@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Shield, ChevronRight, Wifi, CheckCircle2,
   PlusCircle, Download, Link2, Copy, Check,
   Eye, EyeOff, AlertTriangle, RefreshCw, ArrowLeft,
-  Layers, HardDrive,
+  Layers, HardDrive, QrCode,
 } from "lucide-react";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
+import { initReownAppKit, openReownModal, isReownReady } from "@/lib/reown";
 
 interface WalletDef {
   id: string; name: string; network: WalletNetwork;
@@ -17,7 +18,7 @@ interface WalletDef {
 
 const EVM_WALLETS: WalletDef[] = [
   { id: "metamask",    name: "MetaMask",       network: "evm", icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains", popular: true, chainId: 1 },
-  { id: "walletconnect", name: "WalletConnect", network: "evm", icon: "🔗", description: "Connect any mobile wallet via QR code", popular: true, chainId: 1 },
+  { id: "walletconnect", name: "Reown WalletConnect", network: "evm", icon: "🔗", description: "300+ wallets — MetaMask Mobile, Trust, Coinbase & more via QR code", popular: true, chainId: 1 },
   { id: "coinbase",   name: "Coinbase Wallet", network: "evm", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains", popular: true, chainId: 1 },
   { id: "trust",      name: "Trust Wallet",    network: "evm", icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins", chainId: 1 },
   { id: "imtoken",    name: "imToken",         network: "evm", icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…", chainId: 1 },
@@ -205,8 +206,15 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [accountIndex, setAccountIndex] = useState(0);
   const [trezorStatus, setTrezorStatus] = useState<"idle" | "connecting" | "error">("idle");
   const [trezorError, setTrezorError] = useState<string | null>(null);
+  const [reownStatus, setReownStatus] = useState<"idle" | "opening" | "waiting" | "done" | "error">("idle");
+  const reownPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleClose = () => {
+    // Clean up any active Reown polling
+    if (reownPollRef.current) {
+      clearInterval(reownPollRef.current);
+      reownPollRef.current = null;
+    }
     onClose();
     setTimeout(() => {
       setView("landing");
@@ -218,6 +226,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setConfirmed(false);
       setImportInput("");
       setImportError(null);
+      setReownStatus("idle");
+      setConnecting(null);
+      setConnected(null);
+      setConnectError(null);
     }, 400);
   };
 
@@ -228,7 +240,59 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     if (wallet.network === "evm") {
 
       if (wallet.id === "walletconnect") {
-        setConnectError("WalletConnect integration coming soon. Use MetaMask or another installed wallet for now.");
+        setConnectError(null);
+        setReownStatus("opening");
+        setConnecting("walletconnect");
+
+        // Init AppKit (fetches project ID from DB if not in env)
+        await initReownAppKit();
+
+        if (!isReownReady()) {
+          setConnectError(
+            "WalletConnect is not configured yet. Go to Admin → Integrations and add your free Reown Project ID."
+          );
+          setReownStatus("error");
+          setConnecting(null);
+          return;
+        }
+
+        // Open the Reown modal (QR code + 300+ wallets)
+        openReownModal("Connect");
+        setReownStatus("waiting");
+
+        // Poll window.ethereum for a newly connected account
+        // (Reown injects its provider into window.ethereum after connection)
+        let attempts = 0;
+        reownPollRef.current = setInterval(async () => {
+          attempts++;
+          try {
+            const eth = (window as any).ethereum;
+            if (eth) {
+              const accounts: string[] = await eth.request({ method: "eth_accounts" });
+              if (accounts?.length) {
+                const chainHex: string = await eth.request({ method: "eth_chainId" });
+                connect({
+                  address: accounts[0],
+                  provider: "walletconnect",
+                  network: "evm",
+                  chainId: parseInt(chainHex, 16),
+                });
+                clearInterval(reownPollRef.current!);
+                reownPollRef.current = null;
+                setReownStatus("done");
+                setConnecting(null);
+                setTimeout(() => { setReownStatus("idle"); handleClose(); }, 800);
+                return;
+              }
+            }
+          } catch { /* keep polling */ }
+          if (attempts >= 120) { // 60 seconds timeout
+            clearInterval(reownPollRef.current!);
+            reownPollRef.current = null;
+            setReownStatus("idle");
+            setConnecting(null);
+          }
+        }, 500);
         return;
       }
 
@@ -754,6 +818,26 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                           <p className="text-xs text-red-300 leading-relaxed flex-1">{connectError}</p>
                           <button onClick={() => setConnectError(null)} className="text-red-400/60 hover:text-red-400 shrink-0">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Reown / WalletConnect waiting banner */}
+                      {(reownStatus === "waiting" || reownStatus === "opening") && (
+                        <div className="mx-6 mt-4 flex items-center gap-3 p-3.5 bg-violet-500/10 border border-violet-500/30 rounded-xl">
+                          <RefreshCw className="w-4 h-4 text-violet-400 shrink-0 animate-spin" />
+                          <div className="flex-1">
+                            <p className="text-xs font-semibold text-violet-300">Reown modal open</p>
+                            <p className="text-[11px] text-violet-300/70">Scan the QR code with your mobile wallet or select a wallet in the Reown popup.</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (reownPollRef.current) { clearInterval(reownPollRef.current); reownPollRef.current = null; }
+                              setReownStatus("idle"); setConnecting(null);
+                            }}
+                            className="text-violet-400/60 hover:text-violet-400 shrink-0"
+                          >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>

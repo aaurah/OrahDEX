@@ -2,7 +2,7 @@ import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
-  Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity, Wallet,
+  Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity, Wallet, Link2,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ const NAV = [
   { href: "/admin/transactions", label: "On-Chain Transactions", icon: Activity },
   { href: "/admin/pairs", label: "Trade Pairs", icon: ArrowRightLeft },
   { href: "/admin/api", label: "API Settings", icon: Key },
+  { href: "/admin/integrations", label: "Integrations", icon: Link2 },
   { href: "/admin/contracts", label: "Contracts & Coins", icon: Cpu },
   { href: "/admin/fee-wallet", label: "Fee Wallet", icon: Wallet },
   { href: "/admin/themes", label: "Theme Settings", icon: Palette },
