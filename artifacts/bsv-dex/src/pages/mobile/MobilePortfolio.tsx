@@ -2,6 +2,7 @@ import { Link2, TrendingUp, TrendingDown, ArrowDownToLine, ArrowUpFromLine, Copy
 import { useWalletStore } from "@/store/useWalletStore";
 import { useState } from "react";
 import { DepositModal } from "@/components/DepositModal";
+import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn } from "@/lib/utils";
 
 const BALANCES = [
@@ -29,6 +30,7 @@ export function MobilePortfolio() {
   const { address, provider, network } = useWalletStore();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const total = BALANCES.reduce((s, b) => s + b.value, 0);
@@ -63,6 +65,7 @@ export function MobilePortfolio() {
   return (
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
+      <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
         {/* Header */}
@@ -125,6 +128,7 @@ export function MobilePortfolio() {
               <ArrowDownToLine size={16} /> Deposit
             </button>
             <button
+              onClick={() => setWithdrawOpen(true)}
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-card border border-border text-foreground font-semibold text-sm active:opacity-80"
             >
               <ArrowUpFromLine size={16} /> Withdraw

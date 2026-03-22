@@ -5,6 +5,7 @@ import { formatPrice, formatPercent, cn, shortenAddress } from "@/lib/utils";
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { DepositModal } from "@/components/DepositModal";
+import { WithdrawModal } from "@/components/WithdrawModal";
 
 export function Portfolio() {
   const { address } = useWalletStore();
@@ -15,6 +16,8 @@ export function Portfolio() {
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAsset, setWithdrawAsset] = useState("USDT");
   const [copiedAddr, setCopiedAddr] = useState(false);
 
   const handleCopyAddr = () => {
@@ -43,6 +46,7 @@ export function Portfolio() {
   return (
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
+      <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} defaultAsset={withdrawAsset} />
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -69,7 +73,10 @@ export function Portfolio() {
             >
               <ArrowDownToLine className="w-4 h-4" /> Deposit
             </button>
-            <button className="flex items-center gap-2 bg-secondary hover:bg-white/10 px-5 py-2.5 rounded-xl transition-colors font-semibold text-sm border border-border">
+            <button
+              onClick={() => { setWithdrawAsset("USDT"); setWithdrawOpen(true); }}
+              className="flex items-center gap-2 bg-secondary hover:bg-white/10 px-5 py-2.5 rounded-xl transition-colors font-semibold text-sm border border-border"
+            >
               <ArrowUpFromLine className="w-4 h-4" /> Withdraw
             </button>
           </div>
@@ -150,7 +157,7 @@ export function Portfolio() {
                   <th className="p-4 font-medium text-right">Available</th>
                   <th className="p-4 font-medium text-right">In Order</th>
                   <th className="p-4 font-medium text-right">Value (USD)</th>
-                  <th className="p-4 font-medium text-right">Deposit</th>
+                  <th className="p-4 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -169,10 +176,17 @@ export function Portfolio() {
                     <td className="p-4 text-right font-mono text-muted-foreground">{hideBalances ? "***" : bal.locked.toLocaleString()}</td>
                     <td className="p-4 text-right font-mono font-medium">${hideBalances ? "***" : formatPrice(bal.valueUSD)}</td>
                     <td className="p-4 text-right">
-                      <button onClick={() => setDepositOpen(true)}
-                        className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
-                        Deposit
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setDepositOpen(true)}
+                          className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                          Deposit
+                        </button>
+                        <button
+                          onClick={() => { setWithdrawAsset(bal.asset); setWithdrawOpen(true); }}
+                          className="px-3 py-1.5 rounded-lg bg-sell/10 border border-sell/20 text-sell text-xs font-semibold hover:bg-sell/20 transition-colors">
+                          Withdraw
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
