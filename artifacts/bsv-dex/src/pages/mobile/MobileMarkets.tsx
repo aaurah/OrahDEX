@@ -4,6 +4,7 @@ import { Search, X, TrendingUp, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -40,6 +41,9 @@ export function MobileMarkets() {
   const [filter, setFilter] = useState<Filter>("all");
   const { address } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
+  const [walletSheetOpen, setWalletSheetOpen] = useState(false);
+
+  const TOTAL_BALANCE = "$3,340.85";
 
   const { data: apiData, refetch, isFetching } = useQuery({
     queryKey: ["markets"],
@@ -83,6 +87,7 @@ export function MobileMarkets() {
   };
 
   return (
+    <>
     <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b border-border px-4 pt-safe-top pb-3">
@@ -92,16 +97,19 @@ export function MobileMarkets() {
             <p className="text-[10px] text-primary opacity-80">✦ Trade means DEX</p>
           </div>
           <button
-            onClick={() => openWalletModal()}
+            onClick={() => address ? setWalletSheetOpen(true) : openWalletModal()}
             className={address
-              ? "flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-semibold"
+              ? "flex flex-col items-end px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400"
               : "flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white text-xs font-semibold shadow-md shadow-primary/20"
             }
           >
             {address ? (
               <>
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                {address.slice(0, 4)}…{address.slice(-4)}
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-[10px] font-medium text-green-400/70">Connected</span>
+                </div>
+                <span className="text-sm font-bold text-green-400 leading-tight">{TOTAL_BALANCE}</span>
               </>
             ) : (
               <>
@@ -219,6 +227,11 @@ export function MobileMarkets() {
         </div>
       </div>
     </div>
+
+    {walletSheetOpen && (
+      <MobileWalletSheet onClose={() => setWalletSheetOpen(false)} />
+    )}
+    </>
   );
 }
 
