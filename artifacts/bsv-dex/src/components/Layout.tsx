@@ -1,11 +1,13 @@
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Zap, Sun, Moon, Smartphone, Settings } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone };
 const THEME_CYCLE = ["dark", "light", "amoled"] as const;
@@ -26,7 +28,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { address, provider, network, disconnect } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
-  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const ThemeIcon = THEME_ICONS[theme ?? "dark"];
@@ -119,7 +121,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           ) : (
             <button
-              onClick={() => setIsWalletModalOpen(true)}
+              onClick={() => openWalletModal()}
               className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 active:scale-95 transition-all"
             >
               <Wallet className="w-4 h-4" />
@@ -162,7 +164,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {!address && (
             <div className="px-4 pb-4">
               <button
-                onClick={() => { setIsWalletModalOpen(true); setIsMobileMenuOpen(false); }}
+                onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
                 className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-3 rounded-xl font-semibold shadow-lg"
               >
                 <Wallet className="w-4 h-4" />
@@ -179,7 +181,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
       <WalletConnectModal
         isOpen={isWalletModalOpen}
-        onClose={() => setIsWalletModalOpen(false)}
+        onClose={closeWalletModal}
       />
     </div>
   );
