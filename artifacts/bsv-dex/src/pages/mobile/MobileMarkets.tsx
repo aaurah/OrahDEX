@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, X, TrendingUp, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
-import { WalletConnectModal } from "@/components/WalletConnectModal";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -38,8 +38,8 @@ export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const [walletOpen, setWalletOpen] = useState(false);
   const { address } = useWalletStore();
+  const openWalletModal = useWalletModalStore((s) => s.open);
 
   const { data: apiData, refetch, isFetching } = useQuery({
     queryKey: ["markets"],
@@ -92,7 +92,7 @@ export function MobileMarkets() {
             <p className="text-[10px] text-primary opacity-80">✦ Trade means DEX</p>
           </div>
           <button
-            onClick={() => setWalletOpen(true)}
+            onClick={() => openWalletModal()}
             className={address
               ? "flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-semibold"
               : "flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white text-xs font-semibold shadow-md shadow-primary/20"
@@ -111,7 +111,6 @@ export function MobileMarkets() {
             )}
           </button>
         </div>
-        {walletOpen && <WalletConnectModal onClose={() => setWalletOpen(false)} />}
 
         {/* Stats */}
         <div className="flex gap-2 mb-3">
