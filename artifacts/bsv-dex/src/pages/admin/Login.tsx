@@ -74,7 +74,7 @@ export function AdminLogin() {
           <h1 className="text-xl font-bold text-foreground mb-1">Sign in to Admin</h1>
           <p className="text-sm text-muted-foreground mb-6">Enter your credentials to access the dashboard.</p>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
             {/* Email */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</label>
@@ -86,7 +86,6 @@ export function AdminLogin() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@example.com"
                   autoComplete="email"
-                  required
                   className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground/50 focus:outline-none text-sm"
                 />
               </div>
@@ -103,7 +102,6 @@ export function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
-                  required
                   className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground/50 focus:outline-none text-sm"
                 />
                 <button
