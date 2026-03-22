@@ -25,7 +25,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-svh bg-background overflow-hidden">
       {/* Page content */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-y-auto overscroll-contain relative">
         {children}
       </div>
 
