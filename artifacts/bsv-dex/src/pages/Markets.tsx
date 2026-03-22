@@ -19,9 +19,10 @@ export function Markets() {
   return (
     <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
       <div className="mb-10">
-        <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-4">Markets Overview</h1>
+        <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">Markets Overview</h1>
+        <p className="text-primary/80 italic font-medium text-sm mb-3">✦ Always comes to Aura</p>
         <p className="text-muted-foreground text-lg max-w-2xl">
-          Trade BSV and tokens with zero trust, 100% on-chain settlement, and instant liquidity.
+          Multi-chain trading with zero trust, 100% on-chain settlement on BSV, and instant liquidity across EVM and native BSV markets.
         </p>
       </div>
 
