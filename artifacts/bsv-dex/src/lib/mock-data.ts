@@ -116,6 +116,118 @@ export const BSV_MARKETS: any[] = [
   bsvPair("ZEC",  28.2,    0.85,    3_000_000),
 ];
 
+// ─── BTC PAIRS ────────────────────────────────────────────────────────────────
+const BTC_PRICE = 68310;
+function btcPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / BTC_PRICE;
+  return spot(base, "BTC", p, chg, vol / BTC_PRICE);
+}
+export const BTC_MARKETS: any[] = [
+  btcPair("ETH",   3415,    1.32,  950_000_000),
+  btcPair("XRP",   0.5242, -0.64,  110_000_000),
+  btcPair("XMR",   125.5,   0.42,   5_000_000),
+  btcPair("TRX",   0.1205,  2.31,  35_000_000),
+  btcPair("DOGE",  0.1185,  5.42,  78_000_000),
+  btcPair("LTC",   78.2,    0.45,  32_000_000),
+  btcPair("ADA",   0.4421, -2.10,  45_000_000),
+  btcPair("DOT",   6.82,   -1.20,  38_000_000),
+  btcPair("DASH",  28.5,    1.15,   3_500_000),
+  btcPair("BCH",   384,     1.10,  28_000_000),
+  btcPair("ATOM",  8.42,   -0.78,  18_000_000),
+  btcPair("ETC",   26.8,   -1.45,  14_000_000),
+  btcPair("SOL",   148.5,   3.21,  420_000_000),
+  btcPair("XLM",   0.112,   1.42,  12_000_000),
+  btcPair("ZEC",   28.2,    0.85,   3_000_000),
+  btcPair("LINK",  14.52,   3.64,  48_000_000),
+  btcPair("UNI",   9.84,    1.55,  22_000_000),
+  btcPair("AAVE",  96.5,    1.82,  12_000_000),
+  btcPair("AVAX",  36.4,    2.15,  62_000_000),
+  btcPair("NEAR",  6.55,    4.82,  24_000_000),
+];
+
+// ─── THEMED CATEGORIES ────────────────────────────────────────────────────────
+export const AI_MARKETS: any[] = [
+  spot("FET",   "USDT", 1.82,   8.45,  85_000_000),
+  spot("AGIX",  "USDT", 0.892, -3.21,  42_000_000),
+  spot("OCEAN", "USDT", 0.612,  5.14,  28_000_000),
+  spot("RNDR",  "USDT", 7.42,   6.82,  62_000_000),
+  spot("TAO",   "USDT", 482,    4.21, 320_000_000),
+  spot("WLD",   "USDT", 2.84,  -1.45,  98_000_000),
+  spot("GRT",   "USDT", 0.192,  3.15,  12_000_000),
+  spot("ICP",   "USDT", 11.2,   0.95,  12_000_000),
+  spot("ARKM",  "USDT", 1.84,  -2.18,  18_000_000),
+  spot("CTXC",  "USDT", 0.142,  7.32,   4_000_000),
+  spot("NMR",   "USDT", 18.2,   2.45,   3_000_000),
+  spot("ORAI",  "USDT", 4.82,  11.24,   8_000_000),
+  spot("ALT",   "USDT", 0.182, -5.42,  22_000_000),
+];
+
+export const SOL_MARKETS: any[] = [
+  spot("SOL",   "USDT", 148.5,  3.21, 420_000_000),
+  spot("BONK",  "USDT", 0.0000248, 12.5, 185_000_000),
+  spot("WIF",   "USDT", 0.892,  8.42,  82_000_000),
+  spot("JUP",   "USDT", 0.842, -2.18,  48_000_000),
+  spot("PYTH",  "USDT", 0.382,  4.85,  28_000_000),
+  spot("ORCA",  "USDT", 2.84,   3.42,  12_000_000),
+  spot("JTO",   "USDT", 2.42,  -1.82,  18_000_000),
+  spot("BOME",  "USDT", 0.00842, 18.5, 92_000_000),
+  spot("MEW",   "USDT", 0.00582, 9.21, 45_000_000),
+  spot("POPCAT","USDT", 0.842,  15.42, 62_000_000),
+  spot("SLERF", "USDT", 0.00482, 4.82, 12_000_000),
+  spot("GRASS", "USDT", 0.282,   8.70, 18_000_000),
+  spot("W",     "USDT", 0.242,  -3.42, 28_000_000),
+  spot("ZEUS",  "USDT", 0.182,   6.15,  8_000_000),
+];
+
+export const MEME_MARKETS: any[] = [
+  spot("DOGE",   "USDT", 0.1185,  5.42,  78_000_000),
+  spot("SHIB",   "USDT", 0.0000235, 6.1, 92_000_000),
+  spot("PEPE",   "USDT", 0.0000082, 8.5, 185_000_000),
+  spot("BONK",   "USDT", 0.0000248, 12.5, 185_000_000),
+  spot("WIF",    "USDT", 0.892,   8.42,  82_000_000),
+  spot("FLOKI",  "USDT", 0.000182, 9.84, 48_000_000),
+  spot("BABYDOGE","USDT",0.00000000242, 14.5, 12_000_000),
+  spot("COQ",    "USDT", 0.00000012, 22.4, 8_000_000),
+  spot("BRETT",  "USDT", 0.082,   18.42, 42_000_000),
+  spot("MOG",    "USDT", 0.00000082, 11.5, 22_000_000),
+  spot("TURBO",  "USDT", 0.00842, 15.84, 18_000_000),
+  spot("TRUMP",  "USDT", 8.42,    -4.21, 182_000_000),
+  spot("FWOG",   "USDT", 0.0842,   7.45, 12_000_000),
+  spot("POPCAT", "USDT", 0.842,   15.42, 62_000_000),
+];
+
+export const DEFI_MARKETS: any[] = [
+  spot("UNI",   "USDT", 9.84,    1.55,  22_000_000),
+  spot("AAVE",  "USDT", 96.5,    1.82,  12_000_000),
+  spot("MKR",   "USDT", 2920,   -0.45,   8_000_000),
+  spot("CRV",   "USDT", 0.382,  -1.15,  18_000_000),
+  spot("LDO",   "USDT", 2.15,    1.95,  14_000_000),
+  spot("COMP",  "USDT", 52.5,    0.62,   5_000_000),
+  spot("SNX",   "USDT", 2.82,   -1.32,   6_000_000),
+  spot("YFI",   "USDT", 6820,    1.05,   4_000_000),
+  spot("SUSHI", "USDT", 1.22,   -0.85,   8_000_000),
+  spot("BAL",   "USDT", 2.84,   -2.14,   4_000_000),
+  spot("DYDX",  "USDT", 1.84,    3.42,  12_000_000),
+  spot("GMX",   "USDT", 28.4,   -0.85,   8_000_000),
+  spot("RUNE",  "USDT", 5.52,    4.85,  12_000_000),
+];
+
+export const NEW_MARKETS: any[] = [
+  spot("BOME",  "USDT", 0.00842, 18.5,  92_000_000),
+  spot("W",     "USDT", 0.242,  -3.42,  28_000_000),
+  spot("TNSR",  "USDT", 0.342,   5.42,  18_000_000),
+  spot("REZ",   "USDT", 0.082,  -8.42,  12_000_000),
+  spot("BB",    "USDT", 0.242,   12.4,  22_000_000),
+  spot("NOT",   "USDT", 0.00842, 28.5, 182_000_000),
+  spot("LISTA", "USDT", 0.182,   6.42,   8_000_000),
+  spot("ZRO",   "USDT", 2.84,   -2.18,  42_000_000),
+  spot("EIGEN", "USDT", 2.42,   -5.84,  28_000_000),
+  spot("SCR",   "USDT", 0.882,  -4.21,  12_000_000),
+  spot("CATI",  "USDT", 0.242,  -6.42,  18_000_000),
+  spot("HMSTR", "USDT", 0.00142, -9.84, 42_000_000),
+  spot("DOGS",  "USDT", 0.000482, 5.42, 22_000_000),
+];
+
 // ─── FUTURES ──────────────────────────────────────────────────────────────────
 export const FUTURES_MARKETS: any[] = [
   fut("BSV",   55.42,   4.41,  18_500_000),
