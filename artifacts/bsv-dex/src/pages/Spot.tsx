@@ -8,6 +8,7 @@ import { RecentTrades } from "@/components/trading/RecentTrades";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
+import { ExternalLink, CheckCircle2, Clock } from "lucide-react";
 
 type BottomTab = "open" | "history" | "trades";
 
@@ -22,15 +23,17 @@ export function SpotTrading() {
   const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
   const { data: apiTrades } = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
-  const { data: apiOrders } = useGetOrders({ walletAddress: address || '' }, { query: { enabled: !!address } });
+  const { data: apiOrders, refetch: refetchOrders } = useGetOrders({ walletAddress: address || '' }, { query: { enabled: !!address, refetchInterval: 5000 } });
 
   const ticker = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
   
-  const candles = apiCandles || generateMockCandles(ticker.lastPrice);
+  const candles   = apiCandles   || generateMockCandles(ticker.lastPrice);
   const orderBook = apiOrderBook || generateMockOrderBook(ticker.lastPrice);
-  const trades = apiTrades || generateMockTrades(ticker.lastPrice);
-  const orders = apiOrders || [];
+  const trades    = apiTrades    || generateMockTrades(ticker.lastPrice);
+  const allOrders = (apiOrders as any[]) || [];
+  const openOrders   = allOrders.filter((o: any) => o.status === "open");
+  const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
@@ -90,9 +93,9 @@ export function SpotTrading() {
             {/* Tab bar */}
             <div className="flex gap-0 px-4 border-b border-border text-sm font-medium shrink-0">
               {([
-                { key: "open",    label: `Open Orders (${orders.length})` },
-                { key: "history", label: "Order History" },
-                { key: "trades",  label: "Trade History" },
+                { key: "open",    label: `Open (${openOrders.length})` },
+                { key: "history", label: `History (${filledOrders.length})` },
+                { key: "trades",  label: "Market Trades" },
               ] as { key: BottomTab; label: string }[]).map(t => (
                 <button
                   key={t.key}
@@ -113,7 +116,7 @@ export function SpotTrading() {
             <div className="flex-1 overflow-auto">
               {/* ── Open Orders ── */}
               {bottomTab === "open" && (
-                orders.length === 0 ? (
+                openOrders.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                     {address ? "No open orders." : "Connect your wallet to view open orders."}
                   </div>
@@ -123,24 +126,34 @@ export function SpotTrading() {
                       <tr className="text-muted-foreground font-sans border-b border-border">
                         <th className="p-3 font-medium">Date</th>
                         <th className="p-3 font-medium">Pair</th>
-                        <th className="p-3 font-medium">Type</th>
                         <th className="p-3 font-medium">Side</th>
                         <th className="p-3 font-medium text-right">Price</th>
                         <th className="p-3 font-medium text-right">Amount</th>
+                        <th className="p-3 font-medium text-right">Network</th>
                         <th className="p-3 font-medium text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {(orders as any[]).map((o: any, i: number) => (
+                      {openOrders.map((o: any, i: number) => (
                         <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
-                          <td className="p-3 text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</td>
+                          <td className="p-3 text-muted-foreground">{new Date(o.createdAt).toLocaleTimeString()}</td>
                           <td className="p-3">{o.symbol}</td>
-                          <td className="p-3 capitalize">{o.type}</td>
                           <td className={cn("p-3 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
                           <td className="p-3 text-right">{formatPrice(o.price)}</td>
-                          <td className="p-3 text-right">{o.quantity}</td>
+                          <td className="p-3 text-right">{Number(o.quantity).toFixed(4)}</td>
                           <td className="p-3 text-right">
-                            <button className="text-xs text-sell hover:underline">Cancel</button>
+                            <span className={cn("text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border",
+                              o.networkType === "evm"
+                                ? "text-violet-400 border-violet-500/30"
+                                : "text-amber-400 border-amber-500/30"
+                            )}>
+                              {o.networkType === "evm" ? "EVM" : "BSV"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <span className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
+                              <Clock className="w-3 h-3" /> Matching…
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -149,19 +162,62 @@ export function SpotTrading() {
                 )
               )}
 
-              {/* ── Order History ── */}
+              {/* ── Order History (filled / cancelled with BSV settlement) ── */}
               {bottomTab === "history" && (
-                <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
-                  {!address
-                    ? "Connect your wallet to view order history."
-                    : (
-                      <>
-                        <span>No past orders found for this session.</span>
-                        <span className="text-xs opacity-60">Completed and cancelled orders will appear here.</span>
-                      </>
-                    )
-                  }
-                </div>
+                filledOrders.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center gap-1 text-muted-foreground text-sm">
+                    {!address
+                      ? "Connect your wallet to view order history."
+                      : <><span>No completed orders yet.</span><span className="text-xs opacity-60">Filled orders show BSV settlement txid.</span></>
+                    }
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="text-muted-foreground font-sans border-b border-border">
+                        <th className="p-3 font-medium">Date</th>
+                        <th className="p-3 font-medium">Pair</th>
+                        <th className="p-3 font-medium">Side</th>
+                        <th className="p-3 font-medium text-right">Price</th>
+                        <th className="p-3 font-medium text-right">Amount</th>
+                        <th className="p-3 font-medium">BSV Settlement</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filledOrders.map((o: any, i: number) => (
+                        <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString()}</td>
+                          <td className="p-3">{o.symbol}</td>
+                          <td className={cn("p-3 font-semibold capitalize", o.side === "buy" ? "text-buy" : o.side === "sell" ? "text-sell" : "text-muted-foreground")}>{o.side}</td>
+                          <td className="p-3 text-right">{formatPrice(o.price)}</td>
+                          <td className="p-3 text-right">{Number(o.quantity).toFixed(4)}</td>
+                          <td className="p-3">
+                            {o.status === "filled" && o.txid ? (
+                              <div className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3 h-3 text-green-400 shrink-0" />
+                                <span className="text-green-400 font-mono text-[10px]">
+                                  {o.txid.slice(0, 10)}…{o.txid.slice(-6)}
+                                </span>
+                                <a
+                                  href={`https://whatsonchain.com/tx/${o.txid}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:text-primary/80"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
+                            ) : o.status === "cancelled" ? (
+                              <span className="text-muted-foreground text-[10px]">Cancelled</span>
+                            ) : (
+                              <span className="text-muted-foreground text-[10px]">Pending…</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
               )}
 
               {/* ── Trade History ── */}

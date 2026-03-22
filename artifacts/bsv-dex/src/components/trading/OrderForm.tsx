@@ -4,39 +4,36 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatPrice } from "@/lib/utils";
-import { Wallet, Shield, Zap, ArrowRightLeft } from "lucide-react";
+import {
+  Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
+  ExternalLink, Loader2, PenLine,
+} from "lucide-react";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market";
 
+// ── Wallet prompt shown when no wallet is connected ───────────────────────────
 function WalletPrompt() {
   const openModal = useWalletModalStore((s) => s.open);
   return (
     <div className="flex flex-col h-full">
-      {/* Dimmed header tabs */}
       <div className="flex opacity-30 pointer-events-none select-none">
         <div className="flex-1 py-4 text-center font-bold text-sm text-buy border-b-2 border-buy bg-buy/5">Buy</div>
         <div className="flex-1 py-4 text-center font-bold text-sm text-muted-foreground border-b-2 border-transparent">Sell</div>
       </div>
-
-      {/* Overlay prompt */}
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-5 py-6">
-        {/* Animated icon */}
         <div className="relative">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600/30 to-primary/30 flex items-center justify-center border border-primary/20 shadow-lg shadow-primary/10">
             <Wallet className="w-7 h-7 text-primary" />
           </div>
           <div className="absolute -inset-1 rounded-2xl border border-primary/20 animate-ping opacity-30" />
         </div>
-
         <div className="text-center">
           <h3 className="font-bold text-foreground text-base mb-1.5">Connect to Trade</h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Connect your wallet to place orders, view balances, and track positions.
+            Connect your EVM or BSV wallet to place orders. Trades settle on-chain via Bitcoin SV.
           </p>
         </div>
-
-        {/* Main CTA */}
         <button
           onClick={openModal}
           className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-600 to-primary text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150"
@@ -44,13 +41,11 @@ function WalletPrompt() {
           <Wallet className="w-4 h-4" />
           Connect Wallet
         </button>
-
-        {/* Feature pills */}
         <div className="w-full grid grid-cols-3 gap-2 pt-1">
           {[
             { icon: Shield, label: "Non-custodial" },
-            { icon: Zap, label: "Instant fill" },
-            { icon: ArrowRightLeft, label: "On-chain" },
+            { icon: Zap, label: "BSV settled" },
+            { icon: ArrowRightLeft, label: "Multi-chain" },
           ].map(({ icon: Icon, label }) => (
             <div key={label} className="flex flex-col items-center gap-1.5 bg-white/3 rounded-xl py-3 border border-white/5">
               <Icon className="w-4 h-4 text-primary/70" />
@@ -58,8 +53,6 @@ function WalletPrompt() {
             </div>
           ))}
         </div>
-
-        {/* Dimmed form preview */}
         <div className="w-full space-y-2 opacity-20 pointer-events-none select-none mt-1">
           <div className="flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5">
             <span className="text-muted-foreground text-sm w-16">Price</span>
@@ -77,21 +70,89 @@ function WalletPrompt() {
   );
 }
 
-export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; currentPrice?: number }) {
-  const { address } = useWalletStore();
-  const { toast } = useToast();
+// ── Settlement result banner ───────────────────────────────────────────────────
+function SettlementBanner({
+  matched,
+  txid,
+  explorerUrl,
+  onDismiss,
+}: {
+  matched: boolean;
+  txid: string | null;
+  explorerUrl: string | null;
+  onDismiss: () => void;
+}) {
+  if (!matched) return null;
+  return (
+    <div className="mx-4 mb-3 p-3 rounded-xl bg-green-500/10 border border-green-500/25 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+        <span className="text-xs font-semibold text-green-400">Trade Matched & Settled On-Chain</span>
+      </div>
+      {txid && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground font-mono break-all leading-relaxed">
+            BSV txid: {txid.slice(0, 16)}…{txid.slice(-8)}
+          </span>
+          {explorerUrl && (
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-primary hover:text-primary/80"
+              title="View on WhatsOnChain"
+            >
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      )}
+      <button onClick={onDismiss} className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground text-left">
+        Dismiss
+      </button>
+    </div>
+  );
+}
 
-  const [side, setSide] = useState<Side>("buy");
-  const [type, setType] = useState<OrderType>("limit");
-  const [price, setPrice] = useState<string>(currentPrice > 0 ? currentPrice.toString() : "");
+// ── Main OrderForm ─────────────────────────────────────────────────────────────
+export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; currentPrice?: number }) {
+  const { address, network } = useWalletStore();
+  const { toast } = useToast();
+  const isEvm = !address || network === "evm" || address.startsWith("0x");
+
+  const [side, setSide]   = useState<Side>("buy");
+  const [type, setType]   = useState<OrderType>("limit");
+  const [price, setPrice] = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [amount, setAmount] = useState<string>("");
+
+  const [signing, setSigning] = useState(false);
+  const [settlement, setSettlement] = useState<{
+    matched: boolean; txid: string | null; explorerUrl: string | null;
+  } | null>(null);
 
   const [base] = symbol.split("/");
 
   const placeOrder = usePlaceOrder({
     mutation: {
-      onSuccess: () => {
-        toast({ title: "Order Placed", description: `${side.toUpperCase()} ${amount} ${base} @ ${type === "market" ? "market" : "$" + price}` });
+      onSuccess: (data: any) => {
+        const matched = data?.matched ?? false;
+        const txid    = data?.settlementTxid ?? data?.txid ?? null;
+        const url     = data?.explorerUrl ?? null;
+
+        if (matched) {
+          setSettlement({ matched: true, txid, explorerUrl: url });
+          toast({
+            title: "Order Filled ✓",
+            description: txid
+              ? `Settled on BSV chain · ${txid.slice(0, 12)}…`
+              : `${side.toUpperCase()} ${amount} ${base} matched`,
+          });
+        } else {
+          toast({
+            title: "Order Open",
+            description: `${side.toUpperCase()} ${amount} ${base} @ $${price} · waiting for match`,
+          });
+        }
         setAmount("");
       },
       onError: () => {
@@ -102,23 +163,58 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
 
   const total = parseFloat(price || "0") * parseFloat(amount || "0");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  /**
+   * Sign the order intent with MetaMask (EVM) before submitting.
+   * For BSV wallets, no signing step is needed (BSV tx is built server-side).
+   */
+  const buildOrderMessage = () =>
+    `OrahDEX Order\nPair: ${symbol}\nSide: ${side.toUpperCase()}\nType: ${type.toUpperCase()}\nAmount: ${amount} ${base}${type === "limit" ? `\nPrice: $${price}` : ""}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!address) return;
+    if (!address || !amount || parseFloat(amount) <= 0) return;
+
+    let evmSignature: string | undefined;
+
+    // EVM wallets: sign the order intent with MetaMask
+    if (isEvm && (window as any).ethereum) {
+      try {
+        setSigning(true);
+        const message = buildOrderMessage();
+        evmSignature = await (window as any).ethereum.request({
+          method: "personal_sign",
+          params: [message, address],
+        });
+      } catch (err: any) {
+        setSigning(false);
+        if (err?.code === 4001) {
+          toast({ title: "Signing rejected", description: "You cancelled the signature request.", variant: "destructive" });
+          return;
+        }
+        // Signing failed but continue without signature (BSV wallets, test env)
+      } finally {
+        setSigning(false);
+      }
+    }
+
     placeOrder.mutate({
       data: {
         symbol,
         walletAddress: address,
         side,
         type,
-        price: type === "limit" ? parseFloat(price) : undefined,
-        quantity: parseFloat(amount),
-      },
+        price:          type === "limit" ? parseFloat(price) : undefined,
+        quantity:       parseFloat(amount),
+        evmSignature,
+        networkType:    isEvm ? "evm" : "bsv",
+      } as any,
     });
   };
 
-  // Not connected — show the prompt overlay
   if (!address) return <WalletPrompt />;
+
+  const isPending = placeOrder.isPending || signing;
+  const canSubmit = !isPending && !!amount && parseFloat(amount) > 0 && (type === "market" || (price && parseFloat(price) > 0));
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -140,7 +236,32 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         </button>
       </div>
 
+      {/* Settlement banner */}
+      {settlement && (
+        <SettlementBanner
+          matched={settlement.matched}
+          txid={settlement.txid}
+          explorerUrl={settlement.explorerUrl}
+          onDismiss={() => setSettlement(null)}
+        />
+      )}
+
       <div className="p-4 flex-1 flex flex-col gap-4 overflow-y-auto">
+        {/* Network badge */}
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border",
+            isEvm
+              ? "text-violet-400 border-violet-500/30 bg-violet-500/10"
+              : "text-amber-400 border-amber-500/30 bg-amber-500/10"
+          )}>
+            {isEvm ? "⬡ EVM" : "₿ BSV"}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {isEvm ? "Signs with MetaMask · settles on BSV chain" : "Native BSV · on-chain settlement"}
+          </span>
+        </div>
+
         {/* Order type */}
         <div className="flex gap-2 text-xs font-medium bg-secondary p-1 rounded-lg">
           {(["limit", "market"] as OrderType[]).map((t) => (
@@ -158,7 +279,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
           {/* Available */}
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Available</span>
-            <span className="font-mono">{side === "buy" ? "4,520.50 USDT" : `150.00 ${base}`}</span>
+            <span className="font-mono">{side === "buy" ? "— USDT" : `— ${base}`}</span>
           </div>
 
           {/* Price */}
@@ -171,6 +292,8 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 onChange={(e) => setPrice(e.target.value)}
                 className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
                 placeholder="0.00"
+                min="0"
+                step="any"
               />
               <span className="text-muted-foreground text-sm ml-2">USDT</span>
             </div>
@@ -191,6 +314,8 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
               onChange={(e) => setAmount(e.target.value)}
               className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
               placeholder="0.00"
+              min="0"
+              step="any"
             />
             <span className="text-muted-foreground text-sm ml-2">{base}</span>
           </div>
@@ -203,9 +328,9 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 type="button"
                 className="flex-1 py-1 text-xs bg-secondary hover:bg-secondary/80 border border-border rounded-md transition-colors"
                 onClick={() => setAmount(
-                  side === "buy"
-                    ? ((4520.50 * (pct / 100)) / parseFloat(price || "1")).toFixed(4)
-                    : (150 * (pct / 100)).toFixed(4)
+                  side === "buy" && price
+                    ? ((1000 * (pct / 100)) / parseFloat(price)).toFixed(4)
+                    : (1 * (pct / 100)).toFixed(4)
                 )}
               >
                 {pct}%
@@ -225,17 +350,38 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
           {/* Submit */}
           <button
             type="submit"
-            disabled={placeOrder.isPending || !amount || parseFloat(amount) <= 0}
+            disabled={!canSubmit}
             className={cn(
-              "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all hover:-translate-y-0.5 active:translate-y-0",
+              "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",
               side === "buy"
-                ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40"
-                : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40",
-              (placeOrder.isPending || !amount || parseFloat(amount) <= 0) && "opacity-60 cursor-not-allowed transform-none"
+                ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40 hover:-translate-y-0.5 active:translate-y-0"
+                : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40 hover:-translate-y-0.5 active:translate-y-0",
+              !canSubmit && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
-            {placeOrder.isPending ? "Placing..." : `${side === "buy" ? "Buy" : "Sell"} ${base}`}
+            {signing ? (
+              <>
+                <PenLine className="w-4 h-4 animate-pulse" />
+                Sign in MetaMask…
+              </>
+            ) : isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Placing…
+              </>
+            ) : (
+              `${side === "buy" ? "Buy" : "Sell"} ${base}`
+            )}
           </button>
+
+          {/* How it works */}
+          <div className="mt-1 p-3 rounded-xl bg-secondary/40 border border-border/50">
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              {isEvm
+                ? "Your EVM wallet signs the order intent (no gas). When matched, the trade settles permanently on the BSV blockchain via OP_RETURN."
+                : "Your BSV wallet trades natively on-chain. Settlement is recorded on the Bitcoin SV blockchain via OP_RETURN."}
+            </p>
+          </div>
         </form>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, serial } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -6,6 +6,8 @@ export const ordersTable = pgTable("orders", {
   id: text("id").primaryKey(),
   symbol: text("symbol").notNull(),
   walletAddress: text("wallet_address").notNull(),
+  // "evm" = MetaMask/EVM wallet, "bsv" = BSV native wallet
+  networkType: text("network_type").default("evm"),
   side: text("side").notNull(),
   type: text("type").notNull(),
   status: text("status").notNull().default("open"),
@@ -18,8 +20,12 @@ export const ordersTable = pgTable("orders", {
   fee: numeric("fee", { precision: 20, scale: 8 }).notNull().default("0"),
   feeAsset: text("fee_asset").notNull().default("USDT"),
   timeInForce: text("time_in_force").notNull().default("GTC"),
+  // BSV on-chain settlement txid (OP_RETURN transaction)
   txid: text("txid"),
+  // EVM wallet signature (personal_sign) — proves the trader authorized this order
   signedTx: text("signed_tx"),
+  // Which order this was matched against
+  matchedOrderId: text("matched_order_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
