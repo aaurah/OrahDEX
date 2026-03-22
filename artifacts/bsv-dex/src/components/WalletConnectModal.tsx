@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Shield, ChevronRight, Wifi, CheckCircle2,
@@ -53,25 +53,32 @@ const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgen
 function getEthereumProvider(walletId: string): any {
   const eth = (window as any).ethereum;
   if (!eth) return null;
-  if (eth.providers?.length) {
-    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask) ?? null;
+
+  // When multiple extensions inject into window.ethereum.providers[]
+  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
+    if (walletId === "metamask") {
+      return eth.providers.find((p: any) => p.isMetaMask)
+        ?? eth.providers[0]; // fall back to first provider
+    }
     if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
+    if (walletId === "trust") return eth.providers.find((p: any) => p.isTrust) ?? null;
     return eth.providers[0];
   }
-  if (walletId === "metamask") return eth.isMetaMask ? eth : null;
-  if (walletId === "coinbase") return eth.isCoinbaseWallet ? eth : null;
-  if (walletId === "trust") return eth.isTrust ? eth : null;
+
+  // Single provider — use it for any EVM wallet, regardless of isMetaMask flag
+  if (walletId === "coinbase" && !eth.isCoinbaseWallet) return null;
+  if (walletId === "trust" && !eth.isTrust) return null;
   if (walletId === "okx") return (window as any).okxwallet ?? (eth.isOKExWallet ? eth : null);
-  return eth;
+  return eth; // MetaMask, Rainbow, Bybit, Ledger, any injected wallet
 }
 
 function isWalletInstalled(walletId: string): boolean {
   const eth = (window as any).ethereum;
   if (!eth) return false;
   switch (walletId) {
-    case "metamask": return !!(eth.isMetaMask || eth.providers?.some((p: any) => p.isMetaMask));
+    case "metamask": return !!(eth.isMetaMask || eth.providers?.some((p: any) => p.isMetaMask) || eth);
     case "coinbase": return !!(eth.isCoinbaseWallet || eth.providers?.some((p: any) => p.isCoinbaseWallet));
-    case "trust": return !!eth.isTrust;
+    case "trust": return !!(eth.isTrust || eth.providers?.some((p: any) => p.isTrust));
     case "okx": return !!(window as any).okxwallet || !!eth.isOKExWallet;
     case "bybit": return !!eth.isBybit;
     case "phantom": return !!(window as any).phantom?.ethereum;
@@ -131,87 +138,62 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }, 400);
   };
 
-  const handleConnectWallet = useCallback(async (wallet: WalletDef) => {
+  const handleConnectWallet = async (wallet: WalletDef) => {
     setConnectError(null);
 
-    // ── EVM wallets (MetaMask, Coinbase, Trust, etc.) ──────────────────────
+    // ── EVM wallets ──────────────────────────────────────────────────────────
     if (wallet.network === "evm") {
-      // WalletConnect — future integration placeholder
+
       if (wallet.id === "walletconnect") {
-        setConnectError("WalletConnect deep link coming soon. Use MetaMask or another installed wallet for now.");
+        setConnectError("WalletConnect integration coming soon. Use MetaMask or another installed wallet for now.");
         return;
       }
 
-      // Phantom uses its own provider namespace
-      const phantomEth = (window as any).phantom?.ethereum;
-      if (wallet.id === "phantom" && phantomEth) {
-        setConnecting(wallet.id);
-        try {
-          const accounts: string[] = await phantomEth.request({ method: "eth_requestAccounts" });
-          const rawChain: string = await phantomEth.request({ method: "eth_chainId" });
-          connect({ address: accounts[0], provider: "phantom", network: "evm", chainId: parseInt(rawChain, 16) });
-          setConnecting(null);
-          handleClose();
-        } catch (err: any) {
-          setConnecting(null);
-          setConnectError(err?.code === 4001 ? "Connection rejected in Phantom." : (err?.message ?? "Phantom connection failed."));
-        }
-        return;
+      // Resolve provider — Phantom and OKX have their own namespaces
+      let provider: any = null;
+      if (wallet.id === "phantom") {
+        provider = (window as any).phantom?.ethereum ?? null;
+      } else if (wallet.id === "okx") {
+        provider = (window as any).okxwallet ?? null;
+      } else {
+        provider = getEthereumProvider(wallet.id);
       }
 
-      // OKX has its own namespace too
-      const okxProvider = (window as any).okxwallet;
-      if (wallet.id === "okx" && okxProvider) {
-        setConnecting(wallet.id);
-        try {
-          const accounts: string[] = await okxProvider.request({ method: "eth_requestAccounts" });
-          const rawChain: string = await okxProvider.request({ method: "eth_chainId" });
-          connect({ address: accounts[0], provider: "okx", network: "evm", chainId: parseInt(rawChain, 16) });
-          setConnecting(null);
-          handleClose();
-        } catch (err: any) {
-          setConnecting(null);
-          setConnectError(err?.code === 4001 ? "Connection rejected in OKX Wallet." : (err?.message ?? "OKX connection failed."));
-        }
-        return;
-      }
-
-      // Standard EIP-1193 provider (MetaMask, Coinbase, Trust, Rainbow, Bybit, Ledger…)
-      const provider = getEthereumProvider(wallet.id);
-
+      // No provider at all — redirect to install page or MetaMask mobile deep link
       if (!provider) {
-        // Not installed — guide user to install or open mobile app
-        if (wallet.id === "metamask" && isMobileDevice()) {
-          window.open(METAMASK_MOBILE_DEEPLINK, "_blank");
-          return;
-        }
-        const installUrl = WALLET_INSTALL_URLS[wallet.id];
-        if (installUrl) {
-          window.open(installUrl, "_blank");
+        if (wallet.id === "metamask") {
+          if (isMobileDevice()) {
+            window.open(METAMASK_MOBILE_DEEPLINK, "_blank");
+          } else {
+            window.open("https://metamask.io/download/", "_blank");
+          }
         } else {
-          setConnectError(`${wallet.name} is not installed. Install it and refresh this page.`);
+          const url = WALLET_INSTALL_URLS[wallet.id];
+          if (url) window.open(url, "_blank");
+          else setConnectError(`${wallet.name} extension not detected. Install it and refresh.`);
         }
         return;
       }
 
+      // Request accounts — triggers the real wallet popup
       setConnecting(wallet.id);
       try {
-        // Request account access — this triggers the wallet popup
         const accounts: string[] = await provider.request({ method: "eth_requestAccounts" });
-        if (!accounts?.length) throw new Error("No accounts returned from wallet.");
+        if (!accounts?.length) throw new Error("Wallet returned no accounts.");
 
         const rawChain: string = await provider.request({ method: "eth_chainId" });
         const chainId = parseInt(rawChain, 16);
 
         connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId });
 
-        // Listen for account/chain changes
+        // Keep in sync when user switches account or chain inside MetaMask
+        provider.removeAllListeners?.();
         provider.on?.("accountsChanged", (accs: string[]) => {
-          if (accs.length === 0) useWalletStore.getState().disconnect();
-          else connect({ address: accs[0], provider: wallet.id, network: "evm", chainId });
+          if (!accs.length) useWalletStore.getState().disconnect();
+          else useWalletStore.getState().connect({ address: accs[0], provider: wallet.id, network: "evm", chainId });
         });
-        provider.on?.("chainChanged", (chainHex: string) => {
-          connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: parseInt(chainHex, 16) });
+        provider.on?.("chainChanged", (hex: string) => {
+          useWalletStore.getState().connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: parseInt(hex, 16) });
         });
 
         setConnecting(null);
@@ -219,10 +201,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         setTimeout(() => { setConnected(null); handleClose(); }, 800);
       } catch (err: any) {
         setConnecting(null);
-        if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
-          setConnectError("You rejected the connection request. Try again and approve it in your wallet.");
-        } else if (err?.code === -32002) {
-          setConnectError("A connection request is already pending. Open your wallet app and approve it.");
+        const code = err?.code;
+        if (code === 4001 || code === "ACTION_REJECTED") {
+          setConnectError("Connection request rejected. Approve it in your wallet and try again.");
+        } else if (code === -32002) {
+          setConnectError("MetaMask is already waiting for approval — open your wallet extension and accept.");
         } else {
           setConnectError(err?.message ?? "Connection failed. Make sure your wallet is unlocked and try again.");
         }
@@ -230,8 +213,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
 
-    // ── BSV wallets ─────────────────────────────────────────────────────────
-    // BSV wallets don't have a browser standard yet — simulate connection
+    // ── BSV wallets (no browser standard yet — simulated) ───────────────────
     setConnecting(wallet.id);
     setTimeout(() => {
       setConnected(wallet.id);
@@ -241,7 +223,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         handleClose();
       }, 700);
     }, 1200);
-  }, [connect, handleClose]);
+  };
 
   const startCreate = (network: WalletNetwork) => {
     setCreateNetwork(network);
