@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
@@ -101,9 +101,17 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
+  const sortFn = (a: any, b: any) => {
+    if (sortBy === "volume")    return b.tradeVolume24hUsd - a.tradeVolume24hUsd;
+    if (sortBy === "marketcap") return b.marketCap - a.marketCap;
+    if (sortBy === "trust")     return b.trustScore - a.trustScore;
+    if (sortBy === "name")      return a.name.localeCompare(b.name);
+    return 0;
+  };
+
+  // filtered = all rows that match search, then grouped so the selected type is on top
   const filtered = useMemo(() => {
     let rows = allExchanges;
-    if (exType !== "all") rows = rows.filter(e => e.type === exType);
     if (search) {
       const q = search.toLowerCase();
       rows = rows.filter(e =>
@@ -112,13 +120,11 @@ export function DexHub() {
         (e.country ?? "").toLowerCase().includes(q)
       );
     }
-    return [...rows].sort((a, b) => {
-      if (sortBy === "volume")    return b.tradeVolume24hUsd - a.tradeVolume24hUsd;
-      if (sortBy === "marketcap") return b.marketCap - a.marketCap;
-      if (sortBy === "trust")     return b.trustScore - a.trustScore;
-      if (sortBy === "name")      return a.name.localeCompare(b.name);
-      return 0;
-    });
+    if (exType === "all") return [...rows].sort(sortFn);
+    // Put selected type first (sorted by sortFn), then other type (also sorted)
+    const primary   = [...rows.filter(e => e.type === exType)].sort(sortFn);
+    const secondary = [...rows.filter(e => e.type !== exType)].sort(sortFn);
+    return [...primary, ...secondary];
   }, [allExchanges, exType, search, sortBy]);
 
   const totalVolumeUsd: number  = data?.totalVolumeUsd ?? 0;
@@ -325,9 +331,27 @@ export function DexHub() {
                 </tr>
               )}
 
-              {!isLoading && filtered.map((ex, idx) => (
+              {!isLoading && filtered.map((ex, idx) => {
+                // Insert a section divider the moment we hit the first row of the secondary group
+                const isFirstSecondary = exType !== "all" && ex.type !== exType &&
+                  (idx === 0 || filtered[idx - 1]?.type === exType);
+                return (
+                <Fragment key={ex.id}>
+                  {isFirstSecondary && (
+                    <tr>
+                      <td colSpan={7} className="px-4 pt-5 pb-2">
+                        <div className={cn(
+                          "flex items-center gap-2 text-xs font-semibold tracking-widest uppercase",
+                          exType === "dex" ? "text-blue-400/70" : "text-violet-400/70"
+                        )}>
+                          <div className={cn("flex-1 h-px", exType === "dex" ? "bg-blue-500/20" : "bg-violet-500/20")} />
+                          {exType === "dex" ? "Centralised Exchanges (CEX)" : "Decentralised Exchanges (DEX)"}
+                          <div className={cn("flex-1 h-px", exType === "dex" ? "bg-blue-500/20" : "bg-violet-500/20")} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 <tr
-                  key={ex.id}
                   className={cn(
                     "border-b border-border/50 transition-colors group",
                     ex.type === "dex"
@@ -401,7 +425,9 @@ export function DexHub() {
                     </a>
                   </td>
                 </tr>
-              ))}
+                </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
