@@ -1,6 +1,5 @@
 import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, Zap, Layers, Users2 } from "lucide-react";
-import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 
@@ -15,8 +14,7 @@ const TABS = [
 
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
-  const { address } = useWalletStore();
-  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
+  const { isOpen: walletOpen, close: closeWallet } = useWalletModalStore();
 
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
@@ -30,7 +28,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* Bottom tab bar */}
+      {/* Bottom tab bar — 6 tabs, no wallet tab */}
       <div
         className="shrink-0 flex items-stretch border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
@@ -48,38 +46,12 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
                 className={active ? "text-primary" : "text-muted-foreground"}
                 strokeWidth={active ? 2.5 : 1.5}
               />
-              <span
-                className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}
-              >
+              <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
                 {tab.label}
               </span>
             </button>
           );
         })}
-
-        {/* Connect wallet button */}
-        <button
-          onClick={() => openWallet()}
-          className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
-        >
-          {address ? (
-            <>
-              <div className="w-5 h-5 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              </div>
-              <span className="text-[10px] font-medium text-green-500">
-                {address.slice(0, 4)}…{address.slice(-3)}
-              </span>
-            </>
-          ) : (
-            <>
-              <div className="w-5 h-5 rounded-full bg-primary/20 border border-primary/30 flex items-center justify-center">
-                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-              </div>
-              <span className="text-[10px] font-medium text-primary">Wallet</span>
-            </>
-          )}
-        </button>
       </div>
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
