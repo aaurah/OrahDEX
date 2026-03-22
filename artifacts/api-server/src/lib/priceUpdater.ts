@@ -3,10 +3,15 @@ import { marketsTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
 
+export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
+
 export const COINGECKO_IDS: Record<string, string> = {
   BSV:  "bitcoin-sv",
   BTC:  "bitcoin",
   ETH:  "ethereum",
+  USDC: "usd-coin",
+  TUSD: "true-usd",
+  USDD: "usdd",
   SOL:  "solana",
   XRP:  "ripple",
   BNB:  "binancecoin",
@@ -80,6 +85,15 @@ export const ETH_PAIRS = [
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
 ];
 
+// Stablecoin pairs — USDC, TUSD, USDD quote assets
+const STABLE_BASE_PAIRS = [
+  "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
+  "MATIC","LINK","UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
+];
+export const USDC_PAIRS = STABLE_BASE_PAIRS;
+export const TUSD_PAIRS = STABLE_BASE_PAIRS;
+export const USDD_PAIRS = STABLE_BASE_PAIRS;
+
 // BCH pairs — top coins vs Bitcoin Cash
 export const BCH_PAIRS = [
   "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
@@ -147,6 +161,22 @@ export async function seedMarketsIfNeeded() {
           volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
           status: "active", type: "spot",
         });
+      }
+    }
+
+    // Stablecoin pairs (USDC, TUSD, USDD)
+    for (const [pairs, quote] of [[USDC_PAIRS,"USDC"],[TUSD_PAIRS,"TUSD"],[USDD_PAIRS,"USDD"]] as [string[],string][]) {
+      for (const base of pairs) {
+        const sym = `${base}-${quote}`;
+        if (!existingSymbols.has(sym)) {
+          const fp = FALLBACK_PRICES[base] ?? 1;
+          toInsert.push({
+            symbol: sym, baseAsset: base, quoteAsset: quote,
+            lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+            status: "active", type: "spot",
+          });
+        }
       }
     }
 
@@ -259,6 +289,14 @@ export async function updateMarketPrices() {
 
       let lastPrice = baseUSD;
       let vol = data.usd_24h_vol;
+
+      // Stablecoin quote (USDC/TUSD/USDD) — price ≈ same as USD value
+      if (STABLECOIN_QUOTES.has(market.quoteAsset) && market.quoteAsset !== "USDT") {
+        const stableCgId = COINGECKO_IDS[market.quoteAsset];
+        const stableUSD  = stableCgId ? (prices[stableCgId]?.usd ?? 1) : 1;
+        lastPrice = baseUSD / stableUSD;
+        vol = vol / stableUSD;
+      }
 
       // ETH quote — compute cross rate
       if (market.quoteAsset === "ETH") {
