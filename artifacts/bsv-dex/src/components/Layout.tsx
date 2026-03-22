@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Layers, Users } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -9,9 +9,9 @@ import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-const THEME_ICONS = { dark: Moon, light: Sun, system: Monitor };
-const THEME_CYCLE = ["dark", "light", "system"] as const;
-const THEME_LABELS = { dark: "Dark", light: "Light", system: "System" };
+const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone, system: Monitor };
+const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
+const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
   { href: "/", label: "Markets", icon: Activity },
