@@ -5,8 +5,6 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
-import { BsvAutoWalletModal } from "./BsvAutoWalletModal";
-import { BsvDisconnectModal } from "./BsvDisconnectModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -30,7 +28,7 @@ const NETWORK_BADGE: Record<string, { label: string; color: string }> = {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, provider, network, requestDisconnect } = useWalletStore();
+  const { address, provider, network, disconnect } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -110,7 +108,7 @@ export function Layout({ children }: { children: ReactNode }) {
               </div>
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Connected" />
               <button
-                onClick={requestDisconnect}
+                onClick={disconnect}
                 className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
                 title="Disconnect Wallet"
               >
@@ -181,8 +179,6 @@ export function Layout({ children }: { children: ReactNode }) {
         isOpen={isWalletModalOpen}
         onClose={closeWalletModal}
       />
-      <BsvAutoWalletModal />
-      <BsvDisconnectModal />
     </div>
   );
 }
