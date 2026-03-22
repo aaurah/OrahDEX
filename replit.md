@@ -25,7 +25,8 @@ pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
 │   ├── api-server/         # Express API server (BSV DEX backend)
-│   └── bsv-dex/            # React + Vite frontend (DEX UI)
+│   ├── bsv-dex/            # React + Vite frontend (DEX UI)
+│   └── aura-dex-mobile/    # Expo React Native mobile app (iOS/Android)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
