@@ -3,7 +3,7 @@ export const TOTP_SECRET = 'JBSWY3DPEHPK3PXP'; // base32 secret
 export const TOTP_ISSUER = 'AuraDEX';
 export const TOTP_ACCOUNT = 'aaurah@protonmail.com';
 
-function base32Decode(input: string): Uint8Array {
+function base32Decode(input: string): ArrayBuffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   const cleaned = input.toUpperCase().replace(/=+$/, '');
   let bits = 0, value = 0;
@@ -18,7 +18,7 @@ function base32Decode(input: string): Uint8Array {
       bits -= 8;
     }
   }
-  return new Uint8Array(output);
+  return new Uint8Array(output).buffer as ArrayBuffer;
 }
 
 export async function generateTOTP(secret = TOTP_SECRET, time = Date.now()): Promise<string> {

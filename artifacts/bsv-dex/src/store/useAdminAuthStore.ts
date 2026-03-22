@@ -7,15 +7,16 @@ const ADMIN_PASSWORD = 'admin123';
 
 interface AdminAuthState {
   isAuthenticated: boolean;
+  twoFaEnabled: boolean;
   twoFaSetupDone: boolean;
   twoFaVerified: boolean;
   email: string | null;
   error: string | null;
-  // Step 1
   login: (email: string, password: string) => boolean;
-  // Step 2
   verifyTotp: (code: string) => Promise<boolean>;
   markSetupDone: () => void;
+  enable2FA: () => void;
+  disable2FA: () => void;
   logout: () => void;
   clearError: () => void;
 }
@@ -24,6 +25,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
   persist(
     (set, get) => ({
       isAuthenticated: false,
+      twoFaEnabled: false,
       twoFaSetupDone: false,
       twoFaVerified: false,
       email: null,
@@ -31,8 +33,14 @@ export const useAdminAuthStore = create<AdminAuthState>()(
 
       login: (email, password) => {
         if (email.trim().toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
-          // Credentials OK — mark email, but not fully authenticated until 2FA
-          set({ email: ADMIN_EMAIL, error: null, twoFaVerified: false });
+          const { twoFaEnabled } = get();
+          if (!twoFaEnabled) {
+            // No 2FA — grant access immediately
+            set({ email: ADMIN_EMAIL, isAuthenticated: true, error: null, twoFaVerified: false });
+          } else {
+            // Credentials OK — hold until TOTP verified
+            set({ email: ADMIN_EMAIL, error: null, twoFaVerified: false });
+          }
           return true;
         }
         set({ error: 'Invalid email or password.' });
@@ -51,6 +59,10 @@ export const useAdminAuthStore = create<AdminAuthState>()(
 
       markSetupDone: () => set({ twoFaSetupDone: true }),
 
+      enable2FA: () => set({ twoFaEnabled: true, twoFaSetupDone: false }),
+
+      disable2FA: () => set({ twoFaEnabled: false, twoFaSetupDone: false }),
+
       logout: () => set({
         isAuthenticated: false,
         twoFaVerified: false,
@@ -63,6 +75,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
     {
       name: 'aura-admin-auth',
       partialize: (s) => ({
+        twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
         // Never persist isAuthenticated — require re-login each session
       }),

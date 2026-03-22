@@ -1,8 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown } from "lucide-react";
+import {
+  Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown,
+  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { TOTP_SECRET, TOTP_ISSUER, getQRCodeUrl, generateTOTP } from "@/lib/totp";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchAdmins = () => fetch(`${BASE}/api/admin/admins`).then(r => r.json());
@@ -17,28 +21,142 @@ const ROLE_COLORS: Record<string, string> = {
 
 const ALL_PERMISSIONS = ["all", "users", "pairs", "orders", "api", "contracts", "reports"];
 
+// ── Enable 2FA Modal (QR setup) ──────────────────────────────────────────────
+function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [previewCode, setPreviewCode] = useState("");
+
+  useEffect(() => {
+    const refresh = () => generateTOTP().then(setPreviewCode);
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  const copySecret = () => {
+    navigator.clipboard.writeText(TOTP_SECRET);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-green-500/15 flex items-center justify-center">
+              <QrCode className="w-4.5 h-4.5 text-green-400" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-foreground">Enable Two-Factor Auth</h3>
+              <p className="text-xs text-muted-foreground">Scan with Google Authenticator</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* QR Code */}
+          <div className="bg-secondary/50 rounded-xl p-3 flex flex-col items-center gap-3 border border-border">
+            <img
+              src={getQRCodeUrl()}
+              alt="TOTP QR Code"
+              className="w-44 h-44 rounded-lg bg-white p-1"
+              onError={e => (e.currentTarget.style.display = 'none')}
+            />
+            <p className="text-xs text-muted-foreground text-center">
+              Scan with <span className="text-foreground font-medium">Google Authenticator</span>, Authy, or any TOTP app
+            </p>
+          </div>
+
+          {/* Manual secret */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Or enter this secret manually:</p>
+            <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+              <code className="flex-1 text-xs font-mono text-primary tracking-widest">{TOTP_SECRET}</code>
+              <button onClick={copySecret} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5">
+              Issuer: <span className="text-foreground">{TOTP_ISSUER}</span> · SHA-1 · 6 digits · 30 sec
+            </p>
+          </div>
+
+          {/* Live code preview */}
+          {previewCode && (
+            <div className="flex items-center justify-between bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 text-green-400 animate-spin" style={{ animationDuration: '3s' }} />
+                <span className="text-xs text-green-400">Live code (refreshes every 30s)</span>
+              </div>
+              <code className="text-lg font-mono font-bold text-green-400 tracking-widest">{previewCode}</code>
+            </div>
+          )}
+
+          <button
+            onClick={onDone}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all"
+          >
+            <ShieldCheck className="w-4 h-4" />
+            2FA Enabled — I've set it up
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Disable 2FA Confirmation Modal ───────────────────────────────────────────
+function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string; onConfirm: () => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500/15 flex items-center justify-center">
+              <AlertTriangle className="w-4.5 h-4.5 text-orange-400" />
+            </div>
+            <h3 className="font-bold text-base text-foreground">Disable 2FA</h3>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground mb-1">
+          You are about to disable two-factor authentication for <span className="font-semibold text-foreground">{adminName}</span>.
+        </p>
+        <p className="text-sm text-orange-400/80 mb-6">
+          This will make the account less secure. Are you sure?
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+            Cancel
+          </button>
+          <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 text-sm font-semibold hover:bg-orange-500/25 transition-all">
+            Disable 2FA
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
 export function AdminAdmins() {
   const qc = useQueryClient();
-  const { email: loggedInEmail, twoFaSetupDone } = useAdminAuthStore();
+  const {
+    email: loggedInEmail, twoFaEnabled, twoFaSetupDone,
+    enable2FA, disable2FA, markSetupDone
+  } = useAdminAuthStore();
+
   const [showAdd, setShowAdd] = useState(false);
+  const [modal2FA, setModal2FA] = useState<{ type: 'enable' | 'disable'; id: string; name: string } | null>(null);
   const [form, setForm] = useState({ name: "", email: "", role: "moderator", permissions: [] as string[] });
 
   const { data: apiAdmins = [], isLoading } = useQuery({ queryKey: ["admin-admins"], queryFn: fetchAdmins });
-
-  // Pinned superadmin row from local auth
-  const superadminRow = loggedInEmail ? [{
-    id: '__superadmin__',
-    name: 'Aaurah',
-    email: loggedInEmail,
-    role: 'superadmin',
-    permissions: ['all'],
-    twoFa: twoFaSetupDone,
-    lastLogin: new Date().toISOString(),
-    status: 'active',
-    isPinned: true,
-  }] : [];
-
-  const admins = [...superadminRow, ...apiAdmins.filter((a: any) => a.email !== loggedInEmail)];
 
   const addAdmin = useMutation({
     mutationFn: (data: any) =>
@@ -47,7 +165,11 @@ export function AdminAdmins() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-admins"] }); setShowAdd(false); setForm({ name: "", email: "", role: "moderator", permissions: [] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-admins"] });
+      setShowAdd(false);
+      setForm({ name: "", email: "", role: "moderator", permissions: [] });
+    },
   });
 
   const removeAdmin = useMutation({
@@ -56,11 +178,69 @@ export function AdminAdmins() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-admins"] }),
   });
 
+  const toggle2FAAPI = useMutation({
+    mutationFn: ({ id, enable }: { id: string; enable: boolean }) =>
+      fetch(`${BASE}/api/admin/admins/${id}/2fa`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ twoFa: enable }),
+      }).then(r => r.json()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-admins"] }),
+  });
+
   const togglePerm = (p: string) =>
     setForm(f => ({ ...f, permissions: f.permissions.includes(p) ? f.permissions.filter(x => x !== p) : [...f.permissions, p] }));
 
+  // Superadmin pinned row
+  const superadminRow = loggedInEmail ? [{
+    id: '__superadmin__',
+    name: 'Aaurah',
+    email: loggedInEmail,
+    role: 'superadmin',
+    permissions: ['all'],
+    twoFa: twoFaEnabled,
+    lastLogin: new Date().toISOString(),
+    status: 'active',
+    isPinned: true,
+  }] : [];
+
+  const admins = [...superadminRow, ...apiAdmins.filter((a: any) => a.email !== loggedInEmail)];
+
+  const handle2FAToggle = (a: any) => {
+    const currentlyEnabled = a.isPinned ? twoFaEnabled : a.twoFa;
+    setModal2FA({ type: currentlyEnabled ? 'disable' : 'enable', id: a.id, name: a.name });
+  };
+
+  const confirm2FAEnable = () => {
+    if (!modal2FA) return;
+    if (modal2FA.id === '__superadmin__') {
+      enable2FA();
+      // Keep modal open to show QR setup
+      setModal2FA({ ...modal2FA, type: 'enable' });
+    } else {
+      toggle2FAAPI.mutate({ id: modal2FA.id, enable: true });
+      setModal2FA(null);
+    }
+  };
+
+  const confirm2FADisable = () => {
+    if (!modal2FA) return;
+    if (modal2FA.id === '__superadmin__') {
+      disable2FA();
+    } else {
+      toggle2FAAPI.mutate({ id: modal2FA.id, enable: false });
+    }
+    setModal2FA(null);
+  };
+
+  const onSetupDone = () => {
+    markSetupDone();
+    setModal2FA(null);
+  };
+
   return (
     <div className="space-y-5">
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Admin User Management</h2>
@@ -74,32 +254,57 @@ export function AdminAdmins() {
         </button>
       </div>
 
-      {/* Add Admin Modal */}
+      {/* ── 2FA Modals ── */}
+      {modal2FA?.type === 'enable' && modal2FA.id === '__superadmin__' && (
+        <Enable2FAModal
+          onDone={onSetupDone}
+          onClose={() => setModal2FA(null)}
+        />
+      )}
+      {modal2FA?.type === 'enable' && modal2FA.id !== '__superadmin__' && (
+        <Enable2FAModal
+          onDone={() => { toggle2FAAPI.mutate({ id: modal2FA.id, enable: true }); setModal2FA(null); }}
+          onClose={() => setModal2FA(null)}
+        />
+      )}
+      {modal2FA?.type === 'disable' && (
+        <Disable2FAModal
+          adminName={modal2FA.name}
+          onConfirm={confirm2FADisable}
+          onClose={() => setModal2FA(null)}
+        />
+      )}
+
+      {/* ── Add Admin Modal ── */}
       {showAdd && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-bold text-lg">New Admin User</h3>
-              <button onClick={() => setShowAdd(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5"><X className="w-4 h-4" /></button>
+              <button onClick={() => setShowAdd(false)} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+                <X className="w-4 h-4" />
+              </button>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="text-xs text-muted-foreground font-medium block mb-1">Full Name</label>
-                <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
+                <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
                   placeholder="Jane Doe" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground font-medium block mb-1">Email</label>
-                <input value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
+                <input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                   className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
                   placeholder="jane@auradex.io" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground font-medium block mb-1">Role</label>
-                <select value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}
+                <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                   className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary">
-                  {["admin", "developer", "moderator", "analyst"].map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                  {["admin", "developer", "moderator", "analyst"].map(r =>
+                    <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+                  )}
                 </select>
               </div>
               <div>
@@ -129,7 +334,7 @@ export function AdminAdmins() {
         </div>
       )}
 
-      {/* Admins Table */}
+      {/* ── Admins Table ── */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -147,76 +352,121 @@ export function AdminAdmins() {
             <tbody className="divide-y divide-border">
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i}>{Array.from({length:7}).map((_,j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-secondary rounded animate-pulse" /></td>)}</tr>
+                  <tr key={i}>
+                    {Array.from({ length: 7 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3"><div className="h-4 bg-secondary rounded animate-pulse" /></td>
+                    ))}
+                  </tr>
                 ))
-              ) : admins.map((a: any) => (
-                <tr key={a.id} className={cn("hover:bg-secondary/20 transition-colors", a.isPinned && "bg-amber-500/5 border-l-2 border-l-amber-500/40")}>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0",
-                        a.isPinned ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-violet-500 to-primary"
-                      )}>
-                        {a.isPinned ? <Crown className="w-3.5 h-3.5" /> : a.name[0]}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-foreground">{a.name}</span>
-                          {a.isPinned && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
+              ) : admins.map((a: any) => {
+                const isTwoFaOn = a.isPinned ? twoFaEnabled : a.twoFa;
+                return (
+                  <tr key={a.id} className={cn(
+                    "hover:bg-secondary/20 transition-colors",
+                    a.isPinned && "bg-amber-500/5 border-l-2 border-l-amber-500/40"
+                  )}>
+                    {/* Admin */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0",
+                          a.isPinned ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-violet-500 to-primary"
+                        )}>
+                          {a.isPinned ? <Crown className="w-3.5 h-3.5" /> : a.name[0]}
                         </div>
-                        <div className="text-xs text-muted-foreground">{a.email}</div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-foreground">{a.name}</span>
+                            {a.isPinned && (
+                              <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase">You</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{a.email}</div>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded border capitalize", ROLE_COLORS[a.role] ?? "bg-muted text-muted-foreground border-border")}>
-                      {a.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(a.permissions ?? []).slice(0, 3).map((p: string) => (
-                        <span key={p} className="text-[9px] bg-secondary px-1.5 py-0.5 rounded font-medium uppercase">{p}</span>
-                      ))}
-                      {a.permissions?.length > 3 && <span className="text-[9px] text-muted-foreground">+{a.permissions.length - 3}</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {a.twoFa
-                      ? <span className="flex items-center gap-1 text-xs text-green-400"><ShieldCheck className="w-3.5 h-3.5" /> Enabled</span>
-                      : <span className="flex items-center gap-1 text-xs text-orange-400"><ShieldAlert className="w-3.5 h-3.5" /> Disabled</span>
-                    }
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">
-                    {a.lastLogin ? new Date(a.lastLogin).toLocaleString() : "Never"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded border capitalize",
-                      a.status === "active" ? "bg-green-400/10 text-green-400 border-green-400/20" : "bg-muted text-muted-foreground border-border"
-                    )}>
-                      {a.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-center gap-1">
-                      <button className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Reset password">
-                        <KeyRound className="w-4 h-4" />
+                    </td>
+
+                    {/* Role */}
+                    <td className="px-4 py-3">
+                      <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded border capitalize", ROLE_COLORS[a.role] ?? "bg-muted text-muted-foreground border-border")}>
+                        {a.role}
+                      </span>
+                    </td>
+
+                    {/* Permissions */}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(a.permissions ?? []).slice(0, 3).map((p: string) => (
+                          <span key={p} className="text-[9px] bg-secondary px-1.5 py-0.5 rounded font-medium uppercase">{p}</span>
+                        ))}
+                        {a.permissions?.length > 3 && (
+                          <span className="text-[9px] text-muted-foreground">+{a.permissions.length - 3}</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 2FA Toggle */}
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handle2FAToggle(a)}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all hover:scale-[1.03] active:scale-[0.97]",
+                          isTwoFaOn
+                            ? "bg-green-500/10 text-green-400 border-green-500/25 hover:bg-green-500/20"
+                            : "bg-secondary text-muted-foreground border-border hover:border-primary/30 hover:text-foreground"
+                        )}
+                        title={isTwoFaOn ? "Click to disable 2FA" : "Click to enable 2FA"}
+                      >
+                        {isTwoFaOn
+                          ? <><ToggleRight className="w-4 h-4" /> Enabled</>
+                          : <><ToggleLeft className="w-4 h-4" /> Disabled</>
+                        }
                       </button>
-                      {a.role !== "superadmin" && (
-                        <button
-                          onClick={() => removeAdmin.mutate(a.id)}
-                          className="p-1.5 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                          title="Remove admin"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                    </td>
+
+                    {/* Last Login */}
+                    <td className="px-4 py-3 text-xs text-muted-foreground">
+                      {a.lastLogin ? new Date(a.lastLogin).toLocaleString() : "Never"}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded border capitalize",
+                        a.status === "active"
+                          ? "bg-green-400/10 text-green-400 border-green-400/20"
+                          : "bg-muted text-muted-foreground border-border"
+                      )}>
+                        {a.status}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-1">
+                        <button className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Reset password">
+                          <KeyRound className="w-4 h-4" />
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {a.role !== "superadmin" && (
+                          <button
+                            onClick={() => removeAdmin.mutate(a.id)}
+                            className="p-1.5 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                            title="Remove admin"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        {!isLoading && admins.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground">No admins found</div>
+        )}
       </div>
     </div>
   );

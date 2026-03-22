@@ -12,7 +12,7 @@ function shake(fn: () => void) {
 
 export function AdminLogin() {
   const [, navigate] = useLocation();
-  const { isAuthenticated, email, twoFaSetupDone, login, verifyTotp, markSetupDone, error, clearError } = useAdminAuthStore();
+  const { isAuthenticated, email, twoFaEnabled, twoFaSetupDone, login, verifyTotp, markSetupDone, error, clearError } = useAdminAuthStore();
 
   const [step, setStep] = useState<Step>('credentials');
   const [emailVal, setEmailVal] = useState('');
@@ -49,7 +49,10 @@ export function AdminLogin() {
     const ok = login(emailVal, password);
     setLoading(false);
     if (ok) {
-      setStep(twoFaSetupDone ? 'totp' : 'setup');
+      // If 2FA is disabled, login() already set isAuthenticated=true → useEffect navigates
+      if (twoFaEnabled) {
+        setStep(twoFaSetupDone ? 'totp' : 'setup');
+      }
     } else {
       triggerShake();
     }
@@ -104,25 +107,27 @@ export function AdminLogin() {
           </div>
         </div>
 
-        {/* Step indicators */}
-        <div className="flex items-center justify-center gap-2 mb-6">
-          {(['credentials', twoFaSetupDone ? 'totp' : 'setup', 'totp'] as const)
-            .filter((s, i, arr) => arr.indexOf(s) === i)
-            .map((s, idx, arr) => {
-              const done = arr.indexOf(step) > idx;
-              const active = step === s;
-              return (
-                <div key={s} className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
-                    done ? 'bg-green-500 text-white' :
-                    active ? 'bg-primary text-white' :
-                    'bg-secondary text-muted-foreground'
-                  }`}>{done ? '✓' : idx + 1}</div>
-                  {idx < arr.length - 1 && <div className={`w-8 h-0.5 rounded ${done ? 'bg-green-500' : 'bg-border'}`} />}
-                </div>
-              );
-            })}
-        </div>
+        {/* Step indicators — only shown when 2FA is enabled */}
+        {twoFaEnabled && (
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {(['credentials', twoFaSetupDone ? 'totp' : 'setup', 'totp'] as const)
+              .filter((s, i, arr) => arr.indexOf(s) === i)
+              .map((s, idx, arr) => {
+                const done = arr.indexOf(step) > idx;
+                const active = step === s;
+                return (
+                  <div key={s} className="flex items-center gap-2">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                      done ? 'bg-green-500 text-white' :
+                      active ? 'bg-primary text-white' :
+                      'bg-secondary text-muted-foreground'
+                    }`}>{done ? '✓' : idx + 1}</div>
+                    {idx < arr.length - 1 && <div className={`w-8 h-0.5 rounded ${done ? 'bg-green-500' : 'bg-border'}`} />}
+                  </div>
+                );
+              })}
+          </div>
+        )}
 
         {/* ── Step 1: Credentials ── */}
         {step === 'credentials' && (
