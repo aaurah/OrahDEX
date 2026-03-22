@@ -49,13 +49,15 @@ export function MobileMarkets() {
     ? apiData.map((m: any) => ({
         symbol: m.symbol,
         base: m.baseAsset ?? m.symbol?.split("/")[0],
-        quote: m.quoteAsset ?? m.symbol?.split("/")[1],
+        quote: (m.quoteAsset ?? m.symbol?.split("/")[1] ?? "USDT").replace(/-PERP$/, ""),
         price: parseFloat(m.lastPrice) || 0,
-        change: parseFloat(m.priceChangePercent) || 0,
+        change: parseFloat(m.priceChangePercent24h ?? m.priceChangePercent) || 0,
         volume: m.volume24h ?? m.volume ?? "—",
-        type: m.type ?? "spot",
+        type: m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot"),
       }))
     : MOCK_MARKETS;
+
+  const spotMarkets = markets.filter((m: any) => m.type === "spot");
 
   const filtered = markets.filter((m: any) => {
     const q = search.toLowerCase();
@@ -63,7 +65,12 @@ export function MobileMarkets() {
       && (filter === "all" || m.type === filter);
   });
 
-  const topMovers = [...markets].sort((a: any, b: any) => b.change - a.change).slice(0, 4);
+  // Top movers: spot only, unique base asset, sorted by absolute change descending
+  const seenBases = new Set<string>();
+  const topMovers = [...spotMarkets]
+    .sort((a: any, b: any) => Math.abs(b.change) - Math.abs(a.change))
+    .filter((m: any) => { if (seenBases.has(m.base)) return false; seenBases.add(m.base); return true; })
+    .slice(0, 4);
 
   const goTrade = (m: any) => {
     const slug = m.symbol.replace(/\//g, "-").replace(/-PERP$/, "");

@@ -67,18 +67,20 @@ export function Markets() {
     return () => clearInterval(t);
   }, []);
 
-  const cryptoMarkets = (apiMarkets && apiMarkets.length > 0 ? apiMarkets : MOCK_MARKETS).map(m => ({
-    symbol: m.symbol,
-    baseAsset: m.baseAsset,
-    quoteAsset: m.quoteAsset,
-    category: "crypto" as Category,
-    lastPrice: m.lastPrice,
-    priceChangePercent24h: m.priceChangePercent24h,
-    high24h: m.high24h,
-    low24h: m.low24h,
-    volume24h: m.volume24h,
-    description: `${m.baseAsset} / ${m.quoteAsset}`,
-  }));
+  const cryptoMarkets = (apiMarkets && apiMarkets.length > 0 ? apiMarkets : MOCK_MARKETS)
+    .filter(m => !m.symbol.includes("PERP") && (m.type === "spot" || !m.type))
+    .map(m => ({
+      symbol: m.symbol,
+      baseAsset: m.baseAsset,
+      quoteAsset: m.quoteAsset,
+      category: "crypto" as Category,
+      lastPrice: m.lastPrice,
+      priceChangePercent24h: m.priceChangePercent24h ?? 0,
+      high24h: m.high24h,
+      low24h: m.low24h,
+      volume24h: m.volume24h,
+      description: `${m.baseAsset} / ${m.quoteAsset}`,
+    }));
 
   const currentMarkets = category === "crypto"
     ? cryptoMarkets
