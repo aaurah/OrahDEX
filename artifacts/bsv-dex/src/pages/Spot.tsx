@@ -18,8 +18,8 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "USDT", label: "USDT", color: "text-green-400" },
   { id: "ETH",  label: "ETH",  color: "text-violet-400" },
   { id: "BTC",  label: "BTC",  color: "text-orange-400" },
-  { id: "BSV",  label: "BSV",  color: "text-amber-400" },
   { id: "BCH",  label: "BCH",  color: "text-emerald-400" },
+  { id: "BSV",  label: "BSV",  color: "text-amber-400" },
 ];
 
 const COIN_COLORS: Record<string, string> = {
