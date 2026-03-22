@@ -1,4 +1,5 @@
 import { useParams } from "wouter";
+import { useState } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
@@ -8,9 +9,12 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTr
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 
+type BottomTab = "open" | "history" | "trades";
+
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address } = useWalletStore();
+  const [bottomTab, setBottomTab] = useState<BottomTab>("open");
 
   const symbol = rawSymbol.replace(/-/g, '/');
 
@@ -83,33 +87,113 @@ export function SpotTrading() {
             <Chart data={candles} />
           </div>
           <div className="h-[250px] lg:h-[300px] shrink-0 bg-card flex flex-col">
-            <div className="flex gap-6 px-4 border-b border-border text-sm font-medium">
-              <button className="py-3 border-b-2 border-primary text-primary">Open Orders ({orders.length})</button>
-              <button className="py-3 border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors">Order History</button>
-              <button className="py-3 border-b-2 border-transparent text-muted-foreground hover:text-foreground transition-colors">Trade History</button>
+            {/* Tab bar */}
+            <div className="flex gap-0 px-4 border-b border-border text-sm font-medium shrink-0">
+              {([
+                { key: "open",    label: `Open Orders (${orders.length})` },
+                { key: "history", label: "Order History" },
+                { key: "trades",  label: "Trade History" },
+              ] as { key: BottomTab; label: string }[]).map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setBottomTab(t.key)}
+                  className={cn(
+                    "py-3 px-4 border-b-2 transition-colors whitespace-nowrap",
+                    bottomTab === t.key
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              {orders.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                  {address ? "No open orders." : "Please connect your wallet to view orders."}
+
+            {/* Tab content */}
+            <div className="flex-1 overflow-auto">
+              {/* ── Open Orders ── */}
+              {bottomTab === "open" && (
+                orders.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                    {address ? "No open orders." : "Connect your wallet to view open orders."}
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="text-muted-foreground font-sans border-b border-border">
+                        <th className="p-3 font-medium">Date</th>
+                        <th className="p-3 font-medium">Pair</th>
+                        <th className="p-3 font-medium">Type</th>
+                        <th className="p-3 font-medium">Side</th>
+                        <th className="p-3 font-medium text-right">Price</th>
+                        <th className="p-3 font-medium text-right">Amount</th>
+                        <th className="p-3 font-medium text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {(orders as any[]).map((o: any, i: number) => (
+                        <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3 text-muted-foreground">{new Date(o.createdAt).toLocaleString()}</td>
+                          <td className="p-3">{o.symbol}</td>
+                          <td className="p-3 capitalize">{o.type}</td>
+                          <td className={cn("p-3 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                          <td className="p-3 text-right">{formatPrice(o.price)}</td>
+                          <td className="p-3 text-right">{o.quantity}</td>
+                          <td className="p-3 text-right">
+                            <button className="text-xs text-sell hover:underline">Cancel</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              )}
+
+              {/* ── Order History ── */}
+              {bottomTab === "history" && (
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm">
+                  {!address
+                    ? "Connect your wallet to view order history."
+                    : (
+                      <>
+                        <span>No past orders found for this session.</span>
+                        <span className="text-xs opacity-60">Completed and cancelled orders will appear here.</span>
+                      </>
+                    )
+                  }
                 </div>
-              ) : (
-                <table className="w-full text-left text-sm font-mono">
-                  <thead>
-                    <tr className="text-muted-foreground font-sans">
-                      <th className="pb-2 font-medium">Date</th>
-                      <th className="pb-2 font-medium">Pair</th>
-                      <th className="pb-2 font-medium">Type</th>
-                      <th className="pb-2 font-medium">Side</th>
-                      <th className="pb-2 font-medium text-right">Price</th>
-                      <th className="pb-2 font-medium text-right">Amount</th>
-                      <th className="pb-2 font-medium text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Render orders if they exist */}
-                  </tbody>
-                </table>
+              )}
+
+              {/* ── Trade History ── */}
+              {bottomTab === "trades" && (
+                trades.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                    No trades to show.
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="text-muted-foreground font-sans border-b border-border">
+                        <th className="p-3 font-medium">Time</th>
+                        <th className="p-3 font-medium">Side</th>
+                        <th className="p-3 font-medium text-right">Price</th>
+                        <th className="p-3 font-medium text-right">Amount</th>
+                        <th className="p-3 font-medium text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {(trades as any[]).slice(0, 30).map((t: any, i: number) => (
+                        <tr key={t.id ?? i} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3 text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString()}</td>
+                          <td className={cn("p-3 font-semibold capitalize", t.side === "buy" ? "text-buy" : "text-sell")}>{t.side}</td>
+                          <td className={cn("p-3 text-right", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</td>
+                          <td className="p-3 text-right">{Number(t.quantity).toFixed(4)}</td>
+                          <td className="p-3 text-right text-muted-foreground">{formatPrice(t.price * t.quantity)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
               )}
             </div>
           </div>
