@@ -222,4 +222,51 @@ router.put("/admin/fee-wallet", async (req, res) => {
   }
 });
 
+/* ─── PLATFORM INTEGRATION SETTINGS ─── */
+
+// Keys that are safe to expose publicly (not secrets) — the Reown Project ID is
+// a public identifier by design; it appears in client-side JS anyway.
+const PUBLIC_KEYS = ["reown_project_id"];
+
+// All integration keys managed through the admin panel
+const INTEGRATION_KEYS = [
+  "reown_project_id",
+  "coingecko_api_key",
+  "moonpay_api_key",
+  "transak_api_key",
+  "banxa_api_key",
+  "simplex_api_key",
+  "ramp_api_key",
+  "bsv_rpc_url",
+];
+
+router.get("/integrations", async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable);
+    const result: Record<string, string> = {};
+    for (const key of INTEGRATION_KEYS) {
+      const row = rows.find(r => r.key === key);
+      result[key] = row?.value ?? "";
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load integrations" });
+  }
+});
+
+router.put("/integrations", async (req, res) => {
+  try {
+    const updates = req.body as Record<string, string>;
+    for (const [key, value] of Object.entries(updates)) {
+      if (!INTEGRATION_KEYS.includes(key)) continue;
+      await db.insert(platformSettingsTable)
+        .values({ key, value: value ?? "" })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: value ?? "", updatedAt: new Date() } });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save integrations" });
+  }
+});
+
 export default router;

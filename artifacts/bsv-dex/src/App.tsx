@@ -25,6 +25,7 @@ import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
 import { AdminThemes } from "@/pages/admin/Themes";
 import { AdminTransactions } from "@/pages/admin/Transactions";
 import { AdminFeeWallet } from "@/pages/admin/FeeWallet";
+import { AdminIntegrations } from "@/pages/admin/Integrations";
 import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
@@ -127,6 +128,11 @@ function Router() {
       <Route path="/admin/fee-wallet">
         <RequireAdminAuth>
           <AdminLayout><AdminFeeWallet /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/integrations">
+        <RequireAdminAuth>
+          <AdminLayout><AdminIntegrations /></AdminLayout>
         </RequireAdminAuth>
       </Route>
 
