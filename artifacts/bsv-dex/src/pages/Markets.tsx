@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
 import {
-  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
+  USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
+  BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -12,7 +13,15 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Tab = "favorites" | "new" | "usdt" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "futures";
+type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "futures";
+
+const USD_SUBS: { id: UsdSub; label: string }[] = [
+  { id: "USDT", label: "USDT" },
+  { id: "USDC", label: "USDC" },
+  { id: "TUSD", label: "TUSD" },
+  { id: "USDD", label: "USDD" },
+];
 
 const COIN_COLORS: Record<string, string> = {
   BSV:"#EAB308", BTC:"#F97316", ETH:"#8B5CF6", SOL:"#06B6D4",
@@ -25,10 +34,11 @@ const COIN_COLORS: Record<string, string> = {
   FET:"#06B6D4", AGIX:"#7C3AED", OCEAN:"#2563EB", RNDR:"#F97316",
 };
 
-const TAB_META: { id: Tab; label: string; color: string; desc: string }[] = [
+interface TabMeta { id: Tab; label: string; color: string; desc: string }
+const TAB_META: TabMeta[] = [
   { id: "favorites", label: "★ Favorites", color: "text-amber-400",   desc: "Your starred pairs" },
   { id: "new",       label: "NEW",          color: "text-green-400",   desc: "Recently listed" },
-  { id: "usdt",      label: "USDT",         color: "text-blue-400",    desc: "All pairs quoted in USDT" },
+  { id: "usd",       label: "USD",          color: "text-blue-400",    desc: "Stablecoin markets" },
   { id: "btc",       label: "BTC",          color: "text-orange-400",  desc: "All pairs quoted in BTC" },
   { id: "eth",       label: "ETH",          color: "text-violet-400",  desc: "All pairs quoted in ETH" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
@@ -61,13 +71,19 @@ function coinBadge(base: string) {
   );
 }
 
+const STABLE_MOCK: Record<UsdSub, any[]> = {
+  USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
+};
+
 const ALL_MOCK = () => [
-  ...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS,
-  ...BCH_MARKETS, ...AI_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+  ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+  ...AI_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
 ].map(normalise);
 
 export function Markets() {
-  const [tab, setTab] = useState<Tab>("usdt");
+  const [tab, setTab] = useState<Tab>("usd");
+  const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [buyOpen, setBuyOpen] = useState(false);
@@ -81,15 +97,17 @@ export function Markets() {
     switch (tab) {
       case "favorites": return (hasApi ? raw : ALL_MOCK()).filter(m => stars.has(m.symbol));
       case "new":       return NEW_MARKETS.map(normalise);
-      case "usdt":      return hasApi ? raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
-      case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC")     : BTC_MARKETS.map(normalise);
-      case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH")     : ETH_MARKETS.map(normalise);
-      case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")     : BCH_MARKETS.map(normalise);
-      case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")     : BSV_MARKETS.map(normalise);
+      case "usd":       return hasApi
+        ? raw.filter(m => m.quoteAsset === usdSub && m.type === "spot")
+        : STABLE_MOCK[usdSub].map(normalise);
+      case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC")   : BTC_MARKETS.map(normalise);
+      case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH")   : ETH_MARKETS.map(normalise);
+      case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")   : BCH_MARKETS.map(normalise);
+      case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")   : BSV_MARKETS.map(normalise);
       case "ai":        return AI_MARKETS.map(normalise);
       case "meme":      return MEME_MARKETS.map(normalise);
       case "defi":      return DEFI_MARKETS.map(normalise);
-      case "futures":   return hasApi ? raw.filter(m => m.type === "futures")       : FUTURES_MARKETS.map(normalise);
+      case "futures":   return hasApi ? raw.filter(m => m.type === "futures")     : FUTURES_MARKETS.map(normalise);
       default:          return [];
     }
   }
@@ -98,7 +116,9 @@ export function Markets() {
     switch (t) {
       case "favorites": return (hasApi ? raw : ALL_MOCK()).filter(m => stars.has(m.symbol)).length;
       case "new":       return NEW_MARKETS.length;
-      case "usdt":      return hasApi ? raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot").length : USDT_MARKETS.length;
+      case "usd":       return hasApi
+        ? raw.filter(m => ["USDT","USDC","TUSD","USDD"].includes(m.quoteAsset) && m.type === "spot").length
+        : USDT_MARKETS.length + USDC_MARKETS.length + TUSD_MARKETS.length + USDD_MARKETS.length;
       case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC").length  : BTC_MARKETS.length;
       case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH").length  : ETH_MARKETS.length;
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH").length  : BCH_MARKETS.length;
@@ -120,6 +140,7 @@ export function Markets() {
     setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
 
   const meta = TAB_META.find(t => t.id === tab)!;
+  const isCrossQuote = tab === "bsv" || tab === "btc" || tab === "eth" || tab === "bch";
 
   return (
     <div className="flex flex-col h-full">
@@ -140,7 +161,7 @@ export function Markets() {
             </button>
           </div>
 
-          {/* Tabs */}
+          {/* Main tabs */}
           <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
             {TAB_META.map(t => (
               <button
@@ -164,13 +185,36 @@ export function Markets() {
             ))}
           </div>
 
+          {/* USD sub-tabs */}
+          {tab === "usd" && (
+            <div className="flex items-center gap-2 mt-3">
+              {USD_SUBS.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setUsdSub(s.id)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                    usdSub === s.id
+                      ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                      : "text-muted-foreground border-border hover:text-foreground hover:bg-white/5"
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+              <span className="text-xs text-muted-foreground ml-1">
+                · {hasApi ? raw.filter(m => m.quoteAsset === usdSub && m.type === "spot").length : STABLE_MOCK[usdSub].length} pairs
+              </span>
+            </div>
+          )}
+
           {/* Search + descriptor row */}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <div className="relative max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder={`Search ${meta.label} pairs…`}
+                placeholder={tab === "usd" ? `Search ${usdSub} pairs…` : `Search ${meta.label} pairs…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary transition-all"
@@ -179,7 +223,8 @@ export function Markets() {
             <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-border rounded-xl">
               <Zap className={cn("w-3.5 h-3.5", meta.color)} />
               <span className="text-xs font-semibold text-foreground/70">
-                {meta.desc} · <span className={meta.color}>{filtered.length} markets</span>
+                {tab === "usd" ? `All pairs quoted in ${usdSub}` : meta.desc}
+                {" · "}<span className={meta.color}>{filtered.length} markets</span>
               </span>
             </div>
           </div>
@@ -240,7 +285,7 @@ export function Markets() {
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-sm font-semibold">
                         {formatPrice(price)}
-                        {(tab === "bsv" || tab === "btc" || tab === "eth" || tab === "bch") && (
+                        {isCrossQuote && (
                           <span className="text-[10px] text-muted-foreground ml-1">{quote}</span>
                         )}
                       </td>

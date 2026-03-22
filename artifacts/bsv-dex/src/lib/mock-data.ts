@@ -145,6 +145,35 @@ export const BTC_MARKETS: any[] = [
   btcPair("NEAR",  6.55,    4.82,  24_000_000),
 ];
 
+// ─── STABLECOIN PAIRS (USDC / TUSD / USDD) ───────────────────────────────────
+const STABLE_BASES: [string,number,number,number][] = [
+  ["BSV",  0.055, 4.41,  18_500_000],
+  ["BTC",  68310, -1.85, 2_450_000_000],
+  ["ETH",  3415,  1.32,  950_000_000],
+  ["SOL",  148.5, 3.21,  420_000_000],
+  ["XRP",  0.5242,-0.64, 110_000_000],
+  ["BNB",  392,   0.88,  320_000_000],
+  ["ADA",  0.4421,-2.10,  45_000_000],
+  ["DOGE", 0.1185, 5.42,  78_000_000],
+  ["DOT",  6.82,  -1.20,  38_000_000],
+  ["AVAX", 36.4,   2.15,  62_000_000],
+  ["MATIC",0.718, -0.92,  54_000_000],
+  ["LINK", 14.52,  3.64,  48_000_000],
+  ["UNI",  9.84,   1.55,  22_000_000],
+  ["ATOM", 8.42,  -0.78,  18_000_000],
+  ["LTC",  78.2,   0.45,  32_000_000],
+  ["BCH",  384,    1.10,  28_000_000],
+  ["NEAR", 6.55,   4.82,  24_000_000],
+  ["APT",  10.5,   5.21,  18_000_000],
+  ["ARB",  1.12,   2.85,  28_000_000],
+  ["OP",   2.41,   3.10,  22_000_000],
+  ["SUI",  1.22,   6.45,  35_000_000],
+  ["INJ",  28.4,   4.21,  15_000_000],
+];
+export const USDC_MARKETS: any[] = STABLE_BASES.map(([b,p,c,v]) => spot(b,"USDC",p,c,v));
+export const TUSD_MARKETS: any[] = STABLE_BASES.map(([b,p,c,v]) => spot(b,"TUSD",p,c,v));
+export const USDD_MARKETS: any[] = STABLE_BASES.map(([b,p,c,v]) => spot(b,"USDD",p,c,v));
+
 // ─── BCH PAIRS ────────────────────────────────────────────────────────────────
 const BCH_PRICE = 450;
 function bchPair(base: string, usdtPrice: number, chg: number, vol: number): any {

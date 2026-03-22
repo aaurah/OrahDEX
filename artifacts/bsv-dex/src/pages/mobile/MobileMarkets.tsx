@@ -7,7 +7,8 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import {
-  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
+  USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
+  BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -15,7 +16,6 @@ import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// ── Price formatter (like MEXC: 8 decimals for tiny prices) ──────────────────
 function fmt(p: number): string {
   if (!p && p !== 0) return "—";
   if (p >= 10000)  return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -40,14 +40,20 @@ interface MktRow { symbol: string; base: string; quote: string; price: number; c
 
 type SortKey = "base" | "price" | "chg";
 type SortDir = "asc" | "desc";
+type UsdSub  = "USDT" | "USDC" | "TUSD" | "USDD";
 
-// ── Category tabs ─────────────────────────────────────────────────────────────
-type Cat = "favorites" | "new" | "usdt" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
+const USD_SUBS: UsdSub[] = ["USDT", "USDC", "TUSD", "USDD"];
+
+const STABLE_MOCK: Record<UsdSub, any[]> = {
+  USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
+};
+
+type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
   { id: "new",       label: "NEW" },
-  { id: "usdt",      label: "USDT" },
+  { id: "usd",       label: "USD" },
   { id: "btc",       label: "BTC" },
   { id: "eth",       label: "ETH" },
   { id: "bch",       label: "BCH" },
@@ -59,15 +65,21 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "futures",   label: "Futures" },
 ];
 
-function getCatRows(cat: Cat, apiAll: MktRow[], favorites: Set<string>): MktRow[] {
+function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<string>): MktRow[] {
   const hasApi = apiAll.length > 0;
   switch (cat) {
     case "favorites": {
-      const pool = hasApi ? apiAll : [...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS, ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS].map(normalise);
+      const pool = hasApi ? apiAll : [
+        ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+        ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+        ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+      ].map(normalise);
       return pool.filter(m => favorites.has(m.symbol));
     }
     case "new":     return NEW_MARKETS.map(normalise);
-    case "usdt":    return hasApi ? apiAll.filter(m => m.quote === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
+    case "usd":     return hasApi
+      ? apiAll.filter(m => m.quote === usdSub && m.type === "spot")
+      : STABLE_MOCK[usdSub].map(normalise);
     case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC")  : BTC_MARKETS.map(normalise);
     case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH")  : ETH_MARKETS.map(normalise);
     case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
@@ -84,7 +96,8 @@ function getCatRows(cat: Cat, apiAll: MktRow[], favorites: Set<string>): MktRow[
 export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
-  const [cat, setCat]             = useState<Cat>("usdt");
+  const [cat, setCat]             = useState<Cat>("usd");
+  const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
@@ -93,7 +106,7 @@ export function MobileMarkets() {
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  const { address, network, chainId } = useWalletStore();
+  const { address } = useWalletStore();
   const openWalletModal = useWalletModalStore(s => s.open);
 
   const { data: apiData } = useQuery({
@@ -110,15 +123,13 @@ export function MobileMarkets() {
     ? apiData.map(normalise)
     : [];
 
-  let rows = getCatRows(cat, apiAll, favorites);
+  let rows = getCatRows(cat, usdSub, apiAll, favorites);
 
-  // Search filter
   if (search) {
     const q = search.toUpperCase();
     rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
   }
 
-  // Sort
   rows = [...rows].sort((a, b) => {
     let v = 0;
     if (sortKey === "base")  v = a.base.localeCompare(b.base);
@@ -188,7 +199,7 @@ export function MobileMarkets() {
           {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
         </div>
 
-        {/* Horizontal category tabs */}
+        {/* Main category tabs */}
         <div ref={tabsRef} className="flex overflow-x-auto no-scrollbar px-4 pb-0 gap-0">
           {CATS.map(c => (
             <button
@@ -208,6 +219,26 @@ export function MobileMarkets() {
             </button>
           ))}
         </div>
+
+        {/* USD sub-tabs — only visible when USD tab is active */}
+        {cat === "usd" && (
+          <div className="flex items-center gap-2 px-4 py-2 border-t border-border/20 bg-secondary/20">
+            {USD_SUBS.map(s => (
+              <button
+                key={s}
+                onClick={() => setUsdSub(s)}
+                className={cn(
+                  "px-3.5 py-1 rounded-lg text-[12px] font-semibold border transition-all",
+                  usdSub === s
+                    ? "bg-primary/20 text-primary border-primary/40"
+                    : "text-muted-foreground border-border/40 hover:text-foreground"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Column headers ── */}
@@ -259,7 +290,6 @@ export function MobileMarkets() {
   );
 }
 
-// ── Single market row ─────────────────────────────────────────────────────────
 function MexcRow({
   m, isFav, onFav, onTrade, onBuy
 }: { m: MktRow; isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void }) {
@@ -267,38 +297,22 @@ function MexcRow({
 
   return (
     <div className="flex items-center px-4 py-[11px] border-b border-border/20 active:bg-secondary/30 transition-colors">
-      {/* Star */}
-      <button
-        onClick={onFav}
-        className="mr-2.5 shrink-0"
-      >
-        <Star
-          size={13}
-          className={isFav ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}
-        />
+      <button onClick={onFav} className="mr-2.5 shrink-0">
+        <Star size={13} className={isFav ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"} />
       </button>
 
-      {/* Pair name — tap to trade */}
       <button onClick={onTrade} className="flex-1 text-left min-w-0">
-        <span className="text-[14px] font-semibold text-foreground leading-tight">
-          {m.base}
-        </span>
-        <span className="text-[12px] text-muted-foreground font-normal">
-          /{m.quote}
-        </span>
+        <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
+        <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
         {m.type === "futures" && (
           <span className="ml-1.5 text-[9px] font-bold text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded border border-amber-500/25">PERP</span>
         )}
       </button>
 
-      {/* Price */}
       <button onClick={onTrade} className="w-32 text-right pr-3">
-        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">
-          {fmt(m.price)}
-        </span>
+        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">{fmt(m.price)}</span>
       </button>
 
-      {/* 24h % change pill */}
       <button
         onClick={onBuy}
         className={cn(
