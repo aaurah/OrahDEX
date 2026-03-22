@@ -41,8 +41,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const networkBadge = network ? NETWORK_BADGE[network] : null;
 
   return (
-    <div className="h-screen bg-background flex flex-col text-foreground overflow-hidden">
-      <header className="h-16 border-b border-border bg-card flex items-center justify-between px-4 lg:px-6 shrink-0 z-40 relative">
+    <div className="min-h-screen bg-background flex flex-col text-foreground">
+      <header className="sticky top-0 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -177,7 +177,7 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto relative z-0">
+      <main className="flex-1 relative z-0">
         {children}
       </main>
 
