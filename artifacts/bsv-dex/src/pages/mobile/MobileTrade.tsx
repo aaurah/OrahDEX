@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bell, Star, Share2, AlignJustify, Settings2 } from "lucide-react";
-import { useLocation } from "wouter";
+import { Bell, Star, Share2, AlignJustify, Settings2 } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
@@ -44,7 +43,6 @@ type Side = "buy" | "sell";
 type OrderType = "limit" | "market";
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
-  const [, navigate] = useLocation();
   const symbol = rawSymbol.replace(/-/g, "/");
   const base = symbol.split("/")[0];
   const quote = symbol.split("/")[1] ?? "USDT";
@@ -107,11 +105,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
       {/* ── HEADER ── */}
       <div className="shrink-0 flex items-center px-3 pt-3 pb-2 border-b border-border gap-2">
-        {/* Back arrow */}
-        <button onClick={() => navigate("/")} className="p-1.5 shrink-0">
-          <ArrowLeft size={19} className="text-foreground" />
-        </button>
-
         {/* ≡ Three-lines market selector button */}
         <button
           onClick={() => setSelectorOpen(true)}
