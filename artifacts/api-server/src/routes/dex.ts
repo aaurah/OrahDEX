@@ -2,23 +2,27 @@ import { Router, type IRouter } from "express";
 
 const router: IRouter = Router();
 
-let dexCache: { data: any; ts: number } | null = null;
+let cache: { data: any; ts: number } | null = null;
 const CACHE_MS = 5 * 60 * 1000;
 
-// Chain mapping indexed by CoinGecko exchange id fragments
+// Separate long-lived cache for coin market caps (30 min) to avoid rate-limiting
+let mcCache: { defiMcByName: Record<string,number>; defiMcById: Record<string,number>; cefiMcByName: Record<string,number>; cefiMcById: Record<string,number>; defiTotal: number; cefiTotal: number; ts: number } | null = null;
+const MC_CACHE_MS = 30 * 60 * 1000;
+
+// Chain mapping for DEX identification
 const CHAIN_MAP: Array<[string[], string]> = [
-  [["raydium", "orca", "serum", "lifinity", "saber", "cropper", "aldrin", "marinade"], "Solana"],
+  [["raydium", "orca", "serum", "lifinity", "saber", "marinade", "aldrin"], "Solana"],
   [["pancakeswap", "pancake", "biswap", "apeswap", "babyswap", "nomiswap"], "BSC"],
   [["quickswap", "swapr", "dfyn", "polydex", "polycat"], "Polygon"],
-  [["gmx", "camelot", "zyberswap", "arbswap", "sushiswap_arbitrum"], "Arbitrum"],
+  [["gmx", "camelot", "zyberswap", "arbswap"], "Arbitrum"],
   [["velodrome", "aerodrome"], "Base/Optimism"],
   [["traderjoe", "trader_joe", "pangolin", "platypus", "lydia"], "Avalanche"],
-  [["osmosis", "junoswap", "terraswap", "astroport", "loop", "prism"], "Cosmos"],
+  [["osmosis", "junoswap", "terraswap", "astroport"], "Cosmos"],
   [["thorswap", "thorchain"], "THORChain"],
   [["loopring", "zigzag"], "Ethereum L2"],
   [["spookyswap", "spiritswap", "beethoven_x"], "Fantom"],
-  [["uniswap", "sushiswap", "curve", "balancer", "dydx", "bancor", "kyber", "1inch", "paraswap",
-    "dodo", "hashflow", "clipper", "maverick", "woofi", "openocean"], "Ethereum"],
+  [["uniswap", "sushiswap", "curve", "balancer", "dydx", "bancor", "kyber", "1inch",
+    "paraswap", "dodo", "hashflow", "clipper", "maverick", "woofi"], "Ethereum"],
 ];
 
 function getChain(id: string, name: string): string {
@@ -26,88 +30,125 @@ function getChain(id: string, name: string): string {
   for (const [keys, chain] of CHAIN_MAP) {
     if (keys.some(k => s.includes(k))) return chain;
   }
-  if (s.includes("solana") || s.includes("sol")) return "Solana";
+  if (s.includes("solana")) return "Solana";
   if (s.includes("polygon") || s.includes("matic")) return "Polygon";
-  if (s.includes("arbitrum") || s.includes("arb")) return "Arbitrum";
+  if (s.includes("arbitrum")) return "Arbitrum";
   if (s.includes("optimis")) return "Optimism";
   if (s.includes("avalanche") || s.includes("avax")) return "Avalanche";
-  if (s.includes("bsc") || s.includes("binance")) return "BSC";
-  if (s.includes("cosmos") || s.includes("atom")) return "Cosmos";
-  if (s.includes("base")) return "Base";
+  if (s.includes("bsc") || s.includes("binance smart")) return "BSC";
+  if (s.includes("cosmos")) return "Cosmos";
   if (s.includes("near")) return "NEAR";
   if (s.includes("tron")) return "Tron";
-  if (s.includes("swap") || s.includes("dex") || s.includes("defi")) return "Ethereum";
-  return "Multi-chain";
+  return "Ethereum";
+}
+
+// Known exchange-id → CoinGecko token-id mapping for market cap lookup
+const CEX_TOKEN_MAP: Record<string, string> = {
+  binance:         "binancecoin",
+  okex:            "okb",
+  "crypto-com":    "crypto-com-chain",
+  kucoin:          "kucoin-shares",
+  bitget:          "bitget-token",
+  gateio:          "gatechain-token",
+  bitfinex:        "leo-token",
+  woo_network:     "woo-network",
+  mexc:            "mexc-token",
+  huobi:           "huobi-token",
+};
+
+// Fuzzy match exchange name → market cap from coin list
+function matchMarketCap(
+  id: string,
+  name: string,
+  mcByName: Record<string, number>,
+  mcById: Record<string, number>,
+  isCex: boolean
+): number {
+  // Direct CEX token override
+  if (isCex) {
+    const tokenId = CEX_TOKEN_MAP[id.toLowerCase()];
+    if (tokenId && mcById[tokenId.replace(/[^a-z0-9]/g, "")]) {
+      return mcById[tokenId.replace(/[^a-z0-9]/g, "")];
+    }
+  }
+  const n = name.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+  if (mcByName[n]) return mcByName[n];
+  const idClean = id.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (mcById[idClean]) return mcById[idClean];
+  const firstWord = n.split(" ")[0];
+  if (!firstWord || firstWord.length < 3) return 0;
+  for (const [key, val] of Object.entries(mcByName)) {
+    const kFirst = key.split(" ")[0];
+    if (kFirst === firstWord || kFirst.startsWith(firstWord) || firstWord.startsWith(kFirst)) {
+      return val;
+    }
+  }
+  return 0;
+}
+
+async function fetchCoinMarketCaps() {
+  const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+  const result = { defiMcByName: {} as Record<string,number>, defiMcById: {} as Record<string,number>, cefiMcByName: {} as Record<string,number>, cefiMcById: {} as Record<string,number>, defiTotal: 0, cefiTotal: 0 };
+  try {
+    const defiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?category=decentralized-exchange&vs_currency=usd&order=market_cap_desc&per_page=100&sparkline=false", { headers: { Accept: "application/json" } });
+    if (defiResp.ok) {
+      const coins: any[] = await defiResp.json();
+      for (const c of coins) if (c.market_cap) {
+        result.defiMcByName[c.name.toLowerCase().replace(/[^a-z0-9 ]/g, "")] = c.market_cap;
+        result.defiMcById[c.id.toLowerCase().replace(/[^a-z0-9]/g, "")] = c.market_cap;
+        result.defiTotal += c.market_cap;
+      }
+    }
+    await delay(1200);
+    const cefiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?ids=binancecoin,okb,crypto-com-chain,kucoin-shares,bitget-token,gatechain-token,leo-token,woo-network,mexc-token,huobi-token&vs_currency=usd&sparkline=false", { headers: { Accept: "application/json" } });
+    if (cefiResp.ok) {
+      const coins: any[] = await cefiResp.json();
+      for (const c of coins) if (c.market_cap) {
+        result.cefiMcByName[c.name.toLowerCase().replace(/[^a-z0-9 ]/g, "")] = c.market_cap;
+        result.cefiMcById[c.id.toLowerCase().replace(/[^a-z0-9]/g, "")] = c.market_cap;
+        result.cefiTotal += c.market_cap;
+      }
+    }
+  } catch {}
+  return result;
 }
 
 router.get("/dex/exchanges", async (req, res) => {
   try {
-    if (dexCache && Date.now() - dexCache.ts < CACHE_MS) {
-      return res.json(dexCache.data);
-    }
+    if (cache && Date.now() - cache.ts < CACHE_MS) return res.json(cache.data);
 
-    const [exchangesResult, defiResult, btcResult] = await Promise.allSettled([
-      fetch("https://api.coingecko.com/api/v3/exchanges?per_page=250&page=1", {
-        headers: { Accept: "application/json" },
-      }),
-      fetch(
-        "https://api.coingecko.com/api/v3/coins/markets?category=decentralized-exchange&vs_currency=usd&order=market_cap_desc&per_page=100&sparkline=false",
-        { headers: { Accept: "application/json" } }
-      ),
-      fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", {
-        headers: { Accept: "application/json" },
-      }),
+    // Refresh coin market caps if stale (30 min TTL — separate from exchange cache)
+    if (!mcCache || Date.now() - mcCache.ts > MC_CACHE_MS) {
+      const mc = await fetchCoinMarketCaps();
+      mcCache = { ...mc, ts: Date.now() };
+    }
+    const { defiMcByName, defiMcById, cefiMcByName, cefiMcById, defiTotal: defiMarketCap, cefiTotal: cefiMarketCap } = mcCache!;
+
+    // Fetch exchange list + BTC price in parallel (both are lightweight)
+    const [exRes, btcRes] = await Promise.allSettled([
+      fetch("https://api.coingecko.com/api/v3/exchanges?per_page=250&page=1", { headers: { Accept: "application/json" } }),
+      fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", { headers: { Accept: "application/json" } }),
     ]);
 
-    if (exchangesResult.status === "rejected" || !(exchangesResult.value as Response).ok) {
+    if (exRes.status === "rejected" || !(exRes.value as Response).ok) {
       throw new Error("CoinGecko exchanges fetch failed");
     }
 
-    const all: any[] = await (exchangesResult.value as Response).json();
-
-    // Build market-cap lookup from DeFi category coins
-    const mcByName: Record<string, number> = {};
-    const mcById: Record<string, number> = {};
-    let totalMarketCap = 0;
-    if (defiResult.status === "fulfilled" && (defiResult.value as Response).ok) {
-      const coins: any[] = await (defiResult.value as Response).json();
-      for (const c of coins) {
-        if (c.market_cap) {
-          mcByName[c.name.toLowerCase()] = c.market_cap;
-          mcById[c.id.toLowerCase()] = c.market_cap;
-          totalMarketCap += c.market_cap;
-        }
-      }
-    }
+    const allExchanges: any[] = await (exRes.value as Response).json();
 
     let btcPrice = 65000;
-    if (btcResult.status === "fulfilled" && (btcResult.value as Response).ok) {
-      const p = await (btcResult.value as Response).json();
+    if (btcRes.status === "fulfilled" && (btcRes.value as Response).ok) {
+      const p = await (btcRes.value as Response).json();
       btcPrice = p?.bitcoin?.usd ?? btcPrice;
     }
 
-    // Resolve market cap for an exchange by fuzzy-matching against DeFi coins list
-    function resolveMarketCap(id: string, name: string): number {
-      const n = name.toLowerCase().replace(/[^a-z0-9 ]/g, "");
-      if (mcByName[n]) return mcByName[n];
-      const primary = n.split(" ")[0];
-      for (const [key, val] of Object.entries(mcByName)) {
-        const k = key.split(" ")[0];
-        if (primary && k && (primary === k || primary.startsWith(k) || k.startsWith(primary))) {
-          return val;
-        }
-      }
-      return 0;
-    }
-
-    // Identify DEX — prefer CoinGecko's centralized field, fallback to keyword match
+    // Determine if an exchange is a DEX
     const DEX_KEYWORDS = [
       "uniswap", "pancake", "sushi", "curve", "balancer", "dydx", "gmx",
-      "velodrome", "aerodrome", "camelot", "trader joe", "traderjoe", "quickswap",
-      "spookyswap", "spiritswap", "apeswap", "biswap", "osmosis", "raydium",
-      "orca", "dodo", "1inch", "kyber", "loopring", "hashflow", "clipper",
-      "paraswap", "woofi", "openocean", "thorswap", "zigzag", "maverick",
-      "swap", "dex", "defi",
+      "velodrome", "aerodrome", "camelot", "traderjoe", "trader joe", "quickswap",
+      "spookyswap", "apeswap", "biswap", "osmosis", "raydium", "orca", "dodo",
+      "1inch", "kyber", "loopring", "hashflow", "clipper", "paraswap", "woofi",
+      "thorswap", "zigzag", "maverick", "swap", "dex", "defi",
     ];
     function isDex(e: any): boolean {
       if (e.centralized === false) return true;
@@ -116,41 +157,50 @@ router.get("/dex/exchanges", async (req, res) => {
       return DEX_KEYWORDS.some(kw => s.includes(kw));
     }
 
-    const dexes = all
-      .filter(isDex)
-      .map((e) => ({
+    const exchanges = allExchanges.map((e) => {
+      const dex = isDex(e);
+      const mcByName = dex ? defiMcByName : cefiMcByName;
+      const mcById = dex ? defiMcById : cefiMcById;
+      const vol = (parseFloat(e.trade_volume_24h_btc) || 0) * btcPrice;
+      return {
         id: e.id,
         name: e.name,
         url: e.url,
         image: e.image,
         country: e.country ?? null,
         yearEstablished: e.year_established ?? null,
-        chain: getChain(e.id, e.name),
+        type: dex ? "dex" : "cex",
+        chain: dex ? getChain(e.id, e.name) : null,
         trustScore: e.trust_score ?? 0,
-        trustScoreRank: e.trust_score_rank ?? null,
         tradeVolume24hBtc: parseFloat(e.trade_volume_24h_btc) || 0,
-        tradeVolume24hUsd: (parseFloat(e.trade_volume_24h_btc) || 0) * btcPrice,
-        marketCap: resolveMarketCap(e.id, e.name),
-      }))
-      .sort((a, b) => b.tradeVolume24hUsd - a.tradeVolume24hUsd);
+        tradeVolume24hUsd: vol,
+        marketCap: matchMarketCap(e.id, e.name, mcByName, mcById, !dex),
+      };
+    });
 
-    const totalVolumeBtc = dexes.reduce((s, e) => s + e.tradeVolume24hBtc, 0);
+    const totalVolumeBtc = exchanges.reduce((s, e) => s + e.tradeVolume24hBtc, 0);
+    const dexCount = exchanges.filter(e => e.type === "dex").length;
+    const cexCount = exchanges.filter(e => e.type === "cex").length;
 
     const result = {
       btcPrice,
       totalVolumeBtc,
       totalVolumeUsd: totalVolumeBtc * btcPrice,
-      totalMarketCap,
-      exchangeCount: dexes.length,
-      exchanges: dexes,
+      defiMarketCap,
+      cefiMarketCap,
+      totalMarketCap: defiMarketCap + cefiMarketCap,
+      exchangeCount: exchanges.length,
+      dexCount,
+      cexCount,
+      exchanges,
     };
 
-    dexCache = { data: result, ts: Date.now() };
+    cache = { data: result, ts: Date.now() };
     res.json(result);
   } catch (err: any) {
-    req.log.error({ err }, "Failed to fetch DEX exchanges");
-    if (dexCache) return res.json(dexCache.data);
-    res.status(502).json({ error: "Failed to fetch DEX exchange data" });
+    req.log.error({ err }, "Failed to fetch exchanges");
+    if (cache) return res.json(cache.data);
+    res.status(502).json({ error: "Failed to fetch exchange data" });
   }
 });
 
