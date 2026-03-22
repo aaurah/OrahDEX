@@ -9,7 +9,7 @@ import {
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
-import { initReownAppKit, openReownModal, isReownReady } from "@/lib/reown";
+import { openReownModal, isReownReady } from "@/lib/reown";
 
 interface WalletDef {
   id: string; name: string; network: WalletNetwork;
@@ -243,9 +243,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         setConnectError(null);
         setReownStatus("opening");
         setConnecting("walletconnect");
-
-        // Init AppKit (fetches project ID from DB if not in env)
-        await initReownAppKit();
 
         if (!isReownReady()) {
           setConnectError(
