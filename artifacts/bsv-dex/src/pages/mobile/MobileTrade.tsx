@@ -226,7 +226,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         </div>
 
         {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES ── */}
-        <div className="flex border-b border-border shrink-0">
+        <div className="flex border-b border-border">
           {([
             { key: "orderbook" as BottomTab, label: "Order Book" },
             { key: "trades"    as BottomTab, label: "Market Trades" },
@@ -246,71 +246,138 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           ))}
         </div>
 
-        {/* ── ORDER BOOK ── */}
-        {bottomTab === "orderbook" && (
-          <div className="px-4 pt-2 pb-1">
-            <div className="flex justify-between text-[9px] uppercase tracking-wider text-muted-foreground font-semibold mb-1 px-0.5">
-              <span>Amount</span>
-              <span>Price ({quote})</span>
-              <span className="text-right">Amount</span>
-            </div>
-            {/* Asks */}
-            {asks.map((a: any, i: number) => {
-              const p = parseFloat(a.price ?? a[0]);
-              const q = parseFloat(a.quantity ?? a[1]);
-              const pct = Math.min((q / 500) * 100, 100);
-              return (
-                <div key={i} className="flex justify-between text-[11px] relative py-[3px] px-0.5">
-                  <div className="absolute inset-y-0 right-0 bg-red-500/10 rounded-sm" style={{ width: `${pct}%` }} />
-                  <span className="text-muted-foreground/70 relative z-10 w-1/3">{q.toFixed(3)}</span>
-                  <span className="text-red-400 font-medium relative z-10 w-1/3 text-center">{fmt(p)}</span>
-                  <span className="text-muted-foreground/50 relative z-10 w-1/3 text-right">{(p * q).toFixed(2)}</span>
-                </div>
-              );
-            })}
-            {/* Mid price */}
-            <div className="flex items-center justify-center py-1.5 gap-2">
-              <span className={cn("text-sm font-bold tabular-nums", change >= 0 ? "text-green-500" : "text-red-500")}>
-                {fmt(lastPrice)}
-              </span>
-              <span className={cn("text-[10px] font-medium", change >= 0 ? "text-green-500" : "text-red-500")}>
-                ≈${fmt(lastPrice)}
-              </span>
-            </div>
-            {/* Bids */}
-            {bids.map((b: any, i: number) => {
-              const p = parseFloat(b.price ?? b[0]);
-              const q = parseFloat(b.quantity ?? b[1]);
-              const pct = Math.min((q / 500) * 100, 100);
-              return (
-                <div key={i} className="flex justify-between text-[11px] relative py-[3px] px-0.5">
-                  <div className="absolute inset-y-0 right-0 bg-green-500/10 rounded-sm" style={{ width: `${pct}%` }} />
-                  <span className="text-muted-foreground/70 relative z-10 w-1/3">{q.toFixed(3)}</span>
-                  <span className="text-green-400 font-medium relative z-10 w-1/3 text-center">{fmt(p)}</span>
-                  <span className="text-muted-foreground/50 relative z-10 w-1/3 text-right">{(p * q).toFixed(2)}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* ── ORDER BOOK — SPLIT FACE-TO-FACE ── */}
+        {bottomTab === "orderbook" && (() => {
+          const ROWS = 10;
+          // Bids: highest price first (best bid at top)
+          const bidRows = (orderBook?.bids ?? []).slice(0, ROWS);
+          // Asks: lowest price first (best ask at top) — they face the bids
+          const askRows = (orderBook?.asks ?? []).slice(0, ROWS);
+          const allQ = [
+            ...bidRows.map((b: any) => parseFloat(b.quantity ?? b[1])),
+            ...askRows.map((a: any) => parseFloat(a.quantity ?? a[1])),
+          ];
+          const maxQ = Math.max(...allQ, 1);
 
-        {/* ── MARKET TRADES ── */}
-        {bottomTab === "trades" && (
-          <div className="px-4 pt-2">
-            <div className="flex justify-between text-[9px] uppercase tracking-wider text-muted-foreground font-semibold mb-1 px-0.5">
-              <span>Price ({quote})</span>
-              <span className="text-center">Amount ({base})</span>
-              <span className="text-right">Time</span>
-            </div>
-            {((recentTrades as any[]) ?? []).slice(0, 20).map((t: any, i: number) => (
-              <div key={i} className="flex justify-between text-[11px] py-[3px] px-0.5">
-                <span className={t.side === "buy" ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
-                  {fmt(parseFloat(t.price))}
-                </span>
-                <span className="text-muted-foreground text-center">{parseFloat(t.quantity).toFixed(4)}</span>
-                <span className="text-muted-foreground/60 text-right">{new Date(t.timestamp).toLocaleTimeString()}</span>
+          return (
+            <div className="pb-2">
+              {/* Headers */}
+              <div className="flex text-[9px] uppercase tracking-wider text-muted-foreground font-semibold px-3 py-1.5 border-b border-border/40">
+                <div className="flex-1 flex justify-between">
+                  <span>Amount</span>
+                  <span className="text-green-500">Bid</span>
+                </div>
+                <div className="w-px bg-border mx-2" />
+                <div className="flex-1 flex justify-between">
+                  <span className="text-red-400">Ask</span>
+                  <span>Amount</span>
+                </div>
               </div>
-            ))}
+
+              {/* Rows — bid on left, ask on right, same row index */}
+              {Array.from({ length: ROWS }).map((_, i) => {
+                const bid = bidRows[i];
+                const ask = askRows[i];
+                const bP = bid ? parseFloat(bid.price ?? bid[0]) : null;
+                const bQ = bid ? parseFloat(bid.quantity ?? bid[1]) : null;
+                const aP = ask ? parseFloat(ask.price ?? ask[0]) : null;
+                const aQ = ask ? parseFloat(ask.quantity ?? ask[1]) : null;
+                const bidPct = bQ != null ? (bQ / maxQ) * 100 : 0;
+                const askPct = aQ != null ? (aQ / maxQ) * 100 : 0;
+
+                return (
+                  <div key={i} className="flex items-center text-[11px] h-[22px]">
+                    {/* BID — depth bar fills from right edge inward (toward center) */}
+                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 right-0 bg-green-500/12"
+                        style={{ width: `${bidPct}%` }}
+                      />
+                      {bP != null ? (
+                        <>
+                          <span className="relative z-10 text-muted-foreground/60 flex-1 tabular-nums text-[10.5px]">
+                            {bQ!.toFixed(3)}
+                          </span>
+                          <span className="relative z-10 text-green-400 font-semibold tabular-nums">
+                            {fmt(bP)}
+                          </span>
+                        </>
+                      ) : <span className="flex-1" />}
+                    </div>
+
+                    {/* Center vertical divider */}
+                    <div className="w-px self-stretch bg-border/60 shrink-0" />
+
+                    {/* ASK — depth bar fills from left edge inward (toward center) */}
+                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-red-500/12"
+                        style={{ width: `${askPct}%` }}
+                      />
+                      {aP != null ? (
+                        <>
+                          <span className="relative z-10 text-red-400 font-semibold tabular-nums">
+                            {fmt(aP)}
+                          </span>
+                          <span className="relative z-10 text-muted-foreground/60 flex-1 text-right tabular-nums text-[10.5px]">
+                            {aQ!.toFixed(3)}
+                          </span>
+                        </>
+                      ) : <span className="flex-1" />}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Mid price bar */}
+              <div className="flex items-center justify-center gap-3 py-2 border-y border-border/50 mx-0 my-0.5 bg-secondary/30">
+                <span className={cn(
+                  "text-sm font-bold tabular-nums",
+                  change >= 0 ? "text-green-400" : "text-red-400"
+                )}>
+                  {change >= 0 ? "▲" : "▼"} {fmt(lastPrice)}
+                </span>
+                <span className="text-[11px] text-muted-foreground">=</span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">${fmt(lastPrice)}</span>
+                <span className={cn(
+                  "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                  change >= 0 ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+                )}>
+                  {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── MARKET TRADES — POLONIEX STYLE ── */}
+        {bottomTab === "trades" && (
+          <div className="pt-1 pb-2">
+            {/* Column headers */}
+            <div className="flex text-[9px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-1.5 border-b border-border/50">
+              <span className="flex-1">Price ({quote})</span>
+              <span className="w-24 text-right">Amount ({base})</span>
+              <span className="w-20 text-right">Time</span>
+            </div>
+            {((recentTrades as any[]) ?? []).slice(0, 25).map((t: any, i: number) => {
+              const isBuy = t.side === "buy";
+              return (
+                <div key={i} className="flex items-center px-4 py-[4px]">
+                  <span className={cn(
+                    "flex-1 text-[12px] font-semibold tabular-nums",
+                    isBuy ? "text-green-400" : "text-red-400"
+                  )}>
+                    {fmt(parseFloat(t.price))}
+                  </span>
+                  <span className="w-24 text-right text-[11px] text-muted-foreground tabular-nums">
+                    {parseFloat(t.quantity).toFixed(4)}
+                  </span>
+                  <span className="w-20 text-right text-[10px] text-muted-foreground/60">
+                    {new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
 
