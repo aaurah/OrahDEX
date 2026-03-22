@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-buy: hsl(var(--buy));
+  --color-sell: hsl(var(--sell));
+  --color-buy-muted: hsl(var(--buy-muted));
+  --color-sell-muted: hsl(var(--sell-muted));
+}
+
+:root {
+  /* Dark Exchange Theme */
+  --background: 216 20% 5%;    /* #0b0e11 */
+  --foreground: 210 20% 90%;   /* #eaecef */
+  
+  --card: 216 15% 9%;          /* #181a20 */
+  --card-foreground: 210 20% 90%;
+  
+  --popover: 216 15% 12%;      /* #1e2329 */
+  --popover-foreground: 210 20% 90%;
+  
+  --primary: 43 96% 56%;       /* #fcd535 (Binance Yellow) */
+  --primary-foreground: 216 20% 5%;
+  
+  --secondary: 216 15% 16%;    /* #2b3139 */
+  --secondary-foreground: 210 20% 90%;
+  
+  --muted: 216 15% 16%;        /* #2b3139 */
+  --muted-foreground: 215 16% 55%; /* #848e9c */
+  
+  --accent: 216 15% 16%;
+  --accent-foreground: 210 20% 90%;
+  
+  --destructive: 348 83% 47%;  /* #f6465d */
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 216 15% 16%;       /* #2b3139 */
+  --input: 216 15% 16%;
+  --ring: 43 96% 56%;
+
+  /* Trading Colors */
+  --buy: 142 71% 45%;          /* #0ecb81 */
+  --sell: 348 83% 47%;         /* #f6465d */
+  --buy-muted: 142 71% 45% / 0.15;
+  --sell-muted: 348 83% 47% / 0.15;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased selection:bg-primary/30 selection:text-primary;
+  }
+  
+  /* Custom scrollbar for deep dark UI */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
+
+/* Trading utilities */
+.tabular-nums-aligned {
+  font-variant-numeric: tabular-nums;
+  @apply font-mono tracking-tight;
+}
+
+.depth-bar-buy {
+  background: linear-gradient(90deg, transparent 0%, var(--color-buy-muted) 100%);
+}
+
+.depth-bar-sell {
+  background: linear-gradient(90deg, transparent 0%, var(--color-sell-muted) 100%);
+}
+
+/* Hide number input spinners */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}

@@ -1,0 +1,12 @@
+packages:
+  "lightweight-charts": "High performance financial charts for trading view"
+  "framer-motion": "Smooth animations for modals and layout transitions"
+  "zustand": "Global state management for wallet connection"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility to merge tailwind classes safely"
+  "date-fns": "Date formatting for trades and order history"
+
+notes:
+  - "Assuming standard Orval generated hooks exist in @workspace/api-client-react"
+  - "Building dark-mode professional exchange layout matching top-tier centralized exchanges"
+  - "Mock data fallbacks are implemented to ensure stunning UI even without active backend"

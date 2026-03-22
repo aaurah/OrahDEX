@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: BSV DEX Exchange API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: markets
+    description: Market data and trading pairs
+  - name: orderbook
+    description: Order book operations
+  - name: orders
+    description: Order management
+  - name: trades
+    description: Trade history
+  - name: wallet
+    description: Wallet operations
+  - name: portfolio
+    description: Portfolio and balances
+  - name: futures
+    description: Futures/perpetuals trading
+  - name: candles
+    description: OHLCV candlestick data
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,408 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /markets:
+    get:
+      operationId: getMarkets
+      tags: [markets]
+      summary: Get all trading pairs/markets
+      responses:
+        "200":
+          description: List of markets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Market"
+
+  /markets/{symbol}:
+    get:
+      operationId: getMarket
+      tags: [markets]
+      summary: Get a single market
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Market details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Market"
+
+  /markets/{symbol}/ticker:
+    get:
+      operationId: getTicker
+      tags: [markets]
+      summary: Get 24h ticker for a market
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticker data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticker"
+
+  /markets/{symbol}/candles:
+    get:
+      operationId: getCandles
+      tags: [candles]
+      summary: Get OHLCV candlestick data
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: interval
+          schema:
+            type: string
+            enum: [1m, 5m, 15m, 1h, 4h, 1d, 1w]
+            default: 1h
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 200
+      responses:
+        "200":
+          description: Candlestick data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Candle"
+
+  /markets/{symbol}/orderbook:
+    get:
+      operationId: getOrderBook
+      tags: [orderbook]
+      summary: Get order book for a market
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: depth
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Order book
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderBook"
+
+  /markets/{symbol}/trades:
+    get:
+      operationId: getRecentTrades
+      tags: [trades]
+      summary: Get recent trades for a market
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Recent trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+
+  /orders:
+    get:
+      operationId: getOrders
+      tags: [orders]
+      summary: Get user orders
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: symbol
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, filled, cancelled, partial]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: User orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: placeOrder
+      tags: [orders]
+      summary: Place a new order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlaceOrderRequest"
+      responses:
+        "201":
+          description: Order placed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get order by ID
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+    delete:
+      operationId: cancelOrder
+      tags: [orders]
+      summary: Cancel an order
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelOrderRequest"
+      responses:
+        "200":
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+
+  /trades/history:
+    get:
+      operationId: getTradeHistory
+      tags: [trades]
+      summary: Get user trade history
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: symbol
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Trade history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Trade"
+
+  /portfolio:
+    get:
+      operationId: getPortfolio
+      tags: [portfolio]
+      summary: Get user portfolio/balances
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Portfolio data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Portfolio"
+
+  /futures/positions:
+    get:
+      operationId: getFuturesPositions
+      tags: [futures]
+      summary: Get user futures positions
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Futures positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FuturesPosition"
+    post:
+      operationId: openFuturesPosition
+      tags: [futures]
+      summary: Open a futures position
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenFuturesPositionRequest"
+      responses:
+        "201":
+          description: Position opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuturesPosition"
+
+  /futures/positions/{positionId}:
+    delete:
+      operationId: closeFuturesPosition
+      tags: [futures]
+      summary: Close a futures position
+      parameters:
+        - in: path
+          name: positionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloseFuturesPositionRequest"
+      responses:
+        "200":
+          description: Position closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuturesPosition"
+
+  /futures/funding-rates:
+    get:
+      operationId: getFundingRates
+      tags: [futures]
+      summary: Get funding rates for futures markets
+      responses:
+        "200":
+          description: Funding rates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FundingRate"
+
+  /wallet/connect:
+    post:
+      operationId: connectWallet
+      tags: [wallet]
+      summary: Register wallet connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectWalletRequest"
+      responses:
+        "200":
+          description: Wallet connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletSession"
+
+  /wallet/transactions:
+    get:
+      operationId: getWalletTransactions
+      tags: [wallet]
+      summary: Get wallet on-chain transactions
+      parameters:
+        - in: query
+          name: walletAddress
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Wallet transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WalletTransaction"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +451,560 @@ components:
       required:
         - status
 
+    Market:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: "BSV/USDT"
+        baseAsset:
+          type: string
+          example: "BSV"
+        quoteAsset:
+          type: string
+          example: "USDT"
+        lastPrice:
+          type: number
+        priceChange24h:
+          type: number
+        priceChangePercent24h:
+          type: number
+        volume24h:
+          type: number
+        high24h:
+          type: number
+        low24h:
+          type: number
+        marketCap:
+          type: number
+        status:
+          type: string
+          enum: [active, suspended, delisted]
+        type:
+          type: string
+          enum: [spot, futures]
+        minOrderSize:
+          type: number
+        maxOrderSize:
+          type: number
+        tickSize:
+          type: number
+        makerFee:
+          type: number
+        takerFee:
+          type: number
+      required:
+        - symbol
+        - baseAsset
+        - quoteAsset
+        - lastPrice
+        - priceChange24h
+        - priceChangePercent24h
+        - volume24h
+        - high24h
+        - low24h
+        - status
+        - type
+        - makerFee
+        - takerFee
+
+    Ticker:
+      type: object
+      properties:
+        symbol:
+          type: string
+        lastPrice:
+          type: number
+        bidPrice:
+          type: number
+        askPrice:
+          type: number
+        openPrice:
+          type: number
+        highPrice:
+          type: number
+        lowPrice:
+          type: number
+        volume:
+          type: number
+        quoteVolume:
+          type: number
+        priceChange:
+          type: number
+        priceChangePercent:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - symbol
+        - lastPrice
+        - bidPrice
+        - askPrice
+        - openPrice
+        - highPrice
+        - lowPrice
+        - volume
+        - priceChange
+        - priceChangePercent
+        - timestamp
+
+    Candle:
+      type: object
+      properties:
+        time:
+          type: number
+          description: Unix timestamp in seconds
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+      required:
+        - time
+        - open
+        - high
+        - low
+        - close
+        - volume
+
+    OrderBookEntry:
+      type: object
+      properties:
+        price:
+          type: number
+        quantity:
+          type: number
+        total:
+          type: number
+      required:
+        - price
+        - quantity
+        - total
+
+    OrderBook:
+      type: object
+      properties:
+        symbol:
+          type: string
+        bids:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderBookEntry"
+        asks:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderBookEntry"
+        lastUpdateTime:
+          type: string
+          format: date-time
+      required:
+        - symbol
+        - bids
+        - asks
+        - lastUpdateTime
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        price:
+          type: number
+        quantity:
+          type: number
+        total:
+          type: number
+        fee:
+          type: number
+        feeAsset:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        txid:
+          type: string
+          description: BSV on-chain transaction ID
+        walletAddress:
+          type: string
+      required:
+        - id
+        - symbol
+        - side
+        - price
+        - quantity
+        - total
+        - fee
+        - feeAsset
+        - timestamp
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        walletAddress:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        type:
+          type: string
+          enum: [limit, market, stop_limit, stop_market, take_profit, oco]
+        status:
+          type: string
+          enum: [open, filled, cancelled, partial, expired]
+        price:
+          type: number
+        stopPrice:
+          type: number
+        quantity:
+          type: number
+        filledQuantity:
+          type: number
+        remainingQuantity:
+          type: number
+        total:
+          type: number
+        fee:
+          type: number
+        feeAsset:
+          type: string
+        timeInForce:
+          type: string
+          enum: [GTC, IOC, FOK, GTD]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        txid:
+          type: string
+        signedTx:
+          type: string
+          description: BSV signed transaction hex
+      required:
+        - id
+        - symbol
+        - walletAddress
+        - side
+        - type
+        - status
+        - quantity
+        - filledQuantity
+        - remainingQuantity
+        - fee
+        - feeAsset
+        - timeInForce
+        - createdAt
+        - updatedAt
+
+    PlaceOrderRequest:
+      type: object
+      properties:
+        symbol:
+          type: string
+        walletAddress:
+          type: string
+        side:
+          type: string
+          enum: [buy, sell]
+        type:
+          type: string
+          enum: [limit, market, stop_limit, stop_market, take_profit, oco]
+        price:
+          type: number
+        stopPrice:
+          type: number
+        quantity:
+          type: number
+        timeInForce:
+          type: string
+          enum: [GTC, IOC, FOK, GTD]
+          default: GTC
+        signedTx:
+          type: string
+          description: BSV signed transaction hex for on-chain settlement
+      required:
+        - symbol
+        - walletAddress
+        - side
+        - type
+        - quantity
+
+    CancelOrderRequest:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        signedTx:
+          type: string
+      required:
+        - walletAddress
+
+    Portfolio:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        totalValueUSD:
+          type: number
+        totalPnlUSD:
+          type: number
+        totalPnlPercent:
+          type: number
+        balances:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssetBalance"
+        openOrdersCount:
+          type: integer
+        openPositionsCount:
+          type: integer
+      required:
+        - walletAddress
+        - totalValueUSD
+        - totalPnlUSD
+        - totalPnlPercent
+        - balances
+        - openOrdersCount
+        - openPositionsCount
+
+    AssetBalance:
+      type: object
+      properties:
+        asset:
+          type: string
+        free:
+          type: number
+        locked:
+          type: number
+        total:
+          type: number
+        valueUSD:
+          type: number
+        pnl24h:
+          type: number
+        pnl24hPercent:
+          type: number
+      required:
+        - asset
+        - free
+        - locked
+        - total
+        - valueUSD
+
+    FuturesPosition:
+      type: object
+      properties:
+        id:
+          type: string
+        walletAddress:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [long, short]
+        leverage:
+          type: number
+        entryPrice:
+          type: number
+        markPrice:
+          type: number
+        liquidationPrice:
+          type: number
+        quantity:
+          type: number
+        margin:
+          type: number
+        unrealizedPnl:
+          type: number
+        unrealizedPnlPercent:
+          type: number
+        realizedPnl:
+          type: number
+        fundingFee:
+          type: number
+        status:
+          type: string
+          enum: [open, closed, liquidated]
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+        txid:
+          type: string
+      required:
+        - id
+        - walletAddress
+        - symbol
+        - side
+        - leverage
+        - entryPrice
+        - markPrice
+        - liquidationPrice
+        - quantity
+        - margin
+        - unrealizedPnl
+        - unrealizedPnlPercent
+        - status
+        - openedAt
+
+    OpenFuturesPositionRequest:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        symbol:
+          type: string
+        side:
+          type: string
+          enum: [long, short]
+        leverage:
+          type: number
+          minimum: 1
+          maximum: 125
+        quantity:
+          type: number
+        orderType:
+          type: string
+          enum: [market, limit]
+        price:
+          type: number
+        marginMode:
+          type: string
+          enum: [cross, isolated]
+        signedTx:
+          type: string
+      required:
+        - walletAddress
+        - symbol
+        - side
+        - leverage
+        - quantity
+        - orderType
+        - marginMode
+
+    CloseFuturesPositionRequest:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        closePrice:
+          type: number
+        signedTx:
+          type: string
+      required:
+        - walletAddress
+
+    FundingRate:
+      type: object
+      properties:
+        symbol:
+          type: string
+        fundingRate:
+          type: number
+        nextFundingTime:
+          type: string
+          format: date-time
+        lastFundingRate:
+          type: number
+        predictedFundingRate:
+          type: number
+        interval:
+          type: string
+      required:
+        - symbol
+        - fundingRate
+        - nextFundingTime
+        - interval
+
+    ConnectWalletRequest:
+      type: object
+      properties:
+        address:
+          type: string
+          description: BSV wallet address
+        publicKey:
+          type: string
+          description: BSV public key
+        provider:
+          type: string
+          enum: [handcash, relayx, twetch, panda, yours, sensilet]
+        signature:
+          type: string
+          description: Signed message to verify wallet ownership
+        message:
+          type: string
+          description: The message that was signed
+      required:
+        - address
+        - provider
+
+    WalletSession:
+      type: object
+      properties:
+        address:
+          type: string
+        provider:
+          type: string
+        connected:
+          type: boolean
+        connectedAt:
+          type: string
+          format: date-time
+        publicKey:
+          type: string
+      required:
+        - address
+        - provider
+        - connected
+        - connectedAt
+
+    WalletTransaction:
+      type: object
+      properties:
+        txid:
+          type: string
+        type:
+          type: string
+          enum: [deposit, withdrawal, trade, fee, funding]
+        asset:
+          type: string
+        amount:
+          type: number
+        fee:
+          type: number
+        status:
+          type: string
+          enum: [confirmed, pending, failed]
+        confirmations:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        blockHeight:
+          type: integer
+      required:
+        - txid
+        - type
+        - asset
+        - amount
+        - status
+        - timestamp
