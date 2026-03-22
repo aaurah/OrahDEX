@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown,
-  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle
+  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle, Eye, EyeOff
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
@@ -144,6 +144,98 @@ function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string;
   );
 }
 
+// ── Reset Password Modal ───────────────────────────────────────────────────────
+function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: string; email: string }; onClose: () => void }) {
+  const [newPw, setNewPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleReset = async () => {
+    if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPw !== confirm) { setError("Passwords do not match."); return; }
+    setError("");
+    await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPw }),
+    });
+    setDone(true);
+    setTimeout(onClose, 1800);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
+              <KeyRound className="w-4.5 h-4.5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-foreground">Reset Password</h3>
+              <p className="text-xs text-muted-foreground">{admin.email}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {done ? (
+          <div className="py-6 flex flex-col items-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
+              <Check className="w-7 h-7 text-green-400" />
+            </div>
+            <p className="text-sm font-semibold text-green-400">Password reset successfully</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-muted-foreground font-medium block mb-1">New Password</label>
+              <div className="relative">
+                <input
+                  type={show ? "text" : "password"}
+                  value={newPw}
+                  onChange={e => setNewPw(e.target.value)}
+                  className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm pr-9 focus:outline-none focus:border-primary"
+                  placeholder="Min. 8 characters"
+                />
+                <button onClick={() => setShow(s => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground font-medium block mb-1">Confirm Password</label>
+              <input
+                type={show ? "text" : "password"}
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+                placeholder="Repeat new password"
+              />
+            </div>
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            <div className="flex gap-3 pt-1">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={!newPw || !confirm}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-all"
+              >
+                Reset Password
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function AdminAdmins() {
   const qc = useQueryClient();
@@ -154,6 +246,7 @@ export function AdminAdmins() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [modal2FA, setModal2FA] = useState<{ type: 'enable' | 'disable'; id: string; name: string } | null>(null);
+  const [resetPwAdmin, setResetPwAdmin] = useState<{ id: string; name: string; email: string } | null>(null);
   const [form, setForm] = useState({ name: "", email: "", role: "moderator", permissions: [] as string[] });
 
   const { data: apiAdmins = [], isLoading } = useQuery({ queryKey: ["admin-admins"], queryFn: fetchAdmins });
@@ -253,6 +346,11 @@ export function AdminAdmins() {
           <Plus className="w-4 h-4" /> Add Admin
         </button>
       </div>
+
+      {/* ── Reset Password Modal ── */}
+      {resetPwAdmin && (
+        <ResetPasswordModal admin={resetPwAdmin} onClose={() => setResetPwAdmin(null)} />
+      )}
 
       {/* ── 2FA Modals ── */}
       {modal2FA?.type === 'enable' && modal2FA.id === '__superadmin__' && (
@@ -444,10 +542,14 @@ export function AdminAdmins() {
                     {/* Actions */}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
-                        <button className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors" title="Reset password">
+                        <button
+                          onClick={() => setResetPwAdmin({ id: a.id, name: a.name, email: a.email })}
+                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="Reset password"
+                        >
                           <KeyRound className="w-4 h-4" />
                         </button>
-                        {a.role !== "superadmin" && (
+                        {!a.isPinned && (
                           <button
                             onClick={() => removeAdmin.mutate(a.id)}
                             className="p-1.5 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
