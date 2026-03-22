@@ -17,9 +17,13 @@ interface WalletState {
   network: WalletNetwork | null;
   chainId: number | null;
   isConnecting: boolean;
+  // Auto-created BSV wallet (for EVM-connected users who need BSV to trade)
+  bsvAddress: string | null;
+  bsvMnemonic: string[] | null;
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
+  setBsvWallet: (address: string, mnemonic: string[]) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -30,6 +34,8 @@ export const useWalletStore = create<WalletState>()(
       network: null,
       chainId: null,
       isConnecting: false,
+      bsvAddress: null,
+      bsvMnemonic: null,
       connect: (wallet) =>
         set({
           address: wallet.address,
@@ -39,8 +45,17 @@ export const useWalletStore = create<WalletState>()(
           isConnecting: false,
         }),
       disconnect: () =>
-        set({ address: null, provider: null, network: null, chainId: null, isConnecting: false }),
+        set({
+          address: null,
+          provider: null,
+          network: null,
+          chainId: null,
+          isConnecting: false,
+          bsvAddress: null,
+          bsvMnemonic: null,
+        }),
       setConnecting: (isConnecting) => set({ isConnecting }),
+      setBsvWallet: (bsvAddress, bsvMnemonic) => set({ bsvAddress, bsvMnemonic }),
     }),
     { name: 'aura-dex-wallet' }
   )

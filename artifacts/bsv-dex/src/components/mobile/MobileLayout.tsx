@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, Zap, Layers, Users2 } from "lucide-react";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
+import { BsvAutoWalletModal } from "@/components/BsvAutoWalletModal";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
@@ -55,6 +56,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
+      <BsvAutoWalletModal />
     </div>
   );
 }
