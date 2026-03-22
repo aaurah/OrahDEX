@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { useEffect, ReactNode } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -19,6 +19,8 @@ import { AdminTradePairs } from "@/pages/admin/TradePairs";
 import { AdminApiSettings } from "@/pages/admin/ApiSettings";
 import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
 import { AdminThemes } from "@/pages/admin/Themes";
+import { AdminLogin } from "@/pages/admin/Login";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 
 const queryClient = new QueryClient({
@@ -27,6 +29,18 @@ const queryClient = new QueryClient({
   },
 });
 
+function RequireAdminAuth({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAdminAuthStore();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/admin/login");
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) return null;
+  return <>{children}</>;
+}
+
 function Router() {
   useEffect(() => {
     applyStoredTheme();
@@ -34,27 +48,44 @@ function Router() {
 
   return (
     <Switch>
-      {/* Admin routes — own layout */}
+      {/* Admin login — no auth required */}
+      <Route path="/admin/login" component={AdminLogin} />
+
+      {/* Protected admin routes */}
       <Route path="/admin">
-        <AdminLayout><AdminDashboard /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminDashboard /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/users">
-        <AdminLayout><AdminUsers /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminUsers /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/admins">
-        <AdminLayout><AdminAdmins /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminAdmins /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/pairs">
-        <AdminLayout><AdminTradePairs /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminTradePairs /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/api">
-        <AdminLayout><AdminApiSettings /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminApiSettings /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/contracts">
-        <AdminLayout><AdminContractBuilder /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminContractBuilder /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
       <Route path="/admin/themes">
-        <AdminLayout><AdminThemes /></AdminLayout>
+        <RequireAdminAuth>
+          <AdminLayout><AdminThemes /></AdminLayout>
+        </RequireAdminAuth>
       </Route>
 
       {/* Main exchange routes */}
