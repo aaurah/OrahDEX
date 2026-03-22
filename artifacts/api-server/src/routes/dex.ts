@@ -113,6 +113,39 @@ async function fetchCoinMarketCaps() {
   return result;
 }
 
+// Lightweight prices cache (60 s TTL)
+let priceCache: { data: any; ts: number } | null = null;
+const PRICE_CACHE_MS = 60 * 1000;
+
+router.get("/dex/prices", async (_req, res) => {
+  try {
+    if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) return res.json(priceCache.data);
+    const resp = await fetch(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,bitcoin-cash-sv,tether&vs_currencies=usd&include_24hr_change=true",
+      { headers: { Accept: "application/json" } }
+    );
+    if (!resp.ok) throw new Error("CoinGecko price fetch failed");
+    const raw = await resp.json();
+    const data = {
+      BTC:  { usd: raw?.bitcoin?.usd ?? 65000,         change24h: raw?.bitcoin?.usd_24h_change ?? 0 },
+      ETH:  { usd: raw?.ethereum?.usd ?? 3200,          change24h: raw?.ethereum?.usd_24h_change ?? 0 },
+      BSV:  { usd: raw?.["bitcoin-cash-sv"]?.usd ?? 55, change24h: raw?.["bitcoin-cash-sv"]?.usd_24h_change ?? 0 },
+      USDT: { usd: 1,                                   change24h: 0 },
+    };
+    priceCache = { data, ts: Date.now() };
+    res.json(data);
+  } catch {
+    // Return last cached data or fallback
+    if (priceCache) return res.json(priceCache.data);
+    res.json({
+      BTC:  { usd: 65000, change24h: 0 },
+      ETH:  { usd: 3200,  change24h: 0 },
+      BSV:  { usd: 55,    change24h: 0 },
+      USDT: { usd: 1,     change24h: 0 },
+    });
+  }
+});
+
 router.get("/dex/exchanges", async (req, res) => {
   try {
     if (cache && Date.now() - cache.ts < CACHE_MS) return res.json(cache.data);
