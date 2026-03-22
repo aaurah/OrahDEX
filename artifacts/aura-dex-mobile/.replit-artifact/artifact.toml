@@ -1,27 +1,28 @@
 kind = "mobile"
-previewPath = "/mobile/"
-title = "Aura DEX Mobile"
-version = "1.0.0"
-id = "artifacts/aura-dex-mobile"
-router = "expo-domain"
+  previewPath = "/mobile/"
+  title = "Orah DEX Mobile"
+  version = "1.0.0"
+  id = "artifacts/aura-dex-mobile"
+  router = "expo-domain"
 
-[[integratedSkills]]
-name = "expo"
-version = "1.0.0"
+  [[integratedSkills]]
+  name = "expo"
+  version = "1.0.0"
 
-[[services]]
-ensurePreviewReachable = "/status"
-name = "expo"
-paths = [ "/mobile/" ]
-localPort = 23730
+  [[services]]
+  ensurePreviewReachable = "/status"
+  name = "expo"
+  paths = [ "/mobile/" ]
+  localPort = 23730
 
-[services.development]
-run = "pnpm --filter @workspace/aura-dex-mobile run dev"
+  [services.development]
+  run = "pnpm --filter @workspace/aura-dex-mobile run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/aura-dex-mobile", "run", "build" ]
-run = [ "pnpm", "--filter", "@workspace/aura-dex-mobile", "run", "serve" ]
+  [services.production]
+  build = [ "pnpm", "--filter", "@workspace/aura-dex-mobile", "run", "build" ]
+  run = [ "pnpm", "--filter", "@workspace/aura-dex-mobile", "run", "serve" ]
 
-[services.env]
-PORT = "23730"
-BASE_PATH = "/mobile/"
+  [services.env]
+  PORT = "23730"
+  BASE_PATH = "/mobile/"
+  
