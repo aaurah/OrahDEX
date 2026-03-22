@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X } from "lucide-react";
+import { Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchAdmins = () => fetch(`${BASE}/api/admin/admins`).then(r => r.json());
@@ -18,10 +19,26 @@ const ALL_PERMISSIONS = ["all", "users", "pairs", "orders", "api", "contracts", 
 
 export function AdminAdmins() {
   const qc = useQueryClient();
+  const { email: loggedInEmail, twoFaSetupDone } = useAdminAuthStore();
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", role: "moderator", permissions: [] as string[] });
 
-  const { data: admins = [], isLoading } = useQuery({ queryKey: ["admin-admins"], queryFn: fetchAdmins });
+  const { data: apiAdmins = [], isLoading } = useQuery({ queryKey: ["admin-admins"], queryFn: fetchAdmins });
+
+  // Pinned superadmin row from local auth
+  const superadminRow = loggedInEmail ? [{
+    id: '__superadmin__',
+    name: 'Aaurah',
+    email: loggedInEmail,
+    role: 'superadmin',
+    permissions: ['all'],
+    twoFa: twoFaSetupDone,
+    lastLogin: new Date().toISOString(),
+    status: 'active',
+    isPinned: true,
+  }] : [];
+
+  const admins = [...superadminRow, ...apiAdmins.filter((a: any) => a.email !== loggedInEmail)];
 
   const addAdmin = useMutation({
     mutationFn: (data: any) =>
@@ -133,14 +150,19 @@ export function AdminAdmins() {
                   <tr key={i}>{Array.from({length:7}).map((_,j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-secondary rounded animate-pulse" /></td>)}</tr>
                 ))
               ) : admins.map((a: any) => (
-                <tr key={a.id} className="hover:bg-secondary/20 transition-colors">
+                <tr key={a.id} className={cn("hover:bg-secondary/20 transition-colors", a.isPinned && "bg-amber-500/5 border-l-2 border-l-amber-500/40")}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-xs font-bold text-white shrink-0">
-                        {a.name[0]}
+                      <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0",
+                        a.isPinned ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-violet-500 to-primary"
+                      )}>
+                        {a.isPinned ? <Crown className="w-3.5 h-3.5" /> : a.name[0]}
                       </div>
                       <div>
-                        <div className="font-semibold text-foreground">{a.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-foreground">{a.name}</span>
+                          {a.isPinned && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase">You</span>}
+                        </div>
                         <div className="text-xs text-muted-foreground">{a.email}</div>
                       </div>
                     </div>
