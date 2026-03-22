@@ -1,11 +1,11 @@
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, Zap, Layers, Users2 } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2 } from "lucide-react";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
-  { path: "/futures/BSV-USDT", label: "Futures", Icon: Zap },
+  { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
   { path: "/p2p", label: "P2P", Icon: Users2 },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
