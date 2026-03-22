@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Smartphone, Settings, Layers, Users } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Smartphone, Layers, Users } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -90,14 +90,7 @@ export function Layout({ children }: { children: ReactNode }) {
           >
             <ThemeIcon className="w-4 h-4" />
           </button>
-          {/* Admin link */}
-          <Link href="/admin"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors text-sm font-medium"
-            title="Admin Panel"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            Admin
-          </Link>
+
           {address ? (
             <div className="flex items-center gap-2">
               <div className="hidden sm:flex flex-col items-end">
