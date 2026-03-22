@@ -2,22 +2,19 @@ import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 
 const SPOT_MARKETS = [
-  { symbol: "BSV/USDT", base: "BSV", quote: "USDT", price: 55.42, change: 2.34, changeP: 4.41, vol: 18500000, high: 57.10, low: 53.20, mcap: 1080000000 },
-  { symbol: "BTC/USDT", base: "BTC", quote: "USDT", price: 65234.50, change: -1230.0, changeP: -1.85, vol: 1240000000, high: 66800.00, low: 64200.00, mcap: 1280000000000 },
-  { symbol: "ETH/USDT", base: "ETH", quote: "USDT", price: 3198.70, change: 48.20, changeP: 1.53, vol: 420000000, high: 3250.00, low: 3120.00, mcap: 384000000000 },
-  { symbol: "TOKEN/USDT", base: "TOKEN", quote: "USDT", price: 0.1543, change: 0.0083, changeP: 5.69, vol: 2300000, high: 0.162, low: 0.144, mcap: 154300000 },
-  { symbol: "BSV/BTC", base: "BSV", quote: "BTC", price: 0.00085, change: 0.000045, changeP: 5.59, vol: 340, high: 0.00088, low: 0.00082, mcap: undefined },
-  { symbol: "TOKEN/BSV", base: "TOKEN", quote: "BSV", price: 0.00278, change: 0.00014, changeP: 5.31, vol: 125000, high: 0.00290, low: 0.00265, mcap: undefined },
-  { symbol: "SOL/USDT", base: "SOL", quote: "USDT", price: 148.32, change: -3.12, changeP: -2.06, vol: 58000000, high: 154.00, low: 145.20, mcap: 68000000000 },
-  { symbol: "XRP/USDT", base: "XRP", quote: "USDT", price: 0.5234, change: 0.0187, changeP: 3.70, vol: 95000000, high: 0.535, low: 0.502, mcap: 29000000000 },
-  { symbol: "BNB/USDT", base: "BNB", quote: "USDT", price: 412.80, change: 8.30, changeP: 2.05, vol: 120000000, high: 420.00, low: 400.00, mcap: 62000000000 },
-  { symbol: "ADA/USDT", base: "ADA", quote: "USDT", price: 0.4521, change: -0.0123, changeP: -2.65, vol: 28000000, high: 0.470, low: 0.440, mcap: 16000000000 },
+  { symbol: "BSV/USDT",  base: "BSV",  quote: "USDT", price: 55.42,     change: 0, changeP: 0, vol: 18500000,    high: 55.42,     low: 55.42,    mcap: 1080000000 },
+  { symbol: "BTC/USDT",  base: "BTC",  quote: "USDT", price: 65234.50,  change: 0, changeP: 0, vol: 1240000000,  high: 65234.50,  low: 65234.50, mcap: 1280000000000 },
+  { symbol: "ETH/USDT",  base: "ETH",  quote: "USDT", price: 3198.70,   change: 0, changeP: 0, vol: 420000000,   high: 3198.70,   low: 3198.70,  mcap: 384000000000 },
+  { symbol: "SOL/USDT",  base: "SOL",  quote: "USDT", price: 148.32,    change: 0, changeP: 0, vol: 58000000,    high: 148.32,    low: 148.32,   mcap: 68000000000 },
+  { symbol: "XRP/USDT",  base: "XRP",  quote: "USDT", price: 0.5234,    change: 0, changeP: 0, vol: 95000000,    high: 0.5234,    low: 0.5234,   mcap: 29000000000 },
+  { symbol: "BNB/USDT",  base: "BNB",  quote: "USDT", price: 412.80,    change: 0, changeP: 0, vol: 120000000,   high: 412.80,    low: 412.80,   mcap: 62000000000 },
+  { symbol: "ADA/USDT",  base: "ADA",  quote: "USDT", price: 0.4521,    change: 0, changeP: 0, vol: 28000000,    high: 0.4521,    low: 0.4521,   mcap: 16000000000 },
 ];
 
 const FUTURES_MARKETS = [
-  { symbol: "BSV/USDT-PERP", base: "BSV", quote: "USDT", price: 55.38, change: 2.30, changeP: 4.33, vol: 45000000, high: 57.05, low: 53.15, mcap: undefined },
-  { symbol: "BTC/USDT-PERP", base: "BTC", quote: "USDT", price: 65220.00, change: -1240.00, changeP: -1.87, vol: 3800000000, high: 66850.00, low: 64150.00, mcap: undefined },
-  { symbol: "ETH/USDT-PERP", base: "ETH", quote: "USDT", price: 3196.50, change: 46.80, changeP: 1.49, vol: 1100000000, high: 3248.00, low: 3118.00, mcap: undefined },
+  { symbol: "BSV/USDT-PERP", base: "BSV", quote: "USDT", price: 55.38,    change: 0, changeP: 0, vol: 45000000,    high: 55.38,    low: 55.38 },
+  { symbol: "BTC/USDT-PERP", base: "BTC", quote: "USDT", price: 65220.00, change: 0, changeP: 0, vol: 3800000000,  high: 65220.00, low: 65220.00 },
+  { symbol: "ETH/USDT-PERP", base: "ETH", quote: "USDT", price: 3196.50,  change: 0, changeP: 0, vol: 1100000000,  high: 3196.50,  low: 3196.50 },
 ];
 
 async function seed() {
@@ -67,7 +64,7 @@ async function seed() {
   await db.delete(marketsTable);
   await db.insert(marketsTable).values(allMarkets);
 
-  console.log(`Seeded ${allMarkets.length} markets`);
+  console.log(`Seeded ${allMarkets.length} markets (TOKEN/BSV/BTC fake pairs removed)`);
   process.exit(0);
 }
 

@@ -10,7 +10,10 @@ const FUNDING_RATES = [
   { symbol: "BSV/USDT", fundingRate: 0.0001, interval: "8h" },
   { symbol: "BTC/USDT", fundingRate: 0.00015, interval: "8h" },
   { symbol: "ETH/USDT", fundingRate: 0.00012, interval: "8h" },
-  { symbol: "TOKEN/USDT", fundingRate: -0.00005, interval: "8h" },
+  { symbol: "SOL/USDT", fundingRate: 0.00008, interval: "8h" },
+  { symbol: "XRP/USDT", fundingRate: 0.00006, interval: "8h" },
+  { symbol: "BNB/USDT", fundingRate: 0.00010, interval: "8h" },
+  { symbol: "ADA/USDT", fundingRate: 0.00004, interval: "8h" },
 ];
 
 router.get("/futures/funding-rates", (_req, res) => {

@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { generateCandles, generateOrderBook, generateRecentTrades, generateTicker } from "../lib/mockData.js";
+import { generateOrderBook, generateRecentTrades, generateTicker } from "../lib/mockData.js";
+import { fetchRealCandles } from "../lib/candleFetcher.js";
 
 const router: IRouter = Router();
 
@@ -102,7 +103,7 @@ router.get("/markets/:symbol/candles", async (req, res) => {
       res.status(404).json({ error: "Market not found" });
       return;
     }
-    const candles = generateCandles(parseFloat(market.lastPrice), interval, limit);
+    const candles = await fetchRealCandles(market.symbol, parseFloat(market.lastPrice), interval, limit);
     res.json(candles);
   } catch (err) {
     req.log.error({ err }, "Failed to get candles");
