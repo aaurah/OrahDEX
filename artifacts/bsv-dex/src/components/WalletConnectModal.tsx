@@ -48,12 +48,59 @@ function generateMockAddress(network: WalletNetwork): string {
   return "1" + Array.from({ length: 33 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
+const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+function getEthereumProvider(walletId: string): any {
+  const eth = (window as any).ethereum;
+  if (!eth) return null;
+  if (eth.providers?.length) {
+    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask) ?? null;
+    if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
+    return eth.providers[0];
+  }
+  if (walletId === "metamask") return eth.isMetaMask ? eth : null;
+  if (walletId === "coinbase") return eth.isCoinbaseWallet ? eth : null;
+  if (walletId === "trust") return eth.isTrust ? eth : null;
+  if (walletId === "okx") return (window as any).okxwallet ?? (eth.isOKExWallet ? eth : null);
+  return eth;
+}
+
+function isWalletInstalled(walletId: string): boolean {
+  const eth = (window as any).ethereum;
+  if (!eth) return false;
+  switch (walletId) {
+    case "metamask": return !!(eth.isMetaMask || eth.providers?.some((p: any) => p.isMetaMask));
+    case "coinbase": return !!(eth.isCoinbaseWallet || eth.providers?.some((p: any) => p.isCoinbaseWallet));
+    case "trust": return !!eth.isTrust;
+    case "okx": return !!(window as any).okxwallet || !!eth.isOKExWallet;
+    case "bybit": return !!eth.isBybit;
+    case "phantom": return !!(window as any).phantom?.ethereum;
+    default: return !!eth;
+  }
+}
+
+const WALLET_INSTALL_URLS: Record<string, string> = {
+  metamask: "https://metamask.io/download/",
+  coinbase: "https://www.coinbase.com/wallet/downloads",
+  rainbow: "https://rainbow.me/",
+  trust: "https://trustwallet.com/download",
+  okx: "https://www.okx.com/web3",
+  bybit: "https://www.bybit.com/en/web3/",
+  phantom: "https://phantom.app/download",
+  ledger: "https://www.ledger.com/ledger-live",
+  trezor: "https://trezor.io/start",
+  walletconnect: null as any,
+};
+
+const METAMASK_MOBILE_DEEPLINK = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("evm");
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [mnemonic, setMnemonic] = useState<string[]>([]);
@@ -84,17 +131,117 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }, 400);
   };
 
-  const handleConnectWallet = (wallet: WalletDef) => {
+  const handleConnectWallet = useCallback(async (wallet: WalletDef) => {
+    setConnectError(null);
+
+    // ── EVM wallets (MetaMask, Coinbase, Trust, etc.) ──────────────────────
+    if (wallet.network === "evm") {
+      // WalletConnect — future integration placeholder
+      if (wallet.id === "walletconnect") {
+        setConnectError("WalletConnect deep link coming soon. Use MetaMask or another installed wallet for now.");
+        return;
+      }
+
+      // Phantom uses its own provider namespace
+      const phantomEth = (window as any).phantom?.ethereum;
+      if (wallet.id === "phantom" && phantomEth) {
+        setConnecting(wallet.id);
+        try {
+          const accounts: string[] = await phantomEth.request({ method: "eth_requestAccounts" });
+          const rawChain: string = await phantomEth.request({ method: "eth_chainId" });
+          connect({ address: accounts[0], provider: "phantom", network: "evm", chainId: parseInt(rawChain, 16) });
+          setConnecting(null);
+          handleClose();
+        } catch (err: any) {
+          setConnecting(null);
+          setConnectError(err?.code === 4001 ? "Connection rejected in Phantom." : (err?.message ?? "Phantom connection failed."));
+        }
+        return;
+      }
+
+      // OKX has its own namespace too
+      const okxProvider = (window as any).okxwallet;
+      if (wallet.id === "okx" && okxProvider) {
+        setConnecting(wallet.id);
+        try {
+          const accounts: string[] = await okxProvider.request({ method: "eth_requestAccounts" });
+          const rawChain: string = await okxProvider.request({ method: "eth_chainId" });
+          connect({ address: accounts[0], provider: "okx", network: "evm", chainId: parseInt(rawChain, 16) });
+          setConnecting(null);
+          handleClose();
+        } catch (err: any) {
+          setConnecting(null);
+          setConnectError(err?.code === 4001 ? "Connection rejected in OKX Wallet." : (err?.message ?? "OKX connection failed."));
+        }
+        return;
+      }
+
+      // Standard EIP-1193 provider (MetaMask, Coinbase, Trust, Rainbow, Bybit, Ledger…)
+      const provider = getEthereumProvider(wallet.id);
+
+      if (!provider) {
+        // Not installed — guide user to install or open mobile app
+        if (wallet.id === "metamask" && isMobileDevice()) {
+          window.open(METAMASK_MOBILE_DEEPLINK, "_blank");
+          return;
+        }
+        const installUrl = WALLET_INSTALL_URLS[wallet.id];
+        if (installUrl) {
+          window.open(installUrl, "_blank");
+        } else {
+          setConnectError(`${wallet.name} is not installed. Install it and refresh this page.`);
+        }
+        return;
+      }
+
+      setConnecting(wallet.id);
+      try {
+        // Request account access — this triggers the wallet popup
+        const accounts: string[] = await provider.request({ method: "eth_requestAccounts" });
+        if (!accounts?.length) throw new Error("No accounts returned from wallet.");
+
+        const rawChain: string = await provider.request({ method: "eth_chainId" });
+        const chainId = parseInt(rawChain, 16);
+
+        connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId });
+
+        // Listen for account/chain changes
+        provider.on?.("accountsChanged", (accs: string[]) => {
+          if (accs.length === 0) useWalletStore.getState().disconnect();
+          else connect({ address: accs[0], provider: wallet.id, network: "evm", chainId });
+        });
+        provider.on?.("chainChanged", (chainHex: string) => {
+          connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: parseInt(chainHex, 16) });
+        });
+
+        setConnecting(null);
+        setConnected(wallet.id);
+        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      } catch (err: any) {
+        setConnecting(null);
+        if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
+          setConnectError("You rejected the connection request. Try again and approve it in your wallet.");
+        } else if (err?.code === -32002) {
+          setConnectError("A connection request is already pending. Open your wallet app and approve it.");
+        } else {
+          setConnectError(err?.message ?? "Connection failed. Make sure your wallet is unlocked and try again.");
+        }
+      }
+      return;
+    }
+
+    // ── BSV wallets ─────────────────────────────────────────────────────────
+    // BSV wallets don't have a browser standard yet — simulate connection
     setConnecting(wallet.id);
     setTimeout(() => {
       setConnected(wallet.id);
       setTimeout(() => {
-        connect({ address: generateMockAddress(wallet.network), provider: wallet.id, network: wallet.network, chainId: wallet.chainId });
+        connect({ address: generateMockAddress("bsv"), provider: wallet.id, network: "bsv" });
         setConnecting(null); setConnected(null);
         handleClose();
       }, 700);
-    }, 1000);
-  };
+    }, 1200);
+  }, [connect, handleClose]);
 
   const startCreate = (network: WalletNetwork) => {
     setCreateNetwork(network);
@@ -475,6 +622,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {/* ── CONNECT ── */}
                   {view === "connect" && (
                     <motion.div key="connect" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+
+                      {/* Error banner */}
+                      {connectError && (
+                        <div className="mx-6 mt-4 flex items-start gap-3 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl">
+                          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                          <p className="text-xs text-red-300 leading-relaxed flex-1">{connectError}</p>
+                          <button onClick={() => setConnectError(null)} className="text-red-400/60 hover:text-red-400 shrink-0">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
                       {/* Network Tabs */}
                       <div className="flex gap-2 px-6 pt-4">
                         {(["evm", "bsv"] as ConnectTab[]).map((t) => (
@@ -538,17 +697,32 @@ function WalletButton({ wallet, connecting, connected, onConnect }: {
   const isConnecting = connecting === wallet.id;
   const isConnected = connected === wallet.id;
   const isDisabled = !!connecting;
+  const installed = wallet.network === "evm" ? isWalletInstalled(wallet.id) : false;
+  const isMobile = isMobileDevice();
+
+  const badge = (() => {
+    if (wallet.network === "bsv") return null;
+    if (wallet.id === "walletconnect") return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-medium">QR / Mobile</span>;
+    if (installed) return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">Detected</span>;
+    if (isMobile && wallet.id === "metamask") return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">Open App</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/8 text-muted-foreground font-medium">Install</span>;
+  })();
+
   return (
     <button onClick={() => onConnect(wallet)} disabled={isDisabled}
       className={cn("flex items-center justify-between w-full p-3.5 rounded-xl border transition-all duration-200 group",
         "border-border hover:border-primary/50 hover:bg-primary/5",
         isConnecting || isConnected ? "border-primary bg-primary/5 scale-[0.99]" : "",
+        installed && !isConnecting && !isConnected ? "border-green-500/20" : "",
         isDisabled && !isConnecting && !isConnected ? "opacity-40 cursor-not-allowed" : ""
       )}>
       <div className="flex items-center gap-3">
         <span className="text-2xl w-8 text-center">{wallet.icon}</span>
         <div className="text-left">
-          <div className="font-semibold text-sm text-foreground">{wallet.name}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm text-foreground">{wallet.name}</span>
+            {badge}
+          </div>
           <div className="text-xs text-muted-foreground">{wallet.description}</div>
         </div>
       </div>
