@@ -77,6 +77,19 @@ router.patch("/users/:id/status", (req, res) => {
   res.json({ success: true, user });
 });
 
+router.patch("/users/:id", (req, res) => {
+  const user = mockUsers.find(u => u.id === req.params.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  const { status, country, verified, balance, network, provider } = req.body;
+  if (status !== undefined) user.status = status;
+  if (country !== undefined) user.country = country;
+  if (verified !== undefined) user.verified = verified;
+  if (balance !== undefined) user.balance = parseFloat(balance);
+  if (network !== undefined) user.network = network;
+  if (provider !== undefined) user.provider = provider;
+  res.json({ success: true, user });
+});
+
 /* ─── ADMINS ─── */
 router.get("/admins", (_req, res) => res.json(mockAdmins));
 
@@ -99,6 +112,18 @@ router.delete("/admins/:id", (req, res) => {
   if (idx === -1) return res.status(404).json({ error: "Admin not found" });
   mockAdmins.splice(idx, 1);
   res.json({ success: true });
+});
+
+router.patch("/admins/:id", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  const { name, email, role, permissions, status } = req.body;
+  if (name !== undefined) admin.name = name;
+  if (email !== undefined) admin.email = email;
+  if (role !== undefined) admin.role = role;
+  if (permissions !== undefined) admin.permissions = permissions;
+  if (status !== undefined) admin.status = status;
+  res.json({ success: true, admin });
 });
 
 router.patch("/admins/:id/password", (req, res) => {
