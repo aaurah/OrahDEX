@@ -23,6 +23,7 @@ import { AdminTransactions } from "@/pages/admin/Transactions";
 import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
+import { useWalletStore } from "@/store/useWalletStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +46,21 @@ function RequireAdminAuth({ children }: { children: ReactNode }) {
 function Router() {
   useEffect(() => {
     applyStoredTheme();
+
+    // On startup: verify any EVM wallet saved in localStorage is still genuinely connected.
+    // eth_accounts is silent (no popup). If it returns nothing, the stored address is stale
+    // (likely a leftover from the old mock-connection flow) — disconnect immediately.
+    const { network, disconnect } = useWalletStore.getState();
+    if (network === "evm") {
+      const eth = (window as any).ethereum;
+      if (!eth) {
+        disconnect();
+      } else {
+        eth.request({ method: "eth_accounts" })
+          .then((accounts: string[]) => { if (!accounts?.length) disconnect(); })
+          .catch(() => disconnect());
+      }
+    }
   }, []);
 
   return (
