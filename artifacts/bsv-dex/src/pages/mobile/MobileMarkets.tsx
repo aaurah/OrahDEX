@@ -7,7 +7,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import {
-  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS,
+  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -42,7 +42,7 @@ type SortKey = "base" | "price" | "chg";
 type SortDir = "asc" | "desc";
 
 // ── Category tabs ─────────────────────────────────────────────────────────────
-type Cat = "favorites" | "new" | "usdt" | "btc" | "eth" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
+type Cat = "favorites" | "new" | "usdt" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
@@ -50,6 +50,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "usdt",      label: "USDT" },
   { id: "btc",       label: "BTC" },
   { id: "eth",       label: "ETH" },
+  { id: "bch",       label: "BCH" },
   { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
   { id: "meme",      label: "MEME" },
@@ -62,14 +63,15 @@ function getCatRows(cat: Cat, apiAll: MktRow[], favorites: Set<string>): MktRow[
   const hasApi = apiAll.length > 0;
   switch (cat) {
     case "favorites": {
-      const pool = hasApi ? apiAll : [...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS].map(normalise);
+      const pool = hasApi ? apiAll : [...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS, ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS].map(normalise);
       return pool.filter(m => favorites.has(m.symbol));
     }
     case "new":     return NEW_MARKETS.map(normalise);
     case "usdt":    return hasApi ? apiAll.filter(m => m.quote === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
-    case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC") : BTC_MARKETS.map(normalise);
-    case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH") : ETH_MARKETS.map(normalise);
-    case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV") : BSV_MARKETS.map(normalise);
+    case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC")  : BTC_MARKETS.map(normalise);
+    case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH")  : ETH_MARKETS.map(normalise);
+    case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
+    case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV")  : BSV_MARKETS.map(normalise);
     case "ai":      return AI_MARKETS.map(normalise);
     case "meme":    return MEME_MARKETS.map(normalise);
     case "defi":    return DEFI_MARKETS.map(normalise);

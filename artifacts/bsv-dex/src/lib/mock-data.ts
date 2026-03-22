@@ -145,6 +145,35 @@ export const BTC_MARKETS: any[] = [
   btcPair("NEAR",  6.55,    4.82,  24_000_000),
 ];
 
+// ─── BCH PAIRS ────────────────────────────────────────────────────────────────
+const BCH_PRICE = 450;
+function bchPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / BCH_PRICE;
+  return spot(base, "BCH", p, chg, vol / BCH_PRICE);
+}
+export const BCH_MARKETS: any[] = [
+  bchPair("BTC",   68310,  -1.85, 2_450_000_000),
+  bchPair("ETH",   3415,    1.32,  950_000_000),
+  bchPair("SOL",   148.5,   3.21,  420_000_000),
+  bchPair("XRP",   0.5242, -0.64,  110_000_000),
+  bchPair("BNB",   392,     0.88,  320_000_000),
+  bchPair("ADA",   0.4421, -2.10,   45_000_000),
+  bchPair("DOGE",  0.1185,  5.42,   78_000_000),
+  bchPair("DOT",   6.82,   -1.20,   38_000_000),
+  bchPair("AVAX",  36.4,    2.15,   62_000_000),
+  bchPair("MATIC", 0.718,  -0.92,   54_000_000),
+  bchPair("LINK",  14.52,   3.64,   48_000_000),
+  bchPair("UNI",   9.84,    1.55,   22_000_000),
+  bchPair("ATOM",  8.42,   -0.78,   18_000_000),
+  bchPair("LTC",   78.2,    0.45,   32_000_000),
+  bchPair("NEAR",  6.55,    4.82,   24_000_000),
+  bchPair("APT",   10.5,    5.21,   18_000_000),
+  bchPair("ARB",   1.12,    2.85,   28_000_000),
+  bchPair("OP",    2.41,    3.10,   22_000_000),
+  bchPair("SUI",   1.22,    6.45,   35_000_000),
+  bchPair("INJ",   28.4,    4.21,   15_000_000),
+];
+
 // ─── ETH PAIRS ────────────────────────────────────────────────────────────────
 const ETH_PRICE = 3415;
 function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any {
