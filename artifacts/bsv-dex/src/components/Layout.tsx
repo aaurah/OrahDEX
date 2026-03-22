@@ -90,10 +90,11 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
           {/* Admin link */}
           <Link href="/admin"
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors text-sm font-medium"
             title="Admin Panel"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
+            Admin
           </Link>
           {address ? (
             <div className="flex items-center gap-2">
