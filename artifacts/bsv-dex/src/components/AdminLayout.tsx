@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, Zap, LogOut, Menu, X, ChevronRight,
 } from "lucide-react";
-import { useWalletStore } from "@/store/useWalletStore";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -19,7 +19,7 @@ const NAV = [
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, disconnect } = useWalletStore();
+  const { email, logout } = useAdminAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isActive = (nav: typeof NAV[0]) =>
@@ -86,17 +86,26 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="p-3 border-t border-border">
+        <div className="p-3 border-t border-border space-y-1">
+          {email && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/3 border border-white/5 mb-2">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                A
+              </div>
+              <span className="text-xs text-muted-foreground truncate flex-1">{email}</span>
+            </div>
+          )}
           <Link href="/" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all">
             <ArrowRightLeft className="w-4 h-4" />
             Back to Exchange
           </Link>
-          {address && (
-            <button onClick={disconnect} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-xl hover:bg-destructive/5 transition-all">
-              <LogOut className="w-4 h-4" />
-              Disconnect
-            </button>
-          )}
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-xl hover:bg-destructive/5 transition-all"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
         </div>
       </aside>
 
