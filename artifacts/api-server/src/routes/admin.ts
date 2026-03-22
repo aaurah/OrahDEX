@@ -27,15 +27,15 @@ const mockUsers = Array.from({ length: 24 }, (_, i) => ({
 const mockAdmins: any[] = [];
 
 const mockApiKeys = [
-  { id: "key_001", name: "Public Market Feed", key: "aura_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
-  { id: "key_002", name: "Trading Bot Integration", key: "aura_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
-  { id: "key_003", name: "Analytics Dashboard", key: "aura_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
-  { id: "key_004", name: "Legacy Integration", key: "aura_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
+  { id: "key_001", name: "Public Market Feed", key: "orah_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
+  { id: "key_002", name: "Trading Bot Integration", key: "orah_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
+  { id: "key_003", name: "Analytics Dashboard", key: "orah_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
+  { id: "key_004", name: "Legacy Integration", key: "orah_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
 ];
 
 const deployedContracts: any[] = [
-  { id: "ctr_001", name: "AURA Token", symbol: "AURA", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1AURAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "a1b2c3d4e5f6...", deployedAt: "2025-01-20" },
-  { id: "ctr_002", name: "Aura Governance", symbol: "AGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1AGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "b2c3d4e5f6a1...", deployedAt: "2025-02-01" },
+  { id: "ctr_001", name: "Orah Token", symbol: "ORAH", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1ORAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "c3d4e5f6a1b2...", deployedAt: "2026-01-10" },
+  { id: "ctr_002", name: "Orah Governance", symbol: "OGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1OGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "d4e5f6a1b2c3...", deployedAt: "2026-01-20" },
 ];
 
 /* ─── STATS ─── */
@@ -163,7 +163,7 @@ router.post("/api-keys", (req, res) => {
   const newKey = {
     id: `key_${(mockApiKeys.length + 1).toString().padStart(3, "0")}`,
     name, type, rateLimit: parseInt(rateLimit) || 100,
-    key: `aura_${type === "public" ? "pub" : "prv"}_${rand}`,
+    key: `orah_${type === "public" ? "pub" : "prv"}_${rand}`,
     calls24h: 0,
     status: "active",
     createdAt: new Date().toISOString().split("T")[0],
