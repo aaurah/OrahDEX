@@ -35,6 +35,8 @@ import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
 import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
 import { MobileSettings } from "@/pages/mobile/MobileSettings";
 import { MobileTrade } from "@/pages/mobile/MobileTrade";
+import { MobileLiquidity } from "@/pages/mobile/MobileLiquidity";
+import { Liquidity } from "@/pages/Liquidity";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -141,6 +143,7 @@ function Router() {
                 {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
               </Route>
               <Route path="/dex" component={DexHub} />
+              <Route path="/liquidity" component={MobileLiquidity} />
               <Route path="/p2p" component={P2P} />
               <Route path="/portfolio" component={MobilePortfolio} />
               <Route path="/settings" component={MobileSettings} />
@@ -160,6 +163,7 @@ function Router() {
               <Route path="/trade/:symbol" component={SpotTrading} />
               <Route path="/futures/:symbol" component={FuturesTrading} />
               <Route path="/dex" component={DexHub} />
+              <Route path="/liquidity" component={Liquidity} />
               <Route path="/p2p" component={P2P} />
               <Route path="/portfolio" component={Portfolio} />
               <Route component={NotFound} />
