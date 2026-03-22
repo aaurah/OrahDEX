@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { verifyTOTP } from '@/lib/totp';
 
 const ADMIN_EMAIL = 'aaurah@protonmail.com';
-const ADMIN_PASSWORD = 'admin123';
+const DEFAULT_PASSWORD = 'admin123';
 
 interface AdminAuthState {
   isAuthenticated: boolean;
@@ -12,6 +12,7 @@ interface AdminAuthState {
   twoFaVerified: boolean;
   email: string | null;
   displayName: string;
+  storedPassword: string;
   error: string | null;
   login: (email: string, password: string) => boolean;
   verifyTotp: (code: string) => Promise<boolean>;
@@ -21,6 +22,7 @@ interface AdminAuthState {
   logout: () => void;
   clearError: () => void;
   updateProfile: (fields: { displayName?: string }) => void;
+  updatePassword: (newPassword: string) => void;
 }
 
 export const useAdminAuthStore = create<AdminAuthState>()(
@@ -32,16 +34,17 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       twoFaVerified: false,
       email: null,
       displayName: 'Aaurah',
+      storedPassword: DEFAULT_PASSWORD,
       error: null,
 
       login: (email, password) => {
-        if (email.trim().toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+        const { storedPassword } = get();
+        const validPassword = storedPassword || DEFAULT_PASSWORD;
+        if (email.trim().toLowerCase() === ADMIN_EMAIL && password === validPassword) {
           const { twoFaEnabled } = get();
           if (!twoFaEnabled) {
-            // No 2FA — grant access immediately
             set({ email: ADMIN_EMAIL, isAuthenticated: true, error: null, twoFaVerified: false });
           } else {
-            // Credentials OK — hold until TOTP verified
             set({ email: ADMIN_EMAIL, error: null, twoFaVerified: false });
           }
           return true;
@@ -78,6 +81,8 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       updateProfile: (fields) => set((s) => ({
         displayName: fields.displayName ?? s.displayName,
       })),
+
+      updatePassword: (newPassword) => set({ storedPassword: newPassword }),
     }),
     {
       name: 'aura-admin-auth',
@@ -85,6 +90,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
         displayName: s.displayName,
+        storedPassword: s.storedPassword,
         // Never persist isAuthenticated — require re-login each session
       }),
     }

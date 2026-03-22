@@ -147,6 +147,8 @@ function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string;
 
 // ── Reset Password Modal ───────────────────────────────────────────────────────
 function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: string; email: string }; onClose: () => void }) {
+  const { updatePassword } = useAdminAuthStore();
+  const isSuperadmin = admin.id === '__superadmin__';
   const [newPw, setNewPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
@@ -157,11 +159,16 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
     if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (newPw !== confirm) { setError("Passwords do not match."); return; }
     setError("");
-    await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: newPw }),
-    });
+    if (isSuperadmin) {
+      // Superadmin password lives in the auth store (persisted to localStorage)
+      updatePassword(newPw);
+    } else {
+      await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPw }),
+      });
+    }
     setDone(true);
     setTimeout(onClose, 1800);
   };
