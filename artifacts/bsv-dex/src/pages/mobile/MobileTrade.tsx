@@ -128,9 +128,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           <span className="text-base font-bold truncate">
             {base}<span className="text-muted-foreground font-normal text-sm">/{quote}</span>
           </span>
-          <svg className="w-3 h-3 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-          </svg>
         </button>
 
         {/* Right icons */}
