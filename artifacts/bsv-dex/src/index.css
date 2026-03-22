@@ -31,39 +31,83 @@
   --color-sell-muted: hsl(var(--sell-muted));
 }
 
+/* ───── DARK (default) ───── */
 :root {
-  /* Dark Exchange Theme */
-  --background: 216 20% 5%;    /* #0b0e11 */
-  --foreground: 210 20% 90%;   /* #eaecef */
-  
-  --card: 216 15% 9%;          /* #181a20 */
+  --background: 216 20% 5%;
+  --foreground: 210 20% 90%;
+  --card: 216 15% 9%;
   --card-foreground: 210 20% 90%;
-  
-  --popover: 216 15% 12%;      /* #1e2329 */
+  --popover: 216 15% 12%;
   --popover-foreground: 210 20% 90%;
-  
-  --primary: 43 96% 56%;       /* #fcd535 (Binance Yellow) */
+  --primary: 43 96% 56%;
   --primary-foreground: 216 20% 5%;
-  
-  --secondary: 216 15% 16%;    /* #2b3139 */
+  --secondary: 216 15% 16%;
   --secondary-foreground: 210 20% 90%;
-  
-  --muted: 216 15% 16%;        /* #2b3139 */
-  --muted-foreground: 215 16% 55%; /* #848e9c */
-  
+  --muted: 216 15% 16%;
+  --muted-foreground: 215 16% 55%;
   --accent: 216 15% 16%;
   --accent-foreground: 210 20% 90%;
-  
-  --destructive: 348 83% 47%;  /* #f6465d */
+  --destructive: 348 83% 47%;
   --destructive-foreground: 0 0% 100%;
-  
-  --border: 216 15% 16%;       /* #2b3139 */
+  --border: 216 15% 16%;
   --input: 216 15% 16%;
   --ring: 43 96% 56%;
+  --buy: 142 71% 45%;
+  --sell: 348 83% 47%;
+  --buy-muted: 142 71% 45% / 0.15;
+  --sell-muted: 348 83% 47% / 0.15;
+}
 
-  /* Trading Colors */
-  --buy: 142 71% 45%;          /* #0ecb81 */
-  --sell: 348 83% 47%;         /* #f6465d */
+/* ───── LIGHT ───── */
+html.light {
+  --background: 210 20% 98%;
+  --foreground: 216 20% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 216 20% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 216 20% 10%;
+  --primary: 43 96% 45%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 16% 93%;
+  --secondary-foreground: 216 20% 15%;
+  --muted: 210 16% 93%;
+  --muted-foreground: 215 16% 40%;
+  --accent: 210 16% 93%;
+  --accent-foreground: 216 20% 10%;
+  --destructive: 348 83% 47%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 210 16% 86%;
+  --input: 210 16% 86%;
+  --ring: 43 96% 45%;
+  --buy: 142 71% 38%;
+  --sell: 348 83% 47%;
+  --buy-muted: 142 71% 38% / 0.12;
+  --sell-muted: 348 83% 47% / 0.12;
+}
+
+/* ───── AMOLED (true black) ───── */
+html.amoled {
+  --background: 0 0% 0%;
+  --foreground: 210 20% 92%;
+  --card: 0 0% 3%;
+  --card-foreground: 210 20% 92%;
+  --popover: 0 0% 5%;
+  --popover-foreground: 210 20% 92%;
+  --primary: 43 100% 58%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 0 0% 7%;
+  --secondary-foreground: 210 20% 92%;
+  --muted: 0 0% 7%;
+  --muted-foreground: 215 16% 50%;
+  --accent: 0 0% 7%;
+  --accent-foreground: 210 20% 92%;
+  --destructive: 348 83% 47%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 10%;
+  --input: 0 0% 10%;
+  --ring: 43 100% 58%;
+  --buy: 142 71% 45%;
+  --sell: 348 83% 47%;
   --buy-muted: 142 71% 45% / 0.15;
   --sell-muted: 348 83% 47% / 0.15;
 }
@@ -75,43 +119,22 @@
   body {
     @apply bg-background text-foreground font-sans antialiased selection:bg-primary/30 selection:text-primary;
   }
-  
-  /* Custom scrollbar for deep dark UI */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    @apply bg-transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-muted rounded-full;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground/50;
-  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-muted rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/50; }
 }
 
-/* Trading utilities */
 .tabular-nums-aligned {
   font-variant-numeric: tabular-nums;
   @apply font-mono tracking-tight;
 }
-
 .depth-bar-buy {
   background: linear-gradient(90deg, transparent 0%, var(--color-buy-muted) 100%);
 }
-
 .depth-bar-sell {
   background: linear-gradient(90deg, transparent 0%, var(--color-sell-muted) 100%);
 }
-
-/* Hide number input spinners */
-input[type=number]::-webkit-inner-spin-button, 
-input[type=number]::-webkit-outer-spin-button { 
-  -webkit-appearance: none; 
-  margin: 0; 
-}
-input[type=number] {
-  -moz-appearance: textfield;
-}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }

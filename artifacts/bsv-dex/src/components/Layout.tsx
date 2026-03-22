@@ -1,10 +1,14 @@
 import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Zap } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Zap, Sun, Moon, Smartphone, Settings } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useThemeStore } from "@/store/useThemeStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+
+const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone };
+const THEME_CYCLE = ["dark", "light", "amoled"] as const;
 
 const NAV_LINKS = [
   { href: "/", label: "Markets", icon: Activity },
@@ -21,8 +25,15 @@ const NETWORK_BADGE: Record<string, { label: string; color: string }> = {
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { address, provider, network, disconnect } = useWalletStore();
+  const { theme, setTheme } = useThemeStore();
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const ThemeIcon = THEME_ICONS[theme ?? "dark"];
+  const cycleTheme = () => {
+    const idx = THEME_CYCLE.indexOf(theme as typeof THEME_CYCLE[number]);
+    setTheme(THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]);
+  };
 
   const networkBadge = network ? NETWORK_BADGE[network] : null;
 
@@ -66,7 +77,22 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Theme toggle */}
+          <button
+            onClick={cycleTheme}
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+            title={`Switch theme (${theme})`}
+          >
+            <ThemeIcon className="w-4 h-4" />
+          </button>
+          {/* Admin link */}
+          <Link href="/admin"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+            title="Admin Panel"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
           {address ? (
             <div className="flex items-center gap-2">
               <div className="hidden sm:flex flex-col items-end">
