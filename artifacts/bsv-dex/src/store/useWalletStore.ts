@@ -17,11 +17,13 @@ interface WalletState {
   network: WalletNetwork | null;
   chainId: number | null;
   isConnecting: boolean;
-  // Auto-created BSV wallet (for EVM-connected users who need BSV to trade)
   bsvAddress: string | null;
   bsvMnemonic: string[] | null;
+  disconnectPending: boolean;
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
+  requestDisconnect: () => void;
+  cancelDisconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBsvWallet: (address: string, mnemonic: string[]) => void;
 }
@@ -36,6 +38,7 @@ export const useWalletStore = create<WalletState>()(
       isConnecting: false,
       bsvAddress: null,
       bsvMnemonic: null,
+      disconnectPending: false,
       connect: (wallet) =>
         set({
           address: wallet.address,
@@ -43,6 +46,7 @@ export const useWalletStore = create<WalletState>()(
           network: wallet.network,
           chainId: wallet.chainId ?? null,
           isConnecting: false,
+          disconnectPending: false,
         }),
       disconnect: () =>
         set({
@@ -53,7 +57,10 @@ export const useWalletStore = create<WalletState>()(
           isConnecting: false,
           bsvAddress: null,
           bsvMnemonic: null,
+          disconnectPending: false,
         }),
+      requestDisconnect: () => set({ disconnectPending: true }),
+      cancelDisconnect: () => set({ disconnectPending: false }),
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBsvWallet: (bsvAddress, bsvMnemonic) => set({ bsvAddress, bsvMnemonic }),
     }),
