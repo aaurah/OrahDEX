@@ -158,7 +158,6 @@ export default function MarketsScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
             {topGainers.map((m: typeof MOCK_MARKETS[0]) => (
               <Pressable key={m.symbol} style={styles.moverCard} onPress={() => openTrade(m)}>
-                <CoinIcon base={m.base} />
                 <Text style={styles.moverBase}>{m.base}</Text>
                 <Text style={styles.moverPrice}>${formatPrice(m.price)}</Text>
                 <View style={[styles.changePill, { backgroundColor: m.change >= 0 ? C.buyBg : C.sellBg }]}>
@@ -221,7 +220,6 @@ export default function MarketsScreen() {
               activeOpacity={0.7}
             >
               <View style={[{ flex: 2, flexDirection: "row", alignItems: "center", gap: 10 }]}>
-                <CoinIcon base={m.base} />
                 <View>
                   <Text style={styles.pairBase}>{m.base}<Text style={styles.pairQuote}>/{m.quote}</Text></Text>
                   {m.type === "futures" && (
