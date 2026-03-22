@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
-  Activity, Lock, LogOut, Info, FileText, ExternalLink, ChevronRight,
+  Activity, Lock, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -189,16 +189,6 @@ export function MobileSettings() {
         />
       </Section>
 
-      <Section title="Admin">
-        <Row
-          icon={Shield}
-          iconColor="#8B5CF6"
-          label="Admin Panel"
-          value="Platform management & controls"
-          onClick={() => window.open(`${BASE_URL}/admin`, "_blank")}
-          rightEl={<ExternalLink size={14} className="text-muted-foreground shrink-0" />}
-        />
-      </Section>
 
       <Section title="About">
         <Row icon={Info} label="Version" value="1.0.0" />
