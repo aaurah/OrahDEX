@@ -9,34 +9,59 @@ import { cn } from "@/lib/utils";
 
 // Steps:
 //  "choice"  → Does the user already have a BSV wallet?
-//  "import"  → Enter seed phrase to import
-//  "intro"   → Intro before creating new wallet
+//  "import"  → Enter seed phrase to import existing wallet
+//  "intro"   → Intro before creating a brand-new wallet
 //  "phrase"  → Show generated seed phrase
 //  "confirm" → User confirms they saved the phrase
-//  "done"    → Wallet activated
+//  "done"    → Wallet activated – dismiss to trade
 type Step = "choice" | "import" | "intro" | "phrase" | "confirm" | "done";
 
 export function BsvAutoWalletModal() {
   const { address, network, bsvAddress, setBsvWallet } = useWalletStore();
 
-  // Show only when EVM wallet is connected with no BSV wallet yet
-  const needsBsv = !!address && network === "evm" && !bsvAddress;
+  // showModal is set true when the EVM wallet connects without a BSV wallet.
+  // It stays true (even after setBsvWallet is called) until the user dismisses.
+  const [showModal, setShowModal] = useState(false);
+  const [step, setStep]           = useState<Step>("choice");
+  const [mnemonic, setMnemonic]   = useState<string[]>([]);
+  const [bsvAddr, setBsvAddr]     = useState("");
+  const [revealed, setRevealed]   = useState(false);
+  const [copied, setCopied]       = useState(false);
+  const [checked, setChecked]     = useState(false);
+  const [visible, setVisible]     = useState(false);
 
-  const [step, setStep]         = useState<Step>("choice");
-  const [mnemonic, setMnemonic] = useState<string[]>([]);
-  const [bsvAddr, setBsvAddr]   = useState("");
-  const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied]     = useState(false);
-  const [checked, setChecked]   = useState(false);
-  const [visible, setVisible]   = useState(false);
-
-  // Import flow state
+  // Import-flow state
   const [importInput, setImportInput] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
-  const [importAddr, setImportAddr]   = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Prepare new wallet words when create flow starts
+  // Open the modal whenever EVM wallet is connected but BSV wallet is missing
+  useEffect(() => {
+    const needsBsv = !!address && network === "evm" && !bsvAddress;
+    if (needsBsv && !showModal) {
+      setShowModal(true);
+      setStep("choice");
+      setRevealed(false);
+      setCopied(false);
+      setChecked(false);
+      setImportInput("");
+      setImportError("");
+      setBsvAddr("");
+      setMnemonic([]);
+      requestAnimationFrame(() => setVisible(true));
+    }
+    // Close if wallet was disconnected
+    if (!address) {
+      setShowModal(false);
+      setVisible(false);
+    }
+  }, [address, network, bsvAddress]);
+
+  const dismiss = () => {
+    setVisible(false);
+    setTimeout(() => setShowModal(false), 300);
+  };
+
   const prepareNew = () => {
     const words = generateMnemonic(12);
     const addr  = deriveAddress(words, "bsv");
@@ -44,45 +69,29 @@ export function BsvAutoWalletModal() {
     setBsvAddr(addr);
   };
 
-  // Reset all state when modal appears
-  useEffect(() => {
-    if (needsBsv) {
-      setStep("choice");
-      setRevealed(false);
-      setCopied(false);
-      setChecked(false);
-      setImportInput("");
-      setImportError(null);
-      setImportAddr("");
-      requestAnimationFrame(() => setVisible(true));
-    } else {
-      setVisible(false);
-    }
-  }, [needsBsv]);
-
   const copyPhrase = () => {
     navigator.clipboard.writeText(mnemonic.join(" "));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const handleImportValidate = () => {
+  const handleImportSubmit = () => {
     const res = validateMnemonic(importInput);
     if (!res.valid) { setImportError(res.error ?? "Invalid phrase"); return; }
     const addr = deriveAddress(res.words, "bsv");
-    setImportAddr(addr);
-    setImportError(null);
     setBsvWallet(addr, res.words);
-    setStep("done");
     setBsvAddr(addr);
+    setStep("done");
   };
 
-  const handleSave = () => {
+  const handleActivate = () => {
     setBsvWallet(bsvAddr, mnemonic);
     setStep("done");
   };
 
-  if (!needsBsv) return null;
+  if (!showModal) return null;
+
+  const wordCount = importInput.trim().split(/\s+/).filter(Boolean).length;
 
   return (
     <div
@@ -98,7 +107,7 @@ export function BsvAutoWalletModal() {
         )}
       >
 
-        {/* ── CHOICE ── */}
+        {/* ─── CHOICE ─── */}
         {step === "choice" && (
           <div className="p-6 space-y-5">
             <div className="flex flex-col items-center text-center gap-3 pt-2">
@@ -106,9 +115,9 @@ export function BsvAutoWalletModal() {
                 <Zap className="w-8 h-8 text-amber-400" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-foreground">BSV Wallet Required</h2>
+                <h2 className="text-xl font-bold text-foreground">BSV Wallet Needed</h2>
                 <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                  All trades on OrahDEX settle on-chain via Bitcoin SV.
+                  All trades on OrahDEX settle on Bitcoin SV.
                   Do you already have a BSV wallet?
                 </p>
               </div>
@@ -122,8 +131,8 @@ export function BsvAutoWalletModal() {
               <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
                 <KeyRound className="w-5 h-5 text-primary" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">Yes — Import my existing wallet</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">Yes — import my BSV wallet</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Enter your 12 or 24-word seed phrase</p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -137,19 +146,19 @@ export function BsvAutoWalletModal() {
               <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
                 <PlusCircle className="w-5 h-5 text-amber-400" />
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-foreground">No — Create a new BSV wallet</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Generate a fresh wallet and save your seed phrase</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground">No — create a new BSV wallet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Generate a fresh wallet and save your phrase</p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
             </button>
           </div>
         )}
 
-        {/* ── IMPORT ── */}
+        {/* ─── IMPORT ─── */}
         {step === "import" && (
           <div className="p-6 space-y-5">
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center">
                 <KeyRound className="w-5 h-5 text-primary" />
               </div>
@@ -161,7 +170,7 @@ export function BsvAutoWalletModal() {
 
             <div className="bg-red-500/8 border border-red-500/25 rounded-2xl p-3 flex gap-2.5">
               <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-300/90">
+              <p className="text-xs text-red-300/90 leading-relaxed">
                 Never share your seed phrase with anyone. OrahDEX will never ask for it outside this import flow.
               </p>
             </div>
@@ -174,7 +183,7 @@ export function BsvAutoWalletModal() {
                 ref={textareaRef}
                 value={importInput}
                 onChange={(e) => { setImportInput(e.target.value); setImportError(null); }}
-                placeholder="Enter your 12 or 24 words separated by spaces…"
+                placeholder="word1 word2 word3 … (12 or 24 words)"
                 rows={4}
                 className="w-full bg-secondary border border-border rounded-xl px-3 py-3 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 resize-none"
               />
@@ -184,22 +193,21 @@ export function BsvAutoWalletModal() {
                 </p>
               )}
               <p className="text-[10px] text-muted-foreground/60 mt-1">
-                {importInput.trim().split(/\s+/).filter(Boolean).length} / 12 words entered
+                {wordCount} / 12 words entered
               </p>
             </div>
 
             <button
-              onClick={handleImportValidate}
-              disabled={importInput.trim().split(/\s+/).filter(Boolean).length < 12}
+              onClick={handleImportSubmit}
+              disabled={wordCount < 12}
               className={cn(
                 "w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all",
-                importInput.trim().split(/\s+/).filter(Boolean).length >= 12
+                wordCount >= 12
                   ? "bg-primary text-black hover:bg-primary/90"
                   : "bg-muted text-muted-foreground cursor-not-allowed"
               )}
             >
-              Import Wallet
-              <ChevronRight className="w-4 h-4" />
+              Import Wallet <ChevronRight className="w-4 h-4" />
             </button>
 
             <button
@@ -211,7 +219,7 @@ export function BsvAutoWalletModal() {
           </div>
         )}
 
-        {/* ── INTRO ── */}
+        {/* ─── INTRO ─── */}
         {step === "intro" && (
           <div className="p-6 space-y-5">
             <div className="flex flex-col items-center text-center gap-3 pt-2">
@@ -221,20 +229,20 @@ export function BsvAutoWalletModal() {
               <div>
                 <h2 className="text-xl font-bold text-foreground">Save Your Seed Phrase</h2>
                 <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                  We've generated a new BSV wallet for you. Your seed phrase is the <strong>only</strong> way to recover it — store it safely.
+                  A fresh BSV wallet has been generated for you. Your seed phrase is the <strong>only</strong> way to recover it.
                 </p>
               </div>
             </div>
 
-            <div className="bg-amber-500/8 border border-amber-500/25 rounded-2xl p-4 flex gap-3">
+            <div className="bg-amber-500/8 border border-amber-500/25 rounded-2xl p-3.5 flex gap-3">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-300/90 leading-relaxed">
-                Never share your seed phrase. OrahDEX will never ask for it. If you lose it, your BSV wallet cannot be recovered.
+                Never share your seed phrase. OrahDEX will never ask for it. Losing it means losing access to your BSV wallet permanently.
               </p>
             </div>
 
             <div className="space-y-2">
-              {["View & copy your 12-word seed phrase", "Write it down on paper or store it securely", "Confirm you've saved it to activate trading"].map((t, i) => (
+              {["View and copy your 12-word seed phrase", "Write it down or store it securely offline", "Confirm you've saved it to activate trading"].map((t, i) => (
                 <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-secondary/60 border border-border">
                   <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">{i + 1}</div>
                   <p className="text-sm text-foreground">{t}</p>
@@ -246,14 +254,13 @@ export function BsvAutoWalletModal() {
               onClick={() => setStep("phrase")}
               className="w-full py-3.5 rounded-2xl bg-primary text-black font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-all"
             >
-              Show My Seed Phrase
-              <ChevronRight className="w-4 h-4" />
+              Show My Seed Phrase <ChevronRight className="w-4 h-4" />
             </button>
             <button onClick={() => setStep("choice")} className="w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">← Back</button>
           </div>
         )}
 
-        {/* ── PHRASE ── */}
+        {/* ─── PHRASE ─── */}
         {step === "phrase" && (
           <div className="p-6 space-y-4">
             <div className="flex items-center gap-3">
@@ -266,6 +273,7 @@ export function BsvAutoWalletModal() {
               </div>
             </div>
 
+            {/* Word grid */}
             <div className="relative">
               <div className={cn(
                 "grid grid-cols-3 gap-2 transition-all duration-200",
@@ -284,8 +292,7 @@ export function BsvAutoWalletModal() {
                     onClick={() => setRevealed(true)}
                     className="flex items-center gap-2 bg-card border border-border rounded-2xl px-5 py-3 text-sm font-semibold text-foreground shadow-xl hover:bg-secondary transition-all"
                   >
-                    <Eye className="w-4 h-4 text-primary" />
-                    Tap to Reveal
+                    <Eye className="w-4 h-4 text-primary" /> Tap to Reveal
                   </button>
                 </div>
               )}
@@ -308,11 +315,6 @@ export function BsvAutoWalletModal() {
               <p className="text-xs font-mono text-foreground break-all leading-relaxed">{bsvAddr}</p>
             </div>
 
-            <div className="bg-red-500/8 border border-red-500/25 rounded-2xl p-3 flex gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-300/90">Never share your seed phrase. OrahDEX will never ask for it.</p>
-            </div>
-
             <button
               onClick={() => setStep("confirm")}
               disabled={!revealed}
@@ -326,7 +328,7 @@ export function BsvAutoWalletModal() {
           </div>
         )}
 
-        {/* ── CONFIRM ── */}
+        {/* ─── CONFIRM ─── */}
         {step === "confirm" && (
           <div className="p-6 space-y-5">
             <div className="flex flex-col items-center text-center gap-3 pt-2">
@@ -334,7 +336,7 @@ export function BsvAutoWalletModal() {
                 <Shield className="w-8 h-8 text-primary" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-foreground">Confirm & Save</h2>
+                <h2 className="text-xl font-bold text-foreground">Confirm & Activate</h2>
                 <p className="text-sm text-muted-foreground mt-1">Confirm you've stored your seed phrase safely before activating your BSV wallet.</p>
               </div>
             </div>
@@ -355,7 +357,7 @@ export function BsvAutoWalletModal() {
             </button>
 
             <button
-              onClick={handleSave}
+              onClick={handleActivate}
               disabled={!checked}
               className={cn(
                 "w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all",
@@ -368,7 +370,7 @@ export function BsvAutoWalletModal() {
           </div>
         )}
 
-        {/* ── DONE ── */}
+        {/* ─── DONE ─── */}
         {step === "done" && (
           <div className="p-6 space-y-5">
             <div className="flex flex-col items-center text-center gap-4 py-4">
@@ -378,17 +380,17 @@ export function BsvAutoWalletModal() {
               <div>
                 <h2 className="text-xl font-bold text-foreground">BSV Wallet Ready!</h2>
                 <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                  Your BSV wallet is activated. You can now trade on OrahDEX with on-chain settlement.
+                  Your BSV wallet is now linked. You can trade on OrahDEX with full on-chain settlement.
                 </p>
               </div>
               <div className="w-full bg-secondary/60 border border-border rounded-xl p-3 text-left">
                 <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">BSV Address</p>
-                <p className="text-xs font-mono text-green-400 break-all">{bsvAddr || importAddr}</p>
+                <p className="text-xs font-mono text-green-400 break-all">{bsvAddr}</p>
               </div>
             </div>
 
             <button
-              onClick={handleSave}
+              onClick={dismiss}
               className="w-full py-3.5 rounded-2xl bg-primary text-black font-bold text-sm hover:bg-primary/90 transition-all"
             >
               Start Trading →
