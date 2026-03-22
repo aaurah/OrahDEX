@@ -1,10 +1,11 @@
 import { useState } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
-  Activity, Lock, LogOut, Info, FileText, ChevronRight,
+  Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
 import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,7 @@ type BiometricToastState = { show: false } | { show: true; success: boolean; mes
 
 export function MobileSettings() {
   const { address, provider, network, disconnect } = useWalletStore();
+  const { open: openWallet } = useWalletModalStore();
   const { isEnabled, credentialId, setEnabled } = useBiometricStore();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
@@ -149,7 +151,7 @@ export function MobileSettings() {
             />
           </>
         ) : (
-          <Row icon={Link2} label="Connect Wallet" value="Tap to connect your wallet" />
+          <Row icon={Link2} label="Connect Wallet" value="Tap to connect your wallet" onClick={openWallet} />
         )}
       </Section>
 
