@@ -119,10 +119,12 @@ const COIN_COLORS: Record<string, string> = {
 };
 
 function fmt(p: number) {
-  if (!p) return "—";
-  if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (p >= 1) return p.toFixed(2);
-  return p.toFixed(4);
+  if (!p || !isFinite(p)) return "—";
+  if (p >= 1000)  return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (p >= 1)     return p.toFixed(2);
+  if (p >= 0.01)  return p.toFixed(4);
+  if (p >= 0.001) return p.toFixed(6);
+  return p.toFixed(8);
 }
 function fmtVol(v: number) {
   if (!v) return "—";
