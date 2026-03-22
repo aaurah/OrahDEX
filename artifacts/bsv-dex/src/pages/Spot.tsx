@@ -28,9 +28,19 @@ export function SpotTrading() {
   const ticker = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
   
-  const candles   = apiCandles   || generateMockCandles(ticker.lastPrice);
-  const orderBook = apiOrderBook || generateMockOrderBook(ticker.lastPrice);
-  const trades    = apiTrades    || generateMockTrades(ticker.lastPrice);
+  const candles = apiCandles || generateMockCandles(ticker.lastPrice);
+  const trades  = apiTrades  || generateMockTrades(ticker.lastPrice);
+
+  // Transform raw API format [[price, qty], ...] → { price, quantity, total }[]
+  function toEntries(raw: number[][], descending: boolean) {
+    const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
+    let cum = 0;
+    return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
+  }
+  const rawOB = apiOrderBook as any;
+  const orderBook = rawOB?.bids && Array.isArray(rawOB.bids[0])
+    ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
+    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice));
   const allOrders = (apiOrders as any[]) || [];
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");

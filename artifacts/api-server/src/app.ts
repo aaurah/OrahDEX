@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
+import { startLiquidityBot } from "./lib/liquidityBot.js";
 
 const app: Express = express();
 
@@ -33,5 +34,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", router);
 
 startPriceUpdater();
+startLiquidityBot();
 
 export default app;

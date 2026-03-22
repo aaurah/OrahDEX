@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
-import { generateOrderBook, generateRecentTrades, generateTicker } from "../lib/mockData.js";
+import { marketsTable, ordersTable } from "@workspace/db/schema";
+import { eq, and } from "drizzle-orm";
+import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
 
 const router: IRouter = Router();
+
+/** Normalise URL param → DB symbol (always dash-separated: BTC-USDT) */
+const normSymbol = (raw: string) => decodeURIComponent(raw).replace(/\//g, "-");
 
 router.get("/markets", async (req, res) => {
   try {
@@ -38,7 +41,7 @@ router.get("/markets", async (req, res) => {
 
 router.get("/markets/:symbol", async (req, res) => {
   try {
-    const symbol = decodeURIComponent(req.params.symbol);
+    const symbol = normSymbol(req.params.symbol);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) {
       res.status(404).json({ error: "Market not found" });
@@ -71,7 +74,7 @@ router.get("/markets/:symbol", async (req, res) => {
 
 router.get("/markets/:symbol/ticker", async (req, res) => {
   try {
-    const symbol = decodeURIComponent(req.params.symbol);
+    const symbol = normSymbol(req.params.symbol);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) {
       res.status(404).json({ error: "Market not found" });
@@ -95,7 +98,7 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
 
 router.get("/markets/:symbol/candles", async (req, res) => {
   try {
-    const symbol = decodeURIComponent(req.params.symbol);
+    const symbol = normSymbol(req.params.symbol);
     const interval = (req.query.interval as string) || "1h";
     const limit = Math.min(parseInt(req.query.limit as string) || 200, 1000);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
@@ -113,15 +116,50 @@ router.get("/markets/:symbol/candles", async (req, res) => {
 
 router.get("/markets/:symbol/orderbook", async (req, res) => {
   try {
-    const symbol = decodeURIComponent(req.params.symbol);
-    const depth = Math.min(parseInt(req.query.depth as string) || 50, 100);
+    const symbol = normSymbol(req.params.symbol);
+    const depth  = Math.min(parseInt(req.query.depth as string) || 20, 50);
+
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) {
       res.status(404).json({ error: "Market not found" });
       return;
     }
-    const orderBook = generateOrderBook(symbol, parseFloat(market.lastPrice), depth);
-    res.json(orderBook);
+
+    // Pull real open orders (bot + users) from DB
+    const openOrders = await db
+      .select()
+      .from(ordersTable)
+      .where(and(eq(ordersTable.symbol, symbol), eq(ordersTable.status, "open")));
+
+    // Aggregate by price level: sum quantities
+    const bidMap = new Map<string, number>();
+    const askMap = new Map<string, number>();
+
+    for (const o of openOrders) {
+      if (!o.price) continue;
+      const px  = parseFloat(o.price);
+      const qty = parseFloat(o.remainingQuantity);
+      if (!px || !qty) continue;
+      const key = px.toString();
+      if (o.side === "buy") {
+        bidMap.set(key, (bidMap.get(key) ?? 0) + qty);
+      } else {
+        askMap.set(key, (askMap.get(key) ?? 0) + qty);
+      }
+    }
+
+    // Sort bids descending, asks ascending, limit to depth
+    const bids = [...bidMap.entries()]
+      .sort((a, b) => parseFloat(b[0]) - parseFloat(a[0]))
+      .slice(0, depth)
+      .map(([price, qty]) => [parseFloat(price), qty]);
+
+    const asks = [...askMap.entries()]
+      .sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]))
+      .slice(0, depth)
+      .map(([price, qty]) => [parseFloat(price), qty]);
+
+    res.json({ bids, asks, lastPrice: parseFloat(market.lastPrice) });
   } catch (err) {
     req.log.error({ err }, "Failed to get order book");
     res.status(500).json({ error: "Internal server error" });
@@ -130,7 +168,7 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
 
 router.get("/markets/:symbol/trades", async (req, res) => {
   try {
-    const symbol = decodeURIComponent(req.params.symbol);
+    const symbol = normSymbol(req.params.symbol);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) {
