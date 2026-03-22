@@ -39,11 +39,13 @@ const LEVELS = [
 /* ── Compute sane base order size from 24-h volume ──────────────────────── */
 function baseSize(volume24h: number, midPrice: number): number {
   if (!midPrice || midPrice <= 0) return 0.001;
-  // target: roughly 0.03 % of daily volume per level in quote terms
-  const quotePerLevel = Math.max(volume24h * 0.0003, 10);
-  const base = quotePerLevel / midPrice;
-  // Floor at a sensible minimum so micro-cap coins aren't too small
-  return Math.max(base, 0.0001);
+  // target: ~0.03% of 24h volume per level in quote terms
+  const quotePerLevel = volume24h * 0.0003;
+  // Dynamic floor: at least worth 5 base units at current price (avoids insane qty)
+  const quoteFloor = midPrice * 5;
+  const base = Math.max(quotePerLevel, quoteFloor) / midPrice;
+  // Hard cap: no single level exceeds 500,000 base units; floor at 0.0001
+  return Math.min(Math.max(base, 0.0001), 500_000);
 }
 
 /* ── Build one side of the ladder ───────────────────────────────────────── */

@@ -5,10 +5,20 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatPrice(price: number, decimals: number = 2): string {
+export function formatPrice(price: number, decimals?: number): string {
+  if (!isFinite(price) || price === 0) return "0.00";
+  const abs = Math.abs(price);
+  let d = decimals ?? (
+    abs >= 1000  ? 2 :
+    abs >= 1     ? 2 :
+    abs >= 0.1   ? 4 :
+    abs >= 0.01  ? 4 :
+    abs >= 0.001 ? 6 :
+    8
+  );
   return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
   }).format(price);
 }
 
