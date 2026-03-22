@@ -212,8 +212,8 @@ export default function SettingsScreen() {
 
         {/* Branding */}
         <View style={styles.brandingSection}>
-          <Text style={styles.brandingTitle}>Aura<Text style={{ color: C.primary }}>DEX</Text></Text>
-          <Text style={styles.brandingSlogan}>✦ Always comes to Aura</Text>
+          <Text style={styles.brandingTitle}>Orah<Text style={{ color: C.primary }}>DEX</Text></Text>
+          <Text style={styles.brandingSlogan}>✦ Always comes to Orah DEX</Text>
           <Text style={styles.brandingVersion}>Non-custodial · On-chain settlement · BSV</Text>
         </View>
 

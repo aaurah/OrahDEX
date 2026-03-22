@@ -38,7 +38,7 @@ const ACTIVITY = [
   { time: "09:11", event: "BSV/USDT pair fee updated", type: "pair", detail: "0.1% → 0.08%" },
   { time: "09:08", event: "API key generated", type: "api", detail: "Trading Bot Integration" },
   { time: "09:01", event: "User suspended", type: "warn", detail: "usr_0004 — TOS violation" },
-  { time: "08:55", event: "AURA token deployed", type: "contract", detail: "BSV Mainnet" },
+  { time: "08:55", event: "ORAH token deployed", type: "contract", detail: "BSV Mainnet" },
   { time: "08:42", event: "New admin added", type: "admin", detail: "Finance Analyst role" },
   { time: "08:30", event: "ETH/USDT pair enabled", type: "pair", detail: "Spot market activated" },
 ];
@@ -59,7 +59,7 @@ export function AdminDashboard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold mb-1">Platform Overview</h2>
-        <p className="text-muted-foreground text-sm">Real-time Aura DEX system metrics and activity</p>
+        <p className="text-muted-foreground text-sm">Real-time Orah DEX system metrics and activity</p>
       </div>
 
       {/* System Status */}
@@ -114,7 +114,7 @@ export function AdminDashboard() {
               { sev: "info", msg: "API rate limit nearing capacity on pub key", time: "4h ago" },
               { sev: "info", msg: "BSV/BTC pair volume 42% above average", time: "6h ago" },
               { sev: "ok", msg: "All database backups completed", time: "8h ago" },
-              { sev: "ok", msg: "Smart contract audit passed — AURA token", time: "1d ago" },
+              { sev: "ok", msg: "Smart contract audit passed — ORAH token", time: "1d ago" },
             ].map((a, i) => (
               <div key={i} className={cn("flex items-start gap-3 p-3 rounded-xl border text-sm",
                 a.sev === "warn" ? "bg-orange-400/5 border-orange-400/20" :

@@ -49,7 +49,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-extrabold text-sm tracking-tight">
-                Aura<span className="text-primary">DEX</span>
+                Orah<span className="text-primary">DEX</span>
               </span>
               <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Admin Panel</span>
             </div>
@@ -122,7 +122,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <h1 className="text-sm font-bold text-foreground">
                 {NAV.find(isActive)?.label ?? "Admin Panel"}
               </h1>
-              <p className="text-xs text-muted-foreground">Aura DEX Platform Management</p>
+              <p className="text-xs text-muted-foreground">Orah DEX Platform Management</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

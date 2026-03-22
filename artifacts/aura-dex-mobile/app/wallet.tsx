@@ -67,7 +67,7 @@ export default function WalletScreen() {
           )}
           <View>
             <Text style={styles.title}>{getTitle()}</Text>
-            <Text style={styles.subtitle}>✦ Always comes to Aura</Text>
+            <Text style={styles.subtitle}>✦ Always comes to Orah DEX</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
@@ -161,7 +161,7 @@ function LandingView({
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Aura DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
+          Orah DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
         </Text>
       </View>
     </ScrollView>
@@ -384,7 +384,7 @@ function ImportView({ connect, onDone }: { connect: any; onDone: () => void }) {
       <View style={styles.warnCard}>
         <Feather name="alert-triangle" size={14} color="#FBBF24" />
         <Text style={styles.warnText}>
-          Never enter your seed phrase on untrusted sites. Aura DEX never stores or transmits your phrase — all derivation is local.
+          Never enter your seed phrase on untrusted sites. Orah DEX never stores or transmits your phrase — all derivation is local.
         </Text>
       </View>
 
@@ -441,7 +441,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Aura DEX never holds your funds. All trades settle directly on-chain.
+          Orah DEX never holds your funds. All trades settle directly on-chain.
         </Text>
       </View>
     </ScrollView>

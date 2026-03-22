@@ -98,7 +98,7 @@ export function AdminLogin() {
               <Zap className="w-5 h-5 text-white" strokeWidth={2.5} />
             </div>
             <span className="font-extrabold text-2xl tracking-tight text-foreground">
-              Aura<span className="text-primary">DEX</span>
+              Orah<span className="text-primary">DEX</span>
             </span>
           </div>
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
@@ -304,7 +304,7 @@ export function AdminLogin() {
 
         <div className="text-center mt-6">
           <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            ← Back to AuraDEX Exchange
+            ← Back to OrahDEX Exchange
           </a>
         </div>
       </div>

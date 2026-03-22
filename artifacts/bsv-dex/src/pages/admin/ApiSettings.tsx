@@ -12,7 +12,7 @@ const API_SETTINGS = [
   { label: "Order Book Depth", value: "50 levels", editable: true },
   { label: "Candle History Limit", value: "1000 bars", editable: true },
   { label: "API Version", value: "v1.4.2", editable: false },
-  { label: "CORS Origins", value: "*, app.auradex.io", editable: true },
+  { label: "CORS Origins", value: "*, app.orahdex.io", editable: true },
 ];
 
 export function AdminApiSettings() {
