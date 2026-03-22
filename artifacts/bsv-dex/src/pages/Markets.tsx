@@ -1,14 +1,18 @@
 import { useState } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
-import { USDT_MARKETS, BSV_MARKETS, FUTURES_MARKETS } from "@/lib/mock-data";
+import {
+  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS,
+  AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
+  FUTURES_MARKETS,
+} from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
-import { Search, Star, ArrowRightLeft, LineChart, CreditCard, TrendingUp, Zap } from "lucide-react";
+import { Search, Star, ArrowRightLeft, LineChart, CreditCard, TrendingUp, Zap, Flame, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Tab = "usdt" | "bsv" | "futures";
+type Tab = "favorites" | "new" | "usdt" | "btc" | "eth" | "bsv" | "ai" | "meme" | "defi" | "futures";
 
 const COIN_COLORS: Record<string, string> = {
   BSV:"#EAB308", BTC:"#F97316", ETH:"#8B5CF6", SOL:"#06B6D4",
@@ -18,7 +22,19 @@ const COIN_COLORS: Record<string, string> = {
   TRX:"#EF4444", NEAR:"#10B981", APT:"#06B6D4", ARB:"#60A5FA",
   OP:"#EF4444", SUI:"#3B82F6", INJ:"#2563EB", PEPE:"#22C55E",
   SHIB:"#F97316", MKR:"#22C55E", AAVE:"#7C3AED", CRV:"#F43F5E",
+  FET:"#06B6D4", AGIX:"#7C3AED", OCEAN:"#2563EB", RNDR:"#F97316",
 };
+
+function normalise(m: any): any {
+  const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
+  const quote = m.quoteAsset ?? m.quote ?? "USDT";
+  const price = parseFloat(m.lastPrice ?? m.price) || 0;
+  const chg   = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
+  const vol   = parseFloat(m.volume24h ?? m.volume) || 0;
+  const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
+  return { ...m, symbol: m.symbol ?? `${base}-${quote}`, baseAsset: base, quoteAsset: quote,
+    lastPrice: price, priceChangePercent24h: chg, volume24h: vol, type };
+}
 
 function coinBadge(base: string) {
   return (
@@ -31,6 +47,19 @@ function coinBadge(base: string) {
   );
 }
 
+const TAB_META: { id: Tab; label: string; color: string; desc: string }[] = [
+  { id: "favorites", label: "★ Favorites", color: "text-amber-400", desc: "Your starred pairs" },
+  { id: "new",       label: "NEW",          color: "text-green-400", desc: "Recently listed" },
+  { id: "usdt",      label: "USDT",         color: "text-blue-400",  desc: "All pairs quoted in USDT" },
+  { id: "btc",       label: "BTC",          color: "text-orange-400",desc: "All pairs quoted in BTC" },
+  { id: "eth",       label: "ETH",          color: "text-violet-400",desc: "All pairs quoted in ETH" },
+  { id: "bsv",       label: "BSV",          color: "text-amber-400", desc: "All pairs quoted in BSV · On-chain settlement" },
+  { id: "ai",        label: "AI",           color: "text-cyan-400",  desc: "Artificial Intelligence tokens" },
+  { id: "meme",      label: "MEME",         color: "text-pink-400",  desc: "Meme tokens" },
+  { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols" },
+  { id: "futures",   label: "Futures",      color: "text-red-400",   desc: "Perpetual futures · Up to 100× leverage" },
+];
+
 export function Markets() {
   const [tab, setTab] = useState<Tab>("usdt");
   const [search, setSearch] = useState("");
@@ -39,21 +68,29 @@ export function Markets() {
   const [buyCoin, setBuyCoin] = useState("BSV");
 
   const { data: apiMarkets } = useGetMarkets();
-  const raw = (apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[];
+  const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   function getMarkets(): any[] {
-    if (raw.length > 0) {
-      if (tab === "usdt")    return raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot");
-      if (tab === "bsv")     return raw.filter(m => m.quoteAsset === "BSV");
-      if (tab === "futures") return raw.filter(m => m.type === "futures");
+    const hasApi = raw.length > 0;
+    switch (tab) {
+      case "favorites": {
+        const pool = hasApi ? raw : [...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...AI_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS].map(normalise);
+        return pool.filter(m => stars.has(m.symbol));
+      }
+      case "new":     return NEW_MARKETS.map(normalise);
+      case "usdt":    return hasApi ? raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
+      case "btc":     return hasApi ? raw.filter(m => m.quoteAsset === "BTC") : BTC_MARKETS.map(normalise);
+      case "eth":     return hasApi ? raw.filter(m => m.quoteAsset === "ETH") : ETH_MARKETS.map(normalise);
+      case "bsv":     return hasApi ? raw.filter(m => m.quoteAsset === "BSV") : BSV_MARKETS.map(normalise);
+      case "ai":      return AI_MARKETS.map(normalise);
+      case "meme":    return MEME_MARKETS.map(normalise);
+      case "defi":    return DEFI_MARKETS.map(normalise);
+      case "futures": return hasApi ? raw.filter(m => m.type === "futures") : FUTURES_MARKETS.map(normalise);
+      default:        return [];
     }
-    if (tab === "usdt")    return USDT_MARKETS;
-    if (tab === "bsv")     return BSV_MARKETS;
-    return FUTURES_MARKETS;
   }
 
   const markets = getMarkets();
-
   const filtered = markets.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
@@ -62,11 +99,24 @@ export function Markets() {
   const toggleStar = (symbol: string) =>
     setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
 
-  const TABS: { id: Tab; label: string; icon: React.ReactNode; count: number }[] = [
-    { id: "usdt",    label: "USDT Market",    icon: <Zap className="w-3.5 h-3.5" />,        count: raw.length ? raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot").length : USDT_MARKETS.length },
-    { id: "bsv",     label: "BSV Market",     icon: <TrendingUp className="w-3.5 h-3.5" />, count: raw.length ? raw.filter(m => m.quoteAsset === "BSV").length : BSV_MARKETS.length },
-    { id: "futures", label: "Futures",         icon: <LineChart className="w-3.5 h-3.5" />,  count: raw.length ? raw.filter(m => m.type === "futures").length : FUTURES_MARKETS.length },
-  ];
+  function tabCount(t: Tab): number {
+    const hasApi = raw.length > 0;
+    switch (t) {
+      case "favorites": return [...(hasApi ? raw : [...USDT_MARKETS,...BSV_MARKETS,...BTC_MARKETS,...ETH_MARKETS,...AI_MARKETS,...MEME_MARKETS,...DEFI_MARKETS].map(normalise))].filter(m => stars.has(m.symbol)).length;
+      case "new":     return NEW_MARKETS.length;
+      case "usdt":    return hasApi ? raw.filter(m => m.quoteAsset === "USDT" && m.type === "spot").length : USDT_MARKETS.length;
+      case "btc":     return hasApi ? raw.filter(m => m.quoteAsset === "BTC").length : BTC_MARKETS.length;
+      case "eth":     return hasApi ? raw.filter(m => m.quoteAsset === "ETH").length : ETH_MARKETS.length;
+      case "bsv":     return hasApi ? raw.filter(m => m.quoteAsset === "BSV").length : BSV_MARKETS.length;
+      case "ai":      return AI_MARKETS.length;
+      case "meme":    return MEME_MARKETS.length;
+      case "defi":    return DEFI_MARKETS.length;
+      case "futures": return hasApi ? raw.filter(m => m.type === "futures").length : FUTURES_MARKETS.length;
+      default:        return 0;
+    }
+  }
+
+  const meta = TAB_META.find(t => t.id === tab)!;
 
   return (
     <div className="flex flex-col h-full">
@@ -87,42 +137,45 @@ export function Markets() {
             </button>
           </div>
 
-          {/* Tabs + Search */}
-          <div className="flex items-center gap-4 mt-5 flex-wrap">
-            <div className="flex gap-0 border border-border rounded-xl overflow-hidden shrink-0">
-              {TABS.map((t, i) => (
-                <button
-                  key={t.id}
-                  onClick={() => { setTab(t.id); setSearch(""); }}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors",
-                    i > 0 && "border-l border-border",
-                    tab === t.id
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-                  )}
-                >
-                  {t.icon}
-                  {t.label}
-                  <span className={cn(
-                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full",
-                    tab === t.id ? "bg-white/20 text-white" : "bg-secondary text-muted-foreground"
-                  )}>
-                    {t.count}
-                  </span>
-                </button>
-              ))}
-            </div>
+          {/* Tabs */}
+          <div className="mt-5 flex items-center gap-3 overflow-x-auto pb-1 scrollbar-hide">
+            {TAB_META.map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setTab(t.id); setSearch(""); }}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
+                  tab === t.id
+                    ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
+                    : "text-muted-foreground border-border hover:border-primary/40 hover:text-foreground hover:bg-white/5"
+                )}
+              >
+                {t.label}
+                <span className={cn(
+                  "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
+                  tab === t.id ? "bg-white/20 text-white" : "bg-secondary text-muted-foreground"
+                )}>
+                  {tabCount(t.id)}
+                </span>
+              </button>
+            ))}
+          </div>
 
-            <div className="relative flex-1 max-w-xs">
+          {/* Search row */}
+          <div className="flex items-center gap-3 mt-3">
+            <div className="relative max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder={`Search ${tab === "futures" ? "futures" : tab.toUpperCase() + " pairs"}…`}
+                placeholder={`Search ${meta.label} pairs…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-all"
+                className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary transition-all"
               />
+            </div>
+            <div className={cn("flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-border rounded-xl", meta.color)}>
+              <Zap className="w-3.5 h-3.5" />
+              <span className="text-xs font-semibold text-foreground/70">{meta.desc} · <span className={meta.color}>{filtered.length} markets</span></span>
             </div>
           </div>
         </div>
@@ -131,29 +184,6 @@ export function Markets() {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4">
-
-          {/* Market label */}
-          <div className="mb-3 flex items-center gap-2">
-            {tab === "usdt" && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                <Zap className="w-3.5 h-3.5 text-blue-400" />
-                <span className="text-xs font-semibold text-blue-300">All pairs quoted in USDT · {filtered.length} markets</span>
-              </div>
-            )}
-            {tab === "bsv" && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-                <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
-                <span className="text-xs font-semibold text-amber-300">All pairs quoted in BSV · On-chain settlement · {filtered.length} markets</span>
-              </div>
-            )}
-            {tab === "futures" && (
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-xl">
-                <LineChart className="w-3.5 h-3.5 text-red-400" />
-                <span className="text-xs font-semibold text-red-300">Perpetual futures · Up to 100× leverage · {filtered.length} markets</span>
-              </div>
-            )}
-          </div>
-
           <div className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -173,8 +203,8 @@ export function Markets() {
                 {filtered.map((m, idx) => {
                   const base = m.baseAsset ?? m.symbol.split("-")[0];
                   const quote = m.quoteAsset ?? m.symbol.split("-")[1];
-                  const price = parseFloat(m.lastPrice) || m.lastPrice || 0;
-                  const chg = parseFloat(m.priceChangePercent24h) || m.priceChangePercent24h || 0;
+                  const price = parseFloat(m.lastPrice) || 0;
+                  const chg = parseFloat(m.priceChangePercent24h) || 0;
                   const isUp = chg >= 0;
                   const tradeHref = tab === "futures"
                     ? `/futures/${m.symbol.replace(/\//g, "-")}`
@@ -198,28 +228,30 @@ export function Markets() {
                               {tab === "futures" && (
                                 <span className="text-[10px] font-bold bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30">PERP</span>
                               )}
-                              {tab === "bsv" && (
-                                <span className="text-[9px] font-bold bg-amber-500/10 text-amber-400/80 px-1 py-0.5 rounded">₿SV</span>
+                              {tab === "new" && (
+                                <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
                               )}
                             </div>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-sm font-semibold">
-                        {tab === "bsv" ? "" : "$"}{formatPrice(price)}
-                        {tab === "bsv" && <span className="text-[10px] text-muted-foreground ml-1">BSV</span>}
+                        {formatPrice(price)}
+                        {(tab === "bsv" || tab === "btc" || tab === "eth") && (
+                          <span className="text-[10px] text-muted-foreground ml-1">{quote}</span>
+                        )}
                       </td>
                       <td className={cn("px-4 py-3.5 text-right font-mono text-sm font-semibold", isUp ? "text-green-400" : "text-red-400")}>
                         {isUp ? "+" : ""}{chg.toFixed(2)}%
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
-                        {tab === "bsv" ? "" : "$"}{formatPrice(parseFloat(m.high24h) || m.high24h || 0)}
+                        {formatPrice(parseFloat(m.high24h) || 0)}
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
-                        {tab === "bsv" ? "" : "$"}{formatPrice(parseFloat(m.low24h) || m.low24h || 0)}
+                        {formatPrice(parseFloat(m.low24h) || 0)}
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground">
-                        {formatVolume(parseFloat(m.volume24h) || m.volume24h || 0)}
+                        {formatVolume(parseFloat(m.volume24h) || 0)}
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -243,7 +275,7 @@ export function Markets() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={9} className="py-16 text-center text-muted-foreground text-sm">
-                      {search ? `No results for "${search}"` : "Loading markets…"}
+                      {search ? `No results for "${search}"` : tab === "favorites" ? "Star pairs to see them here" : "Loading markets…"}
                     </td>
                   </tr>
                 )}

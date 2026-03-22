@@ -74,6 +74,12 @@ export const BTC_PAIRS = [
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
 ];
 
+// ETH pairs — top coins vs ETH
+export const ETH_PAIRS = [
+  "BTC","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
+  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
+];
+
 // BSV pairs — top coins vs BSV
 export const BSV_PAIRS = [
   "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
@@ -133,6 +139,22 @@ export async function seedMarketsIfNeeded() {
           symbol: sym, baseAsset: base, quoteAsset: "USDT",
           lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
           volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+          status: "active", type: "spot",
+        });
+      }
+    }
+
+    // ETH pairs
+    for (const base of ETH_PAIRS) {
+      const sym = `${base}-ETH`;
+      if (!existingSymbols.has(sym)) {
+        const ethPrice = FALLBACK_PRICES["ETH"] ?? 3400;
+        const basePrice = FALLBACK_PRICES[base] ?? 1;
+        const crossPrice = basePrice / ethPrice;
+        toInsert.push({
+          symbol: sym, baseAsset: base, quoteAsset: "ETH",
+          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
           status: "active", type: "spot",
         });
       }
@@ -215,6 +237,13 @@ export async function updateMarketPrices() {
 
       let lastPrice = baseUSD;
       let vol = data.usd_24h_vol;
+
+      // ETH quote — compute cross rate
+      if (market.quoteAsset === "ETH") {
+        const ethUSD = prices[COINGECKO_IDS["ETH"]]?.usd ?? FALLBACK_PRICES["ETH"] ?? 3400;
+        lastPrice = baseUSD / ethUSD;
+        vol = vol / ethUSD;
+      }
 
       // BTC quote — compute cross rate
       if (market.quoteAsset === "BTC") {

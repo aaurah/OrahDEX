@@ -145,6 +145,35 @@ export const BTC_MARKETS: any[] = [
   btcPair("NEAR",  6.55,    4.82,  24_000_000),
 ];
 
+// ─── ETH PAIRS ────────────────────────────────────────────────────────────────
+const ETH_PRICE = 3415;
+function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / ETH_PRICE;
+  return spot(base, "ETH", p, chg, vol / ETH_PRICE);
+}
+export const ETH_MARKETS: any[] = [
+  ethPair("BTC",   68310,  -1.85, 2_450_000_000),
+  ethPair("SOL",   148.5,   3.21,  420_000_000),
+  ethPair("XRP",   0.5242, -0.64,  110_000_000),
+  ethPair("BNB",   392,     0.88,  320_000_000),
+  ethPair("ADA",   0.4421, -2.10,   45_000_000),
+  ethPair("DOGE",  0.1185,  5.42,   78_000_000),
+  ethPair("DOT",   6.82,   -1.20,   38_000_000),
+  ethPair("AVAX",  36.4,    2.15,   62_000_000),
+  ethPair("MATIC", 0.718,  -0.92,   54_000_000),
+  ethPair("LINK",  14.52,   3.64,   48_000_000),
+  ethPair("UNI",   9.84,    1.55,   22_000_000),
+  ethPair("ATOM",  8.42,   -0.78,   18_000_000),
+  ethPair("LTC",   78.2,    0.45,   32_000_000),
+  ethPair("BCH",   384,     1.10,   28_000_000),
+  ethPair("NEAR",  6.55,    4.82,   24_000_000),
+  ethPair("APT",   10.5,    5.21,   18_000_000),
+  ethPair("ARB",   1.12,    2.85,   28_000_000),
+  ethPair("OP",    2.41,    3.10,   22_000_000),
+  ethPair("SUI",   1.22,    6.45,   35_000_000),
+  ethPair("INJ",   28.4,    4.21,   15_000_000),
+];
+
 // ─── THEMED CATEGORIES ────────────────────────────────────────────────────────
 export const AI_MARKETS: any[] = [
   spot("FET",   "USDT", 1.82,   8.45,  85_000_000),
