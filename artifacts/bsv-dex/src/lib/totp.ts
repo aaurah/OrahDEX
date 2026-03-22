@@ -1,6 +1,6 @@
 // TOTP implementation using Web Crypto API (RFC 6238)
 export const TOTP_SECRET = 'JBSWY3DPEHPK3PXP'; // base32 secret
-export const TOTP_ISSUER = 'AuraDEX';
+export const TOTP_ISSUER = 'OrahDEX';
 export const TOTP_ACCOUNT = 'aaurah@protonmail.com';
 
 function base32Decode(input: string): ArrayBuffer {

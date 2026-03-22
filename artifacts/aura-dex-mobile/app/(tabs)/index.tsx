@@ -121,8 +121,8 @@ export default function MarketsScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 12 }]}>
         <View>
-          <Text style={styles.logo}>Aura<Text style={{ color: C.primary }}>DEX</Text></Text>
-          <Text style={styles.slogan}>✦ Always comes to Aura</Text>
+          <Text style={styles.logo}>Orah<Text style={{ color: C.primary }}>DEX</Text></Text>
+          <Text style={styles.slogan}>✦ Always comes to Orah DEX</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: C.primary + "18" }]} onPress={() => router.push("/wallet" as any)}>

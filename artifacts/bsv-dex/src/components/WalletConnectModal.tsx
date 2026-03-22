@@ -168,7 +168,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
                     </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5 italic">Always comes to Aura ✦</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 italic">Always comes to Orah DEX ✦</p>
                   </div>
                 </div>
                 <button onClick={handleClose}
@@ -258,7 +258,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
                           <span className="font-semibold">Non-custodial & Trustless.</span>{" "}
-                          Aura DEX never holds your funds or stores your seed phrase. All trades settle directly on-chain.
+                          Orah DEX never holds your funds or stores your seed phrase. All trades settle directly on-chain.
                         </p>
                       </div>
                     </motion.div>
@@ -440,7 +440,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex items-start gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
                             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                             <p className="text-xs text-amber-300/80 leading-relaxed">
-                              Never enter your seed phrase on untrusted sites. Aura DEX never stores or transmits your phrase — all derivation is local.
+                              Never enter your seed phrase on untrusted sites. Orah DEX never stores or transmits your phrase — all derivation is local.
                             </p>
                           </div>
 
@@ -515,7 +515,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                           <p className="text-xs leading-relaxed">
                             <span className="font-semibold">Non-custodial & Trustless.</span>{" "}
-                            Aura DEX never holds your funds. All trades settle directly on-chain — no registration, no KYC.
+                            Orah DEX never holds your funds. All trades settle directly on-chain — no registration, no KYC.
                           </p>
                         </div>
                       </div>

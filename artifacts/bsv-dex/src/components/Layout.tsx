@@ -50,9 +50,9 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
             <div className="hidden sm:flex flex-col leading-none">
               <span className="font-extrabold text-lg tracking-tight text-foreground">
-                Aura<span className="text-primary">DEX</span>
+                Orah<span className="text-primary">DEX</span>
               </span>
-              <span className="text-[9px] text-muted-foreground tracking-widest uppercase font-medium">Always comes to Aura</span>
+              <span className="text-[9px] text-muted-foreground tracking-widest uppercase font-medium">Always comes to Orah DEX</span>
             </div>
           </Link>
 

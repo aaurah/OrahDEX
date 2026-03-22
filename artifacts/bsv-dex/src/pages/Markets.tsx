@@ -20,7 +20,7 @@ export function Markets() {
     <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
       <div className="mb-10">
         <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">Markets Overview</h1>
-        <p className="text-primary/80 italic font-medium text-sm mb-3">✦ Always comes to Aura</p>
+        <p className="text-primary/80 italic font-medium text-sm mb-3">✦ Always comes to Orah DEX</p>
         <p className="text-muted-foreground text-lg max-w-2xl">
           Multi-chain trading with zero trust, 100% on-chain settlement on BSV, and instant liquidity across EVM and native BSV markets.
         </p>
