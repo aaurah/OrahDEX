@@ -1,6 +1,11 @@
-import { useState, useEffect } from "react";
-import { X, CreditCard, Building2, Smartphone, ChevronRight, ExternalLink, CheckCircle } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  X, Search, ChevronRight, ExternalLink, CheckCircle,
+  Wallet, CreditCard, Building2, AlertCircle, Zap, Star,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 interface Props {
   open: boolean;
@@ -8,165 +13,380 @@ interface Props {
   defaultCoin?: string;
 }
 
-type Method = "card" | "bank" | "apple" | "google";
-type Provider = "moonpay" | "transak" | "banxa";
+// ── Provider registry ──────────────────────────────────────────────────────────
+interface ProviderDef {
+  id: string;
+  name: string;
+  badge: string;
+  color: string;
+  fee: string;
+  minUSD: number;
+  maxUSD: number;
+  methods: string[];
+  coins: string[];
+  rating: number;
+  baseUrl: string;
+  params: (coin: string, fiat: string, amount: string, method: string) => Record<string,string>;
+}
 
-const PROVIDERS: Record<Provider, { name: string; logo: string; url: string; fee: string }> = {
-  moonpay: { name: "MoonPay", logo: "🌙", url: "https://www.moonpay.com/buy", fee: "1-4.5%" },
-  transak: { name: "Transak", logo: "⚡", url: "https://transak.com", fee: "0.99-2.5%" },
-  banxa:   { name: "Banxa",   logo: "🏦", url: "https://banxa.com", fee: "1-3%" },
-};
+const PROVIDERS: ProviderDef[] = [
+  {
+    id: "moonpay", name: "MoonPay", badge: "🌙", color: "text-violet-400",
+    fee: "1–4.5%", minUSD: 30, maxUSD: 50000, rating: 4.8,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","LTC","BCH","UNI","NEAR","ARB","OP","SUI","BSV"],
+    baseUrl: "https://buy.moonpay.com",
+    params: (coin,fiat,amt,m) => ({
+      currencyCode: coin.toLowerCase(),
+      baseCurrencyCode: fiat.toLowerCase(),
+      baseCurrencyAmount: amt,
+      paymentMethod: m === "card" ? "credit_debit_card" : m === "bank" ? "sepa_bank_transfer" : m,
+    }),
+  },
+  {
+    id: "transak", name: "Transak", badge: "⚡", color: "text-cyan-400",
+    fee: "0.99–2.5%", minUSD: 15, maxUSD: 25000, rating: 4.6,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","UNI","NEAR","ARB","APT","INJ"],
+    baseUrl: "https://global.transak.com",
+    params: (coin,fiat,amt) => ({
+      cryptoCurrencyCode: coin,
+      defaultFiatCurrency: fiat,
+      fiatAmount: amt,
+      network: "mainnet",
+    }),
+  },
+  {
+    id: "banxa", name: "Banxa", badge: "🏦", color: "text-emerald-400",
+    fee: "1–3%", minUSD: 50, maxUSD: 100000, rating: 4.4,
+    methods: ["card","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","LTC","BCH","DOT","LINK"],
+    baseUrl: "https://checkout.banxa.com",
+    params: (coin,fiat,amt) => ({
+      coinType: coin,
+      fiatType: fiat,
+      fiatAmount: amt,
+    }),
+  },
+  {
+    id: "simplex", name: "Simplex", badge: "💎", color: "text-blue-400",
+    fee: "3.5–5%", minUSD: 50, maxUSD: 20000, rating: 4.2,
+    methods: ["card","apple","google"],
+    coins: ["BTC","ETH","XRP","BNB","ADA","DOGE","LTC","BCH","MATIC","LINK","DOT"],
+    baseUrl: "https://checkout.simplexcc.com",
+    params: (coin,fiat,amt) => ({
+      crypto_currency: coin,
+      fiat_currency: fiat,
+      requested_amount: amt,
+      requested_currency: fiat,
+    }),
+  },
+  {
+    id: "ramp", name: "Ramp Network", badge: "🔵", color: "text-blue-300",
+    fee: "0.49–2.9%", minUSD: 5, maxUSD: 10000, rating: 4.7,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE"],
+    baseUrl: "https://app.ramp.network",
+    params: (coin,fiat,amt) => ({
+      swapAsset: coin,
+      fiatCurrency: fiat,
+      fiatValue: amt,
+    }),
+  },
+];
 
-const COINS = [
-  "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC",
-  "LINK","DOT","ATOM","LTC","BCH","UNI","NEAR","ARB","OP","SUI",
+// ── Coin catalogue ─────────────────────────────────────────────────────────────
+interface CoinDef { symbol: string; name: string; color: string }
+const COIN_CATALOGUE: CoinDef[] = [
+  { symbol:"BTC",   name:"Bitcoin",        color:"#F97316" },
+  { symbol:"ETH",   name:"Ethereum",       color:"#8B5CF6" },
+  { symbol:"BSV",   name:"Bitcoin SV",     color:"#EAB308" },
+  { symbol:"SOL",   name:"Solana",         color:"#06B6D4" },
+  { symbol:"XRP",   name:"Ripple",         color:"#3B82F6" },
+  { symbol:"BNB",   name:"BNB",            color:"#F59E0B" },
+  { symbol:"ADA",   name:"Cardano",        color:"#2563EB" },
+  { symbol:"DOGE",  name:"Dogecoin",       color:"#EAB308" },
+  { symbol:"AVAX",  name:"Avalanche",      color:"#EF4444" },
+  { symbol:"MATIC", name:"Polygon",        color:"#7C3AED" },
+  { symbol:"LINK",  name:"Chainlink",      color:"#2563EB" },
+  { symbol:"DOT",   name:"Polkadot",       color:"#E11D48" },
+  { symbol:"UNI",   name:"Uniswap",        color:"#EC4899" },
+  { symbol:"ATOM",  name:"Cosmos",         color:"#6366F1" },
+  { symbol:"LTC",   name:"Litecoin",       color:"#6B7280" },
+  { symbol:"BCH",   name:"Bitcoin Cash",   color:"#22C55E" },
+  { symbol:"NEAR",  name:"NEAR Protocol",  color:"#10B981" },
+  { symbol:"APT",   name:"Aptos",          color:"#06B6D4" },
+  { symbol:"ARB",   name:"Arbitrum",       color:"#60A5FA" },
+  { symbol:"OP",    name:"Optimism",       color:"#EF4444" },
+  { symbol:"SUI",   name:"Sui",            color:"#3B82F6" },
+  { symbol:"INJ",   name:"Injective",      color:"#2563EB" },
 ];
 
 const FIATS = ["USD","EUR","GBP","AUD","CAD","SGD","JPY","AED","INR","BRL"];
+const QUICK_AMOUNTS = ["50","100","250","500","1000","2500"];
 
-function detectApplePay(): boolean {
-  return typeof window !== "undefined" && "ApplePaySession" in window;
-}
+// ── Approximate USD prices for quote estimation ──────────────────────────────
+const APPROX_PRICES: Record<string, number> = {
+  BTC:68000, ETH:3400, BSV:55, SOL:145, XRP:0.52,
+  BNB:390, ADA:0.44, DOGE:0.12, AVAX:36, MATIC:0.72,
+  LINK:14.5, DOT:6.8, UNI:9.8, ATOM:8.4, LTC:78,
+  BCH:384, NEAR:6.5, APT:10.5, ARB:1.1, OP:2.4, SUI:1.2, INJ:28,
+};
 
-function detectGooglePay(): boolean {
-  if (typeof window === "undefined") return false;
-  const ua = navigator.userAgent.toLowerCase();
-  return /android/.test(ua) || /chrome/.test(ua);
-}
+// ── Method label helpers ───────────────────────────────────────────────────────
+const METHOD_LABELS: Record<string,string> = {
+  card:"Credit / Debit Card", bank:"Bank Transfer", apple:"Apple Pay", google:"Google Pay",
+};
+const METHOD_ICONS: Record<string,React.ReactNode> = {
+  card: <CreditCard className="w-3.5 h-3.5" />,
+  bank: <Building2 className="w-3.5 h-3.5" />,
+  apple: <span className="text-sm">🍎</span>,
+  google: <span className="text-sm">G</span>,
+};
 
-export function BuyCryptoModal({ open, onClose, defaultCoin = "BSV" }: Props) {
-  const [step, setStep] = useState<"method" | "details" | "provider">("method");
-  const [method, setMethod] = useState<Method | null>(null);
-  const [coin, setCoin] = useState(defaultCoin);
-  const [fiat, setFiat] = useState("USD");
-  const [amount, setAmount] = useState("100");
-  const [provider, setProvider] = useState<Provider>("moonpay");
-  const [hasApplePay, setHasApplePay] = useState(false);
-  const [hasGooglePay, setHasGooglePay] = useState(false);
+// ── Step type ─────────────────────────────────────────────────────────────────
+type Step = "coin" | "quote" | "checkout";
 
+export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
+  const { address } = useWalletStore();
+  const openWalletModal = useWalletModalStore(s => s.open);
+
+  const [step, setStep]       = useState<Step>("coin");
+  const [coin, setCoin]       = useState(defaultCoin);
+  const [fiat, setFiat]       = useState("USD");
+  const [amount, setAmount]   = useState("100");
+  const [search, setSearch]   = useState("");
+  const [method, setMethod]   = useState<string>("card");
+  const [providerId, setProviderId] = useState<string>("");
+
+  // Reset on open
   useEffect(() => {
-    setHasApplePay(detectApplePay());
-    setHasGooglePay(detectGooglePay());
-  }, []);
-
-  useEffect(() => {
-    if (open) { setStep("method"); setMethod(null); }
-  }, [open]);
+    if (open) { setStep("coin"); setCoin(defaultCoin); setSearch(""); setAmount("100"); }
+  }, [open, defaultCoin]);
 
   if (!open) return null;
 
-  const methods: { id: Method; label: string; sub: string; icon: React.ReactNode; available: boolean; badge?: string }[] = [
-    {
-      id: "apple", label: "Apple Pay", sub: "Instant · Face ID / Touch ID",
-      icon: <svg viewBox="0 0 24 24" className="w-6 h-6 fill-foreground"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>,
-      available: hasApplePay, badge: hasApplePay ? "Detected" : "iOS only",
-    },
-    {
-      id: "google", label: "Google Pay", sub: "Instant · Linked Google account",
-      icon: <svg viewBox="0 0 24 24" className="w-6 h-6"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>,
-      available: hasGooglePay, badge: hasGooglePay ? "Detected" : "Android/Chrome",
-    },
-    {
-      id: "card", label: "Credit / Debit Card", sub: "Visa, Mastercard, Amex",
-      icon: <CreditCard className="w-6 h-6 text-blue-400" />,
-      available: true,
-    },
-    {
-      id: "bank", label: "Bank Transfer", sub: "SEPA, ACH, SWIFT — lowest fees",
-      icon: <Building2 className="w-6 h-6 text-green-400" />,
-      available: true,
-    },
-  ];
+  // Filtered coin list
+  const filteredCoins = COIN_CATALOGUE.filter(c =>
+    !search ||
+    c.symbol.toLowerCase().includes(search.toLowerCase()) ||
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const buildProviderUrl = (p: Provider) => {
-    const base = PROVIDERS[p].url;
-    const params = new URLSearchParams({
-      currencyCode: coin,
-      baseCurrencyCode: fiat,
-      baseCurrencyAmount: amount,
-      paymentMethod: method === "card" ? "credit_debit_card" : method === "bank" ? "sepa_bank_transfer" : "apple_pay",
-    });
-    return `${base}?${params}`;
-  };
+  // Providers that support the selected coin
+  const supportedProviders = PROVIDERS.filter(p => p.coins.includes(coin));
+
+  // Auto-select first supported provider when we switch coins
+  function selectCoin(sym: string) {
+    setCoin(sym);
+    const first = PROVIDERS.find(p => p.coins.includes(sym));
+    setProviderId(first?.id ?? "");
+    setSearch("");
+    setStep("quote");
+  }
+
+  // Compute estimated crypto received
+  const feeRate = 0.025; // ~2.5% average
+  const numAmt = parseFloat(amount) || 0;
+  const priceUSD = APPROX_PRICES[coin] ?? 1;
+  const fiatToUSD = fiat === "USD" ? 1 : fiat === "EUR" ? 1.08 : fiat === "GBP" ? 1.27 : 1;
+  const netUSD = numAmt * fiatToUSD * (1 - feeRate);
+  const estCrypto = netUSD / priceUSD;
+  const fmtCrypto = estCrypto >= 1
+    ? estCrypto.toFixed(4)
+    : estCrypto >= 0.0001
+    ? estCrypto.toFixed(6)
+    : estCrypto.toExponential(4);
+
+  // Build provider URL
+  function getProviderUrl(pId: string): string {
+    const p = PROVIDERS.find(x => x.id === pId);
+    if (!p) return "#";
+    const params = new URLSearchParams(p.params(coin, fiat, amount, method));
+    return `${p.baseUrl}?${params}`;
+  }
+
+  const selectedProvider = PROVIDERS.find(p => p.id === providerId) ?? supportedProviders[0];
+  const coinDef = COIN_CATALOGUE.find(c => c.symbol === coin)!;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal */}
-      <div className="relative w-full sm:w-[440px] bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Header */}
+      <div className="relative w-full sm:w-[460px] bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+
+        {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <div>
-            <h2 className="text-base font-bold">Buy Crypto</h2>
-            <p className="text-[11px] text-muted-foreground">Fast · Secure · Best rates</p>
+          <div className="flex items-center gap-3">
+            {step !== "coin" && (
+              <button
+                onClick={() => setStep(step === "checkout" ? "quote" : "coin")}
+                className="text-muted-foreground hover:text-foreground text-sm font-semibold"
+              >
+                ←
+              </button>
+            )}
+            <div>
+              <h2 className="text-base font-bold">Buy Crypto</h2>
+              <p className="text-[11px] text-muted-foreground">
+                {step === "coin" && "Select the coin you want to buy"}
+                {step === "quote" && `Quote for ${coin} · ${supportedProviders.length} exchanges available`}
+                {step === "checkout" && "Review & pay"}
+              </p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        {/* ── Step indicator ── */}
+        <div className="flex border-b border-border shrink-0">
+          {(["coin","quote","checkout"] as Step[]).map((s, i) => (
+            <div key={s} className="flex-1 flex items-center justify-center py-2 gap-1.5">
+              <div className={cn(
+                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black",
+                step === s ? "bg-primary text-primary-foreground" : i < ["coin","quote","checkout"].indexOf(step) ? "bg-green-500 text-white" : "bg-secondary text-muted-foreground"
+              )}>
+                {i < ["coin","quote","checkout"].indexOf(step) ? "✓" : i + 1}
+              </div>
+              <span className={cn("text-[11px] font-semibold capitalize hidden sm:inline", step === s ? "text-foreground" : "text-muted-foreground")}>
+                {s === "coin" ? "Select Coin" : s === "quote" ? "Quote" : "Pay"}
+              </span>
+            </div>
+          ))}
+        </div>
+
         <div className="overflow-y-auto flex-1">
-          {/* ── STEP 1: Choose Payment Method ── */}
-          {step === "method" && (
-            <div className="p-5 space-y-3">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wider mb-4">Select payment method</p>
 
-              {methods.map(m => (
-                <button
-                  key={m.id}
-                  onClick={() => { setMethod(m.id); setStep("details"); }}
-                  className={cn(
-                    "w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left",
-                    m.available
-                      ? "border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer"
-                      : "border-border/40 opacity-40 cursor-not-allowed"
-                  )}
-                  disabled={!m.available && m.id !== "apple" && m.id !== "google"}
-                >
-                  <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center shrink-0">
-                    {m.icon}
+          {/* ══════════════════ STEP 1: Select Coin ══════════════════ */}
+          {step === "coin" && (
+            <div className="p-4 space-y-4">
+              {/* Wallet status */}
+              <div className={cn(
+                "flex items-center gap-3 p-3 rounded-xl border text-sm",
+                address
+                  ? "bg-green-500/10 border-green-500/25 text-green-300"
+                  : "bg-amber-500/10 border-amber-500/25 text-amber-300"
+              )}>
+                <Wallet className="w-4 h-4 shrink-0" />
+                {address ? (
+                  <span>Wallet connected · <span className="font-mono text-xs">{address.slice(0,10)}…</span></span>
+                ) : (
+                  <div className="flex items-center justify-between flex-1 gap-2">
+                    <span className="text-xs">Connect wallet to auto-receive your crypto</span>
+                    <button
+                      onClick={() => { onClose(); openWalletModal(); }}
+                      className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg text-[11px] font-bold text-amber-300 shrink-0"
+                    >
+                      Connect
+                    </button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{m.label}</span>
-                      {m.badge && (
-                        <span className={cn(
-                          "text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide",
-                          m.available ? "bg-green-500/15 text-green-400" : "bg-muted/40 text-muted-foreground"
-                        )}>
-                          {m.badge}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{m.sub}</p>
-                  </div>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                </button>
-              ))}
+                )}
+              </div>
 
-              <div className="mt-4 p-3 bg-secondary/40 rounded-xl text-[11px] text-muted-foreground leading-relaxed">
-                🔒 Payments processed by licensed providers (MoonPay, Transak, Banxa). OrahDEX does not store card data.
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search coin…"
+                  className="w-full bg-secondary/60 border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary"
+                  autoFocus
+                />
+              </div>
+
+              {/* Popular label */}
+              {!search && (
+                <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">
+                  <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> Popular
+                </p>
+              )}
+
+              {/* Coin grid */}
+              <div className="grid grid-cols-1 gap-1.5">
+                {filteredCoins.map(c => {
+                  const providers = PROVIDERS.filter(p => p.coins.includes(c.symbol));
+                  return (
+                    <button
+                      key={c.symbol}
+                      onClick={() => selectCoin(c.symbol)}
+                      className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                    >
+                      {/* Coin badge */}
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-black text-white shrink-0 shadow"
+                        style={{ background: c.color }}
+                      >
+                        {c.symbol.slice(0, 2)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+                          <span className="text-xs text-muted-foreground">{c.name}</span>
+                        </div>
+                        {/* Exchange badges */}
+                        <div className="flex gap-1 mt-0.5 flex-wrap">
+                          {providers.slice(0,4).map(p => (
+                            <span key={p.id} className="text-[9px] bg-secondary px-1.5 py-0.5 rounded font-medium text-muted-foreground">
+                              {p.badge} {p.name}
+                            </span>
+                          ))}
+                          {providers.length === 0 && (
+                            <span className="text-[9px] text-amber-400 font-medium">OrahDEX P2P only</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs font-mono font-semibold text-foreground">
+                          ${(APPROX_PRICES[c.symbol] ?? 1).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{providers.length} exchanges</div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                    </button>
+                  );
+                })}
+                {filteredCoins.length === 0 && (
+                  <p className="text-center text-muted-foreground text-sm py-8">No coins found for "{search}"</p>
+                )}
               </div>
             </div>
           )}
 
-          {/* ── STEP 2: Amount & Coin ── */}
-          {step === "details" && (
-            <div className="p-5 space-y-4">
-              <button onClick={() => setStep("method")} className="text-xs text-primary font-semibold flex items-center gap-1 mb-2">
-                ← Back
-              </button>
+          {/* ══════════════════ STEP 2: Quote ══════════════════ */}
+          {step === "quote" && (
+            <div className="p-4 space-y-4">
+              {/* Selected coin banner */}
+              <div className="flex items-center gap-3 p-3 bg-secondary/40 rounded-xl">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0 shadow"
+                  style={{ background: coinDef?.color ?? "#6B7280" }}
+                >
+                  {coin.slice(0, 2)}
+                </div>
+                <div>
+                  <div className="font-bold text-sm">{coin} · {coinDef?.name}</div>
+                  <div className="text-xs text-muted-foreground">≈ ${(APPROX_PRICES[coin] ?? 0).toLocaleString()} USD</div>
+                </div>
+                <button
+                  onClick={() => setStep("coin")}
+                  className="ml-auto text-xs text-primary font-semibold hover:underline"
+                >
+                  Change
+                </button>
+              </div>
 
-              {/* Amount */}
+              {/* Amount input */}
               <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Amount</label>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">You pay</label>
                 <div className="flex gap-2 mt-1.5">
                   <select
                     value={fiat}
                     onChange={e => setFiat(e.target.value)}
-                    className="bg-background border border-border rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-primary w-24"
+                    className="bg-background border border-border rounded-xl px-3 py-2.5 text-sm font-semibold focus:outline-none focus:border-primary w-24 shrink-0"
                   >
                     {FIATS.map(f => <option key={f}>{f}</option>)}
                   </select>
@@ -174,18 +394,17 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BSV" }: Props) {
                     type="number"
                     value={amount}
                     onChange={e => setAmount(e.target.value)}
-                    min="10"
-                    placeholder="100"
-                    className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none focus:border-primary tabular-nums"
+                    min="5"
+                    className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-base font-bold focus:outline-none focus:border-primary tabular-nums"
                   />
                 </div>
-                <div className="flex gap-2 mt-2">
-                  {["50","100","250","500","1000"].map(v => (
+                <div className="flex gap-1.5 mt-2">
+                  {QUICK_AMOUNTS.map(v => (
                     <button
                       key={v}
                       onClick={() => setAmount(v)}
                       className={cn(
-                        "flex-1 py-1.5 text-xs rounded-lg border font-semibold transition-colors",
+                        "flex-1 py-1.5 text-[11px] rounded-lg border font-bold transition-colors",
                         amount === v ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50"
                       )}
                     >
@@ -195,118 +414,187 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BSV" }: Props) {
                 </div>
               </div>
 
-              {/* Coin */}
+              {/* Live quote estimate */}
+              <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">You receive ≈</span>
+                  <div className="text-right">
+                    <div className="text-xl font-black text-green-400">{fmtCrypto} {coin}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">after ~2.5% avg fee · {fiat} {amount}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 mt-2 text-[10px] text-green-400/70">
+                  <Zap className="w-3 h-3" />
+                  Delivered to your wallet within 5–15 minutes
+                </div>
+              </div>
+
+              {/* Exchange / Provider list */}
               <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Receive</label>
-                <div className="grid grid-cols-5 gap-2 mt-1.5">
-                  {COINS.slice(0, 15).map(c => (
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Exchanges supporting {coin} ({supportedProviders.length})
+                </label>
+                <div className="space-y-2 mt-2">
+                  {supportedProviders.length === 0 && (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300 text-center">
+                      No third-party exchange supports {coin} directly.<br />
+                      <span className="text-xs text-muted-foreground">Use OrahDEX P2P to buy {coin} from other users.</span>
+                    </div>
+                  )}
+                  {supportedProviders.map(p => (
                     <button
-                      key={c}
-                      onClick={() => setCoin(c)}
+                      key={p.id}
+                      onClick={() => { setProviderId(p.id); }}
                       className={cn(
-                        "py-2 text-xs font-bold rounded-lg border transition-colors",
-                        coin === c ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50"
+                        "w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
+                        providerId === p.id
+                          ? "border-primary bg-primary/8 shadow-sm"
+                          : "border-border hover:border-primary/40 hover:bg-white/5"
                       )}
                     >
-                      {c}
+                      {/* Logo */}
+                      <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
+                        {p.badge}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm">{p.name}</span>
+                          <span className={cn("text-[10px] font-bold", p.color)}>★ {p.rating}</span>
+                          <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded font-medium text-muted-foreground">{p.fee} fee</span>
+                        </div>
+                        <div className="flex gap-1 mt-1 flex-wrap">
+                          {p.methods.map(m => (
+                            <span key={m} className="flex items-center gap-1 text-[10px] bg-secondary/60 px-1.5 py-0.5 rounded text-muted-foreground">
+                              {METHOD_ICONS[m]} {m === "card" ? "Card" : m === "bank" ? "Bank" : m === "apple" ? "Apple" : "Google"}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          Min ${p.minUSD} · Max ${p.maxUSD.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className={cn(
+                        "w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all",
+                        providerId === p.id ? "border-primary bg-primary" : "border-border"
+                      )} />
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Provider selector */}
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Provider</label>
-                <div className="flex gap-2 mt-1.5">
-                  {(Object.entries(PROVIDERS) as [Provider, any][]).map(([key, val]) => (
-                    <button
-                      key={key}
-                      onClick={() => setProvider(key)}
-                      className={cn(
-                        "flex-1 py-2.5 rounded-xl border text-center transition-colors",
-                        provider === key ? "border-primary bg-primary/10" : "border-border hover:border-primary/40"
-                      )}
-                    >
-                      <div className="text-xl">{val.logo}</div>
-                      <div className="text-[10px] font-semibold mt-0.5">{val.name}</div>
-                      <div className="text-[9px] text-muted-foreground">{val.fee}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setStep("provider")}
-                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity mt-2"
-              >
-                Continue → Buy {coin}
-              </button>
+              {/* Continue */}
+              {supportedProviders.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (!providerId && supportedProviders.length > 0) setProviderId(supportedProviders[0].id);
+                    setStep("checkout");
+                  }}
+                  disabled={numAmt < 5}
+                  className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Continue → {selectedProvider ? `Pay with ${selectedProvider.name}` : "Select an exchange"}
+                </button>
+              )}
             </div>
           )}
 
-          {/* ── STEP 3: Launch Provider ── */}
-          {step === "provider" && (
-            <div className="p-5 space-y-4">
-              <button onClick={() => setStep("details")} className="text-xs text-primary font-semibold flex items-center gap-1">
-                ← Back
-              </button>
-
-              <div className="bg-secondary/40 rounded-2xl p-4 space-y-2.5">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">You pay</span>
-                  <span className="font-bold">{fiat} {parseFloat(amount).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">You receive</span>
-                  <span className="font-bold text-green-400">≈ {coin}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Payment</span>
-                  <span className="font-semibold capitalize">{method?.replace("apple","Apple Pay").replace("google","Google Pay").replace("card","Card").replace("bank","Bank")}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Provider</span>
-                  <span className="font-semibold">{PROVIDERS[provider].name}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Network</span>
-                  <span className="font-semibold text-amber-400">Bitcoin SV</span>
+          {/* ══════════════════ STEP 3: Checkout ══════════════════ */}
+          {step === "checkout" && selectedProvider && (
+            <div className="p-4 space-y-4">
+              {/* Order summary */}
+              <div className="bg-secondary/40 border border-border rounded-2xl p-4 space-y-3">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Order Summary</p>
+                <div className="space-y-2.5">
+                  {[
+                    ["You pay",     `${fiat} ${parseFloat(amount).toLocaleString()}`],
+                    ["You receive", `≈ ${fmtCrypto} ${coin}`],
+                    ["Exchange",    `${selectedProvider.badge} ${selectedProvider.name}`],
+                    ["Exchange fee",selectedProvider.fee],
+                    ["Network",     "Bitcoin SV · On-chain settlement"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className={cn("font-semibold", label === "You receive" && "text-green-400")}>{value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="space-y-2.5">
-                <a
-                  href={buildProviderUrl(provider)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity"
-                >
-                  <span>{PROVIDERS[provider].logo}</span>
-                  Continue with {PROVIDERS[provider].name}
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-
-                {/* Alternative providers */}
-                {(Object.entries(PROVIDERS) as [Provider, any][]).filter(([k]) => k !== provider).map(([key, val]) => (
-                  <a
-                    key={key}
-                    href={buildProviderUrl(key)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-3 w-full bg-secondary/60 border border-border py-3 px-4 rounded-xl font-medium text-sm hover:border-primary/50 transition-colors"
-                  >
-                    <span className="text-lg">{val.logo}</span>
-                    <span className="flex-1">{val.name}</span>
-                    <span className="text-xs text-muted-foreground">{val.fee} fee</span>
-                    <ExternalLink className="w-3 h-3 text-muted-foreground" />
-                  </a>
-                ))}
+              {/* Payment method */}
+              <div>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Payment method</label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {selectedProvider.methods.map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setMethod(m)}
+                      className={cn(
+                        "flex items-center gap-2 p-3 rounded-xl border text-sm font-semibold transition-all",
+                        method === m ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-primary/40"
+                      )}
+                    >
+                      {METHOD_ICONS[m]}
+                      <span className="text-xs">{METHOD_LABELS[m]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Wallet warning */}
+              {!address && (
+                <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-300 leading-relaxed">
+                    No wallet connected. Connect a wallet first so {selectedProvider.name} knows where to send your {coin}.
+                    <button
+                      onClick={() => { onClose(); openWalletModal(); }}
+                      className="ml-1 underline font-bold"
+                    >
+                      Connect now
+                    </button>
+                  </p>
+                </div>
+              )}
+
+              {/* Primary CTA */}
+              <a
+                href={getProviderUrl(selectedProvider.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground py-4 rounded-xl font-black text-sm hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+              >
+                <span className="text-xl">{selectedProvider.badge}</span>
+                Buy {coin} with {selectedProvider.name}
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              {/* Alternate providers */}
+              {supportedProviders.filter(p => p.id !== selectedProvider.id).length > 0 && (
+                <div>
+                  <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">Other exchanges</p>
+                  <div className="space-y-2">
+                    {supportedProviders.filter(p => p.id !== selectedProvider.id).map(p => (
+                      <a
+                        key={p.id}
+                        href={getProviderUrl(p.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 w-full bg-secondary/40 border border-border py-2.5 px-3.5 rounded-xl font-medium text-sm hover:border-primary/50 transition-colors"
+                      >
+                        <span className="text-lg">{p.badge}</span>
+                        <span className="flex-1 text-sm">{p.name}</span>
+                        <span className="text-xs text-muted-foreground">{p.fee}</span>
+                        <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
                 <CheckCircle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-green-300/80 leading-relaxed">
-                  After purchase, your {coin} will be sent to your connected wallet. Ensure your wallet is connected before proceeding.
+                  After payment is confirmed, {selectedProvider.name} will send your {coin} directly to your wallet. The process typically takes 5–15 minutes.
                 </p>
               </div>
             </div>
