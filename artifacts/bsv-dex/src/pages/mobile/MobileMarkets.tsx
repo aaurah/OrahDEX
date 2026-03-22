@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X, TrendingUp, RefreshCw } from "lucide-react";
+import { Search, X, TrendingUp } from "lucide-react";
 import { useLocation } from "wouter";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -87,12 +87,6 @@ export function MobileMarkets() {
             <span className="text-xl font-bold text-foreground">Orah<span className="text-primary">DEX</span></span>
             <p className="text-[10px] text-primary opacity-80">✦ Trade means DEX</p>
           </div>
-          <button
-            onClick={() => refetch()}
-            className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center"
-          >
-            <RefreshCw size={15} className={`text-primary ${isFetching ? "animate-spin" : ""}`} />
-          </button>
         </div>
 
         {/* Stats */}
