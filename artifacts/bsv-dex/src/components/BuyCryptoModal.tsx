@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import {
   X, Search, ChevronRight, ExternalLink, CheckCircle,
-  Wallet, CreditCard, Building2, AlertCircle, Zap, Star,
+  Wallet, CreditCard, Building2, Zap, Star, Shield, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -26,7 +26,7 @@ interface ProviderDef {
   coins: string[];
   rating: number;
   baseUrl: string;
-  params: (coin: string, fiat: string, amount: string, method: string) => Record<string,string>;
+  params: (coin: string, fiat: string, amount: string, method: string, walletAddress: string) => Record<string,string>;
 }
 
 const PROVIDERS: ProviderDef[] = [
@@ -36,11 +36,12 @@ const PROVIDERS: ProviderDef[] = [
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","LTC","BCH","UNI","NEAR","ARB","OP","SUI","BSV"],
     baseUrl: "https://buy.moonpay.com",
-    params: (coin,fiat,amt,m) => ({
+    params: (coin, fiat, amt, m, addr) => ({
       currencyCode: coin.toLowerCase(),
       baseCurrencyCode: fiat.toLowerCase(),
       baseCurrencyAmount: amt,
       paymentMethod: m === "card" ? "credit_debit_card" : m === "bank" ? "sepa_bank_transfer" : m,
+      ...(addr ? { walletAddress: addr } : {}),
     }),
   },
   {
@@ -49,11 +50,12 @@ const PROVIDERS: ProviderDef[] = [
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","UNI","NEAR","ARB","APT","INJ"],
     baseUrl: "https://global.transak.com",
-    params: (coin,fiat,amt) => ({
+    params: (coin, fiat, amt, _m, addr) => ({
       cryptoCurrencyCode: coin,
       defaultFiatCurrency: fiat,
       fiatAmount: amt,
       network: "mainnet",
+      ...(addr ? { walletAddress: addr } : {}),
     }),
   },
   {
@@ -62,10 +64,11 @@ const PROVIDERS: ProviderDef[] = [
     methods: ["card","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","LTC","BCH","DOT","LINK"],
     baseUrl: "https://checkout.banxa.com",
-    params: (coin,fiat,amt) => ({
+    params: (coin, fiat, amt, _m, addr) => ({
       coinType: coin,
       fiatType: fiat,
       fiatAmount: amt,
+      ...(addr ? { walletAddress: addr } : {}),
     }),
   },
   {
@@ -74,7 +77,7 @@ const PROVIDERS: ProviderDef[] = [
     methods: ["card","apple","google"],
     coins: ["BTC","ETH","XRP","BNB","ADA","DOGE","LTC","BCH","MATIC","LINK","DOT"],
     baseUrl: "https://checkout.simplexcc.com",
-    params: (coin,fiat,amt) => ({
+    params: (coin, fiat, amt) => ({
       crypto_currency: coin,
       fiat_currency: fiat,
       requested_amount: amt,
@@ -87,10 +90,11 @@ const PROVIDERS: ProviderDef[] = [
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE"],
     baseUrl: "https://app.ramp.network",
-    params: (coin,fiat,amt) => ({
+    params: (coin, fiat, amt, _m, addr) => ({
       swapAsset: coin,
       fiatCurrency: fiat,
       fiatValue: amt,
+      ...(addr ? { userAddress: addr } : {}),
     }),
   },
 ];
@@ -125,7 +129,6 @@ const COIN_CATALOGUE: CoinDef[] = [
 const FIATS = ["USD","EUR","GBP","AUD","CAD","SGD","JPY","AED","INR","BRL"];
 const QUICK_AMOUNTS = ["50","100","250","500","1000","2500"];
 
-// ── Approximate USD prices for quote estimation ──────────────────────────────
 const APPROX_PRICES: Record<string, number> = {
   BTC:68000, ETH:3400, BSV:55, SOL:145, XRP:0.52,
   BNB:390, ADA:0.44, DOGE:0.12, AVAX:36, MATIC:0.72,
@@ -133,36 +136,59 @@ const APPROX_PRICES: Record<string, number> = {
   BCH:384, NEAR:6.5, APT:10.5, ARB:1.1, OP:2.4, SUI:1.2, INJ:28,
 };
 
-// ── Method label helpers ───────────────────────────────────────────────────────
-const METHOD_LABELS: Record<string,string> = {
-  card:"Credit / Debit Card", bank:"Bank Transfer", apple:"Apple Pay", google:"Google Pay",
+const METHOD_ICONS: Record<string, React.ReactNode> = {
+  card:   <CreditCard className="w-3.5 h-3.5" />,
+  bank:   <Building2  className="w-3.5 h-3.5" />,
+  apple:  <span className="text-sm leading-none">🍎</span>,
+  google: <span className="text-sm leading-none font-black">G</span>,
 };
-const METHOD_ICONS: Record<string,React.ReactNode> = {
-  card: <CreditCard className="w-3.5 h-3.5" />,
-  bank: <Building2 className="w-3.5 h-3.5" />,
-  apple: <span className="text-sm">🍎</span>,
-  google: <span className="text-sm">G</span>,
+const METHOD_LABELS: Record<string,string> = {
+  card:"Card", bank:"Bank", apple:"Apple Pay", google:"Google Pay",
 };
 
-// ── Step type ─────────────────────────────────────────────────────────────────
-type Step = "coin" | "quote" | "checkout";
+type Step = "connect" | "coin" | "quote" | "checkout";
+
+const STEP_ORDER: Step[] = ["connect","coin","quote","checkout"];
+
+// Wallet types shown on the connect screen
+const WALLET_OPTIONS = [
+  { id:"metamask",  label:"MetaMask",       badge:"🦊", sub:"EVM · Ethereum, BSC, Polygon…" },
+  { id:"phantom",   label:"Phantom",         badge:"👻", sub:"Solana, EVM" },
+  { id:"coinbase",  label:"Coinbase Wallet", badge:"🔵", sub:"EVM · Multi-chain" },
+  { id:"trust",     label:"Trust Wallet",    badge:"🛡️",  sub:"Multi-chain · Mobile" },
+  { id:"handcash",  label:"HandCash",        badge:"💚", sub:"Bitcoin SV · Native" },
+  { id:"relayx",    label:"RelayX",          badge:"⚡", sub:"Bitcoin SV · BSV native" },
+];
 
 export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
-  const { address } = useWalletStore();
+  const { address, provider: walletProvider } = useWalletStore();
   const openWalletModal = useWalletModalStore(s => s.open);
 
-  const [step, setStep]       = useState<Step>("coin");
-  const [coin, setCoin]       = useState(defaultCoin);
-  const [fiat, setFiat]       = useState("USD");
-  const [amount, setAmount]   = useState("100");
-  const [search, setSearch]   = useState("");
-  const [method, setMethod]   = useState<string>("card");
+  const [step, setStep]         = useState<Step>("connect");
+  const [coin, setCoin]         = useState(defaultCoin);
+  const [fiat, setFiat]         = useState("USD");
+  const [amount, setAmount]     = useState("100");
+  const [search, setSearch]     = useState("");
+  const [method, setMethod]     = useState<string>("card");
   const [providerId, setProviderId] = useState<string>("");
 
-  // Reset on open
+  // When modal opens: if wallet already connected → skip to coin step
   useEffect(() => {
-    if (open) { setStep("coin"); setCoin(defaultCoin); setSearch(""); setAmount("100"); }
+    if (open) {
+      setStep(address ? "coin" : "connect");
+      setCoin(defaultCoin);
+      setSearch("");
+      setAmount("100");
+      setProviderId("");
+    }
   }, [open, defaultCoin]);
+
+  // Auto-advance from connect → coin as soon as wallet connects
+  useEffect(() => {
+    if (step === "connect" && address) {
+      setStep("coin");
+    }
+  }, [address, step]);
 
   if (!open) return null;
 
@@ -173,10 +199,8 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
     c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Providers that support the selected coin
   const supportedProviders = PROVIDERS.filter(p => p.coins.includes(coin));
 
-  // Auto-select first supported provider when we switch coins
   function selectCoin(sym: string) {
     setCoin(sym);
     const first = PROVIDERS.find(p => p.coins.includes(sym));
@@ -185,29 +209,43 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
     setStep("quote");
   }
 
-  // Compute estimated crypto received
-  const feeRate = 0.025; // ~2.5% average
-  const numAmt = parseFloat(amount) || 0;
+  // Quote maths
+  const feeRate  = 0.025;
+  const numAmt   = parseFloat(amount) || 0;
   const priceUSD = APPROX_PRICES[coin] ?? 1;
-  const fiatToUSD = fiat === "USD" ? 1 : fiat === "EUR" ? 1.08 : fiat === "GBP" ? 1.27 : 1;
-  const netUSD = numAmt * fiatToUSD * (1 - feeRate);
+  const fiatToUSD = fiat === "EUR" ? 1.08 : fiat === "GBP" ? 1.27 : fiat === "AUD" ? 0.65 : fiat === "CAD" ? 0.74 : 1;
+  const netUSD   = numAmt * fiatToUSD * (1 - feeRate);
   const estCrypto = netUSD / priceUSD;
-  const fmtCrypto = estCrypto >= 1
-    ? estCrypto.toFixed(4)
-    : estCrypto >= 0.0001
-    ? estCrypto.toFixed(6)
+  const fmtCrypto = estCrypto >= 1 ? estCrypto.toFixed(6)
+    : estCrypto >= 0.0001 ? estCrypto.toFixed(8)
     : estCrypto.toExponential(4);
 
-  // Build provider URL
   function getProviderUrl(pId: string): string {
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
-    const params = new URLSearchParams(p.params(coin, fiat, amount, method));
+    const params = new URLSearchParams(
+      p.params(coin, fiat, amount, method, address ?? "")
+    );
     return `${p.baseUrl}?${params}`;
   }
 
   const selectedProvider = PROVIDERS.find(p => p.id === providerId) ?? supportedProviders[0];
-  const coinDef = COIN_CATALOGUE.find(c => c.symbol === coin)!;
+  const coinDef = COIN_CATALOGUE.find(c => c.symbol === coin);
+
+  // Step label + number for indicator
+  const visibleSteps: { id: Step; label: string }[] = [
+    { id:"connect", label:"Connect" },
+    { id:"coin",    label:"Select" },
+    { id:"quote",   label:"Quote"  },
+    { id:"checkout",label:"Pay"    },
+  ];
+  const currentIdx = STEP_ORDER.indexOf(step);
+
+  function goBack() {
+    if (step === "checkout") setStep("quote");
+    else if (step === "quote")   setStep("coin");
+    else if (step === "coin")    setStep("connect");
+  }
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center">
@@ -218,20 +256,16 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-3">
-            {step !== "coin" && (
-              <button
-                onClick={() => setStep(step === "checkout" ? "quote" : "coin")}
-                className="text-muted-foreground hover:text-foreground text-sm font-semibold"
-              >
-                ←
-              </button>
+            {step !== "connect" && (
+              <button onClick={goBack} className="text-muted-foreground hover:text-foreground text-lg font-semibold leading-none">←</button>
             )}
             <div>
               <h2 className="text-base font-bold">Buy Crypto</h2>
               <p className="text-[11px] text-muted-foreground">
-                {step === "coin" && "Select the coin you want to buy"}
-                {step === "quote" && `Quote for ${coin} · ${supportedProviders.length} exchanges available`}
-                {step === "checkout" && "Review & pay"}
+                {step === "connect" && "Connect your wallet to receive crypto"}
+                {step === "coin"    && "Select the coin you want to buy"}
+                {step === "quote"   && `Quote · ${supportedProviders.length} exchanges available`}
+                {step === "checkout"&& "Review order & pay"}
               </p>
             </div>
           </div>
@@ -241,48 +275,104 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
         </div>
 
         {/* ── Step indicator ── */}
-        <div className="flex border-b border-border shrink-0">
-          {(["coin","quote","checkout"] as Step[]).map((s, i) => (
-            <div key={s} className="flex-1 flex items-center justify-center py-2 gap-1.5">
-              <div className={cn(
-                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black",
-                step === s ? "bg-primary text-primary-foreground" : i < ["coin","quote","checkout"].indexOf(step) ? "bg-green-500 text-white" : "bg-secondary text-muted-foreground"
-              )}>
-                {i < ["coin","quote","checkout"].indexOf(step) ? "✓" : i + 1}
+        <div className="flex border-b border-border shrink-0 bg-secondary/20">
+          {visibleSteps.map((s, i) => {
+            const done    = i < currentIdx;
+            const active  = i === currentIdx;
+            return (
+              <div key={s.id} className="flex-1 flex items-center justify-center py-2 gap-1.5">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black transition-all",
+                  done   ? "bg-green-500 text-white" :
+                  active ? "bg-primary text-primary-foreground" :
+                           "bg-secondary text-muted-foreground"
+                )}>
+                  {done ? "✓" : i + 1}
+                </div>
+                <span className={cn("text-[10px] font-semibold hidden sm:inline transition-colors", active ? "text-foreground" : "text-muted-foreground")}>
+                  {s.label}
+                </span>
               </div>
-              <span className={cn("text-[11px] font-semibold capitalize hidden sm:inline", step === s ? "text-foreground" : "text-muted-foreground")}>
-                {s === "coin" ? "Select Coin" : s === "quote" ? "Quote" : "Pay"}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="overflow-y-auto flex-1">
 
-          {/* ══════════════════ STEP 1: Select Coin ══════════════════ */}
+          {/* ══════════ STEP 0: Connect Wallet ══════════ */}
+          {step === "connect" && (
+            <div className="p-5 space-y-4">
+              {/* Hero */}
+              <div className="text-center py-4">
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 border border-primary/25 flex items-center justify-center mb-3">
+                  <Wallet className="w-8 h-8 text-primary" />
+                </div>
+                <h3 className="text-lg font-bold">Connect Your Wallet</h3>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
+                  Connect a wallet so purchased crypto is sent directly to your address — no copy-pasting needed.
+                </p>
+              </div>
+
+              {/* Why connect */}
+              <div className="bg-secondary/40 border border-border rounded-xl p-4 space-y-2.5">
+                {[
+                  ["🎯", "Crypto sent directly to you", "The exchange uses your address — no manual transfers"],
+                  ["🔒", "Non-custodial",               "Only you control your keys and funds"],
+                  ["⚡", "Instant receipt",             "Coins arrive in your wallet within minutes"],
+                ].map(([icon, title, sub]) => (
+                  <div key={title} className="flex items-start gap-3">
+                    <span className="text-xl shrink-0">{icon}</span>
+                    <div>
+                      <div className="text-sm font-semibold">{title}</div>
+                      <div className="text-[11px] text-muted-foreground">{sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Wallet options */}
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Choose wallet</p>
+              <div className="space-y-2">
+                {WALLET_OPTIONS.map(w => (
+                  <button
+                    key={w.id}
+                    onClick={() => openWalletModal()}
+                    className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
+                      {w.badge}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm">{w.label}</div>
+                      <div className="text-[11px] text-muted-foreground">{w.sub}</div>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 p-3 bg-secondary/30 rounded-xl text-[11px] text-muted-foreground">
+                <Shield className="w-4 h-4 shrink-0 text-primary/60" />
+                OrahDEX never stores your private keys. Your wallet connects via secure browser extension or WalletConnect.
+              </div>
+            </div>
+          )}
+
+          {/* ══════════ STEP 1: Select Coin ══════════ */}
           {step === "coin" && (
             <div className="p-4 space-y-4">
-              {/* Wallet status */}
-              <div className={cn(
-                "flex items-center gap-3 p-3 rounded-xl border text-sm",
-                address
-                  ? "bg-green-500/10 border-green-500/25 text-green-300"
-                  : "bg-amber-500/10 border-amber-500/25 text-amber-300"
-              )}>
-                <Wallet className="w-4 h-4 shrink-0" />
-                {address ? (
-                  <span>Wallet connected · <span className="font-mono text-xs">{address.slice(0,10)}…</span></span>
-                ) : (
-                  <div className="flex items-center justify-between flex-1 gap-2">
-                    <span className="text-xs">Connect wallet to auto-receive your crypto</span>
-                    <button
-                      onClick={() => { onClose(); openWalletModal(); }}
-                      className="px-2.5 py-1 bg-amber-500/20 border border-amber-500/40 rounded-lg text-[11px] font-bold text-amber-300 shrink-0"
-                    >
-                      Connect
-                    </button>
-                  </div>
-                )}
+              {/* Connected wallet banner */}
+              <div className="flex items-center gap-3 p-3 bg-green-500/10 border border-green-500/25 rounded-xl">
+                <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                  <Wallet className="w-4 h-4 text-green-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-green-400">Wallet connected</div>
+                  <div className="font-mono text-[11px] text-muted-foreground truncate">{address}</div>
+                </div>
+                <div className="text-[10px] bg-green-500/20 border border-green-500/30 text-green-400 px-2 py-0.5 rounded-full font-bold shrink-0">
+                  {walletProvider ?? "Connected"}
+                </div>
               </div>
 
               {/* Search */}
@@ -298,14 +388,12 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 />
               </div>
 
-              {/* Popular label */}
               {!search && (
                 <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">
-                  <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> Popular
+                  <Star className="w-3 h-3 text-amber-400 fill-amber-400" /> Select a coin to buy
                 </p>
               )}
 
-              {/* Coin grid */}
               <div className="grid grid-cols-1 gap-1.5">
                 {filteredCoins.map(c => {
                   const providers = PROVIDERS.filter(p => p.coins.includes(c.symbol));
@@ -315,7 +403,6 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                       onClick={() => selectCoin(c.symbol)}
                       className="flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
                     >
-                      {/* Coin badge */}
                       <div
                         className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-black text-white shrink-0 shadow"
                         style={{ background: c.color }}
@@ -324,12 +411,11 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-foreground">{c.symbol}</span>
+                          <span className="font-bold text-sm">{c.symbol}</span>
                           <span className="text-xs text-muted-foreground">{c.name}</span>
                         </div>
-                        {/* Exchange badges */}
                         <div className="flex gap-1 mt-0.5 flex-wrap">
-                          {providers.slice(0,4).map(p => (
+                          {providers.slice(0, 3).map(p => (
                             <span key={p.id} className="text-[9px] bg-secondary px-1.5 py-0.5 rounded font-medium text-muted-foreground">
                               {p.badge} {p.name}
                             </span>
@@ -339,9 +425,9 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs font-mono font-semibold text-foreground">
-                          ${(APPROX_PRICES[c.symbol] ?? 1).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      <div className="text-right shrink-0">
+                        <div className="text-xs font-mono font-semibold">
+                          ${(APPROX_PRICES[c.symbol] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                         </div>
                         <div className="text-[10px] text-muted-foreground">{providers.length} exchanges</div>
                       </div>
@@ -356,10 +442,10 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
             </div>
           )}
 
-          {/* ══════════════════ STEP 2: Quote ══════════════════ */}
+          {/* ══════════ STEP 2: Quote ══════════ */}
           {step === "quote" && (
             <div className="p-4 space-y-4">
-              {/* Selected coin banner */}
+              {/* Selected coin */}
               <div className="flex items-center gap-3 p-3 bg-secondary/40 rounded-xl">
                 <div
                   className="w-10 h-10 rounded-full flex items-center justify-center text-[13px] font-black text-white shrink-0 shadow"
@@ -367,19 +453,25 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 >
                   {coin.slice(0, 2)}
                 </div>
-                <div>
+                <div className="flex-1">
                   <div className="font-bold text-sm">{coin} · {coinDef?.name}</div>
-                  <div className="text-xs text-muted-foreground">≈ ${(APPROX_PRICES[coin] ?? 0).toLocaleString()} USD</div>
+                  <div className="text-xs text-muted-foreground">≈ ${(APPROX_PRICES[coin] ?? 0).toLocaleString()} per coin</div>
                 </div>
-                <button
-                  onClick={() => setStep("coin")}
-                  className="ml-auto text-xs text-primary font-semibold hover:underline"
-                >
+                <button onClick={() => setStep("coin")} className="text-xs text-primary font-semibold hover:underline shrink-0">
                   Change
                 </button>
               </div>
 
-              {/* Amount input */}
+              {/* Destination address */}
+              <div className="flex items-center gap-2 p-2.5 bg-green-500/10 border border-green-500/20 rounded-xl">
+                <Wallet className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-semibold text-green-400">Sending to your wallet · </span>
+                  <span className="font-mono text-[10px] text-muted-foreground">{address}</span>
+                </div>
+              </div>
+
+              {/* Amount */}
               <div>
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">You pay</label>
                 <div className="flex gap-2 mt-1.5">
@@ -414,7 +506,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 </div>
               </div>
 
-              {/* Live quote estimate */}
+              {/* Live quote */}
               <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">You receive ≈</span>
@@ -425,26 +517,26 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 </div>
                 <div className="flex items-center gap-1 mt-2 text-[10px] text-green-400/70">
                   <Zap className="w-3 h-3" />
-                  Delivered to your wallet within 5–15 minutes
+                  Sent to your wallet within 5–15 minutes after payment
                 </div>
               </div>
 
-              {/* Exchange / Provider list */}
+              {/* Exchange list */}
               <div>
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Exchanges supporting {coin} ({supportedProviders.length})
                 </label>
                 <div className="space-y-2 mt-2">
                   {supportedProviders.length === 0 && (
-                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-sm text-amber-300 text-center">
-                      No third-party exchange supports {coin} directly.<br />
-                      <span className="text-xs text-muted-foreground">Use OrahDEX P2P to buy {coin} from other users.</span>
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center">
+                      <p className="text-sm text-amber-300">No third-party exchange supports {coin} yet.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Use OrahDEX P2P to buy {coin} from other users.</p>
                     </div>
                   )}
                   {supportedProviders.map(p => (
                     <button
                       key={p.id}
-                      onClick={() => { setProviderId(p.id); }}
+                      onClick={() => setProviderId(p.id)}
                       className={cn(
                         "w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
                         providerId === p.id
@@ -452,10 +544,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                           : "border-border hover:border-primary/40 hover:bg-white/5"
                       )}
                     >
-                      {/* Logo */}
-                      <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
-                        {p.badge}
-                      </div>
+                      <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">{p.badge}</div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-sm">{p.name}</span>
@@ -465,13 +554,11 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                         <div className="flex gap-1 mt-1 flex-wrap">
                           {p.methods.map(m => (
                             <span key={m} className="flex items-center gap-1 text-[10px] bg-secondary/60 px-1.5 py-0.5 rounded text-muted-foreground">
-                              {METHOD_ICONS[m]} {m === "card" ? "Card" : m === "bank" ? "Bank" : m === "apple" ? "Apple" : "Google"}
+                              {METHOD_ICONS[m]} {METHOD_LABELS[m]}
                             </span>
                           ))}
                         </div>
-                        <div className="text-[10px] text-muted-foreground mt-1">
-                          Min ${p.minUSD} · Max ${p.maxUSD.toLocaleString()}
-                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-1">Min ${p.minUSD} · Max ${p.maxUSD.toLocaleString()}</div>
                       </div>
                       <div className={cn(
                         "w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all",
@@ -482,7 +569,6 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 </div>
               </div>
 
-              {/* Continue */}
               {supportedProviders.length > 0 && (
                 <button
                   onClick={() => {
@@ -492,13 +578,13 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                   disabled={numAmt < 5}
                   className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Continue → {selectedProvider ? `Pay with ${selectedProvider.name}` : "Select an exchange"}
+                  Continue → {selectedProvider ? `Pay via ${selectedProvider.name}` : "Select an exchange"}
                 </button>
               )}
             </div>
           )}
 
-          {/* ══════════════════ STEP 3: Checkout ══════════════════ */}
+          {/* ══════════ STEP 3: Checkout ══════════ */}
           {step === "checkout" && selectedProvider && (
             <div className="p-4 space-y-4">
               {/* Order summary */}
@@ -506,18 +592,32 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Order Summary</p>
                 <div className="space-y-2.5">
                   {[
-                    ["You pay",     `${fiat} ${parseFloat(amount).toLocaleString()}`],
-                    ["You receive", `≈ ${fmtCrypto} ${coin}`],
-                    ["Exchange",    `${selectedProvider.badge} ${selectedProvider.name}`],
-                    ["Exchange fee",selectedProvider.fee],
-                    ["Network",     "Bitcoin SV · On-chain settlement"],
-                  ].map(([label, value]) => (
+                    ["You pay",       `${fiat} ${parseFloat(amount).toLocaleString()}`, ""],
+                    ["You receive",   `≈ ${fmtCrypto} ${coin}`,                        "text-green-400"],
+                    ["Exchange",      `${selectedProvider.badge} ${selectedProvider.name}`, ""],
+                    ["Exchange fee",  selectedProvider.fee,                             ""],
+                    ["Network",       "Bitcoin SV · On-chain settlement",               "text-amber-400"],
+                  ].map(([label, value, cls]) => (
                     <div key={label} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">{label}</span>
-                      <span className={cn("font-semibold", label === "You receive" && "text-green-400")}>{value}</span>
+                      <span className={cn("font-semibold text-right max-w-[60%]", cls)}>{value}</span>
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Destination wallet — prominent */}
+              <div className="p-4 bg-green-500/10 border border-green-500/25 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wallet className="w-4 h-4 text-green-400 shrink-0" />
+                  <span className="text-sm font-bold text-green-400">Destination wallet</span>
+                </div>
+                <div className="font-mono text-[11px] text-muted-foreground break-all bg-black/20 rounded-lg p-2">
+                  {address}
+                </div>
+                <p className="text-[10px] text-green-400/70 mt-2">
+                  {selectedProvider.name} will send {coin} directly to this address after payment is confirmed.
+                </p>
               </div>
 
               {/* Payment method */}
@@ -540,22 +640,6 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 </div>
               </div>
 
-              {/* Wallet warning */}
-              {!address && (
-                <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-amber-300 leading-relaxed">
-                    No wallet connected. Connect a wallet first so {selectedProvider.name} knows where to send your {coin}.
-                    <button
-                      onClick={() => { onClose(); openWalletModal(); }}
-                      className="ml-1 underline font-bold"
-                    >
-                      Connect now
-                    </button>
-                  </p>
-                </div>
-              )}
-
               {/* Primary CTA */}
               <a
                 href={getProviderUrl(selectedProvider.id)}
@@ -572,7 +656,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
               {supportedProviders.filter(p => p.id !== selectedProvider.id).length > 0 && (
                 <div>
                   <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">Other exchanges</p>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {supportedProviders.filter(p => p.id !== selectedProvider.id).map(p => (
                       <a
                         key={p.id}
@@ -591,10 +675,10 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 </div>
               )}
 
-              <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+              <div className="flex items-start gap-2 p-3 bg-secondary/40 border border-border rounded-xl">
                 <CheckCircle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-green-300/80 leading-relaxed">
-                  After payment is confirmed, {selectedProvider.name} will send your {coin} directly to your wallet. The process typically takes 5–15 minutes.
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  After payment, {selectedProvider.name} sends {coin} directly to your wallet. Typically takes 5–15 minutes. OrahDEX does not store card or bank details.
                 </p>
               </div>
             </div>
