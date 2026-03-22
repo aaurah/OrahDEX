@@ -178,6 +178,23 @@ router.get("/dex/exchanges", async (req, res) => {
       };
     });
 
+    // Inject OrahDEX as a pinned DEX entry (always first in DEX list)
+    const orahVolBtc = 120;
+    exchanges.unshift({
+      id: "orahdex",
+      name: "OrahDEX",
+      url: "https://orahdex.org",
+      image: null,
+      country: null,
+      yearEstablished: 2026,
+      type: "dex",
+      chain: "BSV",
+      trustScore: 9,
+      tradeVolume24hBtc: orahVolBtc,
+      tradeVolume24hUsd: orahVolBtc * btcPrice,
+      marketCap: 28000000,
+    });
+
     const totalVolumeBtc = exchanges.reduce((s, e) => s + e.tradeVolume24hBtc, 0);
     const dexCount = exchanges.filter(e => e.type === "dex").length;
     const cexCount = exchanges.filter(e => e.type === "cex").length;

@@ -127,15 +127,27 @@ export function DexHub() {
     return [...rows].sort(sortFn);
   }, [allExchanges, exType, search, sortBy]);
 
-  const totalVolumeUsd: number  = data?.totalVolumeUsd ?? 0;
-  const totalVolumeBtc: number  = data?.totalVolumeBtc ?? 0;
-  const defiMarketCap: number   = data?.defiMarketCap ?? 0;
-  const cefiMarketCap: number   = data?.cefiMarketCap ?? 0;
-  const totalMarketCap: number  = data?.totalMarketCap ?? 0;
-  const exchangeCount: number   = data?.exchangeCount ?? 0;
-  const dexCount: number        = data?.dexCount ?? 0;
-  const cexCount: number        = data?.cexCount ?? 0;
-  const btcPrice: number        = data?.btcPrice ?? 0;
+  const btcPrice: number = data?.btcPrice ?? 0;
+
+  // Stats that react to the selected tab — computed from type-filtered exchanges (no search)
+  const typeFiltered: any[] = useMemo(() => {
+    if (!allExchanges.length) return [];
+    if (exType === "all") return allExchanges;
+    return allExchanges.filter(e => e.type === exType);
+  }, [allExchanges, exType]);
+
+  const statVolumeBtc   = typeFiltered.reduce((s, e) => s + (e.tradeVolume24hBtc ?? 0), 0);
+  const statVolumeUsd   = typeFiltered.reduce((s, e) => s + (e.tradeVolume24hUsd ?? 0), 0);
+  const statCount       = typeFiltered.length;
+  const statDexCount    = typeFiltered.filter(e => e.type === "dex").length;
+  const statCexCount    = typeFiltered.filter(e => e.type === "cex").length;
+
+  // Market cap: use global API totals (CoinGecko global feed) — more accurate than per-exchange sum
+  const apiDefiMc  = data?.defiMarketCap ?? 0;
+  const apiCefiMc  = data?.cefiMarketCap ?? 0;
+  const statMarketCap = exType === "dex" ? apiDefiMc : exType === "cex" ? apiCefiMc : (apiDefiMc + apiCefiMc);
+  const statDefiMc    = exType === "cex" ? 0 : apiDefiMc;
+  const statCefiMc    = exType === "dex" ? 0 : apiCefiMc;
 
   const TAB_STYLE = (active: boolean, type?: ExType) => cn(
     "px-4 py-2 rounded-xl text-sm font-semibold border transition-all",
@@ -171,12 +183,12 @@ export function DexHub() {
         <div className="bg-gradient-to-br from-card to-secondary p-4 lg:p-5 rounded-2xl border border-border shadow-lg">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
             <TrendingUp className="w-4 h-4 text-green-500" />
-            Total Volume 24h
+            {exType === "cex" ? "CEX" : exType === "dex" ? "DEX" : "Total"} Volume 24h
           </div>
           {isLoading ? <div className="h-8 w-32 bg-muted animate-pulse rounded" /> : (
             <>
-              <div className="text-xl lg:text-2xl font-mono font-bold">{fmtUsd(totalVolumeUsd)}</div>
-              <div className="text-xs text-muted-foreground mt-1">{fmtBtc(totalVolumeBtc)}</div>
+              <div className="text-xl lg:text-2xl font-mono font-bold">{fmtUsd(statVolumeUsd)}</div>
+              <div className="text-xs text-muted-foreground mt-1">{fmtBtc(statVolumeBtc)}</div>
             </>
           )}
         </div>
@@ -184,14 +196,14 @@ export function DexHub() {
         <div className="bg-gradient-to-br from-card to-secondary p-4 lg:p-5 rounded-2xl border border-border shadow-lg">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
             <Coins className="w-4 h-4 text-violet-400" />
-            Combined Market Cap
+            {exType === "cex" ? "CEX" : exType === "dex" ? "DEX" : "Combined"} Market Cap
           </div>
           {isLoading ? <div className="h-8 w-28 bg-muted animate-pulse rounded" /> : (
             <>
-              <div className="text-xl lg:text-2xl font-mono font-bold">{fmtUsd(totalMarketCap)}</div>
+              <div className="text-xl lg:text-2xl font-mono font-bold">{fmtUsd(statMarketCap)}</div>
               <div className="text-xs text-muted-foreground mt-1 flex gap-2">
-                <span className="text-blue-400">CEX {fmtUsd(cefiMarketCap)}</span>
-                <span className="text-violet-400">DEX {fmtUsd(defiMarketCap)}</span>
+                {exType !== "dex"  && <span className="text-blue-400">CEX {fmtUsd(statCefiMc)}</span>}
+                {exType !== "cex"  && <span className="text-violet-400">DEX {fmtUsd(statDefiMc)}</span>}
               </div>
             </>
           )}
@@ -200,14 +212,14 @@ export function DexHub() {
         <div className="bg-gradient-to-br from-card to-secondary p-4 lg:p-5 rounded-2xl border border-border shadow-lg">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
             <Globe className="w-4 h-4 text-blue-400" />
-            Exchanges Tracked
+            {exType === "cex" ? "CEX" : exType === "dex" ? "DEX" : "Exchanges"} Tracked
           </div>
           {isLoading ? <div className="h-8 w-16 bg-muted animate-pulse rounded" /> : (
             <>
-              <div className="text-xl lg:text-2xl font-mono font-bold">{exchangeCount}</div>
+              <div className="text-xl lg:text-2xl font-mono font-bold">{statCount}</div>
               <div className="text-xs text-muted-foreground mt-1 flex gap-3">
-                <span className="text-blue-400">{cexCount} CEX</span>
-                <span className="text-violet-400">{dexCount} DEX</span>
+                {exType !== "dex"  && <span className="text-blue-400">{statCexCount} CEX</span>}
+                {exType !== "cex"  && <span className="text-violet-400">{statDexCount} DEX</span>}
               </div>
             </>
           )}
@@ -418,7 +430,7 @@ export function DexHub() {
         {!isLoading && filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-border bg-secondary/20 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2">
             <span>
-              Showing {filtered.length} of {exchangeCount} exchanges
+              Showing {filtered.length} of {statCount} exchanges
               {exType !== "all" && ` · ${exType.toUpperCase()} only`}
               {sortBy !== "volume" && ` · sorted by ${SORT_LABELS[sortBy]}`}
             </span>
