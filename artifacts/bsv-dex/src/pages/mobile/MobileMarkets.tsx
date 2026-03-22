@@ -78,7 +78,7 @@ export function MobileMarkets() {
         <div className="flex items-center justify-between mb-3 pt-3">
           <div>
             <span className="text-xl font-bold text-foreground">Orah<span className="text-primary">DEX</span></span>
-            <p className="text-[10px] text-primary opacity-80">✦ Always comes to Orah DEX</p>
+            <p className="text-[10px] text-primary opacity-80">✦ Trade means DEX</p>
           </div>
           <button
             onClick={() => refetch()}

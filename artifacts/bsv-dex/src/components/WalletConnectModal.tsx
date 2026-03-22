@@ -297,7 +297,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
                     </h2>
-                    <p className="text-xs text-muted-foreground mt-0.5 italic">Always comes to Orah DEX ✦</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 italic">Trade means DEX ✦</p>
                   </div>
                 </div>
                 <button onClick={handleClose}
