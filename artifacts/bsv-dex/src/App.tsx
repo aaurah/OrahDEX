@@ -19,6 +19,7 @@ import { AdminTradePairs } from "@/pages/admin/TradePairs";
 import { AdminApiSettings } from "@/pages/admin/ApiSettings";
 import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
 import { AdminThemes } from "@/pages/admin/Themes";
+import { AdminTransactions } from "@/pages/admin/Transactions";
 import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
@@ -85,6 +86,11 @@ function Router() {
       <Route path="/admin/themes">
         <RequireAdminAuth>
           <AdminLayout><AdminThemes /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/transactions">
+        <RequireAdminAuth>
+          <AdminLayout><AdminTransactions /></AdminLayout>
         </RequireAdminAuth>
       </Route>
 
