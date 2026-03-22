@@ -1,7 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Theme = 'dark' | 'light' | 'amoled';
+export type Theme = 'dark' | 'light' | 'system';
+
+function applyTheme(theme: Theme) {
+  const html = document.documentElement;
+  html.classList.remove('light', 'dark');
+  if (theme === 'light') {
+    html.classList.add('light');
+  } else if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (!prefersDark) html.classList.add('light');
+  }
+}
 
 interface ThemeState {
   theme: Theme;
@@ -13,10 +24,7 @@ export const useThemeStore = create<ThemeState>()(
     (set) => ({
       theme: 'dark',
       setTheme: (theme) => {
-        const html = document.documentElement;
-        html.classList.remove('light', 'amoled');
-        if (theme === 'light') html.classList.add('light');
-        if (theme === 'amoled') html.classList.add('amoled');
+        applyTheme(theme);
         set({ theme });
       },
     }),
@@ -29,9 +37,6 @@ export function applyStoredTheme() {
   if (!raw) return;
   try {
     const { state } = JSON.parse(raw);
-    const html = document.documentElement;
-    html.classList.remove('light', 'amoled');
-    if (state?.theme === 'light') html.classList.add('light');
-    if (state?.theme === 'amoled') html.classList.add('amoled');
+    applyTheme(state?.theme ?? 'dark');
   } catch {}
 }

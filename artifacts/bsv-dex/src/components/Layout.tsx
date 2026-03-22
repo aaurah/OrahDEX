@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Smartphone, Layers, Users } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Layers, Users } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -9,8 +9,9 @@ import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone };
-const THEME_CYCLE = ["dark", "light", "amoled"] as const;
+const THEME_ICONS = { dark: Moon, light: Sun, system: Monitor };
+const THEME_CYCLE = ["dark", "light", "system"] as const;
+const THEME_LABELS = { dark: "Dark", light: "Light", system: "System" };
 
 const NAV_LINKS = [
   { href: "/", label: "Markets", icon: Activity },
@@ -33,9 +34,10 @@ export function Layout({ children }: { children: ReactNode }) {
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const ThemeIcon = THEME_ICONS[theme ?? "dark"];
+  const safeTheme = (THEME_CYCLE as readonly string[]).includes(theme) ? (theme as typeof THEME_CYCLE[number]) : "dark";
+  const ThemeIcon = THEME_ICONS[safeTheme];
   const cycleTheme = () => {
-    const idx = THEME_CYCLE.indexOf(theme as typeof THEME_CYCLE[number]);
+    const idx = THEME_CYCLE.indexOf(safeTheme);
     setTheme(THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]);
   };
 
@@ -85,10 +87,11 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
-            title={`Switch theme (${theme})`}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors text-xs font-medium"
+            title={`Switch theme — currently ${THEME_LABELS[safeTheme]}`}
           >
-            <ThemeIcon className="w-4 h-4" />
+            <ThemeIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{THEME_LABELS[safeTheme]}</span>
           </button>
 
           {address ? (
