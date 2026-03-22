@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bell, Star, Share2, Settings2 } from "lucide-react";
+import { ArrowLeft, Bell, Star, Share2, AlignJustify, Settings2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { Chart } from "@/components/trading/Chart";
+import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -53,6 +54,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [activeIndicator, setActiveIndicator] = useState("MACD");
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [price, setPrice] = useState("");
@@ -104,23 +106,42 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── HEADER ── */}
-      <div className="shrink-0 flex items-center px-4 pt-3 pb-2 border-b border-border gap-3">
-        <button onClick={() => navigate("/")} className="p-1">
-          <ArrowLeft size={20} className="text-foreground" />
+      <div className="shrink-0 flex items-center px-3 pt-3 pb-2 border-b border-border gap-2">
+        {/* Back arrow */}
+        <button onClick={() => navigate("/")} className="p-1.5 shrink-0">
+          <ArrowLeft size={19} className="text-foreground" />
         </button>
-        <div className="flex-1 flex items-center gap-2">
+
+        {/* ≡ Three-lines market selector button */}
+        <button
+          onClick={() => setSelectorOpen(true)}
+          className="p-1.5 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Select market"
+        >
+          <AlignJustify size={19} />
+        </button>
+
+        {/* Pair name — tapping also opens selector */}
+        <button
+          onClick={() => setSelectorOpen(true)}
+          className="flex items-center gap-1.5 flex-1 min-w-0"
+        >
           <div
-            className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold shrink-0"
+            className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0"
             style={{ backgroundColor: color + "22", color }}
           >
             {base[0]}
           </div>
-          <span className="text-base font-bold">{base}<span className="text-muted-foreground font-normal text-sm">/{quote}</span></span>
-          <svg className="w-3 h-3 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          <span className="text-base font-bold truncate">
+            {base}<span className="text-muted-foreground font-normal text-sm">/{quote}</span>
+          </span>
+          <svg className="w-3 h-3 text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
           </svg>
-        </div>
-        <div className="flex items-center gap-3 text-muted-foreground">
+        </button>
+
+        {/* Right icons */}
+        <div className="flex items-center gap-2.5 text-muted-foreground shrink-0">
           <Bell size={17} />
           <button onClick={() => setStarred(s => !s)}>
             <Star size={17} className={starred ? "fill-amber-400 text-amber-400" : ""} />
@@ -497,6 +518,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           Sell
         </button>
       </div>
+
+      {/* ── MARKET SELECTOR DRAWER ── */}
+      <MobileMarketSelector
+        open={selectorOpen}
+        onClose={() => setSelectorOpen(false)}
+        currentSymbol={symbol}
+      />
 
     </div>
   );
