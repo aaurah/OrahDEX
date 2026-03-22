@@ -125,9 +125,6 @@ export default function MarketsScreen() {
           <Text style={styles.slogan}>✦ Always comes to Aura</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push("/wallet" as any)}>
-            <Feather name="cpu" size={20} color={C.text} />
-          </TouchableOpacity>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: C.primary + "18" }]} onPress={() => router.push("/wallet" as any)}>
             <Feather name="link" size={18} color={C.primary} />
           </TouchableOpacity>
