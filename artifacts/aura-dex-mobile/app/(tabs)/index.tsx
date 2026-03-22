@@ -122,7 +122,7 @@ export default function MarketsScreen() {
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 12 }]}>
         <View>
           <Text style={styles.logo}>Orah<Text style={{ color: C.primary }}>DEX</Text></Text>
-          <Text style={styles.slogan}>✦ Always comes to Orah DEX</Text>
+          <Text style={styles.slogan}>✦ Trade means DEX</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={[styles.iconBtn, { backgroundColor: C.primary + "18" }]} onPress={() => router.push("/wallet" as any)}>

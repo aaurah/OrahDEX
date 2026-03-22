@@ -147,7 +147,7 @@ export function MobileSettings() {
         <p className="text-2xl font-bold text-foreground">
           Orah<span className="text-primary">DEX</span>
         </p>
-        <p className="text-xs text-primary mt-1 opacity-80">✦ Always comes to Orah DEX</p>
+        <p className="text-xs text-primary mt-1 opacity-80">✦ Trade means DEX</p>
         <p className="text-[11px] text-muted-foreground mt-2">Non-custodial · On-chain settlement · BSV</p>
       </div>
     </div>

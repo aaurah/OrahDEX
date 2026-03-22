@@ -67,7 +67,7 @@ export default function WalletScreen() {
           )}
           <View>
             <Text style={styles.title}>{getTitle()}</Text>
-            <Text style={styles.subtitle}>✦ Always comes to Orah DEX</Text>
+            <Text style={styles.subtitle}>✦ Trade means DEX</Text>
           </View>
         </View>
         <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>

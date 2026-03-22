@@ -1,7 +1,7 @@
 {
   "name": "OrahDEX",
   "short_name": "OrahDEX",
-  "description": "Always comes to Orah DEX — Multi-chain trading with on-chain BSV settlement",
+  "description": "Trade means DEX — Multi-chain trading with on-chain BSV settlement",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#080d13",
