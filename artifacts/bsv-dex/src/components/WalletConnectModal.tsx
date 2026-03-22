@@ -4,6 +4,7 @@ import {
   X, Shield, ChevronRight, Wifi, CheckCircle2,
   PlusCircle, Download, Link2, Copy, Check,
   Eye, EyeOff, AlertTriangle, RefreshCw, ArrowLeft,
+  Layers, HardDrive,
 } from "lucide-react";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
@@ -99,6 +100,75 @@ const WALLET_INSTALL_URLS: Record<string, string> = {
   walletconnect: null as any,
 };
 
+const EVM_LAYER_CHAINS = [
+  { layer: 1, id: "eth",  name: "Ethereum",      chainId: 1,     symbol: "ETH",  badge: "L1", color: "blue" },
+  { layer: 1, id: "bsc",  name: "BNB Chain",     chainId: 56,    symbol: "BNB",  badge: "L1", color: "yellow" },
+  { layer: 2, id: "poly", name: "Polygon",        chainId: 137,   symbol: "MATIC",badge: "L2", color: "violet" },
+  { layer: 2, id: "arb",  name: "Arbitrum One",   chainId: 42161, symbol: "ETH",  badge: "L2", color: "blue" },
+  { layer: 2, id: "op",   name: "Optimism",       chainId: 10,    symbol: "ETH",  badge: "L2", color: "red" },
+  { layer: 2, id: "base", name: "Base",           chainId: 8453,  symbol: "ETH",  badge: "L2", color: "blue" },
+  { layer: 3, id: "zk",   name: "zkSync Era",     chainId: 324,   symbol: "ETH",  badge: "L3", color: "violet" },
+  { layer: 3, id: "stark",name: "StarkNet",       chainId: 0,     symbol: "STRK", badge: "L3", color: "orange" },
+];
+
+function EvmChainSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const layerColors: Record<number, string> = { 1: "bg-blue-500/10 text-blue-400 border-blue-500/30", 2: "bg-violet-500/10 text-violet-400 border-violet-500/30", 3: "bg-orange-500/10 text-orange-400 border-orange-500/30" };
+  const groups = [1, 2, 3];
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 flex items-center gap-1.5">
+        <Layers className="w-3.5 h-3.5" /> EVM Layer &amp; Chain
+      </p>
+      <div className="space-y-2">
+        {groups.map(layer => (
+          <div key={layer}>
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-bold mb-1.5 px-1">
+              Layer {layer} {layer === 1 ? "— Base Chains" : layer === 2 ? "— Rollups & Sidechains" : "— App Chains"}
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {EVM_LAYER_CHAINS.filter(c => c.layer === layer).map(c => (
+                <button key={c.id} onClick={() => onChange(c.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left",
+                    value === c.id
+                      ? layerColors[layer]
+                      : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                  )}>
+                  <span className={cn("text-[9px] font-black px-1 py-0.5 rounded", layerColors[layer])}>{c.badge}</span>
+                  <span className="truncate">{c.name}</span>
+                  {c.chainId > 0 && <span className="ml-auto text-muted-foreground/50 text-[9px]">#{c.chainId}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AccountIndexSelector({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">HD Account Index</p>
+      <div className="flex gap-2 flex-wrap">
+        {[0, 1, 2, 3, 4, 5].map(i => (
+          <button key={i} onClick={() => onChange(i)}
+            className={cn(
+              "w-10 h-9 rounded-lg border text-sm font-mono font-semibold transition-all",
+              value === i ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:border-primary/30"
+            )}>
+            {i}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground/60 mt-1.5">
+        Derivation path: m/44'/60'/{value}'/0/0 — each index is a separate account from the same seed
+      </p>
+    </div>
+  );
+}
+
 const METAMASK_MOBILE_DEEPLINK = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -123,6 +193,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [importError, setImportError] = useState<string | null>(null);
   const [importAddress, setImportAddress] = useState("");
 
+  const [evmChain, setEvmChain] = useState("eth");
+  const [accountIndex, setAccountIndex] = useState(0);
+  const [trezorStatus, setTrezorStatus] = useState<"idle" | "connecting" | "error">("idle");
+  const [trezorError, setTrezorError] = useState<string | null>(null);
+
   const handleClose = () => {
     onClose();
     setTimeout(() => {
@@ -146,6 +221,46 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
       if (wallet.id === "walletconnect") {
         setConnectError("WalletConnect integration coming soon. Use MetaMask or another installed wallet for now.");
+        return;
+      }
+
+      // Trezor hardware wallet — load TrezorConnect from CDN
+      if (wallet.id === "trezor") {
+        setConnecting("trezor");
+        setTrezorStatus("connecting");
+        setTrezorError(null);
+        try {
+          let TC = (window as any).TrezorConnect;
+          if (!TC) {
+            await new Promise<void>((resolve, reject) => {
+              const s = document.createElement("script");
+              s.src = "https://connect.trezor.io/9/trezor-connect.js";
+              s.onload = () => resolve();
+              s.onerror = () => reject(new Error("Failed to load TrezorConnect SDK"));
+              document.head.appendChild(s);
+            });
+            TC = (window as any).TrezorConnect;
+          }
+          await TC.init({
+            lazyLoad: true,
+            manifest: { email: "admin@orahdex.com", appUrl: window.location.origin },
+          });
+          const path = `m/44'/60'/${accountIndex}'/0/0`;
+          const result = await TC.ethereumGetAddress({ path, showOnTrezor: true });
+          if (!result.success) throw new Error(result.payload?.error ?? "Trezor rejected the request");
+          const addr = result.payload.address;
+          const selectedChain = EVM_LAYER_CHAINS.find(c => c.id === evmChain);
+          connect({ address: addr, provider: "trezor", network: "evm", chainId: selectedChain?.chainId ?? 1 });
+          setTrezorStatus("idle");
+          setConnecting(null);
+          setConnected("trezor");
+          setTimeout(() => { setConnected(null); handleClose(); }, 800);
+        } catch (err: any) {
+          setTrezorStatus("error");
+          setTrezorError(err?.message ?? "Trezor connection failed. Make sure Trezor Suite is open.");
+          setConnecting(null);
+          setConnectError(err?.message ?? "Trezor connection failed. Open Trezor Suite and try again.");
+        }
         return;
       }
 
@@ -416,6 +531,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                           </div>
 
+                          {/* EVM Layer/Chain selector */}
+                          {createNetwork === "evm" && (
+                            <>
+                              <EvmChainSelector value={evmChain} onChange={setEvmChain} />
+                              <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
+                            </>
+                          )}
+
                           {/* Word count */}
                           <div>
                             <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Phrase Length</p>
@@ -536,6 +659,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                           </div>
 
+                          {/* EVM Layer/Chain selector for import */}
+                          {importNetwork === "evm" && (
+                            <>
+                              <EvmChainSelector value={evmChain} onChange={setEvmChain} />
+                              <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
+                              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/5 border border-blue-500/15 text-xs text-blue-300/80">
+                                <Layers className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
+                                <span>Your EVM seed phrase works on <strong>all layers</strong> — Ethereum, Polygon, Arbitrum, Base etc. use the same keys. Select the chain you want to connect to on Orah DEX.</span>
+                              </div>
+                            </>
+                          )}
+
                           <div>
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Seed Phrase</p>
@@ -632,9 +767,25 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       <div className="px-6 pt-3 pb-2">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Wifi className="w-3 h-3" />
-                          {connectTab === "evm" ? "Ethereum Mainnet — all EVM-compatible chains supported" : "Bitcoin SV Mainnet — on-chain settlement via BSV script"}
+                          {connectTab === "evm"
+                            ? <span>EVM-compatible — <span className="text-blue-400 font-medium">L1</span> Ethereum · BSC &nbsp;|&nbsp; <span className="text-violet-400 font-medium">L2</span> Polygon · Arbitrum · Base &nbsp;|&nbsp; <span className="text-orange-400 font-medium">L3</span> zkSync</span>
+                            : "Bitcoin SV Mainnet — on-chain settlement via BSV script"}
                         </div>
                       </div>
+
+                      {/* Trezor: account index selector shown inline */}
+                      {connectTab === "evm" && (
+                        <div className="px-6 pb-3">
+                          <div className="p-3.5 rounded-xl border border-border bg-card/50 space-y-3">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                              <HardDrive className="w-3.5 h-3.5" /> Hardware Wallet / Account Settings
+                            </div>
+                            <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
+                            <p className="text-[10px] text-muted-foreground/50">Used by Trezor and Ledger hardware wallets to derive the correct account address.</p>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="px-6 pb-4">
                         {[wallets.filter(w => w.popular), wallets.filter(w => !w.popular)].map((group, gi) => (
                           group.length > 0 && (
