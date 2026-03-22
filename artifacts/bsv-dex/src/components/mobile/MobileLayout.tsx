@@ -3,6 +3,7 @@ import { BarChart2, Briefcase, Settings, Zap, Layers, Users2 } from "lucide-reac
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { BsvAutoWalletModal } from "@/components/BsvAutoWalletModal";
+import { BsvDisconnectModal } from "@/components/BsvDisconnectModal";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
@@ -57,6 +58,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
       <BsvAutoWalletModal />
+      <BsvDisconnectModal />
     </div>
   );
 }
