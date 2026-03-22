@@ -155,7 +155,6 @@ export default function MarketsScreen() {
 
         {/* Top movers */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top Movers</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
             {topGainers.map((m: typeof MOCK_MARKETS[0]) => (
               <Pressable key={m.symbol} style={styles.moverCard} onPress={() => openTrade(m)}>
