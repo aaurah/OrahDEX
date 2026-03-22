@@ -4,6 +4,7 @@ import { ordersTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne } from "drizzle-orm";
 import crypto from "node:crypto";
 import { buildSettlement } from "../lib/settlement.js";
+import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 
 const router: IRouter = Router();
 
@@ -91,23 +92,29 @@ router.post("/orders", async (req, res) => {
     req.log.info({ orderId: id, side: body.side, networkType }, "Order placed");
 
     // ── Attempt order matching ───────────────────────────────────────────────
+    // Works for BOTH limit orders (match if price crosses) and market orders
+    // (match against best available bot/user counter-order at any price).
     let settlementTxid: string | null = null;
     let matchedOrderId: string | null = null;
 
-    if (body.type === "limit" && price) {
+    const isMarket = body.type === "market";
+    const isLimit  = body.type === "limit" && !!price;
+
+    if (isMarket || isLimit) {
       const counterSide = body.side === "buy" ? "sell" : "buy";
 
-      // Find the best counter-order: for a new BUY find the cheapest SELL ≤ price
-      // For a new SELL find the most expensive BUY ≥ price
+      // For limit orders restrict by price; market orders accept any price
       const counterOrders = await db.select().from(ordersTable).where(
         and(
           eq(ordersTable.symbol, body.symbol),
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
           ne(ordersTable.walletAddress, body.walletAddress),
-          body.side === "buy"
-            ? lte(ordersTable.price, price.toString())
-            : gte(ordersTable.price, price.toString())
+          ...(isLimit
+            ? [body.side === "buy"
+                ? lte(ordersTable.price, price!.toString())
+                : gte(ordersTable.price, price!.toString())]
+            : []),
         )
       );
 
@@ -120,7 +127,11 @@ router.post("/orders", async (req, res) => {
 
       const match = sorted[0];
       if (match) {
-        // ── Settle on BSV chain ───────────────────────────────────────────────
+        // Use the matched order's price (bot's price) as the fill price
+        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
+        const fillTotal = (quantity * fillPrice).toFixed(8);
+
+        // ── Settle on BSV chain ─────────────────────────────────────────────
         const settlement = buildSettlement({
           tradeId:       crypto.randomUUID(),
           pair:          body.symbol,
@@ -131,8 +142,8 @@ router.post("/orders", async (req, res) => {
           buyerNetwork:  body.side === "buy" ? networkType : (match.networkType ?? "evm"),
           sellerNetwork: body.side === "sell" ? networkType : (match.networkType ?? "evm"),
           amount:        quantity.toString(),
-          price:         (parseFloat(match.price ?? price.toString())).toString(),
-          total:         (quantity * parseFloat(match.price ?? price.toString())).toFixed(8),
+          price:         fillPrice.toString(),
+          total:         fillTotal,
           timestamp:     Date.now(),
         });
 
@@ -140,28 +151,36 @@ router.post("/orders", async (req, res) => {
         matchedOrderId = match.id;
 
         req.log.info(
-          { txid: settlement.txid, buyOrder: id, sellOrder: match.id },
+          { txid: settlement.txid, buyOrder: id, sellOrder: match.id,
+            fillPrice, isBot: match.walletAddress === BOT_ADDRESS },
           "BSV settlement committed"
         );
 
-        // Mark the matching counter-order as filled
-        await db.update(ordersTable)
-          .set({
-            status:            "filled",
-            filledQuantity:    match.quantity,
-            remainingQuantity: "0",
-            txid:              settlement.txid,
-            matchedOrderId:    id,
-            updatedAt:         new Date(),
-          })
-          .where(eq(ordersTable.id, match.id));
+        // If matched against the bot, just delete the consumed bot order
+        // (keeps the bot order table clean; real users keep their filled rows)
+        if (match.walletAddress === BOT_ADDRESS) {
+          await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+        } else {
+          await db.update(ordersTable)
+            .set({
+              status:            "filled",
+              filledQuantity:    match.quantity,
+              remainingQuantity: "0",
+              txid:              settlement.txid,
+              matchedOrderId:    id,
+              updatedAt:         new Date(),
+            })
+            .where(eq(ordersTable.id, match.id));
+        }
 
-        // Mark the new order as filled
+        // Mark the user's new order as filled
         await db.update(ordersTable)
           .set({
             status:            "filled",
             filledQuantity:    quantity.toString(),
             remainingQuantity: "0",
+            price:             isMarket ? fillPrice.toString() : undefined,
+            total:             fillTotal,
             txid:              settlement.txid,
             matchedOrderId:    match.id,
             updatedAt:         new Date(),
