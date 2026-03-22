@@ -1,9 +1,114 @@
 import { useState, useCallback, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2 } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
+
+/* ── Notifications drawer ── */
+const NOTIF_ICONS: Record<string, React.ReactNode> = {
+  price:  <TrendingUp size={15} className="text-amber-400" />,
+  order:  <CheckCircle2 size={15} className="text-green-500" />,
+  alert:  <AlertCircle size={15} className="text-red-400" />,
+  system: <Info size={15} className="text-blue-400" />,
+  promo:  <Zap size={15} className="text-purple-400" />,
+};
+
+const BASE_NOTIFS = [
+  { id: 1, type: "order",  title: "Buy order filled",        body: "0.05 BTC bought at $65,200",          time: "2m ago",  read: false },
+  { id: 2, type: "price",  title: "Price alert triggered",   body: "ETH/USDT crossed $3,400",             time: "18m ago", read: false },
+  { id: 3, type: "alert",  title: "Stop-loss executed",      body: "SOL/USDT stop at $142 triggered",     time: "1h ago",  read: false },
+  { id: 4, type: "promo",  title: "Fee rebate earned",       body: "You earned $2.34 in maker rebates",   time: "3h ago",  read: true  },
+  { id: 5, type: "system", title: "Liquidity pool reward",   body: "Harvest 0.0084 BSV from BSV/USDT pool","time": "5h ago", read: true },
+  { id: 6, type: "system", title: "System maintenance",      body: "Scheduled: Sunday 02:00–03:00 UTC",   time: "1d ago",  read: true  },
+];
+
+function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [notifs, setNotifs] = useState(BASE_NOTIFS);
+  const unread = notifs.filter(n => !n.read).length;
+
+  const markAll = () => setNotifs(n => n.map(x => ({ ...x, read: true })));
+  const dismiss = (id: number) => setNotifs(n => n.filter(x => x.id !== id));
+
+  return (
+    <>
+      <div
+        className={cn("fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200",
+          open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")}
+        onClick={onClose}
+      />
+      <div className={cn(
+        "fixed top-0 right-0 bottom-0 z-50 w-[85vw] max-w-xs bg-background flex flex-col shadow-2xl transition-transform duration-250 ease-out border-l border-border",
+        open ? "translate-x-0" : "translate-x-full"
+      )}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-2">
+            <Bell size={16} className="text-foreground" />
+            <span className="font-bold text-base">Notifications</span>
+            {unread > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-500 text-white rounded-full">{unread}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {unread > 0 && (
+              <button onClick={markAll} className="text-xs text-primary font-semibold">Mark all read</button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Notif list */}
+        <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-border/50">
+          {notifs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
+              <Bell size={32} className="opacity-30" />
+              <p className="text-sm">No notifications</p>
+            </div>
+          ) : notifs.map(n => (
+            <div key={n.id} className={cn("flex gap-3 px-4 py-3.5 relative", !n.read && "bg-primary/4")}>
+              {!n.read && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full" />}
+              <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+                {NOTIF_ICONS[n.type]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-1">
+                  <p className={cn("text-[13px] font-semibold leading-snug", !n.read ? "text-foreground" : "text-muted-foreground")}>{n.title}</p>
+                  <button onClick={() => dismiss(n.id)} className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground">
+                    <X size={11} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
+                <p className="text-[10px] text-muted-foreground/50 mt-1">{n.time}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 border-t border-border px-4 py-3">
+          <button onClick={() => setNotifs([])} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors">
+            Clear all notifications
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Share toast ── */
+function ShareToast({ visible, copied }: { visible: boolean; copied: boolean }) {
+  return (
+    <div className={cn(
+      "fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-foreground text-background text-sm font-semibold shadow-xl transition-all duration-300",
+      visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 pointer-events-none"
+    )}>
+      {copied ? <><Check size={14} /> Link copied!</> : <><Share2 size={14} /> Shared!</>}
+    </div>
+  );
+}
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -53,7 +158,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [shareToastVisible, setShareToastVisible] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [side, setSide] = useState<Side>("buy");
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
+    const text = `Trade ${symbol} on OrahDEX — Trade means DEX`;
+    if (navigator.share) {
+      try { await navigator.share({ title: `OrahDEX — ${symbol}`, text, url }); } catch {}
+      setShareCopied(false);
+    } else {
+      try { await navigator.clipboard.writeText(url); } catch {}
+      setShareCopied(true);
+    }
+    setShareToastVisible(true);
+    setTimeout(() => setShareToastVisible(false), 2200);
+  };
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [price, setPrice] = useState("");
   const [amount, setAmount] = useState("");
@@ -132,11 +254,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         {/* Right icons */}
         <div className="flex items-center gap-2.5 text-muted-foreground shrink-0">
-          <Bell size={17} />
+          {/* Bell with unread badge */}
+          <button onClick={() => setNotifOpen(true)} className="relative p-0.5">
+            <Bell size={17} />
+            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
+          </button>
           <button onClick={() => setStarred(s => !s)}>
             <Star size={17} className={starred ? "fill-amber-400 text-amber-400" : ""} />
           </button>
-          <Share2 size={17} />
+          <button onClick={handleShare}>
+            <Share2 size={17} />
+          </button>
         </div>
       </div>
 
@@ -515,6 +643,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         onClose={() => setSelectorOpen(false)}
         currentSymbol={symbol}
       />
+
+      {/* ── NOTIFICATIONS DRAWER ── */}
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
+
+      {/* ── SHARE TOAST ── */}
+      <ShareToast visible={shareToastVisible} copied={shareCopied} />
 
     </div>
   );
