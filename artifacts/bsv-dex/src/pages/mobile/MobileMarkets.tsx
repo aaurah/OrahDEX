@@ -97,7 +97,7 @@ export function MobileMarkets() {
 
         {/* Stats */}
         <div className="flex gap-2 mb-3">
-          {[{ label: "24h Vol", val: "$1.24B" }, { label: "Markets", val: `${markets.length}` }, { label: "TVL", val: "$845M" }].map(s => (
+          {[{ label: "24h Vol", val: "$1.24B" }, { label: "Markets", val: `${spotMarkets.length}` }, { label: "TVL", val: "$845M" }].map(s => (
             <div key={s.label} className="flex-1 bg-card border border-border rounded-xl p-2.5 text-center">
               <p className="text-xs font-bold text-foreground">{s.val}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
@@ -191,15 +191,15 @@ export function MobileMarkets() {
                   {m.base[0]}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground leading-tight">
-                    {m.base}<span className="text-muted-foreground font-normal">/{m.quote}</span>
-                  </p>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    <p className="text-[10px] text-muted-foreground">Vol {m.volume}</p>
+                  <div className="flex items-center gap-1 leading-tight">
+                    <p className="text-sm font-semibold text-foreground">
+                      {m.base}<span className="text-muted-foreground font-normal">/{m.quote}</span>
+                    </p>
                     {m.type === "futures" && (
-                      <span className="text-[9px] font-semibold px-1 py-0.5 rounded bg-accent/20 text-accent">PERP</span>
+                      <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 leading-none shrink-0">PERP</span>
                     )}
                   </div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Vol {m.volume}</p>
                 </div>
               </div>
               <div className="w-24 text-right">
