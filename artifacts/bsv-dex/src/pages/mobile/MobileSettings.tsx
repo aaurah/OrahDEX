@@ -3,12 +3,21 @@ import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
+  Moon, Sun, Smartphone, Monitor, Palette,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
+import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
+
+const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
+  { id: "dark",   label: "Dark",   Icon: Moon,       color: "#6366f1" },
+  { id: "light",  label: "Light",  Icon: Sun,        color: "#f59e0b" },
+  { id: "amoled", label: "Amoled", Icon: Smartphone, color: "#22c55e" },
+  { id: "system", label: "System", Icon: Monitor,    color: "#64748b" },
+];
 
 const BASE_URL = window.location.origin;
 
@@ -86,6 +95,7 @@ export function MobileSettings() {
   const { address, provider, network, disconnect } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
   const { isEnabled, credentialId, setEnabled } = useBiometricStore();
+  const { theme, setTheme } = useThemeStore();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [bioLoading, setBioLoading] = useState(false);
@@ -162,6 +172,40 @@ export function MobileSettings() {
       </Section>
 
       <Section title="Preferences">
+        {/* Theme picker */}
+        <div className="px-4 py-3.5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "#6366f120" }}>
+              <Palette size={15} style={{ color: "#6366f1" }} />
+            </div>
+            <p className="text-sm font-medium text-foreground">Appearance</p>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {THEMES.map(({ id, label, Icon, color }) => {
+              const active = theme === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setTheme(id)}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border transition-all",
+                    active
+                      ? "border-primary/60 bg-primary/10"
+                      : "border-border bg-secondary/30 hover:bg-secondary/60"
+                  )}
+                >
+                  <Icon size={18} style={{ color: active ? color : undefined }} className={active ? "" : "text-muted-foreground"} />
+                  <span className={cn("text-[10px] font-semibold", active ? "text-foreground" : "text-muted-foreground")}>
+                    {label}
+                  </span>
+                  {active && (
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <Row
           icon={Bell}
           label="Price Alerts"
