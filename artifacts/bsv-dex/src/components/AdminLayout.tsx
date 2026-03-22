@@ -2,7 +2,7 @@ import { ReactNode, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
-  Key, Cpu, Palette, Zap, LogOut, Menu, X, ChevronRight, Activity,
+  Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         <div className="h-16 flex items-center justify-between px-5 border-b border-border shrink-0">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center shadow-lg shadow-primary/20">
-              <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+              <span className="text-white font-black text-sm leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-extrabold text-sm tracking-tight">
@@ -128,7 +128,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-xs text-muted-foreground hidden sm:block">System Operational</span>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-xs font-bold text-white">A</div>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-xs font-bold text-white">O</div>
           </div>
         </header>
 
