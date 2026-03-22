@@ -38,7 +38,7 @@ function fmtUsd(n: number) {
 }
 
 export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
-  const { address, provider, network, chainId, requestDisconnect } = useWalletStore();
+  const { address, provider, network, chainId, disconnect } = useWalletStore();
   const { prices, loading: pricesLoading } = useWalletPrices(60_000);
   const { balances: evmBalances, loading: evmLoading, refresh: refreshEvm, lastFetch } = useEvmBalances(
     network === "evm" ? address : null,
@@ -58,7 +58,7 @@ export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
   };
 
   const handleDisconnect = () => {
-    requestDisconnect();
+    disconnect();
     handleClose();
   };
 
