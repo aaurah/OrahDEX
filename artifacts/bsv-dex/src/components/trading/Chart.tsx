@@ -6,11 +6,12 @@ interface ChartProps {
   data: Candle[];
   interval?: string;
   onIntervalChange?: (interval: string) => void;
+  hideIntervalBar?: boolean;
 }
 
 const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d', '1w'];
 
-export function Chart({ data, interval = '1h', onIntervalChange }: ChartProps) {
+export function Chart({ data, interval = '1h', onIntervalChange, hideIntervalBar = false }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
 
@@ -91,21 +92,23 @@ export function Chart({ data, interval = '1h', onIntervalChange }: ChartProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-border shrink-0">
-        {INTERVALS.map((iv) => (
-          <button
-            key={iv}
-            onClick={() => onIntervalChange?.(iv)}
-            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-              interval === iv
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-            }`}
-          >
-            {iv}
-          </button>
-        ))}
-      </div>
+      {!hideIntervalBar && (
+        <div className="flex items-center gap-1 px-3 py-2 border-b border-border shrink-0">
+          {INTERVALS.map((iv) => (
+            <button
+              key={iv}
+              onClick={() => onIntervalChange?.(iv)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                interval === iv
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+              }`}
+            >
+              {iv}
+            </button>
+          ))}
+        </div>
+      )}
       <div ref={containerRef} className="flex-1 min-h-0" />
     </div>
   );
