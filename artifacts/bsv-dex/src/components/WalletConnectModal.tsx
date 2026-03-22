@@ -16,25 +16,30 @@ interface WalletDef {
 }
 
 const EVM_WALLETS: WalletDef[] = [
-  { id: "metamask", name: "MetaMask", network: "evm", icon: "🦊", description: "Most popular Ethereum wallet", popular: true, chainId: 1 },
-  { id: "walletconnect", name: "WalletConnect", network: "evm", icon: "🔗", description: "Connect any mobile wallet via QR", popular: true, chainId: 1 },
-  { id: "coinbase", name: "Coinbase Wallet", network: "evm", icon: "🔵", description: "Self-custody by Coinbase", popular: true, chainId: 1 },
-  { id: "rainbow", name: "Rainbow", network: "evm", icon: "🌈", description: "Fun, simple Ethereum wallet", chainId: 1 },
-  { id: "trust", name: "Trust Wallet", network: "evm", icon: "🛡️", description: "Multi-chain mobile wallet", chainId: 1 },
-  { id: "okx", name: "OKX Wallet", network: "evm", icon: "⭕", description: "Web3 gateway by OKX exchange", chainId: 1 },
-  { id: "bybit", name: "Bybit Wallet", network: "evm", icon: "🟡", description: "Web3 wallet by Bybit", chainId: 1 },
-  { id: "phantom", name: "Phantom", network: "evm", icon: "👻", description: "Multichain — ETH, SOL, BTC", chainId: 1 },
-  { id: "ledger", name: "Ledger", network: "evm", icon: "🔒", description: "Hardware wallet — cold storage", chainId: 1 },
-  { id: "trezor", name: "Trezor", network: "evm", icon: "🛡️", description: "Open-source hardware wallet", chainId: 1 },
+  { id: "metamask",    name: "MetaMask",       network: "evm", icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains", popular: true, chainId: 1 },
+  { id: "walletconnect", name: "WalletConnect", network: "evm", icon: "🔗", description: "Connect any mobile wallet via QR code", popular: true, chainId: 1 },
+  { id: "coinbase",   name: "Coinbase Wallet", network: "evm", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains", popular: true, chainId: 1 },
+  { id: "trust",      name: "Trust Wallet",    network: "evm", icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins", chainId: 1 },
+  { id: "imtoken",    name: "imToken",         network: "evm", icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…", chainId: 1 },
+  { id: "guarda",     name: "Guarda Wallet",   network: "evm", icon: "🟢", description: "EVM + BSV + 400k+ assets supported", chainId: 1 },
+  { id: "atomic",     name: "Atomic Wallet",   network: "evm", icon: "⚛️", description: "500+ coins — EVM all layers + BSV + more", chainId: 1 },
+  { id: "okx",        name: "OKX Wallet",      network: "evm", icon: "⭕", description: "Web3 gateway by OKX — all EVM networks", chainId: 1 },
+  { id: "bybit",      name: "Bybit Wallet",    network: "evm", icon: "🟡", description: "Web3 wallet by Bybit exchange", chainId: 1 },
+  { id: "rainbow",    name: "Rainbow",         network: "evm", icon: "🌈", description: "Simple Ethereum wallet — L1 & L2", chainId: 1 },
+  { id: "phantom",    name: "Phantom",         network: "evm", icon: "👻", description: "Multichain — ETH, SOL, BTC", chainId: 1 },
+  { id: "ledger",     name: "Ledger",          network: "evm", icon: "🔒", description: "Hardware wallet — cold storage", chainId: 1 },
+  { id: "trezor",     name: "Trezor",          network: "evm", icon: "🛡️", description: "Open-source hardware wallet", chainId: 1 },
 ];
 
 const BSV_WALLETS: WalletDef[] = [
-  { id: "handcash", name: "HandCash", network: "bsv", icon: "✋", description: "Social BSV wallet", popular: true },
-  { id: "relayx", name: "RelayX", network: "bsv", icon: "⚡", description: "BSV DeFi wallet", popular: true },
-  { id: "panda", name: "Panda Wallet", network: "bsv", icon: "🐼", description: "Browser extension for BSV", popular: true },
-  { id: "twetch", name: "Twetch", network: "bsv", icon: "🐦", description: "Social + wallet on BSV" },
-  { id: "sensilet", name: "Sensilet", network: "bsv", icon: "🔷", description: "sCrypt smart contract wallet" },
-  { id: "yours", name: "Yours Wallet", network: "bsv", icon: "💛", description: "Open-source BSV wallet" },
+  { id: "handcash",  name: "HandCash",      network: "bsv", icon: "✋", description: "Social BSV wallet — simple & fast", popular: true },
+  { id: "relayx",   name: "RelayX",        network: "bsv", icon: "⚡", description: "BSV DeFi wallet", popular: true },
+  { id: "panda",    name: "Panda Wallet",  network: "bsv", icon: "🐼", description: "Browser extension for BSV", popular: true },
+  { id: "guarda",   name: "Guarda Wallet", network: "bsv", icon: "🟢", description: "Supports BSV + EVM + 400k+ assets" },
+  { id: "atomic",   name: "Atomic Wallet", network: "bsv", icon: "⚛️", description: "500+ coins including BSV + all EVM" },
+  { id: "twetch",   name: "Twetch",        network: "bsv", icon: "🐦", description: "Social + wallet on BSV" },
+  { id: "sensilet", name: "Sensilet",      network: "bsv", icon: "🔷", description: "sCrypt smart contract wallet" },
+  { id: "yours",    name: "Yours Wallet",  network: "bsv", icon: "💛", description: "Open-source BSV wallet" },
 ];
 
 type View = "landing" | "create" | "import" | "connect";
@@ -88,15 +93,18 @@ function isWalletInstalled(walletId: string): boolean {
 }
 
 const WALLET_INSTALL_URLS: Record<string, string> = {
-  metamask: "https://metamask.io/download/",
-  coinbase: "https://www.coinbase.com/wallet/downloads",
-  rainbow: "https://rainbow.me/",
-  trust: "https://trustwallet.com/download",
-  okx: "https://www.okx.com/web3",
-  bybit: "https://www.bybit.com/en/web3/",
-  phantom: "https://phantom.app/download",
-  ledger: "https://www.ledger.com/ledger-live",
-  trezor: "https://trezor.io/start",
+  metamask:     "https://metamask.io/download/",
+  coinbase:     "https://www.coinbase.com/wallet/downloads",
+  rainbow:      "https://rainbow.me/",
+  trust:        "https://trustwallet.com/download",
+  okx:          "https://www.okx.com/web3",
+  bybit:        "https://www.bybit.com/en/web3/",
+  phantom:      "https://phantom.app/download",
+  ledger:       "https://www.ledger.com/ledger-live",
+  trezor:       "https://trezor.io/start",
+  imtoken:      "https://token.im/download",
+  guarda:       "https://guarda.com/desktop/",
+  atomic:       "https://atomicwallet.io/downloads",
   walletconnect: null as any,
 };
 
@@ -485,16 +493,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex-1">
                             <h3 className="font-bold text-foreground text-base">Connect Existing Wallet</h3>
                             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              Link MetaMask, WalletConnect, HandCash, RelayX, and 12+ other wallets.
+                              MetaMask, Guarda, imToken, Atomic, Trust, OKX, HandCash, RelayX and 15+ more. 1-click auto-detect.
                             </p>
                           </div>
                           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 shrink-0 mt-0.5 transition-colors" />
                         </div>
                         <div className="flex gap-2 mt-4">
-                          {["🦊", "🔗", "✋", "⚡", "🐼"].map((e) => (
+                          {["🦊", "🟢", "🪙", "⚛️", "✋", "⚡"].map((e) => (
                             <span key={e} className="text-xl">{e}</span>
                           ))}
-                          <span className="text-sm text-muted-foreground self-center">+11 more</span>
+                          <span className="text-sm text-muted-foreground self-center">+15 more</span>
                         </div>
                       </div>
 
@@ -783,6 +791,27 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
                             <p className="text-[10px] text-muted-foreground/50">Used by Trezor and Ledger hardware wallets to derive the correct account address.</p>
                           </div>
+                        </div>
+                      )}
+
+                      {/* 1-Click Auto-Detect */}
+                      {connectTab === "evm" && (
+                        <div className="px-6 pb-3">
+                          <button
+                            onClick={() => {
+                              const autoWallet = EVM_WALLETS.find(w => isWalletInstalled(w.id));
+                              if (autoWallet) handleConnectWallet(autoWallet);
+                              else { setConnectError("No EVM wallet detected. Install MetaMask, imToken, Guarda, or any EVM wallet extension and try again."); }
+                            }}
+                            disabled={!!connecting}
+                            className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:opacity-90 transition-opacity shadow-lg shadow-primary/25 disabled:opacity-50"
+                          >
+                            <Wifi className="w-4 h-4" />
+                            1-Click Auto-Detect &amp; Connect
+                          </button>
+                          <p className="text-[10px] text-muted-foreground/60 text-center mt-1.5">
+                            Automatically finds and connects your installed wallet — MetaMask, Guarda, imToken, OKX, and more
+                          </p>
                         </div>
                       )}
 
