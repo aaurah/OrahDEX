@@ -1,5 +1,5 @@
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, Zap } from "lucide-react";
+import { BarChart2, Briefcase, Settings, Zap, Layers } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { useState } from "react";
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
   { path: "/futures/BSV-USDT", label: "Futures", Icon: Zap },
+  { path: "/dex", label: "DEX Hub", Icon: Layers },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
   { path: "/settings", label: "Settings", Icon: Settings },
 ];
