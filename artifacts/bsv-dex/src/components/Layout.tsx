@@ -5,6 +5,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
+import { BsvAutoWalletModal } from "./BsvAutoWalletModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -179,6 +180,7 @@ export function Layout({ children }: { children: ReactNode }) {
         isOpen={isWalletModalOpen}
         onClose={closeWalletModal}
       />
+      <BsvAutoWalletModal />
     </div>
   );
 }
