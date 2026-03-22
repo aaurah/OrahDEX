@@ -155,7 +155,7 @@ export function DexHub() {
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-2">
           <Layers className="w-5 h-5 text-primary" />
-          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Exchange Hub</span>
+          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Market Hub</span>
         </div>
         <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">
           All Exchanges — CEX &amp; DEX
