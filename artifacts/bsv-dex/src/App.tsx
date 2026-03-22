@@ -24,6 +24,12 @@ import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { MobileLayout } from "@/components/mobile/MobileLayout";
+import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
+import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
+import { MobileSettings } from "@/pages/mobile/MobileSettings";
+import { MobileTrade } from "@/pages/mobile/MobileTrade";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +50,8 @@ function RequireAdminAuth({ children }: { children: ReactNode }) {
 }
 
 function Router() {
+  const isMobile = useIsMobile();
+
   useEffect(() => {
     applyStoredTheme();
 
@@ -110,18 +118,40 @@ function Router() {
         </RequireAdminAuth>
       </Route>
 
-      {/* Main exchange routes */}
-      <Route>
-        <Layout>
-          <Switch>
-            <Route path="/" component={Markets} />
-            <Route path="/trade/:symbol" component={SpotTrading} />
-            <Route path="/futures/:symbol" component={FuturesTrading} />
-            <Route path="/portfolio" component={Portfolio} />
-            <Route component={NotFound} />
-          </Switch>
-        </Layout>
-      </Route>
+      {/* Mobile layout — rendered when on a phone/small screen */}
+      {isMobile && (
+        <Route>
+          <MobileLayout>
+            <Switch>
+              <Route path="/" component={MobileMarkets} />
+              <Route path="/trade/:symbol">
+                {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+              </Route>
+              <Route path="/futures/:symbol">
+                {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+              </Route>
+              <Route path="/portfolio" component={MobilePortfolio} />
+              <Route path="/settings" component={MobileSettings} />
+              <Route component={MobileMarkets} />
+            </Switch>
+          </MobileLayout>
+        </Route>
+      )}
+
+      {/* Desktop layout */}
+      {!isMobile && (
+        <Route>
+          <Layout>
+            <Switch>
+              <Route path="/" component={Markets} />
+              <Route path="/trade/:symbol" component={SpotTrading} />
+              <Route path="/futures/:symbol" component={FuturesTrading} />
+              <Route path="/portfolio" component={Portfolio} />
+              <Route component={NotFound} />
+            </Switch>
+          </Layout>
+        </Route>
+      )}
     </Switch>
   );
 }
