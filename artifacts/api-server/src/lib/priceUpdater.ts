@@ -80,6 +80,12 @@ export const ETH_PAIRS = [
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
 ];
 
+// BCH pairs — top coins vs Bitcoin Cash
+export const BCH_PAIRS = [
+  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
+  "LINK","UNI","ATOM","LTC","NEAR","APT","ARB","OP","SUI","INJ",
+];
+
 // BSV pairs — top coins vs BSV
 export const BSV_PAIRS = [
   "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
@@ -153,6 +159,22 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / ethPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "ETH",
+          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          status: "active", type: "spot",
+        });
+      }
+    }
+
+    // BCH pairs
+    for (const base of BCH_PAIRS) {
+      const sym = `${base}-BCH`;
+      if (!existingSymbols.has(sym)) {
+        const bchPrice = FALLBACK_PRICES["BCH"] ?? 380;
+        const basePrice = FALLBACK_PRICES[base] ?? 1;
+        const crossPrice = basePrice / bchPrice;
+        toInsert.push({
+          symbol: sym, baseAsset: base, quoteAsset: "BCH",
           lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
           volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
           status: "active", type: "spot",
@@ -243,6 +265,13 @@ export async function updateMarketPrices() {
         const ethUSD = prices[COINGECKO_IDS["ETH"]]?.usd ?? FALLBACK_PRICES["ETH"] ?? 3400;
         lastPrice = baseUSD / ethUSD;
         vol = vol / ethUSD;
+      }
+
+      // BCH quote — compute cross rate
+      if (market.quoteAsset === "BCH") {
+        const bchUSD = prices[COINGECKO_IDS["BCH"]]?.usd ?? FALLBACK_PRICES["BCH"] ?? 380;
+        lastPrice = baseUSD / bchUSD;
+        vol = vol / bchUSD;
       }
 
       // BTC quote — compute cross rate
