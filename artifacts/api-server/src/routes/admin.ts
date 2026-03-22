@@ -22,13 +22,9 @@ const mockUsers = Array.from({ length: 24 }, (_, i) => ({
   country: ["US","UK","SG","JP","AU","DE","CA","KR"][i % 8],
 }));
 
-const mockAdmins = [
-  { id: "adm_0001", name: "Super Admin", email: "superadmin@auradex.io", role: "superadmin", permissions: ["all"], lastLogin: new Date(Date.now() - 2 * 3600 * 1000).toISOString(), status: "active", twoFa: true },
-  { id: "adm_0002", name: "Operations Lead", email: "ops@auradex.io", role: "admin", permissions: ["users","pairs","orders"], lastLogin: new Date(Date.now() - 86400 * 1000).toISOString(), status: "active", twoFa: true },
-  { id: "adm_0003", name: "Support Agent", email: "support@auradex.io", role: "moderator", permissions: ["users"], lastLogin: new Date(Date.now() - 2 * 86400 * 1000).toISOString(), status: "active", twoFa: false },
-  { id: "adm_0004", name: "Dev Engineer", email: "dev@auradex.io", role: "developer", permissions: ["api","contracts","pairs"], lastLogin: new Date(Date.now() - 5 * 86400 * 1000).toISOString(), status: "active", twoFa: true },
-  { id: "adm_0005", name: "Finance Analyst", email: "finance@auradex.io", role: "analyst", permissions: ["reports","orders"], lastLogin: new Date(Date.now() - 10 * 86400 * 1000).toISOString(), status: "inactive", twoFa: false },
-];
+// No pre-seeded admins — only the owner (aaurah@protonmail.com) is shown as
+// the virtual pinned row on the frontend. Any admins added via the UI live here.
+const mockAdmins: any[] = [];
 
 const mockApiKeys = [
   { id: "key_001", name: "Public Market Feed", key: "aura_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
@@ -101,8 +97,14 @@ router.post("/admins", (req, res) => {
 router.delete("/admins/:id", (req, res) => {
   const idx = mockAdmins.findIndex(a => a.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: "Admin not found" });
-  if (mockAdmins[idx].role === "superadmin") return res.status(403).json({ error: "Cannot remove super admin" });
   mockAdmins.splice(idx, 1);
+  res.json({ success: true });
+});
+
+router.patch("/admins/:id/password", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  // In production this would hash the password; here we just acknowledge
   res.json({ success: true });
 });
 

@@ -152,6 +152,7 @@ function Router() {
           <Layout>
             <Switch>
               <Route path="/" component={Markets} />
+              <Route path="/markets" component={Markets} />
               <Route path="/trade/:symbol" component={SpotTrading} />
               <Route path="/futures/:symbol" component={FuturesTrading} />
               <Route path="/dex" component={DexHub} />

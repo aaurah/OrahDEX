@@ -7,6 +7,7 @@ import portfolioRouter from "./portfolio.js";
 import futuresRouter from "./futures.js";
 import adminRouter from "./admin.js";
 import dexRouter from "./dex.js";
+import globalMarketsRouter from "./globalMarkets.js";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(portfolioRouter);
 router.use(futuresRouter);
 router.use(dexRouter);
 router.use("/admin", adminRouter);
+router.use("/global-markets", globalMarketsRouter);
 
 export default router;
