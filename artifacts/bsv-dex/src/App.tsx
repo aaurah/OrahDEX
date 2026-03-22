@@ -20,6 +20,7 @@ import { AdminApiSettings } from "@/pages/admin/ApiSettings";
 import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
 import { AdminThemes } from "@/pages/admin/Themes";
 import { AdminTransactions } from "@/pages/admin/Transactions";
+import { AdminFeeWallet } from "@/pages/admin/FeeWallet";
 import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
@@ -115,6 +116,11 @@ function Router() {
       <Route path="/admin/transactions">
         <RequireAdminAuth>
           <AdminLayout><AdminTransactions /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/fee-wallet">
+        <RequireAdminAuth>
+          <AdminLayout><AdminFeeWallet /></AdminLayout>
         </RequireAdminAuth>
       </Route>
 

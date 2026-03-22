@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 const router = Router();
@@ -171,6 +171,28 @@ router.post("/contracts/deploy", (req, res) => {
   deployedContracts.push(newContract);
   setTimeout(() => { newContract.status = "deployed"; }, 3000);
   res.status(201).json(newContract);
+});
+
+/* ─── FEE WALLET CONFIG ─── */
+router.get("/admin/fee-wallet", async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, "fee_wallet_config"));
+    if (!rows.length) { res.json({}); return; }
+    res.json(JSON.parse(rows[0].value));
+  } catch (err) { res.json({}); }
+});
+
+router.put("/admin/fee-wallet", async (req, res) => {
+  try {
+    const cfg = req.body;
+    const value = JSON.stringify(cfg);
+    await db.insert(platformSettingsTable)
+      .values({ key: "fee_wallet_config", value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    res.json(cfg);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save fee wallet config" });
+  }
 });
 
 export default router;
