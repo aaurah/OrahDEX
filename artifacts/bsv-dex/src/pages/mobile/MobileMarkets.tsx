@@ -34,12 +34,12 @@ function fmt(p: number) {
   return p.toFixed(4);
 }
 
-type Filter = "all" | "spot" | "futures";
+type Filter = "spot" | "futures";
 
 export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("spot");
   const { address, network, chainId } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
@@ -81,7 +81,7 @@ export function MobileMarkets() {
   const filtered = markets.filter((m: any) => {
     const q = search.toLowerCase();
     return (m.symbol.toLowerCase().includes(q) || m.base.toLowerCase().includes(q))
-      && (filter === "all" || m.type === filter);
+      && m.type === filter;
   });
 
   // Top movers: spot only, unique base asset, sorted by absolute change descending
@@ -190,20 +190,20 @@ export function MobileMarkets() {
         </div>
 
         {/* Filters */}
-        <div className="flex gap-2 mt-4 mb-3">
-          {(["all", "spot", "futures"] as Filter[]).map(f => (
+        <div className="flex mt-4 mb-3 border border-border rounded-xl overflow-hidden">
+          {(["spot", "futures"] as Filter[]).map((f, i) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                filter === f && f === "futures"
-                  ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
-                  : filter === f
-                  ? "bg-primary/15 border-primary/40 text-primary"
-                  : "bg-card border-border text-muted-foreground"
+              onClick={() => { setFilter(f); setSearch(""); }}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors ${i > 0 ? "border-l border-border" : ""} ${
+                filter === f
+                  ? f === "futures"
+                    ? "bg-amber-500/15 text-amber-400"
+                    : "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {f === "futures" ? "Futures" : f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === "spot" ? "Spot" : "Futures"}
             </button>
           ))}
         </div>
@@ -215,26 +215,19 @@ export function MobileMarkets() {
             <span className="w-24 text-[10px] font-medium text-muted-foreground uppercase tracking-wide text-right">Price</span>
             <span className="w-16 text-[10px] font-medium text-muted-foreground uppercase tracking-wide text-right">24h</span>
           </div>
-          {(() => {
-            const spotRows = filtered.filter((m: any) => m.type === "spot");
-            const futuresRows = filtered.filter((m: any) => m.type === "futures");
-            const showDivider = filter === "all" && spotRows.length > 0 && futuresRows.length > 0;
-            return (
-              <>
-                {spotRows.map((m: any, i: number) => (
-                  <MarketRow key={m.symbol} m={m} isLast={!showDivider && i === spotRows.length - 1} goTrade={goTrade} />
-                ))}
-                {showDivider && (
-                  <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/8 border-y border-amber-500/20">
-                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Futures — Perpetual Contracts</span>
-                  </div>
-                )}
-                {futuresRows.map((m: any, i: number) => (
-                  <MarketRow key={m.symbol} m={m} isLast={i === futuresRows.length - 1} goTrade={goTrade} isFutures />
-                ))}
-              </>
-            );
-          })()}
+          {filtered.length === 0 ? (
+            <div className="py-10 text-center text-muted-foreground text-sm">No {filter} markets found.</div>
+          ) : (
+            filtered.map((m: any, i: number) => (
+              <MarketRow
+                key={m.symbol}
+                m={m}
+                isLast={i === filtered.length - 1}
+                goTrade={goTrade}
+                isFutures={filter === "futures"}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>

@@ -1,247 +1,192 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { MOCK_MARKETS } from "@/lib/mock-data";
-import { formatPrice, formatVolume, formatPercent, cn } from "@/lib/utils";
-import { Search, Star, TrendingUp, ArrowRightLeft, BarChart2, Globe, Coins, Wheat, LineChart } from "lucide-react";
+import { formatPrice, formatVolume, cn } from "@/lib/utils";
+import { Search, Star, ArrowRightLeft, LineChart } from "lucide-react";
 import { Link } from "wouter";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Category = "crypto" | "stocks" | "indices" | "forex" | "commodities";
-
-const CATEGORIES: { key: Category; label: string; icon: React.ReactNode; color: string }[] = [
-  { key: "crypto",      label: "Crypto",      icon: <Coins className="w-4 h-4" />,     color: "amber" },
-  { key: "stocks",      label: "Stocks",      icon: <BarChart2 className="w-4 h-4" />, color: "blue" },
-  { key: "indices",     label: "Indices",     icon: <LineChart className="w-4 h-4" />, color: "violet" },
-  { key: "forex",       label: "Forex",       icon: <Globe className="w-4 h-4" />,     color: "green" },
-  { key: "commodities", label: "Commodities", icon: <Wheat className="w-4 h-4" />,     color: "orange" },
-];
-
-const CAT_ACTIVE: Record<string, string> = {
-  amber:  "bg-amber-500/15 border-amber-500/50 text-amber-400",
-  blue:   "bg-blue-500/15 border-blue-500/50 text-blue-400",
-  violet: "bg-violet-500/15 border-violet-500/50 text-violet-400",
-  green:  "bg-green-500/15 border-green-500/50 text-green-400",
-  orange: "bg-orange-500/15 border-orange-500/50 text-orange-400",
-};
+type Tab = "spot" | "futures";
 
 const ASSET_ICONS: Record<string, string> = {
-  AAPL:"🍎",TSLA:"⚡",NVDA:"🟩",MSFT:"🪟",AMZN:"📦",GOOGL:"🔍",META:"👥",NFLX:"🎬",AMD:"💻",INTC:"🔵",
-  SPX:"📊",NDX:"💹",DJI:"🏦",FTSE:"🇬🇧",DAX:"🇩🇪",NKY:"🇯🇵",
-  EUR:"🇪🇺",GBP:"🇬🇧",USD:"🇺🇸",AUD:"🇦🇺",NZD:"🇳🇿",
-  XAU:"🥇",XAG:"🥈",OIL:"🛢️",BRENT:"🛢️",NG:"🔥",XPT:"⚗️",WHEAT:"🌾",CORN:"🌽",
   BSV:"₿",BTC:"₿",ETH:"Ξ",SOL:"◎",BNB:"🔶",XRP:"✕",ADA:"🔵",
+  DOGE:"🐶",DOT:"⬤",AVAX:"🔺",MATIC:"⬟",LINK:"🔗",UNI:"🦄",
 };
 
-function assetIcon(baseAsset: string): string {
-  return ASSET_ICONS[baseAsset] ?? baseAsset[0];
-}
-
-function formatPriceByCategory(price: number, cat: Category): string {
-  if (cat === "forex") {
-    if (price > 100) return price.toFixed(2);
-    if (price > 1)   return price.toFixed(4);
-    return price.toFixed(6);
-  }
-  if (cat === "commodities" && price < 10) return price.toFixed(3);
-  return formatPrice(price);
+function assetIcon(base: string) {
+  return ASSET_ICONS[base] ?? base[0];
 }
 
 export function Markets() {
-  const [category, setCategory] = useState<Category>("crypto");
+  const [tab, setTab] = useState<Tab>("spot");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
-  const [globalData, setGlobalData] = useState<any[]>([]);
 
-  const { data: apiMarkets, isLoading: cryptoLoading } = useGetMarkets();
+  const { data: apiMarkets } = useGetMarkets();
+  const raw = (apiMarkets && apiMarkets.length > 0 ? apiMarkets : MOCK_MARKETS) as any[];
 
-  // Fetch global markets (stocks/forex/commodities/indices)
-  useEffect(() => {
-    const load = () =>
-      fetch(`${BASE}/api/global-markets`)
-        .then(r => r.json())
-        .then(setGlobalData)
-        .catch(() => {});
-    load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
-  }, []);
+  const spotMarkets = raw.filter(m => !m.symbol.includes("PERP") && (m.type === "spot" || !m.type));
+  const futuresMarkets = raw.filter(m => m.symbol.includes("PERP") || m.type === "futures");
 
-  const cryptoMarkets = (apiMarkets && apiMarkets.length > 0 ? apiMarkets : MOCK_MARKETS)
-    .filter(m => !m.symbol.includes("PERP") && (m.type === "spot" || !m.type))
-    .map(m => ({
-      symbol: m.symbol,
-      baseAsset: m.baseAsset,
-      quoteAsset: m.quoteAsset,
-      category: "crypto" as Category,
-      lastPrice: m.lastPrice,
-      priceChangePercent24h: m.priceChangePercent24h ?? 0,
-      high24h: m.high24h,
-      low24h: m.low24h,
-      volume24h: m.volume24h,
-      description: `${m.baseAsset} / ${m.quoteAsset}`,
-    }));
+  const markets = tab === "spot" ? spotMarkets : futuresMarkets;
 
-  const currentMarkets = category === "crypto"
-    ? cryptoMarkets
-    : globalData.filter(m => m.category === category);
-
-  const filtered = currentMarkets.filter(m =>
+  const filtered = markets.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
-    m.baseAsset.toLowerCase().includes(search.toLowerCase()) ||
-    (m.description?.toLowerCase() ?? "").includes(search.toLowerCase())
+    (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
-
-  const totalVolume = currentMarkets.reduce((s, m) => s + (m.volume24h ?? 0), 0);
 
   const toggleStar = (symbol: string) =>
     setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
 
-  const cat = CATEGORIES.find(c => c.key === category)!;
-
   return (
-    <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">Markets Overview</h1>
-        <p className="text-primary/80 italic font-medium text-sm mb-3">✦ Trade means DEX</p>
-        <p className="text-muted-foreground max-w-2xl">
-          Trade crypto, stocks, indices, forex &amp; commodities — all in one place. Live on-chain settlement on BSV with automatic fee routing.
-        </p>
-      </div>
+      <div className="px-6 lg:px-10 pt-8 pb-4 border-b border-border bg-card/40">
+        <div className="max-w-6xl mx-auto">
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
+          <p className="text-xs text-primary/70 italic mt-0.5">✦ Trade means DEX</p>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-7">
-        <div className="bg-gradient-to-br from-card to-secondary p-6 rounded-2xl border border-border shadow-lg">
-          <div className="text-muted-foreground mb-2 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-buy" /> 24h Volume ({cat.label})</div>
-          <div className="text-3xl font-mono font-bold">${totalVolume > 1e9 ? (totalVolume / 1e9).toFixed(2) + "B" : totalVolume > 1e6 ? (totalVolume / 1e6).toFixed(1) + "M" : totalVolume.toFixed(0)}</div>
-        </div>
-        <div className="bg-gradient-to-br from-card to-secondary p-6 rounded-2xl border border-border shadow-lg">
-          <div className="text-muted-foreground mb-2">{cat.label} Markets Listed</div>
-          <div className="text-3xl font-mono font-bold">{currentMarkets.length}</div>
-        </div>
-        <div className="bg-gradient-to-br from-card to-secondary p-6 rounded-2xl border border-border shadow-lg flex flex-col justify-center">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder={`Search ${cat.label.toLowerCase()}...`}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:border-primary transition-all"
-            />
+          {/* Tabs + Search row */}
+          <div className="flex items-center gap-4 mt-5">
+            <div className="flex gap-0 border border-border rounded-xl overflow-hidden shrink-0">
+              <button
+                onClick={() => { setTab("spot"); setSearch(""); }}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-colors",
+                  tab === "spot"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                )}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Spot
+              </button>
+              <button
+                onClick={() => { setTab("futures"); setSearch(""); }}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2.5 text-sm font-semibold transition-colors border-l border-border",
+                  tab === "futures"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                )}
+              >
+                <LineChart className="w-3.5 h-3.5" />
+                Futures
+              </button>
+            </div>
+
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder={`Search ${tab}…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary transition-all"
+              />
+            </div>
+
+            <div className="ml-auto hidden md:flex items-center gap-6 text-sm text-muted-foreground">
+              <span><span className="font-semibold text-foreground">{spotMarkets.length}</span> Spot</span>
+              <span><span className="font-semibold text-foreground">{futuresMarkets.length}</span> Futures</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {CATEGORIES.map(c => (
-          <button
-            key={c.key}
-            onClick={() => { setCategory(c.key); setSearch(""); }}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all",
-              category === c.key
-                ? CAT_ACTIVE[c.color]
-                : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
-            )}
-          >
-            {c.icon} {c.label}
-          </button>
-        ))}
-      </div>
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-6xl mx-auto px-6 lg:px-10 py-4">
+          <div className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-secondary/40 text-muted-foreground text-xs font-semibold uppercase tracking-wide">
+                  <th className="px-4 py-3 w-8"></th>
+                  <th className="px-4 py-3">Asset</th>
+                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-right">24h %</th>
+                  <th className="px-4 py-3 text-right hidden lg:table-cell">24h High</th>
+                  <th className="px-4 py-3 text-right hidden lg:table-cell">24h Low</th>
+                  <th className="px-4 py-3 text-right">Volume</th>
+                  <th className="px-4 py-3 text-right">Trade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map(m => {
+                  const isUp = (m.priceChangePercent24h ?? 0) >= 0;
+                  const icon = assetIcon(m.baseAsset ?? m.symbol.split("/")[0]);
+                  const isEmoji = /\p{Emoji}/u.test(icon);
+                  const tradeHref = tab === "spot"
+                    ? `/trade/${m.symbol.replace(/\//g, "-")}`
+                    : `/futures/${m.symbol.replace(/\//g, "-")}`;
 
-      {/* Market table */}
-      <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-sm">
-                <th className="p-4 font-medium w-10"></th>
-                <th className="p-4 font-medium">Asset</th>
-                <th className="p-4 font-medium text-right">Price</th>
-                <th className="p-4 font-medium text-right">24h Change</th>
-                <th className="p-4 font-medium text-right hidden md:table-cell">24h High</th>
-                <th className="p-4 font-medium text-right hidden md:table-cell">24h Low</th>
-                <th className="p-4 font-medium text-right">24h Volume</th>
-                <th className="p-4 font-medium text-right">Trade</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map(market => {
-                const isPositive = market.priceChangePercent24h >= 0;
-                const icon = assetIcon(market.baseAsset);
-                const isEmoji = /\p{Emoji}/u.test(icon);
-                return (
-                  <tr key={market.symbol} className="hover:bg-white/5 transition-colors group">
-                    <td className="p-4 text-center">
-                      <button onClick={() => toggleStar(market.symbol)} className="text-muted-foreground hover:text-amber-400 transition-colors">
-                        <Star className={cn("w-4 h-4", stars.has(market.symbol) && "fill-amber-400 text-amber-400")} />
-                      </button>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm shrink-0">
-                          {isEmoji ? icon : <span className="text-xs">{icon}</span>}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground">{market.baseAsset}</span>
-                            <span className="text-muted-foreground text-sm">/{market.quoteAsset}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground/70 max-w-[180px] truncate">{market.description}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="p-4 text-right font-mono font-semibold">
-                      ${formatPriceByCategory(market.lastPrice, category)}
-                    </td>
-                    <td className={cn("p-4 text-right font-mono font-semibold", isPositive ? "text-buy" : "text-sell")}>
-                      {isPositive ? "+" : ""}{market.priceChangePercent24h.toFixed(2)}%
-                    </td>
-                    <td className="p-4 text-right font-mono text-muted-foreground hidden md:table-cell">
-                      ${formatPriceByCategory(market.high24h, category)}
-                    </td>
-                    <td className="p-4 text-right font-mono text-muted-foreground hidden md:table-cell">
-                      ${formatPriceByCategory(market.low24h, category)}
-                    </td>
-                    <td className="p-4 text-right font-mono text-foreground">
-                      {formatVolume(market.volume24h)}
-                    </td>
-                    <td className="p-4 text-right">
-                      {category === "crypto" ? (
-                        <Link
-                          href={`/trade/${market.symbol.replace(/\//g, '-')}`}
-                          className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-1.5 rounded-lg font-semibold text-sm hover:opacity-90 transition-opacity"
+                  return (
+                    <tr key={m.symbol} className="hover:bg-white/5 transition-colors">
+                      <td className="px-4 py-3.5">
+                        <button
+                          onClick={() => toggleStar(m.symbol)}
+                          className="text-muted-foreground hover:text-amber-400 transition-colors"
                         >
-                          Trade <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </Link>
-                      ) : (
-                        <button className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-1.5 rounded-lg font-semibold text-sm hover:opacity-90 transition-opacity">
-                          Trade <ArrowRightLeft className="w-3.5 h-3.5" />
+                          <Star className={cn("w-3.5 h-3.5", stars.has(m.symbol) && "fill-amber-400 text-amber-400")} />
                         </button>
-                      )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm shrink-0 font-bold text-primary">
+                            {isEmoji ? icon : <span className="text-xs">{icon}</span>}
+                          </div>
+                          <div>
+                            <span className="font-semibold text-foreground text-sm">{m.baseAsset ?? m.symbol.split("/")[0]}</span>
+                            <span className="text-muted-foreground text-xs ml-1">/{m.quoteAsset ?? m.symbol.split("/")[1]}</span>
+                            {tab === "futures" && (
+                              <span className="ml-2 text-[10px] font-bold bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30">PERP</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-sm font-semibold">
+                        ${formatPrice(m.lastPrice)}
+                      </td>
+                      <td className={cn("px-4 py-3.5 text-right font-mono text-sm font-semibold", isUp ? "text-buy" : "text-sell")}>
+                        {isUp ? "+" : ""}{(m.priceChangePercent24h ?? 0).toFixed(2)}%
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
+                        ${formatPrice(m.high24h)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
+                        ${formatPrice(m.low24h)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground">
+                        {formatVolume(m.volume24h)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <Link
+                          href={tradeHref}
+                          className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3.5 py-1.5 rounded-lg font-semibold text-xs hover:opacity-90 transition-opacity"
+                        >
+                          Trade <ArrowRightLeft className="w-3 h-3" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center text-muted-foreground text-sm">
+                      {search ? `No results for "${search}"` : `Loading ${tab} markets…`}
                     </td>
                   </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="p-12 text-center text-muted-foreground">
-                    {search ? `No ${cat.label.toLowerCase()} found matching "${search}"` : `Loading ${cat.label.toLowerCase()} markets…`}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground/50 mt-3 text-center">
+            Live prices via CoinGecko · On-chain settlement via Bitcoin SV · 0.1% fee
+          </p>
         </div>
       </div>
-
-      {/* Live data note */}
-      <p className="text-xs text-muted-foreground/60 mt-4 text-center">
-        Crypto prices from CoinGecko · Stocks / Indices / Forex / Commodities refreshed every 15 s · Platform fee 0.1% automatically credited to OrahDEX fee wallet on every trade
-      </p>
     </div>
   );
 }
