@@ -2,8 +2,12 @@ import { useState } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, Lock, LogOut, Info, FileText, ExternalLink, ChevronRight,
+  Fingerprint, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useBiometricStore } from "@/store/useBiometricStore";
+import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
+import { cn } from "@/lib/utils";
 
 const BASE_URL = window.location.origin;
 
@@ -13,11 +17,8 @@ function Row({
   icon: any; iconColor?: string; label: string; value?: string;
   onClick?: () => void; rightEl?: React.ReactNode; danger?: boolean;
 }) {
-  return (
-    <button
-      className="flex items-center gap-3 px-4 py-3.5 w-full text-left"
-      onClick={onClick}
-    >
+  const inner = (
+    <>
       <div
         className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
         style={{ backgroundColor: iconColor + "20" }}
@@ -29,15 +30,34 @@ function Row({
         {value && <p className="text-xs text-muted-foreground mt-0.5 truncate">{value}</p>}
       </div>
       {rightEl ?? (onClick ? <ChevronRight size={14} className="text-muted-foreground shrink-0" /> : null)}
+    </>
+  );
+
+  if (rightEl) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3.5 w-full" onClick={onClick}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <button className="flex items-center gap-3 px-4 py-3.5 w-full text-left" onClick={onClick}>
+      {inner}
     </button>
   );
 }
 
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ value, onChange, loading = false }: { value: boolean; onChange: (v: boolean) => void; loading?: boolean }) {
   return (
     <button
-      onClick={() => onChange(!value)}
-      className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${value ? "bg-primary/60" : "bg-muted"}`}
+      onClick={() => !loading && onChange(!value)}
+      disabled={loading}
+      className={cn(
+        "w-11 h-6 rounded-full transition-colors relative shrink-0",
+        value ? "bg-primary/60" : "bg-muted",
+        loading ? "opacity-60 cursor-wait" : ""
+      )}
     >
       <div
         className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
@@ -59,11 +79,43 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+type BiometricToastState = { show: false } | { show: true; success: boolean; message: string };
+
 export function MobileSettings() {
   const { address, provider, network, disconnect } = useWalletStore();
+  const { isEnabled, credentialId, setEnabled } = useBiometricStore();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
-  const [biometrics, setBiometrics] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioToast, setBioToast] = useState<BiometricToastState>({ show: false });
+
+  const supported = isBiometricSupported();
+
+  const showToast = (success: boolean, message: string) => {
+    setBioToast({ show: true, success, message });
+    setTimeout(() => setBioToast({ show: false }), 3500);
+  };
+
+  const handleBiometricToggle = async (newValue: boolean) => {
+    if (newValue) {
+      if (!supported) {
+        showToast(false, "Biometrics not supported in this browser. Try Chrome/Safari on a device with a sensor.");
+        return;
+      }
+      setBioLoading(true);
+      const result = await registerBiometric();
+      setBioLoading(false);
+      if (result.success) {
+        setEnabled(true, result.credentialId);
+        showToast(true, "Biometric lock enabled! The app will lock when you leave.");
+      } else {
+        showToast(false, result.error);
+      }
+    } else {
+      setEnabled(false, null);
+      showToast(true, "Biometric lock disabled.");
+    }
+  };
 
   const handleDisconnect = () => {
     if (window.confirm("Disconnect your wallet?")) disconnect();
@@ -119,9 +171,21 @@ export function MobileSettings() {
           rightEl={<Toggle value={haptics} onChange={setHaptics} />}
         />
         <Row
-          icon={Lock}
+          icon={Fingerprint}
+          iconColor={isEnabled ? "#7c3aed" : "#EAB308"}
           label="Biometric Lock"
-          rightEl={<Toggle value={biometrics} onChange={setBiometrics} />}
+          value={
+            !supported ? "Not supported on this device/browser" :
+            isEnabled ? "Enabled — app locks when you leave" :
+            "Protect app with fingerprint / face ID"
+          }
+          rightEl={
+            <Toggle
+              value={isEnabled}
+              onChange={handleBiometricToggle}
+              loading={bioLoading}
+            />
+          }
         />
       </Section>
 
@@ -150,6 +214,22 @@ export function MobileSettings() {
         <p className="text-xs text-primary mt-1 opacity-80">✦ Trade means DEX</p>
         <p className="text-[11px] text-muted-foreground mt-2">Non-custodial · On-chain settlement · BSV</p>
       </div>
+
+      {/* Toast notification */}
+      {bioToast.show && (
+        <div className={cn(
+          "fixed bottom-28 left-4 right-4 z-50 flex items-start gap-3 p-4 rounded-2xl border shadow-xl transition-all",
+          bioToast.success
+            ? "bg-green-950/90 border-green-500/30 text-green-300"
+            : "bg-red-950/90 border-red-500/30 text-red-300"
+        )}>
+          {bioToast.success
+            ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+            : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          }
+          <p className="text-sm leading-snug">{bioToast.message}</p>
+        </div>
+      )}
     </div>
   );
 }
