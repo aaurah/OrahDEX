@@ -10,6 +10,7 @@ import { Markets } from "@/pages/Markets";
 import { SpotTrading } from "@/pages/Spot";
 import { FuturesTrading } from "@/pages/Futures";
 import { Portfolio } from "@/pages/Portfolio";
+import { DexHub } from "@/pages/DexHub";
 import NotFound from "@/pages/not-found";
 
 import { AdminDashboard } from "@/pages/admin/Dashboard";
@@ -136,6 +137,7 @@ function Router() {
               <Route path="/futures/:symbol">
                 {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
               </Route>
+              <Route path="/dex" component={DexHub} />
               <Route path="/portfolio" component={MobilePortfolio} />
               <Route path="/settings" component={MobileSettings} />
               <Route component={MobileMarkets} />
@@ -152,6 +154,7 @@ function Router() {
               <Route path="/" component={Markets} />
               <Route path="/trade/:symbol" component={SpotTrading} />
               <Route path="/futures/:symbol" component={FuturesTrading} />
+              <Route path="/dex" component={DexHub} />
               <Route path="/portfolio" component={Portfolio} />
               <Route component={NotFound} />
             </Switch>
