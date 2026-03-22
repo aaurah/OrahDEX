@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Zap, Sun, Moon, Smartphone, Settings } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Smartphone, Settings } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -46,7 +46,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">
-              <Zap className="w-4.5 h-4.5 text-white" strokeWidth={2.5} />
+              <span className="text-white font-black text-base leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
             </div>
             <div className="hidden sm:flex flex-col leading-none">
               <span className="font-extrabold text-lg tracking-tight text-foreground">
