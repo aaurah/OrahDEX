@@ -21,7 +21,7 @@ const MOCK_MARKETS = [
 const COIN_COLORS: Record<string, string> = {
   BSV: "#EAB308", BTC: "#F97316", ETH: "#8B5CF6",
   SOL: "#06B6D4", XRP: "#3B82F6", BNB: "#EAB308",
-  ADA: "#2563EB", TOKEN: "#EC4899",
+  ADA: "#2563EB",
 };
 
 function fmt(p: number) {
