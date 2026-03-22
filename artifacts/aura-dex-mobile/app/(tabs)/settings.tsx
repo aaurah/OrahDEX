@@ -8,6 +8,7 @@ import {
   Switch,
   Platform,
   Alert,
+  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -17,6 +18,7 @@ import { useWallet } from "@/context/WalletContext";
 import { Colors } from "@/constants/colors";
 
 const C = Colors.dark;
+const ADMIN_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}/admin`;
 
 function SettingRow({
   icon, label, value, onPress, rightEl, showChevron = true,
@@ -176,6 +178,28 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* Admin */}
+        <SectionHeader title="Admin" />
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.adminRow}
+            activeOpacity={0.7}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Linking.openURL(ADMIN_URL);
+            }}
+          >
+            <View style={[styles.settingIcon, { backgroundColor: "#8B5CF6" + "20" }]}>
+              <Feather name="shield" size={16} color="#8B5CF6" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingLabel}>Admin Panel</Text>
+              <Text style={styles.settingValue}>Platform management & controls</Text>
+            </View>
+            <Feather name="external-link" size={16} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* About */}
         <SectionHeader title="About" />
         <View style={styles.card}>
@@ -224,6 +248,7 @@ const styles = StyleSheet.create({
   },
   disconnectText: { fontFamily: "Inter_600SemiBold", fontSize: 14, color: C.sell, flex: 1 },
   connectRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  adminRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
   connectText: { fontFamily: "Inter_500Medium", fontSize: 14, color: C.text, flex: 1 },
   brandingSection: { alignItems: "center", paddingVertical: 28 },
   brandingTitle: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text },
