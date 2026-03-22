@@ -1,6 +1,6 @@
-import { useParams } from "wouter";
-import { useState } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders } from "@workspace/api-client-react";
+import { useParams, Link } from "wouter";
+import { useState, useMemo } from "react";
+import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
@@ -8,30 +8,66 @@ import { RecentTrades } from "@/components/trading/RecentTrades";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
-import { ExternalLink, CheckCircle2, Clock } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, Search, BookOpen, BarChart2 } from "lucide-react";
 
 type BottomTab = "open" | "history" | "trades";
+type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
+type LeftTab = "markets" | "orderbook";
+
+const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
+  { id: "USDT", label: "USDT", color: "text-green-400" },
+  { id: "ETH",  label: "ETH",  color: "text-violet-400" },
+  { id: "BTC",  label: "BTC",  color: "text-orange-400" },
+  { id: "BSV",  label: "BSV",  color: "text-amber-400" },
+  { id: "BCH",  label: "BCH",  color: "text-emerald-400" },
+];
+
+const COIN_COLORS: Record<string, string> = {
+  BSV:"#EAB308", BTC:"#F97316", ETH:"#8B5CF6", SOL:"#06B6D4",
+  XRP:"#3B82F6", BNB:"#EAB308", ADA:"#2563EB", DOGE:"#EAB308",
+  DOT:"#E11D48", AVAX:"#EF4444", MATIC:"#7C3AED", LINK:"#2563EB",
+  UNI:"#EC4899", ATOM:"#6366F1", LTC:"#6B7280", BCH:"#22C55E",
+  TRX:"#EF4444", NEAR:"#10B981", APT:"#06B6D4", ARB:"#60A5FA",
+  OP:"#EF4444",  SUI:"#3B82F6", INJ:"#2563EB", PEPE:"#22C55E",
+  SHIB:"#F97316",MKR:"#22C55E", AAVE:"#7C3AED", CRV:"#F43F5E",
+  FET:"#06B6D4",
+};
+
+function normalise(m: any) {
+  const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
+  const quote = m.quoteAsset ?? m.quote ?? "USDT";
+  const price = parseFloat(m.lastPrice ?? m.price) || 0;
+  const chg   = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
+  const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
+  return { ...m, symbol: m.symbol ?? `${base}-${quote}`, baseAsset: base, quoteAsset: quote,
+    lastPrice: price, priceChangePercent24h: chg, type };
+}
 
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address } = useWalletStore();
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
+  const [leftTab, setLeftTab] = useState<LeftTab>("markets");
+  const [quoteTab, setQuoteTab] = useState<QuoteTab>("USDT");
+  const [marketSearch, setMarketSearch] = useState("");
 
   const symbol = rawSymbol.replace(/-/g, '/');
 
-  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
+  const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
+  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
-  const { data: apiTrades } = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
-  const { data: apiOrders, refetch: refetchOrders } = useGetOrders({ walletAddress: address || '' }, { query: { enabled: !!address, refetchInterval: 5000 } });
+  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
+  const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
+    { walletAddress: address || '' },
+    { query: { enabled: !!address, refetchInterval: 5000 } }
+  );
+  const { data: apiMarkets } = useGetMarkets();
 
-  const ticker = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
+  const ticker     = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
-  
-  const candles = apiCandles || generateMockCandles(ticker.lastPrice);
-  const trades  = apiTrades  || generateMockTrades(ticker.lastPrice);
+  const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
+  const trades     = apiTrades  || generateMockTrades(ticker.lastPrice);
 
-  // Transform raw API format [[price, qty], ...] → { price, quantity, total }[]
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
     let cum = 0;
@@ -41,9 +77,31 @@ export function SpotTrading() {
   const orderBook = rawOB?.bids && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
     : (apiOrderBook || generateMockOrderBook(ticker.lastPrice));
-  const allOrders = (apiOrders as any[]) || [];
+
+  const allOrders    = (apiOrders as any[]) || [];
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
+
+  // Market list for pair selector
+  const allMarkets = useMemo(() => {
+    const raw = ((apiMarkets && (apiMarkets as any[]).length > 0) ? (apiMarkets as any[]) : []).map(normalise);
+    return raw.filter(m => m.type === "spot");
+  }, [apiMarkets]);
+
+  const filteredMarkets = useMemo(() => {
+    const q = marketSearch.toLowerCase();
+    return allMarkets
+      .filter(m => m.quoteAsset === quoteTab)
+      .filter(m => !q || m.baseAsset.toLowerCase().includes(q) || m.symbol.toLowerCase().includes(q));
+  }, [allMarkets, quoteTab, marketSearch]);
+
+  const quoteCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    QUOTE_TABS.forEach(t => {
+      counts[t.id] = allMarkets.filter(m => m.quoteAsset === t.id).length;
+    });
+    return counts;
+  }, [allMarkets]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
@@ -86,12 +144,136 @@ export function SpotTrading() {
 
       {/* Main Trading Area */}
       <div className="flex-1 flex overflow-hidden lg:flex-row flex-col">
-        {/* Left Column: OrderBook */}
-        <div className="w-full lg:w-[320px] border-r border-border shrink-0 flex flex-col min-h-0 order-2 lg:order-1">
-          <div className="p-3 border-b border-border bg-secondary/50 font-semibold text-sm">Order Book</div>
-          <div className="flex-1 min-h-0">
-            <OrderBook data={orderBook} lastPrice={ticker.lastPrice} />
+
+        {/* Left Column: Markets + OrderBook tabs */}
+        <div className="w-full lg:w-[280px] border-r border-border shrink-0 flex flex-col min-h-0 order-2 lg:order-1">
+          {/* Left tab switcher */}
+          <div className="flex border-b border-border shrink-0">
+            <button
+              onClick={() => setLeftTab("markets")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold border-b-2 transition-colors",
+                leftTab === "markets"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <BarChart2 className="w-3.5 h-3.5" />
+              Markets
+            </button>
+            <button
+              onClick={() => setLeftTab("orderbook")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold border-b-2 transition-colors",
+                leftTab === "orderbook"
+                  ? "border-primary text-primary bg-primary/5"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Order Book
+            </button>
           </div>
+
+          {/* Markets Panel */}
+          {leftTab === "markets" && (
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Search */}
+              <div className="px-2 pt-2 pb-1 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search pairs…"
+                    value={marketSearch}
+                    onChange={e => setMarketSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
+                  />
+                </div>
+              </div>
+
+              {/* Quote tabs */}
+              <div className="flex px-2 pb-1 gap-1 shrink-0 overflow-x-auto scrollbar-hide">
+                {QUOTE_TABS.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setQuoteTab(t.id)}
+                    className={cn(
+                      "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
+                      quoteTab === t.id
+                        ? "bg-primary/15 border-primary/40 text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                    )}
+                  >
+                    {t.label}
+                    {quoteCounts[t.id] > 0 && (
+                      <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Column headers */}
+              <div className="flex items-center px-2 py-1 text-[10px] text-muted-foreground font-medium shrink-0 border-b border-border/50">
+                <span className="flex-1">Pair</span>
+                <span className="w-20 text-right">Price</span>
+                <span className="w-14 text-right">Change</span>
+              </div>
+
+              {/* Pair list */}
+              <div className="flex-1 overflow-y-auto min-h-0">
+                {filteredMarkets.length === 0 ? (
+                  <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
+                    No pairs found
+                  </div>
+                ) : (
+                  filteredMarkets.map(m => {
+                    const urlSymbol = m.symbol.replace('/', '-');
+                    const isActive = urlSymbol === rawSymbol;
+                    const isUp = m.priceChangePercent24h >= 0;
+                    const bgColor = COIN_COLORS[m.baseAsset] ?? "#6B7280";
+                    return (
+                      <Link
+                        key={m.symbol}
+                        href={`/trade/${urlSymbol}`}
+                        className={cn(
+                          "flex items-center px-2 py-1.5 gap-2 hover:bg-white/5 cursor-pointer transition-colors border-b border-border/20",
+                          isActive && "bg-primary/10 border-l-2 border-l-primary"
+                        )}
+                      >
+                        <div
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black text-white shrink-0"
+                          style={{ background: bgColor }}
+                        >
+                          {m.baseAsset.slice(0, 2)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[11px] font-semibold text-foreground">{m.baseAsset}</span>
+                          <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
+                        </div>
+                        <span className="w-20 text-right text-[11px] font-mono text-foreground">
+                          {formatPrice(m.lastPrice)}
+                        </span>
+                        <span className={cn(
+                          "w-14 text-right text-[10px] font-semibold",
+                          isUp ? "text-buy" : "text-sell"
+                        )}>
+                          {isUp ? "+" : ""}{m.priceChangePercent24h.toFixed(2)}%
+                        </span>
+                      </Link>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Order Book Panel */}
+          {leftTab === "orderbook" && (
+            <div className="flex-1 min-h-0">
+              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} />
+            </div>
+          )}
         </div>
 
         {/* Center Column: Chart & Open Orders */}
@@ -172,7 +354,7 @@ export function SpotTrading() {
                 )
               )}
 
-              {/* ── Order History (filled / cancelled with BSV settlement) ── */}
+              {/* ── Order History ── */}
               {bottomTab === "history" && (
                 filledOrders.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center gap-1 text-muted-foreground text-sm">
@@ -265,8 +447,8 @@ export function SpotTrading() {
           </div>
         </div>
 
-        {/* Right Column: Order Form & Trades */}
-        <div className="w-full lg:w-[320px] shrink-0 flex flex-col min-h-0 order-3 border-l border-border bg-card">
+        {/* Right Column: Order Form & Recent Trades */}
+        <div className="w-full lg:w-[300px] shrink-0 flex flex-col min-h-0 order-3 border-l border-border bg-card">
           <div className="flex-1 lg:flex-none">
             <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} />
           </div>
