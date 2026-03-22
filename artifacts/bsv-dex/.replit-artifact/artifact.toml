@@ -1,6 +1,6 @@
 kind = "web"
   previewPath = "/"
-  title = "Orah DEX Exchange"
+  title = "OrahDEX — Web & Mobile"
   version = "1.0.0"
   id = "artifacts/bsv-dex"
   router = "path"
