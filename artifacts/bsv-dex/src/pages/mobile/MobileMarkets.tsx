@@ -160,12 +160,14 @@ export function MobileMarkets() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                filter === f
+                filter === f && f === "futures"
+                  ? "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                  : filter === f
                   ? "bg-primary/15 border-primary/40 text-primary"
                   : "bg-card border-border text-muted-foreground"
               }`}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === "futures" ? "Futures" : f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>
@@ -177,49 +179,73 @@ export function MobileMarkets() {
             <span className="w-24 text-[10px] font-medium text-muted-foreground uppercase tracking-wide text-right">Price</span>
             <span className="w-16 text-[10px] font-medium text-muted-foreground uppercase tracking-wide text-right">24h</span>
           </div>
-          {filtered.map((m: any, i: number) => (
-            <button
-              key={m.symbol}
-              onClick={() => goTrade(m)}
-              className={`flex items-center w-full px-4 py-3.5 text-left ${i < filtered.length - 1 ? "border-b border-border" : ""}`}
-            >
-              <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0"
-                  style={{ backgroundColor: (COIN_COLORS[m.base] ?? "#EAB308") + "22", color: COIN_COLORS[m.base] ?? "#EAB308" }}
-                >
-                  {m.base[0]}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1 leading-tight">
-                    <p className="text-sm font-semibold text-foreground">
-                      {m.base}<span className="text-muted-foreground font-normal">/{m.quote}</span>
-                    </p>
-                    {m.type === "futures" && (
-                      <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 leading-none shrink-0">PERP</span>
-                    )}
+          {(() => {
+            const spotRows = filtered.filter((m: any) => m.type === "spot");
+            const futuresRows = filtered.filter((m: any) => m.type === "futures");
+            const showDivider = filter === "all" && spotRows.length > 0 && futuresRows.length > 0;
+            return (
+              <>
+                {spotRows.map((m: any, i: number) => (
+                  <MarketRow key={m.symbol} m={m} isLast={!showDivider && i === spotRows.length - 1} goTrade={goTrade} />
+                ))}
+                {showDivider && (
+                  <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/8 border-y border-amber-500/20">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Futures — Perpetual Contracts</span>
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">Vol {m.volume}</p>
-                </div>
-              </div>
-              <div className="w-24 text-right">
-                <p className="text-sm font-bold text-foreground">${fmt(m.price)}</p>
-              </div>
-              <div className="w-16 flex justify-end">
-                <span
-                  className="text-[11px] font-semibold px-1.5 py-0.5 rounded-lg"
-                  style={{
-                    backgroundColor: m.change >= 0 ? "#22c55e18" : "#ef444418",
-                    color: m.change >= 0 ? "#22c55e" : "#ef4444",
-                  }}
-                >
-                  {m.change >= 0 ? "+" : ""}{m.change.toFixed(2)}%
-                </span>
-              </div>
-            </button>
-          ))}
+                )}
+                {futuresRows.map((m: any, i: number) => (
+                  <MarketRow key={m.symbol} m={m} isLast={i === futuresRows.length - 1} goTrade={goTrade} isFutures />
+                ))}
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>
+  );
+}
+
+function MarketRow({ m, isLast, goTrade, isFutures }: { m: any; isLast: boolean; goTrade: (m: any) => void; isFutures?: boolean }) {
+  return (
+    <button
+      onClick={() => goTrade(m)}
+      className={`flex items-center w-full px-4 py-3.5 text-left transition-colors ${
+        isFutures ? "bg-amber-500/5 hover:bg-amber-500/10" : "hover:bg-secondary/40"
+      } ${!isLast ? "border-b border-border" : ""}`}
+    >
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+        <div
+          className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${isFutures ? "ring-1 ring-amber-500/30" : ""}`}
+          style={{ backgroundColor: (COIN_COLORS[m.base] ?? "#EAB308") + "22", color: COIN_COLORS[m.base] ?? "#EAB308" }}
+        >
+          {m.base[0]}
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 leading-tight">
+            <p className={`text-sm font-semibold ${isFutures ? "text-amber-50" : "text-foreground"}`}>
+              {m.base}<span className="text-muted-foreground font-normal">/{m.quote}</span>
+            </p>
+            {isFutures && (
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 leading-none shrink-0">PERP</span>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Vol {m.volume}</p>
+        </div>
+      </div>
+      <div className="w-24 text-right">
+        <p className={`text-sm font-bold ${isFutures ? "text-amber-100" : "text-foreground"}`}>${fmt(m.price)}</p>
+      </div>
+      <div className="w-16 flex justify-end">
+        <span
+          className="text-[11px] font-semibold px-1.5 py-0.5 rounded-lg"
+          style={{
+            backgroundColor: m.change >= 0 ? "#22c55e18" : "#ef444418",
+            color: m.change >= 0 ? "#22c55e" : "#ef4444",
+          }}
+        >
+          {m.change >= 0 ? "+" : ""}{m.change.toFixed(2)}%
+        </span>
+      </div>
+    </button>
   );
 }
