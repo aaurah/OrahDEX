@@ -1,8 +1,8 @@
 import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, Zap, Layers, Users2 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
-import { useState } from "react";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
@@ -16,7 +16,7 @@ const TABS = [
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { address } = useWalletStore();
-  const [walletOpen, setWalletOpen] = useState(false);
+  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
 
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
@@ -59,7 +59,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
 
         {/* Connect wallet button */}
         <button
-          onClick={() => setWalletOpen(true)}
+          onClick={() => openWallet()}
           className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
         >
           {address ? (
@@ -82,7 +82,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <WalletConnectModal isOpen={walletOpen} onClose={() => setWalletOpen(false)} />
+      <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
     </div>
   );
 }
