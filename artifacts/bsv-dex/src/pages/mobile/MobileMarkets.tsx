@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -39,11 +40,21 @@ export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
-  const { address } = useWalletStore();
+  const { address, network, chainId } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
 
-  const TOTAL_BALANCE = "$3,340.85";
+  // Real on-chain balances for header display
+  const { balances: evmBalances } = useEvmBalances(
+    network === "evm" ? address : null,
+    network === "evm" ? chainId : null
+  );
+  const totalUsd = evmBalances.reduce((s, b) => s + b.usdValue, 0);
+  const TOTAL_BALANCE = totalUsd >= 0.01
+    ? "$" + totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : totalUsd > 0
+      ? "$" + totalUsd.toFixed(4)
+      : "$0.00";
 
   const { data: apiData, refetch, isFetching } = useQuery({
     queryKey: ["markets"],
