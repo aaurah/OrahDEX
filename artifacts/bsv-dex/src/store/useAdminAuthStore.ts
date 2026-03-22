@@ -11,6 +11,7 @@ interface AdminAuthState {
   twoFaSetupDone: boolean;
   twoFaVerified: boolean;
   email: string | null;
+  displayName: string;
   error: string | null;
   login: (email: string, password: string) => boolean;
   verifyTotp: (code: string) => Promise<boolean>;
@@ -19,6 +20,7 @@ interface AdminAuthState {
   disable2FA: () => void;
   logout: () => void;
   clearError: () => void;
+  updateProfile: (fields: { displayName?: string }) => void;
 }
 
 export const useAdminAuthStore = create<AdminAuthState>()(
@@ -29,6 +31,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       twoFaSetupDone: false,
       twoFaVerified: false,
       email: null,
+      displayName: 'Aaurah',
       error: null,
 
       login: (email, password) => {
@@ -71,12 +74,17 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       }),
 
       clearError: () => set({ error: null }),
+
+      updateProfile: (fields) => set((s) => ({
+        displayName: fields.displayName ?? s.displayName,
+      })),
     }),
     {
       name: 'aura-admin-auth',
       partialize: (s) => ({
         twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
+        displayName: s.displayName,
         // Never persist isAuthenticated — require re-login each session
       }),
     }

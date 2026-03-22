@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown,
-  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle, Eye, EyeOff
+  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle, Eye, EyeOff,
+  Pencil, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
@@ -236,17 +237,224 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
   );
 }
 
+// ── Edit Admin Modal ──────────────────────────────────────────────────────────
+function EditAdminModal({
+  admin, isSuperadmin, onClose, onSaved,
+}: {
+  admin: any;
+  isSuperadmin: boolean;
+  onClose: () => void;
+  onSaved: (updated: any) => void;
+}) {
+  const { displayName, updateProfile } = useAdminAuthStore();
+  const [form, setForm] = useState({
+    name: isSuperadmin ? displayName : admin.name,
+    email: admin.email,
+    role: admin.role,
+    permissions: [...(admin.permissions ?? [])] as string[],
+    status: admin.status ?? "active",
+  });
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+
+  const togglePerm = (p: string) =>
+    setForm(f => ({
+      ...f,
+      permissions: f.permissions.includes(p) ? f.permissions.filter(x => x !== p) : [...f.permissions, p],
+    }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    if (isSuperadmin) {
+      updateProfile({ displayName: form.name });
+      setSaving(false);
+      setDone(true);
+      onSaved({ ...admin, name: form.name });
+      setTimeout(onClose, 1200);
+      return;
+    }
+    const res = await fetch(`${BASE}/api/admin/admins/${admin.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.name,
+        email: form.email,
+        role: form.role,
+        permissions: form.permissions,
+        status: form.status,
+      }),
+    });
+    const data = await res.json();
+    setSaving(false);
+    if (data.success) {
+      setDone(true);
+      onSaved(data.admin);
+      setTimeout(onClose, 1200);
+    }
+  };
+
+  const ROLES = ["admin", "developer", "moderator", "analyst"];
+  const PERMS = ALL_PERMISSIONS.filter(p => p !== "all");
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+              isSuperadmin ? "bg-amber-500/15" : "bg-primary/15"
+            )}>
+              {isSuperadmin ? <Crown className="w-4 h-4 text-amber-400" /> : <Pencil className="w-4 h-4 text-primary" />}
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-foreground">
+                {isSuperadmin ? "Edit Your Profile" : `Edit Admin — ${admin.name}`}
+              </h3>
+              <p className="text-xs text-muted-foreground">{admin.email}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="py-12 flex flex-col items-center gap-3">
+            <div className="w-14 h-14 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+              <Check className="w-7 h-7 text-green-400" />
+            </div>
+            <p className="font-semibold text-green-400">
+              {isSuperadmin ? "Profile updated!" : "Admin updated!"}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-y-auto flex-1 p-6 space-y-5">
+            {/* Name */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Display Name</label>
+              <input value={form.name} onChange={e => set("name", e.target.value)}
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary"
+                placeholder="Full name" />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block flex items-center gap-1.5">
+                Email
+                {isSuperadmin && <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Login credential (display only)</span>}
+              </label>
+              <input value={form.email} onChange={e => !isSuperadmin && set("email", e.target.value)}
+                readOnly={isSuperadmin}
+                className={cn(
+                  "w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary",
+                  isSuperadmin && "opacity-50 cursor-not-allowed"
+                )}
+                placeholder="email@example.com" />
+            </div>
+
+            {/* Role */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5 block">
+                Role
+                {isSuperadmin && <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Fixed for superadmin</span>}
+              </label>
+              {isSuperadmin ? (
+                <div className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-amber-400 font-semibold opacity-60 cursor-not-allowed capitalize">
+                  superadmin
+                </div>
+              ) : (
+                <select value={form.role} onChange={e => set("role", e.target.value)}
+                  className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary">
+                  {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                </select>
+              )}
+            </div>
+
+            {/* Permissions */}
+            {!isSuperadmin && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Permissions</label>
+                <div className="flex flex-wrap gap-2">
+                  {PERMS.map(p => (
+                    <button key={p} onClick={() => togglePerm(p)}
+                      className={cn("text-xs px-2.5 py-1 rounded-lg border font-medium capitalize transition-all",
+                        form.permissions.includes(p)
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "border-border text-muted-foreground hover:border-primary/30"
+                      )}>
+                      {form.permissions.includes(p) && <Check className="w-3 h-3 inline mr-1" />}{p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {isSuperadmin && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block flex items-center gap-1.5">
+                  Permissions <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Always "all"</span>
+                </label>
+                <div className="flex flex-wrap gap-2 opacity-50 pointer-events-none">
+                  <span className="text-xs px-2.5 py-1 rounded-lg border bg-primary/10 text-primary border-primary/30 font-medium">all</span>
+                </div>
+              </div>
+            )}
+
+            {/* Status — only for non-superadmin */}
+            {!isSuperadmin && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Status</label>
+                <div className="flex gap-2">
+                  {["active", "inactive", "suspended"].map(s => (
+                    <button key={s} onClick={() => set("status", s)}
+                      className={cn("flex-1 py-2 rounded-xl border text-xs font-semibold capitalize transition-all",
+                        form.status === s
+                          ? s === "active" ? "bg-green-500/15 border-green-500/40 text-green-400"
+                            : s === "suspended" ? "bg-red-500/15 border-red-500/40 text-red-400"
+                            : "bg-secondary border-primary/30 text-foreground"
+                          : "bg-secondary border-border text-muted-foreground hover:text-foreground"
+                      )}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!done && (
+          <div className="px-6 py-4 border-t border-border flex gap-3 shrink-0">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving || !form.name}
+              className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-all">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function AdminAdmins() {
   const qc = useQueryClient();
   const {
-    email: loggedInEmail, twoFaEnabled, twoFaSetupDone,
+    email: loggedInEmail, displayName: superadminDisplayName, twoFaEnabled, twoFaSetupDone,
     enable2FA, disable2FA, markSetupDone
   } = useAdminAuthStore();
 
   const [showAdd, setShowAdd] = useState(false);
   const [modal2FA, setModal2FA] = useState<{ type: 'enable' | 'disable'; id: string; name: string } | null>(null);
   const [resetPwAdmin, setResetPwAdmin] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [editAdminTarget, setEditAdminTarget] = useState<any | null>(null);
   const [form, setForm] = useState({ name: "", email: "", role: "moderator", permissions: [] as string[] });
 
   const { data: apiAdmins = [], isLoading } = useQuery({ queryKey: ["admin-admins"], queryFn: fetchAdmins });
@@ -287,7 +495,7 @@ export function AdminAdmins() {
   // Superadmin pinned row
   const superadminRow = loggedInEmail ? [{
     id: '__superadmin__',
-    name: 'Aaurah',
+    name: superadminDisplayName,
     email: loggedInEmail,
     role: 'superadmin',
     permissions: ['all'],
@@ -350,6 +558,19 @@ export function AdminAdmins() {
       {/* ── Reset Password Modal ── */}
       {resetPwAdmin && (
         <ResetPasswordModal admin={resetPwAdmin} onClose={() => setResetPwAdmin(null)} />
+      )}
+
+      {/* ── Edit Admin Modal ── */}
+      {editAdminTarget && (
+        <EditAdminModal
+          admin={editAdminTarget}
+          isSuperadmin={!!editAdminTarget.isPinned}
+          onClose={() => setEditAdminTarget(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["admin-admins"] });
+            setEditAdminTarget(null);
+          }}
+        />
       )}
 
       {/* ── 2FA Modals ── */}
@@ -542,9 +763,23 @@ export function AdminAdmins() {
                     {/* Actions */}
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
+                        {/* Edit */}
+                        <button
+                          onClick={() => setEditAdminTarget(a)}
+                          className={cn(
+                            "p-1.5 rounded-lg transition-colors",
+                            a.isPinned
+                              ? "text-amber-400 hover:bg-amber-400/10"
+                              : "text-primary hover:bg-primary/10"
+                          )}
+                          title="Edit admin"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        {/* Reset password */}
                         <button
                           onClick={() => setResetPwAdmin({ id: a.id, name: a.name, email: a.email })}
-                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          className="p-1.5 text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
                           title="Reset password"
                         >
                           <KeyRound className="w-4 h-4" />
