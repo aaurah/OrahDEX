@@ -1,10 +1,12 @@
-import { useEffect, ReactNode } from "react";
+import { useEffect, useRef, ReactNode } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { Layout } from "@/components/Layout";
+import { BiometricLockScreen } from "@/components/BiometricLockScreen";
+import { useBiometricStore } from "@/store/useBiometricStore";
 import { AdminLayout } from "@/components/AdminLayout";
 import { Markets } from "@/pages/Markets";
 import { SpotTrading } from "@/pages/Spot";
@@ -169,14 +171,46 @@ function Router() {
   );
 }
 
+const AUTO_LOCK_MS = 30_000;
+
+function AppContent() {
+  const { isEnabled, isLocked, lock } = useBiometricStore();
+  const hiddenAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt.current = Date.now();
+      } else if (document.visibilityState === "visible") {
+        if (hiddenAt.current !== null && Date.now() - hiddenAt.current >= AUTO_LOCK_MS) {
+          lock();
+        }
+        hiddenAt.current = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [isEnabled, lock]);
+
+  return (
+    <>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router />
+      </WouterRouter>
+      <Toaster />
+      {isEnabled && isLocked && <BiometricLockScreen />}
+    </>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
+        <AppContent />
       </TooltipProvider>
     </QueryClientProvider>
   );
