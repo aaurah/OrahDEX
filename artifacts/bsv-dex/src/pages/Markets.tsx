@@ -102,7 +102,7 @@ export function Markets() {
                     </td>
                     <td className="p-4 text-right">
                       <Link 
-                        href={`/trade/${market.symbol}`}
+                        href={`/trade/${market.symbol.replace(/\//g, '-')}`}
                         className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-semibold text-sm hover:scale-105 active:scale-95 transition-transform"
                       >
                         Trade
