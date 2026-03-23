@@ -33,7 +33,7 @@ export function setupReown(projectId: string): void {
         analytics: false,
         email: false,
         socials: [],
-        onramp: false,
+        onramp: true,
         swaps: false,
       },
       themeMode: "dark",
@@ -49,7 +49,11 @@ export function setupReown(projectId: string): void {
   }
 }
 
-export function openReownModal(view?: "Connect" | "Account" | "Networks"): boolean {
+type ReownView =
+  | "Connect" | "Account" | "Networks" | "OnRampProviders"
+  | "Swap" | "AllWallets" | "WhatIsAWallet" | "WhatIsANetwork";
+
+export function openReownModal(view?: ReownView): boolean {
   if (!_modal) {
     console.warn("[OrahDEX] Reown modal not ready — Project ID may not be configured.");
     return false;

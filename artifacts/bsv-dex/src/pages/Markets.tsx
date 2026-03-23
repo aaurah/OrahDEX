@@ -11,6 +11,7 @@ import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { Search, Star, ArrowRightLeft, CreditCard, Zap } from "lucide-react";
 import { Link } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { openReownModal, isReownReady } from "@/lib/reown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -103,6 +104,10 @@ export function Markets() {
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [buyOpen, setBuyOpen] = useState(false);
   const [buyCoin, setBuyCoin] = useState("BSV");
+  const handleBuy = (coin: string) => {
+    setBuyCoin(coin);
+    if (isReownReady()) { openReownModal("OnRampProviders"); } else { setBuyOpen(true); }
+  };
 
   const { data: apiMarkets } = useGetMarkets();
   const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
@@ -168,7 +173,7 @@ export function Markets() {
               <p className="text-xs text-primary/70 italic mt-0.5">✦ Trade means DEX</p>
             </div>
             <button
-              onClick={() => { setBuyCoin("BSV"); setBuyOpen(true); }}
+              onClick={() => handleBuy("BSV")}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity shadow-lg"
             >
               <CreditCard className="w-4 h-4" />
@@ -319,7 +324,7 @@ export function Markets() {
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => { setBuyCoin(base); setBuyOpen(true); }}
+                            onClick={() => handleBuy(base)}
                             className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 border border-green-500/25 px-2.5 py-1.5 rounded-lg font-semibold text-[11px] hover:bg-green-500/25 transition-colors opacity-0 group-hover:opacity-100"
                           >
                             <CreditCard className="w-3 h-3" /> Buy
