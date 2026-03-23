@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X, Star, ChevronUp, ChevronDown, CreditCard, Wallet } from "lucide-react";
+import { Search, X, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
-import { useWalletModalStore } from "@/store/useWalletModalStore";
+
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import {
@@ -107,7 +107,6 @@ export function MobileMarkets() {
   const tabsRef = useRef<HTMLDivElement>(null);
 
   const { address } = useWalletStore();
-  const openWalletModal = useWalletModalStore(s => s.open);
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
@@ -163,40 +162,19 @@ export function MobileMarkets() {
     <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
-        <div className="flex items-center justify-between px-4 pt-safe-top pt-3 pb-2">
-          <span className="text-lg font-bold">Spot</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setBuyOpen(true)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500/15 text-green-400 text-[11px] font-bold border border-green-500/25"
-            >
-              <CreditCard size={11} /> Buy
-            </button>
-            <button
-              onClick={() => address ? setWalletSheetOpen(true) : openWalletModal()}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold",
-                address
-                  ? "bg-green-500/10 border border-green-500/25 text-green-400"
-                  : "bg-primary text-primary-foreground"
-              )}
-            >
-              <Wallet size={11} />
-              {address ? address.slice(0, 6) + "…" : "Connect"}
-            </button>
+        {/* Spot label + Search bar on one line */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+          <span className="text-base font-bold shrink-0">Spot</span>
+          <div className="flex-1 flex items-center gap-2 bg-secondary/60 border border-border/60 rounded-xl px-3 h-9">
+            <Search size={13} className="text-muted-foreground shrink-0" />
+            <input
+              className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/60 outline-none"
+              placeholder="Search coins…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
           </div>
-        </div>
-
-        {/* Search */}
-        <div className="flex items-center gap-2 mx-4 mb-2 bg-secondary/60 border border-border/60 rounded-xl px-3 h-9">
-          <Search size={13} className="text-muted-foreground shrink-0" />
-          <input
-            className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/60 outline-none"
-            placeholder="Search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
         </div>
 
         {/* Main category tabs */}
