@@ -34,13 +34,13 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       <div className="shrink-0 relative grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ gridTemplateColumns: "1fr auto 1fr" }}>
 
-        {/* O icon — pinned to left edge, not part of the grid flow */}
+        {/* Logo icon — pinned to left edge, not part of the grid flow */}
         <button
           onClick={() => navigate("/")}
           className="absolute left-4 inset-y-0 flex items-center active:opacity-70 transition-opacity"
         >
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
-            <span className="text-white font-black text-[13px] leading-none select-none">O</span>
+          <div className="w-7 h-7 rounded-lg overflow-hidden shadow-md shadow-primary/20 shrink-0">
+            <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
           </div>
         </button>
 

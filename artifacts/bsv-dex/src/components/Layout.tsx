@@ -91,8 +91,8 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-8">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">
-              <span className="text-white font-black text-base leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform shrink-0">
+              <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
             </div>
             <div className="hidden sm:flex flex-col leading-none">
               <span className="font-extrabold text-lg tracking-tight text-foreground">
