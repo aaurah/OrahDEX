@@ -4,6 +4,7 @@ import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
+  MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -15,7 +16,7 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "bch" | "bsv" | "ai" | "meme" | "defi" | "futures";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "meme" | "defi" | "futures";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -42,7 +43,13 @@ const TAB_META: TabMeta[] = [
   { id: "usd",       label: "USD",          color: "text-blue-400",    desc: "Stablecoin markets" },
   { id: "btc",       label: "BTC",          color: "text-orange-400",  desc: "All pairs quoted in BTC" },
   { id: "eth",       label: "ETH",          color: "text-violet-400",  desc: "All pairs quoted in ETH" },
-  { id: "bnb",       label: "BNB",          color: "text-yellow-400",  desc: "All pairs quoted in BNB" },
+  { id: "bnb",       label: "BNB",          color: "text-yellow-400",  desc: "All pairs quoted in BNB · BSC" },
+  { id: "matic",     label: "MATIC",        color: "text-purple-400",  desc: "All pairs quoted in MATIC · Polygon" },
+  { id: "avax",      label: "AVAX",         color: "text-red-400",     desc: "All pairs quoted in AVAX · Avalanche" },
+  { id: "arb",       label: "ARB",          color: "text-sky-400",     desc: "All pairs quoted in ARB · Arbitrum" },
+  { id: "op",        label: "OP",           color: "text-red-400",     desc: "All pairs quoted in OP · Optimism" },
+  { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
+  { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
   { id: "bsv",       label: "BSV",          color: "text-amber-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },
@@ -123,6 +130,12 @@ export function Markets() {
       case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC")   : BTC_MARKETS.map(normalise);
       case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH")   : ETH_MARKETS.map(normalise);
       case "bnb":       return hasApi ? raw.filter(m => m.quoteAsset === "BNB")   : BNB_MARKETS.map(normalise);
+      case "matic":     return hasApi ? raw.filter(m => m.quoteAsset === "MATIC") : MATIC_MARKETS.map(normalise);
+      case "avax":      return hasApi ? raw.filter(m => m.quoteAsset === "AVAX")  : AVAX_MARKETS.map(normalise);
+      case "arb":       return hasApi ? raw.filter(m => m.quoteAsset === "ARB")   : ARB_MARKETS.map(normalise);
+      case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP")    : OP_MARKETS.map(normalise);
+      case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM")   : FTM_MARKETS.map(normalise);
+      case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO")   : CRO_MARKETS.map(normalise);
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")   : BCH_MARKETS.map(normalise);
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")   : BSV_MARKETS.map(normalise);
       case "ai":        return AI_MARKETS.map(normalise);
@@ -142,7 +155,13 @@ export function Markets() {
         : USDT_MARKETS.length + USDC_MARKETS.length + TUSD_MARKETS.length + USDD_MARKETS.length;
       case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC").length  : BTC_MARKETS.length;
       case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH").length  : ETH_MARKETS.length;
-      case "bnb":       return hasApi ? raw.filter(m => m.quoteAsset === "BNB").length  : BNB_MARKETS.length;
+      case "bnb":       return hasApi ? raw.filter(m => m.quoteAsset === "BNB").length   : BNB_MARKETS.length;
+      case "matic":     return hasApi ? raw.filter(m => m.quoteAsset === "MATIC").length : MATIC_MARKETS.length;
+      case "avax":      return hasApi ? raw.filter(m => m.quoteAsset === "AVAX").length  : AVAX_MARKETS.length;
+      case "arb":       return hasApi ? raw.filter(m => m.quoteAsset === "ARB").length   : ARB_MARKETS.length;
+      case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP").length    : OP_MARKETS.length;
+      case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM").length   : FTM_MARKETS.length;
+      case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO").length   : CRO_MARKETS.length;
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH").length  : BCH_MARKETS.length;
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV").length  : BSV_MARKETS.length;
       case "ai":        return AI_MARKETS.length;
@@ -162,7 +181,7 @@ export function Markets() {
     setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
 
   const meta = TAB_META.find(t => t.id === tab)!;
-  const isCrossQuote = tab === "bsv" || tab === "btc" || tab === "eth" || tab === "bnb" || tab === "bch";
+  const isCrossQuote = ["bsv","btc","eth","bnb","matic","avax","arb","op","ftm","cro","bch"].includes(tab);
 
   return (
     <div className="flex flex-col h-full">
