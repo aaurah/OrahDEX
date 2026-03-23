@@ -74,8 +74,10 @@ function CexBadge() {
   );
 }
 
-type ExType = "all" | "cex" | "dex";
+type View    = "exchanges" | "coins";
+type ExType  = "all" | "cex" | "dex";
 type SortKey = "volume" | "marketcap" | "trust" | "name";
+type CoinSort = "base" | "price" | "chg" | "vol";
 
 const SORT_LABELS: Record<SortKey, string> = {
   volume:    "24h Volume",
@@ -100,10 +102,18 @@ export function DexHub() {
   });
 
   const [, navigate] = useLocation();
-  const [search, setSearch]   = useState("");
-  const [exType, setExType]   = useState<ExType>("all");
-  const [sortBy, setSortBy]   = useState<SortKey>("volume");
+  const [view, setView]         = useState<View>("exchanges");
+  const [search, setSearch]     = useState("");
+  const [exType, setExType]     = useState<ExType>("all");
+  const [sortBy, setSortBy]     = useState<SortKey>("volume");
   const [sortOpen, setSortOpen] = useState(false);
+
+  /* ── Coin sort state ── */
+  const [coinSearch, setCoinSearch] = useState("");
+  const [coinSort, setCoinSort]     = useState<CoinSort>("vol");
+  const [coinSortDir, setCoinSortDir] = useState<"asc"|"desc">("desc");
+  const [coinPage, setCoinPage]     = useState(0);
+  const COIN_PAGE_SIZE = 50;
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["exchanges-all"],
@@ -117,6 +127,72 @@ export function DexHub() {
   });
 
   const allExchanges: any[] = data?.exchanges ?? [];
+
+  /* ── All coins query ── */
+  const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
+    queryKey: ["markets-all"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/markets`);
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+  });
+
+  const allCoins: any[] = useMemo(() => {
+    if (!coinsRaw || !Array.isArray(coinsRaw)) return [];
+    return coinsRaw.map((m: any) => ({
+      symbol:  m.symbol ?? `${m.baseAsset ?? m.base}-${m.quoteAsset ?? m.quote ?? "USDT"}`,
+      base:    m.baseAsset ?? m.base ?? m.symbol?.split(/[-/]/)[0] ?? "",
+      quote:   m.quoteAsset ?? m.quote ?? "USDT",
+      price:   parseFloat(m.lastPrice ?? m.price) || 0,
+      chg:     parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0,
+      vol:     parseFloat(m.volume24h ?? m.volume) || 0,
+      type:    m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot"),
+    }));
+  }, [coinsRaw]);
+
+  const filteredCoins = useMemo(() => {
+    let rows = allCoins;
+    if (coinSearch) {
+      const q = coinSearch.toUpperCase();
+      rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    }
+    return [...rows].sort((a, b) => {
+      let v = 0;
+      if (coinSort === "base")  v = a.base.localeCompare(b.base);
+      if (coinSort === "price") v = a.price - b.price;
+      if (coinSort === "chg")   v = a.chg - b.chg;
+      if (coinSort === "vol")   v = a.vol - b.vol;
+      return coinSortDir === "asc" ? v : -v;
+    });
+  }, [allCoins, coinSearch, coinSort, coinSortDir]);
+
+  const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
+
+  function toggleCoinSort(k: CoinSort) {
+    if (coinSort === k) setCoinSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setCoinSort(k); setCoinSortDir("desc"); }
+    setCoinPage(0);
+  }
+
+  function fmtPrice(p: number) {
+    if (!p) return "—";
+    if (p >= 10000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (p >= 1)     return p.toFixed(2);
+    if (p >= 0.01)  return p.toFixed(4);
+    if (p >= 0.0001) return p.toFixed(6);
+    return p.toFixed(8);
+  }
+
+  function fmtVol(v: number) {
+    if (!v) return "—";
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + "M";
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+    return v.toFixed(2);
+  }
 
   const sortFn = (a: any, b: any) => {
     if (sortBy === "volume")    return b.tradeVolume24hUsd - a.tradeVolume24hUsd;
@@ -193,6 +269,35 @@ export function DexHub() {
         <p className="text-muted-foreground text-base lg:text-lg max-w-3xl">
           Every centralised and decentralised exchange ranked by volume &amp; market cap — live data from CoinGecko. Trade any pair on OrahDEX with on-chain BSV settlement.
         </p>
+      </div>
+
+      {/* ── Main view tabs ── */}
+      <div className="flex items-center gap-2 mb-6">
+        <button
+          onClick={() => setView("exchanges")}
+          className={cn("px-5 py-2 rounded-xl text-sm font-semibold border transition-all",
+            view === "exchanges"
+              ? "bg-primary/15 border-primary/40 text-primary"
+              : "bg-card border-border text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Exchanges
+        </button>
+        <button
+          onClick={() => { setView("coins"); setCoinPage(0); }}
+          className={cn("px-5 py-2 rounded-xl text-sm font-semibold border transition-all flex items-center gap-2",
+            view === "coins"
+              ? "bg-primary/15 border-primary/40 text-primary"
+              : "bg-card border-border text-muted-foreground hover:text-foreground"
+          )}
+        >
+          All Coins
+          {allCoins.length > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+              {allCoins.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ── Liquidity Pools Banner ── */}
@@ -290,6 +395,157 @@ export function DexHub() {
           )}
         </div>
       </div>
+
+      {/* ══════════════ ALL COINS VIEW ══════════════ */}
+      {view === "coins" && (
+        <div>
+          {/* Search + count */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="relative flex-1 min-w-[180px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search coin or pair…"
+                value={coinSearch}
+                onChange={e => { setCoinSearch(e.target.value); setCoinPage(0); }}
+                className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {coinsLoading ? "Loading…" : `${filteredCoins.length} pairs`}
+            </span>
+          </div>
+
+          {/* Table */}
+          <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider">
+                    <th className="px-3 py-3 font-medium w-10">#</th>
+                    <th
+                      className="px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none"
+                      onClick={() => toggleCoinSort("base")}
+                    >
+                      Pair {coinSort === "base" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    </th>
+                    <th
+                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none"
+                      onClick={() => toggleCoinSort("price")}
+                    >
+                      Price {coinSort === "price" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    </th>
+                    <th
+                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none"
+                      onClick={() => toggleCoinSort("chg")}
+                    >
+                      24h % {coinSort === "chg" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    </th>
+                    <th
+                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
+                      onClick={() => toggleCoinSort("vol")}
+                    >
+                      Volume {coinSort === "vol" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    </th>
+                    <th className="px-3 py-3 font-medium text-right">Trade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coinsLoading && Array.from({ length: 20 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      {[1,2,3,4,5,6].map(j => (
+                        <td key={j} className="px-3 py-2.5">
+                          <div className="h-4 bg-muted animate-pulse rounded" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+
+                  {!coinsLoading && pagedCoins.map((m, idx) => {
+                    const isUp  = m.chg >= 0;
+                    const slug  = m.symbol.replace(/\//g, "-").replace(/-PERP$/, "");
+                    const route = m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`;
+                    return (
+                      <tr
+                        key={m.symbol}
+                        className="border-b border-border/40 hover:bg-secondary/30 transition-colors cursor-pointer"
+                        onClick={() => navigate(route)}
+                      >
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{idx + 1}</td>
+
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                              {m.base[0]}
+                            </div>
+                            <span className="font-semibold text-sm text-foreground">{m.base}</span>
+                            <span className="text-xs text-muted-foreground">/{m.quote}</span>
+                            {m.type === "futures" && (
+                              <span className="text-[8px] font-bold text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded">PERP</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-foreground tabular-nums">
+                          ${fmtPrice(m.price)}
+                        </td>
+
+                        <td className="px-3 py-2.5 text-right">
+                          <span className={cn(
+                            "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold min-w-[56px]",
+                            isUp ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+                          )}>
+                            {isUp ? "+" : ""}{m.chg.toFixed(2)}%
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden sm:table-cell">
+                          {fmtVol(m.vol)}
+                        </td>
+
+                        <td className="px-3 py-2.5 text-right">
+                          <button
+                            onClick={e => { e.stopPropagation(); navigate(route); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors"
+                          >
+                            Trade <ArrowUpRight className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {!coinsLoading && filteredCoins.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                        No pairs found for "{coinSearch}"
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer: count + Load More */}
+            {!coinsLoading && filteredCoins.length > 0 && (
+              <div className="px-4 py-3 border-t border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>Showing {pagedCoins.length} of {filteredCoins.length} pairs</span>
+                {pagedCoins.length < filteredCoins.length && (
+                  <button
+                    onClick={() => setCoinPage(p => p + 1)}
+                    className="px-4 py-1.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-semibold text-foreground transition-colors"
+                  >
+                    Load more ({filteredCoins.length - pagedCoins.length} remaining)
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ EXCHANGES VIEW ══════════════ */}
+      {view === "exchanges" && <>
 
       {/* ── Controls ── */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
@@ -489,6 +745,10 @@ export function DexHub() {
           </div>
         )}
       </div>
+
+      {/* close exchanges fragment */}
+      </>}
+
     </div>
   );
 }
