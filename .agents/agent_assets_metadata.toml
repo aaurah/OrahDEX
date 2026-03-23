@@ -1,0 +1,32 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "S9kinkD-ngQeu2dnRUYbh"
+uri = "file://attached_assets/generated_images/logo_option_1_hexagon_gold.png"
+type = "image"
+title = "Option 1 — Gold Hexagon 'O'"
+
+[[outputs]]
+id = "t1EifB09SOfAPcp-5OmMT"
+uri = "file://attached_assets/generated_images/logo_option_2_orbital_rings.png"
+type = "image"
+title = "Option 2 — Orbital Rings (Purple & Blue)"
+
+[[outputs]]
+id = "W3WWPUxdtRxMr-x2wEUK5"
+uri = "file://attached_assets/generated_images/logo_option_3_phoenix_green.png"
+type = "image"
+title = "Option 3 — Phoenix (Green & Gold)"
+
+[[outputs]]
+id = "46ghHahYU0EF8ChmJUoot"
+uri = "file://attached_assets/generated_images/logo_option_4_arc_cyan.png"
+type = "image"
+title = "Option 4 — Arc 'O' (Cyan & Navy)"
+
+[[outputs]]
+id = "0Ydqq7aGoBDp8gTvibgTh"
+uri = "file://attached_assets/generated_images/logo_option_5_shield_lightning.png"
+type = "image"
+title = "Option 5 — Shield & Lightning (Gold & Black)"
