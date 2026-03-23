@@ -128,10 +128,6 @@ function AccountIndexSelector({ value, onChange }: { value: number; onChange: (v
   );
 }
 
-function generateMockBsvAddress(): string {
-  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  return "1" + Array.from({ length: 33 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
 
 /* ── EVM provider resolution ─────────────────────────────────────────────── */
 function getEvmProvider(walletId: string): any {
@@ -191,6 +187,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [evmChain, setEvmChain] = useState("eth");
   const [accountIndex, setAccountIndex] = useState(0);
 
+  /* bsv sub-step state */
+  type BsvStep = "list" | "handcash" | "relayx" | "panda" | "sensilet" | "manual";
+  const [bsvStep, setBsvStep] = useState<BsvStep>("list");
+  const [bsvHandle, setBsvHandle] = useState("");
+  const [bsvHandleState, setBsvHandleState] = useState<"idle"|"loading"|"found"|"error">("idle");
+  const [bsvHandleErr, setBsvHandleErr] = useState("");
+  const [bsvResolvedAddr, setBsvResolvedAddr] = useState("");
+  const [bsvManualAddr, setBsvManualAddr] = useState("");
+  const [bsvManualWallet, setBsvManualWallet] = useState("");
+
   const handleClose = () => {
     onClose();
     setTimeout(() => {
@@ -206,6 +212,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setConnecting(null);
       setConnected(null);
       setConnectError(null);
+      setBsvStep("list");
+      setBsvHandle("");
+      setBsvHandleState("idle");
+      setBsvHandleErr("");
+      setBsvResolvedAddr("");
+      setBsvManualAddr("");
     }, 400);
   };
 
@@ -407,16 +419,186 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }
   };
 
-  /* ── BSV connection (simulated — no browser standard yet) ────────────────── */
-  const handleConnectBsv = (walletId: string) => {
+  /* ── BSV connection ─────────────────────────────────────────────────────── */
+  const handleConnectBsv = async (walletId: string) => {
     setConnectError(null);
-    setConnecting(walletId);
-    setTimeout(() => {
-      connect({ address: generateMockBsvAddress(), provider: walletId, network: "bsv" });
-      setConnecting(null);
-      setConnected(walletId);
-      setTimeout(() => { setConnected(null); handleClose(); }, 700);
-    }, 1200);
+
+    /* HandCash — needs $handle input + API lookup */
+    if (walletId === "handcash") {
+      setBsvHandle("");
+      setBsvHandleState("idle");
+      setBsvHandleErr("");
+      setBsvResolvedAddr("");
+      setBsvStep("handcash");
+      return;
+    }
+
+    /* RelayX — check window.relayone extension */
+    if (walletId === "relayx") {
+      const relay = (window as any).relayone;
+      if (relay) {
+        setConnecting("relayx");
+        try {
+          const res = await relay.authWithOpts({ reason: "OrahDEX sign-in" });
+          const addr: string = res?.paymail ?? res?.address ?? "";
+          if (!addr) throw new Error("RelayX returned no address. Try signing in to RelayX first.");
+          connect({ address: addr, provider: "relayx", network: "bsv" });
+          setConnected("relayx");
+          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+        } catch (err: any) {
+          if (err?.message?.includes("user rejected") || err?.code === 4001) {
+            setConnectError("Connection cancelled in RelayX.");
+          } else {
+            setConnectError(err?.message ?? "RelayX connection failed.");
+          }
+        } finally {
+          setConnecting(null);
+        }
+      } else {
+        setBsvManualWallet("RelayX");
+        setBsvManualAddr("");
+        setBsvStep("relayx");
+      }
+      return;
+    }
+
+    /* Panda Wallet — check window.panda extension */
+    if (walletId === "panda") {
+      const panda = (window as any).panda;
+      if (panda) {
+        setConnecting("panda");
+        try {
+          const res = await panda.connect();
+          const addr: string = res?.address ?? res?.bsvAddress ?? res?.paymail ?? "";
+          if (!addr) throw new Error("Panda Wallet returned no address. Make sure it is unlocked.");
+          connect({ address: addr, provider: "panda", network: "bsv" });
+          setConnected("panda");
+          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+        } catch (err: any) {
+          setConnectError(err?.message ?? "Panda Wallet connection failed.");
+        } finally {
+          setConnecting(null);
+        }
+      } else {
+        setBsvManualWallet("Panda Wallet");
+        setBsvManualAddr("");
+        setBsvStep("panda");
+      }
+      return;
+    }
+
+    /* Sensilet — check window.sensilet extension */
+    if (walletId === "sensilet") {
+      const sensilet = (window as any).sensilet;
+      if (sensilet) {
+        setConnecting("sensilet");
+        try {
+          const accs: string[] = await sensilet.requestAccount();
+          const addr = Array.isArray(accs) ? accs[0] : (accs as any)?.address ?? "";
+          if (!addr) throw new Error("Sensilet returned no address.");
+          connect({ address: addr, provider: "sensilet", network: "bsv" });
+          setConnected("sensilet");
+          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+        } catch (err: any) {
+          setConnectError(err?.message ?? "Sensilet connection failed.");
+        } finally {
+          setConnecting(null);
+        }
+      } else {
+        setBsvManualWallet("Sensilet");
+        setBsvManualAddr("");
+        setBsvStep("sensilet");
+      }
+      return;
+    }
+
+    /* Twetch — check window.twetch */
+    if (walletId === "twetch") {
+      const twetch = (window as any).twetch;
+      if (twetch) {
+        setConnecting("twetch");
+        try {
+          const res = await twetch.requestAccount?.();
+          const addr: string = res?.address ?? "";
+          if (!addr) throw new Error("Twetch returned no address.");
+          connect({ address: addr, provider: "twetch", network: "bsv" });
+          setConnected("twetch");
+          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+        } catch (err: any) {
+          setConnectError(err?.message ?? "Twetch connection failed.");
+        } finally {
+          setConnecting(null);
+        }
+      } else {
+        setBsvManualWallet("Twetch");
+        setBsvManualAddr("");
+        setBsvStep("manual");
+      }
+      return;
+    }
+
+    /* Yours Wallet — check window.yours */
+    if (walletId === "yours") {
+      const yours = (window as any).yours;
+      if (yours) {
+        setConnecting("yours");
+        try {
+          const res = await yours.connect?.();
+          const addr: string = res?.address ?? yours.address ?? "";
+          if (!addr) throw new Error("Yours Wallet returned no address.");
+          connect({ address: addr, provider: "yours", network: "bsv" });
+          setConnected("yours");
+          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+        } catch (err: any) {
+          setConnectError(err?.message ?? "Yours Wallet connection failed.");
+        } finally {
+          setConnecting(null);
+        }
+      } else {
+        setBsvManualWallet("Yours Wallet");
+        setBsvManualAddr("");
+        setBsvStep("manual");
+      }
+      return;
+    }
+
+    /* Guarda, Atomic — no browser extension; show manual address entry */
+    const w = BSV_WALLETS.find(x => x.id === walletId);
+    setBsvManualWallet(w?.name ?? walletId);
+    setBsvManualAddr("");
+    setBsvStep("manual");
+  };
+
+  /* ── HandCash handle lookup ───────────────────────────────────────────── */
+  const lookupHandCash = async () => {
+    const handle = bsvHandle.trim().replace(/^\$/, "");
+    if (!handle) return;
+    setBsvHandleState("loading");
+    setBsvHandleErr("");
+    setBsvResolvedAddr("");
+    try {
+      const res = await fetch(`https://api.handcash.io/api/users/public-data?alias=${encodeURIComponent(handle)}`);
+      if (!res.ok) throw new Error(`Handle not found (HTTP ${res.status}). Check the spelling.`);
+      const data = await res.json();
+      const addr: string =
+        data?.publicProfile?.receivingAddress ??
+        data?.publicProfile?.paymail ??
+        `${handle}@handcash.io`;
+      if (!addr) throw new Error("HandCash returned no address for that handle.");
+      setBsvResolvedAddr(addr);
+      setBsvHandleState("found");
+    } catch (err: any) {
+      setBsvHandleState("error");
+      setBsvHandleErr(err?.message ?? "Handle not found. Check spelling or use your paymail instead.");
+    }
+  };
+
+  /* ── Confirm BSV manual address ───────────────────────────────────────── */
+  const confirmBsvManual = (walletId: string) => {
+    const addr = bsvManualAddr.trim();
+    if (!addr) return;
+    connect({ address: addr, provider: walletId, network: "bsv" });
+    handleClose();
   };
 
   /* ── Dispatcher ─────────────────────────────────────────────────────────── */
@@ -821,7 +1003,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       <div className="flex border-b border-border mt-4 px-6 gap-1">
                         {CONNECT_TABS.map(tab => (
                           <button key={tab.id}
-                            onClick={() => { setConnectTab(tab.id); setConnectError(null); }}
+                            onClick={() => { setConnectTab(tab.id); setConnectError(null); setBsvStep("list"); }}
                             className={cn(
                               "flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-all",
                               connectTab === tab.id
@@ -834,55 +1016,295 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         ))}
                       </div>
 
-                      {/* Network description */}
-                      <div className="px-6 pt-3 pb-1">
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          {connectTab === "evm" && "Connect any EVM-compatible wallet. Supports Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism and all other EVM chains."}
-                          {connectTab === "sol" && "Connect your Solana wallet. All SPL tokens and NFTs work on OrahDEX. BSV is used for cross-chain settlement."}
-                          {connectTab === "btc" && "Connect your Bitcoin wallet — on-chain addresses only. Lightning Network is not accepted; use BSV for fast settlement."}
-                          {connectTab === "bsv" && "Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees."}
-                        </p>
-                      </div>
+                      {/* ── BSV sub-step forms ──────────────────────────────────────────── */}
+                      {connectTab === "bsv" && bsvStep !== "list" ? (
+                        <div className="p-6 space-y-5">
+                          {/* Back button */}
+                          <button
+                            onClick={() => { setBsvStep("list"); setConnectError(null); }}
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <ArrowLeft className="w-3.5 h-3.5" /> Back to BSV wallets
+                          </button>
 
-                      <div className="p-4 space-y-2">
-                        {currentWallets.map(wallet => {
-                          const isConn = connecting === wallet.id;
-                          const isDone = connected === wallet.id;
-                          return (
-                            <button key={wallet.id}
-                              disabled={!!connecting}
-                              onClick={() => handleConnect(wallet.id, wallet.installUrl)}
-                              className={cn(
-                                "w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all",
-                                isDone ? "border-green-500/60 bg-green-500/8"
-                                  : isConn ? "border-primary/60 bg-primary/8"
-                                  : "border-border hover:border-primary/40 hover:bg-primary/5",
-                                connecting && !isConn && "opacity-40 cursor-not-allowed"
-                              )}>
-                              <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
-                                {isConn ? <RefreshCw className="w-5 h-5 text-primary animate-spin" />
-                                  : isDone ? <CheckCircle2 className="w-5 h-5 text-green-400" />
-                                  : wallet.icon}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm flex items-center gap-2">
-                                  {wallet.name}
-                                  {wallet.popular && (
-                                    <span className="text-[9px] font-black px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase tracking-wider">Popular</span>
-                                  )}
+                          {/* ── HandCash handle lookup ── */}
+                          {bsvStep === "handcash" && (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">✋</div>
+                                <div>
+                                  <p className="font-bold text-base">HandCash</p>
+                                  <p className="text-xs text-muted-foreground">Enter your $handle to look up your receiving address</p>
                                 </div>
-                                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{wallet.description}</p>
                               </div>
-                              {isDone
-                                ? <Check className="w-4 h-4 text-green-400 shrink-0" />
-                                : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
-                            </button>
-                          );
-                        })}
-                      </div>
+
+                              <div>
+                                <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 block">HandCash Handle</label>
+                                <div className="relative">
+                                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-primary font-bold text-sm select-none">$</span>
+                                  <input
+                                    value={bsvHandle}
+                                    onChange={e => {
+                                      setBsvHandle(e.target.value.replace(/^\$/, ""));
+                                      setBsvHandleState("idle");
+                                      setBsvHandleErr("");
+                                      setBsvResolvedAddr("");
+                                    }}
+                                    onKeyDown={e => e.key === "Enter" && lookupHandCash()}
+                                    placeholder="yourhandle"
+                                    className="w-full bg-secondary/40 border border-border rounded-xl pl-8 pr-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
+                                  />
+                                </div>
+                              </div>
+
+                              {bsvHandleState === "found" && bsvResolvedAddr && (
+                                <div className="p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl space-y-1">
+                                  <p className="text-[11px] text-green-400 font-bold uppercase tracking-wider">Address found</p>
+                                  <p className="text-xs font-mono text-foreground break-all">{bsvResolvedAddr}</p>
+                                </div>
+                              )}
+
+                              {bsvHandleState === "error" && (
+                                <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-xl">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                                  <p className="text-xs text-red-300 leading-relaxed">{bsvHandleErr}</p>
+                                </div>
+                              )}
+
+                              {bsvHandleState !== "found" ? (
+                                <button
+                                  onClick={lookupHandCash}
+                                  disabled={bsvHandleState === "loading" || !bsvHandle.trim()}
+                                  className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                  {bsvHandleState === "loading" ? (
+                                    <span className="flex items-center justify-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" /> Looking up...</span>
+                                  ) : "Look Up $Handle"}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    connect({ address: bsvResolvedAddr, provider: "handcash", network: "bsv" });
+                                    handleClose();
+                                  }}
+                                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" /> Connect HandCash
+                                </button>
+                              )}
+
+                              <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
+                                Your address is resolved via the HandCash public API — OrahDEX never stores your handle.
+                              </p>
+                            </>
+                          )}
+
+                          {/* ── RelayX — extension not found ── */}
+                          {bsvStep === "relayx" && (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">⚡</div>
+                                <div>
+                                  <p className="font-bold text-base">RelayX</p>
+                                  <p className="text-xs text-muted-foreground">Browser extension not detected</p>
+                                </div>
+                              </div>
+                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <div className="space-y-2">
+                                  <p className="text-xs text-amber-300/90 leading-relaxed">RelayX extension was not found in your browser. Install it or paste your BSV address manually.</p>
+                                  <a href="https://relayx.com" target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
+                                    Install RelayX <ChevronRight className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 block">Your BSV Address</label>
+                                <input
+                                  value={bsvManualAddr}
+                                  onChange={e => setBsvManualAddr(e.target.value)}
+                                  placeholder="1YourBSVAddress..."
+                                  className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
+                                />
+                              </div>
+                              <button
+                                onClick={() => confirmBsvManual("relayx")}
+                                disabled={!bsvManualAddr.trim()}
+                                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              >
+                                Connect with Address
+                              </button>
+                            </>
+                          )}
+
+                          {/* ── Panda Wallet — extension not found ── */}
+                          {bsvStep === "panda" && (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">🐼</div>
+                                <div>
+                                  <p className="font-bold text-base">Panda Wallet</p>
+                                  <p className="text-xs text-muted-foreground">Browser extension not detected</p>
+                                </div>
+                              </div>
+                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <div className="space-y-2">
+                                  <p className="text-xs text-amber-300/90 leading-relaxed">Panda Wallet extension was not found. Install it or enter your BSV address manually.</p>
+                                  <a href="https://chromewebstore.google.com/detail/panda-wallet/mlbnicldlpdimbjdcncnklfempedekim" target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
+                                    Install Panda Wallet <ChevronRight className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 block">Your BSV Address</label>
+                                <input
+                                  value={bsvManualAddr}
+                                  onChange={e => setBsvManualAddr(e.target.value)}
+                                  placeholder="1YourBSVAddress..."
+                                  className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
+                                />
+                              </div>
+                              <button
+                                onClick={() => confirmBsvManual("panda")}
+                                disabled={!bsvManualAddr.trim()}
+                                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              >
+                                Connect with Address
+                              </button>
+                            </>
+                          )}
+
+                          {/* ── Sensilet — extension not found ── */}
+                          {bsvStep === "sensilet" && (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">🔷</div>
+                                <div>
+                                  <p className="font-bold text-base">Sensilet</p>
+                                  <p className="text-xs text-muted-foreground">Browser extension not detected</p>
+                                </div>
+                              </div>
+                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <div className="space-y-2">
+                                  <p className="text-xs text-amber-300/90 leading-relaxed">Sensilet extension was not found. Install it or enter your BSV address manually.</p>
+                                  <a href="https://sensilet.com" target="_blank" rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
+                                    Install Sensilet <ChevronRight className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 block">Your BSV Address</label>
+                                <input
+                                  value={bsvManualAddr}
+                                  onChange={e => setBsvManualAddr(e.target.value)}
+                                  placeholder="1YourBSVAddress..."
+                                  className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
+                                />
+                              </div>
+                              <button
+                                onClick={() => confirmBsvManual("sensilet")}
+                                disabled={!bsvManualAddr.trim()}
+                                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              >
+                                Connect with Address
+                              </button>
+                            </>
+                          )}
+
+                          {/* ── Generic manual entry (Guarda, Atomic, Twetch, Yours) ── */}
+                          {bsvStep === "manual" && (
+                            <>
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
+                                  {BSV_WALLETS.find(w => w.name === bsvManualWallet)?.icon ?? "🔑"}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-base">{bsvManualWallet}</p>
+                                  <p className="text-xs text-muted-foreground">Paste your BSV receiving address</p>
+                                </div>
+                              </div>
+                              <div className="p-3.5 bg-blue-500/8 border border-blue-500/20 rounded-xl">
+                                <p className="text-xs text-blue-300/80 leading-relaxed">
+                                  Open {bsvManualWallet}, copy your Bitcoin SV receiving address, and paste it below. OrahDEX uses it for settlement only — your keys stay in your wallet.
+                                </p>
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 block">BSV Receiving Address</label>
+                                <input
+                                  value={bsvManualAddr}
+                                  onChange={e => setBsvManualAddr(e.target.value)}
+                                  placeholder="1YourBSVAddress..."
+                                  className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
+                                />
+                              </div>
+                              <button
+                                onClick={() => confirmBsvManual(BSV_WALLETS.find(w => w.name === bsvManualWallet)?.id ?? "manual")}
+                                disabled={!bsvManualAddr.trim()}
+                                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                              >
+                                Connect {bsvManualWallet}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {/* Network description */}
+                          <div className="px-6 pt-3 pb-1">
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              {connectTab === "evm" && "Connect any EVM-compatible wallet. Supports Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism and all other EVM chains."}
+                              {connectTab === "sol" && "Connect your Solana wallet. All SPL tokens and NFTs work on OrahDEX. BSV is used for cross-chain settlement."}
+                              {connectTab === "btc" && "Connect your Bitcoin wallet — on-chain addresses only. Lightning Network is not accepted; use BSV for fast settlement."}
+                              {connectTab === "bsv" && "Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees."}
+                            </p>
+                          </div>
+
+                          <div className="p-4 space-y-2">
+                            {currentWallets.map(wallet => {
+                              const isConn = connecting === wallet.id;
+                              const isDone = connected === wallet.id;
+                              return (
+                                <button key={wallet.id}
+                                  disabled={!!connecting}
+                                  onClick={() => handleConnect(wallet.id, wallet.installUrl)}
+                                  className={cn(
+                                    "w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all",
+                                    isDone ? "border-green-500/60 bg-green-500/8"
+                                      : isConn ? "border-primary/60 bg-primary/8"
+                                      : "border-border hover:border-primary/40 hover:bg-primary/5",
+                                    connecting && !isConn && "opacity-40 cursor-not-allowed"
+                                  )}>
+                                  <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
+                                    {isConn ? <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+                                      : isDone ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                                      : wallet.icon}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-bold text-sm flex items-center gap-2">
+                                      {wallet.name}
+                                      {wallet.popular && (
+                                        <span className="text-[9px] font-black px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase tracking-wider">Popular</span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">{wallet.description}</p>
+                                  </div>
+                                  {isDone
+                                    ? <Check className="w-4 h-4 text-green-400 shrink-0" />
+                                    : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
 
                       {/* BTC Lightning warning */}
-                      {connectTab === "btc" && (
+                      {connectTab === "btc" && bsvStep === "list" && (
                         <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/20 rounded-xl">
                           <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                           <p className="text-[11px] text-amber-300/80">
