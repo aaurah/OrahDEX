@@ -9,7 +9,7 @@ import {
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
-import { openReownModal, isReownReady } from "@/lib/reown";
+import { openReownModal, isReownReady, subscribeReownAccount, fetchEvmBalance } from "@/lib/reown";
 
 interface WalletDef {
   id: string; name: string; network: WalletNetwork;
@@ -210,9 +210,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const reownPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleClose = () => {
-    // Clean up any active Reown polling
+    // Clean up any active Reown timeout
     if (reownPollRef.current) {
-      clearInterval(reownPollRef.current);
+      clearTimeout(reownPollRef.current);
       reownPollRef.current = null;
     }
     onClose();
@@ -253,43 +253,50 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           return;
         }
 
-        // Open the Reown modal (QR code + 300+ wallets)
+        // Open the Reown AppKit modal (QR code + 300+ wallets)
         openReownModal("Connect");
         setReownStatus("waiting");
 
-        // Poll window.ethereum for a newly connected account
-        // (Reown injects its provider into window.ethereum after connection)
-        let attempts = 0;
-        reownPollRef.current = setInterval(async () => {
-          attempts++;
-          try {
-            const eth = (window as any).ethereum;
-            if (eth) {
-              const accounts: string[] = await eth.request({ method: "eth_accounts" });
-              if (accounts?.length) {
-                const chainHex: string = await eth.request({ method: "eth_chainId" });
-                connect({
-                  address: accounts[0],
-                  provider: "walletconnect",
-                  network: "evm",
-                  chainId: parseInt(chainHex, 16),
-                });
-                clearInterval(reownPollRef.current!);
-                reownPollRef.current = null;
-                setReownStatus("done");
-                setConnecting(null);
-                setTimeout(() => { setReownStatus("idle"); handleClose(); }, 800);
-                return;
-              }
+        // Subscribe to Reown's account state — fires when user connects in the modal
+        let resolved = false;
+        const unsub = subscribeReownAccount(async ({ address: addr, isConnected }) => {
+          if (resolved) return;
+          if (isConnected && addr) {
+            resolved = true;
+            unsub();
+            if (reownPollRef.current) {
+              clearTimeout(reownPollRef.current);
+              reownPollRef.current = null;
             }
-          } catch { /* keep polling */ }
-          if (attempts >= 120) { // 60 seconds timeout
-            clearInterval(reownPollRef.current!);
-            reownPollRef.current = null;
+
+            // Fetch chainId and balance
+            let chainId = 1;
+            try {
+              const eth = (window as any).ethereum;
+              if (eth) {
+                const hex: string = await eth.request({ method: "eth_chainId" });
+                chainId = parseInt(hex, 16);
+              }
+            } catch { /* use default */ }
+
+            const balance = await fetchEvmBalance(addr);
+            connect({ address: addr, provider: "walletconnect", network: "evm", chainId, balance: balance ?? undefined });
+
+            setReownStatus("done");
+            setConnecting(null);
+            setTimeout(() => { setReownStatus("idle"); handleClose(); }, 800);
+          }
+        });
+
+        // Fallback timeout — unsubscribe after 90 seconds if nothing happens
+        reownPollRef.current = setTimeout(() => {
+          if (!resolved) {
+            unsub();
             setReownStatus("idle");
             setConnecting(null);
           }
-        }, 500);
+        }, 90_000) as any;
+
         return;
       }
 
@@ -368,16 +375,23 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         const rawChain: string = await provider.request({ method: "eth_chainId" });
         const chainId = parseInt(rawChain, 16);
 
-        connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId });
+        // Fetch balance immediately after connecting
+        const balance = await fetchEvmBalance(accounts[0]);
+        connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId, balance: balance ?? undefined });
 
         // Keep in sync when user switches account or chain inside MetaMask
         provider.removeAllListeners?.();
-        provider.on?.("accountsChanged", (accs: string[]) => {
+        provider.on?.("accountsChanged", async (accs: string[]) => {
           if (!accs.length) useWalletStore.getState().disconnect();
-          else useWalletStore.getState().connect({ address: accs[0], provider: wallet.id, network: "evm", chainId });
+          else {
+            const bal = await fetchEvmBalance(accs[0]);
+            useWalletStore.getState().connect({ address: accs[0], provider: wallet.id, network: "evm", chainId, balance: bal ?? undefined });
+          }
         });
-        provider.on?.("chainChanged", (hex: string) => {
-          useWalletStore.getState().connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: parseInt(hex, 16) });
+        provider.on?.("chainChanged", async (hex: string) => {
+          const newChainId = parseInt(hex, 16);
+          const bal = await fetchEvmBalance(accounts[0]);
+          useWalletStore.getState().connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: newChainId, balance: bal ?? undefined });
         });
 
         setConnecting(null);

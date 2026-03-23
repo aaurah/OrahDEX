@@ -19,7 +19,7 @@ const TABS = [
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
-  const { address, disconnect } = useWalletStore();
+  const { address, balance, disconnect } = useWalletStore();
   const [buyOpen, setBuyOpen] = useState(false);
 
   const isActive = (tab: typeof TABS[0]) => {
@@ -49,16 +49,24 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setBuyOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500/15 text-green-400 text-[11px] font-bold border border-green-500/25"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500 text-white text-[11px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
           >
             <CreditCard size={11} /> Buy
           </button>
 
           {address ? (
-            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-[11px] font-mono text-foreground">{shortenAddress(address)}</span>
-            </div>
+            <button
+              onClick={() => openWallet()}
+              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-1 rounded-lg active:opacity-70 transition-opacity"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+              <div className="flex flex-col items-start">
+                <span className="text-[11px] font-mono text-foreground leading-tight">{shortenAddress(address)}</span>
+                {balance && (
+                  <span className="text-[9px] text-green-400 font-semibold leading-tight">{balance} ETH</span>
+                )}
+              </div>
+            </button>
           ) : (
             <button
               onClick={() => openWallet()}
