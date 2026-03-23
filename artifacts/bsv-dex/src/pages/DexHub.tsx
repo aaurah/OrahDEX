@@ -76,10 +76,11 @@ function CexBadge() {
 
 type View    = "exchanges" | "coins";
 type ExType  = "all" | "cex" | "dex";
-type SortKey = "volume" | "marketcap" | "trust" | "name";
+type SortKey = "rank" | "volume" | "marketcap" | "trust" | "name";
 type CoinSort = "base" | "price" | "chg" | "vol";
 
 const SORT_LABELS: Record<SortKey, string> = {
+  rank:      "Rank",
   volume:    "24h Volume",
   marketcap: "Market Cap",
   trust:     "Trust Score",
@@ -105,8 +106,8 @@ export function DexHub() {
   const [view, setView]         = useState<View>("exchanges");
   const [search, setSearch]     = useState("");
   const [exType, setExType]     = useState<ExType>("all");
-  const [sortBy, setSortBy]     = useState<SortKey>("marketcap");
-  const [exSortDir, setExSortDir] = useState<"asc" | "desc">("desc");
+  const [sortBy, setSortBy]     = useState<SortKey>("rank");
+  const [exSortDir, setExSortDir] = useState<"asc" | "desc">("asc");
 
   /* ── Coin sort state ── */
   const [coinSearch, setCoinSearch] = useState("");
@@ -201,16 +202,22 @@ export function DexHub() {
   }
 
   function toggleExSort(key: SortKey) {
-    if (sortBy === key) setExSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortBy(key); setExSortDir("desc"); }
+    if (sortBy === key) {
+      setExSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(key);
+      // Rank sorts asc by default (1 = best); all others sort desc (highest = best)
+      setExSortDir(key === "rank" || key === "name" ? "asc" : "desc");
+    }
   }
 
   const sortFn = (a: any, b: any) => {
     let v = 0;
+    if (sortBy === "rank")      v = (a.rank ?? 9999) - (b.rank ?? 9999);
     if (sortBy === "volume")    v = a.tradeVolume24hUsd - b.tradeVolume24hUsd;
     if (sortBy === "marketcap") v = a.marketCap - b.marketCap;
     if (sortBy === "trust")     v = a.trustScore - b.trustScore;
-    if (sortBy === "name")      v = b.name.localeCompare(a.name);
+    if (sortBy === "name")      v = a.name.localeCompare(b.name);
     return exSortDir === "desc" ? -v : v;
   };
 
@@ -708,7 +715,18 @@ export function DexHub() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider select-none">
-                <th className="px-4 py-3 font-medium w-10">#</th>
+                {/* # Rank column */}
+                <th
+                  className="px-4 py-3 font-medium w-12 cursor-pointer hover:text-foreground transition-colors"
+                  onClick={() => toggleExSort("rank")}
+                >
+                  <span className="flex items-center gap-1">
+                    #
+                    {sortBy === "rank"
+                      ? exSortDir === "asc" ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />
+                      : <ArrowUpDown className="w-3 h-3 shrink-0 opacity-40" />}
+                  </span>
+                </th>
                 {/* Exchange — sortable by name */}
                 <th
                   className="px-4 py-3 font-medium cursor-pointer hover:text-foreground transition-colors"
@@ -792,7 +810,7 @@ export function DexHub() {
                       : "hover:bg-blue-500/5"
                   )}
                 >
-                  <td className="px-4 py-3 text-muted-foreground text-sm font-mono">{idx + 1}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-sm font-mono">{ex.rank ?? idx + 1}</td>
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">

@@ -190,11 +190,18 @@ router.get("/dex/exchanges", async (req, res) => {
       return DEX_KEYWORDS.some(kw => s.includes(kw));
     }
 
-    const exchanges = allExchanges.map((e) => {
+    // Annual-volume-based market cap estimate when native token MC is unavailable:
+    // Industry rule-of-thumb: exchange valuation ≈ daily vol × 365 × 0.001 (0.1% fee) × 15 (P/E)
+    function estimateMc(volUsd: number): number {
+      return Math.round(volUsd * 365 * 0.001 * 15);
+    }
+
+    const exchanges = allExchanges.map((e, idx) => {
       const dex = isDex(e);
       const mcByName = dex ? defiMcByName : cefiMcByName;
       const mcById = dex ? defiMcById : cefiMcById;
       const vol = (parseFloat(e.trade_volume_24h_btc) || 0) * btcPrice;
+      const tokenMc = matchMarketCap(e.id, e.name, mcByName, mcById, !dex);
       return {
         id: e.id,
         name: e.name,
@@ -204,10 +211,11 @@ router.get("/dex/exchanges", async (req, res) => {
         yearEstablished: e.year_established ?? null,
         type: dex ? "dex" : "cex",
         chain: dex ? getChain(e.id, e.name) : null,
+        rank: e.trust_score_rank ?? (idx + 1),
         trustScore: e.trust_score ?? 0,
         tradeVolume24hBtc: parseFloat(e.trade_volume_24h_btc) || 0,
         tradeVolume24hUsd: vol,
-        marketCap: matchMarketCap(e.id, e.name, mcByName, mcById, !dex),
+        marketCap: tokenMc || estimateMc(vol),
       };
     });
 
@@ -222,6 +230,7 @@ router.get("/dex/exchanges", async (req, res) => {
       yearEstablished: 2026,
       type: "dex",
       chain: "BSV",
+      rank: 1,
       trustScore: 9,
       tradeVolume24hBtc: orahVolBtc,
       tradeVolume24hUsd: orahVolBtc * btcPrice,
