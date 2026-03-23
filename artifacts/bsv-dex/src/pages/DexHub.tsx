@@ -198,21 +198,24 @@ export function DexHub() {
       {/* ── Liquidity Pools Banner ── */}
       <div
         onClick={() => navigate("/liquidity")}
-        className="cursor-pointer mb-6 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-amber-500/10 p-5 flex items-center justify-between gap-4 hover:border-primary/60 transition-colors"
+        className="cursor-pointer mb-6 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-amber-500/10 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:border-primary/60 transition-colors"
       >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0">
-            <Droplets size={24} className="text-primary" />
+        {/* Top / left: icon + text */}
+        <div className="flex items-start gap-4">
+          <div className="w-11 h-11 rounded-2xl bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+            <Droplets size={22} className="text-primary" />
           </div>
-          <div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="font-bold text-base">Liquidity Pools</span>
-              <span className="text-[10px] px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full font-bold">UP TO 78% APR</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="font-bold text-base leading-tight">Liquidity Pools</span>
+              <span className="whitespace-nowrap text-[10px] px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full font-bold">UP TO 78% APR</span>
             </div>
-            <p className="text-sm text-muted-foreground">Provide liquidity to earn trading fees + yield farming rewards. Both AMM pools and market-maker rebates available.</p>
+            <p className="text-sm text-muted-foreground leading-snug">Provide liquidity to earn trading fees + yield farming rewards. Both AMM pools and market-maker rebates available.</p>
           </div>
         </div>
-        <div className="flex items-center gap-5 shrink-0">
+
+        {/* Bottom / right: stats + button */}
+        <div className="flex items-center gap-4 sm:gap-5 sm:shrink-0">
           <div className="hidden lg:flex gap-6">
             {[["$879M", "Total TVL"], ["12 Pools", "Active"], ["78% APR", "Best Rate"]].map(([v, l]) => (
               <div key={l} className="text-center">
@@ -221,7 +224,7 @@ export function DexHub() {
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors">
+          <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors sm:ml-auto whitespace-nowrap">
             <Zap size={14} /> Provide Liquidity
           </div>
         </div>
