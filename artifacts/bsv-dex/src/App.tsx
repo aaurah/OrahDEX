@@ -30,7 +30,6 @@ import { AdminLogin } from "@/pages/admin/Login";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
-import { subscribeReownAccount, fetchEvmBalance, isReownReady } from "@/lib/reown";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
@@ -77,58 +76,16 @@ function Router() {
             if (!accounts?.length) {
               disconnect();
             } else if (accounts[0] && !address) {
-              // Wallet is still connected but store was cleared — restore it
               const chainHex: string = await eth.request({ method: "eth_chainId" });
-              const balance = await fetchEvmBalance(accounts[0]);
               useWalletStore.getState().connect({
                 address: accounts[0], provider: "metamask", network: "evm",
-                chainId: parseInt(chainHex, 16), balance: balance ?? undefined,
-              });
-            } else if (address) {
-              // Already in store — just refresh balance
-              fetchEvmBalance(address).then(bal => {
-                if (bal) useWalletStore.getState().setBalance(bal);
+                chainId: parseInt(chainHex, 16),
               });
             }
           })
           .catch(() => disconnect());
       }
     }
-
-    // Global Reown WalletConnect sync — keeps wallet store in sync with Reown's state
-    // This handles: session resume, external disconnects, account/chain changes via WC
-    let reownUnsub: (() => void) | null = null;
-    const setupReownSync = () => {
-      if (!isReownReady()) return;
-      reownUnsub = subscribeReownAccount(async ({ address: addr, isConnected }) => {
-        const state = useWalletStore.getState();
-        if (isConnected && addr && addr !== state.address) {
-          // New WalletConnect session detected
-          let chainId = 1;
-          try {
-            const eth = (window as any).ethereum;
-            if (eth) {
-              const hex: string = await eth.request({ method: "eth_chainId" });
-              chainId = parseInt(hex, 16);
-            }
-          } catch { /* use default */ }
-          const balance = await fetchEvmBalance(addr);
-          state.connect({ address: addr, provider: "walletconnect", network: "evm", chainId, balance: balance ?? undefined });
-        } else if (!isConnected && state.provider === "walletconnect" && state.address) {
-          // WalletConnect session ended
-          state.disconnect();
-        }
-      });
-    };
-
-    // Try immediately, then retry after a short delay in case Reown is still initializing
-    setupReownSync();
-    const retryTimer = setTimeout(setupReownSync, 2000);
-
-    return () => {
-      reownUnsub?.();
-      clearTimeout(retryTimer);
-    };
   }, []);
 
   return (

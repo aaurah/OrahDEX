@@ -1,15 +1,14 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Link2, Eye, EyeOff, Check, Save, RefreshCw, ExternalLink,
-  AlertTriangle, CheckCircle2, Cpu, ShieldCheck, Globe, Zap,
+  Eye, EyeOff, Check, Save, RefreshCw, ExternalLink,
+  AlertTriangle, CheckCircle2, Cpu, Globe, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface IntegrationSettings {
-  reown_project_id: string;
   coingecko_api_key: string;
   moonpay_api_key: string;
   transak_api_key: string;
@@ -20,7 +19,6 @@ interface IntegrationSettings {
 }
 
 const DEFAULTS: IntegrationSettings = {
-  reown_project_id: "",
   coingecko_api_key: "",
   moonpay_api_key: "",
   transak_api_key: "",
@@ -208,54 +206,6 @@ export function AdminIntegrations() {
           Failed to save settings. Check the API server is running and try again.
         </div>
       )}
-
-      {/* ── Reown WalletConnect ── */}
-      <Section
-        icon={<Link2 className="w-4 h-4" />}
-        title="Reown WalletConnect"
-        description="Enables QR-code wallet connections — MetaMask Mobile, Trust, Coinbase, OKX, Rainbow, Ledger, and 300+ more wallets via WalletConnect v2."
-        badge="Required"
-        badgeColor="bg-red-500/10 text-red-400 border-red-500/30"
-      >
-        <MaskedField
-          label="Project ID"
-          value={form.reown_project_id}
-          onChange={set("reown_project_id")}
-          placeholder="e.g. b56e18d47c72ab683b10814fe9495694"
-          docsUrl="https://cloud.reown.com"
-          required
-          hint="Free tier available. Create a project at cloud.reown.com → copy the Project ID. This is a public identifier (safe to expose in JS)."
-        />
-        <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-xl space-y-1.5">
-          <p className="text-xs font-semibold text-blue-400 flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5" /> How to get your free Project ID:
-          </p>
-          <ol className="text-[11px] text-blue-300/80 space-y-1 list-decimal list-inside">
-            <li>Go to <a href="https://cloud.reown.com" target="_blank" rel="noopener noreferrer" className="underline">cloud.reown.com</a> and sign in</li>
-            <li>Click <strong>Create Project</strong> — name it "OrahDEX"</li>
-            <li>Select <strong>AppKit</strong> as the product</li>
-            <li>Copy the <strong>Project ID</strong> and paste it above</li>
-            <li>Click <strong>Save All</strong> — active immediately, no restart needed</li>
-          </ol>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {[
-            { name: "MetaMask", badge: "🦊" },
-            { name: "Trust Wallet", badge: "🛡️" },
-            { name: "Coinbase", badge: "🔵" },
-            { name: "Rainbow", badge: "🌈" },
-            { name: "Ledger", badge: "🔒" },
-            { name: "OKX", badge: "⭕" },
-            { name: "Phantom", badge: "👻" },
-            { name: "+290 more", badge: "✦" },
-          ].map(w => (
-            <div key={w.name} className="flex items-center gap-1.5 px-2 py-1.5 bg-secondary/40 rounded-lg border border-border">
-              <span className="text-base leading-none">{w.badge}</span>
-              <span className="text-[10px] text-muted-foreground font-medium truncate">{w.name}</span>
-            </div>
-          ))}
-        </div>
-      </Section>
 
       {/* ── CoinGecko ── */}
       <Section

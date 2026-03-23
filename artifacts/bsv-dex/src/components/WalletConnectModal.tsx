@@ -1,135 +1,87 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  X, Shield, ChevronRight, Wifi, CheckCircle2,
+  X, Shield, ChevronRight, CheckCircle2,
   PlusCircle, Download, Link2, Copy, Check,
-  Eye, EyeOff, AlertTriangle, RefreshCw, ArrowLeft,
-  Layers, HardDrive, QrCode,
+  Eye, AlertTriangle, RefreshCw, ArrowLeft,
+  Layers,
 } from "lucide-react";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
-import { openReownModal, isReownReady, subscribeReownAccount, fetchEvmBalance } from "@/lib/reown";
 
+/* ── Wallet definitions ───────────────────────────────────────────────────── */
 interface WalletDef {
-  id: string; name: string; network: WalletNetwork;
-  icon: string; description: string; popular?: boolean; chainId?: number;
+  id: string; name: string; icon: string; description: string;
+  popular?: boolean; installUrl?: string;
 }
 
 const EVM_WALLETS: WalletDef[] = [
-  { id: "metamask",    name: "MetaMask",       network: "evm", icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains", popular: true, chainId: 1 },
-  { id: "walletconnect", name: "Reown WalletConnect", network: "evm", icon: "🔗", description: "300+ wallets — MetaMask Mobile, Trust, Coinbase & more via QR code", popular: true, chainId: 1 },
-  { id: "coinbase",   name: "Coinbase Wallet", network: "evm", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains", popular: true, chainId: 1 },
-  { id: "trust",      name: "Trust Wallet",    network: "evm", icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins", chainId: 1 },
-  { id: "imtoken",    name: "imToken",         network: "evm", icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…", chainId: 1 },
-  { id: "guarda",     name: "Guarda Wallet",   network: "evm", icon: "🟢", description: "EVM + BSV + 400k+ assets supported", chainId: 1 },
-  { id: "atomic",     name: "Atomic Wallet",   network: "evm", icon: "⚛️", description: "500+ coins — EVM all layers + BSV + more", chainId: 1 },
-  { id: "okx",        name: "OKX Wallet",      network: "evm", icon: "⭕", description: "Web3 gateway by OKX — all EVM networks", chainId: 1 },
-  { id: "bybit",      name: "Bybit Wallet",    network: "evm", icon: "🟡", description: "Web3 wallet by Bybit exchange", chainId: 1 },
-  { id: "rainbow",    name: "Rainbow",         network: "evm", icon: "🌈", description: "Simple Ethereum wallet — L1 & L2", chainId: 1 },
-  { id: "phantom",    name: "Phantom",         network: "evm", icon: "👻", description: "Multichain — ETH, SOL, BTC", chainId: 1 },
-  { id: "ledger",     name: "Ledger",          network: "evm", icon: "🔒", description: "Hardware wallet — cold storage", chainId: 1 },
-  { id: "trezor",     name: "Trezor",          network: "evm", icon: "🛡️", description: "Open-source hardware wallet", chainId: 1 },
+  { id: "metamask",  name: "MetaMask",       icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains",         popular: true,  installUrl: "https://metamask.io/download/" },
+  { id: "coinbase",  name: "Coinbase Wallet", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains",             popular: true,  installUrl: "https://www.coinbase.com/wallet/downloads" },
+  { id: "trust",     name: "Trust Wallet",    icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins",          popular: true,  installUrl: "https://trustwallet.com/download" },
+  { id: "okx",       name: "OKX Wallet",      icon: "⭕", description: "Web3 gateway by OKX — all EVM networks",               popular: false, installUrl: "https://www.okx.com/web3" },
+  { id: "bybit",     name: "Bybit Wallet",    icon: "🟡", description: "Web3 wallet by Bybit exchange",                         popular: false },
+  { id: "rainbow",   name: "Rainbow",         icon: "🌈", description: "Simple Ethereum wallet — L1 & L2",                     popular: false, installUrl: "https://rainbow.me/" },
+  { id: "phantom",   name: "Phantom",         icon: "👻", description: "Multichain — ETH, SOL, BTC",                           popular: false, installUrl: "https://phantom.app/download" },
+  { id: "imtoken",   name: "imToken",         icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…",   popular: false, installUrl: "https://token.im/download" },
+  { id: "guarda",    name: "Guarda Wallet",   icon: "🟢", description: "EVM + BSV + 400k+ assets supported",                   popular: false, installUrl: "https://guarda.com/desktop/" },
+  { id: "atomic",    name: "Atomic Wallet",   icon: "⚛️", description: "500+ coins — EVM all layers + BSV + more",             popular: false, installUrl: "https://atomicwallet.io/downloads" },
+  { id: "ledger",    name: "Ledger",          icon: "🔒", description: "Hardware wallet — cold storage",                        popular: false, installUrl: "https://www.ledger.com/ledger-live" },
 ];
 
 const BSV_WALLETS: WalletDef[] = [
-  { id: "handcash",  name: "HandCash",      network: "bsv", icon: "✋", description: "Social BSV wallet — simple & fast", popular: true },
-  { id: "relayx",   name: "RelayX",        network: "bsv", icon: "⚡", description: "BSV DeFi wallet", popular: true },
-  { id: "panda",    name: "Panda Wallet",  network: "bsv", icon: "🐼", description: "Browser extension for BSV", popular: true },
-  { id: "guarda",   name: "Guarda Wallet", network: "bsv", icon: "🟢", description: "Supports BSV + EVM + 400k+ assets" },
-  { id: "atomic",   name: "Atomic Wallet", network: "bsv", icon: "⚛️", description: "500+ coins including BSV + all EVM" },
-  { id: "twetch",   name: "Twetch",        network: "bsv", icon: "🐦", description: "Social + wallet on BSV" },
-  { id: "sensilet", name: "Sensilet",      network: "bsv", icon: "🔷", description: "sCrypt smart contract wallet" },
-  { id: "yours",    name: "Yours Wallet",  network: "bsv", icon: "💛", description: "Open-source BSV wallet" },
+  { id: "handcash",  name: "HandCash",     icon: "✋", description: "Social BSV wallet — simple & fast",        popular: true },
+  { id: "relayx",   name: "RelayX",       icon: "⚡", description: "BSV DeFi wallet",                           popular: true },
+  { id: "panda",    name: "Panda Wallet", icon: "🐼", description: "Browser extension for BSV",                 popular: true },
+  { id: "guarda",   name: "Guarda Wallet",icon: "🟢", description: "BSV + EVM + 400k+ assets",                  popular: false },
+  { id: "atomic",   name: "Atomic Wallet",icon: "⚛️", description: "500+ coins including BSV",                  popular: false },
+  { id: "twetch",   name: "Twetch",       icon: "🐦", description: "Social + wallet on BSV",                    popular: false },
+  { id: "sensilet", name: "Sensilet",     icon: "🔷", description: "sCrypt smart contract wallet",              popular: false },
+  { id: "yours",    name: "Yours Wallet", icon: "💛", description: "Open-source BSV wallet",                    popular: false },
 ];
 
-type View = "landing" | "create" | "import" | "connect";
-type ConnectTab = "evm" | "bsv";
-type CreateStep = "generate" | "confirm" | "done";
-type ImportStep = "enter" | "done";
+const SOL_WALLETS: WalletDef[] = [
+  { id: "phantom-sol",  name: "Phantom",   icon: "👻", description: "Most popular Solana wallet",               popular: true,  installUrl: "https://phantom.app/download" },
+  { id: "solflare",     name: "Solflare",  icon: "🌟", description: "Official Solana Foundation wallet",        popular: true,  installUrl: "https://solflare.com/download" },
+  { id: "backpack",     name: "Backpack",  icon: "🎒", description: "xNFT browser wallet for Solana",           popular: false, installUrl: "https://www.backpack.app/downloads" },
+  { id: "glow",         name: "Glow",      icon: "🟣", description: "Fast Solana wallet for power users",       popular: false, installUrl: "https://glow.app" },
+  { id: "slope",        name: "Slope",     icon: "🔶", description: "Mobile-first Solana wallet",               popular: false, installUrl: "https://slope.finance" },
+];
 
-function generateMockAddress(network: WalletNetwork): string {
-  const hex = () => Math.floor(Math.random() * 16).toString(16);
-  if (network === "evm") return `0x${Array.from({ length: 40 }, hex).join("")}`;
-  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  return "1" + Array.from({ length: 33 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
+const BTC_WALLETS: WalletDef[] = [
+  { id: "phantom-btc", name: "Phantom",    icon: "👻", description: "Bitcoin + Solana + Ethereum — no Lightning",  popular: true,  installUrl: "https://phantom.app/download" },
+  { id: "unisat",      name: "UniSat",     icon: "🟠", description: "Bitcoin & Ordinals wallet — on-chain only",   popular: true,  installUrl: "https://unisat.io/download" },
+  { id: "xverse",      name: "Xverse",     icon: "🔑", description: "Bitcoin-first — Ordinals, BRC-20, on-chain", popular: true,  installUrl: "https://www.xverse.app/download" },
+  { id: "leather",     name: "Leather",    icon: "🟤", description: "Bitcoin wallet for Stacks & BTC",             popular: false, installUrl: "https://leather.io/install-extension" },
+  { id: "oyl",         name: "OYL Wallet", icon: "🛢️", description: "Bitcoin Ordinals & Runes wallet",             popular: false, installUrl: "https://oyl.io" },
+];
 
-const isMobileDevice = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+/* ── EVM chain list ───────────────────────────────────────────────────────── */
+const EVM_LAYER_CHAINS = [
+  { layer: 1, id: "eth",  name: "Ethereum",    chainId: 1,     symbol: "ETH",  badge: "L1" },
+  { layer: 1, id: "bsc",  name: "BNB Chain",   chainId: 56,    symbol: "BNB",  badge: "L1" },
+  { layer: 2, id: "poly", name: "Polygon",      chainId: 137,   symbol: "MATIC",badge: "L2" },
+  { layer: 2, id: "arb",  name: "Arbitrum One", chainId: 42161, symbol: "ETH",  badge: "L2" },
+  { layer: 2, id: "op",   name: "Optimism",     chainId: 10,    symbol: "ETH",  badge: "L2" },
+  { layer: 2, id: "base", name: "Base",         chainId: 8453,  symbol: "ETH",  badge: "L2" },
+  { layer: 3, id: "zk",   name: "zkSync Era",   chainId: 324,   symbol: "ETH",  badge: "L3" },
+];
 
-function getEthereumProvider(walletId: string): any {
-  const eth = (window as any).ethereum;
-  if (!eth) return null;
-
-  // When multiple extensions inject into window.ethereum.providers[]
-  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
-    if (walletId === "metamask") {
-      return eth.providers.find((p: any) => p.isMetaMask)
-        ?? eth.providers[0]; // fall back to first provider
-    }
-    if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
-    if (walletId === "trust") return eth.providers.find((p: any) => p.isTrust) ?? null;
-    return eth.providers[0];
-  }
-
-  // Single provider — use it for any EVM wallet, regardless of isMetaMask flag
-  if (walletId === "coinbase" && !eth.isCoinbaseWallet) return null;
-  if (walletId === "trust" && !eth.isTrust) return null;
-  if (walletId === "okx") return (window as any).okxwallet ?? (eth.isOKExWallet ? eth : null);
-  return eth; // MetaMask, Rainbow, Bybit, Ledger, any injected wallet
-}
-
-function isWalletInstalled(walletId: string): boolean {
-  const eth = (window as any).ethereum;
-  if (!eth) return false;
-  switch (walletId) {
-    case "metamask": return !!(eth.isMetaMask || eth.providers?.some((p: any) => p.isMetaMask) || eth);
-    case "coinbase": return !!(eth.isCoinbaseWallet || eth.providers?.some((p: any) => p.isCoinbaseWallet));
-    case "trust": return !!(eth.isTrust || eth.providers?.some((p: any) => p.isTrust));
-    case "okx": return !!(window as any).okxwallet || !!eth.isOKExWallet;
-    case "bybit": return !!eth.isBybit;
-    case "phantom": return !!(window as any).phantom?.ethereum;
-    default: return !!eth;
-  }
-}
-
-const WALLET_INSTALL_URLS: Record<string, string> = {
-  metamask:     "https://metamask.io/download/",
-  coinbase:     "https://www.coinbase.com/wallet/downloads",
-  rainbow:      "https://rainbow.me/",
-  trust:        "https://trustwallet.com/download",
-  okx:          "https://www.okx.com/web3",
-  bybit:        "https://www.bybit.com/en/web3/",
-  phantom:      "https://phantom.app/download",
-  ledger:       "https://www.ledger.com/ledger-live",
-  trezor:       "https://trezor.io/start",
-  imtoken:      "https://token.im/download",
-  guarda:       "https://guarda.com/desktop/",
-  atomic:       "https://atomicwallet.io/downloads",
-  walletconnect: null as any,
+const LAYER_COLORS: Record<number, string> = {
+  1: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  2: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+  3: "bg-orange-500/10 text-orange-400 border-orange-500/30",
 };
 
-const EVM_LAYER_CHAINS = [
-  { layer: 1, id: "eth",  name: "Ethereum",      chainId: 1,     symbol: "ETH",  badge: "L1", color: "blue" },
-  { layer: 1, id: "bsc",  name: "BNB Chain",     chainId: 56,    symbol: "BNB",  badge: "L1", color: "yellow" },
-  { layer: 2, id: "poly", name: "Polygon",        chainId: 137,   symbol: "MATIC",badge: "L2", color: "violet" },
-  { layer: 2, id: "arb",  name: "Arbitrum One",   chainId: 42161, symbol: "ETH",  badge: "L2", color: "blue" },
-  { layer: 2, id: "op",   name: "Optimism",       chainId: 10,    symbol: "ETH",  badge: "L2", color: "red" },
-  { layer: 2, id: "base", name: "Base",           chainId: 8453,  symbol: "ETH",  badge: "L2", color: "blue" },
-  { layer: 3, id: "zk",   name: "zkSync Era",     chainId: 324,   symbol: "ETH",  badge: "L3", color: "violet" },
-  { layer: 3, id: "stark",name: "StarkNet",       chainId: 0,     symbol: "STRK", badge: "L3", color: "orange" },
-];
-
 function EvmChainSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const layerColors: Record<number, string> = { 1: "bg-blue-500/10 text-blue-400 border-blue-500/30", 2: "bg-violet-500/10 text-violet-400 border-violet-500/30", 3: "bg-orange-500/10 text-orange-400 border-orange-500/30" };
-  const groups = [1, 2, 3];
   return (
     <div>
       <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2 flex items-center gap-1.5">
         <Layers className="w-3.5 h-3.5" /> EVM Layer &amp; Chain
       </p>
       <div className="space-y-2">
-        {groups.map(layer => (
+        {[1, 2, 3].map(layer => (
           <div key={layer}>
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-bold mb-1.5 px-1">
               Layer {layer} {layer === 1 ? "— Base Chains" : layer === 2 ? "— Rollups & Sidechains" : "— App Chains"}
@@ -139,13 +91,11 @@ function EvmChainSelector({ value, onChange }: { value: string; onChange: (v: st
                 <button key={c.id} onClick={() => onChange(c.id)}
                   className={cn(
                     "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left",
-                    value === c.id
-                      ? layerColors[layer]
-                      : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                    value === c.id ? LAYER_COLORS[layer] : "border-border text-muted-foreground hover:border-primary/30 hover:text-foreground"
                   )}>
-                  <span className={cn("text-[9px] font-black px-1 py-0.5 rounded", layerColors[layer])}>{c.badge}</span>
+                  <span className={cn("text-[9px] font-black px-1 py-0.5 rounded", LAYER_COLORS[layer])}>{c.badge}</span>
                   <span className="truncate">{c.name}</span>
-                  {c.chainId > 0 && <span className="ml-auto text-muted-foreground/50 text-[9px]">#{c.chainId}</span>}
+                  <span className="ml-auto text-muted-foreground/50 text-[9px]">#{c.chainId}</span>
                 </button>
               ))}
             </div>
@@ -178,16 +128,50 @@ function AccountIndexSelector({ value, onChange }: { value: number; onChange: (v
   );
 }
 
-const METAMASK_MOBILE_DEEPLINK = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}`;
+function generateMockBsvAddress(): string {
+  const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  return "1" + Array.from({ length: 33 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+}
+
+/* ── EVM provider resolution ─────────────────────────────────────────────── */
+function getEvmProvider(walletId: string): any {
+  const eth = (window as any).ethereum;
+  if (!eth) return null;
+  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
+    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask) ?? eth.providers[0];
+    if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
+    if (walletId === "trust") return eth.providers.find((p: any) => p.isTrust) ?? null;
+    return eth.providers[0];
+  }
+  if (walletId === "coinbase" && !eth.isCoinbaseWallet) return null;
+  if (walletId === "trust" && !eth.isTrust) return null;
+  if (walletId === "okx") return (window as any).okxwallet ?? (eth.isOKExWallet ? eth : null);
+  if (walletId === "phantom") return (window as any).phantom?.ethereum ?? null;
+  return eth;
+}
+
+type View = "landing" | "create" | "import" | "connect";
+type ConnectTab = "evm" | "sol" | "btc" | "bsv";
+type CreateStep = "generate" | "done";
+type ImportStep = "enter" | "done";
+
+const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
+  { id: "evm", label: "EVM",     emoji: "🌐" },
+  { id: "sol", label: "Solana",  emoji: "◎" },
+  { id: "btc", label: "Bitcoin", emoji: "₿" },
+  { id: "bsv", label: "BSV",     emoji: "⚡" },
+];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
+
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("evm");
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
 
+  /* create wallet state */
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [mnemonic, setMnemonic] = useState<string[]>([]);
   const [createStep, setCreateStep] = useState<CreateStep>("generate");
@@ -196,25 +180,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [copied, setCopied] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
+  /* import wallet state */
   const [importInput, setImportInput] = useState("");
   const [importNetwork, setImportNetwork] = useState<WalletNetwork>("bsv");
   const [importStep, setImportStep] = useState<ImportStep>("enter");
   const [importError, setImportError] = useState<string | null>(null);
   const [importAddress, setImportAddress] = useState("");
 
+  /* evm extras */
   const [evmChain, setEvmChain] = useState("eth");
   const [accountIndex, setAccountIndex] = useState(0);
-  const [trezorStatus, setTrezorStatus] = useState<"idle" | "connecting" | "error">("idle");
-  const [trezorError, setTrezorError] = useState<string | null>(null);
-  const [reownStatus, setReownStatus] = useState<"idle" | "opening" | "waiting" | "done" | "error">("idle");
-  const reownPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleClose = () => {
-    // Clean up any active Reown timeout
-    if (reownPollRef.current) {
-      clearTimeout(reownPollRef.current);
-      reownPollRef.current = null;
-    }
     onClose();
     setTimeout(() => {
       setView("landing");
@@ -226,203 +203,231 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setConfirmed(false);
       setImportInput("");
       setImportError(null);
-      setReownStatus("idle");
       setConnecting(null);
       setConnected(null);
       setConnectError(null);
     }, 400);
   };
 
-  const handleConnectWallet = async (wallet: WalletDef) => {
+  /* ── SOL connection ─────────────────────────────────────────────────────── */
+  const handleConnectSol = async (walletId: string) => {
+    setConnectError(null);
+    let provider: any = null;
+
+    if (walletId === "phantom-sol") {
+      provider = (window as any).phantom?.solana ?? (window as any).solana ?? null;
+    } else if (walletId === "solflare") {
+      provider = (window as any).solflare ?? null;
+    } else if (walletId === "backpack") {
+      provider = (window as any).backpack ?? null;
+    } else if (walletId === "glow") {
+      provider = (window as any).glow?.solana ?? null;
+    } else if (walletId === "slope") {
+      provider = (window as any).Slope ? new (window as any).Slope() : null;
+    }
+
+    if (!provider) {
+      const w = SOL_WALLETS.find(x => x.id === walletId);
+      if (w?.installUrl) window.open(w.installUrl, "_blank");
+      setConnectError(`${w?.name ?? "Wallet"} not detected. Install the extension then try again.`);
+      return;
+    }
+
+    setConnecting(walletId);
+    try {
+      const resp = await provider.connect();
+      const address: string = resp?.publicKey?.toString() ?? provider.publicKey?.toString();
+      if (!address) throw new Error("No public key returned from wallet.");
+      connect({ address, provider: walletId, network: "sol" });
+      setConnected(walletId);
+      setTimeout(() => { setConnected(null); handleClose(); }, 800);
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.includes("rejected") || msg.includes("cancelled")) {
+        setConnectError("Connection cancelled. Approve the request in your wallet.");
+      } else {
+        setConnectError(msg || "Connection failed. Make sure your wallet is unlocked.");
+      }
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  /* ── BTC connection (no Lightning) ─────────────────────────────────────── */
+  const handleConnectBtc = async (walletId: string) => {
     setConnectError(null);
 
-    // ── EVM wallets ──────────────────────────────────────────────────────────
-    if (wallet.network === "evm") {
-
-      if (wallet.id === "walletconnect") {
-        setConnectError(null);
-        setReownStatus("opening");
-        setConnecting("walletconnect");
-
-        if (!isReownReady()) {
-          setConnectError(
-            "WalletConnect is not configured yet. Go to Admin → Integrations and add your free Reown Project ID."
-          );
-          setReownStatus("error");
-          setConnecting(null);
-          return;
-        }
-
-        // Open the Reown AppKit modal (QR code + 300+ wallets)
-        openReownModal("Connect");
-        setReownStatus("waiting");
-
-        // Subscribe to Reown's account state — fires when user connects in the modal
-        let resolved = false;
-        const unsub = subscribeReownAccount(async ({ address: addr, isConnected }) => {
-          if (resolved) return;
-          if (isConnected && addr) {
-            resolved = true;
-            unsub();
-            if (reownPollRef.current) {
-              clearTimeout(reownPollRef.current);
-              reownPollRef.current = null;
-            }
-
-            // Fetch chainId and balance
-            let chainId = 1;
-            try {
-              const eth = (window as any).ethereum;
-              if (eth) {
-                const hex: string = await eth.request({ method: "eth_chainId" });
-                chainId = parseInt(hex, 16);
-              }
-            } catch { /* use default */ }
-
-            const balance = await fetchEvmBalance(addr);
-            connect({ address: addr, provider: "walletconnect", network: "evm", chainId, balance: balance ?? undefined });
-
-            setReownStatus("done");
-            setConnecting(null);
-            setTimeout(() => { setReownStatus("idle"); handleClose(); }, 800);
-          }
-        });
-
-        // Fallback timeout — unsubscribe after 90 seconds if nothing happens
-        reownPollRef.current = setTimeout(() => {
-          if (!resolved) {
-            unsub();
-            setReownStatus("idle");
-            setConnecting(null);
-          }
-        }, 90_000) as any;
-
+    if (walletId === "phantom-btc") {
+      const btcProvider = (window as any).phantom?.bitcoin;
+      if (!btcProvider) {
+        window.open("https://phantom.app/download", "_blank");
+        setConnectError("Phantom not detected. Install it and try again.");
         return;
       }
-
-      // Trezor hardware wallet — load TrezorConnect from CDN
-      if (wallet.id === "trezor") {
-        setConnecting("trezor");
-        setTrezorStatus("connecting");
-        setTrezorError(null);
-        try {
-          let TC = (window as any).TrezorConnect;
-          if (!TC) {
-            await new Promise<void>((resolve, reject) => {
-              const s = document.createElement("script");
-              s.src = "https://connect.trezor.io/9/trezor-connect.js";
-              s.onload = () => resolve();
-              s.onerror = () => reject(new Error("Failed to load TrezorConnect SDK"));
-              document.head.appendChild(s);
-            });
-            TC = (window as any).TrezorConnect;
-          }
-          await TC.init({
-            lazyLoad: true,
-            manifest: { email: "admin@orahdex.com", appUrl: window.location.origin },
-          });
-          const path = `m/44'/60'/${accountIndex}'/0/0`;
-          const result = await TC.ethereumGetAddress({ path, showOnTrezor: true });
-          if (!result.success) throw new Error(result.payload?.error ?? "Trezor rejected the request");
-          const addr = result.payload.address;
-          const selectedChain = EVM_LAYER_CHAINS.find(c => c.id === evmChain);
-          connect({ address: addr, provider: "trezor", network: "evm", chainId: selectedChain?.chainId ?? 1 });
-          setTrezorStatus("idle");
-          setConnecting(null);
-          setConnected("trezor");
-          setTimeout(() => { setConnected(null); handleClose(); }, 800);
-        } catch (err: any) {
-          setTrezorStatus("error");
-          setTrezorError(err?.message ?? "Trezor connection failed. Make sure Trezor Suite is open.");
-          setConnecting(null);
-          setConnectError(err?.message ?? "Trezor connection failed. Open Trezor Suite and try again.");
-        }
-        return;
-      }
-
-      // Resolve provider — Phantom and OKX have their own namespaces
-      let provider: any = null;
-      if (wallet.id === "phantom") {
-        provider = (window as any).phantom?.ethereum ?? null;
-      } else if (wallet.id === "okx") {
-        provider = (window as any).okxwallet ?? null;
-      } else {
-        provider = getEthereumProvider(wallet.id);
-      }
-
-      // No provider at all — redirect to install page or MetaMask mobile deep link
-      if (!provider) {
-        if (wallet.id === "metamask") {
-          if (isMobileDevice()) {
-            window.open(METAMASK_MOBILE_DEEPLINK, "_blank");
-          } else {
-            window.open("https://metamask.io/download/", "_blank");
-          }
-        } else {
-          const url = WALLET_INSTALL_URLS[wallet.id];
-          if (url) window.open(url, "_blank");
-          else setConnectError(`${wallet.name} extension not detected. Install it and refresh.`);
-        }
-        return;
-      }
-
-      // Request accounts — triggers the real wallet popup
-      setConnecting(wallet.id);
+      setConnecting(walletId);
       try {
-        const accounts: string[] = await provider.request({ method: "eth_requestAccounts" });
-        if (!accounts?.length) throw new Error("Wallet returned no accounts.");
-
-        const rawChain: string = await provider.request({ method: "eth_chainId" });
-        const chainId = parseInt(rawChain, 16);
-
-        // Fetch balance immediately after connecting
-        const balance = await fetchEvmBalance(accounts[0]);
-        connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId, balance: balance ?? undefined });
-
-        // Keep in sync when user switches account or chain inside MetaMask
-        provider.removeAllListeners?.();
-        provider.on?.("accountsChanged", async (accs: string[]) => {
-          if (!accs.length) useWalletStore.getState().disconnect();
-          else {
-            const bal = await fetchEvmBalance(accs[0]);
-            useWalletStore.getState().connect({ address: accs[0], provider: wallet.id, network: "evm", chainId, balance: bal ?? undefined });
-          }
-        });
-        provider.on?.("chainChanged", async (hex: string) => {
-          const newChainId = parseInt(hex, 16);
-          const bal = await fetchEvmBalance(accounts[0]);
-          useWalletStore.getState().connect({ address: accounts[0], provider: wallet.id, network: "evm", chainId: newChainId, balance: bal ?? undefined });
-        });
-
-        setConnecting(null);
-        setConnected(wallet.id);
+        const accounts: { address: string; addressType: string }[] = await btcProvider.requestAccounts();
+        /* prefer native-segwit (p2wpkh) → taproot (p2tr) → anything else — never lightning */
+        const addr =
+          accounts.find(a => a.addressType === "p2wpkh")?.address ??
+          accounts.find(a => a.addressType === "p2tr")?.address ??
+          accounts.find(a => a.addressType !== "p2sh")?.address ??
+          accounts[0]?.address;
+        if (!addr) throw new Error("No on-chain Bitcoin address returned.");
+        connect({ address: addr, provider: "phantom-btc", network: "btc" });
+        setConnected(walletId);
         setTimeout(() => { setConnected(null); handleClose(); }, 800);
       } catch (err: any) {
+        setConnectError(err?.message ?? "Phantom BTC connection failed.");
+      } finally {
         setConnecting(null);
-        const code = err?.code;
-        if (code === 4001 || code === "ACTION_REJECTED") {
-          setConnectError("Connection request rejected. Approve it in your wallet and try again.");
-        } else if (code === -32002) {
-          setConnectError("MetaMask is already waiting for approval — open your wallet extension and accept.");
-        } else {
-          setConnectError(err?.message ?? "Connection failed. Make sure your wallet is unlocked and try again.");
-        }
       }
       return;
     }
 
-    // ── BSV wallets (no browser standard yet — simulated) ───────────────────
-    setConnecting(wallet.id);
+    if (walletId === "unisat") {
+      const unisat = (window as any).unisat;
+      if (!unisat) {
+        window.open("https://unisat.io/download", "_blank");
+        setConnectError("UniSat not detected. Install it and try again.");
+        return;
+      }
+      setConnecting(walletId);
+      try {
+        const accounts: string[] = await unisat.requestAccounts();
+        if (!accounts?.length) throw new Error("No accounts returned.");
+        connect({ address: accounts[0], provider: "unisat", network: "btc" });
+        setConnected(walletId);
+        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      } catch (err: any) {
+        setConnectError(err?.message ?? "UniSat connection failed.");
+      } finally {
+        setConnecting(null);
+      }
+      return;
+    }
+
+    if (walletId === "xverse") {
+      const xverse = (window as any).XverseProviders?.BitcoinProvider ?? (window as any).BitcoinProvider;
+      if (!xverse) {
+        window.open("https://www.xverse.app/download", "_blank");
+        setConnectError("Xverse not detected. Install it and try again.");
+        return;
+      }
+      setConnecting(walletId);
+      try {
+        /* Xverse injects getAccounts or request method */
+        let addr = "";
+        if (typeof xverse.request === "function") {
+          const res = await xverse.request("getAccounts", { purposes: ["payment", "ordinals"] });
+          addr = res?.result?.[0]?.address ?? res?.result?.payment?.address ?? "";
+        } else if (typeof xverse.getAccounts === "function") {
+          const accs = await xverse.getAccounts();
+          addr = accs?.[0]?.address ?? "";
+        }
+        if (!addr) throw new Error("No address returned from Xverse.");
+        connect({ address: addr, provider: "xverse", network: "btc" });
+        setConnected(walletId);
+        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      } catch (err: any) {
+        setConnectError(err?.message ?? "Xverse connection failed.");
+      } finally {
+        setConnecting(null);
+      }
+      return;
+    }
+
+    if (walletId === "leather") {
+      const leather = (window as any).LeatherProvider ?? (window as any).HiroWalletProvider;
+      if (!leather) {
+        window.open("https://leather.io/install-extension", "_blank");
+        setConnectError("Leather wallet not detected. Install it and try again.");
+        return;
+      }
+      setConnecting(walletId);
+      try {
+        const res = await leather.request("getAddresses");
+        const addrs: { symbol: string; address: string }[] = res?.result?.addresses ?? [];
+        const btcAddr = addrs.find(a => a.symbol === "BTC")?.address ?? addrs[0]?.address;
+        if (!btcAddr) throw new Error("No BTC address returned from Leather.");
+        connect({ address: btcAddr, provider: "leather", network: "btc" });
+        setConnected(walletId);
+        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      } catch (err: any) {
+        setConnectError(err?.message ?? "Leather connection failed.");
+      } finally {
+        setConnecting(null);
+      }
+      return;
+    }
+
+    /* Generic fallback */
+    const w = BTC_WALLETS.find(x => x.id === walletId);
+    if (w?.installUrl) window.open(w.installUrl, "_blank");
+    setConnectError(`${w?.name ?? "Wallet"} not detected. Install it and try again.`);
+  };
+
+  /* ── EVM connection ─────────────────────────────────────────────────────── */
+  const handleConnectEvm = async (walletId: string, installUrl?: string) => {
+    setConnectError(null);
+    let provider: any = getEvmProvider(walletId);
+
+    if (!provider) {
+      if (installUrl) window.open(installUrl, "_blank");
+      setConnectError(`${walletId === "metamask" ? "MetaMask" : "Wallet"} not detected. Install the extension and try again.`);
+      return;
+    }
+
+    setConnecting(walletId);
+    try {
+      const accounts: string[] = await provider.request({ method: "eth_requestAccounts" });
+      if (!accounts?.length) throw new Error("Wallet returned no accounts.");
+      const rawChain: string = await provider.request({ method: "eth_chainId" });
+      const chainId = parseInt(rawChain, 16);
+      connect({ address: accounts[0], provider: walletId, network: "evm", chainId });
+
+      provider.removeAllListeners?.();
+      provider.on?.("accountsChanged", (accs: string[]) => {
+        if (!accs.length) useWalletStore.getState().disconnect();
+        else useWalletStore.getState().connect({ address: accs[0], provider: walletId, network: "evm", chainId });
+      });
+      provider.on?.("chainChanged", (hex: string) => {
+        useWalletStore.getState().connect({ address: accounts[0], provider: walletId, network: "evm", chainId: parseInt(hex, 16) });
+      });
+
+      setConnected(walletId);
+      setTimeout(() => { setConnected(null); handleClose(); }, 800);
+    } catch (err: any) {
+      const code = err?.code;
+      if (code === 4001 || code === "ACTION_REJECTED") setConnectError("Connection rejected. Approve it in your wallet.");
+      else if (code === -32002) setConnectError("Wallet is waiting for approval — open it and accept.");
+      else setConnectError(err?.message ?? "Connection failed. Make sure your wallet is unlocked.");
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  /* ── BSV connection (simulated — no browser standard yet) ────────────────── */
+  const handleConnectBsv = (walletId: string) => {
+    setConnectError(null);
+    setConnecting(walletId);
     setTimeout(() => {
-      setConnected(wallet.id);
-      setTimeout(() => {
-        connect({ address: generateMockAddress("bsv"), provider: wallet.id, network: "bsv" });
-        setConnecting(null); setConnected(null);
-        handleClose();
-      }, 700);
+      connect({ address: generateMockBsvAddress(), provider: walletId, network: "bsv" });
+      setConnecting(null);
+      setConnected(walletId);
+      setTimeout(() => { setConnected(null); handleClose(); }, 700);
     }, 1200);
   };
 
+  /* ── Dispatcher ─────────────────────────────────────────────────────────── */
+  const handleConnect = (walletId: string, installUrl?: string) => {
+    if (connectTab === "sol") return handleConnectSol(walletId);
+    if (connectTab === "btc") return handleConnectBtc(walletId);
+    if (connectTab === "bsv") return handleConnectBsv(walletId);
+    return handleConnectEvm(walletId, installUrl);
+  };
+
+  /* ── Create wallet ────────────────────────────────────────────────────────── */
   const startCreate = (network: WalletNetwork) => {
     setCreateNetwork(network);
     setMnemonic(generateMnemonic(wordCount));
@@ -433,12 +438,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setView("create");
   };
 
-  const regenerate = () => {
-    setMnemonic(generateMnemonic(wordCount));
-    setCopied(false);
-    setRevealed(false);
-    setConfirmed(false);
-  };
+  const regenerate = () => { setMnemonic(generateMnemonic(wordCount)); setCopied(false); setRevealed(false); setConfirmed(false); };
 
   const handleCopy = () => {
     navigator.clipboard?.writeText(mnemonic.join(" "));
@@ -453,6 +453,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setTimeout(() => handleClose(), 2000);
   };
 
+  /* ── Import wallet ────────────────────────────────────────────────────────── */
   const handleImport = () => {
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
@@ -464,7 +465,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setTimeout(() => handleClose(), 2000);
   };
 
-  const wallets = connectTab === "evm" ? EVM_WALLETS : BSV_WALLETS;
+  const currentWallets = connectTab === "evm" ? EVM_WALLETS : connectTab === "sol" ? SOL_WALLETS : connectTab === "btc" ? BTC_WALLETS : BSV_WALLETS;
 
   return (
     <AnimatePresence>
@@ -517,7 +518,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {/* Create New */}
                       <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/5 to-transparent p-5 hover:border-primary/40 transition-all cursor-pointer group"
-                        onClick={() => setView("create")}>
+                        onClick={() => startCreate("bsv")}>
                         <div className="flex items-start gap-4">
                           <div className="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
                             <PlusCircle className="w-5 h-5 text-primary" />
@@ -525,7 +526,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex-1">
                             <h3 className="font-bold text-foreground text-base">Create New Wallet</h3>
                             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              Generate a new wallet with a secure 12 or 24-word seed phrase. Works on BSV and EVM chains.
+                              Generate a new BSV or EVM wallet with a secure 12 or 24-word seed phrase.
                             </p>
                           </div>
                           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0 mt-0.5 transition-colors" />
@@ -547,7 +548,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex-1">
                             <h3 className="font-bold text-foreground text-base">Import Existing Wallet</h3>
                             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              Restore access using your 12 or 24-word seed phrase from any BIP39-compatible wallet.
+                              Restore using your 12 or 24-word seed phrase from any BIP39-compatible wallet.
                             </p>
                           </div>
                           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-400 shrink-0 mt-0.5 transition-colors" />
@@ -568,16 +569,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex-1">
                             <h3 className="font-bold text-foreground text-base">Connect Existing Wallet</h3>
                             <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              MetaMask, Guarda, imToken, Atomic, Trust, OKX, HandCash, RelayX and 15+ more. 1-click auto-detect.
+                              MetaMask, Phantom, UniSat, Xverse, HandCash, RelayX and 20+ more. EVM · SOL · BTC · BSV.
                             </p>
                           </div>
                           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 shrink-0 mt-0.5 transition-colors" />
                         </div>
                         <div className="flex gap-2 mt-4">
-                          {["🦊", "🟢", "🪙", "⚛️", "✋", "⚡"].map((e) => (
+                          {["🦊", "👻", "🟠", "🔑", "✋", "⚡"].map(e => (
                             <span key={e} className="text-xl">{e}</span>
                           ))}
-                          <span className="text-sm text-muted-foreground self-center">+15 more</span>
+                          <span className="text-sm text-muted-foreground self-center">+20 more</span>
                         </div>
                       </div>
 
@@ -585,7 +586,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
                           <span className="font-semibold">Non-custodial & Trustless.</span>{" "}
-                          Orah DEX never holds your funds or stores your seed phrase. All trades settle directly on-chain.
+                          OrahDEX never holds your funds or stores your seed phrase. All trades settle directly on-chain via BSV — the fastest settlement layer.
                         </p>
                       </div>
                     </motion.div>
@@ -602,19 +603,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div>
                             <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
                             <div className="flex gap-2">
-                              {(["bsv", "evm"] as WalletNetwork[]).map((n) => (
-                                <button key={n}
-                                  onClick={() => setCreateNetwork(n)}
+                              {(["bsv", "evm"] as WalletNetwork[]).map(n => (
+                                <button key={n} onClick={() => setCreateNetwork(n)}
                                   className={cn("flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all",
                                     createNetwork === n ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40"
                                   )}>
-                                  {n === "bsv" ? "₿ Bitcoin SV" : "🌐 EVM / Web3"}
+                                  {n === "bsv" ? "⚡ Bitcoin SV" : "🌐 EVM / Web3"}
                                 </button>
                               ))}
                             </div>
                           </div>
 
-                          {/* EVM Layer/Chain selector */}
                           {createNetwork === "evm" && (
                             <>
                               <EvmChainSelector value={evmChain} onChange={setEvmChain} />
@@ -626,7 +625,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div>
                             <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Phrase Length</p>
                             <div className="flex gap-2">
-                              {([12, 24] as const).map((n) => (
+                              {([12, 24] as const).map(n => (
                                 <button key={n}
                                   onClick={() => { setWordCount(n); setMnemonic(generateMnemonic(n)); setRevealed(false); setCopied(false); }}
                                   className={cn("flex-1 py-2 rounded-xl text-sm font-semibold border transition-all",
@@ -661,7 +660,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             )}
                           </div>
 
-                          {/* Action row */}
                           <div className="flex gap-2">
                             <button onClick={regenerate}
                               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 text-sm font-medium transition-all">
@@ -675,27 +673,22 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </button>
                           </div>
 
-                          {/* Warning */}
                           <div className="flex items-start gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
                             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                             <p className="text-xs text-amber-300/80 leading-relaxed">
-                              Write this phrase down and store it somewhere safe. <strong className="text-amber-300">Never share it with anyone.</strong>{" "}
-                              Anyone with your seed phrase has full access to your funds.
+                              Write this phrase down and store it somewhere safe. <strong className="text-amber-300">Never share it.</strong> Anyone with your seed phrase has full access to your funds.
                             </p>
                           </div>
 
-                          {/* Confirm checkbox + continue */}
                           <label className="flex items-start gap-3 cursor-pointer group">
-                            <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)}
+                            <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)}
                               className="mt-0.5 w-4 h-4 accent-primary cursor-pointer" />
                             <span className="text-sm text-muted-foreground leading-relaxed group-hover:text-foreground transition-colors">
                               I have written down my seed phrase and stored it safely. I understand it cannot be recovered.
                             </span>
                           </label>
 
-                          <button
-                            onClick={finishCreate}
-                            disabled={!confirmed || !revealed}
+                          <button onClick={finishCreate} disabled={!confirmed || !revealed}
                             className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all",
                               confirmed && revealed
                                 ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
@@ -711,8 +704,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center">
                             <CheckCircle2 className="w-10 h-10 text-green-400" />
                           </div>
-                          <h3 className="text-xl font-bold text-foreground">Wallet Created!</h3>
-                          <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-xs">
+                          <h3 className="text-xl font-bold">Wallet Created!</h3>
+                          <p className="text-sm text-muted-foreground text-center max-w-xs">
                             Your new {createNetwork.toUpperCase()} wallet is ready. Keep your seed phrase safe.
                           </p>
                         </div>
@@ -727,30 +720,24 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {importStep === "enter" && (
                         <>
-                          {/* Network selector */}
                           <div>
                             <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
                             <div className="flex gap-2">
-                              {(["bsv", "evm"] as WalletNetwork[]).map((n) => (
+                              {(["bsv", "evm"] as WalletNetwork[]).map(n => (
                                 <button key={n} onClick={() => setImportNetwork(n)}
                                   className={cn("flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all",
                                     importNetwork === n ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40"
                                   )}>
-                                  {n === "bsv" ? "₿ Bitcoin SV" : "🌐 EVM / Web3"}
+                                  {n === "bsv" ? "⚡ Bitcoin SV" : "🌐 EVM / Web3"}
                                 </button>
                               ))}
                             </div>
                           </div>
 
-                          {/* EVM Layer/Chain selector for import */}
                           {importNetwork === "evm" && (
                             <>
                               <EvmChainSelector value={evmChain} onChange={setEvmChain} />
                               <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
-                              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-blue-500/5 border border-blue-500/15 text-xs text-blue-300/80">
-                                <Layers className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
-                                <span>Your EVM seed phrase works on <strong>all layers</strong> — Ethereum, Polygon, Arbitrum, Base etc. use the same keys. Select the chain you want to connect to on Orah DEX.</span>
-                              </div>
                             </>
                           )}
 
@@ -761,7 +748,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                             <textarea
                               value={importInput}
-                              onChange={(e) => { setImportInput(e.target.value); setImportError(null); }}
+                              onChange={e => { setImportInput(e.target.value); setImportError(null); }}
                               placeholder="Enter your 12 or 24-word seed phrase, separated by spaces..."
                               rows={5}
                               className={cn(
@@ -776,9 +763,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             )}
                           </div>
 
-                          {/* Quick word-count pills */}
                           <div className="flex gap-2">
-                            {[12, 24].map((n) => (
+                            {[12, 24].map(n => (
                               <span key={n} className="px-2.5 py-1 bg-white/5 border border-border text-muted-foreground text-xs rounded-full">{n} words</span>
                             ))}
                             <span className="text-xs text-muted-foreground self-center">BIP39 compatible</span>
@@ -787,13 +773,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="flex items-start gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
                             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                             <p className="text-xs text-amber-300/80 leading-relaxed">
-                              Never enter your seed phrase on untrusted sites. Orah DEX never stores or transmits your phrase — all derivation is local.
+                              Never enter your seed phrase on untrusted sites. OrahDEX never stores or transmits your phrase — all derivation is local.
                             </p>
                           </div>
 
-                          <button
-                            onClick={handleImport}
-                            disabled={importInput.trim().length === 0}
+                          <button onClick={handleImport} disabled={importInput.trim().length === 0}
                             className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all",
                               importInput.trim().length > 0
                                 ? "bg-violet-600 text-white hover:bg-violet-500 shadow-lg shadow-violet-500/20"
@@ -809,8 +793,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center">
                             <CheckCircle2 className="w-10 h-10 text-green-400" />
                           </div>
-                          <h3 className="text-xl font-bold text-foreground">Wallet Imported!</h3>
-                          <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-xs">
+                          <h3 className="text-xl font-bold">Wallet Imported!</h3>
+                          <p className="text-sm text-muted-foreground text-center max-w-xs">
                             {importAddress.slice(0, 14)}...{importAddress.slice(-8)}
                           </p>
                           <span className="px-3 py-1.5 bg-violet-500/15 text-violet-400 text-xs font-semibold rounded-full uppercase">{importNetwork}</span>
@@ -823,7 +807,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {view === "connect" && (
                     <motion.div key="connect" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
 
-                      {/* Error banner */}
                       {connectError && (
                         <div className="mx-6 mt-4 flex items-start gap-3 p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl">
                           <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -834,107 +817,89 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                       )}
 
-                      {/* Reown / WalletConnect waiting banner */}
-                      {(reownStatus === "waiting" || reownStatus === "opening") && (
-                        <div className="mx-6 mt-4 flex items-center gap-3 p-3.5 bg-violet-500/10 border border-violet-500/30 rounded-xl">
-                          <RefreshCw className="w-4 h-4 text-violet-400 shrink-0 animate-spin" />
-                          <div className="flex-1">
-                            <p className="text-xs font-semibold text-violet-300">Reown modal open</p>
-                            <p className="text-[11px] text-violet-300/70">Scan the QR code with your mobile wallet or select a wallet in the Reown popup.</p>
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (reownPollRef.current) { clearInterval(reownPollRef.current); reownPollRef.current = null; }
-                              setReownStatus("idle"); setConnecting(null);
-                            }}
-                            className="text-violet-400/60 hover:text-violet-400 shrink-0"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Network Tabs */}
-                      <div className="flex gap-2 px-6 pt-4">
-                        {(["evm", "bsv"] as ConnectTab[]).map((t) => (
-                          <button key={t} onClick={() => setConnectTab(t)}
-                            className={cn("flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all",
-                              connectTab === t
-                                ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                                : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40 bg-transparent"
+                      {/* 4-way tab: EVM · SOL · BTC · BSV */}
+                      <div className="flex border-b border-border mt-4 px-6 gap-1">
+                        {CONNECT_TABS.map(tab => (
+                          <button key={tab.id}
+                            onClick={() => { setConnectTab(tab.id); setConnectError(null); }}
+                            className={cn(
+                              "flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-all",
+                              connectTab === tab.id
+                                ? "border-primary text-primary"
+                                : "border-transparent text-muted-foreground hover:text-foreground"
                             )}>
-                            {t === "evm" ? "🌐 EVM / Web3" : "₿ Bitcoin SV"}
+                            <span>{tab.emoji}</span>
+                            {tab.label}
                           </button>
                         ))}
                       </div>
-                      <div className="px-6 pt-3 pb-2">
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Wifi className="w-3 h-3" />
-                          {connectTab === "evm"
-                            ? <span>EVM-compatible — <span className="text-blue-400 font-medium">L1</span> Ethereum · BSC &nbsp;|&nbsp; <span className="text-violet-400 font-medium">L2</span> Polygon · Arbitrum · Base &nbsp;|&nbsp; <span className="text-orange-400 font-medium">L3</span> zkSync</span>
-                            : "Bitcoin SV Mainnet — on-chain settlement via BSV script"}
-                        </div>
+
+                      {/* Network description */}
+                      <div className="px-6 pt-3 pb-1">
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {connectTab === "evm" && "Connect any EVM-compatible wallet. Supports Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism and all other EVM chains."}
+                          {connectTab === "sol" && "Connect your Solana wallet. All SPL tokens and NFTs work on OrahDEX. BSV is used for cross-chain settlement."}
+                          {connectTab === "btc" && "Connect your Bitcoin wallet — on-chain addresses only. Lightning Network is not accepted; use BSV for fast settlement."}
+                          {connectTab === "bsv" && "Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees."}
+                        </p>
                       </div>
 
-                      {/* Trezor: account index selector shown inline */}
-                      {connectTab === "evm" && (
-                        <div className="px-6 pb-3">
-                          <div className="p-3.5 rounded-xl border border-border bg-card/50 space-y-3">
-                            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                              <HardDrive className="w-3.5 h-3.5" /> Hardware Wallet / Account Settings
-                            </div>
-                            <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
-                            <p className="text-[10px] text-muted-foreground/50">Used by Trezor and Ledger hardware wallets to derive the correct account address.</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 1-Click Auto-Detect */}
-                      {connectTab === "evm" && (
-                        <div className="px-6 pb-3">
-                          <button
-                            onClick={() => {
-                              const autoWallet = EVM_WALLETS.find(w => isWalletInstalled(w.id));
-                              if (autoWallet) handleConnectWallet(autoWallet);
-                              else { setConnectError("No EVM wallet detected. Install MetaMask, imToken, Guarda, or any EVM wallet extension and try again."); }
-                            }}
-                            disabled={!!connecting}
-                            className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:opacity-90 transition-opacity shadow-lg shadow-primary/25 disabled:opacity-50"
-                          >
-                            <Wifi className="w-4 h-4" />
-                            1-Click Auto-Detect &amp; Connect
-                          </button>
-                          <p className="text-[10px] text-muted-foreground/60 text-center mt-1.5">
-                            Automatically finds and connects your installed wallet — MetaMask, Guarda, imToken, OKX, and more
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="px-6 pb-4">
-                        {[wallets.filter(w => w.popular), wallets.filter(w => !w.popular)].map((group, gi) => (
-                          group.length > 0 && (
-                            <div key={gi} className="mb-3">
-                              <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">
-                                {gi === 0 ? "Popular" : "More Wallets"}
-                              </p>
-                              <div className="grid gap-2">
-                                {group.map((wallet) => (
-                                  <WalletButton key={wallet.id} wallet={wallet} connecting={connecting} connected={connected} onConnect={handleConnectWallet} />
-                                ))}
+                      <div className="p-4 space-y-2">
+                        {currentWallets.map(wallet => {
+                          const isConn = connecting === wallet.id;
+                          const isDone = connected === wallet.id;
+                          return (
+                            <button key={wallet.id}
+                              disabled={!!connecting}
+                              onClick={() => handleConnect(wallet.id, wallet.installUrl)}
+                              className={cn(
+                                "w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all",
+                                isDone ? "border-green-500/60 bg-green-500/8"
+                                  : isConn ? "border-primary/60 bg-primary/8"
+                                  : "border-border hover:border-primary/40 hover:bg-primary/5",
+                                connecting && !isConn && "opacity-40 cursor-not-allowed"
+                              )}>
+                              <div className="w-10 h-10 rounded-xl bg-secondary/60 flex items-center justify-center text-xl shrink-0">
+                                {isConn ? <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+                                  : isDone ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                                  : wallet.icon}
                               </div>
-                            </div>
-                          )
-                        ))}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm flex items-center gap-2">
+                                  {wallet.name}
+                                  {wallet.popular && (
+                                    <span className="text-[9px] font-black px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded uppercase tracking-wider">Popular</span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{wallet.description}</p>
+                              </div>
+                              {isDone
+                                ? <Check className="w-4 h-4 text-green-400 shrink-0" />
+                                : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <div className="px-6 pb-5">
-                        <div className="flex items-start gap-3 p-4 bg-primary/5 text-primary rounded-xl border border-primary/10">
-                          <Shield className="w-4 h-4 shrink-0 mt-0.5" />
-                          <p className="text-xs leading-relaxed">
-                            <span className="font-semibold">Non-custodial & Trustless.</span>{" "}
-                            Orah DEX never holds your funds. All trades settle directly on-chain — no registration, no KYC.
+
+                      {/* BTC Lightning warning */}
+                      {connectTab === "btc" && (
+                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/20 rounded-xl">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-amber-300/80">
+                            OrahDEX does not support Lightning Network. Use standard on-chain Bitcoin addresses (bc1q, 1, or 3). For fast settlement, use BSV.
                           </p>
                         </div>
-                      </div>
+                      )}
+
+                      {/* BSV fastest settlement note */}
+                      {connectTab === "bsv" && (
+                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-primary/8 border border-primary/20 rounded-xl">
+                          <Shield className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-primary/80">
+                            BSV (Bitcoin SV) is OrahDEX's primary settlement currency — sub-cent fees, instant confirmation, unlimited scale.
+                          </p>
+                        </div>
+                      )}
                     </motion.div>
                   )}
 
@@ -945,49 +910,5 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         </>
       )}
     </AnimatePresence>
-  );
-}
-
-function WalletButton({ wallet, connecting, connected, onConnect }: {
-  wallet: WalletDef; connecting: string | null; connected: string | null; onConnect: (w: WalletDef) => void;
-}) {
-  const isConnecting = connecting === wallet.id;
-  const isConnected = connected === wallet.id;
-  const isDisabled = !!connecting;
-  const installed = wallet.network === "evm" ? isWalletInstalled(wallet.id) : false;
-  const isMobile = isMobileDevice();
-
-  const badge = (() => {
-    if (wallet.network === "bsv") return null;
-    if (wallet.id === "walletconnect") return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 font-medium">QR / Mobile</span>;
-    if (installed) return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-medium">Detected</span>;
-    if (isMobile && wallet.id === "metamask") return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-medium">Open App</span>;
-    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/8 text-muted-foreground font-medium">Install</span>;
-  })();
-
-  return (
-    <button onClick={() => onConnect(wallet)} disabled={isDisabled}
-      className={cn("flex items-center justify-between w-full p-3.5 rounded-xl border transition-all duration-200 group",
-        "border-border hover:border-primary/50 hover:bg-primary/5",
-        isConnecting || isConnected ? "border-primary bg-primary/5 scale-[0.99]" : "",
-        installed && !isConnecting && !isConnected ? "border-green-500/20" : "",
-        isDisabled && !isConnecting && !isConnected ? "opacity-40 cursor-not-allowed" : ""
-      )}>
-      <div className="flex items-center gap-3">
-        <span className="text-2xl w-8 text-center">{wallet.icon}</span>
-        <div className="text-left">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-sm text-foreground">{wallet.name}</span>
-            {badge}
-          </div>
-          <div className="text-xs text-muted-foreground">{wallet.description}</div>
-        </div>
-      </div>
-      <div className="shrink-0">
-        {isConnected ? <CheckCircle2 className="w-5 h-5 text-green-500" />
-          : isConnecting ? <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            : <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />}
-      </div>
-    </button>
   );
 }

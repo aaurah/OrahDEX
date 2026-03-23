@@ -1,13 +1,12 @@
 import { ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, ChevronDown, CreditCard } from "lucide-react";
+import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { openReownModal, isReownReady } from "@/lib/reown";
 
 const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone, system: Monitor };
 const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
@@ -34,30 +33,22 @@ const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
   250:   { short: "FTM",   color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
 };
 
-/** Shows the current chain and opens Reown's built-in network switcher on click */
+/** Shows the current connected chain */
 function ChainBadge({ chainId }: { chainId: number | null }) {
   const meta = chainId ? CHAIN_LABELS[chainId] : null;
   const label = meta?.short ?? (chainId ? `#${chainId}` : "EVM");
   const color = meta?.color ?? "bg-blue-500/20 text-blue-400 border-blue-500/30";
 
-  const handleClick = () => {
-    if (isReownReady()) {
-      openReownModal("Networks");
-    }
-  };
-
   return (
-    <button
-      onClick={handleClick}
-      title="Switch network"
+    <span
+      title="Current network"
       className={cn(
-        "flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider transition-opacity hover:opacity-80",
+        "flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider",
         color
       )}
     >
       {label}
-      <ChevronDown className="w-2.5 h-2.5 opacity-60" />
-    </button>
+    </span>
   );
 }
 
