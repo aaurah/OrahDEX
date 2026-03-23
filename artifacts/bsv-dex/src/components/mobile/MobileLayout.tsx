@@ -6,6 +6,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { shortenAddress } from "@/lib/utils";
+import { openReownModal, isReownReady } from "@/lib/reown";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
@@ -21,6 +22,9 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
   const { address, balance, disconnect } = useWalletStore();
   const [buyOpen, setBuyOpen] = useState(false);
+  const handleBuy = () => {
+    if (isReownReady()) { openReownModal("OnRampProviders"); } else { setBuyOpen(true); }
+  };
 
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
@@ -48,7 +52,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {/* Right side: Buy + Wallet */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setBuyOpen(true)}
+            onClick={handleBuy}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500 text-white text-[11px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
           >
             <CreditCard size={11} /> Buy
