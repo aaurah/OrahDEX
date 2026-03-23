@@ -1,10 +1,8 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, CreditCard } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2 } from "lucide-react";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { shortenAddress } from "@/lib/utils";
 
 const TABS = [
@@ -20,8 +18,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
   const { address, balance, disconnect } = useWalletStore();
-  const [buyOpen, setBuyOpen] = useState(false);
-
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
     return location.startsWith(tab.path);
@@ -60,15 +56,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           </span>
         </button>
 
-        {/* Col 3: Buy + Wallet, right-aligned */}
+        {/* Col 3: Wallet, right-aligned */}
         <div className="flex items-center justify-end gap-2 pr-4">
-          <button
-            onClick={() => setBuyOpen(true)}
-            className="flex items-center gap-1 px-3 py-[6px] rounded-lg bg-green-500 text-white text-[12px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
-          >
-            <CreditCard size={12} /> Buy
-          </button>
-
           {address ? (
             <button
               onClick={() => openWallet()}
@@ -124,7 +113,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} />
     </div>
   );
 }
