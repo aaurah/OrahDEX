@@ -57,16 +57,28 @@ const BTC_WALLETS: WalletDef[] = [
   { id: "oyl",         name: "OYL Wallet", icon: "🛢️", description: "Bitcoin Ordinals & Runes wallet",             popular: false, installUrl: "https://oyl.io" },
 ];
 
-/* ── EVM chain list ───────────────────────────────────────────────────────── */
+/* ── EVM chain list (all major chains) ───────────────────────────────────── */
 const EVM_LAYER_CHAINS = [
-  { layer: 1, id: "eth",  name: "Ethereum",    chainId: 1,     symbol: "ETH",  badge: "L1" },
-  { layer: 1, id: "bsc",  name: "BNB Chain",   chainId: 56,    symbol: "BNB",  badge: "L1" },
-  { layer: 2, id: "poly", name: "Polygon",      chainId: 137,   symbol: "MATIC",badge: "L2" },
-  { layer: 2, id: "arb",  name: "Arbitrum One", chainId: 42161, symbol: "ETH",  badge: "L2" },
-  { layer: 2, id: "op",   name: "Optimism",     chainId: 10,    symbol: "ETH",  badge: "L2" },
-  { layer: 2, id: "base", name: "Base",         chainId: 8453,  symbol: "ETH",  badge: "L2" },
-  { layer: 3, id: "zk",   name: "zkSync Era",   chainId: 324,   symbol: "ETH",  badge: "L3" },
+  /* L1 — Base Chains */
+  { layer: 1, id: "eth",   name: "Ethereum",     chainId: 1,       symbol: "ETH",   badge: "L1", icon: "⟠" },
+  { layer: 1, id: "bsc",   name: "BNB Chain",    chainId: 56,      symbol: "BNB",   badge: "L1", icon: "🟡" },
+  { layer: 1, id: "avax",  name: "Avalanche",    chainId: 43114,   symbol: "AVAX",  badge: "L1", icon: "🔺" },
+  { layer: 1, id: "ftm",   name: "Fantom",       chainId: 250,     symbol: "FTM",   badge: "L1", icon: "👻" },
+  { layer: 1, id: "cro",   name: "Cronos",       chainId: 25,      symbol: "CRO",   badge: "L1", icon: "🔵" },
+  /* L2 — Rollups & Sidechains */
+  { layer: 2, id: "poly",  name: "Polygon",      chainId: 137,     symbol: "MATIC", badge: "L2", icon: "🟣" },
+  { layer: 2, id: "arb",   name: "Arbitrum One", chainId: 42161,   symbol: "ETH",   badge: "L2", icon: "🔷" },
+  { layer: 2, id: "op",    name: "Optimism",     chainId: 10,      symbol: "ETH",   badge: "L2", icon: "🔴" },
+  { layer: 2, id: "base",  name: "Base",         chainId: 8453,    symbol: "ETH",   badge: "L2", icon: "🔵" },
+  { layer: 2, id: "linea", name: "Linea",        chainId: 59144,   symbol: "ETH",   badge: "L2", icon: "⬛" },
+  /* L3 — App Chains */
+  { layer: 3, id: "zk",    name: "zkSync Era",   chainId: 324,     symbol: "ETH",   badge: "L3", icon: "⚡" },
+  { layer: 3, id: "scroll",name: "Scroll",       chainId: 534352,  symbol: "ETH",   badge: "L3", icon: "📜" },
+  { layer: 3, id: "mantle",name: "Mantle",       chainId: 5000,    symbol: "MNT",   badge: "L3", icon: "🟢" },
 ];
+
+/* TRON (TVM — not EVM but commonly listed) */
+const TRON_INFO = { id: "tron", name: "TRON", symbol: "TRX", chainId: "mainnet", icon: "🔴", badge: "TVM" };
 
 const LAYER_COLORS: Record<number, string> = {
   1: "bg-blue-500/10 text-blue-400 border-blue-500/30",
@@ -146,26 +158,32 @@ function getEvmProvider(walletId: string): any {
   return eth;
 }
 
-type View = "landing" | "create" | "import" | "connect";
-type ConnectTab = "evm" | "sol" | "btc" | "bsv";
+type View = "landing" | "create" | "import" | "connect" | "prep";
+type ConnectTab = "bsv" | "evm" | "sol" | "btc";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
+  { id: "bsv", label: "BSV",     emoji: "⚡" },
   { id: "evm", label: "EVM",     emoji: "🌐" },
   { id: "sol", label: "Solana",  emoji: "◎" },
   { id: "btc", label: "Bitcoin", emoji: "₿" },
-  { id: "bsv", label: "BSV",     emoji: "⚡" },
 ];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
 
   const [view, setView] = useState<View>("landing");
-  const [connectTab, setConnectTab] = useState<ConnectTab>("evm");
+  const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  /* prep (post-connection wallet setup) state */
+  const [prepAddr, setPrepAddr] = useState("");
+  const [prepNetwork, setPrepNetwork] = useState<WalletNetwork>("bsv");
+  const [prepProvider, setPrepProvider] = useState("");
+  const [prepStep, setPrepStep] = useState<"fund" | "approve" | "done">("fund");
 
   /* create wallet state */
   const [wordCount, setWordCount] = useState<12 | 24>(12);
@@ -218,7 +236,21 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setBsvHandleErr("");
       setBsvResolvedAddr("");
       setBsvManualAddr("");
+      setPrepAddr("");
+      setPrepNetwork("bsv");
+      setPrepProvider("");
+      setPrepStep("fund");
     }, 400);
+  };
+
+  /* ── Go to prep view after successful connection ─────────────────────── */
+  const goToPrep = (addr: string, network: WalletNetwork, provider: string) => {
+    setPrepAddr(addr);
+    setPrepNetwork(network);
+    setPrepProvider(provider);
+    setPrepStep("fund");
+    setConnected(null);
+    setView("prep");
   };
 
   /* ── SOL connection ─────────────────────────────────────────────────────── */
@@ -252,7 +284,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       if (!address) throw new Error("No public key returned from wallet.");
       connect({ address, provider: walletId, network: "sol" });
       setConnected(walletId);
-      setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      setTimeout(() => goToPrep(address, "sol", walletId), 800);
     } catch (err: any) {
       const msg: string = err?.message ?? "";
       if (msg.includes("rejected") || msg.includes("cancelled")) {
@@ -288,7 +320,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         if (!addr) throw new Error("No on-chain Bitcoin address returned.");
         connect({ address: addr, provider: "phantom-btc", network: "btc" });
         setConnected(walletId);
-        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+        setTimeout(() => goToPrep(addr, "btc", "phantom-btc"), 800);
       } catch (err: any) {
         setConnectError(err?.message ?? "Phantom BTC connection failed.");
       } finally {
@@ -310,7 +342,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         if (!accounts?.length) throw new Error("No accounts returned.");
         connect({ address: accounts[0], provider: "unisat", network: "btc" });
         setConnected(walletId);
-        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+        setTimeout(() => goToPrep(accounts[0], "btc", "unisat"), 800);
       } catch (err: any) {
         setConnectError(err?.message ?? "UniSat connection failed.");
       } finally {
@@ -340,7 +372,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         if (!addr) throw new Error("No address returned from Xverse.");
         connect({ address: addr, provider: "xverse", network: "btc" });
         setConnected(walletId);
-        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+        setTimeout(() => goToPrep(addr, "btc", "xverse"), 800);
       } catch (err: any) {
         setConnectError(err?.message ?? "Xverse connection failed.");
       } finally {
@@ -364,7 +396,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         if (!btcAddr) throw new Error("No BTC address returned from Leather.");
         connect({ address: btcAddr, provider: "leather", network: "btc" });
         setConnected(walletId);
-        setTimeout(() => { setConnected(null); handleClose(); }, 800);
+        setTimeout(() => goToPrep(btcAddr, "btc", "leather"), 800);
       } catch (err: any) {
         setConnectError(err?.message ?? "Leather connection failed.");
       } finally {
@@ -408,7 +440,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       });
 
       setConnected(walletId);
-      setTimeout(() => { setConnected(null); handleClose(); }, 800);
+      setTimeout(() => goToPrep(accounts[0], "evm", walletId), 800);
     } catch (err: any) {
       const code = err?.code;
       if (code === 4001 || code === "ACTION_REJECTED") setConnectError("Connection rejected. Approve it in your wallet.");
@@ -444,7 +476,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           if (!addr) throw new Error("RelayX returned no address. Try signing in to RelayX first.");
           connect({ address: addr, provider: "relayx", network: "bsv" });
           setConnected("relayx");
-          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+          setTimeout(() => goToPrep(addr, "bsv", "relayx"), 700);
         } catch (err: any) {
           if (err?.message?.includes("user rejected") || err?.code === 4001) {
             setConnectError("Connection cancelled in RelayX.");
@@ -473,7 +505,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           if (!addr) throw new Error("Panda Wallet returned no address. Make sure it is unlocked.");
           connect({ address: addr, provider: "panda", network: "bsv" });
           setConnected("panda");
-          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+          setTimeout(() => goToPrep(addr, "bsv", "panda"), 700);
         } catch (err: any) {
           setConnectError(err?.message ?? "Panda Wallet connection failed.");
         } finally {
@@ -498,7 +530,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           if (!addr) throw new Error("Sensilet returned no address.");
           connect({ address: addr, provider: "sensilet", network: "bsv" });
           setConnected("sensilet");
-          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+          setTimeout(() => goToPrep(addr, "bsv", "sensilet"), 700);
         } catch (err: any) {
           setConnectError(err?.message ?? "Sensilet connection failed.");
         } finally {
@@ -523,7 +555,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           if (!addr) throw new Error("Twetch returned no address.");
           connect({ address: addr, provider: "twetch", network: "bsv" });
           setConnected("twetch");
-          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+          setTimeout(() => goToPrep(addr, "bsv", "twetch"), 700);
         } catch (err: any) {
           setConnectError(err?.message ?? "Twetch connection failed.");
         } finally {
@@ -548,7 +580,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           if (!addr) throw new Error("Yours Wallet returned no address.");
           connect({ address: addr, provider: "yours", network: "bsv" });
           setConnected("yours");
-          setTimeout(() => { setConnected(null); handleClose(); }, 700);
+          setTimeout(() => goToPrep(addr, "bsv", "yours"), 700);
         } catch (err: any) {
           setConnectError(err?.message ?? "Yours Wallet connection failed.");
         } finally {
@@ -598,7 +630,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     const addr = bsvManualAddr.trim();
     if (!addr) return;
     connect({ address: addr, provider: walletId, network: "bsv" });
-    handleClose();
+    goToPrep(addr, "bsv", walletId);
   };
 
   /* ── Dispatcher ─────────────────────────────────────────────────────────── */
@@ -632,7 +664,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     const address = deriveAddress(mnemonic, createNetwork);
     connect({ address, provider: "aura-wallet", network: createNetwork });
     setCreateStep("done");
-    setTimeout(() => handleClose(), 2000);
+    setTimeout(() => goToPrep(address, createNetwork, "aura-wallet"), 1500);
   };
 
   /* ── Import wallet ────────────────────────────────────────────────────────── */
@@ -644,7 +676,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setImportAddress(addr);
     connect({ address: addr, provider: "aura-wallet", network: importNetwork });
     setImportStep("done");
-    setTimeout(() => handleClose(), 2000);
+    setTimeout(() => goToPrep(addr, importNetwork, "aura-wallet"), 1500);
   };
 
   const currentWallets = connectTab === "evm" ? EVM_WALLETS : connectTab === "sol" ? SOL_WALLETS : connectTab === "btc" ? BTC_WALLETS : BSV_WALLETS;
@@ -665,7 +697,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
               {/* Header */}
               <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
                 <div className="flex items-center gap-3">
-                  {view !== "landing" && (
+                  {view !== "landing" && view !== "prep" && (
                     <button onClick={() => setView("landing")}
                       className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5 transition-colors">
                       <ArrowLeft className="w-4 h-4" />
@@ -673,10 +705,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   )}
                   <div>
                     <h2 className="text-xl font-bold text-foreground">
-                      {view === "landing" && "Get Started"}
+                      {view === "landing" && "Connect to OrahDEX"}
                       {view === "create" && "Create New Wallet"}
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
+                      {view === "prep" && "Wallet Setup"}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5 italic">Trade means DEX ✦</p>
                   </div>
@@ -693,82 +726,114 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {/* ── LANDING ── */}
                   {view === "landing" && (
                     <motion.div key="landing" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-                      className="p-6 space-y-3">
-                      <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-                        Non-custodial · On-chain settlement · No registration required
-                      </p>
+                      className="p-5 space-y-4">
 
-                      {/* Create New */}
-                      <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/5 to-transparent p-5 hover:border-primary/40 transition-all cursor-pointer group"
-                        onClick={() => startCreate("bsv")}>
-                        <div className="flex items-start gap-4">
-                          <div className="w-11 h-11 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
-                            <PlusCircle className="w-5 h-5 text-primary" />
+                      {/* ① BSV — primary featured block */}
+                      <div className="rounded-2xl border border-amber-500/35 bg-gradient-to-br from-amber-500/8 via-transparent to-transparent p-5">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">⚡</div>
+                          <div>
+                            <h3 className="font-black text-[15px] text-foreground leading-tight">Bitcoin SV Wallet</h3>
+                            <p className="text-[11px] text-amber-400 font-semibold">Primary settlement · sub-cent fees · instant finality</p>
                           </div>
-                          <div className="flex-1">
-                            <h3 className="font-bold text-foreground text-base">Create New Wallet</h3>
-                            <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              Generate a new BSV or EVM wallet with a secure 12 or 24-word seed phrase.
-                            </p>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0 mt-0.5 transition-colors" />
                         </div>
-                        <div className="flex gap-2 mt-4">
-                          <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-semibold rounded-full">BIP39</span>
-                          <span className="px-2.5 py-1 bg-white/5 text-muted-foreground text-xs font-medium rounded-full">BSV</span>
-                          <span className="px-2.5 py-1 bg-white/5 text-muted-foreground text-xs font-medium rounded-full">EVM</span>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <button
+                            onClick={() => startCreate("bsv")}
+                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-md shadow-primary/20 active:scale-95 transition-transform"
+                          >
+                            <PlusCircle className="w-4 h-4" /> Create Wallet
+                          </button>
+                          <button
+                            onClick={() => setView("import")}
+                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-amber-500/40 text-amber-300 font-bold text-sm hover:bg-amber-500/10 transition-colors"
+                          >
+                            <Download className="w-4 h-4" /> Import Seed
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => { setConnectTab("bsv"); setView("connect"); }}
+                          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-amber-500/30 hover:text-foreground transition-all"
+                        >
+                          <Link2 className="w-3.5 h-3.5" /> Connect existing BSV wallet (HandCash, RelayX, Panda…)
+                        </button>
+                      </div>
+
+                      {/* ② Multi-chain connect options */}
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest font-bold mb-2.5 px-0.5">Multi-chain wallets</p>
+                        <div className="space-y-1.5">
+
+                          {/* EVM */}
+                          <button
+                            onClick={() => { setConnectTab("evm"); setView("connect"); }}
+                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center text-xl shrink-0">🌐</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-foreground">EVM Wallets</div>
+                              <p className="text-[10px] text-muted-foreground truncate">MetaMask · Coinbase · Trust · OKX · Phantom + 7 more</p>
+                              <div className="flex gap-1 mt-1 flex-wrap">
+                                {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","FTM","CRO","LINEA","zkSync","Scroll","Mantle"].map(c => (
+                                  <span key={c} className="text-[8px] font-bold px-1 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded">{c}</span>
+                                ))}
+                              </div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                          </button>
+
+                          {/* Solana */}
+                          <button
+                            onClick={() => { setConnectTab("sol"); setView("connect"); }}
+                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-violet-500/40 hover:bg-violet-500/5 transition-all text-left"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center text-xl shrink-0">◎</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-foreground">Solana Wallets</div>
+                              <p className="text-[10px] text-muted-foreground">Phantom · Solflare · Backpack · Glow · Slope</p>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                          </button>
+
+                          {/* Bitcoin */}
+                          <button
+                            onClick={() => { setConnectTab("btc"); setView("connect"); }}
+                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-orange-500/40 hover:bg-orange-500/5 transition-all text-left"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center text-xl shrink-0">₿</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm text-foreground">Bitcoin Wallets</div>
+                              <p className="text-[10px] text-muted-foreground">Phantom · UniSat · Xverse · Leather · OYL — on-chain only, no Lightning</p>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                          </button>
+
+                          {/* TRON info row */}
+                          <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border/40 bg-secondary/15">
+                            <div className="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center text-xl shrink-0">🔴</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-sm text-foreground">TRON</span>
+                                <span className="text-[8px] font-black px-1 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded">TVM</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground">TRX pairs listed · connect via manual BSV address entry</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Import */}
-                      <div className="rounded-2xl border border-border bg-gradient-to-br from-violet-500/5 to-transparent p-5 hover:border-violet-500/40 transition-all cursor-pointer group"
-                        onClick={() => setView("import")}>
-                        <div className="flex items-start gap-4">
-                          <div className="w-11 h-11 rounded-xl bg-violet-500/15 flex items-center justify-center shrink-0 group-hover:bg-violet-500/25 transition-colors">
-                            <Download className="w-5 h-5 text-violet-400" />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-bold text-foreground text-base">Import Existing Wallet</h3>
-                            <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              Restore using your 12 or 24-word seed phrase from any BIP39-compatible wallet.
-                            </p>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-violet-400 shrink-0 mt-0.5 transition-colors" />
-                        </div>
-                        <div className="flex gap-2 mt-4">
-                          <span className="px-2.5 py-1 bg-violet-500/10 text-violet-400 text-xs font-semibold rounded-full">Seed Phrase</span>
-                          <span className="px-2.5 py-1 bg-white/5 text-muted-foreground text-xs font-medium rounded-full">12 or 24 words</span>
-                        </div>
+                      {/* ③ All supported chain badges */}
+                      <div className="flex flex-wrap gap-1 px-0.5">
+                        {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","FTM","CRO","LINEA","zkSync","Scroll","SOL","BTC","BSV","TRX"].map(c => (
+                          <span key={c} className="text-[9px] font-bold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-border/60 rounded">{c}</span>
+                        ))}
                       </div>
 
-                      {/* Connect Wallet */}
-                      <div className="rounded-2xl border border-border bg-gradient-to-br from-blue-500/5 to-transparent p-5 hover:border-blue-500/40 transition-all cursor-pointer group"
-                        onClick={() => setView("connect")}>
-                        <div className="flex items-start gap-4">
-                          <div className="w-11 h-11 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0 group-hover:bg-blue-500/25 transition-colors">
-                            <Link2 className="w-5 h-5 text-blue-400" />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-bold text-foreground text-base">Connect Existing Wallet</h3>
-                            <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                              MetaMask, Phantom, UniSat, Xverse, HandCash, RelayX and 20+ more. EVM · SOL · BTC · BSV.
-                            </p>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 shrink-0 mt-0.5 transition-colors" />
-                        </div>
-                        <div className="flex gap-2 mt-4">
-                          {["🦊", "👻", "🟠", "🔑", "✋", "⚡"].map(e => (
-                            <span key={e} className="text-xl">{e}</span>
-                          ))}
-                          <span className="text-sm text-muted-foreground self-center">+20 more</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3 p-4 bg-primary/5 text-primary rounded-xl border border-primary/10 mt-2">
+                      <div className="flex items-start gap-3 p-3.5 bg-primary/5 text-primary rounded-xl border border-primary/15">
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
-                          <span className="font-semibold">Non-custodial & Trustless.</span>{" "}
-                          OrahDEX never holds your funds or stores your seed phrase. All trades settle directly on-chain via BSV — the fastest settlement layer.
+                          <span className="font-semibold">Non-custodial.</span>{" "}
+                          OrahDEX never holds your keys. All trades settle directly on-chain via BSV — the fastest, highest-throughput settlement layer.
                         </p>
                       </div>
                     </motion.div>
@@ -1085,7 +1150,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 <button
                                   onClick={() => {
                                     connect({ address: bsvResolvedAddr, provider: "handcash", network: "bsv" });
-                                    handleClose();
+                                    goToPrep(bsvResolvedAddr, "bsv", "handcash");
                                   }}
                                   className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
                                 >
@@ -1321,6 +1386,150 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             BSV (Bitcoin SV) is OrahDEX's primary settlement currency — sub-cent fees, instant confirmation, unlimited scale.
                           </p>
                         </div>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {/* ── PREP (Wallet Setup) ── */}
+                  {view === "prep" && (
+                    <motion.div key="prep" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                      className="p-5 space-y-4">
+
+                      {/* Connected badge */}
+                      <div className="flex items-center gap-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+                        <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-green-400 text-sm">Wallet Connected</p>
+                          <p className="text-xs font-mono text-muted-foreground truncate">
+                            {prepAddr.length > 22 ? `${prepAddr.slice(0, 10)}…${prepAddr.slice(-8)}` : prepAddr}
+                          </p>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-green-400/70">
+                            {prepNetwork} · {prepProvider}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Step list */}
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest font-bold mb-2.5 px-0.5">Setup Checklist</p>
+                        <div className="space-y-2.5">
+
+                          {/* Step: Wallet Connected (always done) */}
+                          <div className="flex items-center gap-3 p-3.5 rounded-xl border border-green-500/35 bg-green-500/5">
+                            <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                              <Check className="w-4 h-4 text-green-400" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-sm text-foreground">Wallet Connected</p>
+                              <p className="text-[11px] text-muted-foreground">Your wallet is linked to OrahDEX</p>
+                            </div>
+                          </div>
+
+                          {/* Step: Fund */}
+                          <div className={`rounded-xl border transition-all ${prepStep === "fund" ? "border-primary/60 bg-primary/8 p-4" : "border-green-500/35 bg-green-500/5 p-3.5"}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${prepStep === "fund" ? "bg-primary/20" : "bg-green-500/20"}`}>
+                                {prepStep === "fund"
+                                  ? <span className="text-sm font-black text-primary">2</span>
+                                  : <Check className="w-4 h-4 text-green-400" />}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-bold text-sm text-foreground">Fund Your Wallet</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Deposit {prepNetwork === "bsv" ? "BSV" : prepNetwork === "evm" ? "ETH or tokens" : prepNetwork === "sol" ? "SOL" : "BTC"} to start trading
+                                </p>
+                              </div>
+                            </div>
+                            {prepStep === "fund" && (
+                              <div className="mt-3 space-y-2">
+                                <div className="flex items-center gap-2 bg-secondary/50 rounded-lg p-2.5">
+                                  <span className="flex-1 font-mono text-[11px] text-foreground break-all leading-relaxed">{prepAddr}</span>
+                                  <button
+                                    onClick={() => navigator.clipboard?.writeText(prepAddr)}
+                                    className="shrink-0 p-1.5 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => setPrepStep("approve")}
+                                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm"
+                                >
+                                  I've funded my wallet →
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Step: Enable Trading */}
+                          <div className={`rounded-xl border transition-all ${prepStep === "approve" ? "border-primary/60 bg-primary/8 p-4" : prepStep === "done" ? "border-green-500/35 bg-green-500/5 p-3.5" : "border-border opacity-50 p-3.5"}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${prepStep === "approve" ? "bg-primary/20" : prepStep === "done" ? "bg-green-500/20" : "bg-secondary/60"}`}>
+                                {prepStep === "done"
+                                  ? <Check className="w-4 h-4 text-green-400" />
+                                  : <span className={`text-sm font-black ${prepStep === "approve" ? "text-primary" : "text-muted-foreground"}`}>3</span>}
+                              </div>
+                              <div>
+                                <p className="font-bold text-sm text-foreground">Enable Trading</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {prepNetwork === "evm" ? "Approve token allowances in your wallet" : "Confirm wallet is ready for DEX swaps"}
+                                </p>
+                              </div>
+                            </div>
+                            {prepStep === "approve" && (
+                              <div className="mt-3 space-y-2">
+                                <div className="p-3 bg-blue-500/8 border border-blue-500/20 rounded-lg">
+                                  <p className="text-[11px] text-blue-300/90 leading-relaxed">
+                                    {prepNetwork === "evm"
+                                      ? "To trade ERC-20 tokens you'll need to approve allowances for each token in your wallet app. ETH trades require no approval."
+                                      : prepNetwork === "bsv"
+                                      ? "Your BSV wallet is ready for OrahDEX — no extra approvals needed. BSV is the native settlement currency."
+                                      : prepNetwork === "sol"
+                                      ? "Solana SPL tokens don't require separate approval steps. You're good to go."
+                                      : "Bitcoin trades use standard UTXO signing. Your wallet will prompt for each swap."}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => setPrepStep("done")}
+                                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm"
+                                >
+                                  {prepNetwork === "evm" ? "Got it — I'll approve in my wallet" : "All set →"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Done state */}
+                      {prepStep === "done" && (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
+                            <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
+                            <div>
+                              <p className="font-bold text-green-400">All set! Your wallet is ready.</p>
+                              <p className="text-xs text-muted-foreground">Start trading on OrahDEX now.</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleClose}
+                            className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-bold text-base shadow-lg shadow-primary/25"
+                          >
+                            Start Trading →
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Skip */}
+                      {prepStep !== "done" && (
+                        <button
+                          onClick={handleClose}
+                          className="w-full text-xs text-muted-foreground hover:text-foreground text-center py-2 transition-colors"
+                        >
+                          Skip setup — go straight to trading
+                        </button>
                       )}
                     </motion.div>
                   )}
