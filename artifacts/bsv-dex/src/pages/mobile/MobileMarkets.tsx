@@ -6,7 +6,6 @@ import { useWalletStore } from "@/store/useWalletStore";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { openReownModal, isReownReady } from "@/lib/reown";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
@@ -106,7 +105,7 @@ export function MobileMarkets() {
   const [buyCoin, setBuyCoin]     = useState("BSV");
   const handleBuy = (coin: string) => {
     setBuyCoin(coin);
-    if (isReownReady()) { openReownModal("OnRampProviders"); } else { setBuyOpen(true); }
+    setBuyOpen(true);
   };
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);

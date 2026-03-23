@@ -11,7 +11,6 @@ import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { Search, Star, ArrowRightLeft, CreditCard, Zap } from "lucide-react";
 import { Link } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { openReownModal, isReownReady } from "@/lib/reown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -106,7 +105,7 @@ export function Markets() {
   const [buyCoin, setBuyCoin] = useState("BSV");
   const handleBuy = (coin: string) => {
     setBuyCoin(coin);
-    if (isReownReady()) { openReownModal("OnRampProviders"); } else { setBuyOpen(true); }
+    setBuyOpen(true);
   };
 
   const { data: apiMarkets } = useGetMarkets();
