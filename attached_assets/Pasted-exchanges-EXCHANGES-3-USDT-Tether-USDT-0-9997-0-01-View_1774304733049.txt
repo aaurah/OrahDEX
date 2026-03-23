@@ -1,0 +1,252 @@
+exchanges
+#	EXCHANGES
+3	
+USDT
+Tether
+USDT
+$0.9997	-0.01%	View
+1	
+BTC
+Bitcoin
+BTC
+$70,632	+3.63%	View
+2	
+ETH
+Ethereum
+ETH
+$2148.55	+4.82%	View
+6	
+USDC
+USDC
+USDC
+$1.0000	+0.01%	View
+7	
+SOL
+Solana
+SOL
+$91.61	+6.60%	View
+4	
+XRP
+XRP
+XRP
+$1.43	+3.63%	View
+37	
+XAUT
+Tether Gold
+XAUT
+$4400.86	-2.35%	View
+5	
+BNB
+BNB
+BNB
+$638.25	+1.77%	View
+10	
+DOGE
+Dogecoin
+DOGE
+$0.0945	+5.19%	View
+22	
+USD1
+USD1
+USD1
+$0.9993	-0.01%	View
+42	
+PAXG
+PAX Gold
+PAXG
+$4411.15	-2.40%	View
+79	
+NIGHT
+Midnight
+NIGHT
+$0.0478	+13.05%	View
+13	
+ADA
+Cardano
+ADA
+$0.2621	+4.65%	View
+8	
+TRX
+TRON
+TRX
+$0.3049	-2.64%	View
+18	
+LINK
+Chainlink
+LINK
+$9.11	+5.27%	View
+30	
+SUI
+Sui
+SUI
+$0.9528	+5.47%	View
+15	
+HYPE
+Hyperliquid
+HYPE
+$37.72	-0.76%	View
+36	
+TAO
+Bittensor
+TAO
+$287.25	+9.12%	View
+55	
+PEPE
+Pepe
+PEPE
+$0.00000347	+5.96%	View
+24	
+LTC
+Litecoin
+LTC
+$55.68	+4.34%	View
+51	
+AAVE
+Aave
+AAVE
+$109.81	+3.56%	View
+26	
+AVAX
+Avalanche
+AVAX
+$9.53	+6.07%	View
+29	
+ZEC
+Zcash
+ZEC
+$227.78	+4.83%	View
+14	
+BCH
+Bitcoin Cash
+BCH
+$476.66	+2.21%	View
+41	
+UNI
+Uniswap
+UNI
+$3.58	+3.66%	View
+31	
+SHIB
+Shiba Inu
+SHIB
+$0.00000613	+8.20%	View
+50	
+NEAR
+NEAR Protocol
+NEAR
+$1.32	+3.16%	View
+52	
+ASTER
+Aster
+ASTER
+$0.6619	-0.67%	View
+76	
+APT
+Aptos
+APT
+$1.07	+15.89%	View
+39	
+DOT
+Polkadot
+DOT
+$1.42	+0.40%	View
+23	
+DAI
+Dai
+DAI
+$0.9999	-0.00%	View
+78	
+ENA
+Ethena
+ENA
+$0.0934	-1.75%	View
+82	
+TRUMP
+Official Trump
+TRUMP
+$3.26	+2.40%	View
+54	
+RLUSD
+Ripple USD
+RLUSD
+$1.0000	+0.03%	View
+198	
+KOGE
+KOGE
+KOGE
+$47.99	-0.01%	View
+84	
+FIL
+Filecoin
+FIL
+$0.9295	+9.69%	View
+21	
+XLM
+Stellar
+XLM
+$0.1665	+6.95%	View
+11	
+WBT
+WhiteBIT Coin
+WBT
+$54.74	+2.61%	View
+27	
+HBAR
+Hedera
+HBAR
+$0.0933	+4.88%	View
+67	
+WLD
+Worldcoin
+WLD
+$0.3252	+6.12%	View
+107	
+PENGU
+Pudgy Penguins
+PENGU
+$0.006983	+4.68%	View
+35	
+WLFI
+World Liberty Financial
+WLFI
+$0.1031	+6.16%	View
+120	
+SUN
+Sun Token
+SUN
+$0.0184	+0.11%	View
+17	
+XMR
+Monero
+XMR
+$350.90	-3.11%	View
+28	
+PYUSD
+PayPal USD
+PYUSD
+$0.9998	-0.03%	View
+100	
+FET
+Artificial Superintelligence Alliance
+FET
+$0.2270	+9.56%	View
+19	
+USDE
+Ethena USDe
+USDE
+$0.9992	-0.05%	View
+181	
+WIF
+dogwifhat
+WIF
+$0.1859	+9.21%	View
+32	
+TON
+Toncoin
+TON
+$1.31	+4.63%	View
+108	
+DASH
+Dash
+DASH
+$34.35	+6.51%	View
