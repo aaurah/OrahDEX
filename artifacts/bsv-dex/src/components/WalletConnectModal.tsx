@@ -753,9 +753,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                         <button
                           onClick={() => { setConnectTab("bsv"); setView("connect"); }}
-                          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-amber-500/30 hover:text-foreground transition-all"
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-amber-500/30 hover:text-foreground transition-all text-left"
                         >
-                          <Link2 className="w-3.5 h-3.5" /> Connect existing BSV wallet (HandCash, RelayX, Panda…)
+                          <Link2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Connect existing BSV wallet <span className="opacity-60">(HandCash, RelayX, Panda…)</span></span>
                         </button>
                       </div>
 
