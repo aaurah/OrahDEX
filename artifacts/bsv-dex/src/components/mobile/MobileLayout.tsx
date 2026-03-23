@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2 } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, CreditCard } from "lucide-react";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { shortenAddress } from "@/lib/utils";
 
 const TABS = [
@@ -18,6 +20,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
   const { address, disconnect } = useWalletStore();
+  const [buyOpen, setBuyOpen] = useState(false);
 
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
@@ -42,25 +45,29 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Wallet status */}
-        {address ? (
-          <div className="flex items-center gap-2">
+        {/* Right side: Buy + Wallet */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setBuyOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500/15 text-green-400 text-[11px] font-bold border border-green-500/25"
+          >
+            <CreditCard size={11} /> Buy
+          </button>
+
+          {address ? (
             <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               <span className="text-[11px] font-mono text-foreground">{shortenAddress(address)}</span>
             </div>
-            <button onClick={disconnect} className="text-[10px] text-muted-foreground px-2 py-1 rounded-lg hover:bg-white/5">
-              Disconnect
+          ) : (
+            <button
+              onClick={() => openWallet()}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-primary text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold shadow-md shadow-primary/20"
+            >
+              Connect
             </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => openWallet()}
-            className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-primary text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold shadow-md shadow-primary/20"
-          >
-            Connect
-          </button>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Page content */}
@@ -95,6 +102,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
+      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} />
     </div>
   );
 }
