@@ -188,18 +188,9 @@ export function Markets() {
       {/* Header */}
       <div className="px-6 lg:px-10 pt-8 pb-4 border-b border-border bg-card/40">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
-              <p className="text-xs text-primary/70 italic mt-0.5">✦ Trade means DEX</p>
-            </div>
-            <button
-              onClick={() => handleBuy("BSV")}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity shadow-lg"
-            >
-              <CreditCard className="w-4 h-4" />
-              Buy Crypto
-            </button>
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
+            <p className="text-xs text-primary/70 italic mt-0.5">✦ Trade means DEX</p>
           </div>
 
           {/* Main tabs */}
@@ -287,7 +278,7 @@ export function Markets() {
             </div>
           )}
 
-          {/* Search + descriptor row */}
+          {/* Search + descriptor + Buy row */}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <div className="relative max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -305,6 +296,15 @@ export function Markets() {
                 {tab === "usd" ? `All pairs quoted in ${usdSub}` : meta.desc}
                 {" · "}<span className={meta.color}>{filtered.length} markets</span>
               </span>
+            </div>
+            <div className="ml-auto">
+              <button
+                onClick={() => handleBuy("BSV")}
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity shadow-lg"
+              >
+                <CreditCard className="w-4 h-4" />
+                Buy Crypto
+              </button>
             </div>
           </div>
         </div>
