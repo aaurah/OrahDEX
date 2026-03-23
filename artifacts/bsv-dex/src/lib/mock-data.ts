@@ -242,6 +242,172 @@ export const BNB_MARKETS: any[] = [
   bnbPair("XLM",   0.11,    0.92,    8_000_000),
 ];
 
+// ─── MATIC PAIRS (Polygon) ────────────────────────────────────────────────────
+const MATIC_PRICE = 0.72;
+function maticPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / MATIC_PRICE;
+  return spot(base, "MATIC", p, chg, vol / MATIC_PRICE);
+}
+export const MATIC_MARKETS: any[] = [
+  maticPair("BTC",   68310,  -1.85, 2_450_000_000),
+  maticPair("ETH",   3415,    1.32,  950_000_000),
+  maticPair("BNB",   392,     0.88,  320_000_000),
+  maticPair("SOL",   148.5,   3.21,  420_000_000),
+  maticPair("XRP",   0.5242, -0.64,  110_000_000),
+  maticPair("ADA",   0.4421, -2.10,   45_000_000),
+  maticPair("DOGE",  0.1185,  5.42,   78_000_000),
+  maticPair("DOT",   6.82,   -1.20,   38_000_000),
+  maticPair("AVAX",  36.4,    2.15,   62_000_000),
+  maticPair("LINK",  14.52,   3.64,   48_000_000),
+  maticPair("UNI",   9.84,    1.55,   22_000_000),
+  maticPair("ATOM",  8.42,   -0.78,   18_000_000),
+  maticPair("LTC",   78.2,    0.45,   32_000_000),
+  maticPair("BCH",   384,     1.10,   28_000_000),
+  maticPair("BSV",   55.42,   4.41,   18_500_000),
+  maticPair("TRX",   0.1205,  2.31,   35_000_000),
+  maticPair("NEAR",  6.55,    4.82,   24_000_000),
+  maticPair("APT",   10.5,    5.21,   18_000_000),
+  maticPair("ARB",   1.12,    2.85,   28_000_000),
+  maticPair("OP",    2.41,    3.10,   22_000_000),
+  maticPair("SUI",   1.22,    6.45,   35_000_000),
+  maticPair("INJ",   28.4,    4.21,   15_000_000),
+];
+
+// ─── AVAX PAIRS (Avalanche) ───────────────────────────────────────────────────
+const AVAX_PRICE = 36;
+function avaxPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / AVAX_PRICE;
+  return spot(base, "AVAX", p, chg, vol / AVAX_PRICE);
+}
+export const AVAX_MARKETS: any[] = [
+  avaxPair("BTC",   68310,  -1.85, 2_450_000_000),
+  avaxPair("ETH",   3415,    1.32,  950_000_000),
+  avaxPair("BNB",   392,     0.88,  320_000_000),
+  avaxPair("SOL",   148.5,   3.21,  420_000_000),
+  avaxPair("XRP",   0.5242, -0.64,  110_000_000),
+  avaxPair("ADA",   0.4421, -2.10,   45_000_000),
+  avaxPair("DOGE",  0.1185,  5.42,   78_000_000),
+  avaxPair("DOT",   6.82,   -1.20,   38_000_000),
+  avaxPair("MATIC", 0.718,  -0.92,   54_000_000),
+  avaxPair("LINK",  14.52,   3.64,   48_000_000),
+  avaxPair("UNI",   9.84,    1.55,   22_000_000),
+  avaxPair("ATOM",  8.42,   -0.78,   18_000_000),
+  avaxPair("LTC",   78.2,    0.45,   32_000_000),
+  avaxPair("BCH",   384,     1.10,   28_000_000),
+  avaxPair("BSV",   55.42,   4.41,   18_500_000),
+  avaxPair("NEAR",  6.55,    4.82,   24_000_000),
+  avaxPair("APT",   10.5,    5.21,   18_000_000),
+  avaxPair("ARB",   1.12,    2.85,   28_000_000),
+  avaxPair("OP",    2.41,    3.10,   22_000_000),
+  avaxPair("SUI",   1.22,    6.45,   35_000_000),
+  avaxPair("INJ",   28.4,    4.21,   15_000_000),
+];
+
+// ─── ARB PAIRS (Arbitrum) ─────────────────────────────────────────────────────
+const ARB_PRICE = 1.1;
+function arbPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / ARB_PRICE;
+  return spot(base, "ARB", p, chg, vol / ARB_PRICE);
+}
+export const ARB_MARKETS: any[] = [
+  arbPair("BTC",   68310,  -1.85, 2_450_000_000),
+  arbPair("ETH",   3415,    1.32,  950_000_000),
+  arbPair("BNB",   392,     0.88,  320_000_000),
+  arbPair("SOL",   148.5,   3.21,  420_000_000),
+  arbPair("XRP",   0.5242, -0.64,  110_000_000),
+  arbPair("ADA",   0.4421, -2.10,   45_000_000),
+  arbPair("DOGE",  0.1185,  5.42,   78_000_000),
+  arbPair("DOT",   6.82,   -1.20,   38_000_000),
+  arbPair("AVAX",  36.4,    2.15,   62_000_000),
+  arbPair("MATIC", 0.718,  -0.92,   54_000_000),
+  arbPair("LINK",  14.52,   3.64,   48_000_000),
+  arbPair("UNI",   9.84,    1.55,   22_000_000),
+  arbPair("ATOM",  8.42,   -0.78,   18_000_000),
+  arbPair("NEAR",  6.55,    4.82,   24_000_000),
+  arbPair("OP",    2.41,    3.10,   22_000_000),
+  arbPair("SUI",   1.22,    6.45,   35_000_000),
+  arbPair("INJ",   28.4,    4.21,   15_000_000),
+  arbPair("AAVE",  96.5,    1.82,   12_000_000),
+  arbPair("CRV",   0.382,  -1.15,   18_000_000),
+];
+
+// ─── OP PAIRS (Optimism) ─────────────────────────────────────────────────────
+const OP_PRICE = 2.4;
+function opPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / OP_PRICE;
+  return spot(base, "OP", p, chg, vol / OP_PRICE);
+}
+export const OP_MARKETS: any[] = [
+  opPair("BTC",   68310,  -1.85, 2_450_000_000),
+  opPair("ETH",   3415,    1.32,  950_000_000),
+  opPair("BNB",   392,     0.88,  320_000_000),
+  opPair("SOL",   148.5,   3.21,  420_000_000),
+  opPair("XRP",   0.5242, -0.64,  110_000_000),
+  opPair("ADA",   0.4421, -2.10,   45_000_000),
+  opPair("DOGE",  0.1185,  5.42,   78_000_000),
+  opPair("DOT",   6.82,   -1.20,   38_000_000),
+  opPair("AVAX",  36.4,    2.15,   62_000_000),
+  opPair("MATIC", 0.718,  -0.92,   54_000_000),
+  opPair("LINK",  14.52,   3.64,   48_000_000),
+  opPair("UNI",   9.84,    1.55,   22_000_000),
+  opPair("ATOM",  8.42,   -0.78,   18_000_000),
+  opPair("NEAR",  6.55,    4.82,   24_000_000),
+  opPair("ARB",   1.12,    2.85,   28_000_000),
+  opPair("SUI",   1.22,    6.45,   35_000_000),
+  opPair("INJ",   28.4,    4.21,   15_000_000),
+  opPair("AAVE",  96.5,    1.82,   12_000_000),
+  opPair("CRV",   0.382,  -1.15,   18_000_000),
+];
+
+// ─── FTM PAIRS (Fantom) ───────────────────────────────────────────────────────
+const FTM_PRICE = 0.65;
+function ftmPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / FTM_PRICE;
+  return spot(base, "FTM", p, chg, vol / FTM_PRICE);
+}
+export const FTM_MARKETS: any[] = [
+  ftmPair("BTC",   68310,  -1.85, 2_450_000_000),
+  ftmPair("ETH",   3415,    1.32,  950_000_000),
+  ftmPair("BNB",   392,     0.88,  320_000_000),
+  ftmPair("SOL",   148.5,   3.21,  420_000_000),
+  ftmPair("XRP",   0.5242, -0.64,  110_000_000),
+  ftmPair("ADA",   0.4421, -2.10,   45_000_000),
+  ftmPair("DOGE",  0.1185,  5.42,   78_000_000),
+  ftmPair("DOT",   6.82,   -1.20,   38_000_000),
+  ftmPair("AVAX",  36.4,    2.15,   62_000_000),
+  ftmPair("MATIC", 0.718,  -0.92,   54_000_000),
+  ftmPair("LINK",  14.52,   3.64,   48_000_000),
+  ftmPair("UNI",   9.84,    1.55,   22_000_000),
+  ftmPair("ATOM",  8.42,   -0.78,   18_000_000),
+  ftmPair("NEAR",  6.55,    4.82,   24_000_000),
+  ftmPair("ARB",   1.12,    2.85,   28_000_000),
+  ftmPair("OP",    2.41,    3.10,   22_000_000),
+  ftmPair("AAVE",  96.5,    1.82,   12_000_000),
+];
+
+// ─── CRO PAIRS (Cronos) ───────────────────────────────────────────────────────
+const CRO_PRICE = 0.13;
+function croPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / CRO_PRICE;
+  return spot(base, "CRO", p, chg, vol / CRO_PRICE);
+}
+export const CRO_MARKETS: any[] = [
+  croPair("BTC",   68310,  -1.85, 2_450_000_000),
+  croPair("ETH",   3415,    1.32,  950_000_000),
+  croPair("BNB",   392,     0.88,  320_000_000),
+  croPair("SOL",   148.5,   3.21,  420_000_000),
+  croPair("XRP",   0.5242, -0.64,  110_000_000),
+  croPair("ADA",   0.4421, -2.10,   45_000_000),
+  croPair("DOGE",  0.1185,  5.42,   78_000_000),
+  croPair("DOT",   6.82,   -1.20,   38_000_000),
+  croPair("AVAX",  36.4,    2.15,   62_000_000),
+  croPair("MATIC", 0.718,  -0.92,   54_000_000),
+  croPair("LINK",  14.52,   3.64,   48_000_000),
+  croPair("UNI",   9.84,    1.55,   22_000_000),
+  croPair("ATOM",  8.42,   -0.78,   18_000_000),
+  croPair("NEAR",  6.55,    4.82,   24_000_000),
+];
+
 // ─── ETH PAIRS ────────────────────────────────────────────────────────────────
 const ETH_PRICE = 3415;
 function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any {
