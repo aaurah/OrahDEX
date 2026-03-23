@@ -257,23 +257,25 @@ export function MobileMarkets() {
         )}
       </div>
 
-      {/* ── Column headers ── */}
+      {/* ── Column headers ── aligned to match MexcRow exactly ── */}
       <div className="flex items-center px-4 py-2 border-b border-border/30 bg-background/80">
+        {/* Spacer matching the star button (13px icon + mr-2.5 = ~23px) */}
+        <div className="w-[23px] mr-2.5 shrink-0" />
         <button
           onClick={() => toggleSort("base")}
-          className="flex items-center text-[11px] text-muted-foreground font-medium flex-1"
+          className="flex items-center text-[11px] text-muted-foreground font-semibold flex-1"
         >
           Pair <SortIcon k="base" />
         </button>
         <button
           onClick={() => toggleSort("price")}
-          className="flex items-center justify-end text-[11px] text-muted-foreground font-medium w-32"
+          className="flex items-center justify-end text-[11px] text-muted-foreground font-semibold w-32 pr-3"
         >
           Price <SortIcon k="price" />
         </button>
         <button
           onClick={() => toggleSort("chg")}
-          className="flex items-center justify-end text-[11px] text-muted-foreground font-medium w-20"
+          className="flex items-center justify-center text-[11px] text-muted-foreground font-semibold w-[68px]"
         >
           Change <SortIcon k="chg" />
         </button>
