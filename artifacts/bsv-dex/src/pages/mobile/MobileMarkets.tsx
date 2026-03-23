@@ -198,24 +198,43 @@ export function MobileMarkets() {
 
         {/* Main category tabs */}
         <div ref={tabsRef} className="flex overflow-x-auto no-scrollbar px-4 pb-0 gap-0">
-          {CATS.map(c => (
-            <button
-              key={c.id}
-              onClick={() => { setCat(c.id); setSearch(""); }}
-              className={cn(
-                "shrink-0 px-3.5 py-2.5 text-[13px] font-medium whitespace-nowrap relative transition-colors",
-                cat === c.id
-                  ? "text-foreground font-bold"
+          {CATS.map(c => {
+            const isBsv = c.id === "bsv";
+            const isActive = cat === c.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => { setCat(c.id); setSearch(""); }}
+                className={cn(
+                  "shrink-0 px-3.5 py-2.5 text-[13px] font-medium whitespace-nowrap relative transition-colors",
+                  isActive && isBsv ? "text-amber-400 font-bold"
+                  : isActive ? "text-foreground font-bold"
+                  : isBsv ? "text-amber-500/80 hover:text-amber-400"
                   : "text-muted-foreground hover:text-foreground/80"
-              )}
-            >
-              {c.label}
-              {cat === c.id && (
-                <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-primary rounded-full" />
-              )}
-            </button>
-          ))}
+                )}
+              >
+                {isBsv ? "⚡ BSV" : c.label}
+                {isActive && !isBsv && (
+                  <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-primary rounded-full" />
+                )}
+                {isActive && isBsv && (
+                  <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-amber-500 rounded-full" />
+                )}
+              </button>
+            );
+          })}
         </div>
+
+        {/* BSV fastest settlement banner — mobile */}
+        {cat === "bsv" && (
+          <div className="mx-4 mt-2 mb-0 flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+            <span className="text-base leading-none">⚡</span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-amber-400 leading-tight">World's Fastest Settlement — BSV</p>
+              <p className="text-[10px] text-amber-300/60 leading-tight mt-0.5">On-chain in &lt;5s · ~$0.001 fee · No bridges</p>
+            </div>
+          </div>
+        )}
 
         {/* USD sub-tabs — only visible when USD tab is active */}
         {cat === "usd" && (

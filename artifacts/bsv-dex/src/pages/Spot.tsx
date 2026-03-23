@@ -120,7 +120,7 @@ export function SpotTrading() {
   }, [allMarkets]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-5.75rem)] bg-background overflow-hidden">
       {/* Ticker Header */}
       <div className="flex items-center gap-6 px-4 py-3 border-b border-border bg-card shrink-0">
         <div>
@@ -155,6 +155,16 @@ export function SpotTrading() {
         <div className="hidden lg:flex flex-col">
           <span className="text-xs text-muted-foreground">24h Vol({symbol.split('-')[0]})</span>
           <span className="text-sm font-mono text-foreground mt-0.5">{formatVolume(ticker.volume)}</span>
+        </div>
+
+        {/* BSV Settlement Badge — always visible, since all trades settle on BSV */}
+        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/25 rounded-xl shrink-0">
+          <span className="text-sm leading-none animate-pulse">⚡</span>
+          <div className="hidden sm:block">
+            <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider leading-tight">BSV Settlement</p>
+            <p className="text-[9px] text-amber-300/60 leading-tight">Fastest · &lt;5s · ~$0.001</p>
+          </div>
+          <span className="sm:hidden text-[10px] font-bold text-amber-400">BSV</span>
         </div>
       </div>
 
@@ -210,23 +220,32 @@ export function SpotTrading() {
 
               {/* Quote tabs */}
               <div className="flex px-2 pb-1 gap-1 shrink-0 overflow-x-auto scrollbar-hide">
-                {QUOTE_TABS.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setQuoteTab(t.id)}
-                    className={cn(
-                      "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
-                      quoteTab === t.id
-                        ? "bg-primary/15 border-primary/40 text-primary"
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60"
-                    )}
-                  >
-                    {t.label}
-                    {quoteCounts[t.id] > 0 && (
-                      <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
-                    )}
-                  </button>
-                ))}
+                {QUOTE_TABS.map(t => {
+                  const isBsv = t.id === "BSV";
+                  const isActive = quoteTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setQuoteTab(t.id)}
+                      className={cn(
+                        "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
+                        isActive && isBsv
+                          ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                          : isActive
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : isBsv
+                          ? "border-amber-500/30 text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10"
+                          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                      )}
+                    >
+                      {isBsv && <span className="mr-0.5">⚡</span>}
+                      {t.label}
+                      {quoteCounts[t.id] > 0 && (
+                        <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Column headers */}
