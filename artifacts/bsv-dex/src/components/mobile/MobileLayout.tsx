@@ -30,23 +30,28 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header ── */}
-      <div className="shrink-0 flex items-center justify-between px-4 h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50">
-        {/* Logo — tapping goes to home */}
-        <button onClick={() => navigate("/")} className="flex items-center gap-2 active:opacity-70 transition-opacity">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
-            <span className="text-white font-black text-[13px] leading-none select-none">O</span>
-          </div>
-          <div className="flex flex-col leading-none gap-0.5">
-            <span className="font-extrabold text-[15px] tracking-tight text-foreground leading-none">
-              Orah<span className="text-primary">DEX</span>
-            </span>
-            <span className="text-[8px] text-muted-foreground tracking-widest uppercase font-medium leading-none">Trade means DEX</span>
-          </div>
+      {/* ── Global brand header — grid: left-spacer | centre-logo | right-buttons ── */}
+      <div className="shrink-0 grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
+        style={{ gridTemplateColumns: "1fr auto 1fr" }}>
+
+        {/* Col 1: empty — equals Col 3 width so logo is truly centred */}
+        <div />
+
+        {/* Col 2: logo + slogan, horizontally centred in its auto column */}
+        <button
+          onClick={() => navigate("/")}
+          className="flex flex-col items-center justify-center px-3 active:opacity-70 transition-opacity whitespace-nowrap"
+        >
+          <span className="font-extrabold text-[16px] tracking-tight text-foreground leading-none">
+            Orah<span className="text-primary">DEX</span>
+          </span>
+          <span className="text-[7px] text-muted-foreground tracking-wide uppercase font-semibold leading-none mt-0.5">
+            Trade means DEX
+          </span>
         </button>
 
-        {/* Right side: Buy + Wallet */}
-        <div className="flex items-center gap-2">
+        {/* Col 3: Buy + Wallet, right-aligned */}
+        <div className="flex items-center justify-end gap-2 pr-4">
           <button
             onClick={() => setBuyOpen(true)}
             className="flex items-center gap-1 px-3 py-[6px] rounded-lg bg-green-500 text-white text-[12px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
