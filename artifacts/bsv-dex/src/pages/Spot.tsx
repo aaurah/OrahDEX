@@ -9,7 +9,8 @@ import { RecentTrades } from "@/components/trading/RecentTrades";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
-import { ExternalLink, CheckCircle2, Clock, Search, BookOpen, BarChart2 } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, Search, BookOpen, BarChart2, ShoppingCart } from "lucide-react";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 type BottomTab = "open" | "history" | "trades";
 type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
@@ -51,6 +52,7 @@ export function SpotTrading() {
   const [leftTab, setLeftTab] = useState<LeftTab>("markets");
   const [quoteTab, setQuoteTab] = useState<QuoteTab>("USDT");
   const [marketSearch, setMarketSearch] = useState("");
+  const [buyOpen, setBuyOpen] = useState(false);
 
   const symbol = rawSymbol.replace(/-/g, '/');
   const [base, quote] = rawSymbol.split("-");
@@ -204,9 +206,9 @@ export function SpotTrading() {
           {/* Markets Panel */}
           {leftTab === "markets" && (
             <div className="flex-1 flex flex-col min-h-0">
-              {/* Search */}
-              <div className="px-2 pt-2 pb-1 shrink-0">
-                <div className="relative">
+              {/* Search + Buy */}
+              <div className="px-2 pt-2 pb-1 shrink-0 flex items-center gap-1.5">
+                <div className="relative flex-1">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <input
                     type="text"
@@ -216,6 +218,13 @@ export function SpotTrading() {
                     className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
                   />
                 </div>
+                <button
+                  onClick={() => setBuyOpen(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 active:scale-95 transition-all shrink-0 whitespace-nowrap"
+                >
+                  <ShoppingCart className="w-3 h-3" />
+                  Buy
+                </button>
               </div>
 
               {/* Quote tabs */}
@@ -493,6 +502,8 @@ export function SpotTrading() {
           </div>
         </div>
       </div>
+
+      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin={base} />
     </div>
   );
 }
