@@ -28,17 +28,10 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex flex-col h-svh bg-background overflow-hidden">
+    <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header — safe-area top is absorbed as padding ── */}
-      <div
-        className="shrink-0 flex items-center justify-between px-4 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top, 0px) + 10px)",
-          paddingBottom: "10px",
-          minHeight: "48px",
-        }}
-      >
+      {/* ── Global brand header ── */}
+      <div className="shrink-0 flex items-center justify-between px-4 h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50">
         {/* Logo — tapping goes to home */}
         <button onClick={() => navigate("/")} className="flex items-center gap-2 active:opacity-70 transition-opacity">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
