@@ -29,19 +29,43 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex flex-col h-svh bg-background overflow-hidden">
+
+      {/* ── Safe-area top spacer (notch / Dynamic Island / status bar) ──
+          This div is behind the system UI and matches the card background so
+          there is no colour leak around a notch.                           */}
+      <div
+        className="shrink-0 bg-card/95"
+        style={{ height: "env(safe-area-inset-top, 0px)" }}
+      />
+
+      {/* ── BSV ticker strip ── */}
+      <div className="shrink-0 h-6 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/25 flex items-center overflow-hidden">
+        <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
+          {[0,1,2].map(i => (
+            <span key={i} className="flex items-center gap-4 px-4 text-[10px] font-semibold text-amber-300">
+              <span className="flex items-center gap-1"><span className="animate-pulse text-amber-400">⚡</span> BSV — Fastest Settlement</span>
+              <span className="text-amber-500">·</span>
+              <span>No Bridges. No L2s.</span>
+              <span className="text-amber-500">·</span>
+              <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
+              <span className="text-amber-500">·</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
       {/* ── Global brand header ── */}
-      <div className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+      <div className="shrink-0 flex items-center justify-between px-4 h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50">
         {/* Logo — tapping goes to home */}
         <button onClick={() => navigate("/")} className="flex items-center gap-2 active:opacity-70 transition-opacity">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
-            <span className="text-white font-black text-[11px] leading-none select-none">O</span>
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
+            <span className="text-white font-black text-[13px] leading-none select-none">O</span>
           </div>
-          <div className="flex flex-col leading-none">
-            <span className="font-extrabold text-sm tracking-tight text-foreground">
+          <div className="flex flex-col leading-none gap-0.5">
+            <span className="font-extrabold text-[15px] tracking-tight text-foreground leading-none">
               Orah<span className="text-primary">DEX</span>
             </span>
-            <span className="text-[8px] text-muted-foreground tracking-widest uppercase font-medium">Trade means DEX</span>
+            <span className="text-[8px] text-muted-foreground tracking-widest uppercase font-medium leading-none">Trade means DEX</span>
           </div>
         </button>
 
@@ -49,19 +73,19 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setBuyOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-green-500 text-white text-[11px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
+            className="flex items-center gap-1 px-3 py-[6px] rounded-lg bg-green-500 text-white text-[12px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform"
           >
-            <CreditCard size={11} /> Buy
+            <CreditCard size={12} /> Buy
           </button>
 
           {address ? (
             <button
               onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2 py-1 rounded-lg active:opacity-70 transition-opacity"
+              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
-              <div className="flex flex-col items-start">
-                <span className="text-[11px] font-mono text-foreground leading-tight">{shortenAddress(address)}</span>
+              <div className="flex flex-col items-start min-w-0">
+                <span className="text-[11px] font-mono text-foreground leading-tight truncate">{shortenAddress(address)}</span>
                 {balance && (
                   <span className="text-[9px] text-green-400 font-semibold leading-tight">{balance} ETH</span>
                 )}
@@ -70,7 +94,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           ) : (
             <button
               onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-primary text-white px-3 py-1.5 rounded-lg text-[11px] font-semibold shadow-md shadow-primary/20"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-primary text-white px-3.5 py-[7px] rounded-lg text-[12px] font-semibold shadow-md shadow-primary/20 active:opacity-80 transition-opacity"
             >
               Connect
             </button>
@@ -83,9 +107,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* Bottom tab bar — 6 tabs, no wallet tab */}
-      <div
-        className="shrink-0 flex items-stretch border-t border-border bg-background/95 backdrop-blur"
+      {/* Bottom tab bar — 6 tabs */}
+      <div className="shrink-0 flex items-stretch border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {TABS.map(tab => {
@@ -94,14 +117,14 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <button
               key={tab.path}
               onClick={() => navigate(tab.path)}
-              className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-colors"
+              className="flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors active:bg-white/5"
             >
               <tab.Icon
-                size={22}
+                size={20}
                 className={active ? "text-primary" : "text-muted-foreground"}
                 strokeWidth={active ? 2.5 : 1.5}
               />
-              <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
+              <span className={`text-[10px] font-medium ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
                 {tab.label}
               </span>
             </button>
