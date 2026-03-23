@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
+import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
@@ -82,6 +83,20 @@ const ALL_MOCK = () => [
 ].map(normalise);
 
 export function Markets() {
+  useSEO({
+    title: "Crypto Markets — 226+ Trading Pairs",
+    description: "Live cryptocurrency prices and markets on OrahDEX. Trade 226+ spot pairs including BTC, ETH, BSV, BCH, SOL, BNB and more with real-time CoinGecko data.",
+    keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, OrahDEX markets",
+    url: "/",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      "name": "OrahDEX Cryptocurrency Markets",
+      "description": "Live cryptocurrency trading pairs on OrahDEX",
+      "url": "https://orahdex.replit.app/"
+    }
+  });
+
   const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");

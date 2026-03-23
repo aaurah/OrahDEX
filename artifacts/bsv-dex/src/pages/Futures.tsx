@@ -1,4 +1,5 @@
 import { useParams } from "wouter";
+import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
@@ -111,6 +112,22 @@ function useFundingCountdown() {
 export function FuturesTrading() {
   const { symbol: rawSymbol = "BSV-USDT-PERP" } = useParams();
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
+  const seoBase = rawSymbol.split("-")[0];
+
+  useSEO({
+    title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
+    description: `Trade ${seoBase} perpetual futures on OrahDEX with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
+    keywords: `${seoBase} futures, ${seoBase} perpetual, ${seoBase} leverage, crypto futures, perp trading, ${rawSymbol}, OrahDEX futures`,
+    url: `/futures/${rawSymbol}`,
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": `${seoBase} Perpetual Futures on OrahDEX`,
+      "description": `${seoBase} perpetual futures with up to 100x leverage, cross and isolated margin`,
+      "url": `https://orahdex.replit.app/futures/${rawSymbol}`
+    }
+  });
+
   const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol));
   const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });

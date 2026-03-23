@@ -1,4 +1,5 @@
 import { useGetPortfolio } from "@workspace/api-client-react";
+import { useSEO } from "@/hooks/useSEO";
 import { MOCK_PORTFOLIO } from "@/lib/mock-data";
 import { useWalletStore } from "@/store/useWalletStore";
 import { formatPrice, formatPercent, cn, shortenAddress } from "@/lib/utils";
@@ -8,6 +9,20 @@ import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 
 export function Portfolio() {
+  useSEO({
+    title: "Portfolio — Track Your Crypto Assets",
+    description: "View and manage your entire crypto portfolio on OrahDEX. Track balances, P&L, trade history, and asset allocation across all connected wallets.",
+    keywords: "crypto portfolio, asset tracker, wallet balance, P&L tracker, trade history, OrahDEX portfolio",
+    url: "/portfolio",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "OrahDEX Portfolio",
+      "description": "Cryptocurrency portfolio tracker and asset manager",
+      "url": "https://orahdex.replit.app/portfolio"
+    }
+  });
+
   const { address } = useWalletStore();
   const { data: apiPortfolio, isLoading } = useGetPortfolio(
     { walletAddress: address || '' }, 

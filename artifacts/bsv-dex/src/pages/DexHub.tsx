@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
@@ -84,6 +85,20 @@ const SORT_LABELS: Record<SortKey, string> = {
 };
 
 export function DexHub() {
+  useSEO({
+    title: "Market Hub — Explore Cross-Chain DEX Data",
+    description: "Explore aggregated DEX data across all chains on OrahDEX Market Hub. Track volumes, liquidity, and top tokens from Uniswap, PancakeSwap, BSV DEX and more.",
+    keywords: "DEX hub, crypto market data, cross-chain DEX, Uniswap, PancakeSwap, liquidity data, on-chain trading, OrahDEX",
+    url: "/dex",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "OrahDEX Market Hub",
+      "description": "Cross-chain DEX market data aggregator",
+      "url": "https://orahdex.replit.app/dex"
+    }
+  });
+
   const [, navigate] = useLocation();
   const [search, setSearch]   = useState("");
   const [exType, setExType]   = useState<ExType>("all");
