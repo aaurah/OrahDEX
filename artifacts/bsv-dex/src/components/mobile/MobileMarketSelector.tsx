@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import {
-  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
+  USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
+  BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -31,11 +32,17 @@ function normalise(m: any) {
   return { symbol, base, quote, price, chg, type };
 }
 
-type Cat = "favorites" | "usdt" | "new" | "btc" | "eth" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "futures";
+type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
+const USD_SUBS: UsdSub[] = ["USDT", "USDC", "TUSD", "USDD"];
+const STABLE_MOCK: Record<UsdSub, any[]> = {
+  USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
+};
+
+type Cat = "favorites" | "usd" | "new" | "btc" | "eth" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
-  { id: "usdt",      label: "USDT" },
+  { id: "usd",       label: "USD" },
   { id: "new",       label: "NEW" },
   { id: "btc",       label: "BTC" },
   { id: "eth",       label: "ETH" },
@@ -48,14 +55,14 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "futures",   label: "Futures" },
 ];
 
-function getRows(cat: Cat, apiAll: ReturnType<typeof normalise>[], favorites: Set<string>) {
+function getRows(cat: Cat, usdSub: UsdSub, apiAll: ReturnType<typeof normalise>[], favorites: Set<string>) {
   const hasApi = apiAll.length > 0;
   switch (cat) {
     case "favorites": {
-      const pool = hasApi ? apiAll : [...USDT_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS].map(normalise);
+      const pool = hasApi ? apiAll : [...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS, ...BSV_MARKETS, ...BTC_MARKETS].map(normalise);
       return pool.filter(m => favorites.has(m.symbol));
     }
-    case "usdt":    return hasApi ? apiAll.filter(m => m.quote === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
+    case "usd":     return hasApi ? apiAll.filter(m => m.quote === usdSub && m.type === "spot") : STABLE_MOCK[usdSub].map(normalise);
     case "new":     return NEW_MARKETS.map(normalise);
     case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC") : BTC_MARKETS.map(normalise);
     case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH") : ETH_MARKETS.map(normalise);
@@ -78,7 +85,8 @@ interface Props {
 
 export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
   const [, navigate] = useLocation();
-  const [cat, setCat]         = useState<Cat>("usdt");
+  const [cat, setCat]         = useState<Cat>("usd");
+  const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
@@ -98,7 +106,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
     ? apiData.map(normalise)
     : [];
 
-  let rows = getRows(cat, apiAll, favorites);
+  let rows = getRows(cat, usdSub, apiAll, favorites);
 
   if (search) {
     const q = search.toUpperCase();
@@ -199,6 +207,26 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
             </button>
           ))}
         </div>
+
+        {/* USD sub-tabs (USDT / USDC / TUSD / USDD) */}
+        {cat === "usd" && (
+          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 shrink-0">
+            {USD_SUBS.map(s => (
+              <button
+                key={s}
+                onClick={() => setUsdSub(s)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-[11px] font-semibold transition-colors",
+                  usdSub === s
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary/60 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Column headers */}
         <div className="flex items-center px-4 py-1.5 border-b border-border/30 shrink-0">
