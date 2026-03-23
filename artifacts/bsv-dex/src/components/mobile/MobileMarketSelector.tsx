@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import {
-  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS,
+  USDT_MARKETS, BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -31,13 +31,15 @@ function normalise(m: any) {
   return { symbol, base, quote, price, chg, type };
 }
 
-type Cat = "favorites" | "usdt" | "new" | "btc" | "bsv" | "ai" | "sol" | "meme" | "defi" | "futures";
+type Cat = "favorites" | "usdt" | "new" | "btc" | "eth" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
   { id: "usdt",      label: "USDT" },
   { id: "new",       label: "NEW" },
   { id: "btc",       label: "BTC" },
+  { id: "eth",       label: "ETH" },
+  { id: "bch",       label: "BCH" },
   { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
   { id: "sol",       label: "SOL" },
@@ -56,6 +58,8 @@ function getRows(cat: Cat, apiAll: ReturnType<typeof normalise>[], favorites: Se
     case "usdt":    return hasApi ? apiAll.filter(m => m.quote === "USDT" && m.type === "spot") : USDT_MARKETS.map(normalise);
     case "new":     return NEW_MARKETS.map(normalise);
     case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC") : BTC_MARKETS.map(normalise);
+    case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH") : ETH_MARKETS.map(normalise);
+    case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH") : BCH_MARKETS.map(normalise);
     case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV") : BSV_MARKETS.map(normalise);
     case "ai":      return AI_MARKETS.map(normalise);
     case "sol":     return SOL_MARKETS.map(normalise);
