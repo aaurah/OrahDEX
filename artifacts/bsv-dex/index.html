@@ -1,20 +1,106 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
-    <title>Orah DEX — Trade means DEX</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5, viewport-fit=cover" />
+
+    <!-- Primary meta -->
+    <title>OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange</title>
+    <meta name="description" content="OrahDEX is a multi-chain DEX featuring spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. Trade 226+ markets with real-time CoinGecko prices." />
+    <meta name="keywords" content="OrahDEX, crypto exchange, DEX, decentralized exchange, BSV, Bitcoin SV, spot trading, futures, P2P, DeFi, multi-chain, EVM, WalletConnect, AMM, liquidity pools" />
+    <meta name="author" content="OrahDEX" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <link rel="canonical" href="https://orahdex.replit.app/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://orahdex.replit.app/" />
+    <meta property="og:site_name" content="OrahDEX" />
+    <meta property="og:title" content="OrahDEX — Trade means DEX" />
+    <meta property="og:description" content="Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 226+ markets, real-time prices." />
+    <meta property="og:image" content="https://orahdex.replit.app/opengraph.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="OrahDEX — Trade means DEX" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@OrahDEX" />
+    <meta name="twitter:creator" content="@OrahDEX" />
+    <meta name="twitter:title" content="OrahDEX — Trade means DEX" />
+    <meta name="twitter:description" content="Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 226+ markets." />
+    <meta name="twitter:image" content="https://orahdex.replit.app/opengraph.jpg" />
+    <meta name="twitter:image:alt" content="OrahDEX — Trade means DEX" />
+
+    <!-- PWA / App -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#EAB308" />
+    <meta name="theme-color" content="#7C3AED" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="OrahDEX" />
-    <meta name="description" content="Trade means DEX — Multi-chain trading with on-chain BSV settlement" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="application-name" content="OrahDEX" />
+    <meta name="msapplication-TileColor" content="#7C3AED" />
+
+    <!-- Structured Data — Organization -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "OrahDEX",
+      "alternateName": "Orah DEX",
+      "url": "https://orahdex.replit.app",
+      "logo": "https://orahdex.replit.app/favicon.svg",
+      "description": "OrahDEX is a multi-chain decentralized exchange offering spot trading, perpetual futures, P2P markets, and on-chain BSV settlement.",
+      "sameAs": []
+    }
+    </script>
+
+    <!-- Structured Data — WebSite with SearchAction -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "OrahDEX",
+      "url": "https://orahdex.replit.app",
+      "description": "Trade means DEX — Multi-chain crypto exchange with 226+ markets",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://orahdex.replit.app/trade/{search_term_string}-USDT"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
+    <!-- Structured Data — FinancialService -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FinancialService",
+      "name": "OrahDEX",
+      "url": "https://orahdex.replit.app",
+      "description": "Decentralized cryptocurrency exchange with spot trading, perpetual futures, P2P, and AMM liquidity pools. On-chain settlement via Bitcoin SV.",
+      "serviceType": "Cryptocurrency Exchange",
+      "areaServed": "Worldwide",
+      "currenciesAccepted": "BTC, ETH, BSV, BCH, USDT, USDC, BNB, SOL",
+      "offers": {
+        "@type": "Offer",
+        "description": "Zero-fee spot trading, up to 100x leverage futures, P2P fiat ramps, AMM liquidity pools"
+      }
+    }
+    </script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

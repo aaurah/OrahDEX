@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import {
   Users2, Search, ChevronDown, Shield, Star, Clock, Plus, X, Check,
   ArrowUpDown, Filter, Globe, Zap, AlertCircle, MessageSquare, Lock,
@@ -554,6 +555,20 @@ const COINS: Coin[] = ["BTC", "ETH", "BSV", "USDT", "BNB", "SOL"];
 const FIATS: Fiat[] = ["USD", "EUR", "GBP", "AUD", "NGN", "INR", "BRL", "CAD", "JPY", "ZAR"];
 
 export function P2P() {
+  useSEO({
+    title: "P2P Trading — Buy & Sell Crypto Peer-to-Peer",
+    description: "Buy and sell Bitcoin, Ethereum, BSV and more with 0 fees on OrahDEX P2P. Escrow-secured trades, 100+ payment methods, global merchants.",
+    keywords: "P2P crypto, peer to peer bitcoin, buy BTC, sell ETH, crypto OTC, escrow trading, zero fee P2P, OrahDEX P2P",
+    url: "/p2p",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "OrahDEX P2P Trading",
+      "description": "Peer-to-peer cryptocurrency marketplace with escrow-protected trades",
+      "url": "https://orahdex.replit.app/p2p"
+    }
+  });
+
   const [side, setSide] = useState<Side>("buy");
   const [coin, setCoin] = useState<Coin>("BTC");
   const [fiat, setFiat] = useState<Fiat>("USD");

@@ -1,18 +1,63 @@
 {
-  "name": "OrahDEX",
+  "name": "OrahDEX — Trade means DEX",
   "short_name": "OrahDEX",
-  "description": "Trade means DEX — Multi-chain trading with on-chain BSV settlement",
+  "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 226+ markets with real-time prices.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#080d13",
-  "theme_color": "#EAB308",
-  "orientation": "portrait",
+  "theme_color": "#7C3AED",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["finance", "productivity"],
+  "iarc_rating_id": "",
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Trade BTC/USDT",
+      "short_name": "BTC/USDT",
+      "description": "Open Bitcoin spot trading",
+      "url": "/trade/BTC-USDT",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Trade ETH/USDT",
+      "short_name": "ETH/USDT",
+      "description": "Open Ethereum spot trading",
+      "url": "/trade/ETH-USDT",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "P2P Market",
+      "short_name": "P2P",
+      "description": "Peer-to-peer trading",
+      "url": "/p2p",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "BTC Futures",
+      "short_name": "BTC Perp",
+      "description": "Bitcoin perpetual futures",
+      "url": "/futures/BTC-USDT-PERP",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ],
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }

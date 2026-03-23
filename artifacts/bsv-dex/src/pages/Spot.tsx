@@ -1,4 +1,5 @@
 import { useParams, Link } from "wouter";
+import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
@@ -52,6 +53,21 @@ export function SpotTrading() {
   const [marketSearch, setMarketSearch] = useState("");
 
   const symbol = rawSymbol.replace(/-/g, '/');
+  const [base, quote] = rawSymbol.split("-");
+
+  useSEO({
+    title: `${base}/${quote} Spot Trading — Live Price & Chart`,
+    description: `Trade ${base}/${quote} on OrahDEX spot market. Real-time price chart, order book, and depth data. Place limit, market, and stop orders instantly.`,
+    keywords: `${base} ${quote} trading, ${base} price, buy ${base}, sell ${base}, ${rawSymbol} spot, OrahDEX spot`,
+    url: `/trade/${rawSymbol}`,
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": `${base}/${quote} Spot Trading on OrahDEX`,
+      "description": `Live ${base}/${quote} spot trading with real-time charts and order book`,
+      "url": `https://orahdex.replit.app/trade/${rawSymbol}`
+    }
+  });
 
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });

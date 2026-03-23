@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, ChevronDown, ChevronUp,
   Zap, Award, BarChart3, X, Info, Layers
@@ -183,6 +184,20 @@ function LiquidityModal({
 }
 
 export function Liquidity() {
+  useSEO({
+    title: "Liquidity Pools — Earn Yield on OrahDEX AMM",
+    description: "Provide liquidity to OrahDEX AMM pools and earn trading fees. Join BTC, ETH, BSV, and stablecoin pools with competitive APR. Your keys, your liquidity.",
+    keywords: "liquidity pools, AMM, yield farming, DeFi, LP tokens, trading fees, BSV liquidity, crypto yield, OrahDEX liquidity",
+    url: "/liquidity",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "OrahDEX Liquidity Pools",
+      "description": "Automated Market Maker (AMM) liquidity pools with competitive yield",
+      "url": "https://orahdex.replit.app/liquidity"
+    }
+  });
+
   const [tab, setTab] = useState<Tab>("pools");
   const [sortBy, setSortBy] = useState<"apr" | "tvl" | "vol">("tvl");
   const [modalPool, setModalPool] = useState<typeof POOLS[0] | null>(null);
