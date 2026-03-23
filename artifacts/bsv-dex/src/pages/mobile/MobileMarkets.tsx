@@ -8,7 +8,7 @@ import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
-  BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS,
+  BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -48,7 +48,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
+type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
@@ -56,6 +56,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "usd",       label: "USD" },
   { id: "btc",       label: "BTC" },
   { id: "eth",       label: "ETH" },
+  { id: "bnb",       label: "BNB" },
   { id: "bch",       label: "BCH" },
   { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
@@ -82,6 +83,7 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
       : STABLE_MOCK[usdSub].map(normalise);
     case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC")  : BTC_MARKETS.map(normalise);
     case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH")  : ETH_MARKETS.map(normalise);
+    case "bnb":     return hasApi ? apiAll.filter(m => m.quote === "BNB")  : BNB_MARKETS.map(normalise);
     case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
     case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV")  : BSV_MARKETS.map(normalise);
     case "ai":      return AI_MARKETS.map(normalise);

@@ -203,6 +203,45 @@ export const BCH_MARKETS: any[] = [
   bchPair("INJ",   28.4,    4.21,   15_000_000),
 ];
 
+// ─── BNB PAIRS ────────────────────────────────────────────────────────────────
+const BNB_PRICE = 392;
+function bnbPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / BNB_PRICE;
+  return spot(base, "BNB", p, chg, vol / BNB_PRICE);
+}
+export const BNB_MARKETS: any[] = [
+  bnbPair("BTC",   68310,  -1.85, 2_450_000_000),
+  bnbPair("ETH",   3415,    1.32,  950_000_000),
+  bnbPair("SOL",   148.5,   3.21,  420_000_000),
+  bnbPair("XRP",   0.5242, -0.64,  110_000_000),
+  bnbPair("ADA",   0.4421, -2.10,   45_000_000),
+  bnbPair("DOGE",  0.1185,  5.42,   78_000_000),
+  bnbPair("DOT",   6.82,   -1.20,   38_000_000),
+  bnbPair("AVAX",  36.4,    2.15,   62_000_000),
+  bnbPair("MATIC", 0.718,  -0.92,   54_000_000),
+  bnbPair("LINK",  14.52,   3.64,   48_000_000),
+  bnbPair("UNI",   9.84,    1.55,   22_000_000),
+  bnbPair("ATOM",  8.42,   -0.78,   18_000_000),
+  bnbPair("LTC",   78.2,    0.45,   32_000_000),
+  bnbPair("BCH",   384,     1.10,   28_000_000),
+  bnbPair("BSV",   55.42,   4.41,   18_500_000),
+  bnbPair("TRX",   0.1205,  2.31,   35_000_000),
+  bnbPair("NEAR",  6.55,    4.82,   24_000_000),
+  bnbPair("APT",   10.5,    5.21,   18_000_000),
+  bnbPair("ARB",   1.12,    2.85,   28_000_000),
+  bnbPair("OP",    2.41,    3.10,   22_000_000),
+  bnbPair("SUI",   1.22,    6.45,   35_000_000),
+  bnbPair("INJ",   28.4,    4.21,   15_000_000),
+  bnbPair("PEPE",  0.0000082, 8.5, 185_000_000),
+  bnbPair("SHIB",  0.0000235, 6.1,  92_000_000),
+  bnbPair("AAVE",  96.5,    1.82,   12_000_000),
+  bnbPair("CRV",   0.382,  -1.15,   18_000_000),
+  bnbPair("MKR",   2920,   -0.45,    8_000_000),
+  bnbPair("FIL",   5.82,   -2.18,   10_000_000),
+  bnbPair("ALGO",  0.18,    1.85,    6_000_000),
+  bnbPair("XLM",   0.11,    0.92,    8_000_000),
+];
+
 // ─── ETH PAIRS ────────────────────────────────────────────────────────────────
 const ETH_PRICE = 3415;
 function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any {
