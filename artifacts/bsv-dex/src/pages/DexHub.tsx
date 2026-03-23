@@ -105,8 +105,8 @@ export function DexHub() {
   const [view, setView]         = useState<View>("exchanges");
   const [search, setSearch]     = useState("");
   const [exType, setExType]     = useState<ExType>("all");
-  const [sortBy, setSortBy]     = useState<SortKey>("volume");
-  const [sortOpen, setSortOpen] = useState(false);
+  const [sortBy, setSortBy]     = useState<SortKey>("marketcap");
+  const [exSortDir, setExSortDir] = useState<"asc" | "desc">("desc");
 
   /* ── Coin sort state ── */
   const [coinSearch, setCoinSearch] = useState("");
@@ -200,12 +200,18 @@ export function DexHub() {
     return v.toFixed(2);
   }
 
+  function toggleExSort(key: SortKey) {
+    if (sortBy === key) setExSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortBy(key); setExSortDir("desc"); }
+  }
+
   const sortFn = (a: any, b: any) => {
-    if (sortBy === "volume")    return b.tradeVolume24hUsd - a.tradeVolume24hUsd;
-    if (sortBy === "marketcap") return b.marketCap - a.marketCap;
-    if (sortBy === "trust")     return b.trustScore - a.trustScore;
-    if (sortBy === "name")      return a.name.localeCompare(b.name);
-    return 0;
+    let v = 0;
+    if (sortBy === "volume")    v = a.tradeVolume24hUsd - b.tradeVolume24hUsd;
+    if (sortBy === "marketcap") v = a.marketCap - b.marketCap;
+    if (sortBy === "trust")     v = a.trustScore - b.trustScore;
+    if (sortBy === "name")      v = b.name.localeCompare(a.name);
+    return exSortDir === "desc" ? -v : v;
   };
 
   const filtered = useMemo(() => {
@@ -682,36 +688,6 @@ export function DexHub() {
           />
         </div>
 
-        {/* Sort dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setSortOpen(v => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-xl text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-all"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            Sort: {SORT_LABELS[sortBy]}
-            <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", sortOpen && "rotate-180")} />
-          </button>
-          {sortOpen && (
-            <div className="absolute right-0 top-full mt-1 z-30 bg-card border border-border rounded-xl shadow-xl overflow-hidden w-44">
-              {(Object.entries(SORT_LABELS) as [SortKey, string][]).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => { setSortBy(key); setSortOpen(false); }}
-                  className={cn(
-                    "w-full text-left px-4 py-2.5 text-sm transition-colors",
-                    sortBy === key
-                      ? "bg-primary/10 text-primary font-semibold"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Refresh */}
         <button
           onClick={() => refetch()}
@@ -731,13 +707,58 @@ export function DexHub() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider">
+              <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider select-none">
                 <th className="px-4 py-3 font-medium w-10">#</th>
-                <th className="px-4 py-3 font-medium">Exchange</th>
+                {/* Exchange — sortable by name */}
+                <th
+                  className="px-4 py-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                  onClick={() => toggleExSort("name")}
+                >
+                  <span className="flex items-center gap-1">
+                    Exchange
+                    {sortBy === "name"
+                      ? exSortDir === "desc" ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronUp className="w-3 h-3 shrink-0" />
+                      : <ArrowUpDown className="w-3 h-3 shrink-0 opacity-40" />}
+                  </span>
+                </th>
+                {/* Type / Chain — not sortable */}
                 <th className="px-4 py-3 font-medium">Type / Chain</th>
-                <th className="px-4 py-3 font-medium text-right">24h Volume</th>
-                <th className="px-4 py-3 font-medium text-right">Market Cap</th>
-                <th className="px-4 py-3 font-medium">Trust Score</th>
+                {/* 24h Volume */}
+                <th
+                  className="px-4 py-3 font-medium text-right cursor-pointer hover:text-foreground transition-colors"
+                  onClick={() => toggleExSort("volume")}
+                >
+                  <span className="flex items-center justify-end gap-1">
+                    {sortBy === "volume"
+                      ? exSortDir === "desc" ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronUp className="w-3 h-3 shrink-0" />
+                      : <ArrowUpDown className="w-3 h-3 shrink-0 opacity-40" />}
+                    24h Volume
+                  </span>
+                </th>
+                {/* Market Cap */}
+                <th
+                  className="px-4 py-3 font-medium text-right cursor-pointer hover:text-foreground transition-colors"
+                  onClick={() => toggleExSort("marketcap")}
+                >
+                  <span className="flex items-center justify-end gap-1">
+                    {sortBy === "marketcap"
+                      ? exSortDir === "desc" ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronUp className="w-3 h-3 shrink-0" />
+                      : <ArrowUpDown className="w-3 h-3 shrink-0 opacity-40" />}
+                    Market Cap
+                  </span>
+                </th>
+                {/* Trust Score */}
+                <th
+                  className="px-4 py-3 font-medium cursor-pointer hover:text-foreground transition-colors"
+                  onClick={() => toggleExSort("trust")}
+                >
+                  <span className="flex items-center gap-1">
+                    Trust Score
+                    {sortBy === "trust"
+                      ? exSortDir === "desc" ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronUp className="w-3 h-3 shrink-0" />
+                      : <ArrowUpDown className="w-3 h-3 shrink-0 opacity-40" />}
+                  </span>
+                </th>
                 <th className="px-4 py-3 font-medium text-right">Trade</th>
               </tr>
             </thead>
@@ -849,7 +870,7 @@ export function DexHub() {
             <span>
               Showing {filtered.length} of {statCount} exchanges
               {exType !== "all" && ` · ${exType.toUpperCase()} only`}
-              {sortBy !== "volume" && ` · sorted by ${SORT_LABELS[sortBy]}`}
+              {` · sorted by ${SORT_LABELS[sortBy]} (${exSortDir === "desc" ? "high → low" : "low → high"})`}
             </span>
           </div>
         )}
