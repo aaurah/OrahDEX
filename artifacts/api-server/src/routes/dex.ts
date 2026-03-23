@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { cmcFetchMarkets, cmcFetchExchanges, cmcFetchTickers } from "../lib/cmcFallback.js";
 
 const router: IRouter = Router();
 
@@ -257,7 +258,35 @@ router.get("/dex/exchanges", async (req, res) => {
     cache = { data: result, ts: Date.now() };
     res.json(result);
   } catch (err: any) {
-    req.log.error({ err }, "Failed to fetch exchanges");
+    req.log.warn({ err }, "CoinGecko exchanges failed — trying CoinMarketCap fallback");
+
+    // Try CMC fallback before giving up
+    try {
+      const cmcResult = await cmcFetchExchanges(100);
+      if (cmcResult) {
+        const orahVolBtc = 120;
+        const btcFallback = 65000;
+        cmcResult.exchanges.unshift({
+          id: "orahdex", name: "OrahDEX", url: "https://orahdex.org", image: null,
+          country: null, yearEstablished: 2026, type: "dex", chain: "BSV", rank: 1,
+          trustScore: 9, tradeVolume24hBtc: orahVolBtc,
+          tradeVolume24hUsd: orahVolBtc * btcFallback, marketCap: 28000000,
+        });
+        const fallbackResult = {
+          btcPrice: btcFallback, totalVolumeBtc: 0,
+          totalVolumeUsd: cmcResult.totalVolumeUsd,
+          defiMarketCap: 0, cefiMarketCap: 0, totalMarketCap: 0,
+          exchangeCount: cmcResult.exchanges.length,
+          dexCount: cmcResult.exchanges.filter((e: any) => e.type === "dex").length,
+          cexCount: cmcResult.exchanges.filter((e: any) => e.type === "cex").length,
+          exchanges: cmcResult.exchanges,
+          source: "coinmarketcap",
+        };
+        cache = { data: fallbackResult, ts: Date.now() };
+        return res.json(fallbackResult);
+      }
+    } catch (_cmcErr) {}
+
     if (cache) return res.json(cache.data);
     res.status(502).json({ error: "Failed to fetch exchange data" });
   }
@@ -297,7 +326,14 @@ router.get("/coins/markets", async (req, res) => {
 
     if (!allCoins.length) {
       if (coinsCache) return res.json(coinsCache.data.slice(0, perPage));
-      throw new Error("No coin data returned from CoinGecko");
+      // Try CoinMarketCap fallback
+      const cmcCoins = await cmcFetchMarkets(1000);
+      if (cmcCoins && cmcCoins.length) {
+        coinsCache = { data: cmcCoins, ts: Date.now() };
+        const start2 = (page - 1) * perPage;
+        return res.json(cmcCoins.slice(start2, start2 + perPage));
+      }
+      throw new Error("No coin data returned from CoinGecko or CoinMarketCap");
     }
 
     // Normalise shape
@@ -370,7 +406,17 @@ router.get("/coins/:id/tickers", async (req, res) => {
     tickerCache.set(id, { data: result, ts: Date.now() });
     return res.json(result);
   } catch (err: any) {
-    req.log.error({ err }, `Failed to fetch tickers for ${id}`);
+    req.log.warn({ err }, `CoinGecko tickers failed for ${id} — trying CoinMarketCap fallback`);
+    // Try CMC fallback using the ticker symbol (id might be cg-id; try symbol lookup)
+    try {
+      const symbol = id.replace(/^cmc-\d+$/, "").toUpperCase();
+      const cmcTickers = await cmcFetchTickers(symbol || id.toUpperCase());
+      if (cmcTickers && cmcTickers.length) {
+        const result = { coinId: id, name: id, tickers: cmcTickers, source: "coinmarketcap" };
+        tickerCache.set(id, { data: result, ts: Date.now() });
+        return res.json(result);
+      }
+    } catch (_cmcErr) {}
     const cached = tickerCache.get(id);
     if (cached) return res.json(cached.data);
     return res.status(502).json({ error: "Failed to fetch ticker data" });

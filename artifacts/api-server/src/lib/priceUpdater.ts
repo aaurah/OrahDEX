@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { cmcFetchPrices } from "./cmcFallback.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -175,6 +176,26 @@ async function fetchLivePrices(): Promise<Record<string, CoinGeckoPrice>> {
   });
   if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
   return res.json() as Promise<Record<string, CoinGeckoPrice>>;
+}
+
+/**
+ * Fetch prices from CoinMarketCap and remap to the same shape as CoinGecko.
+ * COINGECKO_IDS keys are ticker symbols (BTC, ETH, …) so we pass symbols directly.
+ */
+async function fetchLivePricesCMC(): Promise<Record<string, CoinGeckoPrice> | null> {
+  const symbols = Object.keys(COINGECKO_IDS); // BTC, ETH, SOL, …
+  const cmcMap = await cmcFetchPrices(symbols);
+  if (!cmcMap) return null;
+
+  // Remap: COINGECKO_IDS maps SYMBOL → cgId; we need cgId → CoinGeckoPrice
+  // for the updateMarketPrices fn which looks up by cgId.
+  // Build a reverse symbol→cgId map.
+  const out: Record<string, CoinGeckoPrice> = {};
+  for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
+    const d = cmcMap[sym.toUpperCase()];
+    if (d) out[cgId] = d;
+  }
+  return out;
 }
 
 // Default fallback prices (approximate) when CoinGecko is down
@@ -356,7 +377,17 @@ export async function seedMarketsIfNeeded() {
 
 export async function updateMarketPrices() {
   try {
-    const prices = await fetchLivePrices();
+    let prices: Record<string, CoinGeckoPrice>;
+    try {
+      prices = await fetchLivePrices();
+      logger.info("Market prices updated from CoinGecko");
+    } catch (cgErr: any) {
+      logger.warn({ err: cgErr }, "CoinGecko price fetch failed — trying CoinMarketCap fallback");
+      const cmcPrices = await fetchLivePricesCMC();
+      if (!cmcPrices) throw new Error("Both CoinGecko and CoinMarketCap price fetches failed");
+      prices = cmcPrices;
+      logger.info("Market prices updated from CoinMarketCap (fallback)");
+    }
     const markets = await db.select().from(marketsTable);
 
     for (const market of markets) {
@@ -446,9 +477,8 @@ export async function updateMarketPrices() {
       }).where(eq(marketsTable.symbol, market.symbol));
     }
 
-    logger.info("Market prices updated from CoinGecko");
   } catch (err) {
-    logger.warn({ err }, "Failed to update prices from CoinGecko");
+    logger.warn({ err }, "Failed to update prices from CoinGecko and CoinMarketCap");
   }
 }
 
