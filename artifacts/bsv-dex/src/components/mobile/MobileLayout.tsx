@@ -30,17 +30,27 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header — grid: left-spacer | centre-logo | right-buttons ── */}
-      <div className="shrink-0 grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
+      {/* ── Global brand header ── */}
+      <div className="shrink-0 relative grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ gridTemplateColumns: "1fr auto 1fr" }}>
 
-        {/* Col 1: empty — equals Col 3 width so logo is truly centred */}
-        <div />
-
-        {/* Col 2: logo + slogan, horizontally centred in its auto column */}
+        {/* O icon — pinned to left edge, not part of the grid flow */}
         <button
           onClick={() => navigate("/")}
-          className="flex flex-col items-center justify-center px-3 active:opacity-70 transition-opacity whitespace-nowrap"
+          className="absolute left-4 inset-y-0 flex items-center active:opacity-70 transition-opacity"
+        >
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
+            <span className="text-white font-black text-[13px] leading-none select-none">O</span>
+          </div>
+        </button>
+
+        {/* Col 1: empty spacer */}
+        <div />
+
+        {/* Col 2: centred brand text */}
+        <button
+          onClick={() => navigate("/")}
+          className="flex flex-col items-center justify-center px-2 active:opacity-70 transition-opacity whitespace-nowrap"
         >
           <span className="font-extrabold text-[16px] tracking-tight text-foreground leading-none">
             Orah<span className="text-primary">DEX</span>
