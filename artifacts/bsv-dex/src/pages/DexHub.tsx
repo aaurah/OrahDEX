@@ -468,7 +468,6 @@ export function DexHub() {
               {exType !== "all" && ` · ${exType.toUpperCase()} only`}
               {sortBy !== "volume" && ` · sorted by ${SORT_LABELS[sortBy]}`}
             </span>
-            <span>Source: CoinGecko public API · OrahDEX on-chain settlement</span>
           </div>
         )}
       </div>
