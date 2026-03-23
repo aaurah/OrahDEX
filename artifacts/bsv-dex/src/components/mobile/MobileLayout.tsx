@@ -38,22 +38,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         style={{ height: "env(safe-area-inset-top, 0px)" }}
       />
 
-      {/* ── BSV ticker strip ── */}
-      <div className="shrink-0 h-6 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/25 flex items-center overflow-hidden">
-        <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
-          {[0,1,2].map(i => (
-            <span key={i} className="flex items-center gap-4 px-4 text-[10px] font-semibold text-amber-300">
-              <span className="flex items-center gap-1"><span className="animate-pulse text-amber-400">⚡</span> BSV — Fastest Settlement</span>
-              <span className="text-amber-500">·</span>
-              <span>No Bridges. No L2s.</span>
-              <span className="text-amber-500">·</span>
-              <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
-              <span className="text-amber-500">·</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
       {/* ── Global brand header ── */}
       <div className="shrink-0 flex items-center justify-between px-4 h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50">
         {/* Logo — tapping goes to home */}
