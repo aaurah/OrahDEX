@@ -204,27 +204,65 @@ export function Markets() {
 
           {/* Main tabs */}
           <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {TAB_META.map(t => (
-              <button
-                key={t.id}
-                onClick={() => { setTab(t.id); setSearch(""); }}
-                className={cn(
-                  "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
-                  tab === t.id
-                    ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
-                    : "text-muted-foreground border-border hover:border-primary/40 hover:text-foreground hover:bg-white/5"
-                )}
-              >
-                {t.label}
-                <span className={cn(
-                  "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
-                  tab === t.id ? "bg-white/20 text-white" : "bg-secondary text-muted-foreground"
-                )}>
-                  {tabCount(t.id)}
-                </span>
-              </button>
-            ))}
+            {TAB_META.map(t => {
+              const isBsv = t.id === "bsv";
+              const isActive = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => { setTab(t.id); setSearch(""); }}
+                  style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
+                  className={cn(
+                    "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
+                    isActive && isBsv
+                      ? "bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/40"
+                      : isActive
+                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
+                      : isBsv
+                      ? "text-amber-400 border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20"
+                      : "text-muted-foreground border-border hover:border-primary/40 hover:text-foreground hover:bg-white/5"
+                  )}
+                >
+                  {isBsv && <span className="text-[13px] leading-none">⚡</span>}
+                  {t.label}
+                  <span className={cn(
+                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
+                    isActive && isBsv ? "bg-black/20 text-black"
+                    : isActive ? "bg-white/20 text-white"
+                    : isBsv ? "bg-amber-500/20 text-amber-300"
+                    : "bg-secondary text-muted-foreground"
+                  )}>
+                    {tabCount(t.id)}
+                  </span>
+                  {isBsv && !isActive && (
+                    <span className="text-[8px] font-black uppercase tracking-wider bg-amber-500 text-black px-1 py-0.5 rounded ml-0.5">FASTEST</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+
+          {/* BSV fastest settlement callout */}
+          {tab === "bsv" && (
+            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+              <span className="text-xl leading-none">⚡</span>
+              <div>
+                <p className="text-xs font-bold text-amber-400">BSV — World's Fastest Settlement Chain</p>
+                <p className="text-[11px] text-amber-300/70 mt-0.5">Every OrahDEX trade settles instantly on-chain via BSV. No bridges. No Layer 2s. True finality in seconds.</p>
+              </div>
+              <div className="ml-auto flex items-center gap-3 shrink-0">
+                <div className="text-center">
+                  <p className="text-[10px] text-amber-500/60 uppercase tracking-wider">Settlement</p>
+                  <p className="text-sm font-black text-amber-400">&lt; 5s</p>
+                </div>
+                <div className="w-px h-8 bg-amber-500/20" />
+                <div className="text-center">
+                  <p className="text-[10px] text-amber-500/60 uppercase tracking-wider">Fees</p>
+                  <p className="text-sm font-black text-amber-400">~$0.001</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* USD sub-tabs */}
           {tab === "usd" && (

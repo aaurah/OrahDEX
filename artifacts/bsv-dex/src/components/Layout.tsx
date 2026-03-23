@@ -68,7 +68,26 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      <header className="sticky top-0 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
+      {/* BSV Settlement Ticker */}
+      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/30 backdrop-blur-sm flex items-center overflow-hidden">
+        <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
+          {[0,1,2].map(i => (
+            <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-amber-300">
+              <span className="flex items-center gap-1.5"><span className="animate-pulse text-amber-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
+              <span className="text-amber-500">·</span>
+              <span>Instant On-Chain Settlement</span>
+              <span className="text-amber-500">·</span>
+              <span>No Bridges. No L2s.</span>
+              <span className="text-amber-500">·</span>
+              <span>Every trade settled on BSV in seconds</span>
+              <span className="text-amber-500">·</span>
+              <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
+              <span className="text-amber-500">·</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <header className="sticky top-7 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">

@@ -143,3 +143,15 @@ input[type=number] { -moz-appearance: textfield; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 .pt-safe-top { padding-top: max(env(safe-area-inset-top, 0px), 16px); }
+
+/* BSV Settlement Ticker */
+@keyframes bsv-ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-33.3333%); }
+}
+
+/* BSV tab glow pulse */
+@keyframes bsv-glow {
+  0%, 100% { box-shadow: 0 0 6px 1px rgba(234,179,8,0.35); }
+  50%       { box-shadow: 0 0 14px 3px rgba(234,179,8,0.65); }
+}
