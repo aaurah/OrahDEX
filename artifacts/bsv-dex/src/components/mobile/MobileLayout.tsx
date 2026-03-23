@@ -32,8 +32,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       {/* ── Global brand header ── */}
       <div className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        {/* Logo */}
-        <div className="flex items-center gap-2">
+        {/* Logo — tapping goes to home */}
+        <button onClick={() => navigate("/")} className="flex items-center gap-2 active:opacity-70 transition-opacity">
           <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-md shadow-primary/20">
             <span className="text-white font-black text-[11px] leading-none select-none">O</span>
           </div>
@@ -43,7 +43,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             </span>
             <span className="text-[8px] text-muted-foreground tracking-widest uppercase font-medium">Trade means DEX</span>
           </div>
-        </div>
+        </button>
 
         {/* Right side: Buy + Wallet */}
         <div className="flex items-center gap-2">
