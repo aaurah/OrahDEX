@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
-  ArrowUpDown, ChevronDown, Droplets, Zap,
+  ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -128,48 +128,54 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
-  /* ── All coins query ── */
+  /* ── World coins from CoinGecko ── */
   const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
-    queryKey: ["markets-all"],
+    queryKey: ["coins-markets-world"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/coins/markets?per_page=250`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    staleTime: 30_000,
-    refetchInterval: 30_000,
+    staleTime: 2 * 60 * 1000,
+    refetchInterval: 2 * 60 * 1000,
   });
 
-  const allCoins: any[] = useMemo(() => {
-    if (!coinsRaw || !Array.isArray(coinsRaw)) return [];
-    return coinsRaw.map((m: any) => ({
-      symbol:  m.symbol ?? `${m.baseAsset ?? m.base}-${m.quoteAsset ?? m.quote ?? "USDT"}`,
-      base:    m.baseAsset ?? m.base ?? m.symbol?.split(/[-/]/)[0] ?? "",
-      quote:   m.quoteAsset ?? m.quote ?? "USDT",
-      price:   parseFloat(m.lastPrice ?? m.price) || 0,
-      chg:     parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0,
-      vol:     parseFloat(m.volume24h ?? m.volume) || 0,
-      type:    m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot"),
-    }));
-  }, [coinsRaw]);
+  const allCoins: any[] = Array.isArray(coinsRaw) ? coinsRaw : [];
 
   const filteredCoins = useMemo(() => {
     let rows = allCoins;
     if (coinSearch) {
-      const q = coinSearch.toUpperCase();
-      rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+      const q = coinSearch.toLowerCase();
+      rows = rows.filter(m =>
+        m.symbol.toLowerCase().includes(q) ||
+        m.name.toLowerCase().includes(q)
+      );
     }
     return [...rows].sort((a, b) => {
       let v = 0;
-      if (coinSort === "base")  v = a.base.localeCompare(b.base);
+      if (coinSort === "base")  v = a.name.localeCompare(b.name);
       if (coinSort === "price") v = a.price - b.price;
-      if (coinSort === "chg")   v = a.chg - b.chg;
-      if (coinSort === "vol")   v = a.vol - b.vol;
+      if (coinSort === "chg")   v = a.change24h - b.change24h;
+      if (coinSort === "vol")   v = a.volume24h - b.volume24h;
       return coinSortDir === "asc" ? v : -v;
     });
   }, [allCoins, coinSearch, coinSort, coinSortDir]);
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
+
+  /* ── Selected coin for exchange modal ── */
+  const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
+
+  const { data: tickersData, isLoading: tickersLoading } = useQuery({
+    queryKey: ["coin-tickers", selectedCoin?.id],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/coins/${encodeURIComponent(selectedCoin!.id)}/tickers`);
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!selectedCoin,
+    staleTime: 5 * 60 * 1000,
+  });
 
   function toggleCoinSort(k: CoinSort) {
     if (coinSort === k) setCoinSortDir(d => d === "asc" ? "desc" : "asc");
@@ -405,14 +411,14 @@ export function DexHub() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search coin or pair…"
+                placeholder="Search name or symbol…"
                 value={coinSearch}
                 onChange={e => { setCoinSearch(e.target.value); setCoinPage(0); }}
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
             <span className="text-xs text-muted-foreground">
-              {coinsLoading ? "Loading…" : `${filteredCoins.length} pairs`}
+              {coinsLoading ? "Loading from CoinGecko…" : `${filteredCoins.length} coins · tap a row to see all exchanges`}
             </span>
           </div>
 
@@ -423,92 +429,83 @@ export function DexHub() {
                 <thead>
                   <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider">
                     <th className="px-3 py-3 font-medium w-10">#</th>
-                    <th
-                      className="px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none"
-                      onClick={() => toggleCoinSort("base")}
-                    >
-                      Pair {coinSort === "base" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    <th className="px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("base")}>
+                      Coin {coinSort === "base" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
-                    <th
-                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                      onClick={() => toggleCoinSort("price")}
-                    >
-                      Price {coinSort === "price" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    <th className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("price")}>
+                      Price {coinSort === "price" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
-                    <th
-                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none"
-                      onClick={() => toggleCoinSort("chg")}
-                    >
-                      24h % {coinSort === "chg" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    <th className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("chg")}>
+                      24h% {coinSort === "chg" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
-                    <th
-                      className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none hidden sm:table-cell"
-                      onClick={() => toggleCoinSort("vol")}
-                    >
-                      Volume {coinSort === "vol" ? (coinSortDir === "asc" ? "↑" : "↓") : ""}
+                    <th className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none hidden md:table-cell" onClick={() => toggleCoinSort("vol")}>
+                      Volume 24h {coinSort === "vol" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
-                    <th className="px-3 py-3 font-medium text-right">Trade</th>
+                    <th className="px-3 py-3 font-medium text-right hidden lg:table-cell">Mkt Cap</th>
+                    <th className="px-3 py-3 font-medium text-center">Exchanges</th>
                   </tr>
                 </thead>
                 <tbody>
                   {coinsLoading && Array.from({ length: 20 }).map((_, i) => (
                     <tr key={i} className="border-b border-border/50">
-                      {[1,2,3,4,5,6].map(j => (
-                        <td key={j} className="px-3 py-2.5">
+                      {[1,2,3,4,5,6,7].map(j => (
+                        <td key={j} className="px-3 py-3">
                           <div className="h-4 bg-muted animate-pulse rounded" />
                         </td>
                       ))}
                     </tr>
                   ))}
 
-                  {!coinsLoading && pagedCoins.map((m, idx) => {
-                    const isUp  = m.chg >= 0;
-                    const slug  = m.symbol.replace(/\//g, "-").replace(/-PERP$/, "");
-                    const route = m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`;
+                  {!coinsLoading && pagedCoins.map((coin, idx) => {
+                    const isUp = coin.change24h >= 0;
                     return (
                       <tr
-                        key={m.symbol}
-                        className="border-b border-border/40 hover:bg-secondary/30 transition-colors cursor-pointer"
-                        onClick={() => navigate(route)}
+                        key={coin.id}
+                        className="border-b border-border/40 hover:bg-primary/5 transition-colors cursor-pointer group"
+                        onClick={() => setSelectedCoin(coin)}
                       >
-                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{idx + 1}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{coin.rank ?? idx + 1}</td>
 
                         <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
-                              {m.base[0]}
+                          <div className="flex items-center gap-2.5">
+                            {coin.image
+                              ? <img src={coin.image} alt={coin.symbol} className="w-7 h-7 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              : <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">{coin.symbol[0]}</div>
+                            }
+                            <div>
+                              <p className="text-sm font-bold text-foreground leading-tight">{coin.name}</p>
+                              <p className="text-[10px] text-muted-foreground font-semibold">{coin.symbol}</p>
                             </div>
-                            <span className="font-semibold text-sm text-foreground">{m.base}</span>
-                            <span className="text-xs text-muted-foreground">/{m.quote}</span>
-                            {m.type === "futures" && (
-                              <span className="text-[8px] font-bold text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded">PERP</span>
-                            )}
                           </div>
                         </td>
 
-                        <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold text-foreground tabular-nums">
-                          ${fmtPrice(m.price)}
+                        <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold tabular-nums">
+                          ${fmtPrice(coin.price)}
                         </td>
 
                         <td className="px-3 py-2.5 text-right">
                           <span className={cn(
-                            "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold min-w-[56px]",
+                            "inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-bold min-w-[60px]",
                             isUp ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
                           )}>
-                            {isUp ? "+" : ""}{m.chg.toFixed(2)}%
+                            {isUp ? "+" : ""}{coin.change24h.toFixed(2)}%
                           </span>
                         </td>
 
-                        <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden sm:table-cell">
-                          {fmtVol(m.vol)}
+                        <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden md:table-cell">
+                          ${fmtVol(coin.volume24h)}
                         </td>
 
-                        <td className="px-3 py-2.5 text-right">
+                        <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden lg:table-cell">
+                          ${fmtVol(coin.marketCap)}
+                        </td>
+
+                        <td className="px-3 py-2.5 text-center">
                           <button
-                            onClick={e => { e.stopPropagation(); navigate(route); }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors"
+                            onClick={e => { e.stopPropagation(); setSelectedCoin(coin); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 hover:bg-primary/25 text-primary border border-primary/20 transition-colors group-hover:border-primary/40"
                           >
-                            Trade <ArrowUpRight className="w-3 h-3" />
+                            View <ArrowUpRight className="w-3 h-3" />
                           </button>
                         </td>
                       </tr>
@@ -517,8 +514,8 @@ export function DexHub() {
 
                   {!coinsLoading && filteredCoins.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
-                        No pairs found for "{coinSearch}"
+                      <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                        No coins found for "{coinSearch}"
                       </td>
                     </tr>
                   )}
@@ -529,7 +526,7 @@ export function DexHub() {
             {/* Footer: count + Load More */}
             {!coinsLoading && filteredCoins.length > 0 && (
               <div className="px-4 py-3 border-t border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>Showing {pagedCoins.length} of {filteredCoins.length} pairs</span>
+                <span>Showing {pagedCoins.length} of {filteredCoins.length} coins — data from CoinGecko</span>
                 {pagedCoins.length < filteredCoins.length && (
                   <button
                     onClick={() => setCoinPage(p => p + 1)}
@@ -541,6 +538,118 @@ export function DexHub() {
               </div>
             )}
           </div>
+
+          {/* ── Exchange listings modal ── */}
+          {selectedCoin && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
+                onClick={() => setSelectedCoin(null)}
+              />
+              {/* Drawer */}
+              <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[700px] lg:max-h-[80vh] lg:rounded-2xl lg:border">
+
+                {/* Modal header */}
+                <div className="flex items-center gap-3 px-4 py-4 border-b border-border shrink-0">
+                  {selectedCoin.image && (
+                    <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-base leading-tight">{selectedCoin.name}
+                      <span className="ml-2 text-xs font-semibold text-muted-foreground">{selectedCoin.symbol}</span>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      ${fmtPrice(selectedCoin.price)}
+                      <span className={cn("ml-2 text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                        {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
+                      </span>
+                    </p>
+                  </div>
+                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors shrink-0">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="px-4 py-2 border-b border-border/40 shrink-0">
+                  <p className="text-xs text-muted-foreground">
+                    {tickersLoading ? "Loading exchanges…" : `${tickersData?.tickers?.length ?? 0} exchanges list ${selectedCoin.symbol} · tap to trade`}
+                  </p>
+                </div>
+
+                {/* Exchange list */}
+                <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-border/40">
+                  {tickersLoading && Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3">
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3.5 bg-muted animate-pulse rounded w-32" />
+                        <div className="h-3 bg-muted animate-pulse rounded w-20" />
+                      </div>
+                      <div className="h-4 bg-muted animate-pulse rounded w-20" />
+                    </div>
+                  ))}
+
+                  {!tickersLoading && (tickersData?.tickers ?? [])
+                    .filter((t: any) => !t.isAnomaly && !t.isStale)
+                    .map((t: any, i: number) => {
+                      const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-500" : "bg-red-400";
+                      return (
+                        <a
+                          key={i}
+                          href={t.tradeUrl ?? "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                        >
+                          {/* Exchange logo */}
+                          {t.exchangeLogo
+                            ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                            : <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
+                          }
+
+                          {/* Exchange name + pair */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-semibold text-foreground truncate">{t.exchangeName}</p>
+                              {t.trustScore && (
+                                <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} title={`Trust: ${t.trustScore}`} />
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
+                          </div>
+
+                          {/* Price + volume */}
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-mono font-semibold tabular-nums">${fmtPrice(t.convertedLast || t.price)}</p>
+                            <p className="text-[10px] text-muted-foreground tabular-nums">${fmtVol(t.convertedVol)} vol</p>
+                          </div>
+
+                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
+                        </a>
+                      );
+                    })
+                  }
+
+                  {!tickersLoading && tickersData?.tickers?.length === 0 && (
+                    <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                      No exchange listings found
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer CTA */}
+                <div className="shrink-0 border-t border-border px-4 py-3">
+                  <button
+                    onClick={() => { navigate(`/trade/${selectedCoin.symbol}-USDT`); setSelectedCoin(null); }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"
+                  >
+                    <Zap className="w-4 h-4" /> Trade {selectedCoin.symbol}/USDT on OrahDEX
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

@@ -254,4 +254,118 @@ router.get("/dex/exchanges", async (req, res) => {
   }
 });
 
+/* ─────────────────────────────────────────────────────────────
+   GET /api/coins/markets
+   Returns top coins from CoinGecko /coins/markets (cached 2 min)
+   Query params: page (1-based), per_page (max 250)
+───────────────────────────────────────────────────────────── */
+let coinsCache: { data: any[]; ts: number } | null = null;
+const COINS_CACHE_MS = 2 * 60 * 1000;
+
+router.get("/coins/markets", async (req, res) => {
+  try {
+    const page     = Math.max(1, parseInt(String(req.query.page     ?? "1")));
+    const perPage  = Math.min(250, Math.max(1, parseInt(String(req.query.per_page ?? "250"))));
+
+    // Serve from cache if fresh
+    if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) {
+      const start = (page - 1) * perPage;
+      return res.json(coinsCache.data.slice(start, start + perPage));
+    }
+
+    // Fetch pages 1–4 (up to 1000 coins) in sequence to respect rate limits
+    const allCoins: any[] = [];
+    for (let p = 1; p <= 4; p++) {
+      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
+      const r = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!r.ok) break;
+      const batch: any[] = await r.json();
+      if (!batch.length) break;
+      allCoins.push(...batch);
+      if (batch.length < 250) break;
+      await new Promise(resolve => setTimeout(resolve, 1200)); // respect rate limit
+    }
+
+    if (!allCoins.length) {
+      if (coinsCache) return res.json(coinsCache.data.slice(0, perPage));
+      throw new Error("No coin data returned from CoinGecko");
+    }
+
+    // Normalise shape
+    const normalised = allCoins.map((c: any, i: number) => ({
+      id:            c.id,
+      rank:          c.market_cap_rank ?? (i + 1),
+      name:          c.name,
+      symbol:        (c.symbol ?? "").toUpperCase(),
+      image:         c.image ?? null,
+      price:         c.current_price ?? 0,
+      marketCap:     c.market_cap ?? 0,
+      volume24h:     c.total_volume ?? 0,
+      change24h:     c.price_change_percentage_24h ?? 0,
+      high24h:       c.high_24h ?? 0,
+      low24h:        c.low_24h ?? 0,
+      circulatingSupply: c.circulating_supply ?? 0,
+    }));
+
+    coinsCache = { data: normalised, ts: Date.now() };
+    const start = (page - 1) * perPage;
+    return res.json(normalised.slice(start, start + perPage));
+  } catch (err: any) {
+    req.log.error({ err }, "Failed to fetch coins/markets");
+    if (coinsCache) {
+      const page    = Math.max(1, parseInt(String(req.query.page    ?? "1")));
+      const perPage = Math.min(250, parseInt(String(req.query.per_page ?? "250")));
+      const start   = (page - 1) * perPage;
+      return res.json(coinsCache.data.slice(start, start + perPage));
+    }
+    return res.status(502).json({ error: "Failed to fetch coin data" });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────
+   GET /api/coins/:id/tickers
+   Returns exchanges listing a specific coin (cached 5 min)
+───────────────────────────────────────────────────────────── */
+const tickerCache = new Map<string, { data: any; ts: number }>();
+const TICKER_CACHE_MS = 5 * 60 * 1000;
+
+router.get("/coins/:id/tickers", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const cached = tickerCache.get(id);
+    if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
+
+    const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}/tickers?include_exchange_logo=true&order=volume_desc&depth=false`;
+    const r = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!r.ok) throw new Error(`CoinGecko tickers HTTP ${r.status}`);
+
+    const raw = await r.json();
+    const tickers = (raw.tickers ?? []).map((t: any) => ({
+      exchangeId:    t.market?.identifier ?? "",
+      exchangeName:  t.market?.name ?? "",
+      exchangeLogo:  t.market?.logo ?? null,
+      base:          t.base,
+      target:        t.target,
+      price:         t.last ?? 0,
+      volume:        t.volume ?? 0,
+      spread:        t.bid_ask_spread_percentage ?? null,
+      trustScore:    t.trust_score ?? null,
+      tradeUrl:      t.trade_url ?? null,
+      convertedLast: t.converted_last?.usd ?? 0,
+      convertedVol:  t.converted_volume?.usd ?? 0,
+      isAnomaly:     t.is_anomaly ?? false,
+      isStale:       t.is_stale ?? false,
+    }));
+
+    const result = { coinId: id, name: raw.name ?? id, tickers };
+    tickerCache.set(id, { data: result, ts: Date.now() });
+    return res.json(result);
+  } catch (err: any) {
+    req.log.error({ err }, `Failed to fetch tickers for ${id}`);
+    const cached = tickerCache.get(id);
+    if (cached) return res.json(cached.data);
+    return res.status(502).json({ error: "Failed to fetch ticker data" });
+  }
+});
+
 export default router;
