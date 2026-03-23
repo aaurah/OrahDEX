@@ -77,7 +77,7 @@ function CexBadge() {
 type View    = "exchanges" | "coins";
 type ExType  = "all" | "cex" | "dex";
 type SortKey = "rank" | "volume" | "marketcap" | "trust" | "name";
-type CoinSort = "base" | "price" | "chg" | "vol";
+type CoinSort = "rank" | "base" | "price" | "chg" | "vol";
 
 const SORT_LABELS: Record<SortKey, string> = {
   rank:      "Rank",
@@ -111,8 +111,8 @@ export function DexHub() {
 
   /* ── Coin sort state ── */
   const [coinSearch, setCoinSearch] = useState("");
-  const [coinSort, setCoinSort]     = useState<CoinSort>("vol");
-  const [coinSortDir, setCoinSortDir] = useState<"asc"|"desc">("desc");
+  const [coinSort, setCoinSort]     = useState<CoinSort>("rank");
+  const [coinSortDir, setCoinSortDir] = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]     = useState(0);
   const COIN_PAGE_SIZE = 50;
 
@@ -154,6 +154,7 @@ export function DexHub() {
     }
     return [...rows].sort((a, b) => {
       let v = 0;
+      if (coinSort === "rank")  v = (a.rank ?? a.market_cap_rank ?? 9999) - (b.rank ?? b.market_cap_rank ?? 9999);
       if (coinSort === "base")  v = a.name.localeCompare(b.name);
       if (coinSort === "price") v = a.price - b.price;
       if (coinSort === "chg")   v = a.change24h - b.change24h;
@@ -180,7 +181,7 @@ export function DexHub() {
 
   function toggleCoinSort(k: CoinSort) {
     if (coinSort === k) setCoinSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setCoinSort(k); setCoinSortDir("desc"); }
+    else { setCoinSort(k); setCoinSortDir(k === "rank" || k === "base" ? "asc" : "desc"); }
     setCoinPage(0);
   }
 
@@ -441,7 +442,9 @@ export function DexHub() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-border bg-secondary/50 text-muted-foreground text-xs uppercase tracking-wider">
-                    <th className="px-3 py-3 font-medium w-10">#</th>
+                    <th className="px-3 py-3 font-medium w-10 cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("rank")}>
+                      # {coinSort === "rank" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
+                    </th>
                     <th className="px-3 py-3 font-medium cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("base")}>
                       Coin {coinSort === "base" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
