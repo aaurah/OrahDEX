@@ -125,7 +125,7 @@ function ChainSwitcher({ chainId }: { chainId: number | null }) {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, provider, network, chainId, disconnect } = useWalletStore();
+  const { address, provider, network, chainId, balance, disconnect } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -200,6 +200,11 @@ export function Layout({ children }: { children: ReactNode }) {
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground capitalize">{provider}</span>
+                  {balance && (
+                    <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded">
+                      {balance} {network === "evm" ? "ETH" : "BSV"}
+                    </span>
+                  )}
                 </div>
                 <span className="text-sm font-mono text-foreground bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
                   {shortenAddress(address)}

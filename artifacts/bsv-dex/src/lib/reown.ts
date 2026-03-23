@@ -58,6 +58,42 @@ export function openReownModal(view?: "Connect" | "Account" | "Networks"): boole
   return true;
 }
 
+/**
+ * Subscribe to Reown account state changes.
+ * Fires immediately with current state, then on every change.
+ * Returns an unsubscribe function.
+ */
+export function subscribeReownAccount(
+  cb: (state: { address?: string; isConnected: boolean; caipAddress?: string }) => void
+): () => void {
+  if (!_modal) return () => {};
+  try {
+    return (_modal.subscribeAccount as any)(cb) ?? (() => {});
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Fetch native token balance for an EVM address.
+ * Returns formatted string "0.1234" or null on failure.
+ */
+export async function fetchEvmBalance(address: string): Promise<string | null> {
+  try {
+    const eth = (window as any).ethereum;
+    if (!eth) return null;
+    const hex: string = await eth.request({
+      method: "eth_getBalance",
+      params: [address, "latest"],
+    });
+    const wei = BigInt(hex);
+    const native = Number(wei) / 1e18;
+    return native.toFixed(4);
+  } catch {
+    return null;
+  }
+}
+
 export function getWagmiConfig() {
   return _adapter?.wagmiConfig ?? null;
 }

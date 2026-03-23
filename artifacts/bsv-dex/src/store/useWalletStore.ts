@@ -16,10 +16,12 @@ interface WalletState {
   provider: string | null;
   network: WalletNetwork | null;
   chainId: number | null;
+  balance: string | null;
   isConnecting: boolean;
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
+  setBalance: (balance: string | null) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -29,6 +31,7 @@ export const useWalletStore = create<WalletState>()(
       provider: null,
       network: null,
       chainId: null,
+      balance: null,
       isConnecting: false,
       connect: (wallet) =>
         set({
@@ -36,6 +39,7 @@ export const useWalletStore = create<WalletState>()(
           provider: wallet.provider,
           network: wallet.network,
           chainId: wallet.chainId ?? null,
+          balance: wallet.balance ?? null,
           isConnecting: false,
         }),
       disconnect: () =>
@@ -44,9 +48,11 @@ export const useWalletStore = create<WalletState>()(
           provider: null,
           network: null,
           chainId: null,
+          balance: null,
           isConnecting: false,
         }),
       setConnecting: (isConnecting) => set({ isConnecting }),
+      setBalance: (balance) => set({ balance }),
     }),
     { name: 'aura-dex-wallet' }
   )
