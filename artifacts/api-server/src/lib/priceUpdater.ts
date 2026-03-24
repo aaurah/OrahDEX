@@ -538,10 +538,13 @@ export async function updateMarketPrices() {
       if (!cgId) continue;
 
       const data = prices[cgId];
-      if (!data || !data.usd) continue;
+      // Use live price if available; fall back to hardcoded price so tokens
+      // not returned by CoinGecko (e.g. BSV) still get a consistent update
+      // across ALL their quote pairs (USDT, USDC, TUSD, USDD, PERP…).
+      const baseUSD = data?.usd ?? FALLBACK_PRICES[market.baseAsset] ?? 0;
+      if (!baseUSD || baseUSD <= 0) continue;
 
-      const baseUSD = data.usd;
-      const changePercent = data.usd_24h_change ?? 0;
+      const changePercent = data?.usd_24h_change ?? 0;
       const change = (baseUSD / (1 + changePercent / 100)) * (changePercent / 100);
       const openPrice = baseUSD - change;
       const volatility = Math.abs(change) * 1.5 || baseUSD * 0.01;
@@ -549,7 +552,7 @@ export async function updateMarketPrices() {
       const low24h = openPrice - volatility;
 
       let lastPrice = baseUSD;
-      let vol = data.usd_24h_vol;
+      let vol = data?.usd_24h_vol ?? baseUSD * 1_000_000;
 
       // Stablecoin quote (USDC/TUSD/USDD) — price ≈ same as USD value
       if (STABLECOIN_QUOTES.has(market.quoteAsset) && market.quoteAsset !== "USDT") {
@@ -623,7 +626,7 @@ export async function updateMarketPrices() {
         volume24h: (safePrice(vol) ? vol : 0).toFixed(2),
         high24h: (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
         low24h: Math.max(safePrice(low24h) ? low24h : lastPrice * 0.99, 0.00000001).toFixed(8),
-        marketCap: data.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
+        marketCap: data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
     }
 
