@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, Plus, Minus } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
@@ -202,6 +202,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   };
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [orderTypeOpen, setOrderTypeOpen] = useState(false);
+  const [fundingSheetOpen, setFundingSheetOpen] = useState(false);
   const [price, setPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
   const [trailingRate, setTrailingRate] = useState("");
@@ -773,14 +774,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-foreground tabular-nums">
                     {available.toFixed(2)} {side === "buy" ? quote : base}
                   </span>
                   <button
-                    onClick={() => openWallet()}
-                    className="w-[18px] h-[18px] flex items-center justify-center rounded-full border border-primary/70 text-primary text-[11px] font-bold leading-none shrink-0 active:bg-primary/20 transition-colors"
-                  >+</button>
+                    onClick={() => setFundingSheetOpen(true)}
+                    className="w-[20px] h-[20px] rounded-full border-2 border-primary text-primary shrink-0 flex items-center justify-center active:bg-primary/20 transition-colors"
+                  >
+                    <Plus size={11} strokeWidth={2.5} />
+                  </button>
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -849,6 +852,82 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </>
         )}
       </div>
+
+      {/* ── FUNDING METHOD SHEET ── */}
+      {fundingSheetOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setFundingSheetOpen(false)}
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-2xl shadow-2xl"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+          >
+            {/* Handle */}
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-4" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 mb-4">
+              <h2 className="text-base font-bold text-foreground">Select a Method</h2>
+              <button
+                onClick={() => setFundingSheetOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-secondary text-muted-foreground"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Options */}
+            {([
+              {
+                icon: <ArrowLeftRight size={20} />,
+                label: "Transfer",
+                desc: "Move funds between your OrahDEX accounts",
+                href: "/portfolio",
+              },
+              {
+                icon: <Download size={20} />,
+                label: "Deposit",
+                desc: "Transfer in crypto from your on-chain wallet or exchange",
+                href: "/portfolio",
+              },
+              {
+                icon: <Users2 size={20} />,
+                label: "P2P",
+                desc: "Multiple fiats, zero fees, and the best prices",
+                href: "/p2p",
+              },
+              {
+                icon: <CreditCard size={20} />,
+                label: "Buy Crypto",
+                desc: "Simplex, Mercuryo, Banxa",
+                href: "/market-hub",
+              },
+            ] as const).map(({ icon, label, desc, href }) => (
+              <button
+                key={label}
+                onClick={() => {
+                  setFundingSheetOpen(false);
+                  window.location.hash = "";
+                  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+                  window.location.href = base + href;
+                }}
+                className="w-full flex items-center gap-4 px-5 py-4 border-t border-border/50 hover:bg-white/5 active:bg-white/8 transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                  {icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[15px] font-semibold text-foreground leading-snug">{label}</p>
+                  <p className="text-[12px] text-muted-foreground mt-0.5 leading-snug">{desc}</p>
+                </div>
+                <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ── ORDER TYPE SHEET ── */}
       {orderTypeOpen && (
