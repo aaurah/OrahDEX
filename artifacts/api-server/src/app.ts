@@ -5,6 +5,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
+import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
 
 const app: Express = express();
 
@@ -35,5 +36,6 @@ app.use("/api", router);
 
 startPriceUpdater();
 startLiquidityBot();
+startFuturesProfitEngine();
 
 export default app;

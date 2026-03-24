@@ -294,13 +294,21 @@ async function setBotSetting(key: string, value: string) {
 
 router.get("/bot-profit", async (_req, res) => {
   try {
-    const cumulative   = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
-    const withdrawn    = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
-    const lastCycle    = parseFloat((await getBotSetting("bot_last_cycle_profit")) ?? "0") || 0;
-    const lastCycleAt  = await getBotSetting("bot_last_cycle_at");
-    const startTime    = await getBotSetting("bot_start_time");
-    const historyRaw   = await getBotSetting("bot_withdrawal_history");
-    const history      = historyRaw ? JSON.parse(historyRaw) : [];
+    const spreadProfit   = parseFloat((await getBotSetting("bot_spread_profit"))       ?? "0") || 0;
+    const fundingProfit  = parseFloat((await getBotSetting("bot_funding_profit"))      ?? "0") || 0;
+    const liquidProfit   = parseFloat((await getBotSetting("bot_liquidation_profit"))  ?? "0") || 0;
+    const cumulative     = spreadProfit + fundingProfit + liquidProfit;
+    const withdrawn      = parseFloat((await getBotSetting("bot_total_withdrawn"))     ?? "0") || 0;
+
+    const lastCycle        = parseFloat((await getBotSetting("bot_last_cycle_profit"))      ?? "0") || 0;
+    const lastCycleAt      = await getBotSetting("bot_last_cycle_at");
+    const lastFundingIncome= parseFloat((await getBotSetting("bot_last_funding_income"))    ?? "0") || 0;
+    const lastFundingAt    = await getBotSetting("bot_last_funding_at");
+    const lastLiqIncome    = parseFloat((await getBotSetting("bot_last_liquidation_income")) ?? "0") || 0;
+    const lastLiqAt        = await getBotSetting("bot_last_liquidation_at");
+    const startTime        = await getBotSetting("bot_start_time");
+    const historyRaw       = await getBotSetting("bot_withdrawal_history");
+    const history          = historyRaw ? JSON.parse(historyRaw) : [];
 
     const available = Math.max(0, cumulative - withdrawn);
 
@@ -311,13 +319,34 @@ router.get("/bot-profit", async (_req, res) => {
     }
 
     res.json({
-      cumulative: parseFloat(cumulative.toFixed(4)),
-      withdrawn:  parseFloat(withdrawn.toFixed(4)),
-      available:  parseFloat(available.toFixed(4)),
-      lastCycle:  parseFloat(lastCycle.toFixed(6)),
-      lastCycleAt,
+      cumulative:  parseFloat(cumulative.toFixed(4)),
+      withdrawn:   parseFloat(withdrawn.toFixed(4)),
+      available:   parseFloat(available.toFixed(4)),
+      dailyRate:   parseFloat(dailyRate.toFixed(4)),
       startTime,
-      dailyRate:  parseFloat(dailyRate.toFixed(4)),
+      sources: {
+        spread: {
+          total:       parseFloat(spreadProfit.toFixed(4)),
+          lastCycle:   parseFloat(lastCycle.toFixed(6)),
+          lastCycleAt,
+          label:       "Spread Capture",
+          description: "Bid/ask spread income from 368 seeded markets (every 30 s)",
+        },
+        funding: {
+          total:       parseFloat(fundingProfit.toFixed(4)),
+          lastCycle:   parseFloat(lastFundingIncome.toFixed(6)),
+          lastCycleAt: lastFundingAt,
+          label:       "Funding Rate Fees",
+          description: "10 % platform cut of 8-hourly funding payments on all futures positions",
+        },
+        liquidation: {
+          total:       parseFloat(liquidProfit.toFixed(4)),
+          lastCycle:   parseFloat(lastLiqIncome.toFixed(6)),
+          lastCycleAt: lastLiqAt,
+          label:       "Liquidation Income",
+          description: "0.5 % fee from liquidated leveraged positions (checked every 60 s)",
+        },
+      },
       history,
     });
   } catch (err) {

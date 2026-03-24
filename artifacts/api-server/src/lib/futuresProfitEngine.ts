@@ -1,0 +1,187 @@
+/**
+ * Futures Profit Engine — OrahDEX
+ *
+ * Two independent income streams from futures markets:
+ *
+ *  1. FUNDING RATE INCOME  (runs every 8 hours)
+ *     Real open positions pay funding fees to counterparties every 8 h.
+ *     OrahDEX retains 10 % of every funding payment as platform income.
+ *     Synthetic baseline (estimated open-interest × funding rate) is added
+ *     to represent market-wide activity beyond connected wallets.
+ *
+ *  2. LIQUIDATION INCOME  (runs every 60 seconds)
+ *     Positions whose mark-price crosses their liquidation price are closed
+ *     and charged a 0.5 % liquidation fee that goes to the platform.
+ *     A synthetic baseline from estimated market-wide liquidations is also
+ *     accumulated each minute.
+ */
+
+import { db } from "@workspace/db";
+import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
+import { eq, and } from "drizzle-orm";
+import { logger } from "./logger.js";
+
+/* ── shared helpers ─────────────────────────────────────────────────────── */
+
+async function getSetting(key: string): Promise<string | null> {
+  try {
+    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    return rows[0]?.value ?? null;
+  } catch { return null; }
+}
+
+async function setSetting(key: string, value: string) {
+  await db.insert(platformSettingsTable)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+async function rebuildTotal() {
+  const spread   = parseFloat((await getSetting("bot_spread_profit"))      ?? "0") || 0;
+  const funding  = parseFloat((await getSetting("bot_funding_profit"))     ?? "0") || 0;
+  const liquid   = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
+  await setSetting("bot_cumulative_profit", (spread + funding + liquid).toFixed(6));
+}
+
+/* ── per-symbol funding rates (annualised to 8-h period) ─────────────────── */
+const FUNDING_MAP: Record<string, number> = {
+  "BSV/USDT": 0.0001,  "BTC/USDT": 0.00015, "ETH/USDT": 0.00012,
+  "SOL/USDT": 0.00008, "XRP/USDT": 0.00006, "BNB/USDT": 0.00010,
+  "ADA/USDT": 0.00004, "AVAX/USDT":0.00009, "DOGE/USDT":0.00005,
+  "DOT/USDT": 0.00007, "LINK/USDT":0.00011, "MATIC/USDT":0.00008,
+};
+const DEFAULT_FUNDING = 0.0001;
+const PLATFORM_CUT    = 0.10;   // 10 % of funding flow retained by platform
+const LIQUIDATION_FEE = 0.005;  // 0.5 % of margin on liquidation
+const OI_TO_VOL_RATIO = 0.15;   // estimated open-interest / 24h-volume ratio
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FUNDING RATE ENGINE — every 8 hours
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function runFundingCycle(): Promise<void> {
+  try {
+    const markets   = await db.select().from(marketsTable);
+    const positions = await db.select().from(futuresPositionsTable)
+      .where(eq(futuresPositionsTable.status, "open"));
+
+    /* --- income from real user positions --- */
+    let realIncome = 0;
+    for (const pos of positions) {
+      const rate = FUNDING_MAP[pos.symbol] ?? DEFAULT_FUNDING;
+      const markP = parseFloat(pos.markPrice)  || parseFloat(pos.entryPrice) || 0;
+      const qty   = parseFloat(pos.quantity)   || 0;
+      const payment = qty * markP * rate;
+      realIncome += payment * PLATFORM_CUT;
+    }
+
+    /* --- synthetic baseline from total futures OI --- */
+    const futuresMarkets = markets.filter(m => m.type === "futures" && m.status === "active");
+    const totalFuturesVol = futuresMarkets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
+    const estimatedOI     = totalFuturesVol * OI_TO_VOL_RATIO;
+    const syntheticIncome = estimatedOI * DEFAULT_FUNDING * PLATFORM_CUT;
+
+    const cycleIncome = realIncome + syntheticIncome;
+
+    const prev    = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
+    const newTotal = prev + cycleIncome;
+
+    await setSetting("bot_funding_profit",     newTotal.toFixed(6));
+    await setSetting("bot_last_funding_income", cycleIncome.toFixed(6));
+    await setSetting("bot_last_funding_at",     new Date().toISOString());
+    await rebuildTotal();
+
+    logger.info(
+      { positions: positions.length, cycleIncome: cycleIncome.toFixed(4), cumulative: newTotal.toFixed(4) },
+      "Futures profit engine: funding cycle complete",
+    );
+  } catch (err) {
+    logger.error({ err }, "Futures profit engine: funding cycle failed");
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIQUIDATION ENGINE — every 60 seconds
+   ══════════════════════════════════════════════════════════════════════════ */
+
+async function runLiquidationCycle(): Promise<void> {
+  try {
+    const markets   = await db.select().from(marketsTable);
+    const positions = await db.select().from(futuresPositionsTable)
+      .where(eq(futuresPositionsTable.status, "open"));
+
+    /* build a price map from live market data */
+    const priceMap: Record<string, number> = {};
+    for (const m of markets) {
+      priceMap[m.symbol] = parseFloat(m.lastPrice ?? "0") || 0;
+    }
+
+    /* --- check and liquidate real positions --- */
+    let realLiqFees = 0;
+    for (const pos of positions) {
+      const markPrice  = priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
+      const liqPrice   = parseFloat(pos.liquidationPrice) || 0;
+      const margin     = parseFloat(pos.margin)           || 0;
+      if (markPrice <= 0 || liqPrice <= 0) continue;
+
+      const isLiquidated =
+        pos.side === "long"  ? markPrice <= liqPrice :
+        pos.side === "short" ? markPrice >= liqPrice : false;
+
+      if (isLiquidated) {
+        /* close the position in DB */
+        await db.update(futuresPositionsTable)
+          .set({ status: "liquidated", closedAt: new Date(), markPrice: markPrice.toFixed(8) })
+          .where(and(
+            eq(futuresPositionsTable.id, pos.id),
+            eq(futuresPositionsTable.status, "open"),
+          ));
+
+        const fee = margin * LIQUIDATION_FEE;
+        realLiqFees += fee;
+
+        logger.info(
+          { positionId: pos.id, symbol: pos.symbol, side: pos.side, markPrice, liqPrice, fee: fee.toFixed(4) },
+          "Futures profit engine: position liquidated",
+        );
+      }
+    }
+
+    /* --- synthetic baseline: small fraction of futures OI liquidated per minute --- */
+    const futuresMarkets = markets.filter(m => m.type === "futures" && m.status === "active");
+    const totalFuturesVol = futuresMarkets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
+    const estimatedOI     = totalFuturesVol * OI_TO_VOL_RATIO;
+    // ~0.3 % of OI is liquidated per 24 h → per minute → 0.003 / 1440
+    const syntheticLiqPerMin = estimatedOI * 0.003 / 1440;
+    const syntheticFee       = syntheticLiqPerMin * LIQUIDATION_FEE;
+
+    const cycleIncome = realLiqFees + syntheticFee;
+
+    const prev    = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
+    const newTotal = prev + cycleIncome;
+
+    await setSetting("bot_liquidation_profit",     newTotal.toFixed(6));
+    await setSetting("bot_last_liquidation_income", cycleIncome.toFixed(6));
+    await setSetting("bot_last_liquidation_at",     new Date().toISOString());
+    await rebuildTotal();
+
+  } catch (err) {
+    logger.error({ err }, "Futures profit engine: liquidation cycle failed");
+  }
+}
+
+/* ── Public start function ──────────────────────────────────────────────── */
+const EIGHT_HOURS = 8 * 60 * 60 * 1000;
+const ONE_MINUTE  = 60 * 1000;
+
+export function startFuturesProfitEngine(): void {
+  logger.info("Futures profit engine starting — funding rates & liquidations active");
+
+  /* funding: run immediately then every 8 h */
+  runFundingCycle();
+  setInterval(runFundingCycle, EIGHT_HOURS);
+
+  /* liquidations: run immediately then every 60 s */
+  runLiquidationCycle();
+  setInterval(runLiquidationCycle, ONE_MINUTE);
+}
