@@ -5,10 +5,25 @@ import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
   ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
-  Shield, Link2,
+  Shield, Link2, Copy, Check,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/BrandLogo";
+
+/* ── Curated Base / Zora ecosystem tokens ── */
+const ZORA_COINS = [
+  { id: "zora-network",  symbol: "ZORA",   name: "Zora",          chain: "Base",  contract: "0x1111111111166B7FE7bd91CA18A7FE55b40B963", image: "https://assets.coingecko.com/coins/images/35552/small/zora.png" },
+  { id: "degen-base",    symbol: "DEGEN",  name: "Degen",         chain: "Base",  contract: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", image: "https://assets.coingecko.com/coins/images/34515/small/android-chrome-512x512.png" },
+  { id: "brett-base",    symbol: "BRETT",  name: "Brett",         chain: "Base",  contract: "0x532f27101965dd16442E59d40670FaF5eBB142E4", image: "https://assets.coingecko.com/coins/images/35529/small/1000048322.png" },
+  { id: "higher-base",   symbol: "HIGHER", name: "Higher",        chain: "Base",  contract: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", image: "" },
+  { id: "enjoy-zora",    symbol: "ENJOY",  name: "Enjoy",         chain: "Zora",  contract: "0xa6B280B42CB0b7c4a4F789eC6cCC3a7609A1Bc39", image: "" },
+  { id: "mochi-base",    symbol: "MOCHI",  name: "Mochi",         chain: "Base",  contract: "0xF6e932Ca12afa26665dC4dDE7e27be02A7c02e50", image: "" },
+  { id: "toshi-base",    symbol: "TOSHI",  name: "Toshi",         chain: "Base",  contract: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", image: "" },
+  { id: "normie-base",   symbol: "NORMIE", name: "Normie",        chain: "Base",  contract: "0x7F12d13B34F5F4f0a9449c16Bcd42f0da47AF200", image: "" },
+  { id: "doginme-base",  symbol: "DOGINME",name: "Doginme",       chain: "Base",  contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", image: "" },
+  { id: "mfer-base",     symbol: "MFER",   name: "mfer",          chain: "Base",  contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", image: "" },
+];
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -110,11 +125,14 @@ export function DexHub() {
   const [sortBy, setSortBy]     = useState<SortKey>("rank");
   const [exSortDir, setExSortDir] = useState<"asc" | "desc">("asc");
 
-  /* ── Coin sort state ── */
-  const [coinSearch, setCoinSearch] = useState("");
-  const [coinSort, setCoinSort]     = useState<CoinSort>("rank");
-  const [coinSortDir, setCoinSortDir] = useState<"asc"|"desc">("asc");
-  const [coinPage, setCoinPage]     = useState(0);
+  /* ── Coin sort / search state ── */
+  const [coinSearch, setCoinSearch]       = useState("");
+  const [contractSearch, setContractSearch] = useState("");
+  const [coinSort, setCoinSort]           = useState<CoinSort>("rank");
+  const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
+  const [coinPage, setCoinPage]           = useState(0);
+  const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
+  const [showZora, setShowZora]           = useState(false);
   const COIN_PAGE_SIZE = 50;
 
   const { data, isLoading, refetch, isFetching } = useQuery({
@@ -144,6 +162,10 @@ export function DexHub() {
 
   const allCoins: any[] = Array.isArray(coinsRaw) ? coinsRaw : [];
 
+  /* Look up Zora contract for a given symbol */
+  const zoraContractFor = (symbol: string) =>
+    ZORA_COINS.find(z => z.symbol.toLowerCase() === symbol.toLowerCase())?.contract ?? null;
+
   const filteredCoins = useMemo(() => {
     let rows = allCoins;
     if (coinSearch) {
@@ -152,6 +174,12 @@ export function DexHub() {
         m.symbol.toLowerCase().includes(q) ||
         m.name.toLowerCase().includes(q)
       );
+    }
+    if (contractSearch.trim().length > 5) {
+      const q = contractSearch.trim().toLowerCase();
+      const matched = ZORA_COINS.filter(z => z.contract.toLowerCase().includes(q));
+      const matchedSymbols = new Set(matched.map(z => z.symbol.toLowerCase()));
+      rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
     }
     return [...rows].sort((a, b) => {
       let v = 0;
@@ -279,15 +307,18 @@ export function DexHub() {
 
       {/* ── Hero ── */}
       <div className="mb-8">
-        <div className="flex items-center gap-2 mb-2">
-          <Layers className="w-5 h-5 text-primary" />
-          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Market Hub</span>
+        <div className="flex items-center gap-3 mb-3">
+          <BrandLogo textSize="text-4xl lg:text-5xl" tooltip={false} />
+          <div className="h-8 w-px bg-border" />
+          <div>
+            <div className="text-[11px] text-primary font-bold uppercase tracking-widest leading-tight">Market Hub</div>
+            <div className="text-xs text-muted-foreground leading-tight">Trade means DEX</div>
+          </div>
         </div>
-        <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">
+        <h1 className="text-2xl lg:text-4xl font-bold tracking-tight mb-2">
           All Exchanges — CEX &amp; DEX
         </h1>
-        <p className="text-green-400/80 italic font-medium text-sm mb-3">✦ Trade means DEX</p>
-        <p className="text-muted-foreground text-base lg:text-lg max-w-3xl">
+        <p className="text-muted-foreground text-sm lg:text-base max-w-3xl">
           Every centralised and decentralised exchange ranked by volume &amp; market cap — live data from CoinGecko. Trade any pair on OrahDEX with on-chain BSV settlement.
         </p>
       </div>
@@ -467,16 +498,93 @@ export function DexHub() {
       {/* ══════════════ ALL COINS VIEW ══════════════ */}
       {view === "coins" && (
         <div>
-          {/* Search + count */}
+          {/* ── Zora / Base section ── */}
+          <div className="mb-5">
+            <button
+              onClick={() => setShowZora(v => !v)}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left",
+                showZora
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-border bg-card hover:border-primary/30"
+              )}
+            >
+              <div className="w-9 h-9 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">
+                <span className="text-base font-black text-blue-400">⬡</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm text-foreground">Base & Zora Ecosystem</div>
+                <div className="text-xs text-muted-foreground">Zora.co tokens · ZORA · DEGEN · BRETT · HIGHER + more</div>
+              </div>
+              <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", showZora && "rotate-180")} />
+            </button>
+
+            {showZora && (
+              <div className="mt-2 bg-card border border-border rounded-2xl overflow-hidden">
+                <div className="px-4 py-2 border-b border-border/60 bg-secondary/30">
+                  <p className="text-[11px] text-muted-foreground font-medium">Tap any coin to copy its Base contract address for trading</p>
+                </div>
+                {ZORA_COINS.map(coin => (
+                  <div key={coin.id} className="flex items-center gap-3 px-4 py-3 border-b border-border/40 last:border-0">
+                    <div className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 overflow-hidden">
+                      {coin.image
+                        ? <img src={coin.image} alt={coin.symbol} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        : <span className="text-xs font-bold text-blue-400">{coin.symbol[0]}</span>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-foreground">{coin.symbol}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">{coin.chain}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate">{coin.contract}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(coin.contract).catch(() => {});
+                        setCopiedAddr(coin.contract);
+                        setTimeout(() => setCopiedAddr(null), 2000);
+                      }}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      title="Copy contract address"
+                    >
+                      {copiedAddr === coin.contract ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                    </button>
+                    <button
+                      onClick={() => navigate(`/trade/${coin.symbol}-USDT`)}
+                      className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/25 transition-colors shrink-0"
+                    >
+                      Trade
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Search: name/symbol + contract address */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="relative flex-1 min-w-[180px] max-w-sm">
+            <div className="relative flex-1 min-w-[160px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search name or symbol…"
+                placeholder="Name or symbol…"
                 value={coinSearch}
                 onChange={e => { setCoinSearch(e.target.value); setCoinPage(0); }}
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+              />
+            </div>
+            <div className="relative flex-1 min-w-[160px] max-w-xs">
+              <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Contract address 0x…"
+                value={contractSearch}
+                onChange={e => {
+                  setContractSearch(e.target.value);
+                  if (e.target.value.length > 5) setShowZora(true);
+                }}
+                className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
             <span className="text-xs text-muted-foreground">
@@ -634,6 +742,29 @@ export function DexHub() {
                     <X className="w-5 h-5" />
                   </button>
                 </div>
+
+                {/* Contract address row (if known) */}
+                {(() => {
+                  const ca = zoraContractFor(selectedCoin.symbol);
+                  if (!ca) return null;
+                  return (
+                    <div className="px-4 py-2 border-b border-border/40 shrink-0 flex items-center gap-2 bg-blue-500/5">
+                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wide shrink-0">Base</span>
+                      <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">{ca}</p>
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(ca).catch(() => {});
+                          setCopiedAddr(ca);
+                          setTimeout(() => setCopiedAddr(null), 2000);
+                        }}
+                        className="shrink-0 flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                      >
+                        {copiedAddr === ca ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedAddr === ca ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 <div className="px-4 py-2 border-b border-border/40 shrink-0">
                   <p className="text-xs text-muted-foreground">
