@@ -7,65 +7,54 @@ interface Props {
 
 /**
  * OrahDEX wordmark.
- * The "O" is an SVG ring — dot is mathematically centred at the same cx/cy.
- * Green pulse = connected  •  Red = disconnected
+ * Icon: green rounded-square badge · white O ring · green dot centred inside.
+ * Green pulse = online  •  Red = offline
  */
 export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
   const online = useOnlineStatus();
 
   return (
     <span
-      className={`inline-flex items-center font-bold tracking-tight text-foreground leading-none ${textSize}`}
+      className={`inline-flex items-center gap-1.5 font-bold tracking-tight text-foreground leading-none ${textSize}`}
       title={tooltip ? (online ? 'Connected to internet' : 'No internet connection') : undefined}
     >
-      {/*
-        SVG "O": outer ring drawn with stroke, dot drawn at exact cx/cy centre.
-        viewBox is square; height matches 1em via className; width auto.
-      */}
+      {/* Green box badge icon */}
       <svg
         viewBox="0 0 100 100"
-        className="inline-block h-[1em] w-[1em] overflow-visible shrink-0"
+        className="inline-block h-[1.25em] w-[1.25em] shrink-0"
         fill="none"
         aria-hidden
       >
-        {/* O ring — stroke colour matches the surrounding text */}
+        {/* Green rounded-rect background */}
+        <rect width="100" height="100" rx="22" fill="#16a34a" />
+
+        {/* White O — drawn as a thick ring (stroke) */}
         <circle
-          cx="50" cy="50" r="40"
-          stroke="currentColor"
+          cx="50" cy="50" r="30"
+          stroke="white"
           strokeWidth="16"
           fill="none"
         />
 
-        {/* Pulse ring — green when online, red when offline */}
+        {/* Pulse ring around dot — green online, red offline */}
         <circle
-          cx="50" cy="50" r="13"
-          fill={online ? 'var(--color-primary)' : '#ef4444'}
+          cx="50" cy="50" r="8"
+          fill={online ? '#4ade80' : '#ef4444'}
           opacity="0.7"
         >
-          <animate
-            attributeName="r"
-            from="13" to="34"
-            dur="1.2s"
-            repeatCount="indefinite"
-          />
-          <animate
-            attributeName="opacity"
-            from="0.7" to="0"
-            dur="1.2s"
-            repeatCount="indefinite"
-          />
+          <animate attributeName="r"       from="8"   to="24"  dur="1.2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" from="0.7" to="0"   dur="1.2s" repeatCount="indefinite" />
         </circle>
 
-        {/* Solid dot — green online, red offline */}
+        {/* Solid green dot inside the O */}
         <circle
-          cx="50" cy="50" r="13"
-          fill={online ? 'var(--color-primary)' : '#ef4444'}
+          cx="50" cy="50" r="8"
+          fill={online ? '#4ade80' : '#ef4444'}
         />
       </svg>
 
-      {/* Rest of wordmark */}
-      <span>rah</span>
-      <span className="text-green-400">DEX</span>
+      {/* Wordmark */}
+      <span>Orah</span><span className="text-green-400">DEX</span>
     </span>
   );
 }
