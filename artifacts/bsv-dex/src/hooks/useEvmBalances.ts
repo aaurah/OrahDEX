@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { CHAIN_RPC_URLS } from "@/lib/reown";
 
 export interface TokenBalance {
   symbol: string;
@@ -67,8 +68,33 @@ function balanceOfCalldata(address: string): string {
   return "0x70a08231" + padded;
 }
 
-async function rpcCall(provider: any, method: string, params: any[]): Promise<any> {
-  return provider.request({ method, params });
+/**
+ * RPC call wrapper — uses injected wallet if available, otherwise falls back
+ * to a public JSON-RPC endpoint for the given chainId.
+ * This makes balances work for MetaMask AND WalletConnect/Reown wallets.
+ */
+async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
+  const injected = (window as any).ethereum;
+  if (injected) {
+    try {
+      return await injected.request({ method, params });
+    } catch {
+      /* fall through to public RPC */
+    }
+  }
+
+  const rpcUrl = CHAIN_RPC_URLS[chainId];
+  if (!rpcUrl) throw new Error(`No RPC URL for chainId ${chainId}`);
+
+  const res = await globalThis.fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`RPC ${rpcUrl} returned ${res.status}`);
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
+  return json.result;
 }
 
 export function useEvmBalances(address: string | null, chainId: number | null) {
@@ -77,13 +103,12 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
   const [lastFetch, setLastFetch] = useState(0);
 
   const fetch = useCallback(async () => {
-    const provider = (window as any).ethereum;
-    if (!address || !chainId || !provider) return;
+    if (!address || !chainId) return;
 
     setLoading(true);
     try {
       // 1. Get native token balance
-      const nativeHex: string = await rpcCall(provider, "eth_getBalance", [address, "latest"]);
+      const nativeHex: string = await rpcCall("eth_getBalance", [address, "latest"], chainId);
       const nativeWei = BigInt(nativeHex);
       const nativeAmount = Number(nativeWei) / 1e18;
 
@@ -124,10 +149,10 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       const tokens = ERC20_TOKENS[chainId] ?? [];
       const erc20Results = await Promise.allSettled(
         tokens.map(async (token) => {
-          const hexBal: string = await rpcCall(provider, "eth_call", [
+          const hexBal: string = await rpcCall("eth_call", [
             { to: token.address, data: balanceOfCalldata(address) },
             "latest",
-          ]);
+          ], chainId);
           const raw = BigInt(hexBal || "0x0");
           const amount = Number(raw) / Math.pow(10, token.decimals);
           return { token, amount };

@@ -38,7 +38,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { subscribeReownAccount, isReownReady } from "@/lib/reown";
+import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
 import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
@@ -102,14 +102,25 @@ function Router() {
     const pollReown = setInterval(() => {
       if (isReownReady()) {
         clearInterval(pollReown);
-        reownUnsub = subscribeReownAccount((state) => {
+        reownUnsub = subscribeReownAccount(async (state) => {
           const { provider: current } = useWalletStore.getState();
           if (state.isConnected && state.address) {
+            // Parse chainId from CAIP address (e.g. "eip155:8453:0xabc..." → 8453)
+            const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
+
+            // Connect immediately with address + chainId so UI updates fast
             useWalletStore.getState().connect({
               address: state.address,
               provider: "reown",
               network: "evm",
+              chainId,
             });
+
+            // Fetch balance in background using public RPC (works for all wallet types)
+            const bal = await fetchEvmBalance(state.address, chainId);
+            if (bal !== null) {
+              useWalletStore.getState().setBalance(bal);
+            }
           } else if (current === "reown") {
             useWalletStore.getState().disconnect();
           }
