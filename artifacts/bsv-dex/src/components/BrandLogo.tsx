@@ -28,27 +28,19 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
         {/* Green rounded-rect background */}
         <rect width="100" height="100" rx="22" fill="#16a34a" />
 
-        {/* White O — drawn as a thick ring (stroke) */}
+        {/* Pulse ring */}
         <circle
-          cx="50" cy="50" r="30"
-          stroke="white"
-          strokeWidth="16"
-          fill="none"
-        />
-
-        {/* Pulse ring around dot — green online, red offline */}
-        <circle
-          cx="50" cy="50" r="8"
+          cx="50" cy="50" r="16"
           fill={online ? '#4ade80' : '#ef4444'}
           opacity="0.7"
         >
-          <animate attributeName="r"       from="8"   to="24"  dur="1.2s" repeatCount="indefinite" />
+          <animate attributeName="r"       from="16"  to="38"  dur="1.2s" repeatCount="indefinite" />
           <animate attributeName="opacity" from="0.7" to="0"   dur="1.2s" repeatCount="indefinite" />
         </circle>
 
-        {/* Solid green dot inside the O */}
+        {/* Solid dot */}
         <circle
-          cx="50" cy="50" r="8"
+          cx="50" cy="50" r="16"
           fill={online ? '#4ade80' : '#ef4444'}
         />
       </svg>
