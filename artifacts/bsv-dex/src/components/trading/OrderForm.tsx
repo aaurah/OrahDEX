@@ -568,19 +568,50 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             </div>
           )}
 
-          {/* Amount */}
-          <div className="group flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-            <span className="text-muted-foreground text-sm w-16">Amount</span>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
-              placeholder="0.00"
-              min="0"
-              step="any"
-            />
-            <span className="text-muted-foreground text-sm ml-2">{base}</span>
+          {/* Amount — header shows live available balance */}
+          <div className="flex flex-col bg-secondary border border-border rounded-xl focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+            <div className="flex items-center justify-between px-3 pt-2 pb-0.5">
+              <span className="text-muted-foreground text-xs">Amount ({base})</span>
+              <div className="flex items-center gap-1">
+                {balancesLoading && isEvm ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Available:{" "}
+                    <span className={cn(
+                      "font-semibold font-mono",
+                      availableAmt > 0 ? "text-primary" : "text-muted-foreground"
+                    )}>
+                      {availableAmt > 0
+                        ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
+                        : "0"}{" "}{availableSym}
+                    </span>
+                  </span>
+                )}
+                {!balancesLoading && isEvm && (
+                  <button
+                    type="button"
+                    onClick={refreshBalances}
+                    className="text-muted-foreground/30 hover:text-primary transition-colors ml-0.5"
+                    title="Refresh balance"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center px-3 pb-2.5 pt-1 gap-2">
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="flex-1 bg-transparent text-foreground font-mono focus:outline-none text-base"
+                placeholder="0.00"
+                min="0"
+                step="any"
+              />
+              <span className="text-muted-foreground text-sm shrink-0">{base}</span>
+            </div>
           </div>
 
           {/* Slippage (market orders only) */}
@@ -646,63 +677,30 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             </div>
           )}
 
-          {/* Balance + % shortcuts */}
-          <div className="space-y-1.5">
-            {/* Balance row — shown right above the % buttons */}
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">
-                Available ({side === "sell" ? base : quote})
-              </span>
-              <div className="flex items-center gap-1.5">
-                {balancesLoading && isEvm ? (
-                  <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/50" />
-                ) : (
-                  <span className="font-mono font-semibold text-foreground">
-                    {availableAmt > 0
-                      ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 8 })
-                      : "0"}{" "}
-                    <span className="text-muted-foreground font-normal">{availableSym}</span>
-                  </span>
+          {/* % shortcuts */}
+          <div className="flex justify-between gap-1">
+            {[25, 50, 75, 100].map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                className={cn(
+                  "flex-1 py-1.5 text-xs font-semibold border rounded-md transition-all",
+                  pct === 100
+                    ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                    : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground hover:text-foreground"
                 )}
-                {!balancesLoading && isEvm && (
-                  <button
-                    type="button"
-                    onClick={refreshBalances}
-                    className="text-muted-foreground/40 hover:text-primary transition-colors"
-                    title="Refresh balance"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* % shortcut buttons */}
-            <div className="flex justify-between gap-1">
-              {[25, 50, 75, 100].map((pct) => (
-                <button
-                  key={pct}
-                  type="button"
-                  className={cn(
-                    "flex-1 py-1.5 text-xs font-semibold border rounded-md transition-all",
-                    pct === 100
-                      ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                      : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground hover:text-foreground"
-                  )}
-                  onClick={() => {
-                    const maxAmt = availableAmt;
-                    const portion = maxAmt * (pct / 100);
-                    if (side === "buy" && price && parseFloat(price) > 0) {
-                      setAmount((portion / parseFloat(price)).toFixed(6));
-                    } else {
-                      setAmount(portion > 0 ? portion.toFixed(6) : "");
-                    }
-                  }}
-                >
-                  {pct === 100 ? "MAX" : `${pct}%`}
-                </button>
-              ))}
-            </div>
+                onClick={() => {
+                  const portion = availableAmt * (pct / 100);
+                  if (side === "buy" && price && parseFloat(price) > 0) {
+                    setAmount((portion / parseFloat(price)).toFixed(6));
+                  } else {
+                    setAmount(portion > 0 ? portion.toFixed(6) : "");
+                  }
+                }}
+              >
+                {pct === 100 ? "MAX" : `${pct}%`}
+              </button>
+            ))}
           </div>
 
           {/* Total / Min Received */}
