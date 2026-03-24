@@ -2,9 +2,11 @@ import { useState, useCallback } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
-  X, Info, AlertTriangle, ChevronRight, BookOpen,
+  X, Info, AlertTriangle, ChevronRight, BookOpen, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 // ─── Pool data ────────────────────────────────────────────────────────────────
 const POOLS = [
@@ -78,13 +80,19 @@ function LiquidityModal({
   const [pct, setPct]   = useState(50);
   const [showIlInfo, setShowIlInfo] = useState(false);
 
+  const { address, network, chainId: walletChainId } = useWalletStore();
+  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const chainId = walletChainId ?? 1;
+  const { balances } = useEvmBalances(isEvm ? address : null, chainId);
+  const walletConnected = !!address;
+
   const handleAmtAChange = useCallback((val: string, p: typeof POOLS[0]) => {
     setAmtA(val);
     const n = parseFloat(val);
     if (!isNaN(n) && n > 0) {
       const priceA = SPOT[p.base]  ?? 1;
       const priceB = SPOT[p.quote] ?? 1;
-      const ratio  = priceA / priceB;          // how many B per 1 A
+      const ratio  = priceA / priceB;
       setAmtB((n * ratio).toFixed(6));
     } else {
       setAmtB("");
@@ -105,6 +113,9 @@ function LiquidityModal({
   }, []);
 
   if (!pool) return null;
+
+  const tokenBalA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
+  const tokenBalB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
 
   const colorA   = COIN_COLORS[pool.base]  ?? "#EAB308";
   const colorB   = COIN_COLORS[pool.quote] ?? "#16a34a";
@@ -145,7 +156,24 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
-        {mode === "add" ? (
+        {/* Wallet gate */}
+        {!walletConnected ? (
+          <div className="flex flex-col items-center justify-center py-10 gap-4">
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+              <Wallet size={26} className="text-primary" />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-base mb-1">Connect your wallet</p>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
+                Connect an EVM or BSV wallet to add or remove liquidity from this pool.
+              </p>
+            </div>
+            <button onClick={onClose}
+              className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">
+              Close &amp; Connect Wallet
+            </button>
+          </div>
+        ) : mode === "add" ? (
           <>
             {/* ── ADD ── */}
 
@@ -161,14 +189,21 @@ function LiquidityModal({
             <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.base} amount</span>
-                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtA) || 0) * priceA).toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground">
+                  Balance: {tokenBalA > 0 ? tokenBalA.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "0"} {pool.base}
+                  {" · "}≈ ${((parseFloat(amtA) || 0) * priceA).toFixed(2)}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-xl font-bold outline-none"
                   placeholder="0.00" value={amtA}
                   onChange={e => handleAmtAChange(e.target.value, pool)} />
-                <button onClick={() => handleAmtAChange("1", pool)}
-                  className="text-xs text-primary font-bold px-2 py-1 hover:bg-primary/10 rounded-lg transition-colors">MAX</button>
+                <button
+                  onClick={() => tokenBalA > 0 && handleAmtAChange(String(tokenBalA), pool)}
+                  disabled={tokenBalA <= 0}
+                  className="text-xs text-primary font-bold px-2 py-1 hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  MAX
+                </button>
                 <div className="px-2.5 py-1.5 bg-background border border-border rounded-lg">
                   <span className="text-sm font-bold" style={{ color: colorA }}>{pool.base}</span>
                 </div>
@@ -186,7 +221,10 @@ function LiquidityModal({
             <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-4">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
-                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtB) || 0) * priceB).toFixed(2)}</span>
+                <span className="text-xs text-muted-foreground">
+                  Balance: {tokenBalB > 0 ? tokenBalB.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "0"} {pool.quote}
+                  {" · "}≈ ${((parseFloat(amtB) || 0) * priceB).toFixed(2)}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-xl font-bold outline-none"
