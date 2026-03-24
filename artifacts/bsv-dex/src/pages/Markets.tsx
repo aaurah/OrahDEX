@@ -127,11 +127,14 @@ export function Markets() {
 
   const { address } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
+  const closeWalletModal = useWalletModalStore((s) => s.close);
   const [, navigate] = useLocation();
   const [pendingRoute, setPendingRoute] = useState<string | null>(null);
 
   useEffect(() => {
     if (address && pendingRoute) {
+      // Close the wallet modal first so the user lands on the trade page unobstructed
+      closeWalletModal();
       navigate(pendingRoute);
       setPendingRoute(null);
     }

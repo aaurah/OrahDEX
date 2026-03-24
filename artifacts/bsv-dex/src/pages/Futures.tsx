@@ -145,7 +145,7 @@ export function FuturesTrading() {
   const [orderType, setOrderType] = useState<"limit" | "market" | "stop">("limit");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
-  const [interval, setInterval] = useState("1h");
+  const [chartInterval, setChartInterval] = useState("1h");
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
 
   const countdown = useFundingCountdown();
@@ -259,9 +259,9 @@ export function FuturesTrading() {
           {[
             { label: "Mark Price", val: formatPrice(ticker.lastPrice + 0.05) },
             { label: "Index Price", val: formatPrice(ticker.lastPrice - 0.02) },
-            { label: "24h High", val: formatPrice(ticker.high24h ?? ticker.lastPrice * 1.02) },
-            { label: "24h Low", val: formatPrice(ticker.low24h ?? ticker.lastPrice * 0.98) },
-            { label: "24h Volume", val: ticker.volume24h ? `${(ticker.volume24h / 1e6).toFixed(1)}M` : "—" },
+            { label: "24h High", val: formatPrice((ticker as any).high24h ?? ticker.highPrice ?? ticker.lastPrice * 1.02) },
+            { label: "24h Low", val: formatPrice((ticker as any).low24h ?? ticker.lowPrice ?? ticker.lastPrice * 0.98) },
+            { label: "24h Volume", val: (() => { const v = (ticker as any).volume24h ?? ticker.volume; return v ? `${(v / 1e6).toFixed(1)}M` : "—"; })() },
             { label: "Open Interest", val: formatPrice(ticker.lastPrice * 4200) },
           ].map((s) => (
             <div key={s.label} className="flex flex-col shrink-0">
@@ -284,8 +284,8 @@ export function FuturesTrading() {
             <div className="flex-1 border-b border-border relative">
               <Chart
                 data={candles}
-                interval={interval}
-                onIntervalChange={setInterval}
+                interval={chartInterval}
+                onIntervalChange={setChartInterval}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
