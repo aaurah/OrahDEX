@@ -116,9 +116,12 @@ function SettlementBanner({
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
 export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; currentPrice?: number }) {
-  const { address, network } = useWalletStore();
+  const { address, network, balance } = useWalletStore();
   const { toast } = useToast();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
+
+  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : "ETH";
+  const nativeBal = balance ? parseFloat(balance) : 0;
 
   const [side, setSide]   = useState<Side>("buy");
   const [type, setType]   = useState<OrderType>("limit");
@@ -279,7 +282,11 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
           {/* Available */}
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>Available</span>
-            <span className="font-mono">{side === "buy" ? "— USDT" : `— ${base}`}</span>
+            <span className="font-mono text-foreground">
+              {side === "buy"
+                ? `${nativeBal.toFixed(4)} ${nativeSymbol}`
+                : `${nativeBal.toFixed(4)} ${nativeSymbol}`}
+            </span>
           </div>
 
           {/* Price */}
@@ -327,11 +334,14 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 key={pct}
                 type="button"
                 className="flex-1 py-1 text-xs bg-secondary hover:bg-secondary/80 border border-border rounded-md transition-colors"
-                onClick={() => setAmount(
-                  side === "buy" && price
-                    ? ((1000 * (pct / 100)) / parseFloat(price)).toFixed(4)
-                    : (1 * (pct / 100)).toFixed(4)
-                )}
+                onClick={() => {
+                  const portion = nativeBal * (pct / 100);
+                  if (side === "buy" && price && parseFloat(price) > 0) {
+                    setAmount((portion / parseFloat(price)).toFixed(6));
+                  } else {
+                    setAmount(portion.toFixed(6));
+                  }
+                }}
               >
                 {pct}%
               </button>

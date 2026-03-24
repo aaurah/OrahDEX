@@ -5,6 +5,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
+import { ChainSwitcherDropdown } from "./ChainSwitcherDropdown";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -171,19 +172,15 @@ export function Layout({ children }: { children: ReactNode }) {
 
           {address ? (
             <div className="flex items-center gap-2">
+              {/* Chain Switcher */}
+              <ChainSwitcherDropdown />
+
               <div className="hidden sm:flex flex-col items-end gap-0.5">
                 <div className="flex items-center gap-1.5">
-                  {network === "evm" ? (
-                    <ChainBadge chainId={chainId} />
-                  ) : (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider bg-amber-500/20 text-amber-400 border-amber-500/30">
-                      BSV
-                    </span>
-                  )}
                   <span className="text-xs text-muted-foreground capitalize">{provider}</span>
                   {balance && (
                     <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded">
-                      {balance} {network === "evm" ? "ETH" : "BSV"}
+                      {parseFloat(balance).toFixed(4)} {network === "evm" ? "ETH" : network === "bsv" ? "BSV" : network === "sol" ? "SOL" : "BTC"}
                     </span>
                   )}
                 </div>
