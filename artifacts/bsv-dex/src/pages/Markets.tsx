@@ -382,7 +382,8 @@ export function Markets() {
                   <th className="px-4 py-3 text-right">24h %</th>
                   <th className="px-4 py-3 text-right hidden lg:table-cell">24h High</th>
                   <th className="px-4 py-3 text-right hidden lg:table-cell">24h Low</th>
-                  <th className="px-4 py-3 text-right">Volume</th>
+                  <th className="px-4 py-3 text-right hidden md:table-cell">Volume 24h</th>
+                  <th className="px-4 py-3 text-right hidden md:table-cell">Market Cap</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -435,8 +436,11 @@ export function Markets() {
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
                         {formatPrice(parseFloat(m.low24h) || 0)}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground">
+                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
                         {formatVolume(parseFloat(m.volume24h) || 0)}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
+                        {m.marketCap ? formatVolume(parseFloat(m.marketCap) || 0) : <span className="text-muted-foreground/30">—</span>}
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -459,7 +463,7 @@ export function Markets() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="py-16 text-center text-muted-foreground text-sm">
+                    <td colSpan={10} className="py-16 text-center text-muted-foreground text-sm">
                       {search ? `No results for "${search}"` : tab === "favorites" ? "Star pairs to see them here" : "Loading markets…"}
                     </td>
                   </tr>
