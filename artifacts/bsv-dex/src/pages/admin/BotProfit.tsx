@@ -72,7 +72,7 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
   color: "yellow" | "green" | "blue" | "orange";
 }) {
   const cls = {
-    yellow: "text-yellow-400 bg-yellow-400/10",
+    yellow: "text-green-400 bg-green-400/10",
     green:  "text-green-400  bg-green-400/10",
     blue:   "text-blue-400   bg-blue-400/10",
     orange: "text-orange-400 bg-orange-400/10",
@@ -98,17 +98,17 @@ function SourceCard({
 }) {
   const pct = parseFloat(fmtPct(source.total, total));
   const bar = {
-    yellow: "bg-yellow-400",
+    yellow: "bg-green-400",
     cyan:   "bg-cyan-400",
     orange: "bg-orange-400",
   }[color];
   const text = {
-    yellow: "text-yellow-400",
+    yellow: "text-green-400",
     cyan:   "text-cyan-400",
     orange: "text-orange-400",
   }[color];
   const iconBg = {
-    yellow: "bg-yellow-400/10 text-yellow-400",
+    yellow: "bg-green-400/10 text-green-400",
     cyan:   "bg-cyan-400/10   text-cyan-400",
     orange: "bg-orange-400/10 text-orange-400",
   }[color];
@@ -221,7 +221,7 @@ export function AdminBotProfit() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Bot className="w-6 h-6 text-yellow-400" />
+            <Bot className="w-6 h-6 text-green-400" />
             Bot Profit
           </h1>
           <p className="text-sm text-white/40 mt-1">
@@ -282,14 +282,14 @@ export function AdminBotProfit() {
       <div className="bg-[#1a1a2e] border border-white/10 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-amber-400" />
+            <Wallet className="w-4 h-4 text-green-400" />
             BSV Settlement Wallet
           </h2>
           <div className={cn(
             "flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider",
             wallet?.broadcastReady
               ? "bg-green-500/10 border-green-500/20 text-green-400"
-              : "bg-amber-500/10 border-amber-500/20 text-amber-400",
+              : "bg-green-500/10 border-green-500/20 text-green-400",
           )}>
             <Radio className="w-3 h-3" />
             {wallet?.broadcastReady ? "BROADCAST READY" : "AWAITING FUNDS"}
@@ -302,7 +302,7 @@ export function AdminBotProfit() {
             <div>
               <p className="text-xs text-white/40 mb-1.5">Deposit Address (P2PKH Mainnet)</p>
               <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2.5">
-                <code className="flex-1 font-mono text-sm text-amber-300 break-all">{wallet.address}</code>
+                <code className="flex-1 font-mono text-sm text-green-300 break-all">{wallet.address}</code>
                 <CopyBtn text={wallet.address} />
                 <a href={wallet.explorerUrl} target="_blank" rel="noreferrer"
                   className="text-white/30 hover:text-white/70 transition-colors ml-1">
@@ -320,7 +320,7 @@ export function AdminBotProfit() {
               </div>
               <div className="bg-white/5 rounded-lg p-3 text-center">
                 <p className="text-xs text-white/40 mb-1">BSV Balance</p>
-                <p className="font-mono text-sm font-bold text-amber-400">{wallet.bsv.toFixed(8)}</p>
+                <p className="font-mono text-sm font-bold text-green-400">{wallet.bsv.toFixed(8)}</p>
                 <p className="text-[10px] text-white/30">BSV</p>
               </div>
               <div className="bg-white/5 rounded-lg p-3 text-center">
@@ -335,7 +335,7 @@ export function AdminBotProfit() {
               "flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs",
               wallet.broadcastReady
                 ? "bg-green-500/10 text-green-300"
-                : "bg-amber-500/10 text-amber-300",
+                : "bg-green-500/10 text-green-300",
             )}>
               <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>{wallet.notice}</span>
@@ -346,7 +346,7 @@ export function AdminBotProfit() {
               <div className="text-xs text-white/30 leading-relaxed border-t border-white/5 pt-3">
                 Once funded, every matched trade will automatically build a real BSV OP_RETURN transaction
                 signed by this wallet's private key and broadcast to the BSV mainnet via WhatsOnChain.
-                The txid will be verifiable at <span className="text-amber-400">whatsonchain.com</span>.
+                The txid will be verifiable at <span className="text-green-400">whatsonchain.com</span>.
                 Minimum recommended deposit: <span className="text-white/60">0.001 BSV</span> (~{(0.001 * 14.20).toFixed(3)} USD).
               </div>
             )}
@@ -385,7 +385,7 @@ export function AdminBotProfit() {
         {/* Withdraw form */}
         <div className="lg:col-span-2 bg-[#1a1a2e] border border-white/10 rounded-xl p-5">
           <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <ArrowDownToLine className="w-4 h-4 text-yellow-400" />
+            <ArrowDownToLine className="w-4 h-4 text-green-400" />
             Withdraw Profits
           </h2>
 
@@ -395,7 +395,7 @@ export function AdminBotProfit() {
               <select
                 value={network}
                 onChange={e => setNetwork(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-400/60"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-400/60"
               >
                 {NETWORKS.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -408,7 +408,7 @@ export function AdminBotProfit() {
                 value={address}
                 onChange={e => setAddress(e.target.value)}
                 placeholder={network === "BSV" ? "1BSV…" : "0x…"}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-yellow-400/60"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-400/60"
               />
             </div>
 
@@ -418,7 +418,7 @@ export function AdminBotProfit() {
                 <button
                   type="button"
                   onClick={() => data && setAmount(data.available.toFixed(4))}
-                  className="text-yellow-400 hover:text-yellow-300 text-xs"
+                  className="text-green-400 hover:text-green-300 text-xs"
                 >
                   Max ${data ? fmt(data.available) : "—"}
                 </button>
@@ -430,7 +430,7 @@ export function AdminBotProfit() {
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-yellow-400/60"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-green-400/60"
               />
             </div>
 
@@ -448,7 +448,7 @@ export function AdminBotProfit() {
             <button
               type="submit"
               disabled={withdrawMut.isPending}
-              className="w-full py-2.5 rounded-lg bg-yellow-500 hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-lg bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-colors flex items-center justify-center gap-2"
             >
               {withdrawMut.isPending
                 ? <><RefreshCw className="w-4 h-4 animate-spin" /> Processing…</>
@@ -460,7 +460,7 @@ export function AdminBotProfit() {
             <div className="mt-4 pt-4 border-t border-white/10 space-y-2 text-xs">
               <div className="flex justify-between text-white/50">
                 <span>Spread Capture</span>
-                <span className="text-yellow-400">${fmt(data.sources.spread.total)}</span>
+                <span className="text-green-400">${fmt(data.sources.spread.total)}</span>
               </div>
               <div className="flex justify-between text-white/50">
                 <span>Funding Rate Fees</span>
@@ -480,7 +480,7 @@ export function AdminBotProfit() {
               </div>
               <div className="flex justify-between font-semibold">
                 <span className="text-white/70">Available</span>
-                <span className="text-yellow-400">${fmt(data.available)}</span>
+                <span className="text-green-400">${fmt(data.available)}</span>
               </div>
             </div>
           )}
@@ -489,7 +489,7 @@ export function AdminBotProfit() {
         {/* Withdrawal history */}
         <div className="lg:col-span-3 bg-[#1a1a2e] border border-white/10 rounded-xl p-5">
           <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-yellow-400" />
+            <Clock className="w-4 h-4 text-green-400" />
             Withdrawal History
           </h2>
 
@@ -517,7 +517,7 @@ export function AdminBotProfit() {
                       <td className="py-2.5 text-white/50 whitespace-nowrap pr-3">
                         {new Date(w.timestamp).toLocaleString()}
                       </td>
-                      <td className="py-2.5 text-right font-semibold text-yellow-400 whitespace-nowrap">
+                      <td className="py-2.5 text-right font-semibold text-green-400 whitespace-nowrap">
                         ${w.amount.toFixed(4)}
                       </td>
                       <td className="py-2.5 pl-4 text-white/60 whitespace-nowrap">{w.network}</td>
@@ -536,7 +536,7 @@ export function AdminBotProfit() {
                           "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
                           w.status === "completed"
                             ? "bg-green-400/10 text-green-400"
-                            : "bg-yellow-400/10 text-yellow-400",
+                            : "bg-green-400/10 text-green-400",
                         )}>
                           {w.status === "completed"
                             ? <><CheckCircle className="w-3 h-3" /> Completed</>
@@ -555,8 +555,8 @@ export function AdminBotProfit() {
       {/* How it works legend */}
       {data && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-yellow-400/5 border border-yellow-400/20 rounded-xl p-4 text-xs text-yellow-300/70">
-            <strong className="text-yellow-300 flex items-center gap-1.5 mb-1">
+          <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-4 text-xs text-green-300/70">
+            <strong className="text-green-300 flex items-center gap-1.5 mb-1">
               <Droplets className="w-3.5 h-3.5" /> Spread Capture
             </strong>
             Bot places 12 bid/ask levels on all {data.sources.spread.lastCycleAt ? "368" : "—"} active markets every 30 s.

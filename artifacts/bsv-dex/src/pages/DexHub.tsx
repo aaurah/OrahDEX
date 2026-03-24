@@ -24,7 +24,7 @@ function fmtBtc(n: number) {
 }
 function trustColor(score: number) {
   if (score >= 8) return "text-green-500";
-  if (score >= 5) return "text-yellow-500";
+  if (score >= 5) return "text-green-500";
   return "text-red-400";
 }
 function TrustDots({ score }: { score: number }) {
@@ -33,7 +33,7 @@ function TrustDots({ score }: { score: number }) {
       {Array.from({ length: 10 }).map((_, i) => (
         <div key={i} className={cn("w-1.5 h-1.5 rounded-full",
           i < score
-            ? score >= 8 ? "bg-green-500" : score >= 5 ? "bg-yellow-500" : "bg-red-400"
+            ? score >= 8 ? "bg-green-500" : score >= 5 ? "bg-green-500" : "bg-red-400"
             : "bg-muted")} />
       ))}
     </div>
@@ -44,7 +44,7 @@ function TrustDots({ score }: { score: number }) {
 const CHAIN_STYLE: Record<string, string> = {
   "Ethereum":      "bg-blue-500/10 text-blue-400 border-blue-500/20",
   "Ethereum L2":   "bg-blue-400/10 text-blue-300 border-blue-400/20",
-  "BSC":           "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+  "BSC":           "bg-green-500/10 text-green-400 border-green-500/20",
   "Polygon":       "bg-purple-500/10 text-purple-400 border-purple-500/20",
   "Arbitrum":      "bg-sky-500/10 text-sky-400 border-sky-500/20",
   "Base/Optimism": "bg-red-500/10 text-red-400 border-red-500/20",
@@ -323,7 +323,7 @@ export function DexHub() {
       {/* ── Liquidity Pools Banner ── */}
       <div
         onClick={() => navigate("/liquidity")}
-        className="cursor-pointer mb-6 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-amber-500/10 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:border-primary/60 transition-colors"
+        className="cursor-pointer mb-6 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-green-500/10 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 hover:border-primary/60 transition-colors"
       >
         {/* Top / left: icon + text */}
         <div className="flex items-start gap-4">
@@ -404,7 +404,7 @@ export function DexHub() {
 
         <div className="bg-gradient-to-br from-card to-secondary p-4 lg:p-5 rounded-2xl border border-border shadow-lg">
           <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
-            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <ShieldCheck className="w-4 h-4 text-green-400" />
             BTC Price (live)
           </div>
           {isLoading ? <div className="h-8 w-24 bg-muted animate-pulse rounded" /> : (
@@ -609,7 +609,7 @@ export function DexHub() {
                   {!tickersLoading && (tickersData?.tickers ?? [])
                     .filter((t: any) => !t.isAnomaly && !t.isStale)
                     .map((t: any, i: number) => {
-                      const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-500" : "bg-red-400";
+                      const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-green-500" : "bg-red-400";
                       return (
                         <a
                           key={i}

@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const EVM_CHAINS = [
   { id: 1,      key: "eth",    name: "Ethereum",     symbol: "ETH",   badge: "L1", icon: "⟠",  color: "text-blue-400" },
-  { id: 56,     key: "bsc",   name: "BNB Chain",    symbol: "BNB",   badge: "L1", icon: "🟡", color: "text-yellow-400" },
+  { id: 56,     key: "bsc",   name: "BNB Chain",    symbol: "BNB",   badge: "L1", icon: "🟡", color: "text-green-400" },
   { id: 43114,  key: "avax",  name: "Avalanche",    symbol: "AVAX",  badge: "L1", icon: "🔺", color: "text-red-400" },
   { id: 250,    key: "ftm",   name: "Fantom",       symbol: "FTM",   badge: "L1", icon: "👻", color: "text-blue-300" },
   { id: 25,     key: "cro",   name: "Cronos",       symbol: "CRO",   badge: "L1", icon: "🔵", color: "text-blue-400" },
@@ -15,13 +15,13 @@ const EVM_CHAINS = [
   { id: 10,     key: "op",    name: "Optimism",     symbol: "ETH",   badge: "L2", icon: "🔴", color: "text-red-400" },
   { id: 8453,   key: "base",  name: "Base",         symbol: "ETH",   badge: "L2", icon: "🔵", color: "text-blue-400" },
   { id: 59144,  key: "linea", name: "Linea",        symbol: "ETH",   badge: "L2", icon: "⬛", color: "text-gray-300" },
-  { id: 324,    key: "zk",    name: "zkSync Era",   symbol: "ETH",   badge: "L3", icon: "⚡", color: "text-yellow-300" },
+  { id: 324,    key: "zk",    name: "zkSync Era",   symbol: "ETH",   badge: "L3", icon: "⚡", color: "text-green-300" },
   { id: 534352, key: "scroll",name: "Scroll",       symbol: "ETH",   badge: "L3", icon: "📜", color: "text-orange-300" },
   { id: 5000,   key: "mantle",name: "Mantle",       symbol: "MNT",   badge: "L3", icon: "🟢", color: "text-green-400" },
 ];
 
 const OTHER_CHAINS = [
-  { key: "bsv", name: "Bitcoin SV",  symbol: "BSV", icon: "₿",  color: "text-amber-400",  network: "bsv" as const },
+  { key: "bsv", name: "Bitcoin SV",  symbol: "BSV", icon: "₿",  color: "text-green-400",  network: "bsv" as const },
   { key: "sol", name: "Solana",      symbol: "SOL", icon: "◎",  color: "text-purple-400", network: "sol" as const },
   { key: "btc", name: "Bitcoin",     symbol: "BTC", icon: "₿",  color: "text-orange-400", network: "btc" as const },
 ];

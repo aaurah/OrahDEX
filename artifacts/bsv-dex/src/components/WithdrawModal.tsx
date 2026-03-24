@@ -173,9 +173,9 @@ export function WithdrawModal({ isOpen, onClose, defaultAsset = "USDT" }: Props)
             </div>
 
             {/* Fee info */}
-            <div className="flex items-center gap-2 bg-amber-500/8 border border-amber-500/20 rounded-xl px-3 py-2.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <p className="text-xs text-amber-300/80">
+            <div className="flex items-center gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-green-400 shrink-0" />
+              <p className="text-xs text-green-300/80">
                 Network fee {net.fee} will be deducted from your withdrawal. Arrives in {net.time}.
               </p>
             </div>

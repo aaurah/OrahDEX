@@ -65,7 +65,7 @@ const AVATAR_COLORS = [
   "from-violet-600 to-purple-700",
   "from-blue-600 to-cyan-600",
   "from-green-600 to-emerald-600",
-  "from-orange-600 to-amber-600",
+  "from-green-600 to-emerald-500",
   "from-pink-600 to-rose-600",
   "from-teal-600 to-cyan-700",
   "from-indigo-600 to-violet-600",
@@ -190,8 +190,8 @@ function PaymentBadge({ method }: { method: string }) {
 function StarRating({ rating }: { rating: number }) {
   return (
     <span className="flex items-center gap-0.5">
-      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-      <span className="text-xs text-amber-400 font-medium">{rating.toFixed(1)}</span>
+      <Star className="w-3 h-3 fill-green-400 text-green-400" />
+      <span className="text-xs text-green-400 font-medium">{rating.toFixed(1)}</span>
     </span>
   );
 }
@@ -243,11 +243,11 @@ function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClos
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-sm text-foreground">{offer.trader.name}</span>
                   {offer.trader.verified && <Shield className="w-3.5 h-3.5 text-blue-400" />}
-                  {offer.trader.topTrader && <Zap className="w-3.5 h-3.5 text-amber-400" />}
+                  {offer.trader.topTrader && <Zap className="w-3.5 h-3.5 text-green-400" />}
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                   <span>{offer.trader.trades} trades</span>
-                  <span className={offer.trader.completion >= 98 ? "text-green-400" : "text-yellow-400"}>
+                  <span className={offer.trader.completion >= 98 ? "text-green-400" : "text-green-400"}>
                     {offer.trader.completion}% completion
                   </span>
                   <StarRating rating={offer.trader.rating} />
@@ -341,9 +341,9 @@ function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClos
               <div className="flex justify-between"><span className="text-muted-foreground">Amount ({offer.coin})</span><span className="font-semibold">{cryptoAmount} {offer.coin}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Rate</span><span>${offer.price.toLocaleString()} / {offer.coin}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Payment method</span><span>{offer.paymentMethods[0]}</span></div>
-              <div className="flex justify-between items-center"><span className="text-muted-foreground">Status</span><span className="flex items-center gap-1 text-amber-400"><Clock className="w-3.5 h-3.5" /> Awaiting payment</span></div>
+              <div className="flex justify-between items-center"><span className="text-muted-foreground">Status</span><span className="flex items-center gap-1 text-green-400"><Clock className="w-3.5 h-3.5" /> Awaiting payment</span></div>
             </div>
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-xs text-green-300">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>Send your payment within <strong>30 minutes</strong> and mark it as paid. The seller will release {offer.coin} from escrow after confirming receipt.</span>
             </div>
@@ -630,7 +630,7 @@ export function P2P() {
               { icon: TrendingUp, label: "Volume 24h", value: `$${(totalVolume24h/1e6).toFixed(1)}M`, color: "text-green-400" },
               { icon: Users2, label: "Active Traders", value: activeTraders.toLocaleString(), color: "text-blue-400" },
               { icon: Globe, label: "Countries", value: countries.toString(), color: "text-violet-400" },
-              { icon: Activity, label: "Completed Trades", value: `${(completedTrades/1e6).toFixed(2)}M`, color: "text-amber-400" },
+              { icon: Activity, label: "Completed Trades", value: `${(completedTrades/1e6).toFixed(2)}M`, color: "text-green-400" },
             ].map(({ icon: Icon, label, value, color }) => (
               <div key={label} className="bg-card border border-border rounded-xl p-3 lg:p-4 flex items-center gap-3">
                 <div className={cn("w-8 h-8 rounded-lg bg-secondary flex items-center justify-center", color)}>
@@ -770,11 +770,11 @@ export function P2P() {
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-sm">{offer.trader.name}</span>
                             {offer.trader.verified && <Shield className="w-3.5 h-3.5 text-blue-400" />}
-                            {offer.trader.topTrader && <Zap className="w-3.5 h-3.5 text-amber-400" />}
+                            {offer.trader.topTrader && <Zap className="w-3.5 h-3.5 text-green-400" />}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>{offer.trader.trades} trades</span>
-                            <span className={offer.trader.completion >= 98 ? "text-green-400" : "text-yellow-400"}>{offer.trader.completion}%</span>
+                            <span className={offer.trader.completion >= 98 ? "text-green-400" : "text-green-400"}>{offer.trader.completion}%</span>
                             <StarRating rating={offer.trader.rating} />
                           </div>
                         </div>
@@ -817,13 +817,13 @@ export function P2P() {
                           )}
                           {offer.trader.topTrader && (
                             <span title="Top Trader" className="flex items-center">
-                              <Zap className="w-3.5 h-3.5 text-amber-400" />
+                              <Zap className="w-3.5 h-3.5 text-green-400" />
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                           <span>{offer.trader.trades.toLocaleString()} trades</span>
-                          <span className={cn("font-medium", offer.trader.completion >= 98 ? "text-green-400" : "text-yellow-400")}>
+                          <span className={cn("font-medium", offer.trader.completion >= 98 ? "text-green-400" : "text-green-400")}>
                             {offer.trader.completion}% completion
                           </span>
                           <StarRating rating={offer.trader.rating} />

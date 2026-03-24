@@ -218,8 +218,8 @@ export function AdminFeeWallet() {
 
       {/* BSV Wallet */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-gradient-to-r from-yellow-500/5 to-transparent">
-          <div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-gradient-to-r from-green-500/5 to-transparent">
+          <div className="w-8 h-8 rounded-lg bg-green-500/15 flex items-center justify-center">
             <span className="text-base">₿</span>
           </div>
           <div>
@@ -227,7 +227,7 @@ export function AdminFeeWallet() {
             <p className="text-xs text-muted-foreground">Receives fees from all BSV on-chain trades</p>
           </div>
           <div className="ml-auto">
-            <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400">
+            <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400">
               BSV
             </span>
           </div>
@@ -243,7 +243,7 @@ export function AdminFeeWallet() {
               value={current.bsvAddress}
               onChange={e => set("bsvAddress", e.target.value)}
               placeholder="1BSV... or a BSV address"
-              className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-yellow-500/50 transition-colors"
+              className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-green-500/50 transition-colors"
             />
             {current.bsvAddress && (
               <button
@@ -259,7 +259,7 @@ export function AdminFeeWallet() {
               href={`https://whatsonchain.com/address/${current.bsvAddress}`}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-yellow-400 flex items-center gap-1 mt-1.5 hover:underline"
+              className="text-xs text-green-400 flex items-center gap-1 mt-1.5 hover:underline"
             >
               <ExternalLink className="w-3 h-3" />
               View on WhatsOnChain
@@ -329,7 +329,7 @@ export function AdminFeeWallet() {
 
       {/* Validation warnings */}
       {current.evmAddress && !/^0x[0-9a-fA-F]{40}$/.test(current.evmAddress) && (
-        <div className="flex items-center gap-2 p-3 rounded-xl border border-yellow-500/30 bg-yellow-500/5 text-yellow-400 text-xs">
+        <div className="flex items-center gap-2 p-3 rounded-xl border border-green-500/30 bg-green-500/5 text-green-400 text-xs">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           EVM address format looks incorrect. It should start with 0x and be 42 characters.
         </div>

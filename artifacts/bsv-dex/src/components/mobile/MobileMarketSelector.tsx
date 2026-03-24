@@ -290,7 +290,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
                   >
                     <Star
                       size={12}
-                      className={favorites.has(m.symbol) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}
+                      className={favorites.has(m.symbol) ? "fill-green-400 text-green-400" : "text-muted-foreground/30"}
                     />
                   </button>
 
@@ -301,7 +301,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
                     </span>
                     <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
                     {m.type === "futures" && (
-                      <span className="ml-1 text-[8px] font-bold text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded">PERP</span>
+                      <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
                     )}
                     {isActive && (
                       <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>

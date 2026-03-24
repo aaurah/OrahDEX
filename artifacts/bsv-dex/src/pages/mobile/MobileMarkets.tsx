@@ -235,9 +235,9 @@ export function MobileMarkets() {
                 onClick={() => { setCat(c.id); setSearch(""); }}
                 className={cn(
                   "shrink-0 px-3.5 py-2.5 text-[13px] font-medium whitespace-nowrap relative transition-colors",
-                  isActive && isBsv ? "text-amber-400 font-bold"
+                  isActive && isBsv ? "text-green-400 font-bold"
                   : isActive ? "text-foreground font-bold"
-                  : isBsv ? "text-amber-500/80 hover:text-amber-400"
+                  : isBsv ? "text-green-500/80 hover:text-green-400"
                   : "text-muted-foreground hover:text-foreground/80"
                 )}
               >
@@ -246,7 +246,7 @@ export function MobileMarkets() {
                   <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-primary rounded-full" />
                 )}
                 {isActive && isBsv && (
-                  <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-amber-500 rounded-full" />
+                  <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-green-500 rounded-full" />
                 )}
               </button>
             );
@@ -255,11 +255,11 @@ export function MobileMarkets() {
 
         {/* BSV fastest settlement banner — mobile */}
         {cat === "bsv" && (
-          <div className="mx-4 mt-2 mb-0 flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/25 rounded-xl">
+          <div className="mx-4 mt-2 mb-0 flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/25 rounded-xl">
             <span className="text-base leading-none">⚡</span>
             <div className="min-w-0">
-              <p className="text-[11px] font-bold text-amber-400 leading-tight">World's Fastest Settlement — BSV</p>
-              <p className="text-[10px] text-amber-300/60 leading-tight mt-0.5">On-chain in &lt;5s · ~$0.001 fee · No bridges</p>
+              <p className="text-[11px] font-bold text-green-400 leading-tight">World's Fastest Settlement — BSV</p>
+              <p className="text-[10px] text-green-300/60 leading-tight mt-0.5">On-chain in &lt;5s · ~$0.001 fee · No bridges</p>
             </div>
           </div>
         )}
@@ -344,14 +344,14 @@ function MexcRow({
   return (
     <div className="flex items-center px-4 py-[11px] border-b border-border/20 active:bg-secondary/30 transition-colors">
       <button onClick={onFav} className="mr-2.5 shrink-0">
-        <Star size={13} className={isFav ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"} />
+        <Star size={13} className={isFav ? "fill-green-400 text-green-400" : "text-muted-foreground/30"} />
       </button>
 
       <button onClick={onTrade} className="flex-1 text-left min-w-0">
         <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
         <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
         {m.type === "futures" && (
-          <span className="ml-1.5 text-[9px] font-bold text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded border border-amber-500/25">PERP</span>
+          <span className="ml-1.5 text-[9px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded border border-green-500/25">PERP</span>
         )}
       </button>
 

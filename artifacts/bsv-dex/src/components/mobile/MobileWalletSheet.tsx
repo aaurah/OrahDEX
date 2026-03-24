@@ -17,7 +17,7 @@ const BSV_HOLDINGS = [
 ];
 
 const NETWORK_LABEL: Record<string, { label: string; color: string }> = {
-  bsv: { label: "BSV", color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/30" },
+  bsv: { label: "BSV", color: "text-green-400 bg-green-400/10 border-green-400/30" },
   evm: { label: "EVM", color: "text-blue-400 bg-blue-400/10 border-blue-400/30" },
 };
 

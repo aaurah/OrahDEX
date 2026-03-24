@@ -60,7 +60,7 @@ function MaskedField({
               <CheckCircle2 className="w-3 h-3" /> Configured
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-[10px] text-amber-400 font-semibold">
+            <span className="flex items-center gap-1 text-[10px] text-green-400 font-semibold">
               <AlertTriangle className="w-3 h-3" /> Not set
             </span>
           )}
@@ -290,7 +290,7 @@ export function AdminIntegrations() {
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Node RPC URL</label>
             <span className={cn(
               "flex items-center gap-1 text-[10px] font-semibold",
-              form.bsv_rpc_url ? "text-green-400" : "text-amber-400"
+              form.bsv_rpc_url ? "text-green-400" : "text-green-400"
             )}>
               {form.bsv_rpc_url ? <><CheckCircle2 className="w-3 h-3" /> Configured</> : <><AlertTriangle className="w-3 h-3" /> Not set</>}
             </span>

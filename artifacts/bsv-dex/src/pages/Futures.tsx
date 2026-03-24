@@ -218,7 +218,7 @@ export function FuturesTrading() {
   const leverageColor =
     leverage >= 50 ? "text-red-400 border-red-500/40 bg-red-500/10"
     : leverage >= 20 ? "text-orange-400 border-orange-500/40 bg-orange-500/10"
-    : "text-yellow-400 border-yellow-500/40 bg-yellow-500/10";
+    : "text-green-400 border-green-500/40 bg-green-500/10";
 
   return (
     <>

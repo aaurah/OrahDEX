@@ -42,7 +42,7 @@ const NAV_LINKS = [
 
 const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
   1:     { short: "ETH",   color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  56:    { short: "BNB",   color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+  56:    { short: "BNB",   color: "bg-green-500/20 text-green-400 border-green-500/30" },
   137:   { short: "MATIC", color: "bg-violet-500/20 text-violet-400 border-violet-500/30" },
   42161: { short: "ARB",   color: "bg-sky-500/20 text-sky-400 border-sky-500/30" },
   10:    { short: "OP",    color: "bg-red-500/20 text-red-400 border-red-500/30" },
@@ -91,20 +91,20 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
       {/* BSV Chain Status Bar */}
-      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/30 backdrop-blur-sm flex items-center justify-between overflow-hidden px-3">
+      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-green-950/90 via-green-900/80 to-green-950/90 border-b border-green-500/30 backdrop-blur-sm flex items-center justify-between overflow-hidden px-3">
         {/* Scrolling ticker */}
         <div className="flex-1 overflow-hidden">
           <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
             {[0,1,2].map(i => (
-              <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-amber-300">
-                <span className="flex items-center gap-1.5"><span className="animate-pulse text-amber-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
-                <span className="text-amber-500">·</span>
+              <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-green-300">
+                <span className="flex items-center gap-1.5"><span className="animate-pulse text-green-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
+                <span className="text-green-500">·</span>
                 <span>Instant On-Chain Settlement · No Bridges · No L2s</span>
-                <span className="text-amber-500">·</span>
+                <span className="text-green-500">·</span>
                 <span>Every trade settled on BSV in seconds</span>
-                <span className="text-amber-500">·</span>
-                <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
-                <span className="text-amber-500">·</span>
+                <span className="text-green-500">·</span>
+                <span className="text-green-400 font-bold">OrahDEX — Trade means DEX</span>
+                <span className="text-green-500">·</span>
               </span>
             ))}
           </div>
@@ -114,7 +114,7 @@ export function Layout({ children }: { children: ReactNode }) {
           href={bsvBlock > 0 ? `https://whatsonchain.com/block-height/${bsvBlock}` : "https://whatsonchain.com"}
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 flex items-center gap-1.5 ml-3 px-2 py-0.5 rounded bg-black/30 border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider hover:bg-black/50 transition-colors"
+          className="shrink-0 flex items-center gap-1.5 ml-3 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider hover:bg-black/50 transition-colors"
         >
           <span className={cn(
             "w-1.5 h-1.5 rounded-full",
@@ -124,7 +124,7 @@ export function Layout({ children }: { children: ReactNode }) {
             BSV {bsvOnline ? "LIVE" : "—"}
           </span>
           {bsvBlock > 0 && (
-            <span className="text-amber-400/80">#{bsvBlock.toLocaleString()}</span>
+            <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>
           )}
         </a>
       </div>

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 /* ── Notifications drawer ── */
 const NOTIF_ICONS: Record<string, React.ReactNode> = {
-  price:  <TrendingUp size={15} className="text-amber-400" />,
+  price:  <TrendingUp size={15} className="text-green-400" />,
   order:  <CheckCircle2 size={15} className="text-green-500" />,
   alert:  <AlertCircle size={15} className="text-red-400" />,
   system: <Info size={15} className="text-blue-400" />,
@@ -262,7 +262,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
           </button>
           <button onClick={() => setStarred(s => !s)}>
-            <Star size={17} className={starred ? "fill-amber-400 text-amber-400" : ""} />
+            <Star size={17} className={starred ? "fill-green-400 text-green-400" : ""} />
           </button>
           <button onClick={handleShare}>
             <Share2 size={17} />

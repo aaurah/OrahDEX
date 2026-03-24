@@ -299,7 +299,7 @@ export function Liquidity() {
                   <span className="text-right text-sm font-semibold">{fmtTvl(pool.tvl)}</span>
                   <span className="text-right text-sm">{fmtTvl(pool.vol24)}</span>
                   <span className="text-right text-sm font-bold text-green-500">{pool.apr.toFixed(1)}%</span>
-                  <span className="text-right text-sm font-bold text-amber-500">+{pool.farmApr.toFixed(1)}%</span>
+                  <span className="text-right text-sm font-bold text-green-500">+{pool.farmApr.toFixed(1)}%</span>
                   <span className="text-right text-sm text-muted-foreground">{pool.fee}%</span>
                   <div className="flex items-center gap-1.5 justify-end">
                     <button onClick={() => openAdd(pool)}
@@ -356,9 +356,9 @@ export function Liquidity() {
         <div className="grid grid-cols-3 gap-6">
           {/* Left: Market Maker Rebates */}
           <div className="col-span-1 space-y-4">
-            <div className="bg-card border border-amber-500/25 rounded-xl p-5">
+            <div className="bg-card border border-green-500/25 rounded-xl p-5">
               <div className="flex items-center gap-2 mb-3">
-                <Zap size={18} className="text-amber-400" />
+                <Zap size={18} className="text-green-400" />
                 <span className="font-bold">Market Maker Rebates</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 bg-primary/15 text-primary rounded font-bold">NEW</span>
               </div>
@@ -374,7 +374,7 @@ export function Liquidity() {
                       <div className="text-xs font-bold text-green-500">{rebate}</div>
                       <div className="text-[10px] text-muted-foreground">{spread} · {tier}</div>
                     </div>
-                    <Award size={16} className="text-amber-400" />
+                    <Award size={16} className="text-green-400" />
                   </div>
                 ))}
               </div>
@@ -421,13 +421,13 @@ export function Liquidity() {
                 <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3.5 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors">
                   <TokenPair base={pool.base} quote={pool.quote} />
                   <span className="text-right text-sm font-semibold text-green-500">{pool.apr.toFixed(1)}%</span>
-                  <span className="text-right text-sm font-semibold text-amber-500">+{pool.farmApr.toFixed(1)}%</span>
+                  <span className="text-right text-sm font-semibold text-green-500">+{pool.farmApr.toFixed(1)}%</span>
                   <span className="text-right text-sm font-bold text-green-400">{(pool.apr + pool.farmApr).toFixed(1)}%</span>
                   <span className="text-right text-sm">{pool.userLp > 0 ? pool.userLp.toFixed(2) : "—"}</span>
                   <div className="flex gap-1.5 justify-end">
                     {pool.userLp > 0 ? (
                       <>
-                        <button className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-black text-xs font-bold transition-colors">Stake</button>
+                        <button className="px-2.5 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-black text-xs font-bold transition-colors">Stake</button>
                         <button className="px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">Harvest</button>
                       </>
                     ) : (
