@@ -282,7 +282,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const resp = await provider.connect();
       const address: string = resp?.publicKey?.toString() ?? provider.publicKey?.toString();
       if (!address) throw new Error("No public key returned from wallet.");
-      connect({ address, provider: walletId, network: "sol" });
+
+      // Fetch real SOL balance if the provider supports it
+      let solBalance: string | undefined;
+      try {
+        const lamports: number = await provider.getBalance?.(resp?.publicKey ?? provider.publicKey) ?? null;
+        if (lamports !== null && lamports !== undefined) {
+          solBalance = (lamports / 1e9).toFixed(6);
+        }
+      } catch { /* non-critical */ }
+
+      connect({ address, provider: walletId, network: "sol", balance: solBalance });
       setConnected(walletId);
       setTimeout(() => goToPrep(address, "sol", walletId), 800);
     } catch (err: any) {
@@ -428,7 +438,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       if (!accounts?.length) throw new Error("Wallet returned no accounts.");
       const rawChain: string = await provider.request({ method: "eth_chainId" });
       const chainId = parseInt(rawChain, 16);
-      connect({ address: accounts[0], provider: walletId, network: "evm", chainId });
+
+      // Fetch real native token balance from the wallet
+      let nativeBalance: string | undefined;
+      try {
+        const rawBal: string = await provider.request({ method: "eth_getBalance", params: [accounts[0], "latest"] });
+        const balWei = BigInt(rawBal);
+        const balEth = Number(balWei) / 1e18;
+        nativeBalance = balEth.toFixed(6);
+      } catch { /* non-critical */ }
+
+      connect({ address: accounts[0], provider: walletId, network: "evm", chainId, balance: nativeBalance });
 
       provider.removeAllListeners?.();
       provider.on?.("accountsChanged", (accs: string[]) => {
