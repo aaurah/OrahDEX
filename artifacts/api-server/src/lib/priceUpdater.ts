@@ -147,6 +147,36 @@ export const CRO_PAIRS = [
   "LINK","UNI","ATOM","NEAR",
 ];
 
+// BASE (Coinbase L2) pairs
+export const BASE_PAIRS = [
+  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","ARB","OP","DOGE",
+  "SHIB","PEPE","MKR","CRV","LDO","COMP","GRT","SNX","RUNE","SUSHI",
+];
+
+// LINEA (MetaMask L2) pairs
+export const LINEA_PAIRS = [
+  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","SNX","CRV","LDO",
+  "COMP","GRT","MKR","SUSHI","RUNE","ZEC","INJ","NEAR","DOT","SOL",
+];
+
+// ZK (zkSync Era) pairs
+export const ZK_PAIRS = [
+  "ETH","BTC","USDC","USDT","DAI","ARB","OP","LINK","UNI","AAVE",
+  "COMP","CRV","LDO","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
+];
+
+// SCR (Scroll L2) pairs
+export const SCR_PAIRS = [
+  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","LDO","CRV",
+  "MKR","SNX","COMP","GRT","RUNE","SUSHI","INJ","NEAR","DOT","SOL",
+];
+
+// MNT (Mantle L2) pairs
+export const MNT_PAIRS = [
+  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","ARB","OP",
+  "CRV","LDO","COMP","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
+];
+
 // BSV pairs — top coins vs BSV
 export const BSV_PAIRS = [
   "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
@@ -208,6 +238,7 @@ const FALLBACK_PRICES: Record<string, number> = {
   LDO:0.90,SUSHI:0.60,COMP:43,GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,
   FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
   ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
+  BASE:0.85,LINEA:0.80,ZK:0.18,SCR:1.20,MNT:0.84,DAI:1.00,WBTC:70215,WSTETH:3981,
 };
 
 export async function seedMarketsIfNeeded() {
@@ -289,6 +320,30 @@ export async function seedMarketsIfNeeded() {
       [CRO_PAIRS,   "CRO",   FALLBACK_PRICES["CRO"]   ?? 0.13],
     ];
     for (const [pairs, quote, quotePrice] of EVM_QUOTE_CHAINS) {
+      for (const base of pairs) {
+        const sym = `${base}-${quote}`;
+        if (!existingSymbols.has(sym)) {
+          const basePrice = FALLBACK_PRICES[base] ?? 1;
+          const crossPrice = basePrice / quotePrice;
+          toInsert.push({
+            symbol: sym, baseAsset: base, quoteAsset: quote,
+            lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+            status: "active", type: "spot",
+          });
+        }
+      }
+    }
+
+    // New L2 chain quote pairs (BASE, LINEA, ZK, SCR, MNT)
+    const L2_QUOTE_CHAINS: [string[], string, number][] = [
+      [BASE_PAIRS,  "BASE",  FALLBACK_PRICES["BASE"]  ?? 0.85],
+      [LINEA_PAIRS, "LINEA", FALLBACK_PRICES["LINEA"] ?? 0.80],
+      [ZK_PAIRS,    "ZK",   FALLBACK_PRICES["ZK"]    ?? 0.18],
+      [SCR_PAIRS,   "SCR",  FALLBACK_PRICES["SCR"]   ?? 1.20],
+      [MNT_PAIRS,   "MNT",  FALLBACK_PRICES["MNT"]   ?? 0.84],
+    ];
+    for (const [pairs, quote, quotePrice] of L2_QUOTE_CHAINS) {
       for (const base of pairs) {
         const sym = `${base}-${quote}`;
         if (!existingSymbols.has(sym)) {
