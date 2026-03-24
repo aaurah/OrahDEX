@@ -28,17 +28,27 @@ function fmt(p: number): string {
   return p.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
 
+function fmtShort(n: number): string {
+  if (!n) return "—";
+  if (n >= 1_000_000_000_000) return `$${(n / 1_000_000_000_000).toFixed(2)}T`;
+  if (n >= 1_000_000_000)     return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000)         return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)             return `$${(n / 1_000).toFixed(2)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
 function normalise(m: any): MktRow {
   const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
   const quote = m.quoteAsset ?? m.quote ?? "USDT";
   const price = parseFloat(m.lastPrice ?? m.price) || 0;
   const chg   = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
   const vol   = parseFloat(m.volume24h ?? m.volume) || 0;
+  const cap   = parseFloat(m.marketCap ?? m.market_cap) || 0;
   const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
-  return { symbol: m.symbol ?? `${base}-${quote}`, base, quote, price, chg, vol, type };
+  return { symbol: m.symbol ?? `${base}-${quote}`, base, quote, price, chg, vol, cap, type };
 }
 
-interface MktRow { symbol: string; base: string; quote: string; price: number; chg: number; vol: number; type: string; }
+interface MktRow { symbol: string; base: string; quote: string; price: number; chg: number; vol: number; cap: number; type: string; }
 
 type SortKey = "base" | "price" | "chg";
 type SortDir = "asc" | "desc";
@@ -76,7 +86,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "ai",        label: "AI" },
   { id: "meme",      label: "MEME" },
   { id: "defi",      label: "DEFI" },
-  { id: "sol",       label: "SOL" },
   { id: "futures",   label: "Futures" },
 ];
 
@@ -342,20 +351,31 @@ function MexcRow({
   const isUp = m.chg >= 0;
 
   return (
-    <div className="flex items-center px-4 py-[11px] active:bg-secondary/30 transition-colors">
-      <button onClick={onFav} className="mr-2.5 shrink-0">
+    <div className="flex items-center px-4 py-[9px] active:bg-secondary/30 transition-colors">
+      <button onClick={onFav} className="mr-2.5 shrink-0 self-start mt-1">
         <Star size={13} className={isFav ? "fill-green-400 text-green-400" : "text-muted-foreground/30"} />
       </button>
 
-      <button onClick={onTrade} className="flex-1 text-left min-w-0">
-        <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
-        <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
-        {m.type === "futures" && (
-          <span className="ml-1.5 text-[9px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded border border-green-500/25">PERP</span>
-        )}
+      <button onClick={onTrade} className="flex-1 text-left min-w-0 flex flex-col gap-[2px]">
+        <div className="flex items-center gap-1">
+          <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
+          <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
+          {m.type === "futures" && (
+            <span className="ml-1 text-[9px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded border border-green-500/25">PERP</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium leading-none">
+          <span>Vol {fmtShort(m.vol)}</span>
+          {m.cap > 0 && (
+            <>
+              <span className="opacity-30">·</span>
+              <span>Cap {fmtShort(m.cap)}</span>
+            </>
+          )}
+        </div>
       </button>
 
-      <button onClick={onTrade} className="w-32 text-right pr-3">
+      <button onClick={onTrade} className="text-right pr-3">
         <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">{fmt(m.price)}</span>
       </button>
 
@@ -366,7 +386,7 @@ function MexcRow({
           isUp ? "bg-green-500" : "bg-red-500"
         )}
       >
-        <span className="text-[12px] font-bold text-white leading-none">
+        <span className="text-[11px] font-bold text-white leading-none">
           {isUp ? "+" : ""}{m.chg.toFixed(2)}%
         </span>
       </button>
