@@ -46,9 +46,9 @@ const EXPLORER: Record<Chain, (hash: string) => string> = {
 };
 
 const CHAIN_COLORS: Record<Chain, string> = {
-  BSV: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  BSV: "bg-green-500/15 text-green-400 border-green-500/25",
   ETH: "bg-blue-500/15 text-blue-400 border-blue-500/25",
-  BNB: "bg-yellow-500/15 text-yellow-400 border-yellow-500/25",
+  BNB: "bg-green-500/15 text-green-400 border-green-500/25",
   MATIC: "bg-violet-500/15 text-violet-400 border-violet-500/25",
   ARB: "bg-sky-500/15 text-sky-400 border-sky-500/25",
 };
@@ -62,7 +62,7 @@ const TYPE_META: Record<TxType, { label: string; icon: any; color: string }> = {
 
 const STATUS_META: Record<TxStatus, { label: string; icon: any; color: string; bg: string }> = {
   confirmed: { label: "Confirmed", icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
-  pending:   { label: "Pending",   icon: Loader2,     color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20" },
+  pending:   { label: "Pending",   icon: Loader2,     color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
   failed:    { label: "Failed",    icon: XCircle,     color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20" },
 };
 
@@ -186,7 +186,7 @@ function TxDetail({ tx }: { tx: OnChainTx }) {
             </p>
             <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
               <div
-                className={cn("h-full rounded-full transition-all", tx.status === "confirmed" ? "bg-green-500" : tx.status === "pending" ? "bg-yellow-400" : "bg-red-500")}
+                className={cn("h-full rounded-full transition-all", tx.status === "confirmed" ? "bg-green-500" : tx.status === "pending" ? "bg-green-400" : "bg-red-500")}
                 style={{ width: `${confPct}%` }}
               />
             </div>
@@ -329,7 +329,7 @@ export function AdminTransactions() {
           <h2 className="text-2xl font-bold">On-Chain Transactions</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Live BSV & EVM chain settlement data
-            {realTxs.length > 0 && <span className="ml-2 text-amber-400 font-medium">· {realTxs.length} real BSV settlements</span>}
+            {realTxs.length > 0 && <span className="ml-2 text-green-400 font-medium">· {realTxs.length} real BSV settlements</span>}
           </p>
         </div>
         <button
@@ -345,14 +345,14 @@ export function AdminTransactions() {
         "flex items-center justify-between rounded-xl border px-4 py-3",
         bsvStatus?.online
           ? "bg-green-500/5 border-green-500/20"
-          : "bg-amber-500/5 border-amber-500/20",
+          : "bg-green-500/5 border-green-500/20",
       )}>
         <div className="flex items-center gap-3">
           <div className={cn(
             "w-8 h-8 rounded-lg flex items-center justify-center",
-            bsvStatus?.online ? "bg-green-500/10" : "bg-amber-500/10",
+            bsvStatus?.online ? "bg-green-500/10" : "bg-green-500/10",
           )}>
-            <Zap className={cn("w-4 h-4", bsvStatus?.online ? "text-green-400" : "text-amber-400")} />
+            <Zap className={cn("w-4 h-4", bsvStatus?.online ? "text-green-400" : "text-green-400")} />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -361,9 +361,9 @@ export function AdminTransactions() {
                 "flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider",
                 bsvStatus?.online
                   ? "bg-green-500/10 border-green-500/20 text-green-400"
-                  : "bg-amber-500/10 border-amber-500/20 text-amber-400",
+                  : "bg-green-500/10 border-green-500/20 text-green-400",
               )}>
-                <span className={cn("w-1.5 h-1.5 rounded-full", bsvStatus?.online ? "bg-green-400 animate-pulse" : "bg-amber-400")} />
+                <span className={cn("w-1.5 h-1.5 rounded-full", bsvStatus?.online ? "bg-green-400 animate-pulse" : "bg-green-400")} />
                 {bsvStatus?.online ? "ONLINE" : "CONNECTING…"}
               </span>
             </div>
@@ -379,7 +379,7 @@ export function AdminTransactions() {
             href={`https://whatsonchain.com/block-height/${bsvStatus.blockHeight}`}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-green-400 hover:text-green-300 transition-colors"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             WhatsOnChain
@@ -390,7 +390,7 @@ export function AdminTransactions() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Total Transactions" value={allTxs.length.toString()} sub={`${confirmed} confirmed`} icon={Hash} color="bg-primary/15 text-primary" />
-        <StatCard label="Pending" value={pending.toString()} sub="Awaiting confirmations" icon={Clock} color="bg-yellow-500/15 text-yellow-400" />
+        <StatCard label="Pending" value={pending.toString()} sub="Awaiting confirmations" icon={Clock} color="bg-green-500/15 text-green-400" />
         <StatCard label="Failed" value={failed.toString()} sub="Require attention" icon={XCircle} color="bg-red-500/15 text-red-400" />
         <StatCard label="Total Volume" value={`$${(totalVolume * 45).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Across all chains" icon={Activity} color="bg-green-500/15 text-green-400" />
       </div>
@@ -535,7 +535,7 @@ export function AdminTransactions() {
                       {/* Confirmations */}
                       <td className="px-4 py-3 text-right">
                         <span className={cn("font-mono text-xs",
-                          tx.confirmations >= tx.requiredConfirmations ? "text-green-400" : "text-yellow-400"
+                          tx.confirmations >= tx.requiredConfirmations ? "text-green-400" : "text-green-400"
                         )}>
                           {tx.confirmations}/{tx.requiredConfirmations}
                         </span>

@@ -18,7 +18,7 @@ interface EvmChain {
 }
 const EVM_CHAINS: EvmChain[] = [
   { chainId:1,     name:"Ethereum",         symbol:"ETH",  badge:"L1", color:"text-blue-400",   rpcUrl:"https://mainnet.infura.io/v3/",             blockExplorer:"https://etherscan.io" },
-  { chainId:56,    name:"BNB Chain",         symbol:"BNB",  badge:"L1", color:"text-yellow-400", rpcUrl:"https://bsc-dataseed.binance.org/",          blockExplorer:"https://bscscan.com" },
+  { chainId:56,    name:"BNB Chain",         symbol:"BNB",  badge:"L1", color:"text-green-400", rpcUrl:"https://bsc-dataseed.binance.org/",          blockExplorer:"https://bscscan.com" },
   { chainId:137,   name:"Polygon",           symbol:"MATIC",badge:"L2", color:"text-violet-400", rpcUrl:"https://polygon-rpc.com/",                   blockExplorer:"https://polygonscan.com" },
   { chainId:43114, name:"Avalanche C-Chain", symbol:"AVAX", badge:"L1", color:"text-red-400",    rpcUrl:"https://api.avax.network/ext/bc/C/rpc",     blockExplorer:"https://snowtrace.io" },
   { chainId:42161, name:"Arbitrum One",      symbol:"ETH",  badge:"L2", color:"text-blue-300",   rpcUrl:"https://arb1.arbitrum.io/rpc",               blockExplorer:"https://arbiscan.io" },
@@ -134,8 +134,8 @@ const PAY_METHODS: PayMethodDef[] = [
     label: "Pay with Crypto",
     sublabel: "BTC · ETH · USDT · stablecoins",
     icon: <span className="text-2xl leading-none">₿</span>,
-    bg: "bg-gradient-to-br from-amber-950/60 to-amber-900/40 hover:from-amber-950/80",
-    border: "border-amber-500/30",
+    bg: "bg-gradient-to-br from-green-950/60 to-green-900/40 hover:from-green-950/80",
+    border: "border-green-500/30",
     text: "text-white",
   },
 ];
@@ -234,7 +234,7 @@ const PRICES: Record<string,number> = {
 };
 
 const KYC_LABEL: Record<string,string> = { none:"No KYC", light:"Light KYC", full:"Full KYC" };
-const KYC_COLOR: Record<string,string> = { none:"text-green-400", light:"text-amber-400", full:"text-red-400" };
+const KYC_COLOR: Record<string,string> = { none:"text-green-400", light:"text-green-400", full:"text-red-400" };
 
 type Step = "connect" | "coin" | "method" | "quote" | "checkout";
 const STEPS: Step[] = ["connect","coin","method","quote","checkout"];
@@ -525,18 +525,18 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 const w = EVM_WALLETS.find(x => x.id === notFoundWalletId)!;
                 return (
                   <div className="space-y-3">
-                    <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl">
+                    <div className="flex items-start gap-3 p-4 bg-green-500/10 border border-green-500/25 rounded-2xl">
                       <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">{w.badge}</div>
                       <div>
-                        <p className="font-bold text-sm text-amber-300">{w.name} not detected</p>
-                        <p className="text-[11px] text-amber-300/70 mt-1 leading-relaxed">
+                        <p className="font-bold text-sm text-green-300">{w.name} not detected</p>
+                        <p className="text-[11px] text-green-300/70 mt-1 leading-relaxed">
                           The {w.name} browser extension wasn&apos;t found. Install it in your browser, then refresh and try again — or connect by pasting your address below.
                         </p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <a href={w.installUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs font-bold hover:bg-amber-500/20 transition-colors">
+                        className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-green-500/40 bg-green-500/10 text-green-300 text-xs font-bold hover:bg-green-500/20 transition-colors">
                         <ExternalLink className="w-3.5 h-3.5"/> Install {w.name}
                       </a>
                       <button onClick={() => setNotFoundWalletId(null)}
@@ -589,7 +589,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                       </div>
                       {handleErr && <p className="text-[11px] text-red-400">⚠ {handleErr}</p>}
                       {handleState==="found" && <p className="text-[11px] text-green-400 flex items-center gap-1"><Check className="w-3 h-3"/>HandCash connected!</p>}
-                      {handleState==="error"  && <p className="text-[11px] text-amber-400">⚠ Handle not found — check spelling or enter BSV address manually.</p>}
+                      {handleState==="error"  && <p className="text-[11px] text-green-400">⚠ Handle not found — check spelling or enter BSV address manually.</p>}
                       <button onClick={connectHandCash} disabled={handleState==="loading"}
                         className="w-full py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-500 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
                         {handleState==="loading" ? <><RefreshCw className="w-4 h-4 animate-spin"/>Resolving…</> : "Connect HandCash →"}
@@ -800,7 +800,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                 <input type="text" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search coin…" autoFocus
                   className="w-full bg-secondary/60 border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary"/>
               </div>
-              {!search && <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1"><Star className="w-3 h-3 text-amber-400 fill-amber-400"/>Popular coins</p>}
+              {!search && <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1"><Star className="w-3 h-3 text-green-400 fill-green-400"/>Popular coins</p>}
               <div className="space-y-1.5">
                 {filteredCoins.map(c => {
                   const net = COIN_NETWORKS[c.symbol];
@@ -813,7 +813,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">{c.symbol}</span>
                           <span className="text-xs text-muted-foreground">{c.name}</span>
-                          {net?.type==="native" && <span className="text-[9px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">Native</span>}
+                          {net?.type==="native" && <span className="text-[9px] bg-green-500/15 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded font-bold">Native</span>}
                           {net?.type==="evm"    && <span className="text-[9px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">EVM</span>}
                         </div>
                         <div className="text-[10px] text-muted-foreground/70 mt-0.5">{net?.name ?? c.name} network</div>
@@ -912,11 +912,11 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                   {coinNet.type === "evm" && (
                     <>
                       {isOnWrongChain && (
-                        <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
-                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5"/>
+                        <div className="flex items-start gap-2 p-3 bg-green-500/10 border border-green-500/25 rounded-xl">
+                          <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5"/>
                           <div>
-                            <p className="text-[12px] text-amber-300 font-semibold">Wrong network detected</p>
-                            <p className="text-[11px] text-amber-300/70 mt-0.5">You&apos;re on <strong>{activeChain.name}</strong> but {coin} lives on <strong>{targetChain?.name}</strong>.</p>
+                            <p className="text-[12px] text-green-300 font-semibold">Wrong network detected</p>
+                            <p className="text-[11px] text-green-300/70 mt-0.5">You&apos;re on <strong>{activeChain.name}</strong> but {coin} lives on <strong>{targetChain?.name}</strong>.</p>
                           </div>
                         </div>
                       )}
@@ -936,7 +936,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                               <button key={ch.chainId} onClick={() => switchChain(ch)} disabled={switchingChain || isActive}
                                 className={cn("flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all text-left",
                                   isActive?"border-primary bg-primary/15 text-primary":
-                                  isTarget?"border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15":
+                                  isTarget?"border-green-500/50 bg-green-500/10 text-green-300 hover:bg-green-500/15":
                                   "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground")}>
                                 <span className={cn("text-[9px] font-black px-1 py-0.5 rounded shrink-0",
                                   ch.badge==="L1"?"bg-blue-500/15 text-blue-400":"bg-violet-500/15 text-violet-400")}>{ch.badge}</span>
@@ -959,9 +959,9 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                   )}
                   {coinNet.type === "native" && (
                     <>
-                      <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl">
-                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5"/>
-                        <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                      <div className="flex items-start gap-2.5 p-3 bg-green-500/10 border border-green-500/25 rounded-xl">
+                        <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5"/>
+                        <p className="text-[11px] text-green-300/80 leading-relaxed">
                           {coin} requires a native <strong>{coinNet.name}</strong> address — your EVM address won&apos;t work here.
                         </p>
                       </div>
@@ -1017,8 +1017,8 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
 
               {/* Provider selector */}
               {supportedProviders.length === 0 ? (
-                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center">
-                  <p className="text-sm text-amber-300">No provider supports {coin} with {payMethodDef?.label}.</p>
+                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-center">
+                  <p className="text-sm text-green-300">No provider supports {coin} with {payMethodDef?.label}.</p>
                   <button onClick={()=>setStep("method")} className="text-xs text-primary font-semibold mt-1 hover:underline">Try another payment method →</button>
                 </div>
               ) : (

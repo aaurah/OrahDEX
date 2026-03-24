@@ -21,7 +21,7 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "BTC",  label: "BTC",  color: "text-orange-400" },
   { id: "ETH",  label: "ETH",  color: "text-violet-400" },
   { id: "BCH",  label: "BCH",  color: "text-emerald-400" },
-  { id: "BSV",  label: "BSV",  color: "text-amber-400" },
+  { id: "BSV",  label: "BSV",  color: "text-green-400" },
 ];
 
 const COIN_COLORS: Record<string, string> = {
@@ -160,13 +160,13 @@ export function SpotTrading() {
         </div>
 
         {/* BSV Settlement Badge — always visible, since all trades settle on BSV */}
-        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/25 rounded-xl shrink-0">
+        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-green-500/10 border border-green-500/25 rounded-xl shrink-0">
           <span className="text-sm leading-none animate-pulse">⚡</span>
           <div className="hidden sm:block">
-            <p className="text-[10px] font-black text-amber-400 uppercase tracking-wider leading-tight">BSV Settlement</p>
-            <p className="text-[9px] text-amber-300/60 leading-tight">Fastest · &lt;5s · ~$0.001</p>
+            <p className="text-[10px] font-black text-green-400 uppercase tracking-wider leading-tight">BSV Settlement</p>
+            <p className="text-[9px] text-green-300/60 leading-tight">Fastest · &lt;5s · ~$0.001</p>
           </div>
-          <span className="sm:hidden text-[10px] font-bold text-amber-400">BSV</span>
+          <span className="sm:hidden text-[10px] font-bold text-green-400">BSV</span>
         </div>
       </div>
 
@@ -239,11 +239,11 @@ export function SpotTrading() {
                       className={cn(
                         "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
                         isActive && isBsv
-                          ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                          ? "bg-green-500/20 border-green-500/50 text-green-400"
                           : isActive
                           ? "bg-primary/15 border-primary/40 text-primary"
                           : isBsv
-                          ? "border-amber-500/30 text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10"
+                          ? "border-green-500/30 text-green-500/70 hover:text-green-400 hover:bg-green-500/10"
                           : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60"
                       )}
                     >
@@ -381,7 +381,7 @@ export function SpotTrading() {
                             <span className={cn("text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border",
                               o.networkType === "evm"
                                 ? "text-violet-400 border-violet-500/30"
-                                : "text-amber-400 border-amber-500/30"
+                                : "text-green-400 border-green-500/30"
                             )}>
                               {o.networkType === "evm" ? "EVM" : "BSV"}
                             </span>

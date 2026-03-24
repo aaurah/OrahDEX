@@ -220,12 +220,12 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
           </div>
         ) : isSuperadmin ? (
           <div className="space-y-4">
-            <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-4 flex gap-3">
-              <Lock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="bg-green-500/10 border border-green-500/25 rounded-xl p-4 flex gap-3">
+              <Lock className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-400 mb-1">Server-side credential</p>
+                <p className="text-sm font-semibold text-green-400 mb-1">Server-side credential</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  The superadmin password is protected server-side. To change it, update the <code className="text-amber-300">ADMIN_PASSWORD</code> secret in your Replit environment, then restart the server.
+                  The superadmin password is protected server-side. To change it, update the <code className="text-green-300">ADMIN_PASSWORD</code> secret in your Replit environment, then restart the server.
                 </p>
               </div>
             </div>
@@ -349,9 +349,9 @@ function EditAdminModal({
           <div className="flex items-center gap-3">
             <div className={cn(
               "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
-              isSuperadmin ? "bg-amber-500/15" : "bg-primary/15"
+              isSuperadmin ? "bg-green-500/15" : "bg-primary/15"
             )}>
-              {isSuperadmin ? <Crown className="w-4 h-4 text-amber-400" /> : <Pencil className="w-4 h-4 text-primary" />}
+              {isSuperadmin ? <Crown className="w-4 h-4 text-green-400" /> : <Pencil className="w-4 h-4 text-primary" />}
             </div>
             <div>
               <h3 className="font-bold text-base text-foreground">
@@ -388,7 +388,7 @@ function EditAdminModal({
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block flex items-center gap-1.5">
                 Email
-                {isSuperadmin && <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Login credential (display only)</span>}
+                {isSuperadmin && <span className="text-green-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Login credential (display only)</span>}
               </label>
               <input value={form.email} onChange={e => !isSuperadmin && set("email", e.target.value)}
                 readOnly={isSuperadmin}
@@ -403,10 +403,10 @@ function EditAdminModal({
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5 block">
                 Role
-                {isSuperadmin && <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Fixed for superadmin</span>}
+                {isSuperadmin && <span className="text-green-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Fixed for superadmin</span>}
               </label>
               {isSuperadmin ? (
-                <div className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-amber-400 font-semibold opacity-60 cursor-not-allowed capitalize">
+                <div className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm text-green-400 font-semibold opacity-60 cursor-not-allowed capitalize">
                   superadmin
                 </div>
               ) : (
@@ -439,7 +439,7 @@ function EditAdminModal({
             {isSuperadmin && (
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-2 block flex items-center gap-1.5">
-                  Permissions <span className="text-amber-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Always "all"</span>
+                  Permissions <span className="text-green-400/70 flex items-center gap-1"><Lock className="w-3 h-3" /> Always "all"</span>
                 </label>
                 <div className="flex flex-wrap gap-2 opacity-50 pointer-events-none">
                   <span className="text-xs px-2.5 py-1 rounded-lg border bg-primary/10 text-primary border-primary/30 font-medium">all</span>
@@ -725,14 +725,14 @@ export function AdminAdmins() {
                 return (
                   <tr key={a.id} className={cn(
                     "hover:bg-secondary/20 transition-colors",
-                    a.isPinned && "bg-amber-500/5 border-l-2 border-l-amber-500/40"
+                    a.isPinned && "bg-green-500/5 border-l-2 border-l-green-500/40"
                   )}>
                     {/* Admin */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className={cn(
                           "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0",
-                          a.isPinned ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-violet-500 to-primary"
+                          a.isPinned ? "bg-gradient-to-br from-green-400 to-orange-500" : "bg-gradient-to-br from-violet-500 to-primary"
                         )}>
                           {a.isPinned ? <Crown className="w-3.5 h-3.5" /> : a.name[0]}
                         </div>
@@ -740,7 +740,7 @@ export function AdminAdmins() {
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-foreground">{a.name}</span>
                             {a.isPinned && (
-                              <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase">You</span>
+                              <span className="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded font-bold uppercase">You</span>
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">{a.email}</div>
@@ -812,7 +812,7 @@ export function AdminAdmins() {
                           className={cn(
                             "p-1.5 rounded-lg transition-colors",
                             a.isPinned
-                              ? "text-amber-400 hover:bg-amber-400/10"
+                              ? "text-green-400 hover:bg-green-400/10"
                               : "text-primary hover:bg-primary/10"
                           )}
                           title="Edit admin"

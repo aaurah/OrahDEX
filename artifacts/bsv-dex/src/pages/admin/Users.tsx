@@ -20,7 +20,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const NETWORK_COLORS: Record<string, string> = {
   evm: "bg-blue-400/10 text-blue-400",
-  bsv: "bg-amber-400/10 text-amber-400",
+  bsv: "bg-green-400/10 text-green-400",
 };
 
 const COUNTRIES = ["US","UK","SG","JP","AU","DE","CA","KR","IN","BR","NG","ZA","FR","ES","IT","NL","SE","CH","AE","HK"];
@@ -128,7 +128,7 @@ function EditUserModal({
                       className={cn("flex-1 py-2 rounded-xl border text-xs font-bold uppercase transition-all",
                         form.network === n
                           ? n === "evm" ? "bg-blue-500/15 border-blue-500/40 text-blue-400"
-                            : "bg-amber-500/15 border-amber-500/40 text-amber-400"
+                            : "bg-green-500/15 border-green-500/40 text-green-400"
                           : "bg-secondary border-border text-muted-foreground hover:text-foreground"
                       )}>
                       {n}

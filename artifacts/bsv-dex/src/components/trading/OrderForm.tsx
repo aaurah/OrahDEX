@@ -256,7 +256,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border",
             isEvm
               ? "text-violet-400 border-violet-500/30 bg-violet-500/10"
-              : "text-amber-400 border-amber-500/30 bg-amber-500/10"
+              : "text-green-400 border-green-500/30 bg-green-500/10"
           )}>
             {isEvm ? "⬡ EVM" : "₿ BSV"}
           </span>

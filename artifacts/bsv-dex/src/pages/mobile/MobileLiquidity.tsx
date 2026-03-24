@@ -235,7 +235,7 @@ function PoolCard({ pool, onAdd, onRemove }: {
           <div className="grid grid-cols-3 gap-3 mb-4">
             {[
               ["Pool APR", `${pool.apr.toFixed(1)}%`, "text-green-500"],
-              ["Farm APR", `+${pool.farmApr.toFixed(1)}%`, "text-amber-500"],
+              ["Farm APR", `+${pool.farmApr.toFixed(1)}%`, "text-green-500"],
               ["24h Vol", fmtTvl(pool.vol24), "text-foreground"],
             ].map(([label, val, cls]) => (
               <div key={label} className="bg-secondary/40 rounded-lg p-2 text-center">
@@ -328,10 +328,10 @@ function Farming() {
   return (
     <div className="space-y-3">
       {/* Info banner */}
-      <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 flex gap-3">
-        <Zap size={18} className="text-amber-400 shrink-0 mt-0.5" />
+      <div className="bg-green-500/10 border border-green-500/25 rounded-xl p-3 flex gap-3">
+        <Zap size={18} className="text-green-400 shrink-0 mt-0.5" />
         <div>
-          <p className="text-xs font-semibold text-amber-400">Yield Farming Active</p>
+          <p className="text-xs font-semibold text-green-400">Yield Farming Active</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">Stake your LP tokens to earn additional OrahDEX rewards on top of pool fees.</p>
         </div>
       </div>
@@ -379,7 +379,7 @@ function Farming() {
                     ))}
                   </div>
                   <span className="font-semibold text-sm">{fp.base}/{fp.quote}</span>
-                  <span className="ml-auto text-xs font-bold text-amber-400">+{fp.farmApr}% farm APR</span>
+                  <span className="ml-auto text-xs font-bold text-green-400">+{fp.farmApr}% farm APR</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 mb-3">
                   {[
@@ -394,7 +394,7 @@ function Farming() {
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <button className="flex-1 py-2 rounded-xl bg-amber-500 text-black text-xs font-bold">Stake More</button>
+                  <button className="flex-1 py-2 rounded-xl bg-green-500 text-black text-xs font-bold">Stake More</button>
                   <button className="flex-1 py-2 rounded-xl bg-green-600 text-white text-xs font-bold">Harvest</button>
                   <button className="flex-1 py-2 rounded-xl bg-secondary border border-border text-xs font-medium">Unstake</button>
                 </div>

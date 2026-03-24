@@ -39,12 +39,12 @@ const COIN_COLORS: Record<string, string> = {
 
 interface TabMeta { id: Tab; label: string; color: string; desc: string }
 const TAB_META: TabMeta[] = [
-  { id: "favorites", label: "★ Favorites", color: "text-amber-400",   desc: "Your starred pairs" },
+  { id: "favorites", label: "★ Favorites", color: "text-green-400",   desc: "Your starred pairs" },
   { id: "new",       label: "NEW",          color: "text-green-400",   desc: "Recently listed" },
   { id: "usd",       label: "USD",          color: "text-blue-400",    desc: "Stablecoin markets" },
   { id: "btc",       label: "BTC",          color: "text-orange-400",  desc: "All pairs quoted in BTC" },
   { id: "eth",       label: "ETH",          color: "text-violet-400",  desc: "All pairs quoted in ETH" },
-  { id: "bnb",       label: "BNB",          color: "text-yellow-400",  desc: "All pairs quoted in BNB · BSC" },
+  { id: "bnb",       label: "BNB",          color: "text-green-400",  desc: "All pairs quoted in BNB · BSC" },
   { id: "matic",     label: "MATIC",        color: "text-purple-400",  desc: "All pairs quoted in MATIC · Polygon" },
   { id: "avax",      label: "AVAX",         color: "text-red-400",     desc: "All pairs quoted in AVAX · Avalanche" },
   { id: "arb",       label: "ARB",          color: "text-sky-400",     desc: "All pairs quoted in ARB · Arbitrum" },
@@ -58,7 +58,7 @@ const TAB_META: TabMeta[] = [
   { id: "mnt",       label: "MNT",          color: "text-teal-400",    desc: "All pairs quoted in MNT · Mantle L2" },
   { id: "sol",       label: "SOL",          color: "text-purple-400",  desc: "Solana ecosystem tokens" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
-  { id: "bsv",       label: "BSV",          color: "text-amber-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
+  { id: "bsv",       label: "BSV",          color: "text-green-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },
   { id: "meme",      label: "MEME",         color: "text-pink-400",    desc: "Meme tokens" },
   { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols" },
@@ -238,11 +238,11 @@ export function Markets() {
                   className={cn(
                     "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
                     isActive && isBsv
-                      ? "bg-amber-500 text-black border-amber-400 shadow-lg shadow-amber-500/40"
+                      ? "bg-green-500 text-black border-green-400 shadow-lg shadow-green-500/40"
                       : isActive
                       ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
                       : isBsv
-                      ? "text-amber-400 border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20"
+                      ? "text-green-400 border-green-500/50 bg-green-500/10 hover:bg-green-500/20"
                       : "text-muted-foreground border-border hover:border-primary/40 hover:text-foreground hover:bg-white/5"
                   )}
                 >
@@ -252,13 +252,13 @@ export function Markets() {
                     "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
                     isActive && isBsv ? "bg-black/20 text-black"
                     : isActive ? "bg-white/20 text-white"
-                    : isBsv ? "bg-amber-500/20 text-amber-300"
+                    : isBsv ? "bg-green-500/20 text-green-300"
                     : "bg-secondary text-muted-foreground"
                   )}>
                     {tabCount(t.id)}
                   </span>
                   {isBsv && !isActive && (
-                    <span className="text-[8px] font-black uppercase tracking-wider bg-amber-500 text-black px-1 py-0.5 rounded ml-0.5">FASTEST</span>
+                    <span className="text-[8px] font-black uppercase tracking-wider bg-green-500 text-black px-1 py-0.5 rounded ml-0.5">FASTEST</span>
                   )}
                 </button>
               );
@@ -267,21 +267,21 @@ export function Markets() {
 
           {/* BSV fastest settlement callout */}
           {tab === "bsv" && (
-            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-green-500/10 border border-green-500/30 rounded-xl">
               <span className="text-xl leading-none">⚡</span>
               <div>
-                <p className="text-xs font-bold text-amber-400">BSV — World's Fastest Settlement Chain</p>
-                <p className="text-[11px] text-amber-300/70 mt-0.5">Every OrahDEX trade settles instantly on-chain via BSV. No bridges. No Layer 2s. True finality in seconds.</p>
+                <p className="text-xs font-bold text-green-400">BSV — World's Fastest Settlement Chain</p>
+                <p className="text-[11px] text-green-300/70 mt-0.5">Every OrahDEX trade settles instantly on-chain via BSV. No bridges. No Layer 2s. True finality in seconds.</p>
               </div>
               <div className="ml-auto flex items-center gap-3 shrink-0">
                 <div className="text-center">
-                  <p className="text-[10px] text-amber-500/60 uppercase tracking-wider">Settlement</p>
-                  <p className="text-sm font-black text-amber-400">&lt; 5s</p>
+                  <p className="text-[10px] text-green-500/60 uppercase tracking-wider">Settlement</p>
+                  <p className="text-sm font-black text-green-400">&lt; 5s</p>
                 </div>
-                <div className="w-px h-8 bg-amber-500/20" />
+                <div className="w-px h-8 bg-green-500/20" />
                 <div className="text-center">
-                  <p className="text-[10px] text-amber-500/60 uppercase tracking-wider">Fees</p>
-                  <p className="text-sm font-black text-amber-400">~$0.001</p>
+                  <p className="text-[10px] text-green-500/60 uppercase tracking-wider">Fees</p>
+                  <p className="text-sm font-black text-green-400">~$0.001</p>
                 </div>
               </div>
             </div>
@@ -374,8 +374,8 @@ export function Markets() {
                   return (
                     <tr key={m.symbol} className="hover:bg-white/5 transition-colors group">
                       <td className="px-4 py-3.5">
-                        <button onClick={() => toggleStar(m.symbol)} className="text-muted-foreground hover:text-amber-400 transition-colors">
-                          <Star className={cn("w-3.5 h-3.5", stars.has(m.symbol) && "fill-amber-400 text-amber-400")} />
+                        <button onClick={() => toggleStar(m.symbol)} className="text-muted-foreground hover:text-green-400 transition-colors">
+                          <Star className={cn("w-3.5 h-3.5", stars.has(m.symbol) && "fill-green-400 text-green-400")} />
                         </button>
                       </td>
                       <td className="px-4 py-3.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
@@ -386,7 +386,7 @@ export function Markets() {
                             <span className="font-bold text-sm text-foreground">{base}</span>
                             <span className="text-muted-foreground text-xs">/{quote}</span>
                             {tab === "futures" && (
-                              <span className="text-[10px] font-bold bg-amber-500/15 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/30">PERP</span>
+                              <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
                             )}
                             {tab === "new" && (
                               <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>

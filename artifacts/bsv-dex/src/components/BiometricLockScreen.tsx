@@ -153,7 +153,7 @@ export function BiometricLockScreen() {
       )}
 
       {!supported && (
-        <div className="flex items-start gap-2.5 mt-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 max-w-xs text-xs text-amber-300">
+        <div className="flex items-start gap-2.5 mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/20 max-w-xs text-xs text-green-300">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
             Your browser or device doesn't support biometric authentication via WebAuthn.

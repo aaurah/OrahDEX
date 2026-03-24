@@ -729,12 +729,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       className="p-5 space-y-4">
 
                       {/* ① BSV — primary featured block */}
-                      <div className="rounded-2xl border border-amber-500/35 bg-gradient-to-br from-amber-500/8 via-transparent to-transparent p-5">
+                      <div className="rounded-2xl border border-green-500/35 bg-gradient-to-br from-green-500/8 via-transparent to-transparent p-5">
                         <div className="flex items-center gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">⚡</div>
+                          <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center text-2xl shrink-0">⚡</div>
                           <div>
                             <h3 className="font-black text-[15px] text-foreground leading-tight">Bitcoin SV Wallet</h3>
-                            <p className="text-[11px] text-amber-400 font-semibold">Primary settlement · sub-cent fees · instant finality</p>
+                            <p className="text-[11px] text-green-400 font-semibold">Primary settlement · sub-cent fees · instant finality</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mb-2">
@@ -746,14 +746,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </button>
                           <button
                             onClick={() => setView("import")}
-                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-amber-500/40 text-amber-300 font-bold text-sm hover:bg-amber-500/10 transition-colors"
+                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-green-500/40 text-green-300 font-bold text-sm hover:bg-green-500/10 transition-colors"
                           >
                             <Download className="w-4 h-4" /> Import Seed
                           </button>
                         </div>
                         <button
                           onClick={() => { setConnectTab("bsv"); setView("connect"); }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-amber-500/30 hover:text-foreground transition-all text-left"
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-green-500/30 hover:text-foreground transition-all text-left"
                         >
                           <Link2 className="w-3.5 h-3.5 shrink-0" />
                           <span>Connect existing BSV wallet <span className="opacity-60">(HandCash, RelayX, Panda…)</span></span>
@@ -921,10 +921,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </button>
                           </div>
 
-                          <div className="flex items-start gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
-                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                            <p className="text-xs text-amber-300/80 leading-relaxed">
-                              Write this phrase down and store it somewhere safe. <strong className="text-amber-300">Never share it.</strong> Anyone with your seed phrase has full access to your funds.
+                          <div className="flex items-start gap-3 p-4 bg-green-500/8 border border-green-500/20 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                            <p className="text-xs text-green-300/80 leading-relaxed">
+                              Write this phrase down and store it somewhere safe. <strong className="text-green-300">Never share it.</strong> Anyone with your seed phrase has full access to your funds.
                             </p>
                           </div>
 
@@ -1018,9 +1018,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <span className="text-xs text-muted-foreground self-center">BIP39 compatible</span>
                           </div>
 
-                          <div className="flex items-start gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-xl">
-                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                            <p className="text-xs text-amber-300/80 leading-relaxed">
+                          <div className="flex items-start gap-3 p-4 bg-green-500/8 border border-green-500/20 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                            <p className="text-xs text-green-300/80 leading-relaxed">
                               Never enter your seed phrase on untrusted sites. OrahDEX never stores or transmits your phrase — all derivation is local.
                             </p>
                           </div>
@@ -1175,10 +1175,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                   <p className="text-xs text-muted-foreground">Browser extension not detected</p>
                                 </div>
                               </div>
-                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
-                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                              <div className="p-3.5 bg-green-500/8 border border-green-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                                 <div className="space-y-2">
-                                  <p className="text-xs text-amber-300/90 leading-relaxed">RelayX extension was not found in your browser. Install it or paste your BSV address manually.</p>
+                                  <p className="text-xs text-green-300/90 leading-relaxed">RelayX extension was not found in your browser. Install it or paste your BSV address manually.</p>
                                   <a href="https://relayx.com" target="_blank" rel="noreferrer"
                                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
                                     Install RelayX <ChevronRight className="w-3 h-3" />
@@ -1214,10 +1214,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                   <p className="text-xs text-muted-foreground">Browser extension not detected</p>
                                 </div>
                               </div>
-                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
-                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                              <div className="p-3.5 bg-green-500/8 border border-green-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                                 <div className="space-y-2">
-                                  <p className="text-xs text-amber-300/90 leading-relaxed">Panda Wallet extension was not found. Install it or enter your BSV address manually.</p>
+                                  <p className="text-xs text-green-300/90 leading-relaxed">Panda Wallet extension was not found. Install it or enter your BSV address manually.</p>
                                   <a href="https://chromewebstore.google.com/detail/panda-wallet/mlbnicldlpdimbjdcncnklfempedekim" target="_blank" rel="noreferrer"
                                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
                                     Install Panda Wallet <ChevronRight className="w-3 h-3" />
@@ -1253,10 +1253,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                   <p className="text-xs text-muted-foreground">Browser extension not detected</p>
                                 </div>
                               </div>
-                              <div className="p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl flex items-start gap-2.5">
-                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                              <div className="p-3.5 bg-green-500/8 border border-green-500/20 rounded-xl flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                                 <div className="space-y-2">
-                                  <p className="text-xs text-amber-300/90 leading-relaxed">Sensilet extension was not found. Install it or enter your BSV address manually.</p>
+                                  <p className="text-xs text-green-300/90 leading-relaxed">Sensilet extension was not found. Install it or enter your BSV address manually.</p>
                                   <a href="https://sensilet.com" target="_blank" rel="noreferrer"
                                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold">
                                     Install Sensilet <ChevronRight className="w-3 h-3" />
@@ -1371,9 +1371,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {/* BTC Lightning warning */}
                       {connectTab === "btc" && bsvStep === "list" && (
-                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/20 rounded-xl">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                          <p className="text-[11px] text-amber-300/80">
+                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-green-500/8 border border-green-500/20 rounded-xl">
+                          <AlertTriangle className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-green-300/80">
                             OrahDEX does not support Lightning Network. Use standard on-chain Bitcoin addresses (bc1q, 1, or 3). For fast settlement, use BSV.
                           </p>
                         </div>
