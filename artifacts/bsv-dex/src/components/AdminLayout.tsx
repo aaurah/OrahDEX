@@ -44,13 +44,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
-        {/* Logo */}
+        {/* Brand */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-border shrink-0">
-          <Link href="/" className="flex items-center group">
-            <div className="h-11 w-11 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
-              <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-            </div>
-            <span className="ml-2 text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Admin Panel</span>
+          <Link href="/" className="flex items-center group gap-2">
+            <span className="text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors">OrahDEX</span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Admin Panel</span>
           </Link>
           <button className="md:hidden text-muted-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="w-4 h-4" />
@@ -126,9 +124,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-xs text-muted-foreground hidden sm:block">System Operational</span>
-            <div className="w-8 h-8 rounded-full overflow-hidden shadow-md shrink-0">
-              <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-            </div>
           </div>
         </header>
 

@@ -129,11 +129,9 @@ export function Layout({ children }: { children: ReactNode }) {
       </div>
       <header className="sticky top-7 h-20 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
-          {/* Logo */}
+          {/* Brand */}
           <Link href="/" className="flex items-center group">
-            <div className="h-16 w-16 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
-              <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-            </div>
+            <span className="text-xl font-bold tracking-tight text-foreground group-hover:text-primary transition-colors">OrahDEX</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

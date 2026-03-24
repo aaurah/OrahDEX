@@ -33,14 +33,12 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {/* Col 1: empty spacer */}
         <div />
 
-        {/* Col 2: centred logo image */}
+        {/* Col 2: centred brand text */}
         <button
           onClick={() => navigate("/")}
           className="flex items-center justify-center active:opacity-70 transition-opacity"
         >
-          <div className="h-16 w-16 overflow-hidden shrink-0">
-            <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-          </div>
+          <span className="text-lg font-bold tracking-tight text-foreground">OrahDEX</span>
         </button>
 
         {/* Col 3: Wallet, right-aligned */}
