@@ -2,13 +2,16 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import {
   Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check,
-  RefreshCw, Wallet, AlertTriangle, LogIn,
+  RefreshCw, Wallet, LogIn, Layers,
 } from 'lucide-react';
 import { useAdminAuthStore } from '@/store/useAdminAuthStore';
+import { useWalletModalStore } from '@/store/useWalletModalStore';
+import { useWalletStore } from '@/store/useWalletStore';
+import { WalletConnectModal } from '@/components/WalletConnectModal';
 import { generateTOTP } from '@/lib/totp';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useChainId } from 'wagmi';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -41,9 +44,20 @@ export function AdminLogin() {
   const [totpSecret, setTotpSecret] = useState('');
   const [totpIssuer, setTotpIssuer] = useState('OrahDEX');
 
+  // Wallet connect modal (embedded on the login page)
+  const { isOpen: walletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
+  const walletStore = useWalletStore();
+
   // Wagmi account + signMessage
-  const { address: evmAddress, isConnected } = useAccount();
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const chainId = useChainId();
   const { signMessageAsync } = useSignMessage();
+
+  // Combined connected state — EVM wallet OR BSV/SOL/BTC wallet
+  const isConnected = evmConnected || !!walletStore.address;
+  const displayAddress = evmConnected && evmAddress
+    ? evmAddress
+    : walletStore.address ?? null;
 
   useEffect(() => { if (isAuthenticated) navigate('/admin'); }, [isAuthenticated]);
   useEffect(() => { clearError(); }, [emailVal, password, totpCode]);
@@ -112,8 +126,13 @@ export function AdminLogin() {
 
   // ── Wallet login flow ────────────────────────────────────────────────────
   const handleWalletLogin = async () => {
-    if (!isConnected || !evmAddress) {
-      setWalletError('Connect your wallet first using the button above.');
+    const signerAddress = evmConnected && evmAddress ? evmAddress : walletStore.address;
+    if (!isConnected || !signerAddress) {
+      setWalletError('Connect your wallet first using the button below.');
+      return;
+    }
+    if (!evmConnected) {
+      setWalletError('EVM wallet required to sign the admin challenge. Connect MetaMask or another EVM wallet.');
       return;
     }
     setWalletLoading(true);
@@ -123,7 +142,7 @@ export function AdminLogin() {
       const chalRes = await fetch(`${API}/api/admin/auth/wallet-challenge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: evmAddress }),
+        body: JSON.stringify({ address: signerAddress }),
       });
       const chalData = await chalRes.json();
       if (!chalRes.ok) {
@@ -137,7 +156,7 @@ export function AdminLogin() {
       const signature = await signMessageAsync({ message: chalData.message });
 
       // 3. Verify + authenticate
-      const ok = await loginViaWallet(evmAddress, signature);
+      const ok = await loginViaWallet(signerAddress, signature);
       if (!ok) triggerShake();
     } catch (err: any) {
       if (err?.code === 4001 || err?.name === 'UserRejectedRequestError') {
@@ -302,40 +321,66 @@ export function AdminLogin() {
               </div>
               <div>
                 <h1 className="text-lg font-bold text-foreground">Wallet Sign-In</h1>
-                <p className="text-xs text-muted-foreground">Whitelisted addresses only — no password needed</p>
+                <p className="text-xs text-muted-foreground">Authorised wallets only — sign a message to verify</p>
               </div>
             </div>
 
             <div className="space-y-4">
-              {/* Wallet status */}
+              {/* Wallet status card */}
               <div className={cn(
-                "flex items-center gap-3 rounded-xl px-4 py-3 border",
-                isConnected
-                  ? "bg-green-500/10 border-green-500/20"
-                  : "bg-secondary border-border"
+                "rounded-xl border p-4 transition-all",
+                isConnected ? "bg-green-500/8 border-green-500/20" : "bg-secondary/40 border-border"
               )}>
-                <div className={cn("w-2 h-2 rounded-full shrink-0", isConnected ? "bg-green-400 animate-pulse" : "bg-muted-foreground")} />
-                {isConnected && evmAddress ? (
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-muted-foreground">Connected wallet</p>
-                    <code className="text-sm font-mono text-green-300 truncate block">
-                      {evmAddress.slice(0, 10)}...{evmAddress.slice(-8)}
-                    </code>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className={cn("w-2 h-2 rounded-full shrink-0", isConnected ? "bg-green-400 animate-pulse" : "bg-muted-foreground/50")} />
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {isConnected ? "Wallet Connected" : "No Wallet Connected"}
+                    </span>
                   </div>
+                  {isConnected && walletStore.network && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-green-500/15 border border-green-500/25 text-green-400 uppercase">
+                      {walletStore.network === "evm" ? (chainId ? `Chain ${chainId}` : "EVM") : walletStore.network}
+                    </span>
+                  )}
+                  {isConnected && evmConnected && (
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/25 text-blue-400 uppercase">
+                      EVM · Chain {chainId}
+                    </span>
+                  )}
+                </div>
+                {isConnected && displayAddress ? (
+                  <code className="text-sm font-mono text-green-300 block truncate">
+                    {displayAddress.slice(0, 12)}…{displayAddress.slice(-8)}
+                  </code>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No wallet connected</p>
+                  <p className="text-sm text-muted-foreground/70">Connect your wallet below to continue</p>
                 )}
               </div>
 
+              {/* Connect wallet button (shown when not connected) */}
               {!isConnected && (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-300 leading-relaxed">
-                    Use the wallet connect button in the top navigation bar of the exchange to connect your wallet first, then return here.
-                  </p>
-                </div>
+                <button
+                  onClick={() => openWalletModal()}
+                  className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-600/90 to-primary/80 border border-primary/30 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-[1.01] active:scale-[0.99] transition-all"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Connect Wallet
+                </button>
               )}
 
+              {/* Switch wallet button (shown when connected) */}
+              {isConnected && (
+                <button
+                  onClick={() => openWalletModal()}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 text-sm font-medium transition-all"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Switch Wallet / Network
+                </button>
+              )}
+
+              {/* Challenge message preview */}
               {walletChallenge && (
                 <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3">
                   <p className="text-[10px] text-muted-foreground mb-1.5 uppercase tracking-wider font-bold">Message to Sign</p>
@@ -343,6 +388,7 @@ export function AdminLogin() {
                 </div>
               )}
 
+              {/* Error display */}
               {(walletError || error) && (
                 <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3">
                   <Shield className="w-4 h-4 text-destructive shrink-0" />
@@ -350,10 +396,11 @@ export function AdminLogin() {
                 </div>
               )}
 
+              {/* Sign & access button */}
               <button
                 onClick={handleWalletLogin}
-                disabled={walletLoading || !isConnected}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+                disabled={walletLoading || !isConnected || !evmConnected}
+                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 {walletLoading
                   ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Signing...</>
@@ -361,12 +408,27 @@ export function AdminLogin() {
                 }
               </button>
 
-              <p className="text-center text-xs text-muted-foreground">
-                Your wallet must be in the admin whitelist. Signing does not cost gas.
-              </p>
+              {isConnected && !evmConnected && (
+                <p className="text-center text-xs text-amber-400">
+                  EVM wallet required to sign the admin challenge.
+                </p>
+              )}
+              {!isConnected && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Connect any supported wallet — EVM, BSV, Solana, or Bitcoin.
+                </p>
+              )}
+              {isConnected && evmConnected && (
+                <p className="text-center text-xs text-muted-foreground">
+                  Your address must be in the admin whitelist. Signing is free — no gas required.
+                </p>
+              )}
             </div>
           </div>
         )}
+
+        {/* Embedded wallet connect modal */}
+        <WalletConnectModal isOpen={walletModalOpen} onClose={closeWalletModal} />
 
         {/* ── 2FA Setup ── */}
         {step === 'setup' && (
