@@ -34,7 +34,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           onClick={() => navigate("/")}
           className="active:opacity-70 transition-opacity"
         >
-          <span className="text-xl font-bold tracking-tight text-foreground">OrahDEX</span>
+          <span className="text-xl font-bold tracking-tight text-foreground">Orah<span className="text-green-400">DEX</span></span>
         </button>
 
         {/* Wallet button on right */}

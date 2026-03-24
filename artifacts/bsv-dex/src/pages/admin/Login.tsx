@@ -110,11 +110,11 @@ export function AdminLogin() {
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-lg shadow-primary/30">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 via-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/30">
               <span className="text-white font-black text-xl leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
             </div>
             <span className="font-extrabold text-2xl tracking-tight text-foreground">
-              Orah<span className="text-primary">DEX</span>
+              Orah<span className="text-green-400">DEX</span>
             </span>
           </div>
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
