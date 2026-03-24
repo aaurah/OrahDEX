@@ -200,9 +200,9 @@ export function AdminFeatureFlags() {
               {group.flags.map(flag => {
                 const enabled = flags[flag.id] ?? false;
                 return (
-                  <div key={flag.id} className={cn("flex items-center gap-4 px-5 py-3.5 transition-colors", enabled ? "" : "opacity-60")}>
+                  <div key={flag.id} className={cn("flex items-center gap-4 pl-5 pr-6 py-3.5 transition-colors", enabled ? "" : "opacity-60")}>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-foreground">{flag.label}</span>
                         {flag.beta && (
                           <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-400 border border-violet-500/25">BETA</span>
@@ -211,18 +211,23 @@ export function AdminFeatureFlags() {
                           <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/25">CRITICAL</span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{flag.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{flag.description}</p>
                     </div>
                     <button
                       onClick={() => toggle(flag.id)}
+                      aria-checked={enabled}
+                      role="switch"
                       className={cn(
-                        "relative w-11 h-6 rounded-full border-2 transition-all duration-200 shrink-0",
+                        "relative w-12 h-6 rounded-full transition-all duration-200 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                         enabled
-                          ? flag.danger ? "bg-red-500 border-red-500" : "bg-primary border-primary"
-                          : "bg-muted/30 border-border"
+                          ? flag.danger ? "bg-red-500" : "bg-primary"
+                          : "bg-muted/50 border border-border"
                       )}
                     >
-                      <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200", enabled ? "translate-x-5" : "translate-x-0.5")} />
+                      <span className={cn(
+                        "absolute top-[3px] left-[3px] w-[18px] h-[18px] rounded-full bg-white shadow-md transition-transform duration-200",
+                        enabled ? "translate-x-6" : "translate-x-0"
+                      )} />
                     </button>
                   </div>
                 );

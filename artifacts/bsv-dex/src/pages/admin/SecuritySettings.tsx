@@ -66,19 +66,27 @@ type Sec = typeof DEFAULT_SEC;
 
 function Toggle({ value, onChange, label, description, danger }: { value: boolean; onChange: (v: boolean) => void; label: string; description?: string; danger?: boolean }) {
   return (
-    <div className="flex items-center gap-4 py-4 border-b border-border last:border-0">
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
+    <div className="flex items-center gap-4 py-4 pr-2 border-b border-border last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
           <p className="text-sm font-medium text-foreground">{label}</p>
           {danger && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/25">HIGH RISK</span>}
         </div>
-        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+        {description && <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>}
       </div>
       <button
         onClick={() => onChange(!value)}
-        className={cn("relative w-11 h-6 rounded-full border-2 transition-all duration-200 shrink-0", value ? (danger ? "bg-red-500 border-red-500" : "bg-primary border-primary") : "bg-muted/30 border-border")}
+        aria-checked={value}
+        role="switch"
+        className={cn(
+          "relative w-12 h-6 rounded-full transition-all duration-200 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+          value ? (danger ? "bg-red-500" : "bg-primary") : "bg-muted/50 border border-border"
+        )}
       >
-        <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200", value ? "translate-x-5" : "translate-x-0.5")} />
+        <span className={cn(
+          "absolute top-[3px] left-[3px] w-[18px] h-[18px] rounded-full bg-white shadow-md transition-transform duration-200",
+          value ? "translate-x-6" : "translate-x-0"
+        )} />
       </button>
     </div>
   );

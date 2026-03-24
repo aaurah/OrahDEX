@@ -216,8 +216,13 @@ export function AdminAnnouncements() {
                 <p className="text-sm font-semibold text-foreground">Enable Pop-up Announcement</p>
                 <p className="text-xs text-muted-foreground mt-0.5">Show a modal to users when they first visit the site</p>
               </div>
-              <button onClick={() => setPopup(p => ({ ...p, enabled: !p.enabled }))} className={cn("relative w-11 h-6 rounded-full border-2 transition-all duration-200", popup.enabled ? "bg-primary border-primary" : "bg-muted/30 border-border")}>
-                <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200", popup.enabled ? "translate-x-5" : "translate-x-0.5")} />
+              <button
+                onClick={() => setPopup(p => ({ ...p, enabled: !p.enabled }))}
+                aria-checked={popup.enabled}
+                role="switch"
+                className={cn("relative w-12 h-6 rounded-full transition-all duration-200 shrink-0 focus:outline-none", popup.enabled ? "bg-primary" : "bg-muted/50 border border-border")}
+              >
+                <span className={cn("absolute top-[3px] left-[3px] w-[18px] h-[18px] rounded-full bg-white shadow-md transition-transform duration-200", popup.enabled ? "translate-x-6" : "translate-x-0")} />
               </button>
             </div>
             {popup.enabled && (
