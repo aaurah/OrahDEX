@@ -6,6 +6,7 @@ import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { ChainSwitcherDropdown } from "./ChainSwitcherDropdown";
+import { ConnectivityDot } from "./ConnectivityDot";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -130,8 +131,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="sticky top-7 h-20 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Brand */}
-          <Link href="/" className="flex items-center group">
+          <Link href="/" className="flex items-center gap-1.5 group">
             <span className="text-xl font-bold tracking-tight text-foreground">Orah<span className="text-green-400">DEX</span></span>
+            <ConnectivityDot />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
