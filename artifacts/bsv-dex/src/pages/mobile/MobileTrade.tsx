@@ -780,9 +780,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </span>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
-                    className="w-[20px] h-[20px] rounded-full border-2 border-primary text-primary shrink-0 flex items-center justify-center active:bg-primary/20 transition-colors"
+                    className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors"
+                    style={{ width: 22, height: 22, minWidth: 22, minHeight: 22 }}
                   >
-                    <Plus size={11} strokeWidth={2.5} />
+                    <Plus size={10} strokeWidth={3} />
                   </button>
                 </div>
               </div>
