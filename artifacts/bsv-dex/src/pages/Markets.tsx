@@ -5,6 +5,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
+  BASE_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -50,6 +51,7 @@ const TAB_META: TabMeta[] = [
   { id: "op",        label: "OP",           color: "text-red-400",     desc: "All pairs quoted in OP · Optimism" },
   { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
   { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
+  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "All pairs quoted in BASE · Coinbase L2" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
   { id: "bsv",       label: "BSV",          color: "text-amber-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },
@@ -136,6 +138,7 @@ export function Markets() {
       case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP")    : OP_MARKETS.map(normalise);
       case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM")   : FTM_MARKETS.map(normalise);
       case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO")   : CRO_MARKETS.map(normalise);
+      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE")  : BASE_MARKETS.map(normalise);
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")   : BCH_MARKETS.map(normalise);
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")   : BSV_MARKETS.map(normalise);
       case "ai":        return AI_MARKETS.map(normalise);
@@ -162,6 +165,7 @@ export function Markets() {
       case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP").length    : OP_MARKETS.length;
       case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM").length   : FTM_MARKETS.length;
       case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO").length   : CRO_MARKETS.length;
+      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE").length : BASE_MARKETS.length;
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH").length  : BCH_MARKETS.length;
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV").length  : BSV_MARKETS.length;
       case "ai":        return AI_MARKETS.length;

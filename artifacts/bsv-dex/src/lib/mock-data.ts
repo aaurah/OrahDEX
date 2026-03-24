@@ -406,6 +406,35 @@ export const FTM_MARKETS: any[] = [
   ftmPair("AAVE",  96.5,    1.82,   12_000_000),
 ];
 
+// ─── BASE PAIRS (Base L2 · Coinbase) ─────────────────────────────────────────
+const BASE_ETH_PRICE = 3415;
+function basePair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / BASE_ETH_PRICE;
+  return spot(base, "BASE", p, chg, vol / BASE_ETH_PRICE);
+}
+export const BASE_MARKETS: any[] = [
+  basePair("ETH",   3415,    2.15, 2_100_000_000),
+  basePair("BTC",   68310,  -1.85, 1_850_000_000),
+  basePair("SOL",   148.5,   3.21,   520_000_000),
+  basePair("USDC",  1.00,    0.01,   980_000_000),
+  basePair("DAI",   1.00,    0.02,   420_000_000),
+  basePair("LINK",  14.52,   3.64,   148_000_000),
+  basePair("UNI",   9.84,    1.55,    82_000_000),
+  basePair("AAVE",  96.5,    1.82,    62_000_000),
+  basePair("ARB",   1.12,    2.85,   128_000_000),
+  basePair("OP",    2.41,    3.10,    92_000_000),
+  basePair("DOGE",  0.1185,  5.42,    78_000_000),
+  basePair("SHIB",  0.0000235, 6.10, 142_000_000),
+  basePair("PEPE",  0.0000082, 8.50, 285_000_000),
+  basePair("MKR",   2920,   -0.45,    28_000_000),
+  basePair("CRV",   0.382,  -1.15,    48_000_000),
+  basePair("LDO",   2.15,    1.95,    44_000_000),
+  basePair("COMP",  52.5,    0.62,    15_000_000),
+  basePair("GRT",   0.192,   3.15,    32_000_000),
+  basePair("SNX",   2.82,   -1.32,    16_000_000),
+  basePair("RUNE",  5.52,    4.85,    22_000_000),
+];
+
 // ─── CRO PAIRS (Cronos) ───────────────────────────────────────────────────────
 const CRO_PRICE = 0.13;
 function croPair(base: string, usdtPrice: number, chg: number, vol: number): any {
