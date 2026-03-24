@@ -281,7 +281,7 @@ export function SpotTrading() {
                         key={m.symbol}
                         href={`/trade/${urlSymbol}`}
                         className={cn(
-                          "flex items-center px-2 py-1.5 gap-2 hover:bg-white/5 cursor-pointer transition-colors border-b border-border/20",
+                          "flex items-center px-2 py-1.5 gap-2 hover:bg-white/5 cursor-pointer transition-colors",
                           isActive && "bg-primary/10 border-l-2 border-l-primary"
                         )}
                       >
