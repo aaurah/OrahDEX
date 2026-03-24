@@ -28,14 +28,12 @@ function getNativeAsset(network: string | null, chainId: number | null): string 
   return "ETH";
 }
 
-// All DEX-traded assets shown in the portfolio
-const PORTFOLIO_ASSETS = [
-  { asset: "BSV",  marketSymbol: "BSV-USDT",  color: "#22C55E" },
-  { asset: "USDT", marketSymbol: null,          color: "#34D399" },
-  { asset: "BTC",  marketSymbol: "BTC-USDT",  color: "#F97316" },
-  { asset: "ETH",  marketSymbol: "ETH-USDT",  color: "#8B5CF6" },
-  { asset: "BNB",  marketSymbol: "BNB-USDT",  color: "#EAB308" },
-];
+const ASSET_COLORS: Record<string, string> = {
+  ETH: "#8B5CF6", BNB: "#EAB308", MATIC: "#7C3AED", POL: "#7C3AED",
+  USDT: "#22C55E", USDC: "#3B82F6", DAI: "#EAB308", WBTC: "#F97316",
+  LINK: "#3B82F6", BSV: "#22C55E", BTC: "#F97316", SOL: "#9945FF",
+  AVAX: "#E84142", FTM: "#1969FF", MNT: "#6B7280",
+};
 
 interface MarketRow { symbol: string; baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
 
@@ -78,23 +76,25 @@ export function MobilePortfolio() {
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
 
-  // Build rows:
-  // - EVM wallets: use real on-chain balances (native + ERC-20 tokens)
-  // - BSV/SOL/BTC: use stored native balance only
-  const rows = PORTFOLIO_ASSETS.map(a => {
-    const mkt    = prices?.[a.asset];
-    const price  = a.asset === "USDT" ? 1 : (mkt?.lastPrice ?? 0);
-    const change = a.asset === "USDT" ? 0 : (mkt?.priceChangePercent24h ?? 0);
-    let amount = 0;
+  // Build rows from real on-chain data where available
+  const rows = (() => {
+    // EVM: use all tokens returned by useEvmBalances (includes native + ERC-20)
     if (network === "evm" && evmBalances.length > 0) {
-      const evmBal = evmBalances.find(b => b.symbol === a.asset);
-      amount = evmBal?.amount ?? 0;
-    } else {
-      amount = a.asset === nativeAsset ? nativeBalance : 0;
+      return evmBalances.map(b => {
+        const stableSymbols = ["USDT", "USDC", "DAI", "BUSD", "TUSD"];
+        const isStable = stableSymbols.includes(b.symbol.toUpperCase());
+        const mkt = prices?.[b.symbol];
+        const price = b.price > 0 ? b.price : isStable ? 1 : (mkt?.lastPrice ?? 0);
+        const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+        const usdValue = b.usdValue > 0 ? b.usdValue : b.amount * price;
+        const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
+        return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
+      });
     }
-    const value = amount * price;
-    return { ...a, amount, price, change, value };
-  });
+    // Non-EVM wallets: show native asset with stored balance
+    const nativeColor = ASSET_COLORS[nativeAsset] ?? "#6B7280";
+    return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: 0, change: 0, value: 0, isNative: true }];
+  })();
 
   const total = rows.reduce((s, r) => s + r.value, 0);
   const nonZero = rows.filter(r => r.amount > 0);
@@ -184,7 +184,7 @@ export function MobilePortfolio() {
               </p>
             )}
 
-            {nativeBalance > 0 && (
+            {total > 0 && (
               <div className="flex items-center gap-1.5 mt-2">
                 {totalChange >= 0
                   ? <TrendingUp size={14} className="text-green-500" />
@@ -270,12 +270,12 @@ export function MobilePortfolio() {
           {/* Assets tab */}
           {tab === "assets" && (
             <>
-              {/* Deposit hint when non-native assets are 0 */}
-              {rows.filter(r => r.amount === 0).length > 0 && (
+              {/* Note about single-chain view for EVM wallets */}
+              {network === "evm" && (
                 <div className="flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/15">
                   <Info size={14} className="text-primary shrink-0 mt-0.5" />
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Your wallet balance is shown above. Deposit assets into OrahDEX to start trading.
+                    Showing on-chain balances for your connected network. Switch chains in your wallet to view other assets.
                   </p>
                 </div>
               )}
@@ -284,7 +284,7 @@ export function MobilePortfolio() {
                 {rows.map((r, i) => (
                   <div
                     key={r.asset}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""} ${r.amount === 0 ? "opacity-50" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
@@ -295,20 +295,18 @@ export function MobilePortfolio() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-semibold text-foreground">{r.asset}</p>
-                        {r.asset === nativeAsset && r.amount > 0 && (
+                        {r.isNative && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/25">
-                            WALLET
+                            NATIVE
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                         {r.amount > 0
-                          ? r.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                          : r.asset === nativeAsset
-                            ? "0.000000"
-                            : "— deposit to trade"}
+                          ? r.amount.toLocaleString(undefined, { maximumFractionDigits: r.amount < 0.0001 ? 8 : 6 })
+                          : "0.000000"}
                       </p>
-                      {r.price > 0 && r.asset !== "USDT" && r.amount > 0 && (
+                      {r.price > 0 && !["USDT","USDC","DAI"].includes(r.asset) && (
                         <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                           @ ${r.price.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
@@ -321,7 +319,7 @@ export function MobilePortfolio() {
                       <p className="text-sm font-bold text-foreground">
                         ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
-                      {r.amount > 0 && (
+                      {r.change !== 0 && (
                         <p className={`text-xs font-medium mt-0.5 ${r.change >= 0 ? "text-green-500" : "text-red-500"}`}>
                           {r.change >= 0 ? "+" : ""}{r.change.toFixed(2)}%
                         </p>
