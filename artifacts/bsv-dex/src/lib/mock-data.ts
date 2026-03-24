@@ -465,6 +465,7 @@ function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any
   return spot(base, "ETH", p, chg, vol / ETH_PRICE);
 }
 export const ETH_MARKETS: any[] = [
+  ethPair("BSV",   55.42,   4.41,   18_500_000),
   ethPair("BTC",   68310,  -1.85, 2_450_000_000),
   ethPair("SOL",   148.5,   3.21,  420_000_000),
   ethPair("XRP",   0.5242, -0.64,  110_000_000),
@@ -686,8 +687,10 @@ export const FUTURES_MARKETS: any[] = [
 
 export const MOCK_MARKETS: any[] = [...USDT_MARKETS, ...BSV_MARKETS, ...FUTURES_MARKETS];
 
+const BSV_ETH_PRICE = 55.42 / 3415; // ≈ 0.016228 ETH per BSV
 export const MOCK_TICKER: Record<string, any> = {
-  "BSV-USDT": { symbol: "BSV-USDT", lastPrice: 55.42, bidPrice: 55.40, askPrice: 55.44, openPrice: 53.10, highPrice: 56.50, lowPrice: 52.80, volume: 18_500_000, quoteVolume: 1_025_000_000, priceChange: 2.32, priceChangePercent: 4.41, timestamp: new Date().toISOString() }
+  "BSV-USDT": { symbol: "BSV-USDT", lastPrice: 55.42,           bidPrice: 55.40,            askPrice: 55.44,            openPrice: 53.10,           highPrice: 56.50,           lowPrice: 52.80,           volume: 18_500_000, quoteVolume: 1_025_000_000,        priceChange: 2.32,          priceChangePercent: 4.41,  timestamp: new Date().toISOString() },
+  "BSV-ETH":  { symbol: "BSV-ETH",  lastPrice: BSV_ETH_PRICE,   bidPrice: BSV_ETH_PRICE * 0.9997, askPrice: BSV_ETH_PRICE * 1.0003, openPrice: BSV_ETH_PRICE * 0.958, highPrice: BSV_ETH_PRICE * 1.02, lowPrice: BSV_ETH_PRICE * 0.952, volume: 5_420_000, quoteVolume: 5_420_000 * BSV_ETH_PRICE, priceChange: BSV_ETH_PRICE * 0.044, priceChangePercent: 4.41, timestamp: new Date().toISOString() },
 };
 
 export const generateMockOrderBook = (basePrice: number): OrderBook => {

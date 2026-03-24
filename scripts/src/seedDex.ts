@@ -1,14 +1,16 @@
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 
+const BSV_ETH_PRICE = 55.42 / 3415; // ≈ 0.016228 ETH per BSV
 const SPOT_MARKETS = [
-  { symbol: "BSV/USDT",  base: "BSV",  quote: "USDT", price: 55.42,     change: 0, changeP: 0, vol: 18500000,    high: 55.42,     low: 55.42,    mcap: 1080000000 },
-  { symbol: "BTC/USDT",  base: "BTC",  quote: "USDT", price: 65234.50,  change: 0, changeP: 0, vol: 1240000000,  high: 65234.50,  low: 65234.50, mcap: 1280000000000 },
-  { symbol: "ETH/USDT",  base: "ETH",  quote: "USDT", price: 3198.70,   change: 0, changeP: 0, vol: 420000000,   high: 3198.70,   low: 3198.70,  mcap: 384000000000 },
-  { symbol: "SOL/USDT",  base: "SOL",  quote: "USDT", price: 148.32,    change: 0, changeP: 0, vol: 58000000,    high: 148.32,    low: 148.32,   mcap: 68000000000 },
-  { symbol: "XRP/USDT",  base: "XRP",  quote: "USDT", price: 0.5234,    change: 0, changeP: 0, vol: 95000000,    high: 0.5234,    low: 0.5234,   mcap: 29000000000 },
-  { symbol: "BNB/USDT",  base: "BNB",  quote: "USDT", price: 412.80,    change: 0, changeP: 0, vol: 120000000,   high: 412.80,    low: 412.80,   mcap: 62000000000 },
-  { symbol: "ADA/USDT",  base: "ADA",  quote: "USDT", price: 0.4521,    change: 0, changeP: 0, vol: 28000000,    high: 0.4521,    low: 0.4521,   mcap: 16000000000 },
+  { symbol: "BSV/USDT",  base: "BSV",  quote: "USDT", price: 55.42,          change: 0, changeP: 0, vol: 18500000,    high: 55.42,          low: 55.42,          mcap: 1080000000 },
+  { symbol: "BSV/ETH",   base: "BSV",  quote: "ETH",  price: BSV_ETH_PRICE,  change: 0, changeP: 0, vol: 5420000,     high: BSV_ETH_PRICE,  low: BSV_ETH_PRICE,  mcap: null },
+  { symbol: "BTC/USDT",  base: "BTC",  quote: "USDT", price: 65234.50,       change: 0, changeP: 0, vol: 1240000000,  high: 65234.50,       low: 65234.50,       mcap: 1280000000000 },
+  { symbol: "ETH/USDT",  base: "ETH",  quote: "USDT", price: 3198.70,        change: 0, changeP: 0, vol: 420000000,   high: 3198.70,        low: 3198.70,        mcap: 384000000000 },
+  { symbol: "SOL/USDT",  base: "SOL",  quote: "USDT", price: 148.32,         change: 0, changeP: 0, vol: 58000000,    high: 148.32,         low: 148.32,         mcap: 68000000000 },
+  { symbol: "XRP/USDT",  base: "XRP",  quote: "USDT", price: 0.5234,         change: 0, changeP: 0, vol: 95000000,    high: 0.5234,         low: 0.5234,         mcap: 29000000000 },
+  { symbol: "BNB/USDT",  base: "BNB",  quote: "USDT", price: 412.80,         change: 0, changeP: 0, vol: 120000000,   high: 412.80,         low: 412.80,         mcap: 62000000000 },
+  { symbol: "ADA/USDT",  base: "ADA",  quote: "USDT", price: 0.4521,         change: 0, changeP: 0, vol: 28000000,    high: 0.4521,         low: 0.4521,         mcap: 16000000000 },
 ];
 
 const FUTURES_MARKETS = [
