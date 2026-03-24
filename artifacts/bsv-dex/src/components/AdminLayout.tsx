@@ -4,11 +4,37 @@ import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
-  Megaphone, ChevronDown,
+  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { WalletConnectModal } from "@/components/WalletConnectModal";
+import { useAccount, useChainId, useBalance } from "wagmi";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./BrandLogo";
+
+const CHAIN_NAMES: Record<number, { name: string; color: string; short: string }> = {
+  1:      { name: "Ethereum",    color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "ETH" },
+  56:     { name: "BNB Chain",   color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20", short: "BNB" },
+  137:    { name: "Polygon",     color: "text-violet-400 bg-violet-400/10 border-violet-400/20", short: "MATIC" },
+  42161:  { name: "Arbitrum",   color: "text-blue-300 bg-blue-300/10 border-blue-300/20",    short: "ARB" },
+  10:     { name: "Optimism",   color: "text-red-400 bg-red-400/10 border-red-400/20",       short: "OP" },
+  8453:   { name: "Base",       color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "BASE" },
+  43114:  { name: "Avalanche",  color: "text-red-400 bg-red-400/10 border-red-400/20",       short: "AVAX" },
+  250:    { name: "Fantom",     color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "FTM" },
+  324:    { name: "zkSync",     color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "ZK" },
+  534352: { name: "Scroll",     color: "text-yellow-400 bg-yellow-400/10 border-yellow-400/20", short: "SCR" },
+  5000:   { name: "Mantle",     color: "text-teal-400 bg-teal-400/10 border-teal-400/20",    short: "MNT" },
+  59144:  { name: "Linea",      color: "text-blue-300 bg-blue-300/10 border-blue-300/20",    short: "LINEA" },
+  25:     { name: "Cronos",     color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/20", short: "CRO" },
+};
+
+const NETWORK_STYLES: Record<string, { color: string; label: string }> = {
+  bsv: { color: "text-green-400 bg-green-400/10 border-green-400/20",   label: "BSV" },
+  sol: { color: "text-purple-400 bg-purple-400/10 border-purple-400/20", label: "SOL" },
+  btc: { color: "text-orange-400 bg-orange-400/10 border-orange-400/20", label: "BTC" },
+};
 
 interface NavItem {
   href: string;
@@ -72,6 +98,141 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+function AdminWalletWidget() {
+  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
+  const walletStore = useWalletStore();
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const chainId = useChainId();
+  const { data: evmBalance } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
+  const [copied, setCopied] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const isConnected = evmConnected || !!walletStore.address;
+  const displayAddress = evmConnected && evmAddress
+    ? evmAddress
+    : walletStore.address ?? null;
+  const network = evmConnected ? "evm" : walletStore.network;
+
+  const chainInfo = evmConnected && chainId ? CHAIN_NAMES[chainId] : null;
+  const networkStyle = network === "evm"
+    ? (chainInfo ? { color: chainInfo.color, label: chainInfo.short } : { color: "text-blue-400 bg-blue-400/10 border-blue-400/20", label: "EVM" })
+    : network ? NETWORK_STYLES[network] ?? { color: "text-muted-foreground bg-muted/10 border-border", label: network.toUpperCase() }
+    : null;
+
+  const balance = evmConnected && evmBalance
+    ? `${parseFloat(evmBalance.formatted).toFixed(4)} ${evmBalance.symbol}`
+    : walletStore.balance ?? null;
+
+  const copyAddress = () => {
+    if (!displayAddress) return;
+    navigator.clipboard.writeText(displayAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+
+  if (!isConnected) {
+    return (
+      <>
+        <button
+          onClick={() => openWallet()}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-all"
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          <span className="hidden sm:block">Connect Wallet</span>
+        </button>
+        <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="relative">
+        <button
+          onClick={() => setDropdownOpen(d => !d)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/30 transition-all"
+        >
+          {networkStyle && (
+            <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-md border", networkStyle.color)}>
+              {networkStyle.label}
+            </span>
+          )}
+          {displayAddress && (
+            <span className="text-xs font-mono text-foreground hidden sm:block">
+              {truncate(displayAddress)}
+            </span>
+          )}
+          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", dropdownOpen && "rotate-180")} />
+        </button>
+
+        {dropdownOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+            <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl shadow-black/40 z-50 overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Connected Wallet</span>
+                  {networkStyle && (
+                    <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-md border", networkStyle.color)}>
+                      {chainInfo?.name ?? networkStyle.label}
+                    </span>
+                  )}
+                </div>
+                {displayAddress && (
+                  <div className="flex items-center gap-2 bg-secondary/60 rounded-xl px-3 py-2">
+                    <code className="text-xs font-mono text-foreground flex-1 truncate">{displayAddress}</code>
+                    <button onClick={copyAddress} className="text-muted-foreground hover:text-green-400 transition-colors shrink-0">
+                      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    {evmConnected && chainId && (
+                      <a
+                        href={`https://etherscan.io/address/${displayAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-blue-400 transition-colors shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {balance && (
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Balance</p>
+                  <p className="text-sm font-mono font-bold text-foreground">{balance}</p>
+                </div>
+              )}
+
+              <div className="p-2 space-y-1">
+                <button
+                  onClick={() => { setDropdownOpen(false); openWallet(); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all text-left"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Switch Network / Wallet
+                </button>
+                <button
+                  onClick={() => { walletStore.disconnect(); setDropdownOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all text-left"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Disconnect
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
+    </>
+  );
+}
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
@@ -204,6 +365,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               <span className="text-xs text-green-400 font-medium hidden sm:block">System Operational</span>
             </div>
+            <AdminWalletWidget />
           </div>
         </header>
 
