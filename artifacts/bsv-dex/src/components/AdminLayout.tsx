@@ -46,16 +46,11 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-border shrink-0">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-7 h-7 rounded-lg overflow-hidden shadow-lg shadow-primary/20 shrink-0">
+          <Link href="/" className="flex items-center group">
+            <div className="h-11 w-11 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
               <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
             </div>
-            <div className="flex flex-col leading-none">
-              <span className="font-extrabold text-sm tracking-tight">
-                Orah<span className="text-primary">DEX</span>
-              </span>
-              <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Admin Panel</span>
-            </div>
+            <span className="ml-2 text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Admin Panel</span>
           </Link>
           <button className="md:hidden text-muted-foreground" onClick={() => setSidebarOpen(false)}>
             <X className="w-4 h-4" />

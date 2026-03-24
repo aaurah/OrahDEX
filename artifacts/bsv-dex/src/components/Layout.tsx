@@ -129,15 +129,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="sticky top-7 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg overflow-hidden shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform shrink-0">
+          <Link href="/" className="flex items-center group">
+            <div className="h-12 w-12 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
               <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-            </div>
-            <div className="hidden sm:flex flex-col leading-none">
-              <span className="font-extrabold text-lg tracking-tight text-foreground">
-                Orah<span className="text-primary">DEX</span>
-              </span>
-              <span className="text-[9px] text-muted-foreground tracking-widest uppercase font-medium">Trade means DEX</span>
             </div>
           </Link>
 
