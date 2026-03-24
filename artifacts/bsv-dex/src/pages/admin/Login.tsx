@@ -3,7 +3,7 @@ import { useLocation } from 'wouter';
 import { Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check, RefreshCw } from 'lucide-react';
 import { useAdminAuthStore } from '@/store/useAdminAuthStore';
 import { generateTOTP } from '@/lib/totp';
-import { ConnectivityDot } from '@/components/ConnectivityDot';
+import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -12,6 +12,7 @@ type Step = 'credentials' | 'setup' | 'totp';
 export function AdminLogin() {
   const [, navigate] = useLocation();
   const { isAuthenticated, twoFaEnabled, twoFaSetupDone, login, verifyTotp, markSetupDone, error, clearError } = useAdminAuthStore();
+  const online = useOnlineStatus();
 
   const [step, setStep] = useState<Step>('credentials');
   const [emailVal, setEmailVal] = useState('');
@@ -111,13 +112,25 @@ export function AdminLogin() {
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 via-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/30">
+            {/* Gradient O-box with connectivity dot inside */}
+            <div
+              className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 via-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/30"
+              title={online ? 'Connected to internet' : 'No internet connection'}
+            >
               <span className="text-white font-black text-xl leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
+              {/* Dot centered inside the O hollow */}
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="relative flex items-center justify-center w-[6px] h-[6px]">
+                  {online && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                  )}
+                  <span className={`relative rounded-full w-[6px] h-[6px] ${online ? 'bg-white' : 'bg-red-400'}`} />
+                </span>
+              </span>
             </div>
             <span className="font-extrabold text-2xl tracking-tight text-foreground">
               Orah<span className="text-green-400">DEX</span>
             </span>
-            <ConnectivityDot size="md" />
           </div>
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Shield className="w-4 h-4 text-violet-400" />

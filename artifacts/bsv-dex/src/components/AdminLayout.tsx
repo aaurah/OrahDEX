@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { cn } from "@/lib/utils";
-import { ConnectivityDot } from "./ConnectivityDot";
+import { BrandLogo } from "./BrandLogo";
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
@@ -47,9 +47,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       >
         {/* Brand */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-border shrink-0">
-          <Link href="/" className="flex items-center group gap-2">
-            <span className="text-base font-bold tracking-tight text-foreground">Orah<span className="text-green-400">DEX</span></span>
-            <ConnectivityDot />
+          <Link href="/" className="flex items-center gap-2 group">
+            <BrandLogo textSize="text-base" />
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">Admin Panel</span>
           </Link>
           <button className="md:hidden text-muted-foreground" onClick={() => setSidebarOpen(false)}>
