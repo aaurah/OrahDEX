@@ -1,0 +1,222 @@
+1. Architecture: L1/L2/L3 + bridge + wallet
+
+Core components
+
+• BSV layer (L1 UTXO):• Native BSV UTXOs
+• HTLC scripts for locking/unlocking BSV
+• Optional: on‑chain settlement records for trades
+
+• EVM layer (L1/L2 account model):• ERC‑20 wBSV token
+• AMM DEX (Uniswap‑style): Factory, Pair, Router
+• Treasury + fee collector contracts
+
+• Bridge layer:• Off‑chain relayer/oracle cluster watching both chains
+• On‑chain:• BSV HTLC scripts
+• EVM Bridge contract (mint/burn wBSV)
+
+
+• App layer (L3):• Unified DEX frontend
+• Routing engine (decides BSV‑side vs EVM‑side execution)
+• Fee logic, tiers, and analytics
+
+• Wallet layer:• BSV wallet (UTXO)
+• EVM wallet (MetaMask/WalletConnect)
+• App maintains:• bsvAddress, evmAddress
+• currentChainContext
+• Per‑chain RPC and contract maps
+
+
+
+
+---
+
+2. Trade flow diagrams (conceptual)
+
+A. BSV → EVM token (e.g., BSV → USDC)
+
+1. User connects:• Connects BSV wallet + EVM wallet.
+
+2. User selects trade:• From: BSV (native)
+• To: USDC (EVM)
+
+3. DEX computes route:• BSV → wBSV (bridge)
+• wBSV → USDC (EVM AMM)
+
+4. Step 1: Lock BSV on BSV chain:• DEX builds HTLC:• Lock BSV with hash H, timeout T.
+
+• User signs and broadcasts BSV tx.
+
+5. Step 2: Bridge observes lock:• Relayers see HTLC with H and amount.
+• After sufficient confirmations, they call EVM Bridge contract.
+
+6. Step 3: Mint wBSV on EVM:• Bridge contract mints wBSV to user’s EVM address.
+
+7. Step 4: Swap wBSV → USDC on EVM:• DEX calls Router:• swapExactTokensForTokens(wBSV, USDC, ...)
+
+• User signs EVM tx.
+
+8. Step 5: Fees:• AMM fee taken in wBSV/USDC.
+• Protocol share routed to Treasury, later converted to BSV if desired.
+
+9. Result:• User ends with USDC on EVM.
+• BSV locked on BSV chain backing wBSV supply.
+
+
+
+B. EVM token → BSV (e.g., USDC → BSV)
+
+1. User selects trade:• From: USDC (EVM)
+• To: BSV (native)
+
+2. DEX computes route:• USDC → wBSV (EVM AMM)
+• wBSV → BSV (bridge)
+
+3. Step 1: Swap USDC → wBSV:• Router swap on EVM.
+• User signs EVM tx.
+
+4. Step 2: Burn wBSV:• User (or DEX) calls Bridge contract:• burn(wBSV, bsvDestinationAddress)
+
+• Event emitted with amount + BSV address.
+
+5. Step 3: Bridge observes burn:• Relayers see burn event.
+• After confirmations, they unlock BSV from HTLC pool on BSV chain to user’s BSV address.
+
+6. Step 4: Fees:• Swap fee on EVM.
+• Bridge fee in BSV on unlock.
+
+7. Result:• User ends with native BSV.
+• wBSV supply reduced accordingly.
+
+
+
+---
+
+3. Smart‑contract specs (EVM + HTLC)
+
+EVM side
+
+a) WBSV (ERC‑20)
+
+• State:• mapping(address => uint256) balances
+• mapping(address => mapping(address => uint256)) allowance
+
+• Key functions:• mint(address to, uint256 amount) — only Bridge
+• burn(address from, uint256 amount) — only Bridge
+• Standard transfer, approve, transferFrom
+
+
+
+b) Bridge contract
+
+• State:• address wBSV
+• address[] relayers or oracle mechanism
+• uint256 feeBps (bridge fee)
+
+• Events:• Minted(address indexed to, uint256 amount, bytes32 bsvLockId)
+• Burned(address indexed from, uint256 amount, string bsvAddress)
+
+• Functions:• mint(address to, uint256 amount, bytes32 bsvLockId)• Called by relayers after BSV lock.
+
+• burn(uint256 amount, string calldata bsvAddress)• Burns wBSV, emits event for BSV unlock.
+
+• setFee(uint256 newFeeBps) (governance)
+• setRelayer(address relayer, bool active)
+
+
+
+c) AMM DEX (Uniswap‑style)
+
+• Factory:• createPair(tokenA, tokenB)
+
+• Pair:• Reserves reserve0, reserve1
+• swap(amount0Out, amount1Out, to, data)
+
+• Router:• swapExactTokensForTokens(amountIn, amountOutMin, path, to, deadline)
+• getAmountsOut(amountIn, path)
+
+
+
+BSV side (HTLC script outline)
+
+HTLC locking script (conceptual):
+
+• Conditions:• Can be spent if:• Preimage s is provided such that HASH160(s) == H, and signed by receiver
+
+• Or, after time T, signed by sender (refund)
+
+
+
+Script logic:
+
+• OP_IF• OP_HASH160 <H> OP_EQUALVERIFY <receiverPubKey> OP_CHECKSIG
+
+• OP_ELSE• <T> OP_CHECKLOCKTIMEVERIFY OP_DROP <senderPubKey> OP_CHECKSIG
+
+• OP_ENDIF
+
+
+Relayers:
+
+• Watch for:• HTLC creation (lock)
+• HTLC spend (reveal preimage)
+
+• Use lock tx ID or lock ID to correlate with EVM mint.
+
+
+---
+
+4. Revenue model (BSV‑denominated)
+
+Revenue streams
+
+• EVM AMM swap fees:• Standard fee (e.g., 0.3%) on wBSV pairs.
+• Protocol share (e.g., 10%) routed to Treasury.
+• Periodically bridged back to BSV and held/used there.
+
+• Bridge fees:• Fee on:• BSV → wBSV (lock → mint)
+• wBSV → BSV (burn → unlock)
+
+• Charged as:• Slight haircut on amount bridged
+• Or explicit fee in BSV on unlock
+
+
+• Withdrawal / redemption fees:• Extra fee for converting large wBSV positions back to BSV.
+
+• Listing / integration fees (optional):• Projects pay in BSV to be supported as primary pairs with wBSV.
+
+• Premium routing / priority (optional):• VIP/keeper‑like tiers with reduced fees, paid in BSV.
+
+
+
+BSV anchoring
+
+• All protocol revenue ultimately:• Aggregated in EVM contracts
+• Periodically bridged to BSV
+• Held in a BSV Treasury UTXO structure
+
+• Treasury usage:• Liquidity seeding
+• Buybacks
+• Incentives
+• Development funding
+
+
+
+---
+
+5. Whitepaper‑style explanation
+
+This system is a cross‑chain DEX architecture that:
+
+• Treats BSV as the base asset and revenue anchor
+• Uses EVM chains for high‑liquidity AMM trading
+• Connects them via a bridge that mints/burns wBSV
+
+
+On BSV, users interact with native UTXO scripts (HTLCs) to lock and unlock BSV in a trust‑minimized way. On EVM, users interact with familiar AMM smart contracts to trade wBSV against other assets. A bridge layer coordinates state between the two worlds, ensuring that every wBSV is backed by locked BSV and that burns on EVM result in BSV releases on BSV.
+
+Fees are collected at multiple points—AMM swaps, bridge operations, and redemptions—and are ultimately consolidated into BSV, making BSV the unit of profit, governance, and long‑term value. The wallet and frontend logic abstract away the complexity: users see a single interface where they can connect both BSV and EVM wallets, view balances, choose assets, and execute trades that may span chains, while the routing engine and bridge handle the underlying choreography.
+
+If you want, next we can turn this into either:
+
+• A minimal v1 implementation plan (what to build first, what to defer), or
+• A dev‑ready spec for one concrete flow (e.g., BSV → wBSV → USDC).
