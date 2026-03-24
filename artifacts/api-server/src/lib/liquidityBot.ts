@@ -16,6 +16,9 @@ import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 
+/** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
+const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
+
 /* ── Bot profit accumulation helpers ────────────────────────────────────── */
 
 async function getSetting(key: string): Promise<string | null> {
@@ -182,21 +185,72 @@ async function runCycle(): Promise<void> {
     const markets = await db.select().from(marketsTable);
     const active  = markets.filter(m => m.status === "active");
 
+    // ── Step 1: Build the master USD price map from live USDT spot markets ──
+    // All stablecoins are pegged 1:1. Every other asset's USD price comes
+    // from its USDT market price, which was just updated by the price updater.
+    const usdMap = new Map<string, number>();
+    for (const s of STABLECOINS) usdMap.set(s, 1);
+
+    for (const m of active) {
+      if (m.quoteAsset === "USDT" && m.type === "spot") {
+        const p = parseFloat(m.lastPrice as string);
+        if (p > 0) usdMap.set(m.baseAsset, p);
+      }
+    }
+
+    // ── Step 2: Recompute & persist cross-pair DB prices from USD map ───────
+    // This keeps every ticker mathematically consistent with the order book.
+    // ETH/BTC price = ETH_USD / BTC_USD — same snapshot, no drift window.
+    const crossUpdates: Promise<unknown>[] = [];
+    for (const m of active) {
+      // Skip stablecoin-quoted and futures markets (their prices come from external APIs)
+      if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") continue;
+      const baseUSD  = usdMap.get(m.baseAsset);
+      const quoteUSD = usdMap.get(m.quoteAsset);
+      if (!baseUSD || !quoteUSD || quoteUSD <= 0) continue;
+      const crossPrice = baseUSD / quoteUSD;
+      if (!Number.isFinite(crossPrice) || crossPrice <= 0) continue;
+
+      crossUpdates.push(
+        db.update(marketsTable)
+          .set({ lastPrice: crossPrice.toFixed(8) })
+          .where(eq(marketsTable.symbol, m.symbol))
+          .catch(() => {}),
+      );
+    }
+    await Promise.all(crossUpdates);
+
+    // ── Step 3: Seed order books using the now-consistent prices ────────────
+    // Cross pairs use the derived USD ratio — never the (potentially stale)
+    // stored price — so NO triangular arbitrage path can ever be profitable.
     await Promise.all(
-      active.map(m =>
-        refreshMarket(
+      active.map(m => {
+        let midPrice: number;
+
+        if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
+          // USD-quoted and futures: use stored price (kept fresh by price updater)
+          midPrice = parseFloat(m.lastPrice as string) || 0;
+        } else {
+          // Cross pair: always derive from same-cycle USD snapshot
+          const baseUSD  = usdMap.get(m.baseAsset);
+          const quoteUSD = usdMap.get(m.quoteAsset);
+          midPrice = (baseUSD && quoteUSD && quoteUSD > 0)
+            ? baseUSD / quoteUSD
+            : parseFloat(m.lastPrice as string) || 0;
+        }
+
+        return refreshMarket(
           m.symbol,
           m.quoteAsset,
-          parseFloat(m.lastPrice) || 0,
-          parseFloat(m.volume24h) || 0,
+          midPrice,
+          parseFloat(m.volume24h as string) || 0,
         ).catch(err =>
           logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
-        ),
-      ),
+        );
+      }),
     );
 
     await accumulateCycleProfit(active);
-
     logger.info({ markets: active.length }, "Liquidity bot cycle complete");
   } catch (err) {
     logger.error({ err }, "Liquidity bot cycle failed");
