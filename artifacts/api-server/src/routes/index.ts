@@ -9,6 +9,7 @@ import adminRouter from "./admin.js";
 import dexRouter from "./dex.js";
 import globalMarketsRouter from "./globalMarkets.js";
 import bridgeRouter from "./bridge.js";
+import dexscreenerRouter from "./dexscreener.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger.js";
@@ -42,6 +43,7 @@ router.use(dexRouter);
 router.use("/admin", adminRouter);
 router.use("/global-markets", globalMarketsRouter);
 router.use("/bridge", bridgeRouter);
+router.use(dexscreenerRouter);
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {
