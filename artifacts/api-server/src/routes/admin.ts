@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { db } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey } from "../lib/bsvWallet.js";
+import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 
@@ -618,6 +618,54 @@ router.post("/bot-profit/withdraw", async (req, res) => {
     if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid amount" });
     if (!address)               return res.status(400).json({ error: "Destination address required" });
 
+    const net = (network || "BSV").trim();
+
+    // ── BSV on-chain broadcast ──────────────────────────────────────────────
+    if (net === "BSV") {
+      if (!isBsvAddress(address)) {
+        return res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" });
+      }
+
+      // Get current BSV price in USD from the spot market
+      const bsvMarket = await db.select({ lastPrice: marketsTable.lastPrice })
+        .from(marketsTable)
+        .where(eq(marketsTable.symbol, "BSV/USDT"))
+        .limit(1);
+      const bsvPriceUsd = parseFloat(bsvMarket[0]?.lastPrice ?? "0") || 14.35; // fallback
+
+      const satoshis = Math.round((amount / bsvPriceUsd) * 1e8);
+      if (satoshis < 546) {
+        return res.status(400).json({ error: `Amount too small. Minimum is $${((546 * bsvPriceUsd) / 1e8).toFixed(4)} (546 sat dust limit)` });
+      }
+
+      const wallet  = await getOrCreateWallet();
+      const balance = await fetchWalletBalance(wallet.address);
+
+      if (balance.confirmedSatoshis < satoshis + 500) {
+        const maxUsd = ((balance.confirmedSatoshis - 500) / 1e8 * bsvPriceUsd).toFixed(4);
+        return res.status(400).json({
+          error: `Settlement wallet has insufficient BSV. Available: ${balance.bsv.toFixed(8)} BSV (~$${maxUsd}). Fund ${wallet.address} to enable withdrawals.`,
+        });
+      }
+
+      const { txid } = await buildAndBroadcastBsvTx(address, satoshis, wallet, balance.utxos);
+
+      const cumulative = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
+      const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
+      if (amount > cumulative - withdrawn) {
+        return res.status(400).json({ error: `Insufficient profit balance. Available: $${(cumulative - withdrawn).toFixed(4)}` });
+      }
+      const newWithdrawn = withdrawn + amount;
+      const historyRaw = await getBotSetting("bot_withdrawal_history");
+      const history: any[] = historyRaw ? JSON.parse(historyRaw) : [];
+      history.unshift({ id: txid, amount: parseFloat(amount.toFixed(4)), address, network: "BSV", txid, status: "completed", timestamp: new Date().toISOString() });
+      await setBotSetting("bot_total_withdrawn", newWithdrawn.toFixed(6));
+      await setBotSetting("bot_withdrawal_history", JSON.stringify(history.slice(0, 100)));
+
+      return res.json({ success: true, txid, satoshis, bsvPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
+    }
+
+    // ── Non-BSV: record withdrawal intent (EVM/Solana require on-chain wallet) ──
     const cumulative = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
     const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
     const available  = cumulative - withdrawn;
@@ -629,22 +677,14 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 
     const historyRaw = await getBotSetting("bot_withdrawal_history");
     const history: any[] = historyRaw ? JSON.parse(historyRaw) : [];
-    history.unshift({
-      id: txid,
-      amount: parseFloat(amount.toFixed(4)),
-      address,
-      network: network || "BSV",
-      txid,
-      status: "completed",
-      timestamp: new Date().toISOString(),
-    });
+    history.unshift({ id: txid, amount: parseFloat(amount.toFixed(4)), address, network: net, txid, status: "completed", timestamp: new Date().toISOString() });
 
     await setBotSetting("bot_total_withdrawn", newWithdrawn.toFixed(6));
     await setBotSetting("bot_withdrawal_history", JSON.stringify(history.slice(0, 100)));
 
     res.json({ success: true, txid, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
-  } catch (err) {
-    res.status(500).json({ error: "Withdrawal failed" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
   }
 });
 
