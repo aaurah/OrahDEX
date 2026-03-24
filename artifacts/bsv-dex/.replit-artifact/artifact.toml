@@ -1,6 +1,6 @@
 kind = "web"
   previewPath = "/admin"
-  title = "OrahDEX — Web & Mobile"
+  title = "OrahDEX Admin Panel"
   version = "1.0.0"
   id = "artifacts/bsv-dex"
   router = "path"
@@ -29,4 +29,3 @@ kind = "web"
   [services.env]
   PORT = "20180"
   BASE_PATH = "/"
-  
