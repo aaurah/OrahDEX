@@ -40,6 +40,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
+import { useTxTracker } from "@/hooks/useTxTracker";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
 import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
@@ -79,14 +80,18 @@ function Router() {
   // Auto-fetch and refresh BSV balance whenever a BSV wallet is connected
   useBsvBalance();
 
+  // Poll pending EVM tx receipts and refresh balance on confirmation
+  useTxTracker();
+
   useEffect(() => {
     applyStoredTheme();
+
+    const eth = (window as any).ethereum;
 
     // On startup: verify any EVM wallet saved in localStorage is still genuinely connected.
     // eth_accounts is silent (no popup). If it returns nothing, the stored address is stale.
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
     if (network === "evm" && storedProvider !== "reown") {
-      const eth = (window as any).ethereum;
       if (!eth) {
         disconnect();
       } else {
@@ -104,6 +109,36 @@ function Router() {
           })
           .catch(() => disconnect());
       }
+    }
+
+    // ── accountsChanged — user switched wallet account ─────────────────────
+    const onAccountsChanged = async (accounts: string[]) => {
+      const { provider: p } = useWalletStore.getState();
+      if (p === "reown") return; // Reown handles its own state
+      if (!accounts.length) {
+        useWalletStore.getState().disconnect();
+      } else {
+        const chainHex: string = await eth.request({ method: "eth_chainId" }).catch(() => "0x1");
+        const chainId = parseInt(chainHex, 16);
+        useWalletStore.getState().connect({ address: accounts[0], provider: p ?? "metamask", network: "evm", chainId });
+        const bal = await fetchEvmBalance(accounts[0], chainId);
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+      }
+    };
+
+    // ── chainChanged — user switched network ───────────────────────────────
+    const onChainChanged = async (chainHex: string) => {
+      const { address: addr, provider: p } = useWalletStore.getState();
+      if (p === "reown" || !addr) return;
+      const chainId = parseInt(chainHex, 16);
+      useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
+      const bal = await fetchEvmBalance(addr, chainId);
+      if (bal !== null) useWalletStore.getState().setBalance(bal);
+    };
+
+    if (eth) {
+      eth.on?.("accountsChanged", onAccountsChanged);
+      eth.on?.("chainChanged", onChainChanged);
     }
 
     // Subscribe to Reown AppKit account changes and sync to wallet store.
@@ -143,6 +178,10 @@ function Router() {
     return () => {
       clearInterval(pollReown);
       reownUnsub?.();
+      if (eth) {
+        eth.removeListener?.("accountsChanged", onAccountsChanged);
+        eth.removeListener?.("chainChanged", onChainChanged);
+      }
     };
   }, []);
 

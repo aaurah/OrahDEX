@@ -4,10 +4,25 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatPrice } from "@/lib/utils";
+import { getTxExplorerUrl } from "@/store/useWalletStore";
+import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
+  Lock, ShieldCheck,
 } from "lucide-react";
+
+// OrahDEX mock router address (represents the BSV settlement contract / escrow)
+const ORAHDEX_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488";
+
+// Known ERC-20 token contract addresses on Ethereum mainnet
+const ERC20_TOKENS: Record<string, { address: string; decimals: number }> = {
+  USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
+  USDC: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
+  ETH:  { address: "", decimals: 18 }, // native, no contract
+  BNB:  { address: "", decimals: 18 }, // native on BSC
+  WBTC: { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
+};
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -129,7 +144,10 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
 
-  const [signing, setSigning] = useState(false);
+  const [signing, setSigning]       = useState(false);
+  const [approvalStep, setApprovalStep] = useState<
+    "idle" | "checking" | "needed" | "approving" | "approved"
+  >("idle");
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
   } | null>(null);
@@ -145,7 +163,6 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         const matched = data?.matched ?? false;
         const txid    = data?.settlementTxid ?? data?.txid ?? null;
         const url     = data?.explorerUrl ?? null;
-
         if (matched) {
           setSettlement({ matched: true, txid, explorerUrl: url });
           toast({
@@ -181,9 +198,67 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
-    let evmSignature: string | undefined;
+    const chainId = useWalletStore.getState().chainId ?? 1;
+    const addTx   = useWalletStore.getState().addPendingTx;
+    const setbal  = useWalletStore.getState().setBalance;
 
-    // EVM wallets: sign the order intent with MetaMask
+    // ── Step 1: ERC-20 Allowance check for EVM sells ──────────────────────
+    // If the user is selling an ERC-20 token, verify the DEX router has
+    // enough allowance via allowance(owner, router). If not, request approve().
+    if (isEvm && side === "sell" && (window as any).ethereum) {
+      const token = ERC20_TOKENS[base];
+      if (token?.address) {
+        try {
+          setApprovalStep("checking");
+          const amtUnits = BigInt(Math.floor(parseFloat(amount) * 10 ** token.decimals));
+          const allowed  = await checkAllowance(token.address, address, ORAHDEX_ROUTER, chainId);
+
+          if (allowed < amtUnits) {
+            setApprovalStep("needed");
+            toast({
+              title: "Token Approval Required",
+              description: `Allow OrahDEX to spend your ${base} — you'll see a wallet prompt.`,
+            });
+
+            setApprovalStep("approving");
+            // Request max approval (0xfff...fff = unlimited)
+            const maxHex = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+            const approveTxHash = await approveToken(token.address, ORAHDEX_ROUTER, maxHex, address);
+
+            if (!approveTxHash) {
+              setApprovalStep("idle");
+              toast({ title: "Approval cancelled", description: "You rejected the approval request.", variant: "destructive" });
+              return;
+            }
+
+            // Track the approve tx
+            addTx({
+              hash:                 approveTxHash,
+              chainId,
+              label:                `Approve ${base} for OrahDEX`,
+              status:               "pending",
+              confirmations:        0,
+              requiredConfirmations: 1,
+              timestamp:            Date.now(),
+              explorerUrl:          getTxExplorerUrl(approveTxHash, chainId),
+            });
+
+            setApprovalStep("approved");
+            toast({
+              title: "Approval submitted",
+              description: `${base} approval tx sent — proceeding to sign order.`,
+            });
+          } else {
+            setApprovalStep("approved");
+          }
+        } catch {
+          setApprovalStep("idle");
+        }
+      }
+    }
+
+    // ── Step 2: Sign the order intent (EVM only) ───────────────────────────
+    let evmSignature: string | undefined;
     if (isEvm && (window as any).ethereum) {
       try {
         setSigning(true);
@@ -194,34 +269,67 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         });
       } catch (err: any) {
         setSigning(false);
+        setApprovalStep("idle");
         if (err?.code === 4001) {
           toast({ title: "Signing rejected", description: "You cancelled the signature request.", variant: "destructive" });
           return;
         }
-        // Signing failed but continue without signature (BSV wallets, test env)
       } finally {
         setSigning(false);
       }
     }
 
-    placeOrder.mutate({
-      data: {
-        symbol,
-        walletAddress: address,
-        side,
-        type:           type === "stop" ? "limit" : type,
-        price:          type !== "market" ? parseFloat(price) : undefined,
-        stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
-        quantity:       parseFloat(amount),
-        evmSignature,
-        networkType:    isEvm ? "evm" : "bsv",
-      } as any,
-    });
+    setApprovalStep("idle");
+
+    // ── Step 3: Submit order — on success, track settlement tx ─────────────
+    placeOrder.mutate(
+      {
+        data: {
+          symbol,
+          walletAddress: address,
+          side,
+          type:           type === "stop" ? "limit" : type,
+          price:          type !== "market" ? parseFloat(price) : undefined,
+          stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
+          quantity:       parseFloat(amount),
+          evmSignature,
+          networkType:    isEvm ? "evm" : "bsv",
+        } as any,
+      },
+      {
+        onSuccess: async (data: any) => {
+          const matched = data?.matched ?? false;
+          const txid    = data?.settlementTxid ?? data?.txid ?? null;
+          const url     = data?.explorerUrl ?? null;
+
+          if (matched && txid) {
+            // Track BSV settlement tx in the status bar
+            addTx({
+              hash:                 txid,
+              chainId:              0, // BSV
+              label:                `BSV Settlement · ${side.toUpperCase()} ${amount} ${base}`,
+              status:               "confirmed", // BSV txs appear confirmed immediately for UX
+              confirmations:        1,
+              requiredConfirmations: 1,
+              timestamp:            Date.now(),
+              explorerUrl:          url ?? `https://whatsonchain.com/tx/${txid}`,
+            });
+          }
+
+          // Refresh native balance after any trade
+          if (isEvm && address) {
+            const bal = await fetchEvmBalance(address, chainId);
+            if (bal !== null) setbal(bal);
+          }
+        },
+      }
+    );
   };
 
   if (!address) return <WalletPrompt />;
 
-  const isPending = placeOrder.isPending || signing;
+  const isApproving = approvalStep === "checking" || approvalStep === "needed" || approvalStep === "approving";
+  const isPending = placeOrder.isPending || signing || isApproving;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
@@ -475,6 +583,16 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             </div>
           )}
 
+          {/* EVM approval step indicator */}
+          {approvalStep !== "idle" && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs">
+              {approvalStep === "checking" && <><Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" /><span className="text-amber-300">Checking {base} allowance…</span></>}
+              {approvalStep === "needed"   && <><AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" /><span className="text-amber-300">Approval required — confirm in wallet</span></>}
+              {approvalStep === "approving" && <><Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" /><span className="text-amber-300">Waiting for approval tx…</span></>}
+              {approvalStep === "approved"  && <><ShieldCheck className="w-3.5 h-3.5 text-green-400 shrink-0" /><span className="text-green-300">Allowance confirmed — signing order</span></>}
+            </div>
+          )}
+
           {/* Submit */}
           <button
             type="submit"
@@ -487,16 +605,14 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
               !canSubmit && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
-            {signing ? (
-              <>
-                <PenLine className="w-4 h-4 animate-pulse" />
-                Sign in MetaMask…
-              </>
+            {approvalStep === "checking" || approvalStep === "needed" ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Checking allowance…</>
+            ) : approvalStep === "approving" ? (
+              <><Lock className="w-4 h-4 animate-pulse" /> Approving {base}…</>
+            ) : signing ? (
+              <><PenLine className="w-4 h-4 animate-pulse" /> Sign in MetaMask…</>
             ) : isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Placing…
-              </>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
