@@ -126,11 +126,11 @@ export function Layout({ children }: { children: ReactNode }) {
           )}
         </a>
       </div>
-      <header className="sticky top-7 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
+      <header className="sticky top-7 h-20 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Logo */}
           <Link href="/" className="flex items-center group">
-            <div className="h-12 w-12 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
+            <div className="h-16 w-16 overflow-hidden group-hover:scale-105 transition-transform shrink-0">
               <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
             </div>
           </Link>
