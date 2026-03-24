@@ -48,37 +48,42 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 border-b border-border/40 z-50 flex items-center pl-1 pr-3 py-2 gap-2 bg-card/95 backdrop-blur-sm">
+      <div className="shrink-0 border-b border-border/40 z-50 bg-card/95 backdrop-blur-sm">
+        <div className="flex items-center h-12">
 
-        {/* Brand — top-left corner */}
-        <button
-          onClick={() => navigate("/")}
-          className="active:opacity-70 transition-opacity flex-1"
-        >
-          <BrandLogo textSize="text-2xl" />
-        </button>
+          {/* Brand — hard left corner, no left padding */}
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center h-full px-2 active:opacity-70 transition-opacity shrink-0"
+          >
+            <BrandLogo textSize="text-2xl" />
+          </button>
 
-        {/* Theme toggle — single cycle button */}
-        <button
-          onClick={cycleTheme}
-          title={`Theme: ${themeLabel}`}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground active:bg-secondary transition-colors shrink-0"
-        >
-          <ThemeIcon size={18} className="text-foreground/80" />
-        </button>
+          {/* Spacer */}
+          <div className="flex-1" />
 
-        {/* Wallet button — right */}
-        <div className="shrink-0">
-          {address ? (
-            <WalletOptionsDropdown compact />
-          ) : (
-            <button
-              onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-3.5 py-[7px] rounded-lg text-[12px] font-semibold shadow-md shadow-primary/20 active:opacity-80 transition-opacity"
-            >
-              Connect
-            </button>
-          )}
+          {/* Theme toggle */}
+          <button
+            onClick={cycleTheme}
+            title={`Theme: ${themeLabel}`}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground active:bg-secondary transition-colors shrink-0 mr-2"
+          >
+            <ThemeIcon size={18} className="text-foreground/80" />
+          </button>
+
+          {/* Wallet button */}
+          <div className="shrink-0 pr-3">
+            {address ? (
+              <WalletOptionsDropdown compact />
+            ) : (
+              <button
+                onClick={() => openWallet()}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-3.5 py-[7px] rounded-lg text-[12px] font-semibold shadow-md shadow-primary/20 active:opacity-80 transition-opacity"
+              >
+                Connect
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

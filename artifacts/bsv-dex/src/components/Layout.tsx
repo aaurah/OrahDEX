@@ -7,7 +7,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
 import { ReownConnectButton } from "./ReownConnectButton";
-import { BrandLogo } from "./BrandLogo";
+import { BrandLogo, OrahInline } from "./BrandLogo";
 import { TxStatusBar } from "./TxStatusBar";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -185,7 +185,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 <span className="text-green-500">·</span>
                 <span>Every trade settled on BSV in seconds</span>
                 <span className="text-green-500">·</span>
-                <span className="text-green-400 font-bold">OrahDEX — Trade means DEX</span>
+                <span className="font-bold flex items-center gap-1"><OrahInline /> — Trade means DEX</span>
                 <span className="text-green-500">·</span>
               </span>
             ))}

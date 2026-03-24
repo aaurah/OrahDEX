@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { OrahInline } from '@/components/BrandLogo';
 import { useLocation } from 'wouter';
 import {
   Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check,
@@ -581,7 +582,7 @@ export function AdminLogin() {
 
         <div className="text-center mt-6">
           <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            ← Back to OrahDEX Exchange
+            ← Back to <OrahInline className="text-xs" /> Exchange
           </a>
         </div>
       </div>
