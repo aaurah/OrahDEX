@@ -182,7 +182,7 @@ export function MobileMarkets() {
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
         {/* Spot label + Search bar + Buy on one line */}
-        <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+        <div className="flex items-center gap-2 px-4 pt-1 pb-1">
           <span className="text-base font-bold shrink-0">Spot</span>
           <div className="flex-1 flex items-center gap-2 bg-secondary/60 border border-border/60 rounded-xl px-3 h-9">
             <Search size={13} className="text-muted-foreground shrink-0" />
