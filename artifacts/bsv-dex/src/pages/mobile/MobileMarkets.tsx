@@ -6,6 +6,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { MobileBaseMarket } from "@/components/mobile/MobileBaseMarket";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
@@ -75,7 +76,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP" },
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
-  { id: "base",      label: "BASE" },
+  { id: "base",      label: "⬡ Base" },
   { id: "linea",     label: "LINEA" },
   { id: "zk",        label: "ZK" },
   { id: "scr",       label: "SCROLL" },
@@ -209,7 +210,7 @@ export function MobileMarkets() {
 
   return (
     <>
-    <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
+    <div className={cn("flex flex-col bg-background", cat === "base" ? "h-full" : "h-full overflow-y-auto pb-24")}>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
         {/* Spot label + Search bar + Buy on one line */}
@@ -295,48 +296,54 @@ export function MobileMarkets() {
         )}
       </div>
 
-      {/* ── Column headers ── aligned to match MexcRow exactly ── */}
-      <div className="flex items-center px-4 py-2 border-b border-border/30 bg-background/80">
-        {/* Spacer matching the star button (13px icon + mr-2.5 = ~23px) */}
-        <div className="w-[23px] mr-2.5 shrink-0" />
-        <button
-          onClick={() => toggleSort("base")}
-          className="flex items-center text-[11px] text-muted-foreground font-semibold flex-1"
-        >
-          Pair <SortIcon k="base" />
-        </button>
-        <button
-          onClick={() => toggleSort("price")}
-          className="flex items-center justify-end text-[11px] text-muted-foreground font-semibold w-32 pr-3"
-        >
-          Price <SortIcon k="price" />
-        </button>
-        <button
-          onClick={() => toggleSort("chg")}
-          className="flex items-center justify-center text-[11px] text-muted-foreground font-semibold w-[68px]"
-        >
-          Change <SortIcon k="chg" />
-        </button>
-      </div>
-
-      {/* ── Market list ── */}
-      {rows.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center py-20 text-muted-foreground text-sm">
-          {cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
-        </div>
+      {/* ── Base chain live markets (DexScreener) ── */}
+      {cat === "base" ? (
+        <MobileBaseMarket />
       ) : (
-        <div>
-          {rows.map((m) => (
-            <MexcRow
-              key={m.symbol}
-              m={m}
-              isFav={favorites.has(m.symbol)}
-              onFav={() => toggleFav(m.symbol)}
-              onTrade={() => goTrade(m)}
-              onBuy={() => handleBuy(m.base)}
-            />
-          ))}
-        </div>
+        <>
+          {/* ── Column headers ── aligned to match MexcRow exactly ── */}
+          <div className="flex items-center px-4 py-2 border-b border-border/30 bg-background/80">
+            <div className="w-[23px] mr-2.5 shrink-0" />
+            <button
+              onClick={() => toggleSort("base")}
+              className="flex items-center text-[11px] text-muted-foreground font-semibold flex-1"
+            >
+              Pair <SortIcon k="base" />
+            </button>
+            <button
+              onClick={() => toggleSort("price")}
+              className="flex items-center justify-end text-[11px] text-muted-foreground font-semibold w-32 pr-3"
+            >
+              Price <SortIcon k="price" />
+            </button>
+            <button
+              onClick={() => toggleSort("chg")}
+              className="flex items-center justify-center text-[11px] text-muted-foreground font-semibold w-[68px]"
+            >
+              Change <SortIcon k="chg" />
+            </button>
+          </div>
+
+          {/* ── Market list ── */}
+          {rows.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center py-20 text-muted-foreground text-sm">
+              {cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
+            </div>
+          ) : (
+            <div>
+              {rows.map((m) => (
+                <MexcRow
+                  key={m.symbol}
+                  m={m}
+                  isFav={favorites.has(m.symbol)}
+                  onFav={() => toggleFav(m.symbol)}
+                  onTrade={() => goTrade(m)}
+                  onBuy={() => handleBuy(m.base)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
 
