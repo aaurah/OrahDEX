@@ -601,7 +601,7 @@ export function P2P() {
   return (
     <div className="min-h-full w-full bg-background">
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div className="border-b border-border bg-gradient-to-b from-card/60 to-background px-4 lg:px-10 pt-8 pb-6">
+      <div className="border-b border-border bg-gradient-to-b from-card/60 to-background px-4 lg:px-10 pt-0 pb-6">
         <div className="max-w-[1400px] mx-auto">
           <div className="flex items-start justify-between gap-4 mb-6">
             <div>
