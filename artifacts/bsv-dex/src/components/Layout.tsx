@@ -1,13 +1,12 @@
 import { ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LogOut, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
-import { ChainSwitcherDropdown } from "./ChainSwitcherDropdown";
+import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
 import { BrandLogo } from "./BrandLogo";
-import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 
@@ -73,7 +72,7 @@ function ChainBadge({ chainId }: { chainId: number | null }) {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, provider, network, chainId, balance, disconnect } = useWalletStore();
+  const { address } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -170,32 +169,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
 
           {address ? (
-            <div className="flex items-center gap-2">
-              {/* Chain Switcher */}
-              <ChainSwitcherDropdown />
-
-              <div className="hidden sm:flex flex-col items-end gap-0.5">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground capitalize">{provider}</span>
-                  {balance && (
-                    <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded">
-                      {parseFloat(balance).toFixed(4)} {network === "evm" ? "ETH" : network === "bsv" ? "BSV" : network === "sol" ? "SOL" : "BTC"}
-                    </span>
-                  )}
-                </div>
-                <span className="text-sm font-mono text-foreground bg-white/5 px-2 py-0.5 rounded-md border border-white/10">
-                  {shortenAddress(address)}
-                </span>
-              </div>
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Connected" />
-              <button
-                onClick={disconnect}
-                className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                title="Disconnect Wallet"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
+            <WalletOptionsDropdown />
           ) : (
             <button
               onClick={() => openWalletModal()}

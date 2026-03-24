@@ -36,25 +36,27 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
           fill="none"
         />
 
-        {/* Ping animation circle (online only) */}
-        {online && (
-          <circle cx="50" cy="50" r="13" fill="var(--color-primary)" opacity="0.7">
-            <animate
-              attributeName="r"
-              from="13" to="34"
-              dur="1.2s"
-              repeatCount="indefinite"
-            />
-            <animate
-              attributeName="opacity"
-              from="0.7" to="0"
-              dur="1.2s"
-              repeatCount="indefinite"
-            />
-          </circle>
-        )}
+        {/* Pulse ring — green when online, red when offline */}
+        <circle
+          cx="50" cy="50" r="13"
+          fill={online ? 'var(--color-primary)' : '#ef4444'}
+          opacity="0.7"
+        >
+          <animate
+            attributeName="r"
+            from="13" to="34"
+            dur="1.2s"
+            repeatCount="indefinite"
+          />
+          <animate
+            attributeName="opacity"
+            from="0.7" to="0"
+            dur="1.2s"
+            repeatCount="indefinite"
+          />
+        </circle>
 
-        {/* Solid dot — perfectly centred */}
+        {/* Solid dot — green online, red offline */}
         <circle
           cx="50" cy="50" r="13"
           fill={online ? 'var(--color-primary)' : '#ef4444'}
