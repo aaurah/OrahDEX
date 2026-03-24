@@ -1,9 +1,11 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 /* ── Notifications drawer ── */
 const NOTIF_ICONS: Record<string, React.ReactNode> = {
@@ -145,15 +147,25 @@ const PERIODS = [
   { label: "1Y",    key: "1y" },
 ] as const;
 
-type BottomTab = "orderbook" | "trades";
+type BottomTab = "orderbook" | "trades" | "orders";
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market";
+
+const MOCK_OPEN_ORDERS = [
+  { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
+  { id: "2", symbol: "BTC/USDT", side: "sell", type: "market", price: 65400, qty: 0.01, status: "filled",    time: "08:42" },
+  { id: "3", symbol: "ETH/USDT", side: "buy",  type: "limit",  price: 3150,  qty: 0.5,  status: "cancelled", time: "07:30" },
+];
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const symbol = rawSymbol.replace(/-/g, "/");
   const base = symbol.split("/")[0];
-  const quote = symbol.split("/")[1] ?? "USDT";
+  const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
+  const isFutures = rawSymbol.toUpperCase().includes("PERP");
   const color = COIN_COLORS[base] ?? "#EAB308";
+
+  const { address } = useWalletStore();
+  const { open: openWallet } = useWalletModalStore();
 
   const [interval, setInterval] = useState<string>("1h");
   const [activeIndicator, setActiveIndicator] = useState("MACD");
@@ -252,6 +264,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           <span className="text-base font-bold truncate">
             {base}<span className="text-muted-foreground font-normal text-sm">/{quote}</span>
           </span>
+          {isFutures && (
+            <span className="shrink-0 text-[9px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
+          )}
         </button>
 
         {/* Right icons */}
@@ -366,11 +381,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           })}
         </div>
 
-        {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES ── */}
+        {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES / MY ORDERS ── */}
         <div className="flex border-b border-border">
           {([
-            { key: "orderbook" as BottomTab, label: "Order Book" },
-            { key: "trades"    as BottomTab, label: "Market Trades" },
+            { key: "orderbook" as BottomTab, label: "Order Book",    Icon: ListOrdered },
+            { key: "trades"    as BottomTab, label: "Market Trades", Icon: Clock },
+            { key: "orders"    as BottomTab, label: "My Orders",     Icon: Wallet },
           ]).map(t => (
             <button
               key={t.key}
@@ -522,6 +538,55 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </div>
         )}
 
+        {/* ── MY ORDERS ── */}
+        {bottomTab === "orders" && (
+          <div className="pb-2">
+            {!address ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3 px-6 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                  <Wallet size={22} className="text-primary" />
+                </div>
+                <p className="text-sm font-semibold text-foreground">Connect to view orders</p>
+                <p className="text-xs text-muted-foreground">Connect your wallet to see open and filled orders.</p>
+                <button
+                  onClick={() => openWallet()}
+                  className="mt-1 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold active:opacity-80"
+                >
+                  Connect Wallet
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex text-[9px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-1.5 border-b border-border/50">
+                  <span className="flex-1">Pair</span>
+                  <span className="w-16 text-right">Price</span>
+                  <span className="w-16 text-right">Amount</span>
+                  <span className="w-18 text-right pr-1">Status</span>
+                </div>
+                {MOCK_OPEN_ORDERS.map(o => (
+                  <div key={o.id} className="flex items-center px-4 py-2.5 border-b border-border/20">
+                    <div className="flex-1 min-w-0">
+                      <span className={cn("text-[10px] font-bold uppercase mr-1.5", o.side === "buy" ? "text-green-400" : "text-red-400")}>
+                        {o.side.toUpperCase()}
+                      </span>
+                      <span className="text-xs text-foreground font-medium">{o.symbol}</span>
+                      <span className="text-[10px] text-muted-foreground ml-1">{o.type}</span>
+                    </div>
+                    <span className="w-16 text-right text-xs font-mono text-foreground">{o.price.toLocaleString()}</span>
+                    <span className="w-16 text-right text-xs font-mono text-muted-foreground">{o.qty}</span>
+                    <span className={cn(
+                      "w-18 text-right text-[10px] font-semibold pr-1",
+                      o.status === "open" ? "text-green-400" : o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                    )}>
+                      {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
         {/* ── ORDER FORM (slide-up panel) ── */}
         {showOrderForm && (
           <div className="px-4 pt-4 pb-2 border-t border-border mt-2">
@@ -614,29 +679,42 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           ))}
         </div>
 
-        {/* Buy button */}
-        <button
-          onClick={() => { setSide("buy"); setShowOrderForm(true); }}
-          className={cn(
-            "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
-            side === "buy" && showOrderForm ? "opacity-100" : "opacity-85"
-          )}
-          style={{ backgroundColor: "#16a34a" }}
-        >
-          Buy
-        </button>
+        {!address ? (
+          /* Connect Wallet CTA */
+          <button
+            onClick={() => openWallet()}
+            className="flex-1 py-3 rounded-xl text-sm font-bold text-primary-foreground bg-primary active:opacity-80 transition-opacity flex items-center justify-center gap-2"
+          >
+            <Wallet size={16} />
+            Connect Wallet
+          </button>
+        ) : (
+          <>
+            {/* Buy button */}
+            <button
+              onClick={() => { setSide("buy"); setShowOrderForm(true); }}
+              className={cn(
+                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
+                side === "buy" && showOrderForm ? "opacity-100" : "opacity-85"
+              )}
+              style={{ backgroundColor: "#16a34a" }}
+            >
+              Buy {base}
+            </button>
 
-        {/* Sell button */}
-        <button
-          onClick={() => { setSide("sell"); setShowOrderForm(true); }}
-          className={cn(
-            "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
-            side === "sell" && showOrderForm ? "opacity-100" : "opacity-85"
-          )}
-          style={{ backgroundColor: "#dc2626" }}
-        >
-          Sell
-        </button>
+            {/* Sell button */}
+            <button
+              onClick={() => { setSide("sell"); setShowOrderForm(true); }}
+              className={cn(
+                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
+                side === "sell" && showOrderForm ? "opacity-100" : "opacity-85"
+              )}
+              style={{ backgroundColor: "#dc2626" }}
+            >
+              Sell {base}
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── MARKET SELECTOR DRAWER ── */}

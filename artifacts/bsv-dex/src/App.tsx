@@ -287,6 +287,7 @@ function Router() {
           <MobileLayout>
             <Switch>
               <Route path="/" component={MobileMarkets} />
+              <Route path="/markets" component={MobileMarkets} />
               <Route path="/trade/:symbol">
                 {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
               </Route>
