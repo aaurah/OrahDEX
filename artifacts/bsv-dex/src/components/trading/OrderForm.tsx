@@ -8,6 +8,7 @@ import { getTxExplorerUrl } from "@/store/useWalletStore";
 import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
+import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
@@ -271,9 +272,114 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
       }
     }
 
-    // ── Step 2: Sign the order intent (EVM only) ───────────────────────────
+    // ── Step 2: EVM market orders — execute on-chain router swap ──────────
+    // For market orders on EVM chains, we call swapExactTokensForTokens (or the
+    // native-in/out variants) directly on the Uniswap v2-compatible router for
+    // this chain. The result tx hash is forwarded to the API as proof-of-trade.
+    let onChainTxHash: string | undefined;
+    if (isEvm && type === "market" && (window as any).ethereum) {
+      try {
+        setSigning(true);
+
+        const wNative   = WRAPPED_NATIVE[currentChainId];
+        const baseToken  = getChainToken(currentChainId, base);
+        const quoteToken = getChainToken(currentChainId, quote);
+
+        // Resolve token addresses; native coin uses its wrapped address in paths
+        const isNativeBase  = !baseToken  && !!wNative;
+        const isNativeQuote = !quoteToken && !!wNative;
+        const baseAddr  = baseToken?.address  ?? wNative ?? "";
+        const quoteAddr = quoteToken?.address ?? wNative ?? "";
+
+        if (baseAddr && quoteAddr) {
+          const amtFloat = parseFloat(amount);
+          let amountInUnits: bigint;
+          let isNativeIn  = false;
+          let isNativeOut = false;
+          let tokenPath: string[];
+
+          if (side === "sell") {
+            // Selling base asset → quote asset
+            // e.g. ETH → USDT: ETH(native) → USDT
+            const decimals   = baseToken?.decimals ?? 18;
+            amountInUnits    = BigInt(Math.floor(amtFloat * 10 ** decimals));
+            isNativeIn       = isNativeBase;
+            isNativeOut      = isNativeQuote;
+            tokenPath        = [baseAddr, quoteAddr];
+          } else {
+            // Buying base asset with quote asset
+            // e.g. USDT → ETH: USDT → ETH(native)
+            const total      = amtFloat * (parseFloat(price || "0") || currentPrice);
+            const decimals   = quoteToken?.decimals ?? 6;
+            amountInUnits    = BigInt(Math.floor(total * 10 ** decimals));
+            isNativeIn       = isNativeQuote;
+            isNativeOut      = isNativeBase;
+            tokenPath        = [quoteAddr, baseAddr];
+          }
+
+          if (amountInUnits > 0n) {
+            // Quote the expected output from the router
+            const quoted      = await getAmountsOut(routerAddr, amountInUnits, tokenPath, currentChainId);
+            const amountOutMin = quoted ?? 0n;
+
+            toast({
+              title: "Confirm Swap",
+              description: `Approve the on-chain swap in your wallet — ${amount} ${base}`,
+            });
+
+            try {
+              onChainTxHash = await evmTrade({
+                chainId:        currentChainId,
+                routerAddress:  routerAddr,
+                amountIn:       amountInUnits,
+                amountOutMin,
+                path:           tokenPath,
+                to:             address,
+                slippageBps:    Math.round(slippage * 100),
+                isNativeIn,
+                isNativeOut,
+              }) ?? undefined;
+
+              if (onChainTxHash) {
+                addTx({
+                  hash:                 onChainTxHash,
+                  chainId:              currentChainId,
+                  label:                `Swap ${amount} ${base} on ${side === "buy" ? "Buy" : "Sell"}`,
+                  status:               "pending",
+                  confirmations:        0,
+                  requiredConfirmations: 1,
+                  timestamp:            Date.now(),
+                  explorerUrl:          getTxExplorerUrl(onChainTxHash, currentChainId),
+                });
+                toast({
+                  title: "Swap Submitted ✓",
+                  description: `On-chain swap sent · ${onChainTxHash.slice(0, 14)}…`,
+                });
+              }
+            } catch (swapErr: any) {
+              setSigning(false);
+              setApprovalStep("idle");
+              if (swapErr?.code === "USER_REJECTED") {
+                toast({ title: "Swap cancelled", description: "You rejected the swap transaction.", variant: "destructive" });
+                return;
+              }
+              // Non-rejection error: fall through to API submission without on-chain hash
+              console.warn("[OrahDEX] EVM swap failed, falling back to API:", swapErr);
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn("[OrahDEX] EVM market swap error:", err);
+      } finally {
+        setSigning(false);
+      }
+    }
+
+    // ── Step 3: Sign the order intent (EVM limit / stop orders only) ───────
+    // Market orders already have the on-chain tx hash from Step 2.
+    // For limit and stop orders we sign the intent to prove ownership.
     let evmSignature: string | undefined;
-    if (isEvm && (window as any).ethereum) {
+    if (isEvm && type !== "market" && (window as any).ethereum) {
       try {
         setSigning(true);
         const message = buildOrderMessage();
@@ -295,7 +401,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
 
     setApprovalStep("idle");
 
-    // ── Step 3: Submit order — on success, track settlement tx ─────────────
+    // ── Step 4: Record the order — on success, track settlement tx ─────────
     placeOrder.mutate(
       {
         data: {
@@ -307,6 +413,9 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
           evmSignature,
+          // Attach the on-chain swap txHash for market orders so the API can
+          // record it and generate the corresponding BSV settlement tx.
+          signedTx:       onChainTxHash ?? evmSignature,
           networkType:    isEvm ? "evm" : "bsv",
         } as any,
       },
@@ -322,7 +431,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
               hash:                 txid,
               chainId:              0, // BSV
               label:                `BSV Settlement · ${side.toUpperCase()} ${amount} ${base}`,
-              status:               "confirmed", // BSV txs appear confirmed immediately for UX
+              status:               "confirmed",
               confirmations:        1,
               requiredConfirmations: 1,
               timestamp:            Date.now(),

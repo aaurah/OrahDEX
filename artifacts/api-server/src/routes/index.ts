@@ -253,4 +253,75 @@ router.get("/bsv/balance/:address", async (req, res) => {
   }
 });
 
+/* ── BSV UTXO list (proxied from WhatsonChain) ───────────────────────────────
+ * GET /api/bsv/utxos/:address
+ * Returns unspent outputs in the same shape as the reference fetchBsvUtxos().
+ */
+router.get("/bsv/utxos/:address", async (req, res) => {
+  const address = req.params.address ?? "";
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+  try {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const wocRes = await fetch(
+      `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`,
+      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+    );
+    clearTimeout(timer);
+    if (!wocRes.ok) { res.json([]); return; }
+    const data = await wocRes.json() as Array<{
+      tx_hash: string;
+      tx_pos:  number;
+      value:   number;
+      height?: number;
+    }>;
+    res.json(data.map(u => ({
+      txId:        u.tx_hash,
+      outputIndex: u.tx_pos,
+      script:      "",      // P2PKH script — built by client from the address
+      satoshis:    u.value,
+      height:      u.height ?? 0,
+    })));
+  } catch {
+    res.json([]);
+  }
+});
+
+/* ── BSV raw tx broadcast (proxied to WhatsonChain) ─────────────────────────
+ * POST /api/bsv/broadcast
+ * Body: { rawHex: string }
+ * Mirrors signAndBroadcastBsvTx() from the reference implementation.
+ * WhatsonChain returns the txid as a JSON-quoted string on success.
+ */
+router.post("/bsv/broadcast", async (req, res) => {
+  const { rawHex } = req.body ?? {};
+  if (!rawHex || typeof rawHex !== "string") {
+    res.status(400).json({ error: "rawHex is required" });
+    return;
+  }
+  try {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    const wocRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/tx/raw", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
+      body:    JSON.stringify({ txhex: rawHex }),
+      signal:  ctrl.signal,
+    });
+    clearTimeout(timer);
+    const text = await wocRes.text();
+    if (wocRes.ok && text) {
+      // WoC returns the txid as plain or JSON-quoted text
+      const txid = text.trim().replace(/^"|"$/g, "");
+      res.json({ txid, explorerUrl: `https://whatsonchain.com/tx/${txid}` });
+    } else {
+      res.status(wocRes.status).json({ error: text || "Broadcast failed" });
+    }
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, "BSV broadcast failed");
+    res.status(500).json({ error: err?.message ?? "Broadcast failed" });
+  }
+});
+
 export default router;
+

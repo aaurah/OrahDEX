@@ -16,37 +16,33 @@ export function useTxTracker() {
   const walletAddr   = useWalletStore((s) => s.address);
   const walletChain  = useWalletStore((s) => s.chainId);
 
-  // Track which hashes we're already polling so we don't double-poll
   const watching = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const pending = pendingTxs.filter((tx) => tx.status === "pending");
+    const pending  = pendingTxs.filter((tx) => tx.status === "pending");
+    const cancels: Array<() => void> = [];
 
     for (const tx of pending) {
       if (watching.current.has(tx.hash)) continue;
       watching.current.add(tx.hash);
 
       const cancel = pollTxReceipt(tx.hash, tx.chainId, {
-        intervalMs: 4000,
-        maxAttempts: 90, // ~6 min
+        intervalMs:  4000,
+        maxAttempts: 90,
 
         onReceipt: async (receipt) => {
           watching.current.delete(tx.hash);
-
-          const confirmed  = receipt.status === "0x1";
-          const txBlock    = parseInt(receipt.blockNumber, 16);
-
-          // Get current block number to compute confirmations
-          const curBlock = await getBlockNumber(tx.chainId);
-          const confs    = curBlock != null ? Math.max(1, curBlock - txBlock + 1) : 1;
+          const confirmed = receipt.status === "0x1";
+          const txBlock   = parseInt(receipt.blockNumber, 16);
+          const curBlock  = await getBlockNumber(tx.chainId);
+          const confs     = curBlock != null ? Math.max(1, curBlock - txBlock + 1) : 1;
 
           updateTx(tx.hash, {
-            status:       confirmed ? "confirmed" : "failed",
+            status:        confirmed ? "confirmed" : "failed",
             confirmations: confs,
-            blockNumber:  txBlock,
+            blockNumber:   txBlock,
           });
 
-          // After confirmation, refresh the native balance
           if (confirmed && walletAddr) {
             const chainId = walletChain ?? tx.chainId;
             const bal = await fetchEvmBalance(walletAddr, chainId);
@@ -60,8 +56,9 @@ export function useTxTracker() {
         },
       });
 
-      // If the tx is somehow no longer pending when this runs, cancel
-      return () => cancel();
+      cancels.push(cancel);
     }
+
+    return () => { cancels.forEach((c) => c()); };
   }, [pendingTxs]);
 }

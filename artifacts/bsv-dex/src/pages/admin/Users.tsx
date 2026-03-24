@@ -300,7 +300,7 @@ export function AdminUsers() {
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs text-foreground">{u.walletAddress.slice(0, 10)}...{u.walletAddress.slice(-5)}</span>
-                          {u.verified && <Shield className="w-3 h-3 text-blue-400" title="KYC Verified" />}
+                          {u.verified && <Shield className="w-3 h-3 text-blue-400" aria-label="KYC Verified" />}
                         </div>
                         <div className="text-xs text-muted-foreground">{u.provider} · {u.country}</div>
                       </div>
