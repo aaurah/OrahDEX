@@ -6,6 +6,7 @@ import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
+import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.js";
 
 const app: Express = express();
 
@@ -37,5 +38,15 @@ app.use("/api", router);
 startPriceUpdater();
 startLiquidityBot();
 startFuturesProfitEngine();
+startBsvChainMonitor();
+
+/* ── BSV chain status — public endpoint ─────────────────────────────────── */
+app.get("/api/bsv-status", async (_req, res) => {
+  try {
+    res.json(await getBsvChainStatus());
+  } catch {
+    res.status(500).json({ online: false, blockHeight: 0 });
+  }
+});
 
 export default app;

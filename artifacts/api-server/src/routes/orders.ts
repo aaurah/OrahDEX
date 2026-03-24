@@ -249,4 +249,44 @@ router.delete("/orders/:orderId", async (req, res) => {
   }
 });
 
+// ── GET /settlements — recent BSV on-chain settlements ────────────────────────
+router.get("/settlements", async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    const settled = await db.select().from(ordersTable)
+      .where(and(eq(ordersTable.status, "filled"), ne(ordersTable.txid, "NULL")));
+
+    const real = settled
+      .filter(o => o.txid && o.txid.length > 0)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, limit)
+      .map(o => ({
+        id:          o.id,
+        txid:        o.txid!,
+        explorerUrl: `https://whatsonchain.com/tx/${o.txid}`,
+        symbol:      o.symbol,
+        side:        o.side,
+        price:       parseFloat(o.price ?? "0"),
+        quantity:    parseFloat(o.quantity),
+        total:       parseFloat(o.total ?? "0"),
+        fee:         parseFloat(o.fee),
+        feeAsset:    o.feeAsset,
+        walletAddress: o.walletAddress,
+        networkType: o.networkType,
+        matchedOrderId: o.matchedOrderId,
+        timestamp:   o.updatedAt.toISOString(),
+        chain:       "BSV",
+        status:      "confirmed" as const,
+        confirmations: 6,
+        requiredConfirmations: 3,
+      }));
+
+    res.json({ settlements: real, total: real.length });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get settlements");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

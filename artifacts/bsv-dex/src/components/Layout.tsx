@@ -7,6 +7,23 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { shortenAddress } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type BsvStatus = { online: boolean; blockHeight: number; bestBlockHash: string };
+
+function useBsvStatus() {
+  return useQuery<BsvStatus>({
+    queryKey: ["bsv-status"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/bsv-status`);
+      return r.ok ? r.json() : { online: false, blockHeight: 0, bestBlockHash: "" };
+    },
+    refetchInterval: 30_000,
+    staleTime: 25_000,
+  });
+}
 
 const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone, system: Monitor };
 const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
@@ -58,6 +75,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { data: bsvStatus } = useBsvStatus();
+  const bsvOnline = bsvStatus?.online ?? false;
+  const bsvBlock  = bsvStatus?.blockHeight ?? 0;
 
   const safeTheme = (THEME_CYCLE as readonly string[]).includes(theme) ? (theme as typeof THEME_CYCLE[number]) : "dark";
   const ThemeIcon = THEME_ICONS[safeTheme];
@@ -68,24 +88,43 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      {/* BSV Settlement Ticker */}
-      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/30 backdrop-blur-sm flex items-center overflow-hidden">
-        <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
-          {[0,1,2].map(i => (
-            <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-amber-300">
-              <span className="flex items-center gap-1.5"><span className="animate-pulse text-amber-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
-              <span className="text-amber-500">·</span>
-              <span>Instant On-Chain Settlement</span>
-              <span className="text-amber-500">·</span>
-              <span>No Bridges. No L2s.</span>
-              <span className="text-amber-500">·</span>
-              <span>Every trade settled on BSV in seconds</span>
-              <span className="text-amber-500">·</span>
-              <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
-              <span className="text-amber-500">·</span>
-            </span>
-          ))}
+      {/* BSV Chain Status Bar */}
+      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-amber-950/90 via-amber-900/80 to-amber-950/90 border-b border-amber-500/30 backdrop-blur-sm flex items-center justify-between overflow-hidden px-3">
+        {/* Scrolling ticker */}
+        <div className="flex-1 overflow-hidden">
+          <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
+            {[0,1,2].map(i => (
+              <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-amber-300">
+                <span className="flex items-center gap-1.5"><span className="animate-pulse text-amber-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
+                <span className="text-amber-500">·</span>
+                <span>Instant On-Chain Settlement · No Bridges · No L2s</span>
+                <span className="text-amber-500">·</span>
+                <span>Every trade settled on BSV in seconds</span>
+                <span className="text-amber-500">·</span>
+                <span className="text-amber-400 font-bold">OrahDEX — Trade means DEX</span>
+                <span className="text-amber-500">·</span>
+              </span>
+            ))}
+          </div>
         </div>
+        {/* Live chain status badge — always visible on right */}
+        <a
+          href={bsvBlock > 0 ? `https://whatsonchain.com/block-height/${bsvBlock}` : "https://whatsonchain.com"}
+          target="_blank"
+          rel="noreferrer"
+          className="shrink-0 flex items-center gap-1.5 ml-3 px-2 py-0.5 rounded bg-black/30 border border-amber-500/30 text-[10px] font-bold uppercase tracking-wider hover:bg-black/50 transition-colors"
+        >
+          <span className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400"
+          )} />
+          <span className={bsvOnline ? "text-green-400" : "text-red-400"}>
+            BSV {bsvOnline ? "LIVE" : "—"}
+          </span>
+          {bsvBlock > 0 && (
+            <span className="text-amber-400/80">#{bsvBlock.toLocaleString()}</span>
+          )}
+        </a>
       </div>
       <header className="sticky top-7 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
