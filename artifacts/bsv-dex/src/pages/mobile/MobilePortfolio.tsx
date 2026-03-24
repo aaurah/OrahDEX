@@ -1,7 +1,7 @@
 import {
   Link2, TrendingUp, TrendingDown,
   ArrowDownToLine, ArrowUpFromLine,
-  Copy, Check, RefreshCw,
+  Copy, Check, RefreshCw, Info,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useState } from "react";
@@ -12,78 +12,82 @@ import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const ASSET_COLORS: Record<string, string> = {
-  BSV:  "#22C55E",
-  USDT: "#34D399",
-  BTC:  "#F97316",
-  ETH:  "#8B5CF6",
-  BNB:  "#EAB308",
+// Map EVM chainId → portfolio native symbol
+const EVM_NATIVE: Record<number, string> = {
+  1: "ETH", 10: "ETH", 42161: "ETH", 8453: "ETH",
+  59144: "ETH", 324: "ETH", 534352: "ETH", 5000: "MNT",
+  56: "BNB", 137: "MATIC", 43114: "AVAX", 250: "FTM", 25: "CRO",
 };
+
+function getNativeAsset(network: string | null, chainId: number | null): string {
+  if (network === "bsv") return "BSV";
+  if (network === "sol") return "SOL";
+  if (network === "btc") return "BTC";
+  if (network === "evm" && chainId) return EVM_NATIVE[chainId] ?? "ETH";
+  return "ETH";
+}
+
+// All DEX-traded assets shown in the portfolio
+const PORTFOLIO_ASSETS = [
+  { asset: "BSV",  marketSymbol: "BSV-USDT",  color: "#22C55E" },
+  { asset: "USDT", marketSymbol: null,          color: "#34D399" },
+  { asset: "BTC",  marketSymbol: "BTC-USDT",  color: "#F97316" },
+  { asset: "ETH",  marketSymbol: "ETH-USDT",  color: "#8B5CF6" },
+  { asset: "BNB",  marketSymbol: "BNB-USDT",  color: "#EAB308" },
+];
+
+interface MarketRow { symbol: string; baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+
+function useLivePrices() {
+  return useQuery<Record<string, MarketRow>>({
+    queryKey: ["portfolio-mobile-prices"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
+      if (!res.ok) throw new Error("price fetch failed");
+      const rows: MarketRow[] = await res.json();
+      return Object.fromEntries(rows.map(r => [r.baseAsset, r]));
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
 
 const ORDERS = [
   { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
   { id: "2", symbol: "BTC/USDT", side: "sell", type: "market", price: 65400, qty: 0.01, status: "filled",    time: "08:42" },
   { id: "3", symbol: "ETH/USDT", side: "buy",  type: "limit",  price: 3150,  qty: 0.5,  status: "cancelled", time: "07:30" },
 ];
-
-const STATUS_COLOR: Record<string, string> = {
-  open: "#4ade80",
-  filled: "#22c55e",
-  cancelled: "#6b7280",
-};
+const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e", cancelled: "#6b7280" };
 
 type Tab = "assets" | "orders";
 
-interface BalanceRow {
-  asset: string;
-  total: number;
-  free: number;
-  locked: number;
-  valueUSD: number;
-  price: number;
-  change24hPercent: number;
-  pnl24h: number;
-}
-
-interface PortfolioData {
-  walletAddress: string;
-  totalValueUSD: number;
-  totalPnlUSD: number;
-  totalPnlPercent: number;
-  balances: BalanceRow[];
-  openOrdersCount: number;
-  openPositionsCount: number;
-}
-
-function usePortfolioData(address: string | null) {
-  return useQuery<PortfolioData>({
-    queryKey: ["portfolio", address],
-    queryFn: async () => {
-      const res = await fetch(
-        `${BASE}/api/portfolio?walletAddress=${encodeURIComponent(address!)}`,
-        { cache: "no-store" }
-      );
-      if (!res.ok) throw new Error("Failed to fetch portfolio");
-      return res.json();
-    },
-    enabled: !!address,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
-}
-
 export function MobilePortfolio() {
-  const { address, network, provider } = useWalletStore();
+  const { address, network, provider, chainId, balance } = useWalletStore();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { data: portfolio, isLoading, refetch } = usePortfolioData(address);
+  const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
 
-  const balances = portfolio?.balances ?? [];
-  const total = portfolio?.totalValueUSD ?? 0;
-  const totalChange = portfolio?.totalPnlPercent ?? 0;
+  const nativeAsset = getNativeAsset(network, chainId);
+  const nativeBalance = balance ? parseFloat(balance) : 0;
+
+  // Build rows: native token gets the real wallet balance, everything else is 0
+  const rows = PORTFOLIO_ASSETS.map(a => {
+    const mkt = prices?.[a.asset];
+    const price      = a.asset === "USDT" ? 1 : (mkt?.lastPrice ?? 0);
+    const change     = a.asset === "USDT" ? 0 : (mkt?.priceChangePercent24h ?? 0);
+    const amount     = a.asset === nativeAsset ? nativeBalance : 0;
+    const value      = amount * price;
+    return { ...a, amount, price, change, value };
+  });
+
+  const total = rows.reduce((s, r) => s + r.value, 0);
+  const nonZero = rows.filter(r => r.amount > 0);
+  const totalChange = total > 0 && nonZero.length > 0
+    ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / total * 100
+    : 0;
 
   const handleCopy = () => {
     if (!address) return;
@@ -103,7 +107,7 @@ export function MobilePortfolio() {
             <Link2 size={36} className="text-primary" />
           </div>
           <h2 className="text-xl font-bold text-foreground mb-2">Connect Your Wallet</h2>
-          <p className="text-sm text-muted-foreground leading-relaxed mb-6">
+          <p className="text-sm text-muted-foreground leading-relaxed">
             Connect your BSV, EVM, or Solana wallet to view your portfolio and start trading.
           </p>
         </div>
@@ -150,7 +154,7 @@ export function MobilePortfolio() {
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-foreground transition-all"
               title="Refresh"
             >
-              <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
+              <RefreshCw size={13} className={pricesLoading ? "animate-spin" : ""} />
             </button>
           </div>
         </div>
@@ -158,43 +162,43 @@ export function MobilePortfolio() {
         <div className="px-4 space-y-4">
           {/* Total value card */}
           <div className="bg-card border border-border rounded-2xl p-5">
-            <p className="text-xs text-muted-foreground mb-1">Total Portfolio Value</p>
-            {isLoading ? (
+            <p className="text-xs text-muted-foreground mb-1">Wallet Balance</p>
+            {pricesLoading && total === 0 ? (
               <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
             ) : (
               <p className="text-3xl font-bold text-foreground tracking-tight">
                 ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             )}
-            <div className="flex items-center gap-1.5 mt-2">
-              {totalChange >= 0
-                ? <TrendingUp size={14} className="text-green-500" />
-                : <TrendingDown size={14} className="text-red-500" />}
-              <span className={`text-sm font-semibold ${totalChange >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}% today
-              </span>
-            </div>
 
-            {/* Allocation bar */}
-            {balances.length > 0 && (
+            {nativeBalance > 0 && (
+              <div className="flex items-center gap-1.5 mt-2">
+                {totalChange >= 0
+                  ? <TrendingUp size={14} className="text-green-500" />
+                  : <TrendingDown size={14} className="text-red-500" />}
+                <span className={`text-sm font-semibold ${totalChange >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}% today
+                </span>
+              </div>
+            )}
+
+            {/* Allocation bar — only show if there's a real balance */}
+            {total > 0 && (
               <>
                 <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                  {balances.map(b => (
+                  {nonZero.map(r => (
                     <div
-                      key={b.asset}
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        flex: total > 0 ? b.valueUSD / total : 1 / balances.length,
-                        backgroundColor: ASSET_COLORS[b.asset] ?? "#6b7280",
-                      }}
+                      key={r.asset}
+                      className="h-full rounded-full"
+                      style={{ flex: r.value / total, backgroundColor: r.color }}
                     />
                   ))}
                 </div>
                 <div className="flex gap-3 mt-2 flex-wrap">
-                  {balances.map(b => (
-                    <div key={b.asset} className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ASSET_COLORS[b.asset] ?? "#6b7280" }} />
-                      <span className="text-[10px] text-muted-foreground">{b.asset}</span>
+                  {nonZero.map(r => (
+                    <div key={r.asset} className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
+                      <span className="text-[10px] text-muted-foreground">{r.asset}</span>
                     </div>
                   ))}
                 </div>
@@ -218,7 +222,7 @@ export function MobilePortfolio() {
             </button>
           </div>
 
-          {/* Deposit QR banner */}
+          {/* Deposit CTA */}
           <button
             onClick={() => setDepositOpen(true)}
             className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left"
@@ -252,60 +256,68 @@ export function MobilePortfolio() {
 
           {/* Assets tab */}
           {tab === "assets" && (
-            <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-              {isLoading
-                ? Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className={`flex items-center gap-3 px-4 py-3.5 ${i < 4 ? "border-b border-border" : ""}`}>
-                      <div className="w-9 h-9 rounded-xl bg-muted/40 animate-pulse" />
-                      <div className="flex-1 space-y-1.5">
-                        <div className="h-3 w-14 bg-muted/40 rounded animate-pulse" />
-                        <div className="h-2.5 w-20 bg-muted/30 rounded animate-pulse" />
-                      </div>
-                      <div className="text-right space-y-1.5">
-                        <div className="h-3 w-20 bg-muted/40 rounded animate-pulse" />
-                        <div className="h-2.5 w-10 bg-muted/30 rounded animate-pulse" />
-                      </div>
+            <>
+              {/* Deposit hint when non-native assets are 0 */}
+              {rows.filter(r => r.amount === 0).length > 0 && (
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/15">
+                  <Info size={14} className="text-primary shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Your wallet balance is shown above. Deposit assets into OrahDEX to start trading.
+                  </p>
+                </div>
+              )}
+
+              <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                {rows.map((r, i) => (
+                  <div
+                    key={r.asset}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""} ${r.amount === 0 ? "opacity-50" : ""}`}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                      style={{ backgroundColor: r.color + "22", borderColor: r.color + "44", color: r.color }}
+                    >
+                      {r.asset[0]}
                     </div>
-                  ))
-                : balances.map((b, i) => {
-                    const color = ASSET_COLORS[b.asset] ?? "#6b7280";
-                    return (
-                      <div
-                        key={b.asset}
-                        className={`flex items-center gap-3 px-4 py-3.5 ${i < balances.length - 1 ? "border-b border-border" : ""}`}
-                      >
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                          style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
-                        >
-                          {b.asset[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground">{b.asset}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {b.total.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                          </p>
-                          {b.price > 0 && b.asset !== "USDT" && (
-                            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                              @ ${b.price.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: b.price < 1 ? 6 : 2,
-                              })}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-foreground">
-                            ${b.valueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          <p className={`text-xs font-medium mt-0.5 ${b.change24hPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
-                            {b.change24hPercent >= 0 ? "+" : ""}{b.change24hPercent.toFixed(2)}%
-                          </p>
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-semibold text-foreground">{r.asset}</p>
+                        {r.asset === nativeAsset && r.amount > 0 && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/25">
+                            WALLET
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
-            </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {r.amount > 0
+                          ? r.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                          : r.asset === nativeAsset
+                            ? "0.000000"
+                            : "— deposit to trade"}
+                      </p>
+                      {r.price > 0 && r.asset !== "USDT" && r.amount > 0 && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                          @ ${r.price.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: r.price < 1 ? 6 : 2,
+                          })}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-foreground">
+                        ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                      {r.amount > 0 && (
+                        <p className={`text-xs font-medium mt-0.5 ${r.change >= 0 ? "text-green-500" : "text-red-500"}`}>
+                          {r.change >= 0 ? "+" : ""}{r.change.toFixed(2)}%
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Orders tab */}
