@@ -8,6 +8,7 @@ import { WalletConnectModal } from "./WalletConnectModal";
 import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
 import { ReownConnectButton } from "./ReownConnectButton";
 import { BrandLogo } from "./BrandLogo";
+import { TxStatusBar } from "./TxStatusBar";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -398,6 +399,9 @@ export function Layout({ children }: { children: ReactNode }) {
         isOpen={isWalletModalOpen}
         onClose={closeWalletModal}
       />
+
+      {/* Fixed tx status overlay — bottom right */}
+      <TxStatusBar />
     </div>
   );
 }

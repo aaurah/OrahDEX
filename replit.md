@@ -125,6 +125,19 @@ React + Vite DEX frontend. Routes via Wouter, API via `@workspace/api-client-rea
 - Supported EVM networks: Ethereum, Polygon, Arbitrum, Optimism, Base, BNB Chain, Avalanche, Linea, zkSync, Scroll, Mantle, Fantom, Cronos
 - `pnpm --filter @workspace/bsv-dex run dev` — dev server
 
+**EVM wallet flow (end-to-end):**
+- `accountsChanged` / `chainChanged` event listeners in `App.tsx` — UI stays in sync when user switches MetaMask account or network
+- `lib/reown.ts` exports: `checkAllowance(token, owner, spender, chainId)`, `approveToken(...)`, `pollTxReceipt(...)`, `getBlockNumber(...)`, `fetchErc20Balance(...)`
+- `OrderForm.tsx` EVM sell flow: Step 1 = check ERC-20 allowance → Step 2 = `approve(router, maxUint256)` if insufficient → Step 3 = `personal_sign` order intent → Step 4 = submit
+- `useWalletStore` extended with `pendingTxs: PendingTx[]` + `addPendingTx / updateTx / removeTx`
+- `getTxExplorerUrl(hash, chainId)` maps to correct block explorer per chain
+- `useTxTracker` hook (mounted at app root) polls `eth_getTransactionReceipt` for all pending txs every 4s; on confirmation: updates status + refreshes native balance
+- `TxStatusBar` component (fixed bottom-right): shows in-flight/confirmed/failed txs with hash, explorer link, confirmation count; auto-renders from `pendingTxs` store
+
+**P2P + Atomic Swap:**
+- P2P page has top-level tab: "P2P Trades" | "Atomic Swap"
+- Atomic Swap tab: HTLC form (from/to coin picker, amount input, live rate), 4-step protocol visualizer, animated HTLC execution, BSV settlement badge
+
 ### `artifacts/api-server` (`@workspace/api-server`)
 Express 5 API server. Routes in `src/routes/`. Uses `@workspace/db` for DB and `@workspace/api-zod` for validation.
 - Mock data generators in `src/lib/mockData.ts` for order books, candles, trades

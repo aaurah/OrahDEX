@@ -184,3 +184,197 @@ export function getWagmiConfig() {
 export function getReownModal() { return _modal; }
 export function getWagmiAdapter() { return _adapter; }
 export function isReownReady() { return _initialized && !!_modal; }
+
+/* ── ERC-20 ABI helpers (minimal selectors) ──────────────────────────────── */
+const ERC20_BALANCE_OF = "0x70a08231"; // balanceOf(address)
+const ERC20_ALLOWANCE  = "0xdd62ed3e"; // allowance(owner, spender)
+const ERC20_APPROVE    = "0x095ea7b3"; // approve(spender, uint256)
+
+function padAddress(addr: string): string {
+  return addr.replace("0x", "").padStart(64, "0");
+}
+
+function hexToBigInt(hex: string): bigint {
+  if (!hex || hex === "0x") return 0n;
+  return BigInt(hex);
+}
+
+async function ethCall(rpc: string, to: string, data: string): Promise<string | null> {
+  try {
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to, data }, "latest"] }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch ERC-20 token balance for an address.
+ * Returns the human-readable amount as a string, or null on failure.
+ */
+export async function fetchErc20Balance(
+  tokenAddress: string,
+  ownerAddress: string,
+  chainId: number,
+  decimals = 18,
+): Promise<string | null> {
+  const rpc = CHAIN_RPC_URLS[chainId];
+  if (!rpc) return null;
+  const data = ERC20_BALANCE_OF + padAddress(ownerAddress);
+  const result = await ethCall(rpc, tokenAddress, data);
+  if (!result) return null;
+  const raw = hexToBigInt(result);
+  const divisor = 10n ** BigInt(decimals);
+  const whole = raw / divisor;
+  const frac  = raw % divisor;
+  return `${whole}.${frac.toString().padStart(decimals, "0").slice(0, 6)}`;
+}
+
+/**
+ * Check how many tokens `spender` is allowed to spend from `owner`.
+ * Returns the allowance as a bigint (in token's smallest unit).
+ */
+export async function checkAllowance(
+  tokenAddress: string,
+  ownerAddress: string,
+  spenderAddress: string,
+  chainId: number,
+): Promise<bigint> {
+  const rpc = CHAIN_RPC_URLS[chainId];
+  if (!rpc) return 0n;
+  const data = ERC20_ALLOWANCE + padAddress(ownerAddress) + padAddress(spenderAddress);
+  const result = await ethCall(rpc, tokenAddress, data);
+  return result ? hexToBigInt(result) : 0n;
+}
+
+/**
+ * Submit an ERC-20 `approve(spender, amount)` transaction via the injected wallet.
+ * Returns the tx hash, or null if the user rejects / no wallet is available.
+ */
+export async function approveToken(
+  tokenAddress: string,
+  spenderAddress: string,
+  amountHex: string,         // uint256 in hex, e.g. "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  fromAddress: string,
+): Promise<string | null> {
+  const eth = (window as any).ethereum;
+  if (!eth) return null;
+  try {
+    const paddedSpender = padAddress(spenderAddress);
+    const paddedAmount  = amountHex.replace("0x", "").padStart(64, "0");
+    const data = ERC20_APPROVE + paddedSpender + paddedAmount;
+    const txHash: string = await eth.request({
+      method: "eth_sendTransaction",
+      params: [{ from: fromAddress, to: tokenAddress, data }],
+    });
+    return txHash ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/* ── TX Receipt Polling ──────────────────────────────────────────────────── */
+
+export interface TxReceipt {
+  status: "0x1" | "0x0";
+  blockNumber: string;
+  transactionHash: string;
+  logs: unknown[];
+}
+
+/**
+ * Poll for a transaction receipt using public RPC.
+ * Calls `onReceipt` once the tx is mined, or `onTimeout` after maxAttempts.
+ * Returns a cleanup function to cancel polling.
+ */
+export function pollTxReceipt(
+  txHash: string,
+  chainId: number,
+  opts: {
+    intervalMs?: number;
+    maxAttempts?: number;
+    onReceipt: (receipt: TxReceipt) => void;
+    onTimeout?: () => void;
+  }
+): () => void {
+  const rpc = CHAIN_RPC_URLS[chainId];
+  const intervalMs  = opts.intervalMs  ?? 4000;
+  const maxAttempts = opts.maxAttempts ?? 75;   // ~5 min at 4s
+  let attempt = 0;
+  let cancelled = false;
+
+  const poll = async () => {
+    if (cancelled) return;
+    attempt++;
+    if (attempt > maxAttempts) {
+      opts.onTimeout?.();
+      return;
+    }
+
+    try {
+      if (rpc) {
+        const res = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "eth_getTransactionReceipt",
+            params: [txHash],
+          }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.result) {
+            opts.onReceipt(json.result as TxReceipt);
+            return;
+          }
+        }
+      } else {
+        // Fallback: try injected provider
+        const eth = (window as any).ethereum;
+        if (eth) {
+          const receipt = await eth.request({
+            method: "eth_getTransactionReceipt",
+            params: [txHash],
+          });
+          if (receipt) {
+            opts.onReceipt(receipt as TxReceipt);
+            return;
+          }
+        }
+      }
+    } catch {
+      /* swallow and retry */
+    }
+
+    if (!cancelled) setTimeout(poll, intervalMs);
+  };
+
+  setTimeout(poll, intervalMs);
+  return () => { cancelled = true; };
+}
+
+/**
+ * Get the current block number via public RPC.
+ */
+export async function getBlockNumber(chainId: number): Promise<number | null> {
+  const rpc = CHAIN_RPC_URLS[chainId];
+  if (!rpc) return null;
+  try {
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
+    });
+    const json = await res.json();
+    return json?.result ? parseInt(json.result, 16) : null;
+  } catch {
+    return null;
+  }
+}
