@@ -38,10 +38,10 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
 
         {/* Ping animation circle (online only) */}
         {online && (
-          <circle cx="50" cy="50" r="10" fill="#4ade80" opacity="0.7">
+          <circle cx="50" cy="50" r="6" fill="#4ade80" opacity="0.7">
             <animate
               attributeName="r"
-              from="8" to="22"
+              from="6" to="16"
               dur="1.2s"
               repeatCount="indefinite"
             />
@@ -56,7 +56,7 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
 
         {/* Solid dot — perfectly centred */}
         <circle
-          cx="50" cy="50" r="10"
+          cx="50" cy="50" r="6"
           fill={online ? '#4ade80' : '#ef4444'}
         />
       </svg>
