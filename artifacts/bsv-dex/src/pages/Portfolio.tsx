@@ -1,27 +1,48 @@
-import { useGetPortfolio } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
-import { MOCK_PORTFOLIO } from "@/lib/mock-data";
 import { useWalletStore } from "@/store/useWalletStore";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-interface MarketRow { baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+interface BalanceRow {
+  asset: string;
+  total: number;
+  free: number;
+  locked: number;
+  valueUSD: number;
+  price: number;
+  change24hPercent: number;
+  pnl24h: number;
+  pnl24hPercent: number;
+}
 
-function useLivePrices() {
-  return useQuery<Record<string, MarketRow>>({
-    queryKey: ["portfolio-live-prices"],
+interface PortfolioData {
+  walletAddress: string;
+  totalValueUSD: number;
+  totalPnlUSD: number;
+  totalPnlPercent: number;
+  balances: BalanceRow[];
+  openOrdersCount: number;
+  openPositionsCount: number;
+}
+
+function usePortfolioData(address: string | null) {
+  return useQuery<PortfolioData>({
+    queryKey: ["portfolio", address],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
-      if (!res.ok) throw new Error("price fetch failed");
-      const rows: MarketRow[] = await res.json();
-      return Object.fromEntries(rows.map(r => [r.baseAsset, r]));
+      const res = await fetch(
+        `${BASE}/api/portfolio?walletAddress=${encodeURIComponent(address!)}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch portfolio");
+      return res.json();
     },
+    enabled: !!address,
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
@@ -42,12 +63,8 @@ export function Portfolio() {
     }
   });
 
-  const { address } = useWalletStore();
-  const { data: apiPortfolio, isLoading } = useGetPortfolio(
-    { walletAddress: address || '' }, 
-    { query: { enabled: !!address } }
-  );
-  const { data: livePrices, isLoading: pricesLoading, refetch: refetchPrices } = useLivePrices();
+  const { address, network, provider } = useWalletStore();
+  const { data: portfolio, isLoading, refetch, isFetching } = usePortfolioData(address);
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -64,34 +81,22 @@ export function Portfolio() {
 
   if (!address) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="text-center max-w-md">
-          <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-6">
-            <History className="w-10 h-10" />
-          </div>
-          <h2 className="text-2xl font-bold mb-3">Portfolio Overview</h2>
-          <p className="text-muted-foreground mb-8">Connect your wallet to view your balances, open orders, and transaction history on OrahDEX.</p>
+      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+        <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
+          <History className="w-10 h-10 text-primary" />
         </div>
+        <h2 className="text-2xl font-bold mb-3">Portfolio Overview</h2>
+        <p className="text-muted-foreground mb-8">Connect your wallet to view your balances, open orders, and transaction history on OrahDEX.</p>
       </div>
     );
   }
 
-  const rawPortfolio = apiPortfolio || MOCK_PORTFOLIO;
-
-  // Apply live prices to balance valueUSD calculations
-  const portfolio = useMemo(() => {
-    if (!livePrices) return rawPortfolio;
-    const balances = rawPortfolio.balances.map((bal: { asset: string; total: number; free: number; locked: number; valueUSD: number }) => {
-      if (bal.asset === "USDT" || bal.asset === "USDC" || bal.asset === "TUSD" || bal.asset === "USDD") {
-        return { ...bal, valueUSD: bal.total };
-      }
-      const mkt = livePrices[bal.asset];
-      const valueUSD = mkt ? bal.total * mkt.lastPrice : bal.valueUSD;
-      return { ...bal, valueUSD };
-    });
-    const totalValueUSD = balances.reduce((s: number, b: { valueUSD: number }) => s + b.valueUSD, 0);
-    return { ...rawPortfolio, balances, totalValueUSD };
-  }, [rawPortfolio, livePrices]);
+  const balances = portfolio?.balances ?? [];
+  const totalValueUSD = portfolio?.totalValueUSD ?? 0;
+  const totalPnlUSD = portfolio?.totalPnlUSD ?? 0;
+  const totalPnlPercent = portfolio?.totalPnlPercent ?? 0;
+  const openOrdersCount = portfolio?.openOrdersCount ?? 0;
+  const openPositionsCount = portfolio?.openPositionsCount ?? 0;
 
   return (
     <>
@@ -99,9 +104,14 @@ export function Portfolio() {
       <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} defaultAsset={withdrawAsset} />
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-2">Portfolio Overview</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">Portfolio Overview</h1>
+            {network && (
+              <p className="text-xs text-muted-foreground mb-2 capitalize">
+                {provider ?? network} · {network.toUpperCase()} network
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <p className="text-muted-foreground font-mono bg-white/5 inline-block px-3 py-1 rounded-lg border border-border text-sm truncate max-w-xs md:max-w-md">
                 {address}
@@ -118,11 +128,11 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => refetchPrices()}
+              onClick={() => refetch()}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
-              title="Refresh live prices"
+              title="Refresh portfolio"
             >
-              <RefreshCw className={`w-4 h-4 ${pricesLoading ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
             </button>
             <button
               onClick={() => setDepositOpen(true)}
@@ -157,9 +167,9 @@ export function Portfolio() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+          {/* Balance card */}
           <div className="lg:col-span-2 bg-gradient-to-br from-card to-secondary p-8 rounded-3xl border border-border shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
-            
             <div className="relative z-10">
               <div className="flex items-center gap-3 text-muted-foreground mb-2">
                 <span className="font-medium">Estimated Balance</span>
@@ -167,49 +177,64 @@ export function Portfolio() {
                   {hideBalances ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              
               <div className="flex items-end gap-4 mb-6">
-                <span className="text-5xl font-bold font-mono tracking-tight text-foreground">
-                  {hideBalances ? "******" : `$${formatPrice(portfolio.totalValueUSD)}`}
-                </span>
+                {isLoading ? (
+                  <div className="h-14 w-52 bg-muted/40 rounded-xl animate-pulse" />
+                ) : (
+                  <span className="text-5xl font-bold font-mono tracking-tight text-foreground">
+                    {hideBalances ? "••••••" : `$${formatPrice(totalValueUSD)}`}
+                  </span>
+                )}
               </div>
-
               <div className="flex items-center gap-4">
                 <div className="bg-background/50 backdrop-blur px-4 py-2 rounded-xl border border-white/5">
                   <div className="text-xs text-muted-foreground mb-1">Today's PnL</div>
-                  <div className={cn("font-mono font-bold", portfolio.totalPnlUSD >= 0 ? "text-buy" : "text-sell")}>
-                    {hideBalances ? "***" : `${portfolio.totalPnlUSD >= 0 ? '+' : ''}$${formatPrice(portfolio.totalPnlUSD)} (${formatPercent(portfolio.totalPnlPercent)})`}
-                  </div>
+                  {isLoading ? (
+                    <div className="h-5 w-32 bg-muted/40 rounded animate-pulse" />
+                  ) : (
+                    <div className={cn("font-mono font-bold", totalPnlUSD >= 0 ? "text-green-400" : "text-red-400")}>
+                      {hideBalances ? "•••" : `${totalPnlUSD >= 0 ? "+" : ""}$${formatPrice(Math.abs(totalPnlUSD))} (${formatPercent(totalPnlPercent)})`}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Stats card */}
           <div className="bg-card p-6 rounded-3xl border border-border shadow-xl flex flex-col justify-center gap-4">
-             <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
-               <span className="text-muted-foreground font-medium">Open Spot Orders</span>
-               <span className="text-2xl font-bold font-mono text-foreground">{portfolio.openOrdersCount}</span>
-             </div>
-             <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
-               <span className="text-muted-foreground font-medium">Futures Positions</span>
-               <span className="text-2xl font-bold font-mono text-foreground">{portfolio.openPositionsCount}</span>
-             </div>
-             <button onClick={() => setDepositOpen(true)}
-               className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors">
-               <ArrowDownToLine className="w-4 h-4" /> Deposit
-             </button>
+            <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
+              <span className="text-muted-foreground font-medium">Open Spot Orders</span>
+              {isLoading
+                ? <div className="h-8 w-8 bg-muted/40 rounded animate-pulse" />
+                : <span className="text-2xl font-bold font-mono text-foreground">{openOrdersCount}</span>}
+            </div>
+            <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
+              <span className="text-muted-foreground font-medium">Futures Positions</span>
+              {isLoading
+                ? <div className="h-8 w-8 bg-muted/40 rounded animate-pulse" />
+                : <span className="text-2xl font-bold font-mono text-foreground">{openPositionsCount}</span>}
+            </div>
+            <button onClick={() => setDepositOpen(true)}
+              className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors">
+              <ArrowDownToLine className="w-4 h-4" /> Deposit
+            </button>
           </div>
         </div>
 
+        {/* Asset balances table */}
         <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
-          <div className="p-6 border-b border-border bg-secondary/20">
+          <div className="p-6 border-b border-border bg-secondary/20 flex items-center justify-between">
             <h3 className="text-lg font-bold">Asset Balances</h3>
+            <span className="text-xs text-muted-foreground">Live prices · refreshes every 30s</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-border text-muted-foreground text-sm">
                   <th className="p-4 font-medium">Asset</th>
+                  <th className="p-4 font-medium text-right">Price</th>
+                  <th className="p-4 font-medium text-right">24h</th>
                   <th className="p-4 font-medium text-right">Total</th>
                   <th className="p-4 font-medium text-right">Available</th>
                   <th className="p-4 font-medium text-right">In Order</th>
@@ -218,35 +243,59 @@ export function Portfolio() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {portfolio.balances.map((bal) => (
-                  <tr key={bal.asset} className="hover:bg-white/5 transition-colors">
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                          {bal.asset[0]}
-                        </div>
-                        <span className="font-bold text-foreground">{bal.asset}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-right font-mono">{hideBalances ? "***" : bal.total.toLocaleString()}</td>
-                    <td className="p-4 text-right font-mono">{hideBalances ? "***" : bal.free.toLocaleString()}</td>
-                    <td className="p-4 text-right font-mono text-muted-foreground">{hideBalances ? "***" : bal.locked.toLocaleString()}</td>
-                    <td className="p-4 text-right font-mono font-medium">${hideBalances ? "***" : formatPrice(bal.valueUSD)}</td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button onClick={() => setDepositOpen(true)}
-                          className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
-                          Deposit
-                        </button>
-                        <button
-                          onClick={() => { setWithdrawAsset(bal.asset); setWithdrawOpen(true); }}
-                          className="px-3 py-1.5 rounded-lg bg-sell/10 border border-sell/20 text-sell text-xs font-semibold hover:bg-sell/20 transition-colors">
-                          Withdraw
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {isLoading
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i}>
+                        {Array.from({ length: 8 }).map((__, j) => (
+                          <td key={j} className="p-4">
+                            <div className="h-4 bg-muted/40 rounded animate-pulse w-full" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  : balances.map((bal) => (
+                      <tr key={bal.asset} className="hover:bg-white/5 transition-colors">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
+                              {bal.asset[0]}
+                            </div>
+                            <span className="font-bold text-foreground">{bal.asset}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right font-mono text-sm">
+                          {bal.asset === "USDT" ? "$1.00" : `$${formatPrice(bal.price)}`}
+                        </td>
+                        <td className={`p-4 text-right text-sm font-semibold ${bal.change24hPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {bal.change24hPercent >= 0 ? "+" : ""}{bal.change24hPercent.toFixed(2)}%
+                        </td>
+                        <td className="p-4 text-right font-mono">
+                          {hideBalances ? "•••" : bal.total.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </td>
+                        <td className="p-4 text-right font-mono">
+                          {hideBalances ? "•••" : bal.free.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </td>
+                        <td className="p-4 text-right font-mono text-muted-foreground">
+                          {hideBalances ? "•••" : bal.locked.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </td>
+                        <td className="p-4 text-right font-mono font-medium">
+                          {hideBalances ? "•••" : `$${formatPrice(bal.valueUSD)}`}
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => setDepositOpen(true)}
+                              className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                              Deposit
+                            </button>
+                            <button
+                              onClick={() => { setWithdrawAsset(bal.asset); setWithdrawOpen(true); }}
+                              className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/20 transition-colors">
+                              Withdraw
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
               </tbody>
             </table>
           </div>
