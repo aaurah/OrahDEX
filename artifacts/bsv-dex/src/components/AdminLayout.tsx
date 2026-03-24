@@ -9,6 +9,7 @@ import {
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./BrandLogo";
+import { ReownConnectButton } from "./ReownConnectButton";
 
 interface NavItem {
   href: string;
@@ -200,6 +201,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <ReownConnectButton size="sm" />
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               <span className="text-xs text-green-400 font-medium hidden sm:block">System Operational</span>

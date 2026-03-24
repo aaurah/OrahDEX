@@ -115,6 +115,14 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 ### `artifacts/bsv-dex` (`@workspace/bsv-dex`)
 React + Vite DEX frontend. Routes via Wouter, API via `@workspace/api-client-react` hooks, state via Zustand.
+
+**Wallet connectivity:**
+- Custom multi-chain modal (BSV/EVM/SOL/BTC) — `WalletConnectModal.tsx`
+- **Reown AppKit** (WalletConnect v2) — `@reown/appkit` + `@reown/appkit-adapter-wagmi` — initialized in `main.tsx` with `WagmiProvider`, project ID from `VITE_REOWN_PROJECT_ID` secret
+- `ReownConnectButton.tsx` — standalone button shown in navbar and admin header
+- Reown tab added to wallet connect modal (first tab, opens AppKit modal with 500+ wallets)
+- Account sync: `App.tsx` polls until Reown is ready then subscribes to account changes → syncs to `useWalletStore`
+- Supported EVM networks: Ethereum, Polygon, Arbitrum, Optimism, Base, BNB Chain, Avalanche, Linea, zkSync, Scroll, Mantle, Fantom, Cronos
 - `pnpm --filter @workspace/bsv-dex run dev` — dev server
 
 ### `artifacts/api-server` (`@workspace/api-server`)
