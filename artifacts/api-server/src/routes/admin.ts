@@ -491,9 +491,19 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 router.get("/bsv-wallet", async (req, res) => {
   try {
     const wallet  = await getOrCreateWallet();
-    const balance = await fetchWalletBalance(wallet.address);
+
+    // Check for a custom address override saved by admin
+    const overrideRows = await db.select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+    const customAddress = overrideRows.length ? overrideRows[0].value : null;
+    const displayAddress = customAddress || wallet.address;
+
+    const balance = await fetchWalletBalance(displayAddress);
     res.json({
-      address:             wallet.address,
+      address:             displayAddress,
+      systemAddress:       wallet.address,
+      customAddress:       customAddress ?? null,
       pubKeyHex:           wallet.pubKeyHex,
       confirmedSatoshis:   balance.confirmedSatoshis,
       unconfirmedSatoshis: balance.unconfirmedSatoshis,
@@ -501,7 +511,7 @@ router.get("/bsv-wallet", async (req, res) => {
       bsv:                 balance.bsv,
       utxos:               balance.utxos,
       funded:              balance.funded,
-      explorerUrl:         `https://whatsonchain.com/address/${wallet.address}`,
+      explorerUrl:         `https://whatsonchain.com/address/${displayAddress}`,
       broadcastReady:      balance.funded,
       notice: balance.funded
         ? "Wallet is funded — all new trade settlements will be broadcast to BSV mainnet."
@@ -509,6 +519,38 @@ router.get("/bsv-wallet", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to load BSV wallet" });
+  }
+});
+
+// ── PUT /admin/bsv-wallet — update custom settlement address ─────────────────
+router.put("/bsv-wallet", async (req, res) => {
+  try {
+    const { customAddress } = req.body as { customAddress: string };
+
+    if (customAddress === "" || customAddress === null) {
+      // Remove override — revert to system wallet
+      await db.delete(platformSettingsTable)
+        .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+      res.json({ customAddress: null, message: "Reverted to system wallet" });
+      return;
+    }
+
+    // Basic BSV/BTC address validation (P2PKH starts with 1, P2SH with 3)
+    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(customAddress)) {
+      res.status(400).json({ error: "Invalid BSV address format" });
+      return;
+    }
+
+    await db.insert(platformSettingsTable)
+      .values({ key: "bsv_settlement_address_override", value: customAddress })
+      .onConflictDoUpdate({
+        target: platformSettingsTable.key,
+        set: { value: customAddress, updatedAt: new Date() },
+      });
+
+    res.json({ customAddress, message: "Settlement address updated" });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update BSV wallet address" });
   }
 });
 

@@ -4,7 +4,7 @@ import {
   Bot, TrendingUp, DollarSign, ArrowDownToLine, RefreshCw,
   CheckCircle, Clock, Copy, Check, AlertTriangle, Zap,
   Flame, Droplets, Activity, Wallet, ExternalLink, Info,
-  Radio, ShieldCheck,
+  Radio, ShieldCheck, Pencil, X, Save, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -145,6 +145,8 @@ function SourceCard({
 
 type BsvWallet = {
   address: string;
+  systemAddress: string;
+  customAddress: string | null;
   pubKeyHex: string;
   confirmedSatoshis: number;
   unconfirmedSatoshis: number;
@@ -165,6 +167,11 @@ export function AdminBotProfit() {
   const [network, setNetwork] = useState("BSV");
   const [error,   setError]   = useState("");
   const [success, setSuccess] = useState("");
+
+  // Settlement address editor state
+  const [editingAddr, setEditingAddr] = useState(false);
+  const [newAddr,     setNewAddr]     = useState("");
+  const [addrSaved,   setAddrSaved]   = useState(false);
 
   const { data, isLoading, refetch } = useQuery<BotProfitData>({
     queryKey: ["admin-bot-profit"],
@@ -203,6 +210,27 @@ export function AdminBotProfit() {
       qc.invalidateQueries({ queryKey: ["admin-bot-profit"] });
     },
     onError: (e: Error) => { setError(e.message); setSuccess(""); },
+  });
+
+  const addrMut = useMutation({
+    mutationFn: async (customAddress: string) => {
+      const r = await fetch(`${BASE}/api/admin/bsv-wallet`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customAddress }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Failed to update address");
+      return j;
+    },
+    onSuccess: () => {
+      setEditingAddr(false);
+      setNewAddr("");
+      setAddrSaved(true);
+      setTimeout(() => setAddrSaved(false), 2500);
+      qc.invalidateQueries({ queryKey: ["admin-bsv-wallet"] });
+    },
+    onError: (e: Error) => { setError(e.message); },
   });
 
   function handleWithdraw(e: React.FormEvent) {
@@ -285,14 +313,19 @@ export function AdminBotProfit() {
             <Wallet className="w-4 h-4 text-green-400" />
             BSV Settlement Wallet
           </h2>
-          <div className={cn(
-            "flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider",
-            wallet?.broadcastReady
-              ? "bg-green-500/10 border-green-500/20 text-green-400"
-              : "bg-green-500/10 border-green-500/20 text-green-400",
-          )}>
-            <Radio className="w-3 h-3" />
-            {wallet?.broadcastReady ? "BROADCAST READY" : "AWAITING FUNDS"}
+          <div className="flex items-center gap-2">
+            {wallet?.customAddress && (
+              <span className="text-[10px] font-bold px-2 py-1 rounded border bg-violet-500/10 border-violet-500/20 text-violet-400 uppercase tracking-wider">
+                Custom Address
+              </span>
+            )}
+            <div className={cn(
+              "flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider",
+              "bg-green-500/10 border-green-500/20 text-green-400",
+            )}>
+              <Radio className="w-3 h-3" />
+              {wallet?.broadcastReady ? "BROADCAST READY" : "AWAITING FUNDS"}
+            </div>
           </div>
         </div>
 
@@ -300,7 +333,35 @@ export function AdminBotProfit() {
           <div className="space-y-4">
             {/* Address */}
             <div>
-              <p className="text-xs text-white/40 mb-1.5">Deposit Address (P2PKH Mainnet)</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-xs text-white/40">Deposit Address (P2PKH Mainnet)</p>
+                <div className="flex items-center gap-1">
+                  {wallet.customAddress && (
+                    <button
+                      onClick={() => addrMut.mutate("")}
+                      disabled={addrMut.isPending}
+                      className="flex items-center gap-1 text-[10px] text-white/40 hover:text-orange-400 transition-colors px-2 py-0.5 rounded border border-white/10 hover:border-orange-500/30"
+                      title="Revert to system wallet"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      Revert
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setEditingAddr(v => !v); setNewAddr(wallet.address); setError(""); }}
+                    className={cn(
+                      "flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border transition-colors",
+                      editingAddr
+                        ? "bg-white/5 border-white/20 text-white/60"
+                        : "border-white/10 text-white/40 hover:text-green-400 hover:border-green-500/30"
+                    )}
+                  >
+                    {editingAddr ? <><X className="w-2.5 h-2.5" /> Cancel</> : <><Pencil className="w-2.5 h-2.5" /> Change Address</>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Address display */}
               <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2.5">
                 <code className="flex-1 font-mono text-sm text-green-300 break-all">{wallet.address}</code>
                 <CopyBtn text={wallet.address} />
@@ -309,6 +370,47 @@ export function AdminBotProfit() {
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </div>
+
+              {/* Inline editor */}
+              {editingAddr && (
+                <div className="mt-3 p-4 rounded-xl border border-green-500/20 bg-green-500/5 space-y-3">
+                  <p className="text-xs text-white/50 leading-relaxed">
+                    Enter a custom BSV deposit address. This overrides the system-generated wallet for display and balance tracking. Your private keys stay on the server.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newAddr}
+                      onChange={e => setNewAddr(e.target.value)}
+                      placeholder="1... (BSV P2PKH address)"
+                      className="flex-1 bg-white/5 border border-white/15 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/20 focus:outline-none focus:border-green-500/40 transition-colors"
+                    />
+                    <button
+                      onClick={() => addrMut.mutate(newAddr.trim())}
+                      disabled={!newAddr.trim() || addrMut.isPending}
+                      className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-green-500 hover:bg-green-400 text-black font-bold text-xs transition-all disabled:opacity-50 shrink-0"
+                    >
+                      {addrMut.isPending
+                        ? <div className="w-3.5 h-3.5 border-2 border-black/40 border-t-black rounded-full animate-spin" />
+                        : addrSaved
+                          ? <><Check className="w-3.5 h-3.5" /> Saved</>
+                          : <><Save className="w-3.5 h-3.5" /> Save</>}
+                    </button>
+                  </div>
+                  {wallet.systemAddress && (
+                    <p className="text-[11px] text-white/30">
+                      System wallet: <code className="text-white/50 font-mono">{wallet.systemAddress}</code>
+                    </p>
+                  )}
+                  {error && <p className="text-xs text-red-400">{error}</p>}
+                </div>
+              )}
+
+              {addrSaved && !editingAddr && (
+                <p className="text-xs text-green-400 mt-1.5 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Address updated successfully
+                </p>
+              )}
             </div>
 
             {/* Balance row */}
