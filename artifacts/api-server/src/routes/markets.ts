@@ -7,8 +7,19 @@ import { fetchRealCandles } from "../lib/candleFetcher.js";
 
 const router: IRouter = Router();
 
-/** Normalise URL param → DB symbol (always dash-separated: BTC-USDT) */
-const normSymbol = (raw: string) => decodeURIComponent(raw).replace(/\//g, "-");
+/**
+ * Normalise URL param → DB symbol (slash-separated: BTC/USDT).
+ * Accepts both URL-encoded slash  (BSV%2FETH  → BSV/ETH)
+ * and dash-separated params       (BSV-USDT   → BSV/USDT, BSV-USDT-PERP → BSV/USDT-PERP).
+ */
+const normSymbol = (raw: string): string => {
+  const decoded = decodeURIComponent(raw);
+  // Already contains a slash — came as encoded %2F, use directly
+  if (decoded.includes("/")) return decoded;
+  // Dash-separated: convert only the FIRST dash to a slash so
+  // "BSV-USDT-PERP" → "BSV/USDT-PERP" and "BTC-USDT" → "BTC/USDT"
+  return decoded.replace("-", "/");
+};
 
 router.get("/markets", async (req, res) => {
   try {

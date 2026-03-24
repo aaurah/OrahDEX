@@ -250,7 +250,7 @@ export async function seedMarketsIfNeeded() {
 
     // USDT pairs
     for (const base of USDT_PAIRS) {
-      const sym = `${base}-USDT`;
+      const sym = `${base}/USDT`;
       if (!existingSymbols.has(sym)) {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
@@ -265,7 +265,7 @@ export async function seedMarketsIfNeeded() {
     // Stablecoin pairs (USDC, TUSD, USDD)
     for (const [pairs, quote] of [[USDC_PAIRS,"USDC"],[TUSD_PAIRS,"TUSD"],[USDD_PAIRS,"USDD"]] as [string[],string][]) {
       for (const base of pairs) {
-        const sym = `${base}-${quote}`;
+        const sym = `${base}/${quote}`;
         if (!existingSymbols.has(sym)) {
           const fp = FALLBACK_PRICES[base] ?? 1;
           toInsert.push({
@@ -280,7 +280,7 @@ export async function seedMarketsIfNeeded() {
 
     // ETH pairs
     for (const base of ETH_PAIRS) {
-      const sym = `${base}-ETH`;
+      const sym = `${base}/ETH`;
       if (!existingSymbols.has(sym)) {
         const ethPrice = FALLBACK_PRICES["ETH"] ?? 3400;
         const basePrice = FALLBACK_PRICES[base] ?? 1;
@@ -296,7 +296,7 @@ export async function seedMarketsIfNeeded() {
 
     // BNB pairs
     for (const base of BNB_PAIRS) {
-      const sym = `${base}-BNB`;
+      const sym = `${base}/BNB`;
       if (!existingSymbols.has(sym)) {
         const bnbPrice = FALLBACK_PRICES["BNB"] ?? 380;
         const basePrice = FALLBACK_PRICES[base] ?? 1;
@@ -321,7 +321,7 @@ export async function seedMarketsIfNeeded() {
     ];
     for (const [pairs, quote, quotePrice] of EVM_QUOTE_CHAINS) {
       for (const base of pairs) {
-        const sym = `${base}-${quote}`;
+        const sym = `${base}/${quote}`;
         if (!existingSymbols.has(sym)) {
           const basePrice = FALLBACK_PRICES[base] ?? 1;
           const crossPrice = basePrice / quotePrice;
@@ -345,7 +345,7 @@ export async function seedMarketsIfNeeded() {
     ];
     for (const [pairs, quote, quotePrice] of L2_QUOTE_CHAINS) {
       for (const base of pairs) {
-        const sym = `${base}-${quote}`;
+        const sym = `${base}/${quote}`;
         if (!existingSymbols.has(sym)) {
           const basePrice = FALLBACK_PRICES[base] ?? 1;
           const crossPrice = basePrice / quotePrice;
@@ -361,7 +361,7 @@ export async function seedMarketsIfNeeded() {
 
     // BCH pairs
     for (const base of BCH_PAIRS) {
-      const sym = `${base}-BCH`;
+      const sym = `${base}/BCH`;
       if (!existingSymbols.has(sym)) {
         const bchPrice = FALLBACK_PRICES["BCH"] ?? 380;
         const basePrice = FALLBACK_PRICES[base] ?? 1;
@@ -377,7 +377,7 @@ export async function seedMarketsIfNeeded() {
 
     // BTC pairs
     for (const base of BTC_PAIRS) {
-      const sym = `${base}-BTC`;
+      const sym = `${base}/BTC`;
       if (!existingSymbols.has(sym)) {
         const btcPrice = FALLBACK_PRICES["BTC"] ?? 68000;
         const basePrice = FALLBACK_PRICES[base] ?? 1;
@@ -393,7 +393,7 @@ export async function seedMarketsIfNeeded() {
 
     // BSV pairs
     for (const base of BSV_PAIRS) {
-      const sym = `${base}-BSV`;
+      const sym = `${base}/BSV`;
       if (!existingSymbols.has(sym)) {
         const bsvPrice = FALLBACK_PRICES["BSV"] ?? 0.055;
         const basePrice = FALLBACK_PRICES[base] ?? 1;
@@ -409,7 +409,7 @@ export async function seedMarketsIfNeeded() {
 
     // Futures PERP pairs
     for (const base of FUTURES_PAIRS) {
-      const sym = `${base}-USDT-PERP`;
+      const sym = `${base}/USDT-PERP`;
       if (!existingSymbols.has(sym)) {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
