@@ -10,7 +10,8 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
-import { useAccount, useChainId, useBalance } from "wagmi";
+import { useAccount, useChainId, useBalance, useDisconnect } from "wagmi";
+import { useAppKit } from "@reown/appkit/react";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./BrandLogo";
 
@@ -105,6 +106,8 @@ function AdminWalletWidget() {
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const chainId = useChainId();
   const { data: evmBalance, isLoading: balanceLoading } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
+  const { disconnect: evmDisconnect } = useDisconnect();
+  const appKit = useAppKit();
   const [copied, setCopied] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -215,7 +218,7 @@ function AdminWalletWidget() {
 
               <div className="p-2 space-y-0.5">
                 <button
-                  onClick={() => { setDropdownOpen(false); openWallet(); }}
+                  onClick={() => { setDropdownOpen(false); appKit.open(); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all"
                 >
                   <Layers className="w-4 h-4 shrink-0" />
@@ -223,7 +226,11 @@ function AdminWalletWidget() {
                 </button>
                 <div className="mx-3 h-px bg-border/60" />
                 <button
-                  onClick={() => { walletStore.disconnect(); setDropdownOpen(false); }}
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    if (evmConnected) evmDisconnect();
+                    walletStore.disconnect();
+                  }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all"
                 >
                   <LogOut className="w-4 h-4 shrink-0" />
