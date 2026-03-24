@@ -82,6 +82,15 @@ const CATS: { id: Cat; label: string }[] = [
 
 function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<string>): MktRow[] {
   const hasApi = apiAll.length > 0;
+
+  /** Returns API-filtered rows when available; falls back to mock when the API
+   *  has no pairs for that quote asset (e.g. new L2 chains not yet in DB). */
+  const apiOrMock = (quote: string, mock: MktRow[]): MktRow[] => {
+    if (!hasApi) return mock;
+    const filtered = apiAll.filter(m => m.quote === quote);
+    return filtered.length > 0 ? filtered : mock;
+  };
+
   switch (cat) {
     case "favorites": {
       const pool = hasApi ? apiAll : [
@@ -95,27 +104,26 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
     case "usd":     return hasApi
       ? apiAll.filter(m => m.quote === usdSub && m.type === "spot")
       : STABLE_MOCK[usdSub].map(normalise);
-    case "btc":     return hasApi ? apiAll.filter(m => m.quote === "BTC")  : BTC_MARKETS.map(normalise);
-    case "eth":     return hasApi ? apiAll.filter(m => m.quote === "ETH")  : ETH_MARKETS.map(normalise);
-    case "bnb":     return hasApi ? apiAll.filter(m => m.quote === "BNB")   : BNB_MARKETS.map(normalise);
-    case "matic":   return hasApi ? apiAll.filter(m => m.quote === "MATIC") : MATIC_MARKETS.map(normalise);
-    case "avax":    return hasApi ? apiAll.filter(m => m.quote === "AVAX")  : AVAX_MARKETS.map(normalise);
-    case "arb":     return hasApi ? apiAll.filter(m => m.quote === "ARB")   : ARB_MARKETS.map(normalise);
-    case "op":      return hasApi ? apiAll.filter(m => m.quote === "OP")    : OP_MARKETS.map(normalise);
-    case "ftm":     return hasApi ? apiAll.filter(m => m.quote === "FTM")   : FTM_MARKETS.map(normalise);
-    case "cro":     return hasApi ? apiAll.filter(m => m.quote === "CRO")   : CRO_MARKETS.map(normalise);
-    case "base":    return hasApi ? apiAll.filter(m => m.quote === "BASE")  : BASE_MARKETS.map(normalise);
-    case "linea":   return hasApi ? apiAll.filter(m => m.quote === "LINEA") : LINEA_MARKETS.map(normalise);
-    case "zk":      return hasApi ? apiAll.filter(m => m.quote === "ZK")    : ZK_MARKETS.map(normalise);
-    case "scr":     return hasApi ? apiAll.filter(m => m.quote === "SCR")   : SCR_MARKETS.map(normalise);
-    case "mnt":     return hasApi ? apiAll.filter(m => m.quote === "MNT")   : MNT_MARKETS.map(normalise);
+    case "btc":     return apiOrMock("BTC",   BTC_MARKETS.map(normalise));
+    case "eth":     return apiOrMock("ETH",   ETH_MARKETS.map(normalise));
+    case "bnb":     return apiOrMock("BNB",   BNB_MARKETS.map(normalise));
+    case "matic":   return apiOrMock("MATIC", MATIC_MARKETS.map(normalise));
+    case "avax":    return apiOrMock("AVAX",  AVAX_MARKETS.map(normalise));
+    case "arb":     return apiOrMock("ARB",   ARB_MARKETS.map(normalise));
+    case "op":      return apiOrMock("OP",    OP_MARKETS.map(normalise));
+    case "ftm":     return apiOrMock("FTM",   FTM_MARKETS.map(normalise));
+    case "cro":     return apiOrMock("CRO",   CRO_MARKETS.map(normalise));
+    case "base":    return apiOrMock("BASE",  BASE_MARKETS.map(normalise));
+    case "linea":   return apiOrMock("LINEA", LINEA_MARKETS.map(normalise));
+    case "zk":      return apiOrMock("ZK",    ZK_MARKETS.map(normalise));
+    case "scr":     return apiOrMock("SCR",   SCR_MARKETS.map(normalise));
+    case "mnt":     return apiOrMock("MNT",   MNT_MARKETS.map(normalise));
     case "sol":     return SOL_MARKETS.map(normalise);
-    case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
-    case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV")  : BSV_MARKETS.map(normalise);
+    case "bch":     return apiOrMock("BCH",   BCH_MARKETS.map(normalise));
+    case "bsv":     return apiOrMock("BSV",   BSV_MARKETS.map(normalise));
     case "ai":      return AI_MARKETS.map(normalise);
     case "meme":    return MEME_MARKETS.map(normalise);
     case "defi":    return DEFI_MARKETS.map(normalise);
-    case "sol":     return SOL_MARKETS.map(normalise);
     case "futures": return hasApi ? apiAll.filter(m => m.type === "futures") : FUTURES_MARKETS.map(normalise);
     default:        return [];
   }

@@ -127,6 +127,19 @@ export function Markets() {
   const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
   const hasApi = raw.length > 0;
 
+  /** Returns API-filtered rows when available; falls back to mock when the API
+   *  has no pairs for that quote asset (e.g. new L2 chains not yet in DB). */
+  const apiOrMock = (quote: string, mock: any[]): any[] => {
+    if (!hasApi) return mock;
+    const filtered = raw.filter((m: any) => m.quoteAsset === quote);
+    return filtered.length > 0 ? filtered : mock;
+  };
+  const apiOrMockCount = (quote: string, mockLen: number): number => {
+    if (!hasApi) return mockLen;
+    const filtered = raw.filter((m: any) => m.quoteAsset === quote);
+    return filtered.length > 0 ? filtered.length : mockLen;
+  };
+
   function getMarkets(): any[] {
     switch (tab) {
       case "favorites": return (hasApi ? raw : ALL_MOCK()).filter(m => stars.has(m.symbol));
@@ -134,27 +147,27 @@ export function Markets() {
       case "usd":       return hasApi
         ? raw.filter(m => m.quoteAsset === usdSub && m.type === "spot")
         : STABLE_MOCK[usdSub].map(normalise);
-      case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC")   : BTC_MARKETS.map(normalise);
-      case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH")   : ETH_MARKETS.map(normalise);
-      case "bnb":       return hasApi ? raw.filter(m => m.quoteAsset === "BNB")   : BNB_MARKETS.map(normalise);
-      case "matic":     return hasApi ? raw.filter(m => m.quoteAsset === "MATIC") : MATIC_MARKETS.map(normalise);
-      case "avax":      return hasApi ? raw.filter(m => m.quoteAsset === "AVAX")  : AVAX_MARKETS.map(normalise);
-      case "arb":       return hasApi ? raw.filter(m => m.quoteAsset === "ARB")   : ARB_MARKETS.map(normalise);
-      case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP")    : OP_MARKETS.map(normalise);
-      case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM")   : FTM_MARKETS.map(normalise);
-      case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO")   : CRO_MARKETS.map(normalise);
-      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE")   : BASE_MARKETS.map(normalise);
-      case "linea":     return hasApi ? raw.filter(m => m.quoteAsset === "LINEA")  : LINEA_MARKETS.map(normalise);
-      case "zk":        return hasApi ? raw.filter(m => m.quoteAsset === "ZK")     : ZK_MARKETS.map(normalise);
-      case "scr":       return hasApi ? raw.filter(m => m.quoteAsset === "SCR")    : SCR_MARKETS.map(normalise);
-      case "mnt":       return hasApi ? raw.filter(m => m.quoteAsset === "MNT")    : MNT_MARKETS.map(normalise);
+      case "btc":       return apiOrMock("BTC",   BTC_MARKETS.map(normalise));
+      case "eth":       return apiOrMock("ETH",   ETH_MARKETS.map(normalise));
+      case "bnb":       return apiOrMock("BNB",   BNB_MARKETS.map(normalise));
+      case "matic":     return apiOrMock("MATIC", MATIC_MARKETS.map(normalise));
+      case "avax":      return apiOrMock("AVAX",  AVAX_MARKETS.map(normalise));
+      case "arb":       return apiOrMock("ARB",   ARB_MARKETS.map(normalise));
+      case "op":        return apiOrMock("OP",    OP_MARKETS.map(normalise));
+      case "ftm":       return apiOrMock("FTM",   FTM_MARKETS.map(normalise));
+      case "cro":       return apiOrMock("CRO",   CRO_MARKETS.map(normalise));
+      case "base":      return apiOrMock("BASE",  BASE_MARKETS.map(normalise));
+      case "linea":     return apiOrMock("LINEA", LINEA_MARKETS.map(normalise));
+      case "zk":        return apiOrMock("ZK",    ZK_MARKETS.map(normalise));
+      case "scr":       return apiOrMock("SCR",   SCR_MARKETS.map(normalise));
+      case "mnt":       return apiOrMock("MNT",   MNT_MARKETS.map(normalise));
       case "sol":       return SOL_MARKETS.map(normalise);
-      case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")   : BCH_MARKETS.map(normalise);
-      case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")   : BSV_MARKETS.map(normalise);
+      case "bch":       return apiOrMock("BCH",   BCH_MARKETS.map(normalise));
+      case "bsv":       return apiOrMock("BSV",   BSV_MARKETS.map(normalise));
       case "ai":        return AI_MARKETS.map(normalise);
       case "meme":      return MEME_MARKETS.map(normalise);
       case "defi":      return DEFI_MARKETS.map(normalise);
-      case "futures":   return hasApi ? raw.filter(m => m.type === "futures")     : FUTURES_MARKETS.map(normalise);
+      case "futures":   return hasApi ? raw.filter(m => m.type === "futures") : FUTURES_MARKETS.map(normalise);
       default:          return [];
     }
   }
@@ -166,27 +179,27 @@ export function Markets() {
       case "usd":       return hasApi
         ? raw.filter(m => ["USDT","USDC","TUSD","USDD"].includes(m.quoteAsset) && m.type === "spot").length
         : USDT_MARKETS.length + USDC_MARKETS.length + TUSD_MARKETS.length + USDD_MARKETS.length;
-      case "btc":       return hasApi ? raw.filter(m => m.quoteAsset === "BTC").length  : BTC_MARKETS.length;
-      case "eth":       return hasApi ? raw.filter(m => m.quoteAsset === "ETH").length  : ETH_MARKETS.length;
-      case "bnb":       return hasApi ? raw.filter(m => m.quoteAsset === "BNB").length   : BNB_MARKETS.length;
-      case "matic":     return hasApi ? raw.filter(m => m.quoteAsset === "MATIC").length : MATIC_MARKETS.length;
-      case "avax":      return hasApi ? raw.filter(m => m.quoteAsset === "AVAX").length  : AVAX_MARKETS.length;
-      case "arb":       return hasApi ? raw.filter(m => m.quoteAsset === "ARB").length   : ARB_MARKETS.length;
-      case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP").length    : OP_MARKETS.length;
-      case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM").length   : FTM_MARKETS.length;
-      case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO").length   : CRO_MARKETS.length;
-      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE").length  : BASE_MARKETS.length;
-      case "linea":     return hasApi ? raw.filter(m => m.quoteAsset === "LINEA").length : LINEA_MARKETS.length;
-      case "zk":        return hasApi ? raw.filter(m => m.quoteAsset === "ZK").length    : ZK_MARKETS.length;
-      case "scr":       return hasApi ? raw.filter(m => m.quoteAsset === "SCR").length   : SCR_MARKETS.length;
-      case "mnt":       return hasApi ? raw.filter(m => m.quoteAsset === "MNT").length   : MNT_MARKETS.length;
+      case "btc":       return apiOrMockCount("BTC",   BTC_MARKETS.length);
+      case "eth":       return apiOrMockCount("ETH",   ETH_MARKETS.length);
+      case "bnb":       return apiOrMockCount("BNB",   BNB_MARKETS.length);
+      case "matic":     return apiOrMockCount("MATIC", MATIC_MARKETS.length);
+      case "avax":      return apiOrMockCount("AVAX",  AVAX_MARKETS.length);
+      case "arb":       return apiOrMockCount("ARB",   ARB_MARKETS.length);
+      case "op":        return apiOrMockCount("OP",    OP_MARKETS.length);
+      case "ftm":       return apiOrMockCount("FTM",   FTM_MARKETS.length);
+      case "cro":       return apiOrMockCount("CRO",   CRO_MARKETS.length);
+      case "base":      return apiOrMockCount("BASE",  BASE_MARKETS.length);
+      case "linea":     return apiOrMockCount("LINEA", LINEA_MARKETS.length);
+      case "zk":        return apiOrMockCount("ZK",    ZK_MARKETS.length);
+      case "scr":       return apiOrMockCount("SCR",   SCR_MARKETS.length);
+      case "mnt":       return apiOrMockCount("MNT",   MNT_MARKETS.length);
       case "sol":       return SOL_MARKETS.length;
-      case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH").length  : BCH_MARKETS.length;
-      case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV").length  : BSV_MARKETS.length;
+      case "bch":       return apiOrMockCount("BCH",   BCH_MARKETS.length);
+      case "bsv":       return apiOrMockCount("BSV",   BSV_MARKETS.length);
       case "ai":        return AI_MARKETS.length;
       case "meme":      return MEME_MARKETS.length;
       case "defi":      return DEFI_MARKETS.length;
-      case "futures":   return hasApi ? raw.filter(m => m.type === "futures").length    : FUTURES_MARKETS.length;
+      case "futures":   return hasApi ? raw.filter(m => m.type === "futures").length : FUTURES_MARKETS.length;
       default:          return 0;
     }
   }
