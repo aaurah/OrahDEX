@@ -11,6 +11,7 @@ import { WalletConnectModal } from '@/components/WalletConnectModal';
 import { generateTOTP } from '@/lib/totp';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
+import { BrandLogo } from '@/components/BrandLogo';
 import { useAccount, useSignMessage, useChainId } from 'wagmi';
 import { openReownModal, isReownReady } from '@/lib/reown';
 
@@ -208,22 +209,8 @@ export function AdminLogin() {
       <div className="relative w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div
-              className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 via-emerald-400 to-green-600 flex items-center justify-center shadow-lg shadow-green-500/30"
-              title={online ? 'Connected' : 'No internet'}
-            >
-              <span className="text-white font-black text-xl leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
-              <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" aria-hidden>
-                <span className="relative flex items-center justify-center w-[7px] h-[7px]">
-                  {online && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-70" />}
-                  <span className={`relative rounded-full w-[7px] h-[7px] ${online ? 'bg-white' : 'bg-red-400'}`} />
-                </span>
-              </span>
-            </div>
-            <span className="font-extrabold text-2xl tracking-tight text-foreground">
-              Orah<span className="text-green-400">DEX</span>
-            </span>
+          <div className="flex items-center justify-center mb-4">
+            <BrandLogo textSize="text-3xl" />
           </div>
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Shield className="w-4 h-4 text-violet-400" />
