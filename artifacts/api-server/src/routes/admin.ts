@@ -755,4 +755,31 @@ router.put("/bsv-wallet", async (req, res) => {
   }
 });
 
+// ── POST /admin/bsv-wallet/send — send BSV directly from settlement wallet ───
+router.post("/bsv-wallet/send", async (req, res) => {
+  try {
+    const { toAddress, bsv: bsvAmount } = req.body as { toAddress: string; bsv: number };
+    if (!toAddress)                             return res.status(400).json({ error: "Destination address required" });
+    if (!isBsvAddress(toAddress))              return res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" });
+    if (!bsvAmount || bsvAmount <= 0)          return res.status(400).json({ error: "Enter a valid BSV amount" });
+
+    const satoshis = Math.round(bsvAmount * 1e8);
+    if (satoshis < 546)                        return res.status(400).json({ error: "Amount below dust limit (546 sat)" });
+
+    const wallet  = await getOrCreateWallet();
+    const balance = await fetchWalletBalance(wallet.address);
+
+    if (balance.confirmedSatoshis < satoshis + 500) {
+      return res.status(400).json({
+        error: `Insufficient balance. Wallet has ${balance.bsv.toFixed(8)} BSV confirmed; need ${(bsvAmount + 0.000005).toFixed(8)} BSV (including fee).`,
+      });
+    }
+
+    const { txid } = await buildAndBroadcastBsvTx(toAddress, satoshis, wallet, balance.utxos);
+    res.json({ success: true, txid, satoshis, toAddress });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Send failed" });
+  }
+});
+
 export default router;

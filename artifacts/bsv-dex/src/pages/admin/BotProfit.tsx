@@ -188,6 +188,12 @@ export function AdminBotProfit() {
   const [newAddr,     setNewAddr]     = useState("");
   const [addrSaved,   setAddrSaved]   = useState(false);
 
+  // Direct BSV send state
+  const [sendAddr,    setSendAddr]    = useState("");
+  const [sendBsvAmt,  setSendBsvAmt]  = useState("");
+  const [sendErr,     setSendErr]     = useState("");
+  const [sendOk,      setSendOk]      = useState("");
+
   const { data, isLoading, refetch } = useQuery<BotProfitData>({
     queryKey: ["admin-bot-profit"],
     queryFn: async () => {
@@ -251,6 +257,34 @@ export function AdminBotProfit() {
     },
     onError: (e: Error) => { setError(e.message); },
   });
+
+  const sendMut = useMutation({
+    mutationFn: async (body: { toAddress: string; bsv: number }) => {
+      const r = await fetch(`${BASE}/api/admin/bsv-wallet/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Send failed");
+      return j;
+    },
+    onSuccess: (j) => {
+      setSendOk(`Sent! TXID: ${j.txid}`);
+      setSendAddr(""); setSendBsvAmt(""); setSendErr("");
+      qc.invalidateQueries({ queryKey: ["admin-bsv-wallet"] });
+    },
+    onError: (e: Error) => { setSendErr(e.message); setSendOk(""); },
+  });
+
+  function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    setSendErr(""); setSendOk("");
+    const bsv = parseFloat(sendBsvAmt);
+    if (isNaN(bsv) || bsv <= 0) { setSendErr("Enter a valid BSV amount"); return; }
+    if (!sendAddr.trim())        { setSendErr("Destination address is required"); return; }
+    sendMut.mutate({ toAddress: sendAddr.trim(), bsv });
+  }
 
   function handleWithdraw(e: React.FormEvent) {
     e.preventDefault();
@@ -489,6 +523,63 @@ export function AdminBotProfit() {
                 </div>
               </div>
             )}
+            {/* ── Send BSV ── */}
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-xs text-white/50 uppercase tracking-wider mb-3 font-semibold flex items-center gap-1.5">
+                <ArrowDownToLine className="w-3.5 h-3.5 text-green-400" />
+                Send BSV from Wallet
+              </p>
+              <form onSubmit={handleSend} className="space-y-3">
+                <input
+                  type="text"
+                  value={sendAddr}
+                  onChange={e => setSendAddr(e.target.value)}
+                  placeholder="Destination BSV address (1…)"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/25 focus:outline-none focus:border-green-400/50 transition-colors"
+                />
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    step="0.00000001"
+                    min="0.00000546"
+                    value={sendBsvAmt}
+                    onChange={e => setSendBsvAmt(e.target.value)}
+                    placeholder="Amount (BSV)"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm font-mono text-white placeholder:text-white/25 focus:outline-none focus:border-green-400/50 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => wallet && setSendBsvAmt(Math.max(0, wallet.bsv - 0.000005).toFixed(8))}
+                    className="px-3 py-2 text-xs font-semibold text-green-400 bg-green-400/10 rounded-lg border border-green-400/20 hover:bg-green-400/20 transition-colors shrink-0"
+                  >
+                    MAX
+                  </button>
+                </div>
+                {sendErr && (
+                  <div className="flex items-center gap-2 text-red-400 text-xs bg-red-400/10 rounded-lg px-3 py-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{sendErr}
+                  </div>
+                )}
+                {sendOk && (
+                  <div className="flex items-start gap-2 text-green-400 text-xs bg-green-400/10 rounded-lg px-3 py-2 break-all">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{sendOk}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={sendMut.isPending || !wallet?.funded}
+                  className="w-full py-2.5 rounded-lg bg-green-500 hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                >
+                  {sendMut.isPending
+                    ? <><RefreshCw className="w-4 h-4 animate-spin" /> Broadcasting…</>
+                    : <><ArrowDownToLine className="w-4 h-4" /> Send BSV</>}
+                </button>
+                {wallet && !wallet.funded && (
+                  <p className="text-xs text-white/30 text-center">Fund the wallet above to enable sending</p>
+                )}
+              </form>
+            </div>
+
           </div>
         ) : (
           <div className="animate-pulse space-y-3">
