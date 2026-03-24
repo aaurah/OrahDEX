@@ -6,23 +6,13 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, formatPrice } from "@/lib/utils";
 import { getTxExplorerUrl } from "@/store/useWalletStore";
 import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
-  Lock, ShieldCheck,
+  Lock, ShieldCheck, RefreshCw,
 } from "lucide-react";
-
-// OrahDEX mock router address (represents the BSV settlement contract / escrow)
-const ORAHDEX_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488";
-
-// Known ERC-20 token contract addresses on Ethereum mainnet
-const ERC20_TOKENS: Record<string, { address: string; decimals: number }> = {
-  USDT: { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
-  USDC: { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
-  ETH:  { address: "", decimals: 18 }, // native, no contract
-  BNB:  { address: "", decimals: 18 }, // native on BSC
-  WBTC: { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
-};
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -131,12 +121,19 @@ function SettlementBanner({
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
 export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; currentPrice?: number }) {
-  const { address, network, balance } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId } = useWalletStore();
   const { toast } = useToast();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
 
-  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : "ETH";
+  const chainId = walletChainId ?? 1;
+  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
+
+  // Fetch real on-chain token balances for the connected EVM wallet
+  const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances } = useEvmBalances(
+    isEvm ? address : null,
+    isEvm ? chainId : null
+  );
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -155,7 +152,20 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
 
-  const [base] = symbol.split("/");
+  const parts = symbol.split("/");
+  const [base, quote = "USDT"] = parts;
+
+  // Derive available balance for each side using real on-chain data:
+  // • Sell: how much of the base asset the user has (e.g. BSV, BTC, ETH)
+  // • Buy:  how much of the quote asset they can spend (e.g. USDT, USDC)
+  const baseBalEntry  = tokenBalances.find(t => t.symbol.toUpperCase() === base.toUpperCase());
+  const quoteBalEntry = tokenBalances.find(t => t.symbol.toUpperCase() === quote.toUpperCase());
+  // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
+  const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
+  const baseAvailable  = isNativeBase ? nativeBal : (baseBalEntry?.amount  ?? 0);
+  const quoteAvailable = quoteBalEntry?.amount ?? 0;
+  const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
+  const availableSym   = side === "sell" ? base : quote;
 
   const placeOrder = usePlaceOrder({
     mutation: {
@@ -198,20 +208,24 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
-    const chainId = useWalletStore.getState().chainId ?? 1;
+    const currentChainId = useWalletStore.getState().chainId ?? 1;
     const addTx   = useWalletStore.getState().addPendingTx;
     const setbal  = useWalletStore.getState().setBalance;
+
+    // Per-chain router + token registry — correct addresses for every network
+    const routerAddr = getChainRouter(currentChainId);
 
     // ── Step 1: ERC-20 Allowance check for EVM sells ──────────────────────
     // If the user is selling an ERC-20 token, verify the DEX router has
     // enough allowance via allowance(owner, router). If not, request approve().
     if (isEvm && side === "sell" && (window as any).ethereum) {
-      const token = ERC20_TOKENS[base];
+      // Look up the token contract on the CURRENT chain (not hardcoded mainnet)
+      const token = getChainToken(currentChainId, base);
       if (token?.address) {
         try {
           setApprovalStep("checking");
           const amtUnits = BigInt(Math.floor(parseFloat(amount) * 10 ** token.decimals));
-          const allowed  = await checkAllowance(token.address, address, ORAHDEX_ROUTER, chainId);
+          const allowed  = await checkAllowance(token.address, address, routerAddr, currentChainId);
 
           if (allowed < amtUnits) {
             setApprovalStep("needed");
@@ -223,7 +237,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             setApprovalStep("approving");
             // Request max approval (0xfff...fff = unlimited)
             const maxHex = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-            const approveTxHash = await approveToken(token.address, ORAHDEX_ROUTER, maxHex, address);
+            const approveTxHash = await approveToken(token.address, routerAddr, maxHex, address);
 
             if (!approveTxHash) {
               setApprovalStep("idle");
@@ -316,10 +330,11 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             });
           }
 
-          // Refresh native balance after any trade
+          // Refresh native + token balances after any trade
           if (isEvm && address) {
-            const bal = await fetchEvmBalance(address, chainId);
+            const bal = await fetchEvmBalance(address, currentChainId);
             if (bal !== null) setbal(bal);
+            refreshBalances();
           }
         },
       }
@@ -403,14 +418,30 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* Available */}
-          <div className="flex justify-between text-xs text-muted-foreground">
+          {/* Available balance — shows correct asset per side */}
+          <div className="flex justify-between items-center text-xs text-muted-foreground">
             <span>Available</span>
-            <span className="font-mono text-foreground">
-              {side === "buy"
-                ? `${nativeBal.toFixed(4)} ${nativeSymbol}`
-                : `${nativeBal.toFixed(4)} ${nativeSymbol}`}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {balancesLoading && isEvm ? (
+                <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/50" />
+              ) : (
+                <span className="font-mono text-foreground">
+                  {availableAmt > 0
+                    ? `${availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${availableSym}`
+                    : `0 ${availableSym}`}
+                </span>
+              )}
+              {!balancesLoading && isEvm && (
+                <button
+                  type="button"
+                  onClick={refreshBalances}
+                  className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                  title="Refresh balance"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Trigger price for stop orders */}

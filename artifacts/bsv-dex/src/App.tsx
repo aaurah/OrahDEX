@@ -131,7 +131,10 @@ function Router() {
       const { address: addr, provider: p } = useWalletStore.getState();
       if (p === "reown" || !addr) return;
       const chainId = parseInt(chainHex, 16);
+      // Clear stale balance immediately so the UI doesn't show the old chain's value
+      useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
+      // Fetch fresh balance for the new chain
       const bal = await fetchEvmBalance(addr, chainId);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
     };
