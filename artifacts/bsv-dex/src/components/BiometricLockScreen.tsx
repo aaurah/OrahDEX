@@ -3,6 +3,7 @@ import { Fingerprint, AlertCircle, RefreshCw, Eye, Scan } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authenticateBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { useBiometricStore } from "@/store/useBiometricStore";
+import { OrahInline } from "@/components/BrandLogo";
 
 type Status = "idle" | "scanning" | "success" | "error";
 
@@ -165,7 +166,7 @@ export function BiometricLockScreen() {
       {/* Footer */}
       <div className="absolute bottom-8 flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <Eye className="w-3 h-3" />
-        Secured by OrahDEX Biometric Lock
+        Secured by <OrahInline className="text-[11px]" /> Biometric Lock
       </div>
     </div>
   );

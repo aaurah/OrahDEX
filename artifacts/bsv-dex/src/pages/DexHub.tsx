@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { BrandLogo } from "@/components/BrandLogo";
+import { BrandLogo, OrahInline } from "@/components/BrandLogo";
 
 /* ── Curated Base / Zora ecosystem tokens ── */
 const ZORA_COINS = [
@@ -839,7 +839,7 @@ export function DexHub() {
                     onClick={() => { navigate(`/trade/${selectedCoin.symbol}-USDT`); setSelectedCoin(null); }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"
                   >
-                    <Zap className="w-4 h-4" /> Trade {selectedCoin.symbol}/USDT on OrahDEX
+                    <Zap className="w-4 h-4" /> Trade {selectedCoin.symbol}/USDT on <OrahInline className="text-sm" />
                   </button>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { OrahInline } from "@/components/BrandLogo";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Shield, ChevronRight, CheckCircle2,
@@ -803,7 +804,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   )}
                   <div>
                     <h2 className="text-xl font-bold text-foreground">
-                      {view === "landing" && "Connect to OrahDEX"}
+                      {view === "landing" && <span className="flex items-center gap-2">Connect to <OrahInline className="text-xl" /></span>}
                       {view === "create" && "Create New Wallet"}
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
