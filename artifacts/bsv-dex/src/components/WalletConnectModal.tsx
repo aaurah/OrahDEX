@@ -9,6 +9,7 @@ import {
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
+import { ReownConnectPanel } from "@/components/ReownConnectButton";
 
 /* ── Wallet definitions ───────────────────────────────────────────────────── */
 interface WalletDef {
@@ -159,15 +160,16 @@ function getEvmProvider(walletId: string): any {
 }
 
 type View = "landing" | "create" | "import" | "connect" | "prep";
-type ConnectTab = "bsv" | "evm" | "sol" | "btc";
+type ConnectTab = "reown" | "bsv" | "evm" | "sol" | "btc";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
-  { id: "bsv", label: "BSV",     emoji: "⚡" },
-  { id: "evm", label: "EVM",     emoji: "🌐" },
-  { id: "sol", label: "Solana",  emoji: "◎" },
-  { id: "btc", label: "Bitcoin", emoji: "₿" },
+  { id: "reown", label: "Reown",  emoji: "🔗" },
+  { id: "bsv",   label: "BSV",   emoji: "⚡" },
+  { id: "evm",   label: "EVM",   emoji: "🌐" },
+  { id: "sol",   label: "Solana",emoji: "◎" },
+  { id: "btc",   label: "Bitcoin",emoji: "₿" },
 ];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -1340,7 +1342,15 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                       ) : (
                         <>
+                          {/* Reown tab — full-panel content */}
+                          {connectTab === "reown" && (
+                            <div className="p-6">
+                              <ReownConnectPanel onConnected={() => handleClose()} />
+                            </div>
+                          )}
+
                           {/* Network description */}
+                          {connectTab !== "reown" && (
                           <div className="px-6 pt-3 pb-1">
                             <p className="text-[11px] text-muted-foreground leading-relaxed">
                               {connectTab === "evm" && "Connect any EVM-compatible wallet. Supports Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism and all other EVM chains."}
@@ -1349,7 +1359,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               {connectTab === "bsv" && "Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees."}
                             </p>
                           </div>
+                          )}
 
+                          {connectTab !== "reown" && (
                           <div className="p-4 space-y-2">
                             {currentWallets.map(wallet => {
                               const isConn = connecting === wallet.id;
@@ -1386,6 +1398,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               );
                             })}
                           </div>
+                          )}
                         </>
                       )}
 

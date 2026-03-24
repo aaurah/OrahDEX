@@ -6,6 +6,7 @@ import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
+import { ReownConnectButton } from "./ReownConnectButton";
 import { BrandLogo } from "./BrandLogo";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -169,16 +170,22 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
 
           {address ? (
-            <WalletOptionsDropdown />
+            <div className="flex items-center gap-2">
+              <ReownConnectButton size="sm" />
+              <WalletOptionsDropdown />
+            </div>
           ) : (
-            <button
-              onClick={() => openWalletModal()}
-              className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 active:scale-95 transition-all"
-            >
-              <Wallet className="w-4 h-4" />
-              <span className="hidden sm:inline">Connect Wallet</span>
-              <span className="sm:hidden">Connect</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <ReownConnectButton size="sm" className="hidden sm:flex" />
+              <button
+                onClick={() => openWalletModal()}
+                className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 active:scale-95 transition-all"
+              >
+                <Wallet className="w-4 h-4" />
+                <span className="hidden sm:inline">Connect Wallet</span>
+                <span className="sm:hidden">Connect</span>
+              </button>
+            </div>
           )}
 
           <button

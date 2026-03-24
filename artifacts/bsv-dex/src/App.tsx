@@ -38,6 +38,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { subscribeReownAccount, isReownReady } from "@/lib/reown";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
 import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
@@ -72,8 +73,8 @@ function Router() {
 
     // On startup: verify any EVM wallet saved in localStorage is still genuinely connected.
     // eth_accounts is silent (no popup). If it returns nothing, the stored address is stale.
-    const { network, address, disconnect } = useWalletStore.getState();
-    if (network === "evm") {
+    const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
+    if (network === "evm" && storedProvider !== "reown") {
       const eth = (window as any).ethereum;
       if (!eth) {
         disconnect();
@@ -93,6 +94,34 @@ function Router() {
           .catch(() => disconnect());
       }
     }
+
+    // Subscribe to Reown AppKit account changes and sync to wallet store.
+    // Polls until Reown is initialized (it's async — project ID fetch happens after mount).
+    let reownUnsub: (() => void) | null = null;
+    let pollTries = 0;
+    const pollReown = setInterval(() => {
+      if (isReownReady()) {
+        clearInterval(pollReown);
+        reownUnsub = subscribeReownAccount((state) => {
+          const { provider: current } = useWalletStore.getState();
+          if (state.isConnected && state.address) {
+            useWalletStore.getState().connect({
+              address: state.address,
+              provider: "reown",
+              network: "evm",
+            });
+          } else if (current === "reown") {
+            useWalletStore.getState().disconnect();
+          }
+        });
+      }
+      if (++pollTries > 50) clearInterval(pollReown);
+    }, 200);
+
+    return () => {
+      clearInterval(pollReown);
+      reownUnsub?.();
+    };
   }, []);
 
   return (

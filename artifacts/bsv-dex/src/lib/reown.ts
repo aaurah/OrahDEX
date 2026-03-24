@@ -2,11 +2,13 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
+  linea, zkSync, scroll, mantle, fantom, cronos,
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
+  linea, zkSync, scroll, mantle, fantom, cronos,
 ];
 
 let _modal: ReturnType<typeof createAppKit> | null = null;
@@ -25,7 +27,7 @@ export function setupReown(projectId: string): void {
       projectId,
       metadata: {
         name: "OrahDEX",
-        description: "Trade means DEX — Multi-chain BSV DEX",
+        description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.ico`],
       },
@@ -38,8 +40,10 @@ export function setupReown(projectId: string): void {
       },
       themeMode: "dark",
       themeVariables: {
-        "--w3m-accent": "#8B5CF6",
+        "--w3m-accent": "#4ade80",
         "--w3m-border-radius-master": "12px",
+        "--w3m-font-family": "inherit",
+        "--w3m-z-index": "9999",
       },
     });
 
@@ -62,6 +66,10 @@ export function openReownModal(view?: ReownView): boolean {
   return true;
 }
 
+export function closeReownModal(): void {
+  _modal?.close();
+}
+
 /**
  * Subscribe to Reown account state changes.
  * Fires immediately with current state, then on every change.
@@ -79,8 +87,19 @@ export function subscribeReownAccount(
 }
 
 /**
+ * Get the current Reown account state synchronously.
+ */
+export function getReownAccount(): { address?: string; isConnected: boolean } {
+  if (!_modal) return { isConnected: false };
+  try {
+    return (_modal as any).getAccount?.() ?? { isConnected: false };
+  } catch {
+    return { isConnected: false };
+  }
+}
+
+/**
  * Fetch native token balance for an EVM address.
- * Returns formatted string "0.1234" or null on failure.
  */
 export async function fetchEvmBalance(address: string): Promise<string | null> {
   try {
