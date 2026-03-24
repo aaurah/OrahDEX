@@ -186,7 +186,7 @@ export function Markets() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 lg:px-10 pt-8 pb-4 border-b border-border bg-card/40">
+      <div className="px-6 lg:px-10 pt-0 pb-4 border-b border-border bg-card/40">
         <div className="max-w-7xl mx-auto">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
