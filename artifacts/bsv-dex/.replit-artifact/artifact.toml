@@ -1,5 +1,5 @@
 kind = "web"
-  previewPath = "/"
+  previewPath = "/admin"
   title = "OrahDEX — Web & Mobile"
   version = "1.0.0"
   id = "artifacts/bsv-dex"
