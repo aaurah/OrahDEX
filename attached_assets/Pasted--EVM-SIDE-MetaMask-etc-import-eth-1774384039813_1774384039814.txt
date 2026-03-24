@@ -1,0 +1,286 @@
+// =========================
+// EVM SIDE (MetaMask, etc.)
+// =========================
+
+import { ethers } from "ethers";
+import * as bsv from "bsv";
+
+// ---------- EVM CONFIG ----------
+const EVM_RPC_URL = "https://your-evm-rpc";
+const EVM_ROUTER_ADDRESS = "0xYourRouterAddress"; // Uniswap-style router
+const EVM_ROUTER_ABI = [/* ...router ABI... */];
+const EVM_WBSV_ADDRESS = "0xYourWrappedBSVToken"; // ERC-20 wBSV
+
+// ---------- EVM: CONNECT WALLET ----------
+export async function connectEvmWallet() {
+  if (!window.ethereum) {
+    throw new Error("No EVM wallet found (MetaMask, etc.)");
+  }
+
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+  const signer = await provider.getSigner();
+  const address = await signer.getAddress();
+  const network = await provider.getNetwork();
+
+  return { provider, signer, address, chainId: network.chainId };
+}
+
+// ---------- EVM: GET TOKEN BALANCE ----------
+export async function getEvmTokenBalance(
+  tokenAddress: string,
+  address: string,
+  provider: ethers.Provider
+) {
+  const erc20Abi = [
+    "function balanceOf(address) view returns (uint256)",
+    "function allowance(address,address) view returns (uint256)",
+    "function approve(address,uint256) returns (bool)",
+    "function decimals() view returns (uint8)",
+  ];
+  const token = new ethers.Contract(tokenAddress, erc20Abi, provider);
+  return await token.balanceOf(address);
+}
+
+// ---------- EVM: APPROVE TOKEN ----------
+export async function approveEvmToken(
+  tokenAddress: string,
+  spender: string,
+  amount: bigint,
+  signer: ethers.Signer
+) {
+  const erc20Abi = [
+    "function approve(address,uint256) returns (bool)",
+  ];
+  const token = new ethers.Contract(tokenAddress, erc20Abi, signer);
+  const tx = await token.approve(spender, amount);
+  return await tx.wait();
+}
+
+// ---------- EVM: TRADE (e.g., wBSV -> TOKEN) ----------
+export async function evmTrade({
+  signer,
+  amountIn,
+  amountOutMin,
+  path, // [wBSV, TOKEN] or [TOKEN, wBSV]
+}: {
+  signer: ethers.Signer;
+  amountIn: bigint;
+  amountOutMin: bigint;
+  path: string[];
+}) {
+  const router = new ethers.Contract(EVM_ROUTER_ADDRESS, EVM_ROUTER_ABI, signer);
+  const to = await signer.getAddress();
+  const deadline = Math.floor(Date.now() / 1000) + 60 * 10;
+
+  const tx = await router.swapExactTokensForTokens(
+    amountIn,
+    amountOutMin,
+    path,
+    to,
+    deadline
+  );
+
+  const receipt = await tx.wait();
+  return receipt;
+}
+
+// =========================
+// BSV SIDE (Native UTXO)
+// =========================
+
+// ---------- BSV CONFIG ----------
+const BSV_API_BASE = "https://api.whatsonchain.com/..."; // replace with real endpoint
+
+// ---------- BSV: CONNECT WALLET ----------
+export async function connectBsvWallet() {
+  // This depends on the wallet SDK (Sensilet, HandCash, etc.)
+  // For now, we mock it as a simple object.
+  // In real code, you'd call wallet.connect() and get address + signRawTx().
+  const address = "your-bsv-address-here";
+  return {
+    address,
+    // Placeholder: wallet signing function
+    signRawTx: async (rawTxHex: string) => {
+      // In real life, send rawTxHex to wallet for signing and return signed hex
+      return rawTxHex;
+    },
+  };
+}
+
+// ---------- BSV: FETCH UTXOS ----------
+export async function fetchBsvUtxos(address: string) {
+  const res = await fetch(`${BSV_API_BASE}/address/${address}/unspent`);
+  const data = await res.json();
+
+  return data.map((u: any) => ({
+    txId: u.tx_hash,
+    outputIndex: u.tx_pos,
+    script: bsv.Script.buildPublicKeyHashOut(address).toString(),
+    satoshis: u.value,
+  }));
+}
+
+// ---------- BSV: FETCH POOL UTXO (DEX CONTRACT) ----------
+export async function fetchPoolUtxo() {
+  // In a real DEX, you track the current pool UTXO in an indexer or DB.
+  // Here we mock it.
+  return {
+    txId: "pool-txid-here",
+    outputIndex: 0,
+    script: "pool-locking-script-hex-here",
+    satoshis: 100000000, // example
+  };
+}
+
+// ---------- BSV: DEX CONTRACT LOGIC (SKELETON) ----------
+class BsvDexContract {
+  static buildSwapTx(args: {
+    userUtxos: any[];
+    poolUtxo: any;
+    userAddress: string;
+    amountInSats: number;
+    minAmountOutSats: number;
+    feePerKb: number;
+  }): bsv.Transaction {
+    const {
+      userUtxos,
+      poolUtxo,
+      userAddress,
+      amountInSats,
+      minAmountOutSats,
+      feePerKb,
+    } = args;
+
+    const tx = new bsv.Transaction();
+
+    // 1. Add user inputs
+    userUtxos.forEach((u) => {
+      tx.from({
+        txId: u.txId,
+        outputIndex: u.outputIndex,
+        script: u.script,
+        satoshis: u.satoshis,
+      });
+    });
+
+    // 2. Add pool input (DEX contract UTXO)
+    tx.from({
+      txId: poolUtxo.txId,
+      outputIndex: poolUtxo.outputIndex,
+      script: poolUtxo.script,
+      satoshis: poolUtxo.satoshis,
+    });
+
+    // 3. Pricing logic (AMM formula) would compute:
+    //    - userAmountOut
+    //    - newPoolValue
+    // For now, we just use minAmountOutSats as placeholder.
+    const userAmountOut = minAmountOutSats;
+    const newPoolValue = poolUtxo.satoshis; // placeholder
+
+    // 4. Outputs
+    // 4a. New pool UTXO (same locking script, updated value)
+    const poolScript = new bsv.Script(poolUtxo.script);
+    tx.to(poolScript, newPoolValue);
+
+    // 4b. User receives swapped asset (simplified: BSV only)
+    tx.to(userAddress, userAmountOut);
+
+    // 4c. Change back to user (bsv lib will compute change if we set change address)
+    tx.change(userAddress);
+
+    // 5. Fee
+    tx.feePerKb(feePerKb);
+
+    return tx;
+  }
+}
+
+// ---------- BSV: TRADE ----------
+export async function bsvTrade({
+  userAddress,
+  amountInSats,
+  minAmountOutSats,
+  feePerKb,
+}: {
+  userAddress: string;
+  amountInSats: number;
+  minAmountOutSats: number;
+  feePerKb: number;
+}) {
+  const userUtxos = await fetchBsvUtxos(userAddress);
+  const poolUtxo = await fetchPoolUtxo();
+
+  // In real logic, you'd select specific UTXOs to cover amountInSats + fee.
+  // Here we just pass all user UTXOs to the builder.
+  const tx = BsvDexContract.buildSwapTx({
+    userUtxos,
+    poolUtxo,
+    userAddress,
+    amountInSats,
+    minAmountOutSats,
+    feePerKb,
+  });
+
+  return tx;
+}
+
+// ---------- BSV: SIGN & BROADCAST ----------
+export async function signAndBroadcastBsvTx(
+  tx: bsv.Transaction,
+  signRawTx: (raw: string) => Promise<string>
+) {
+  const rawUnsigned = tx.serialize();
+  const rawSigned = await signRawTx(rawUnsigned);
+
+  const res = await fetch(`${BSV_API_BASE}/tx/raw`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ txhex: rawSigned }),
+  });
+
+  return res.json();
+}
+
+// =========================
+// ORCHESTRATION EXAMPLES
+// =========================
+
+// EVM FLOW: connect → approve → trade
+export async function runEvmFlow() {
+  const { signer, address, provider } = await connectEvmWallet();
+
+  const amountIn = ethers.parseUnits("1.0", 18); // example
+  const amountOutMin = ethers.parseUnits("0.9", 18);
+  const path = [EVM_WBSV_ADDRESS, "0xOtherTokenAddress"];
+
+  // Approve router to spend wBSV
+  await approveEvmToken(EVM_WBSV_ADDRESS, EVM_ROUTER_ADDRESS, amountIn, signer);
+
+  // Execute trade
+  const receipt = await evmTrade({ signer, amountIn, amountOutMin, path });
+
+  // After trade, you can re-fetch balances and compute PnL off-chain
+  const newBalance = await getEvmTokenBalance(EVM_WBSV_ADDRESS, address, provider);
+  return { receipt, newBalance };
+}
+
+// BSV FLOW: connect → build tx → sign → broadcast
+export async function runBsvFlow() {
+  const { address, signRawTx } = await connectBsvWallet();
+
+  const amountInSats = 10000;
+  const minAmountOutSats = 9000;
+  const feePerKb = 500;
+
+  const tx = await bsvTrade({
+    userAddress: address,
+    amountInSats,
+    minAmountOutSats,
+    feePerKb,
+  });
+
+  const result = await signAndBroadcastBsvTx(tx, signRawTx);
+  return result;
+}

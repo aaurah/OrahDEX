@@ -43,7 +43,7 @@ export function setupReown(projectId: string): void {
         "--w3m-accent": "#4ade80",
         "--w3m-border-radius-master": "12px",
         "--w3m-font-family": "inherit",
-        "--w3m-z-index": "9999",
+        "--w3m-z-index": 9999,
       },
     });
 

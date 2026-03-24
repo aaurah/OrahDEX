@@ -77,7 +77,7 @@ export async function authenticateBiometric(credentialId: string): Promise<
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge,
-        allowCredentials: [{ type: "public-key", id: rawId }],
+        allowCredentials: [{ type: "public-key", id: rawId as unknown as ArrayBuffer }],
         userVerification: "required",
         timeout: 60000,
       },

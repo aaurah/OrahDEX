@@ -92,9 +92,9 @@ export function SpotTrading() {
     return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
   }
   const rawOB = apiOrderBook as any;
-  const orderBook = rawOB?.bids && Array.isArray(rawOB.bids[0])
+  const orderBook = (rawOB?.bids && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
-    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice));
+    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
 
   const allOrders    = (apiOrders as any[]) || [];
   const openOrders   = allOrders.filter((o: any) => o.status === "open");

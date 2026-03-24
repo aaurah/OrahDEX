@@ -3,7 +3,7 @@ import { Save, RefreshCw, Zap, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-interface Flag { id: string; label: string; description: string; enabled: boolean; beta?: boolean; danger?: boolean; }
+interface Flag { id: string; label: string; description: string; enabled?: boolean; beta?: boolean; danger?: boolean; }
 interface Group { title: string; icon: string; flags: Flag[]; }
 
 const DEFAULT_FLAGS: Record<string, boolean> = {

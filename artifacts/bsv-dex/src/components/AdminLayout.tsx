@@ -123,7 +123,9 @@ function AdminWalletWidget() {
     : network ? NETWORK_STYLES[network] ?? { color: "text-muted-foreground bg-muted/10 border-border", label: network.toUpperCase() }
     : null;
 
-  const evmBalanceNum = evmBalance ? parseFloat(evmBalance.formatted ?? "0") : NaN;
+  const evmBalanceNum = evmBalance
+    ? Number(evmBalance.value) / 10 ** evmBalance.decimals
+    : NaN;
   const balance = evmConnected && evmBalance
     ? `${isNaN(evmBalanceNum) ? "0.0000" : evmBalanceNum.toFixed(4)} ${evmBalance.symbol}`
     : walletStore.balance ?? null;

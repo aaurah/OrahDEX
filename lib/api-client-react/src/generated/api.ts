@@ -16,6 +16,8 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
+type PartialQueryOpts<T, E, D = T> = Omit<UseQueryOptions<T, E, D>, "queryKey"> & { queryKey?: QueryKey };
+
 import type {
   CancelOrderRequest,
   Candle,
@@ -77,7 +79,7 @@ export const getHealthCheckQueryOptions = <
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -112,7 +114,7 @@ export function useHealthCheck<
   TData = Awaited<ReturnType<typeof healthCheck>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof healthCheck>>,
     TError,
     TData
@@ -150,7 +152,7 @@ export const getGetMarketsQueryOptions = <
   TData = Awaited<ReturnType<typeof getMarkets>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof getMarkets>>,
     TError,
     TData
@@ -185,7 +187,7 @@ export function useGetMarkets<
   TData = Awaited<ReturnType<typeof getMarkets>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof getMarkets>>,
     TError,
     TData
@@ -228,7 +230,7 @@ export const getGetMarketQueryOptions = <
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getMarket>>,
       TError,
       TData
@@ -269,7 +271,7 @@ export function useGetMarket<
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getMarket>>,
       TError,
       TData
@@ -313,7 +315,7 @@ export const getGetTickerQueryOptions = <
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getTicker>>,
       TError,
       TData
@@ -354,7 +356,7 @@ export function useGetTicker<
 >(
   symbol: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getTicker>>,
       TError,
       TData
@@ -418,7 +420,7 @@ export const getGetCandlesQueryOptions = <
   symbol: string,
   params?: GetCandlesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getCandles>>,
       TError,
       TData
@@ -463,7 +465,7 @@ export function useGetCandles<
   symbol: string,
   params?: GetCandlesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getCandles>>,
       TError,
       TData
@@ -530,7 +532,7 @@ export const getGetOrderBookQueryOptions = <
   symbol: string,
   params?: GetOrderBookParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrderBook>>,
       TError,
       TData
@@ -575,7 +577,7 @@ export function useGetOrderBook<
   symbol: string,
   params?: GetOrderBookParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrderBook>>,
       TError,
       TData
@@ -642,7 +644,7 @@ export const getGetRecentTradesQueryOptions = <
   symbol: string,
   params?: GetRecentTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getRecentTrades>>,
       TError,
       TData
@@ -687,7 +689,7 @@ export function useGetRecentTrades<
   symbol: string,
   params?: GetRecentTradesParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getRecentTrades>>,
       TError,
       TData
@@ -743,7 +745,7 @@ export const getGetOrdersQueryOptions = <
 >(
   params: GetOrdersParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrders>>,
       TError,
       TData
@@ -781,7 +783,7 @@ export function useGetOrders<
 >(
   params: GetOrdersParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrders>>,
       TError,
       TData
@@ -911,7 +913,7 @@ export const getGetOrderQueryOptions = <
 >(
   orderId: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrder>>,
       TError,
       TData
@@ -952,7 +954,7 @@ export function useGetOrder<
 >(
   orderId: string,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getOrder>>,
       TError,
       TData
@@ -1095,7 +1097,7 @@ export const getGetTradeHistoryQueryOptions = <
 >(
   params: GetTradeHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getTradeHistory>>,
       TError,
       TData
@@ -1133,7 +1135,7 @@ export function useGetTradeHistory<
 >(
   params: GetTradeHistoryParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getTradeHistory>>,
       TError,
       TData
@@ -1189,7 +1191,7 @@ export const getGetPortfolioQueryOptions = <
 >(
   params: GetPortfolioParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getPortfolio>>,
       TError,
       TData
@@ -1227,7 +1229,7 @@ export function useGetPortfolio<
 >(
   params: GetPortfolioParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getPortfolio>>,
       TError,
       TData
@@ -1287,7 +1289,7 @@ export const getGetFuturesPositionsQueryOptions = <
 >(
   params: GetFuturesPositionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getFuturesPositions>>,
       TError,
       TData
@@ -1327,7 +1329,7 @@ export function useGetFuturesPositions<
 >(
   params: GetFuturesPositionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getFuturesPositions>>,
       TError,
       TData
@@ -1543,7 +1545,7 @@ export const getGetFundingRatesQueryOptions = <
   TData = Awaited<ReturnType<typeof getFundingRates>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof getFundingRates>>,
     TError,
     TData
@@ -1578,7 +1580,7 @@ export function useGetFundingRates<
   TData = Awaited<ReturnType<typeof getFundingRates>>,
   TError = ErrorType<unknown>,
 >(options?: {
-  query?: UseQueryOptions<
+  query?: PartialQueryOpts<
     Awaited<ReturnType<typeof getFundingRates>>,
     TError,
     TData
@@ -1723,7 +1725,7 @@ export const getGetWalletTransactionsQueryOptions = <
 >(
   params: GetWalletTransactionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getWalletTransactions>>,
       TError,
       TData
@@ -1763,7 +1765,7 @@ export function useGetWalletTransactions<
 >(
   params: GetWalletTransactionsParams,
   options?: {
-    query?: UseQueryOptions<
+    query?: PartialQueryOpts<
       Awaited<ReturnType<typeof getWalletTransactions>>,
       TError,
       TData

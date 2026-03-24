@@ -715,7 +715,7 @@ export const generateMockTrades = (basePrice: number): Trade[] => {
   return Array.from({ length: 30 }).map((_, i) => ({
     id: `trade-${i}`,
     symbol: "BSV-USDT",
-    side: Math.random() > 0.5 ? "buy" : "sell",
+    side: (Math.random() > 0.5 ? "buy" : "sell") as "buy" | "sell",
     price: basePrice + (Math.random() > 0.5 ? 1 : -1) * Math.random() * 0.5,
     quantity: Math.random() * 50 + 1,
     total: 0,

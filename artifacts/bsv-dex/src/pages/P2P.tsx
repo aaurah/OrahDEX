@@ -22,7 +22,7 @@ interface Offer {
   fiat: Fiat;
   trader: {
     name: string;
-    avatar: string;
+    avatar?: string;
     trades: number;
     completion: number;
     rating: number;
@@ -203,7 +203,7 @@ function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClos
   const [amountFiat, setAmountFiat] = useState("");
   const [step, setStep] = useState<"form" | "confirm">("form");
   const cryptoAmount = amountFiat ? (parseFloat(amountFiat) / offer.price).toFixed(6) : "";
-  const avatarIdx = AVATARS.indexOf(offer.trader.avatar) % AVATAR_COLORS.length;
+  const avatarIdx = AVATARS.indexOf(offer.trader.avatar ?? "") % AVATAR_COLORS.length;
 
   const handleConfirm = () => setStep("confirm");
 
@@ -239,7 +239,7 @@ function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClos
           <div className="p-6 space-y-5">
             {/* Trader info */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-secondary/50 border border-border">
-              <TraderAvatar avatar={offer.trader.avatar} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
+              <TraderAvatar avatar={offer.trader.avatar ?? ""} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-sm text-foreground">{offer.trader.name}</span>
@@ -935,7 +935,7 @@ export function P2P() {
         ) : (
           <div className="space-y-2">
             {filtered.map((offer, idx) => {
-              const avatarIdx = AVATARS.indexOf(offer.trader.avatar) % AVATAR_COLORS.length;
+              const avatarIdx = AVATARS.indexOf(offer.trader.avatar ?? "") % AVATAR_COLORS.length;
               return (
                 <div key={offer.id}
                   className="group bg-card hover:bg-card/80 border border-border hover:border-primary/30 rounded-2xl p-4 transition-all duration-150">
@@ -943,7 +943,7 @@ export function P2P() {
                   <div className="lg:hidden">
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex items-center gap-3">
-                        <TraderAvatar avatar={offer.trader.avatar} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
+                        <TraderAvatar avatar={offer.trader.avatar ?? ""} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="font-semibold text-sm">{offer.trader.name}</span>
@@ -984,7 +984,7 @@ export function P2P() {
                   <div className="hidden lg:grid grid-cols-[2fr_1.2fr_1fr_1fr_2fr_auto] gap-4 items-center">
                     {/* Advertiser */}
                     <div className="flex items-center gap-3">
-                      <TraderAvatar avatar={offer.trader.avatar} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
+                      <TraderAvatar avatar={offer.trader.avatar ?? ""} color={AVATAR_COLORS[avatarIdx]} online={offer.trader.online} />
                       <div>
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-sm text-foreground">{offer.trader.name}</span>
