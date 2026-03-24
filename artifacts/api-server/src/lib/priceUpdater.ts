@@ -127,6 +127,10 @@ export const USDT_PAIRS = [
 export const BTC_PAIRS = [
   "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
+  // DeFi / alts commonly traded vs BTC
+  "AAVE","DASH","XMR","ZEC","PEPE","SHIB","MKR","CRV","RUNE","YFI",
+  "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
+  "ETC","FTM","EOS","THETA","VET","BSV","BCH",
 ];
 
 // ETH pairs — top coins vs ETH
@@ -303,6 +307,17 @@ const FALLBACK_PRICES: Record<string, number> = {
 
 export async function seedMarketsIfNeeded() {
   try {
+    // ── Cleanup: remove legacy dash-separator symbols (e.g. "AAVE-USDT") ───
+    // These were created by an old seeder; only slash-format is canonical now.
+    const allMarkets = await db.select().from(marketsTable);
+    const dashFormat = allMarkets.filter(m => m.symbol.includes("-") && !m.symbol.endsWith("-PERP"));
+    if (dashFormat.length > 0) {
+      logger.info({ count: dashFormat.length }, "Removing legacy dash-format market symbols");
+      for (const m of dashFormat) {
+        await db.delete(marketsTable).where(eq(marketsTable.symbol, m.symbol)).catch(() => {});
+      }
+    }
+
     const existing = await db.select().from(marketsTable);
     const existingSymbols = new Set(existing.map(m => m.symbol));
 
