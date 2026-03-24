@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Shield, ChevronRight, CheckCircle2,
@@ -221,6 +221,44 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [bsvAvatarUrl, setBsvAvatarUrl] = useState<string | null>(null);
   const [bsvManualAddr, setBsvManualAddr] = useState("");
   const [bsvManualWallet, setBsvManualWallet] = useState("");
+
+  // When isOpen goes from true → false externally (e.g. Markets closes it on navigation),
+  // reset all internal state so the next open starts fresh.
+  const prevOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (prevOpenRef.current && !isOpen) {
+      // Slight delay to let exit animation run first
+      const t = setTimeout(() => {
+        setView("landing");
+        setCreateStep("generate");
+        setImportStep("enter");
+        setMnemonic([]);
+        setRevealed(false);
+        setCopied(false);
+        setConfirmed(false);
+        setImportInput("");
+        setImportError(null);
+        setConnecting(null);
+        setConnected(null);
+        setConnectError(null);
+        setBsvStep("list");
+        setBsvHandle("");
+        setBsvHandleState("idle");
+        setBsvHandleErr("");
+        setBsvResolvedAddr("");
+        setBsvHandleFallback(false);
+        setBsvDisplayName("");
+        setBsvAvatarUrl(null);
+        setBsvManualAddr("");
+        setPrepAddr("");
+        setPrepNetwork("bsv");
+        setPrepProvider("");
+        setPrepStep("fund");
+      }, 350);
+      return () => clearTimeout(t);
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
 
   const handleClose = () => {
     onClose();
@@ -1488,145 +1526,80 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                   {/* ── PREP (Wallet Setup) ── */}
                   {view === "prep" && (
-                    <motion.div key="prep" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                      className="p-5 space-y-4">
+                    <motion.div key="prep" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+                      className="p-6 flex flex-col items-center text-center gap-5">
 
-                      {/* Connected badge */}
-                      <div className="flex items-center gap-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
-                        <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
-                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                      {/* Success animation */}
+                      <div className="relative mt-2">
+                        <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center border border-green-500/30">
+                          <CheckCircle2 className="w-10 h-10 text-green-400" />
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-green-400 text-sm">Wallet Connected</p>
-                          <p className="text-xs font-mono text-muted-foreground truncate">
-                            {prepAddr.length > 22 ? `${prepAddr.slice(0, 10)}…${prepAddr.slice(-8)}` : prepAddr}
-                          </p>
-                          <span className="text-[9px] font-black uppercase tracking-wider text-green-400/70">
-                            {prepNetwork} · {prepProvider}
-                          </span>
-                        </div>
+                        <div className="absolute inset-0 rounded-full border-2 border-green-500/30 animate-ping opacity-40" />
                       </div>
 
-                      {/* Step list */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest font-bold mb-2.5 px-0.5">Setup Checklist</p>
-                        <div className="space-y-2.5">
-
-                          {/* Step: Wallet Connected (always done) */}
-                          <div className="flex items-center gap-3 p-3.5 rounded-xl border border-green-500/35 bg-green-500/5">
-                            <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
-                              <Check className="w-4 h-4 text-green-400" />
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm text-foreground">Wallet Connected</p>
-                              <p className="text-[11px] text-muted-foreground">Your wallet is linked to OrahDEX</p>
-                            </div>
-                          </div>
-
-                          {/* Step: Fund */}
-                          <div className={`rounded-xl border transition-all ${prepStep === "fund" ? "border-primary/60 bg-primary/8 p-4" : "border-green-500/35 bg-green-500/5 p-3.5"}`}>
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${prepStep === "fund" ? "bg-primary/20" : "bg-green-500/20"}`}>
-                                {prepStep === "fund"
-                                  ? <span className="text-sm font-black text-primary">2</span>
-                                  : <Check className="w-4 h-4 text-green-400" />}
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-bold text-sm text-foreground">Fund Your Wallet</p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  Deposit {prepNetwork === "bsv" ? "BSV" : prepNetwork === "evm" ? "ETH or tokens" : prepNetwork === "sol" ? "SOL" : "BTC"} to start trading
-                                </p>
-                              </div>
-                            </div>
-                            {prepStep === "fund" && (
-                              <div className="mt-3 space-y-2">
-                                <div className="flex items-center gap-2 bg-secondary/50 rounded-lg p-2.5">
-                                  <span className="flex-1 font-mono text-[11px] text-foreground break-all leading-relaxed">{prepAddr}</span>
-                                  <button
-                                    onClick={() => navigator.clipboard?.writeText(prepAddr)}
-                                    className="shrink-0 p-1.5 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                                <button
-                                  onClick={() => setPrepStep("approve")}
-                                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm"
-                                >
-                                  I've funded my wallet →
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Step: Enable Trading */}
-                          <div className={`rounded-xl border transition-all ${prepStep === "approve" ? "border-primary/60 bg-primary/8 p-4" : prepStep === "done" ? "border-green-500/35 bg-green-500/5 p-3.5" : "border-border opacity-50 p-3.5"}`}>
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${prepStep === "approve" ? "bg-primary/20" : prepStep === "done" ? "bg-green-500/20" : "bg-secondary/60"}`}>
-                                {prepStep === "done"
-                                  ? <Check className="w-4 h-4 text-green-400" />
-                                  : <span className={`text-sm font-black ${prepStep === "approve" ? "text-primary" : "text-muted-foreground"}`}>3</span>}
-                              </div>
-                              <div>
-                                <p className="font-bold text-sm text-foreground">Enable Trading</p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {prepNetwork === "evm" ? "Approve token allowances in your wallet" : "Confirm wallet is ready for DEX swaps"}
-                                </p>
-                              </div>
-                            </div>
-                            {prepStep === "approve" && (
-                              <div className="mt-3 space-y-2">
-                                <div className="p-3 bg-blue-500/8 border border-blue-500/20 rounded-lg">
-                                  <p className="text-[11px] text-blue-300/90 leading-relaxed">
-                                    {prepNetwork === "evm"
-                                      ? "To trade ERC-20 tokens you'll need to approve allowances for each token in your wallet app. ETH trades require no approval."
-                                      : prepNetwork === "bsv"
-                                      ? "Your BSV wallet is ready for OrahDEX — no extra approvals needed. BSV is the native settlement currency."
-                                      : prepNetwork === "sol"
-                                      ? "Solana SPL tokens don't require separate approval steps. You're good to go."
-                                      : "Bitcoin trades use standard UTXO signing. Your wallet will prompt for each swap."}
-                                  </p>
-                                </div>
-                                <button
-                                  onClick={() => setPrepStep("done")}
-                                  className="w-full py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm"
-                                >
-                                  {prepNetwork === "evm" ? "Got it — I'll approve in my wallet" : "All set →"}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                        <h3 className="text-xl font-black text-foreground mb-1">You're Connected!</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {prepNetwork === "bsv"
+                            ? "BSV wallet ready — native on-chain settlement"
+                            : prepNetwork === "evm"
+                            ? "EVM wallet ready — signs orders, settles on BSV"
+                            : prepNetwork === "sol"
+                            ? "Solana wallet ready — trades settle via BSV bridge"
+                            : "Bitcoin wallet ready — connected to OrahDEX"}
+                        </p>
                       </div>
 
-                      {/* Done state */}
-                      {prepStep === "done" && (
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
-                            <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
-                            <div>
-                              <p className="font-bold text-green-400">All set! Your wallet is ready.</p>
-                              <p className="text-xs text-muted-foreground">Start trading on OrahDEX now.</p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={handleClose}
-                            className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-bold text-base shadow-lg shadow-primary/25"
-                          >
-                            Start Trading →
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Skip */}
-                      {prepStep !== "done" && (
+                      {/* Address display */}
+                      <div className="w-full flex items-center gap-2 bg-secondary/60 border border-border rounded-xl px-3 py-2.5">
+                        <div className="w-2 h-2 rounded-full bg-green-400 shrink-0 animate-pulse" />
+                        <span className="flex-1 text-left font-mono text-[11px] text-foreground truncate">
+                          {prepAddr}
+                        </span>
                         <button
-                          onClick={handleClose}
-                          className="w-full text-xs text-muted-foreground hover:text-foreground text-center py-2 transition-colors"
+                          onClick={() => navigator.clipboard?.writeText(prepAddr)}
+                          className="shrink-0 p-1 hover:bg-white/10 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+                          title="Copy address"
                         >
-                          Skip setup — go straight to trading
+                          <Copy className="w-3.5 h-3.5" />
                         </button>
-                      )}
+                      </div>
+
+                      {/* Network + provider badge */}
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border",
+                          prepNetwork === "bsv" ? "bg-green-500/15 border-green-500/30 text-green-400"
+                          : prepNetwork === "evm" ? "bg-violet-500/15 border-violet-500/30 text-violet-400"
+                          : prepNetwork === "sol" ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+                          : "bg-orange-500/15 border-orange-500/30 text-orange-400"
+                        )}>
+                          {prepNetwork.toUpperCase()}
+                        </span>
+                        {prepProvider && (
+                          <span className="text-[10px] font-semibold text-muted-foreground capitalize bg-white/5 border border-border px-2 py-0.5 rounded-full">
+                            {prepProvider}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Primary CTA */}
+                      <button
+                        onClick={handleClose}
+                        className="w-full py-4 rounded-xl bg-gradient-to-r from-violet-600 to-primary text-white font-black text-base shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                      >
+                        Start Trading →
+                      </button>
+
+                      {/* Deposit hint */}
+                      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-xs">
+                        Deposit{" "}
+                        <span className="text-foreground font-medium">
+                          {prepNetwork === "bsv" ? "BSV" : prepNetwork === "evm" ? "ETH / tokens" : prepNetwork === "sol" ? "SOL" : "BTC"}
+                        </span>{" "}
+                        to your address above to fund trades. All trades settle permanently on the BSV blockchain.
+                      </p>
+
                     </motion.div>
                   )}
 
