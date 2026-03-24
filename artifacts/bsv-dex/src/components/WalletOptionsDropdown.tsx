@@ -130,7 +130,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           {network === 'evm' && (
             <div className="px-4 py-3 border-b border-border">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Change Chain</p>
-              <ChainSwitcherDropdown />
+              <ChainSwitcherDropdown inline />
             </div>
           )}
 
