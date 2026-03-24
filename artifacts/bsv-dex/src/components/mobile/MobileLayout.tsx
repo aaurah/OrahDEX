@@ -26,23 +26,23 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header — edge-to-edge logo ── */}
-      <div className="shrink-0 relative h-16 border-b border-border/40 z-50 overflow-hidden">
+      {/* ── Global brand header ── */}
+      <div className="shrink-0 h-14 bg-black border-b border-border/40 z-50 flex items-center justify-between px-3">
 
-        {/* Logo fills edge to edge */}
+        {/* Logo — sized to header height, aspect ratio preserved */}
         <button
           onClick={() => navigate("/")}
-          className="absolute inset-0 w-full h-full active:opacity-80 transition-opacity"
+          className="h-full py-1 active:opacity-80 transition-opacity"
         >
           <img
             src={import.meta.env.BASE_URL + "logo.png"}
             alt="OrahDEX"
-            className="w-full h-full object-cover object-center"
+            className="h-full w-auto object-contain"
           />
         </button>
 
-        {/* Wallet button overlaid on right */}
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
+        {/* Wallet button on right */}
+        <div>
           {address ? (
             <button
               onClick={() => openWallet()}
