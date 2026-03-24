@@ -40,6 +40,11 @@ startLiquidityBot();
 startFuturesProfitEngine();
 startBsvChainMonitor();
 
+/* ── Connectivity ping — returns 204, used by frontend status dot ────────── */
+app.get("/api/ping", (_req, res) => {
+  res.status(204).end();
+});
+
 /* ── BSV chain status — public endpoint ─────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {
   try {
