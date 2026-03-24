@@ -89,56 +89,51 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "futures",   label: "Futures" },
 ];
 
-function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<string>): MktRow[] {
-  const hasApi = apiAll.length > 0;
+/**
+ * Always use mock data as the full pair list; enrich prices from API where available.
+ * This ensures all pairs are visible even when the API DB only tracks a small subset.
+ */
+function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, favorites: Set<string>): MktRow[] {
+  const enrich = (mock: any[]): MktRow[] =>
+    mock.map(m => {
+      const n = normalise(m);
+      const live = livePrice.get(n.symbol);
+      if (!live) return n;
+      return { ...n, price: live.price, chg: live.chg, vol: live.vol };
+    });
 
-  /** Returns API-filtered rows when available; falls back to mock when the API
-   *  has no pairs for that quote asset (e.g. new L2 chains not yet in DB). */
-  const apiOrMock = (quote: string, mock: MktRow[]): MktRow[] => {
-    if (!hasApi) return mock;
-    const filtered = apiAll.filter(m => m.quote === quote);
-    return filtered.length > 0 ? filtered : mock;
-  };
+  const ALL_POOL = [
+    ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+    ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+    ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ];
 
   switch (cat) {
-    case "favorites": {
-      const pool = hasApi ? apiAll : [
-        ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
-        ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
-        ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
-      ].map(normalise);
-      return pool.filter(m => favorites.has(m.symbol));
-    }
-    case "new":     return NEW_MARKETS.map(normalise);
-    case "usd": {
-      const apiUsd = hasApi ? apiAll.filter(m => m.quote === usdSub && m.type === "spot") : [];
-      return apiUsd.length > 0 ? apiUsd : STABLE_MOCK[usdSub].map(normalise);
-    }
-    case "btc":     return apiOrMock("BTC",   BTC_MARKETS.map(normalise));
-    case "eth":     return apiOrMock("ETH",   ETH_MARKETS.map(normalise));
-    case "bnb":     return apiOrMock("BNB",   BNB_MARKETS.map(normalise));
-    case "matic":   return apiOrMock("MATIC", MATIC_MARKETS.map(normalise));
-    case "avax":    return apiOrMock("AVAX",  AVAX_MARKETS.map(normalise));
-    case "arb":     return apiOrMock("ARB",   ARB_MARKETS.map(normalise));
-    case "op":      return apiOrMock("OP",    OP_MARKETS.map(normalise));
-    case "ftm":     return apiOrMock("FTM",   FTM_MARKETS.map(normalise));
-    case "cro":     return apiOrMock("CRO",   CRO_MARKETS.map(normalise));
-    case "base":    return apiOrMock("BASE",  BASE_MARKETS.map(normalise));
-    case "linea":   return apiOrMock("LINEA", LINEA_MARKETS.map(normalise));
-    case "zk":      return apiOrMock("ZK",    ZK_MARKETS.map(normalise));
-    case "scr":     return apiOrMock("SCR",   SCR_MARKETS.map(normalise));
-    case "mnt":     return apiOrMock("MNT",   MNT_MARKETS.map(normalise));
-    case "sol":     return SOL_MARKETS.map(normalise);
-    case "bch":     return apiOrMock("BCH",   BCH_MARKETS.map(normalise));
-    case "bsv":     return apiOrMock("BSV",   BSV_MARKETS.map(normalise));
-    case "ai":      return AI_MARKETS.map(normalise);
-    case "meme":    return MEME_MARKETS.map(normalise);
-    case "defi":    return DEFI_MARKETS.map(normalise);
-    case "futures": {
-      const apiFut = hasApi ? apiAll.filter(m => m.type === "futures") : [];
-      return apiFut.length > 0 ? apiFut : FUTURES_MARKETS.map(normalise);
-    }
-    default:        return [];
+    case "favorites": return enrich(ALL_POOL).filter(m => favorites.has(m.symbol));
+    case "new":       return NEW_MARKETS.map(normalise);
+    case "usd":       return enrich(STABLE_MOCK[usdSub]);
+    case "btc":       return enrich(BTC_MARKETS);
+    case "eth":       return enrich(ETH_MARKETS);
+    case "bnb":       return enrich(BNB_MARKETS);
+    case "matic":     return enrich(MATIC_MARKETS);
+    case "avax":      return enrich(AVAX_MARKETS);
+    case "arb":       return enrich(ARB_MARKETS);
+    case "op":        return enrich(OP_MARKETS);
+    case "ftm":       return enrich(FTM_MARKETS);
+    case "cro":       return enrich(CRO_MARKETS);
+    case "base":      return enrich(BASE_MARKETS);
+    case "linea":     return enrich(LINEA_MARKETS);
+    case "zk":        return enrich(ZK_MARKETS);
+    case "scr":       return enrich(SCR_MARKETS);
+    case "mnt":       return enrich(MNT_MARKETS);
+    case "sol":       return enrich(SOL_MARKETS);
+    case "bch":       return enrich(BCH_MARKETS);
+    case "bsv":       return enrich(BSV_MARKETS);
+    case "ai":        return enrich(AI_MARKETS);
+    case "meme":      return enrich(MEME_MARKETS);
+    case "defi":      return enrich(DEFI_MARKETS);
+    case "futures":   return enrich(FUTURES_MARKETS);
+    default:          return [];
   }
 }
 
@@ -171,11 +166,13 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
-  const apiAll: MktRow[] = (apiData && Array.isArray(apiData) && apiData.length > 0)
-    ? apiData.map(normalise)
-    : [];
+  const livePrice = new Map<string, MktRow>(
+    (apiData && Array.isArray(apiData) ? apiData : [])
+      .map(normalise)
+      .map((m: MktRow) => [m.symbol, m])
+  );
 
-  let rows = getCatRows(cat, usdSub, apiAll, favorites);
+  let rows = getCatRows(cat, usdSub, livePrice, favorites);
 
   if (search) {
     const q = search.toUpperCase();

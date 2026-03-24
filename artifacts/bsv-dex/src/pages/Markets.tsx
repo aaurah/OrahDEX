@@ -151,81 +151,77 @@ export function Markets() {
 
   const { data: apiMarkets } = useGetMarkets();
   const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
-  const hasApi = raw.length > 0;
 
-  /** Returns API-filtered rows when available; falls back to mock when the API
-   *  has no pairs for that quote asset (e.g. new L2 chains not yet in DB). */
-  const apiOrMock = (quote: string, mock: any[]): any[] => {
-    if (!hasApi) return mock;
-    const filtered = raw.filter((m: any) => m.quoteAsset === quote);
-    return filtered.length > 0 ? filtered : mock;
-  };
-  const apiOrMockCount = (quote: string, mockLen: number): number => {
-    if (!hasApi) return mockLen;
-    const filtered = raw.filter((m: any) => m.quoteAsset === quote);
-    return filtered.length > 0 ? filtered.length : mockLen;
-  };
+  /**
+   * Build a symbol → live-price map from the API response.
+   * Mock data always provides the FULL pair list; API prices enrich it.
+   */
+  const livePrice = new Map<string, any>(raw.map((m: any) => [m.symbol, m]));
+
+  /** Enrich a mock pair list with live prices from the API where available. */
+  const enrich = (mock: any[]): any[] =>
+    mock.map(m => {
+      const live = livePrice.get(m.symbol);
+      if (!live) return m;
+      return { ...m, lastPrice: live.lastPrice, priceChangePercent24h: live.priceChangePercent24h, volume24h: live.volume24h, marketCap: live.marketCap ?? m.marketCap };
+    });
 
   function getMarkets(): any[] {
     switch (tab) {
-      case "favorites": return (hasApi ? raw : ALL_MOCK()).filter(m => stars.has(m.symbol));
+      case "favorites": return enrich(ALL_MOCK()).filter(m => stars.has(m.symbol));
       case "new":       return NEW_MARKETS.map(normalise);
-      case "usd":       return hasApi
-        ? raw.filter(m => m.quoteAsset === usdSub && m.type === "spot")
-        : STABLE_MOCK[usdSub].map(normalise);
-      case "btc":       return apiOrMock("BTC",   BTC_MARKETS.map(normalise));
-      case "eth":       return apiOrMock("ETH",   ETH_MARKETS.map(normalise));
-      case "bnb":       return apiOrMock("BNB",   BNB_MARKETS.map(normalise));
-      case "matic":     return apiOrMock("MATIC", MATIC_MARKETS.map(normalise));
-      case "avax":      return apiOrMock("AVAX",  AVAX_MARKETS.map(normalise));
-      case "arb":       return apiOrMock("ARB",   ARB_MARKETS.map(normalise));
-      case "op":        return apiOrMock("OP",    OP_MARKETS.map(normalise));
-      case "ftm":       return apiOrMock("FTM",   FTM_MARKETS.map(normalise));
-      case "cro":       return apiOrMock("CRO",   CRO_MARKETS.map(normalise));
-      case "base":      return apiOrMock("BASE",  BASE_MARKETS.map(normalise));
-      case "linea":     return apiOrMock("LINEA", LINEA_MARKETS.map(normalise));
-      case "zk":        return apiOrMock("ZK",    ZK_MARKETS.map(normalise));
-      case "scr":       return apiOrMock("SCR",   SCR_MARKETS.map(normalise));
-      case "mnt":       return apiOrMock("MNT",   MNT_MARKETS.map(normalise));
-      case "sol":       return SOL_MARKETS.map(normalise);
-      case "bch":       return apiOrMock("BCH",   BCH_MARKETS.map(normalise));
-      case "bsv":       return apiOrMock("BSV",   BSV_MARKETS.map(normalise));
-      case "ai":        return AI_MARKETS.map(normalise);
-      case "meme":      return MEME_MARKETS.map(normalise);
-      case "defi":      return DEFI_MARKETS.map(normalise);
-      case "futures":   return hasApi ? raw.filter(m => m.type === "futures") : FUTURES_MARKETS.map(normalise);
+      case "usd":       return enrich(STABLE_MOCK[usdSub].map(normalise));
+      case "btc":       return enrich(BTC_MARKETS.map(normalise));
+      case "eth":       return enrich(ETH_MARKETS.map(normalise));
+      case "bnb":       return enrich(BNB_MARKETS.map(normalise));
+      case "matic":     return enrich(MATIC_MARKETS.map(normalise));
+      case "avax":      return enrich(AVAX_MARKETS.map(normalise));
+      case "arb":       return enrich(ARB_MARKETS.map(normalise));
+      case "op":        return enrich(OP_MARKETS.map(normalise));
+      case "ftm":       return enrich(FTM_MARKETS.map(normalise));
+      case "cro":       return enrich(CRO_MARKETS.map(normalise));
+      case "base":      return enrich(BASE_MARKETS.map(normalise));
+      case "linea":     return enrich(LINEA_MARKETS.map(normalise));
+      case "zk":        return enrich(ZK_MARKETS.map(normalise));
+      case "scr":       return enrich(SCR_MARKETS.map(normalise));
+      case "mnt":       return enrich(MNT_MARKETS.map(normalise));
+      case "sol":       return enrich(SOL_MARKETS.map(normalise));
+      case "bch":       return enrich(BCH_MARKETS.map(normalise));
+      case "bsv":       return enrich(BSV_MARKETS.map(normalise));
+      case "ai":        return enrich(AI_MARKETS.map(normalise));
+      case "meme":      return enrich(MEME_MARKETS.map(normalise));
+      case "defi":      return enrich(DEFI_MARKETS.map(normalise));
+      case "futures":   return enrich(FUTURES_MARKETS.map(normalise));
       default:          return [];
     }
   }
 
   function tabCount(t: Tab): number {
     switch (t) {
-      case "favorites": return (hasApi ? raw : ALL_MOCK()).filter(m => stars.has(m.symbol)).length;
+      case "favorites": return ALL_MOCK().filter(m => stars.has(m.symbol)).length;
       case "new":       return NEW_MARKETS.length;
-      case "usd":       return hasApi
-        ? raw.filter(m => ["USDT","USDC","TUSD","USDD"].includes(m.quoteAsset) && m.type === "spot").length
-        : USDT_MARKETS.length + USDC_MARKETS.length + TUSD_MARKETS.length + USDD_MARKETS.length;
-      case "btc":       return apiOrMockCount("BTC",   BTC_MARKETS.length);
-      case "eth":       return apiOrMockCount("ETH",   ETH_MARKETS.length);
-      case "bnb":       return apiOrMockCount("BNB",   BNB_MARKETS.length);
-      case "matic":     return apiOrMockCount("MATIC", MATIC_MARKETS.length);
-      case "avax":      return apiOrMockCount("AVAX",  AVAX_MARKETS.length);
-      case "arb":       return apiOrMockCount("ARB",   ARB_MARKETS.length);
-      case "op":        return apiOrMockCount("OP",    OP_MARKETS.length);
-      case "ftm":       return apiOrMockCount("FTM",   FTM_MARKETS.length);
-      case "cro":       return apiOrMockCount("CRO",   CRO_MARKETS.length);
-      case "base":      return apiOrMockCount("BASE",  BASE_MARKETS.length);
-      case "linea":     return apiOrMockCount("LINEA", LINEA_MARKETS.length);
-      case "zk":        return apiOrMockCount("ZK",    ZK_MARKETS.length);
-      case "scr":       return apiOrMockCount("SCR",   SCR_MARKETS.length);
-      case "mnt":       return apiOrMockCount("MNT",   MNT_MARKETS.length);
+      case "usd":       return STABLE_MOCK[usdSub].length;
+      case "btc":       return BTC_MARKETS.length;
+      case "eth":       return ETH_MARKETS.length;
+      case "bnb":       return BNB_MARKETS.length;
+      case "matic":     return MATIC_MARKETS.length;
+      case "avax":      return AVAX_MARKETS.length;
+      case "arb":       return ARB_MARKETS.length;
+      case "op":        return OP_MARKETS.length;
+      case "ftm":       return FTM_MARKETS.length;
+      case "cro":       return CRO_MARKETS.length;
+      case "base":      return BASE_MARKETS.length;
+      case "linea":     return LINEA_MARKETS.length;
+      case "zk":        return ZK_MARKETS.length;
+      case "scr":       return SCR_MARKETS.length;
+      case "mnt":       return MNT_MARKETS.length;
       case "sol":       return SOL_MARKETS.length;
-      case "bch":       return apiOrMockCount("BCH",   BCH_MARKETS.length);
-      case "bsv":       return apiOrMockCount("BSV",   BSV_MARKETS.length);
+      case "bch":       return BCH_MARKETS.length;
+      case "bsv":       return BSV_MARKETS.length;
       case "ai":        return AI_MARKETS.length;
       case "meme":      return MEME_MARKETS.length;
       case "defi":      return DEFI_MARKETS.length;
-      case "futures":   return hasApi ? raw.filter(m => m.type === "futures").length : FUTURES_MARKETS.length;
+      case "futures":   return FUTURES_MARKETS.length;
       default:          return 0;
     }
   }
@@ -331,7 +327,7 @@ export function Markets() {
                 </button>
               ))}
               <span className="text-xs text-muted-foreground ml-1">
-                · {hasApi ? raw.filter(m => m.quoteAsset === usdSub && m.type === "spot").length : STABLE_MOCK[usdSub].length} pairs
+                · {STABLE_MOCK[usdSub].length} pairs
               </span>
             </div>
           )}
