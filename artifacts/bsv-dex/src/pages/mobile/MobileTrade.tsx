@@ -550,7 +550,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-muted-foreground">Connect your wallet to see open and filled orders.</p>
                 <button
                   onClick={() => openWallet()}
-                  className="mt-1 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold active:opacity-80"
+                  className="mt-1 px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-500 to-primary text-white text-sm font-bold active:opacity-80"
                 >
                   Connect Wallet
                 </button>
@@ -683,7 +683,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           /* Connect Wallet CTA */
           <button
             onClick={() => openWallet()}
-            className="flex-1 py-3 rounded-xl text-sm font-bold text-primary-foreground bg-primary active:opacity-80 transition-opacity flex items-center justify-center gap-2"
+            className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-500 to-primary active:opacity-80 transition-opacity flex items-center justify-center gap-2"
           >
             <Wallet size={16} />
             Connect Wallet
