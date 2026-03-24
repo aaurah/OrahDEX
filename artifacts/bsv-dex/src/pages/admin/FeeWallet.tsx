@@ -127,13 +127,13 @@ export function AdminFeeWallet() {
         <button
           onClick={() => set("feeEnabled", !current.feeEnabled)}
           className={cn(
-            "relative w-12 h-6 rounded-full transition-colors",
+            "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none",
             current.feeEnabled ? "bg-green-500" : "bg-muted"
           )}
         >
           <span className={cn(
-            "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform",
-            current.feeEnabled ? "translate-x-6" : "translate-x-0.5"
+            "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200",
+            current.feeEnabled ? "translate-x-5" : "translate-x-0"
           )} />
         </button>
       </div>
