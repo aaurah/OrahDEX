@@ -104,7 +104,7 @@ function AdminWalletWidget() {
   const walletStore = useWalletStore();
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const chainId = useChainId();
-  const { data: evmBalance } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
+  const { data: evmBalance, isLoading: balanceLoading } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
   const [copied, setCopied] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -120,8 +120,9 @@ function AdminWalletWidget() {
     : network ? NETWORK_STYLES[network] ?? { color: "text-muted-foreground bg-muted/10 border-border", label: network.toUpperCase() }
     : null;
 
+  const evmBalanceNum = evmBalance ? parseFloat(evmBalance.formatted ?? "0") : NaN;
   const balance = evmConnected && evmBalance
-    ? `${parseFloat(evmBalance.formatted).toFixed(4)} ${evmBalance.symbol}`
+    ? `${isNaN(evmBalanceNum) ? "0.0000" : evmBalanceNum.toFixed(4)} ${evmBalance.symbol}`
     : walletStore.balance ?? null;
 
   const copyAddress = () => {
@@ -202,10 +203,13 @@ function AdminWalletWidget() {
                 )}
               </div>
 
-              {balance && (
+              {(evmConnected || walletStore.balance) && (
                 <div className="px-4 py-3 border-b border-border">
                   <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Balance</p>
-                  <p className="text-sm font-mono font-bold text-foreground">{balance}</p>
+                  {balanceLoading
+                    ? <p className="text-sm font-mono text-muted-foreground animate-pulse">Fetching…</p>
+                    : <p className="text-sm font-mono font-bold text-foreground">{balance ?? "—"}</p>
+                  }
                 </div>
               )}
 
