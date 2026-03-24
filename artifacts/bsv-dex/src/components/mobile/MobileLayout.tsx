@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2 } from "lucide-react";
+import { ConnectivityDot } from "@/components/ConnectivityDot";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
@@ -32,9 +33,10 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {/* Brand text */}
         <button
           onClick={() => navigate("/")}
-          className="active:opacity-70 transition-opacity"
+          className="flex items-center gap-1.5 active:opacity-70 transition-opacity"
         >
           <span className="text-xl font-bold tracking-tight text-foreground">Orah<span className="text-green-400">DEX</span></span>
+          <ConnectivityDot />
         </button>
 
         {/* Wallet button on right */}

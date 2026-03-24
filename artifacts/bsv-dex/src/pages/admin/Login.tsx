@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check, RefreshCw } from 'lucide-react';
 import { useAdminAuthStore } from '@/store/useAdminAuthStore';
 import { generateTOTP } from '@/lib/totp';
+import { ConnectivityDot } from '@/components/ConnectivityDot';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -116,6 +117,7 @@ export function AdminLogin() {
             <span className="font-extrabold text-2xl tracking-tight text-foreground">
               Orah<span className="text-green-400">DEX</span>
             </span>
+            <ConnectivityDot size="md" />
           </div>
           <div className="flex items-center justify-center gap-2 text-muted-foreground">
             <Shield className="w-4 h-4 text-violet-400" />
