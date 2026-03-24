@@ -337,7 +337,7 @@ export function Layout({ children }: { children: ReactNode }) {
               <ReownConnectButton size="sm" className="hidden sm:flex" />
               <button
                 onClick={() => openWalletModal()}
-                className="flex items-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/30 active:scale-95 transition-all"
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/30 hover:brightness-110 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/40 active:scale-95 transition-all"
               >
                 <Wallet className="w-4 h-4" />
                 <span className="hidden sm:inline">Connect Wallet</span>
@@ -381,7 +381,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="px-4 pb-4">
               <button
                 onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white px-5 py-3 rounded-xl font-semibold shadow-lg"
+                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground px-5 py-3 rounded-xl font-bold shadow-lg shadow-primary/30"
               >
                 <Wallet className="w-4 h-4" />
                 Connect Wallet
