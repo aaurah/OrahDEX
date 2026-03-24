@@ -118,13 +118,13 @@ export function AdminLogin() {
               title={online ? 'Connected to internet' : 'No internet connection'}
             >
               <span className="text-white font-black text-xl leading-none select-none" style={{ fontFamily: "Inter, sans-serif" }}>O</span>
-              {/* Dot centered inside the O hollow */}
-              <span className="absolute inset-0 flex items-center justify-center">
-                <span className="relative flex items-center justify-center w-[6px] h-[6px]">
+              {/* Dot — perfectly centred inside the O hollow */}
+              <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" aria-hidden>
+                <span className="relative flex items-center justify-center w-[7px] h-[7px]">
                   {online && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-70" />
                   )}
-                  <span className={`relative rounded-full w-[6px] h-[6px] ${online ? 'bg-white' : 'bg-red-400'}`} />
+                  <span className={`relative rounded-full w-[7px] h-[7px] ${online ? 'bg-white' : 'bg-red-400'}`} />
                 </span>
               </span>
             </div>
