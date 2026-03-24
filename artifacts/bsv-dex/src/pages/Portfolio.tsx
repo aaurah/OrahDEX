@@ -9,27 +9,97 @@ import { WithdrawModal } from "@/components/WithdrawModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const EVM_NATIVE: Record<number, string> = {
-  1: "ETH", 10: "ETH", 42161: "ETH", 8453: "ETH",
-  59144: "ETH", 324: "ETH", 534352: "ETH", 5000: "MNT",
-  56: "BNB", 137: "MATIC", 43114: "AVAX", 250: "FTM", 25: "CRO",
+interface ChainInfo {
+  name: string;
+  native: string;
+  color: string;
+  isL2?: boolean;
+  layer?: number;
+}
+
+const CHAIN_INFO: Record<number, ChainInfo> = {
+  1:       { name: "Ethereum Mainnet",  native: "ETH",  color: "#8B5CF6" },
+  10:      { name: "Optimism",          native: "ETH",  color: "#FF0420", isL2: true, layer: 2 },
+  56:      { name: "BNB Chain",         native: "BNB",  color: "#EAB308" },
+  100:     { name: "Gnosis Chain",      native: "xDAI", color: "#04795B", isL2: true, layer: 2 },
+  137:     { name: "Polygon",           native: "MATIC", color: "#8247E5", isL2: true, layer: 2 },
+  250:     { name: "Fantom",            native: "FTM",  color: "#1969FF" },
+  324:     { name: "zkSync Era",        native: "ETH",  color: "#8C8DFC", isL2: true, layer: 2 },
+  1101:    { name: "Polygon zkEVM",     native: "ETH",  color: "#7B3FE4", isL2: true, layer: 2 },
+  2020:    { name: "Ronin",             native: "RON",  color: "#1273EA" },
+  5000:    { name: "Mantle",            native: "MNT",  color: "#000000", isL2: true, layer: 2 },
+  8453:    { name: "Base",              native: "ETH",  color: "#0052FF", isL2: true, layer: 2 },
+  25:      { name: "Cronos",            native: "CRO",  color: "#002D74" },
+  43114:   { name: "Avalanche C-Chain", native: "AVAX", color: "#E84142" },
+  42161:   { name: "Arbitrum One",      native: "ETH",  color: "#28A0F0", isL2: true, layer: 2 },
+  42170:   { name: "Arbitrum Nova",     native: "ETH",  color: "#E57310", isL2: true, layer: 2 },
+  59144:   { name: "Linea",             native: "ETH",  color: "#61DFFF", isL2: true, layer: 2 },
+  534352:  { name: "Scroll",            native: "ETH",  color: "#FFDBB0", isL2: true, layer: 2 },
+  7777777: { name: "Zora",             native: "ETH",  color: "#A4F542", isL2: true, layer: 2 },
+  1088:    { name: "Metis",             native: "METIS", color: "#00DACC", isL2: true, layer: 2 },
+  34443:   { name: "Mode",              native: "ETH",  color: "#DFFE00", isL2: true, layer: 2 },
+  81457:   { name: "Blast",             native: "ETH",  color: "#FCFC03", isL2: true, layer: 2 },
 };
+
+function getChainInfo(chainId: number | null): ChainInfo | null {
+  if (!chainId) return null;
+  return CHAIN_INFO[chainId] ?? null;
+}
 
 function getNativeAsset(network: string | null, chainId: number | null): string {
   if (network === "bsv") return "BSV";
   if (network === "sol") return "SOL";
   if (network === "btc") return "BTC";
-  if (network === "evm" && chainId) return EVM_NATIVE[chainId] ?? "ETH";
+  if (network === "evm" && chainId) return CHAIN_INFO[chainId]?.native ?? "ETH";
   return "ETH";
 }
 
-const PORTFOLIO_ASSETS = [
-  { asset: "BSV",  marketKey: "BSV",  color: "#22C55E" },
-  { asset: "USDT", marketKey: "USDT", color: "#34D399" },
-  { asset: "BTC",  marketKey: "BTC",  color: "#F97316" },
-  { asset: "ETH",  marketKey: "ETH",  color: "#8B5CF6" },
-  { asset: "BNB",  marketKey: "BNB",  color: "#EAB308" },
+function getNetworkLabel(network: string | null, chainId: number | null, provider: string | null): string {
+  if (network === "bsv") return "Bitcoin SV (BSV)";
+  if (network === "sol") return "Solana";
+  if (network === "btc") return "Bitcoin";
+  if (network === "evm" && chainId) {
+    const info = CHAIN_INFO[chainId];
+    return info ? info.name : `Chain ID ${chainId}`;
+  }
+  return provider ?? "EVM";
+}
+
+const ASSET_COLORS: Record<string, string> = {
+  BSV:  "#22C55E",
+  USDT: "#34D399",
+  USDC: "#2775CA",
+  BTC:  "#F97316",
+  ETH:  "#8B5CF6",
+  BNB:  "#EAB308",
+  MATIC:"#8247E5",
+  AVAX: "#E84142",
+  FTM:  "#1969FF",
+  CRO:  "#002D74",
+  SOL:  "#9945FF",
+  MNT:  "#6B7280",
+  xDAI: "#04795B",
+  RON:  "#1273EA",
+  METIS:"#00DACC",
+};
+
+const BASE_ASSETS = [
+  { asset: "BSV",  marketKey: "BSV"  },
+  { asset: "USDT", marketKey: "USDT" },
+  { asset: "USDC", marketKey: "USDC" },
+  { asset: "BTC",  marketKey: "BTC"  },
+  { asset: "ETH",  marketKey: "ETH"  },
+  { asset: "BNB",  marketKey: "BNB"  },
+  { asset: "MATIC",marketKey: "MATIC"},
+  { asset: "AVAX", marketKey: "AVAX" },
+  { asset: "SOL",  marketKey: "SOL"  },
 ];
+
+function getPortfolioAssets(nativeAsset: string) {
+  const hasnative = BASE_ASSETS.some(a => a.asset === nativeAsset);
+  const list = hasnative ? BASE_ASSETS : [{ asset: nativeAsset, marketKey: nativeAsset }, ...BASE_ASSETS];
+  return list.map(a => ({ ...a, color: ASSET_COLORS[a.asset] ?? "#6B7280" }));
+}
 
 interface MarketRow { baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
 
@@ -71,6 +141,9 @@ export function Portfolio() {
   const [withdrawAsset, setWithdrawAsset] = useState("USDT");
   const [copiedAddr, setCopiedAddr] = useState(false);
 
+  const chainInfo  = getChainInfo(chainId);
+  const networkLabel = getNetworkLabel(network, chainId, provider);
+
   const handleCopyAddr = () => {
     if (!address) return;
     navigator.clipboard?.writeText(address);
@@ -92,12 +165,13 @@ export function Portfolio() {
 
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
+  const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
 
   // Build balance rows: native token uses real wallet balance, others start at 0
   const balances = PORTFOLIO_ASSETS.map(a => {
     const mkt    = prices?.[a.asset];
-    const price  = a.asset === "USDT" ? 1 : (mkt?.lastPrice ?? 0);
-    const change = a.asset === "USDT" ? 0 : (mkt?.priceChangePercent24h ?? 0);
+    const price  = (a.asset === "USDT" || a.asset === "USDC") ? 1 : (mkt?.lastPrice ?? 0);
+    const change = (a.asset === "USDT" || a.asset === "USDC") ? 0 : (mkt?.priceChangePercent24h ?? 0);
     const total  = a.asset === nativeAsset ? nativeBalance : 0;
     const free   = total;
     const locked = 0;
@@ -122,9 +196,24 @@ export function Portfolio() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight mb-1">Portfolio</h1>
             {network && (
-              <p className="text-xs text-muted-foreground mb-2 capitalize">
-                {provider ?? network} · {network.toUpperCase()} network
-              </p>
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                {/* Chain colour dot */}
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: chainInfo?.color ?? (network === "bsv" ? "#22C55E" : network === "sol" ? "#9945FF" : "#8B5CF6") }}
+                />
+                <span className="text-xs text-muted-foreground font-medium">{networkLabel}</span>
+                {chainInfo?.isL2 && (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25">
+                    L{chainInfo.layer ?? 2}
+                  </span>
+                )}
+                {provider && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground border border-border capitalize">
+                    {provider}
+                  </span>
+                )}
+              </div>
             )}
             <div className="flex items-center gap-2">
               <p className="text-muted-foreground font-mono bg-white/5 inline-block px-3 py-1 rounded-lg border border-border text-sm truncate max-w-xs md:max-w-md">
@@ -236,7 +325,7 @@ export function Portfolio() {
             <div>
               <h3 className="text-lg font-bold">Asset Balances</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Showing your {nativeAsset} wallet balance · other assets require a deposit
+                {nativeAsset} balance from <span className="font-semibold">{networkLabel}</span> · other assets require a deposit
               </p>
             </div>
             <span className="text-xs text-muted-foreground">Live prices · 30s refresh</span>
@@ -280,26 +369,39 @@ export function Portfolio() {
                         <td className="p-4">
                           <div className="flex items-center gap-3">
                             <div
-                              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border"
+                              className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs border shrink-0"
                               style={{ backgroundColor: bal.color + "22", borderColor: bal.color + "44", color: bal.color }}
                             >
                               {bal.asset[0]}
                             </div>
-                            <div>
-                              <span className="font-bold text-foreground">{bal.asset}</span>
-                              {bal.asset === nativeAsset && bal.total > 0 && (
-                                <span className="ml-1.5 text-[9px] font-black px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/25">
-                                  WALLET
-                                </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-foreground">{bal.asset}</span>
+                                {bal.asset === nativeAsset && bal.total > 0 && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/25 shrink-0">
+                                    WALLET
+                                  </span>
+                                )}
+                                {bal.asset === nativeAsset && chainInfo?.isL2 && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: chainInfo.color + "22", color: chainInfo.color, borderWidth: 1, borderColor: chainInfo.color + "44" }}>
+                                    L{chainInfo.layer ?? 2}
+                                  </span>
+                                )}
+                              </div>
+                              {bal.asset === nativeAsset && chainInfo && (
+                                <p className="text-[10px] text-muted-foreground truncate">{chainInfo.name}</p>
+                              )}
+                              {(bal.asset === "USDT" || bal.asset === "USDC") && (
+                                <p className="text-[10px] text-muted-foreground">Stablecoin</p>
                               )}
                             </div>
                           </div>
                         </td>
                         <td className="p-4 text-right font-mono text-sm">
-                          {bal.asset === "USDT" ? "$1.00" : bal.price > 0 ? `$${formatPrice(bal.price)}` : "—"}
+                          {(bal.asset === "USDT" || bal.asset === "USDC") ? "$1.00" : bal.price > 0 ? `$${formatPrice(bal.price)}` : "—"}
                         </td>
                         <td className={`p-4 text-right text-sm font-semibold ${bal.change24hPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {bal.asset === "USDT" ? "0.00%" : `${bal.change24hPercent >= 0 ? "+" : ""}${bal.change24hPercent.toFixed(2)}%`}
+                          {(bal.asset === "USDT" || bal.asset === "USDC") ? "0.00%" : `${bal.change24hPercent >= 0 ? "+" : ""}${bal.change24hPercent.toFixed(2)}%`}
                         </td>
                         <td className="p-4 text-right font-mono">
                           {hideBalances
