@@ -1,12 +1,15 @@
 import { useParams } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook } from "@workspace/api-client-react";
+import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
-import { X, ChevronDown, AlertTriangle } from "lucide-react";
+import { X, ChevronDown, AlertTriangle, Wallet, Loader2 } from "lucide-react";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useToast } from "@/hooks/use-toast";
 
 const LEVERAGE_OPTIONS = [2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 
@@ -114,6 +117,10 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
+  const { address, network, balance } = useWalletStore();
+  const openModal = useWalletModalStore((s) => s.open);
+  const { toast } = useToast();
+
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
     description: `Trade ${seoBase} perpetual futures on OrahDEX with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
@@ -139,8 +146,53 @@ export function FuturesTrading() {
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
   const [interval, setInterval] = useState("1h");
+  const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
 
   const countdown = useFundingCountdown();
+
+  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const nativeBal = balance ? parseFloat(balance) : 0;
+  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : "ETH";
+
+  const placeOrder = usePlaceOrder({
+    mutation: {
+      onSuccess: (data: any) => {
+        const matched = data?.matched ?? false;
+        toast({
+          title: matched ? `${futuresSide === "buy" ? "Long" : "Short"} Position Opened ✓` : "Futures Order Open",
+          description: matched
+            ? `${base} ${futuresSide === "buy" ? "Long" : "Short"} ${leverage}× — matched & settled on BSV`
+            : `${base}-PERP ${futuresSide === "buy" ? "Buy/Long" : "Sell/Short"} ${leverage}× @ ${orderType === "market" ? "market price" : `$${price}`} · pending match`,
+        });
+        setSize("");
+      },
+      onError: () => {
+        toast({ title: "Order Failed", description: "Could not open futures position. Please try again.", variant: "destructive" });
+      },
+    },
+  });
+
+  const handleFuturesSubmit = async (side: "buy" | "sell") => {
+    if (!address) { openModal(); return; }
+    if (!size || parseFloat(size) <= 0) {
+      toast({ title: "Enter size", description: "Please enter a position size.", variant: "destructive" });
+      return;
+    }
+    setFuturesSide(side);
+    placeOrder.mutate({
+      data: {
+        symbol: `${base}/USDT-PERP`,
+        walletAddress: address,
+        side,
+        type: orderType === "stop" ? "limit" : orderType,
+        price: orderType !== "market" && price ? parseFloat(price) : undefined,
+        quantity: parseFloat(size),
+        networkType: isEvm ? "evm" : "bsv",
+        leverage,
+        marginMode,
+      } as any,
+    });
+  };
 
   const ticker = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
@@ -253,7 +305,13 @@ export function FuturesTrading() {
                 ))}
               </div>
               <div className="flex-1 overflow-auto p-4 flex items-center justify-center text-muted-foreground text-sm">
-                Connect wallet to view futures positions and settle PnL.
+                {address ? (
+                  <span className="text-muted-foreground">No open positions · Place a trade to get started</span>
+                ) : (
+                  <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                    <Wallet className="w-4 h-4" /> Connect wallet to view positions
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -329,7 +387,13 @@ export function FuturesTrading() {
               {/* Available balance */}
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Available</span>
-                <span className="font-mono text-foreground">0.00 USDT</span>
+                {address ? (
+                  <span className="font-mono text-foreground">{nativeBal.toFixed(4)} {nativeSymbol}</span>
+                ) : (
+                  <button onClick={openModal} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
+                    <Wallet className="w-3 h-3" /> Connect Wallet
+                  </button>
+                )}
               </div>
 
               {/* Price input */}
@@ -362,12 +426,17 @@ export function FuturesTrading() {
 
               {/* PCT quick-fill */}
               <div className="flex gap-1">
-                {[25, 50, 75, 100].map((p) => (
+                {[25, 50, 75, 100].map((pct) => (
                   <button
-                    key={p}
+                    key={pct}
+                    onClick={() => {
+                      const portion = nativeBal * (pct / 100);
+                      const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;
+                      setSize((portion * leverage / entryPrice).toFixed(4));
+                    }}
                     className="flex-1 py-1 text-[10px] font-semibold bg-secondary border border-border rounded-lg text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all"
                   >
-                    {p}%
+                    {pct}%
                   </button>
                 ))}
               </div>
@@ -390,14 +459,34 @@ export function FuturesTrading() {
               </div>
 
               {/* Buy / Sell buttons */}
-              <div className="flex gap-2 pt-1">
-                <button className="flex-1 bg-green-500 hover:bg-green-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-green-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
-                  Buy / Long
+              {address ? (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => handleFuturesSubmit("buy")}
+                    disabled={placeOrder.isPending}
+                    className="flex-1 bg-green-500 hover:bg-green-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-green-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                  >
+                    {placeOrder.isPending && futuresSide === "buy" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Buy / Long
+                  </button>
+                  <button
+                    onClick={() => handleFuturesSubmit("sell")}
+                    disabled={placeOrder.isPending}
+                    className="flex-1 bg-red-500 hover:bg-red-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-red-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                  >
+                    {placeOrder.isPending && futuresSide === "sell" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Sell / Short
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={openModal}
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Connect Wallet to Trade
                 </button>
-                <button className="flex-1 bg-red-500 hover:bg-red-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-red-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0">
-                  Sell / Short
-                </button>
-              </div>
+              )}
 
               {/* Settle note */}
               <p className="text-[10px] text-muted-foreground text-center pt-1">
