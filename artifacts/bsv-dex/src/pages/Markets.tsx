@@ -149,7 +149,7 @@ export function Markets() {
     }
   };
 
-  const { data: apiMarkets } = useGetMarkets();
+  const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 15_000 } });
   const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   /**
@@ -385,8 +385,8 @@ export function Markets() {
               </thead>
               <tbody>
                 {filtered.map((m, idx) => {
-                  const base  = m.baseAsset ?? m.symbol.split("-")[0];
-                  const quote = m.quoteAsset ?? m.symbol.split("-")[1];
+                  const base  = m.baseAsset ?? m.symbol.split(/[-/]/)[0];
+                  const quote = m.quoteAsset ?? m.symbol.split(/[-/]/)[1];
                   const price = parseFloat(m.lastPrice) || 0;
                   const chg   = parseFloat(m.priceChangePercent24h) || 0;
                   const isUp  = chg >= 0;
