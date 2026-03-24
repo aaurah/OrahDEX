@@ -874,13 +874,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                       </button>
 
-                      {/* ③ All supported chain badges */}
-                      <div className="flex flex-wrap gap-1 px-0.5">
-                        {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","FTM","CRO","LINEA","zkSync","Scroll","SOL","BTC","BSV","TRX"].map(c => (
-                          <span key={c} className="text-[9px] font-bold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-border/60 rounded">{c}</span>
-                        ))}
-                      </div>
-
                       <div className="flex items-start gap-3 p-3.5 bg-primary/5 text-primary rounded-xl border border-primary/15">
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
