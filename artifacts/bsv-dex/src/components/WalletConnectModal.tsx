@@ -163,16 +163,13 @@ function getEvmProvider(walletId: string): any {
 }
 
 type View = "landing" | "create" | "import" | "connect" | "prep";
-type ConnectTab = "reown" | "bsv" | "evm" | "sol" | "btc";
+type ConnectTab = "reown" | "bsv";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
-  { id: "reown", label: "Reown",  emoji: "🔗" },
-  { id: "bsv",   label: "BSV",   emoji: "⚡" },
-  { id: "evm",   label: "EVM",   emoji: "🌐" },
-  { id: "sol",   label: "Solana",emoji: "◎" },
-  { id: "btc",   label: "Bitcoin",emoji: "₿" },
+  { id: "reown", label: "Reown / WalletConnect", emoji: "🔗" },
+  { id: "bsv",   label: "Bitcoin SV",            emoji: "⚡" },
 ];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -267,6 +264,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return () => clearTimeout(t);
     }
     prevOpenRef.current = isOpen;
+    return undefined;
   }, [isOpen]);
 
   const handleClose = () => {
@@ -725,11 +723,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   /* ── Dispatcher ─────────────────────────────────────────────────────────── */
-  const handleConnect = (walletId: string, installUrl?: string) => {
-    if (connectTab === "sol") return handleConnectSol(walletId);
-    if (connectTab === "btc") return handleConnectBtc(walletId);
-    if (connectTab === "bsv") return handleConnectBsv(walletId);
-    return handleConnectEvm(walletId, installUrl);
+  const handleConnect = (walletId: string, _installUrl?: string) => {
+    return handleConnectBsv(walletId);
   };
 
   /* ── Create wallet ────────────────────────────────────────────────────────── */
@@ -752,10 +747,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   const finishCreate = () => {
-    const address = deriveAddress(mnemonic, createNetwork);
-    connect({ address, provider: "aura-wallet", network: createNetwork });
+    const address = deriveAddress(mnemonic, "bsv");
+    connect({ address, provider: "aura-wallet", network: "bsv" });
     setCreateStep("done");
-    setTimeout(() => goToPrep(address, createNetwork, "aura-wallet"), 1500);
+    setTimeout(() => goToPrep(address, "bsv", "aura-wallet"), 1500);
   };
 
   /* ── Import wallet ────────────────────────────────────────────────────────── */
@@ -763,14 +758,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
     setImportError(null);
-    const addr = deriveAddress(result.words, importNetwork);
+    const addr = deriveAddress(result.words, "bsv");
     setImportAddress(addr);
-    connect({ address: addr, provider: "aura-wallet", network: importNetwork });
+    connect({ address: addr, provider: "aura-wallet", network: "bsv" });
     setImportStep("done");
-    setTimeout(() => goToPrep(addr, importNetwork, "aura-wallet"), 1500);
+    setTimeout(() => goToPrep(addr, "bsv", "aura-wallet"), 1500);
   };
 
-  const currentWallets = connectTab === "evm" ? EVM_WALLETS : connectTab === "sol" ? SOL_WALLETS : connectTab === "btc" ? BTC_WALLETS : BSV_WALLETS;
+  const currentWallets = BSV_WALLETS;
 
   return (
     <AnimatePresence>
@@ -851,68 +846,33 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </button>
                       </div>
 
-                      {/* ② Multi-chain connect options */}
-                      <div>
-                        <p className="text-[10px] text-muted-foreground/70 uppercase tracking-widest font-bold mb-2.5 px-0.5">Multi-chain wallets</p>
-                        <div className="space-y-1.5">
-
-                          {/* EVM */}
-                          <button
-                            onClick={() => { setConnectTab("evm"); setView("connect"); }}
-                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left"
-                          >
-                            <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center text-xl shrink-0">🌐</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm text-foreground">EVM Wallets</div>
-                              <p className="text-[10px] text-muted-foreground truncate">MetaMask · Coinbase · Trust · OKX · Phantom + 7 more</p>
-                              <div className="flex gap-1 mt-1 flex-wrap">
-                                {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","FTM","CRO","LINEA","zkSync","Scroll","Mantle"].map(c => (
-                                  <span key={c} className="text-[8px] font-bold px-1 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded">{c}</span>
-                                ))}
-                              </div>
+                      {/* ② Reown / WalletConnect — all other chains */}
+                      <button
+                        onClick={() => { setConnectTab("reown"); setView("connect"); }}
+                        className="w-full rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4 text-left hover:border-blue-500/50 hover:bg-blue-500/10 transition-all active:scale-[0.99]"
+                      >
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center text-2xl shrink-0">🔗</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-[15px] text-foreground leading-tight">Reown · WalletConnect</span>
+                              <span className="text-[8px] font-black px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded">600+ WALLETS</span>
                             </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                          </button>
-
-                          {/* Solana */}
-                          <button
-                            onClick={() => { setConnectTab("sol"); setView("connect"); }}
-                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-violet-500/40 hover:bg-violet-500/5 transition-all text-left"
-                          >
-                            <div className="w-10 h-10 rounded-xl bg-violet-500/15 flex items-center justify-center text-xl shrink-0">◎</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm text-foreground">Solana Wallets</div>
-                              <p className="text-[10px] text-muted-foreground">Phantom · Solflare · Backpack · Glow · Slope</p>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                          </button>
-
-                          {/* Bitcoin */}
-                          <button
-                            onClick={() => { setConnectTab("btc"); setView("connect"); }}
-                            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-border hover:border-orange-500/40 hover:bg-orange-500/5 transition-all text-left"
-                          >
-                            <div className="w-10 h-10 rounded-xl bg-orange-500/15 flex items-center justify-center text-xl shrink-0">₿</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-sm text-foreground">Bitcoin Wallets</div>
-                              <p className="text-[10px] text-muted-foreground">Phantom · UniSat · Xverse · Leather · OYL — on-chain only, no Lightning</p>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                          </button>
-
-                          {/* TRON info row */}
-                          <div className="flex items-center gap-3 p-3.5 rounded-xl border border-border/40 bg-secondary/15">
-                            <div className="w-10 h-10 rounded-xl bg-red-500/12 flex items-center justify-center text-xl shrink-0">🔴</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-sm text-foreground">TRON</span>
-                                <span className="text-[8px] font-black px-1 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded">TVM</span>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground">TRX pairs listed · connect via manual BSV address entry</p>
-                            </div>
+                            <p className="text-[11px] text-blue-300/80 font-semibold mt-0.5">EVM · Solana · Bitcoin · TON · Tron — one modal, every chain</p>
                           </div>
+                          <ChevronRight className="w-4 h-4 text-blue-400 shrink-0" />
                         </div>
-                      </div>
+                        <div className="flex flex-wrap gap-1">
+                          {["MetaMask","Coinbase","Trust","Phantom","Solflare","UniSat","Ledger","OKX","Rainbow","Backpack","Xverse","+ 589 more"].map(w => (
+                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-blue-500/10 text-blue-300/80 border border-blue-500/15 rounded">{w}</span>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","SOL","BTC","TON","TRX","zkSync","Scroll","Linea","Mantle","FTM"].map(c => (
+                            <span key={c} className="text-[8px] font-bold px-1 py-0.5 bg-white/5 text-muted-foreground border border-border/50 rounded">{c}</span>
+                          ))}
+                        </div>
+                      </button>
 
                       {/* ③ All supported chain badges */}
                       <div className="flex flex-wrap gap-1 px-0.5">
@@ -938,27 +898,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {createStep === "generate" && (
                         <>
-                          {/* Network selector */}
-                          <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                            <div className="flex gap-2">
-                              {(["bsv", "evm"] as WalletNetwork[]).map(n => (
-                                <button key={n} onClick={() => setCreateNetwork(n)}
-                                  className={cn("flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all",
-                                    createNetwork === n ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40"
-                                  )}>
-                                  {n === "bsv" ? "⚡ Bitcoin SV" : "🌐 EVM / Web3"}
-                                </button>
-                              ))}
-                            </div>
+                          {/* BSV-only badge */}
+                          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/8 border border-green-500/20 rounded-xl">
+                            <span className="text-base">⚡</span>
+                            <span className="text-sm font-bold text-green-300">Bitcoin SV Wallet</span>
+                            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/25 rounded">BSV</span>
                           </div>
-
-                          {createNetwork === "evm" && (
-                            <>
-                              <EvmChainSelector value={evmChain} onChange={setEvmChain} />
-                              <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
-                            </>
-                          )}
 
                           {/* Word count */}
                           <div>
@@ -1059,26 +1004,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {importStep === "enter" && (
                         <>
-                          <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                            <div className="flex gap-2">
-                              {(["bsv", "evm"] as WalletNetwork[]).map(n => (
-                                <button key={n} onClick={() => setImportNetwork(n)}
-                                  className={cn("flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all",
-                                    importNetwork === n ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40"
-                                  )}>
-                                  {n === "bsv" ? "⚡ Bitcoin SV" : "🌐 EVM / Web3"}
-                                </button>
-                              ))}
-                            </div>
+                          {/* BSV-only badge */}
+                          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/8 border border-green-500/20 rounded-xl">
+                            <span className="text-base">⚡</span>
+                            <span className="text-sm font-bold text-green-300">Bitcoin SV Wallet</span>
+                            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/25 rounded">BSV</span>
                           </div>
-
-                          {importNetwork === "evm" && (
-                            <>
-                              <EvmChainSelector value={evmChain} onChange={setEvmChain} />
-                              <AccountIndexSelector value={accountIndex} onChange={setAccountIndex} />
-                            </>
-                          )}
 
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -1462,10 +1393,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           {connectTab !== "reown" && (
                           <div className="px-6 pt-3 pb-1">
                             <p className="text-[11px] text-muted-foreground leading-relaxed">
-                              {connectTab === "evm" && "Connect any EVM-compatible wallet. Supports Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism and all other EVM chains."}
-                              {connectTab === "sol" && "Connect your Solana wallet. All SPL tokens and NFTs work on OrahDEX. BSV is used for cross-chain settlement."}
-                              {connectTab === "btc" && "Connect your Bitcoin wallet — on-chain addresses only. Lightning Network is not accepted; use BSV for fast settlement."}
-                              {connectTab === "bsv" && "Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees."}
+                              Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees.
                             </p>
                           </div>
                           )}
@@ -1509,16 +1437,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           )}
                         </>
-                      )}
-
-                      {/* BTC Lightning warning */}
-                      {connectTab === "btc" && bsvStep === "list" && (
-                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-green-500/8 border border-green-500/20 rounded-xl">
-                          <AlertTriangle className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
-                          <p className="text-[11px] text-green-300/80">
-                            OrahDEX does not support Lightning Network. Use standard on-chain Bitcoin addresses (bc1q, 1, or 3). For fast settlement, use BSV.
-                          </p>
-                        </div>
                       )}
 
                       {/* BSV fastest settlement note */}
