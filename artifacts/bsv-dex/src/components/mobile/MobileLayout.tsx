@@ -27,33 +27,20 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 relative grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
+      <div className="shrink-0 relative grid h-14 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ gridTemplateColumns: "1fr auto 1fr" }}>
-
-        {/* Logo icon — pinned to left edge, not part of the grid flow */}
-        <button
-          onClick={() => navigate("/")}
-          className="absolute left-4 inset-y-0 flex items-center active:opacity-70 transition-opacity"
-        >
-          <div className="w-7 h-7 rounded-lg overflow-hidden shadow-md shadow-primary/20 shrink-0">
-            <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
-          </div>
-        </button>
 
         {/* Col 1: empty spacer */}
         <div />
 
-        {/* Col 2: centred brand text */}
+        {/* Col 2: centred logo image */}
         <button
           onClick={() => navigate("/")}
-          className="flex flex-col items-center justify-center px-2 active:opacity-70 transition-opacity whitespace-nowrap"
+          className="flex items-center justify-center active:opacity-70 transition-opacity"
         >
-          <span className="font-extrabold text-[16px] tracking-tight text-foreground leading-none">
-            Orah<span className="text-primary">DEX</span>
-          </span>
-          <span className="text-[7px] text-muted-foreground tracking-wide uppercase font-semibold leading-none mt-0.5">
-            Trade means DEX
-          </span>
+          <div className="h-11 w-11 overflow-hidden shrink-0">
+            <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
+          </div>
         </button>
 
         {/* Col 3: Wallet, right-aligned */}
