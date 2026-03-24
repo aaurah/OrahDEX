@@ -5,6 +5,7 @@ import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
   ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
+  Shield, Link2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -289,6 +290,53 @@ export function DexHub() {
         <p className="text-muted-foreground text-base lg:text-lg max-w-3xl">
           Every centralised and decentralised exchange ranked by volume &amp; market cap — live data from CoinGecko. Trade any pair on OrahDEX with on-chain BSV settlement.
         </p>
+      </div>
+
+      {/* ── L1 / L2 / L3 Architecture strip ── */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        {[
+          {
+            layer: "L1", title: "Base Security", icon: Shield,
+            color: "text-green-400", border: "border-green-500/20",
+            bg: "from-green-500/5 to-transparent",
+            items: ["BTC · BSV · ETH · SOL", "Final settlement anchor", "HTLC scripts & bridges"],
+          },
+          {
+            layer: "L2", title: "Scaling Layer", icon: Zap,
+            color: "text-sky-400", border: "border-sky-500/20",
+            bg: "from-sky-500/5 to-transparent",
+            items: ["Arbitrum · Optimism · Base", "Cheap AMM execution", "Rollup-secured trades"],
+          },
+          {
+            layer: "L3", title: "OrahDEX Router", icon: Link2,
+            color: "text-primary", border: "border-primary/20",
+            bg: "from-primary/5 to-transparent",
+            items: ["Smart cross-chain routing", "BSV settlement fabric", "Fee & rewards system"],
+          },
+        ].map(({ layer, title, icon: Icon, color, border, bg, items }) => (
+          <div key={layer} className={cn(
+            "rounded-2xl border bg-gradient-to-br p-4",
+            border, bg
+          )}>
+            <div className="flex items-center gap-2 mb-3">
+              <div className={cn("w-7 h-7 rounded-lg bg-background/60 flex items-center justify-center", color)}>
+                <Icon className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <div className={cn("text-[10px] font-black uppercase tracking-wider", color)}>{layer}</div>
+                <div className="text-xs font-semibold text-foreground">{title}</div>
+              </div>
+            </div>
+            <ul className="space-y-1.5">
+              {items.map(item => (
+                <li key={item} className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <span className={cn("w-1 h-1 rounded-full shrink-0 bg-current", color)} />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
 
       {/* ── Main view tabs ── */}
