@@ -69,32 +69,44 @@ function balanceOfCalldata(address: string): string {
 }
 
 /**
- * RPC call wrapper — uses injected wallet if available, otherwise falls back
- * to a public JSON-RPC endpoint for the given chainId.
- * This makes balances work for MetaMask AND WalletConnect/Reown wallets.
+ * RPC call wrapper — prefers the public JSON-RPC endpoint for the specified
+ * chainId so balances are always from the correct chain.
+ * Falls back to the injected wallet only when no public RPC is configured.
  */
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
-  const injected = (window as any).ethereum;
-  if (injected) {
+  // Try the public RPC for the specific chain first to avoid the injected wallet
+  // returning balances for the wrong chain (e.g. MetaMask on Ethereum when user
+  // connected Reown on Base).
+  const rpcUrl = CHAIN_RPC_URLS[chainId];
+  if (rpcUrl) {
     try {
-      return await injected.request({ method, params });
+      const res = await globalThis.fetch(rpcUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (!json.error) return json.result;
+      }
     } catch {
-      /* fall through to public RPC */
+      /* fall through to injected wallet */
     }
   }
 
-  const rpcUrl = CHAIN_RPC_URLS[chainId];
-  if (!rpcUrl) throw new Error(`No RPC URL for chainId ${chainId}`);
+  // Fallback: injected wallet (only if same chain is active)
+  const injected = (window as any).ethereum;
+  if (injected) {
+    try {
+      const walletChainHex: string = await injected.request({ method: "eth_chainId", params: [] });
+      const walletChain = parseInt(walletChainHex, 16);
+      if (walletChain === chainId) {
+        return await injected.request({ method, params });
+      }
+    } catch { /* ignore */ }
+  }
 
-  const res = await globalThis.fetch(rpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`RPC ${rpcUrl} returned ${res.status}`);
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message);
-  return json.result;
+  throw new Error(`No RPC available for chainId ${chainId}`);
 }
 
 export function useEvmBalances(address: string | null, chainId: number | null) {

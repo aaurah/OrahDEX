@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Wallet, ChevronDown, LogOut, Copy, Check, ExternalLink } from "lucide-react";
-import { openReownModal, subscribeReownAccount, isReownReady } from "@/lib/reown";
+import { openReownModal, subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { useWalletStore } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 
@@ -165,7 +165,7 @@ export function ReownConnectButton({
  */
 export function ReownConnectPanel({ onConnected }: { onConnected?: (addr: string) => void }) {
   const [ready, setReady] = useState(false);
-  const { connect } = useWalletStore();
+  const { connect, setBalance } = useWalletStore();
 
   useEffect(() => {
     let tries = 0;
@@ -178,14 +178,18 @@ export function ReownConnectPanel({ onConnected }: { onConnected?: (addr: string
 
   useEffect(() => {
     if (!ready) return;
-    const unsub = subscribeReownAccount(state => {
+    const unsub = subscribeReownAccount(async (state) => {
       if (state.isConnected && state.address) {
-        connect({ address: state.address, provider: "reown", network: "evm" });
+        const chainId = parseChainFromCaip(state.caipAddress) ?? undefined;
+        connect({ address: state.address, provider: "reown", network: "evm", chainId });
         onConnected?.(state.address);
+        // Fetch native ETH/EVM balance in background and push to store
+        const bal = await fetchEvmBalance(state.address, chainId ?? null);
+        if (bal !== null) setBalance(bal);
       }
     });
     return unsub;
-  }, [ready, connect, onConnected]);
+  }, [ready, connect, setBalance, onConnected]);
 
   const chains = [
     "Ethereum", "Polygon", "Arbitrum", "Optimism", "Base",

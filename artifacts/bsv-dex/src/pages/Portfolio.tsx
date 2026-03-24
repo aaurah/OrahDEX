@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -135,6 +136,10 @@ export function Portfolio() {
 
   const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
+  const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
+    network === "evm" ? address : null,
+    chainId,
+  );
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -189,8 +194,21 @@ export function Portfolio() {
   const nativeBalance = balance ? parseFloat(balance) : 0;
   const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
 
-  // Build balance rows: native token uses real wallet balance, others start at 0
+  // Build balance rows:
+  // - EVM wallets: use real on-chain balances from useEvmBalances (native + ERC-20)
+  // - BSV/SOL/BTC: use balance from wallet store for the native asset only
   const balances = PORTFOLIO_ASSETS.map(a => {
+    // For EVM, prefer real on-chain data from the hook
+    if (network === "evm" && evmBalances.length > 0) {
+      const evmBal = evmBalances.find(b => b.symbol === a.asset);
+      if (evmBal) {
+        const pnl24h = evmBal.usdValue * evmBal.change24h / 100;
+        return { ...a, total: evmBal.amount, free: evmBal.amount, locked: 0,
+                 price: evmBal.price, change24hPercent: evmBal.change24h,
+                 valueUSD: evmBal.usdValue, pnl24h };
+      }
+    }
+    // Fallback: native token from wallet store, everything else 0
     const mkt    = prices?.[a.asset];
     const price  = (a.asset === "USDT" || a.asset === "USDC") ? 1 : (mkt?.lastPrice ?? 0);
     const change = (a.asset === "USDT" || a.asset === "USDC") ? 0 : (mkt?.priceChangePercent24h ?? 0);
@@ -253,7 +271,7 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); }}
+              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               title="Refresh prices & balance"
             >

@@ -338,12 +338,24 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const address: string = resp?.publicKey?.toString() ?? provider.publicKey?.toString();
       if (!address) throw new Error("No public key returned from wallet.");
 
-      // Fetch real SOL balance if the provider supports it
+      // Fetch real SOL balance — try wallet provider first, then fall back to public RPC
       let solBalance: string | undefined;
       try {
-        const lamports: number = await provider.getBalance?.(resp?.publicKey ?? provider.publicKey) ?? null;
+        const lamports: number | null = await provider.getBalance?.(resp?.publicKey ?? provider.publicKey) ?? null;
         if (lamports !== null && lamports !== undefined) {
           solBalance = (lamports / 1e9).toFixed(6);
+        } else {
+          // Fallback: public Solana mainnet RPC
+          const rpcRes = await fetch("https://api.mainnet-beta.solana.com", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+          });
+          if (rpcRes.ok) {
+            const rpcData = await rpcRes.json();
+            const lamps = rpcData?.result?.value;
+            if (lamps !== undefined) solBalance = (lamps / 1e9).toFixed(6);
+          }
         }
       } catch { /* non-critical */ }
 
