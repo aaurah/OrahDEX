@@ -3,9 +3,43 @@ import crypto from "node:crypto";
 import { db } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
+import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey } from "../lib/bsvWallet.js";
+import * as secp from "@noble/secp256k1";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 
 const router = Router();
+
+/* ─── EVM SIGNATURE RECOVERY ─────────────────────────────────────────────── */
+
+function hashPersonalMessage(message: string): Uint8Array {
+  const prefix = `\x19Ethereum Signed Message:\n${message.length}`;
+  const buf = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
+  return keccak_256(buf);
+}
+
+function recoverEthAddress(message: string, sigHex: string): string {
+  const sig = sigHex.startsWith("0x") ? sigHex.slice(2) : sigHex;
+  const v = parseInt(sig.slice(128, 130), 16);
+  const recovery = v >= 27 ? v - 27 : v;
+  const r = sig.slice(0, 64);
+  const s = sig.slice(64, 128);
+  const msgHash = hashPersonalMessage(message);
+  const signature = secp.Signature.fromCompact(r + s).addRecoveryBit(recovery);
+  const pubKey = signature.recoverPublicKey(msgHash);
+  const pubKeyBytes = pubKey.toRawBytes(false).slice(1); // strip 0x04 prefix
+  const hash = keccak_256(pubKeyBytes);
+  return "0x" + Buffer.from(hash).slice(-20).toString("hex");
+}
+
+/* ─── WALLET AUTH NONCES (in-memory) ─────────────────────────────────────── */
+
+const pendingNonces = new Map<string, { nonce: string; message: string; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of pendingNonces.entries()) {
+    if (v.expiresAt < now) pendingNonces.delete(k);
+  }
+}, 5 * 60 * 1000);
 
 /* ─── SERVER-SIDE TOTP (RFC 6238) ─────────────────────────────────────────── */
 function base32Decode(input: string): Buffer {
@@ -101,6 +135,120 @@ router.get("/auth/totp-uri", (_req, res) => {
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
   res.json({ uri, qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}` });
+});
+
+/**
+ * POST /admin/auth/wallet-challenge
+ * Returns a unique nonce + human-readable message for the wallet to sign.
+ */
+router.post("/auth/wallet-challenge", (req, res) => {
+  const { address } = req.body as { address?: string };
+  if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    res.status(400).json({ error: "Valid EVM address required (0x...)" });
+    return;
+  }
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const ts      = new Date().toISOString();
+  const message = `Sign in to OrahDEX Admin Panel\n\nNonce: ${nonce}\nTimestamp: ${ts}\n\nThis request will not trigger a blockchain transaction.`;
+  pendingNonces.set(address.toLowerCase(), { nonce, message, expiresAt: Date.now() + 5 * 60 * 1000 });
+  res.json({ nonce, message });
+});
+
+/**
+ * POST /admin/auth/wallet
+ * Verifies a signed message, checks the address is on the whitelist, and grants admin access.
+ */
+router.post("/auth/wallet", async (req, res) => {
+  const { address, signature } = req.body as { address?: string; signature?: string };
+  if (!address || !signature) {
+    res.status(400).json({ error: "address and signature are required" });
+    return;
+  }
+  const stored = pendingNonces.get(address.toLowerCase());
+  if (!stored || stored.expiresAt < Date.now()) {
+    res.status(401).json({ error: "Challenge expired or not found. Request a new one." });
+    return;
+  }
+  let recovered: string;
+  try {
+    recovered = recoverEthAddress(stored.message, signature);
+  } catch {
+    res.status(401).json({ error: "Invalid signature format" });
+    return;
+  }
+  if (recovered.toLowerCase() !== address.toLowerCase()) {
+    res.status(401).json({ error: "Signature does not match address" });
+    return;
+  }
+  const rows = await db.select().from(platformSettingsTable)
+    .where(eq(platformSettingsTable.key, "admin_wallet_whitelist"));
+  const whitelist: string[] = rows.length ? JSON.parse(rows[0].value) : [];
+  if (!whitelist.includes(address.toLowerCase())) {
+    res.status(403).json({ error: "Address not in admin whitelist. Contact your administrator." });
+    return;
+  }
+  pendingNonces.delete(address.toLowerCase());
+  res.json({ success: true, address });
+});
+
+/* ─── WALLET WHITELIST ────────────────────────────────────────────────────── */
+
+router.get("/wallet-whitelist", async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "admin_wallet_whitelist"));
+    const addresses: string[] = rows.length ? JSON.parse(rows[0].value) : [];
+    res.json({ addresses });
+  } catch { res.json({ addresses: [] }); }
+});
+
+router.put("/wallet-whitelist", async (req, res) => {
+  try {
+    const { addresses } = req.body as { addresses: string[] };
+    const normalised = (addresses ?? []).map((a: string) => a.toLowerCase().trim()).filter(Boolean);
+    const value = JSON.stringify(normalised);
+    await db.insert(platformSettingsTable)
+      .values({ key: "admin_wallet_whitelist", value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    res.json({ addresses: normalised });
+  } catch { res.status(500).json({ error: "Failed to save whitelist" }); }
+});
+
+/* ─── SECURITY VAULT ──────────────────────────────────────────────────────── */
+
+router.get("/security-vault", async (_req, res) => {
+  try {
+    const wallet = await getOrCreateWallet();
+    res.json({
+      bsvWallet: {
+        address:    wallet.address,
+        wif:        wallet.wif,
+        privKeyHex: wallet.privKeyHex,
+        pubKeyHex:  wallet.pubKeyHex,
+      },
+      adminEmail:  process.env.ADMIN_EMAIL  ?? null,
+      totpSecret:  process.env.ADMIN_TOTP_SECRET ?? null,
+    });
+  } catch { res.status(500).json({ error: "Failed to load security vault" }); }
+});
+
+router.post("/security-vault/regenerate-bsv", async (_req, res) => {
+  try {
+    const privKey = crypto.randomBytes(32);
+    const wif     = privKeyToWif(privKey);
+    const address = privKeyToAddress(privKey);
+    const pubKeyHex = privKeyToPubKey(privKey).toString("hex");
+    await db.insert(platformSettingsTable)
+      .values({ key: "bsv_settlement_wif", value: wif })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: wif, updatedAt: new Date() } });
+    await db.insert(platformSettingsTable)
+      .values({ key: "bsv_settlement_address", value: address })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: address, updatedAt: new Date() } });
+    // Clear any custom address override since we have a fresh wallet
+    await db.delete(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+    res.json({ address, wif, privKeyHex: privKey.toString("hex"), pubKeyHex });
+  } catch { res.status(500).json({ error: "Failed to regenerate BSV wallet" }); }
 });
 
 const mockUsers = Array.from({ length: 24 }, (_, i) => ({
