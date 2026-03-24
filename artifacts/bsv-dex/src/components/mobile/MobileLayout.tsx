@@ -27,7 +27,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 relative grid h-14 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
+      <div className="shrink-0 relative grid h-20 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ gridTemplateColumns: "1fr auto 1fr" }}>
 
         {/* Col 1: empty spacer */}
@@ -38,7 +38,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           onClick={() => navigate("/")}
           className="flex items-center justify-center active:opacity-70 transition-opacity"
         >
-          <div className="h-11 w-11 overflow-hidden shrink-0">
+          <div className="h-16 w-16 overflow-hidden shrink-0">
             <img src={import.meta.env.BASE_URL + "logo.png"} alt="OrahDEX" className="w-full h-full object-contain" />
           </div>
         </button>
