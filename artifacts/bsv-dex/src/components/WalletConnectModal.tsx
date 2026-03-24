@@ -168,7 +168,7 @@ type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
-  { id: "reown", label: "Reown / WalletConnect", emoji: "🔗" },
+  { id: "reown", label: "EVM Wallets", emoji: "🔗" },
   { id: "bsv",   label: "Bitcoin SV",            emoji: "⚡" },
 ];
 
@@ -858,7 +858,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </button>
                       </div>
 
-                      {/* ② Reown / WalletConnect — all other chains */}
+                      {/* ② EVM / Web3 wallets */}
                       <button
                         onClick={() => { setConnectTab("reown"); setView("connect"); }}
                         className="w-full rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4 text-left hover:border-blue-500/50 hover:bg-blue-500/10 transition-all active:scale-[0.99]"
@@ -867,7 +867,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center text-2xl shrink-0">🔗</div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-black text-[15px] text-foreground leading-tight">Reown · WalletConnect</span>
+                              <span className="font-black text-[15px] text-foreground leading-tight">EVM Wallets</span>
                               <span className="text-[8px] font-black px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded">600+ WALLETS</span>
                             </div>
                             <p className="text-[11px] text-blue-300/80 font-semibold mt-0.5">EVM · Solana · Bitcoin · TON · Tron — one modal, every chain</p>

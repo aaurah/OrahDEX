@@ -81,7 +81,7 @@ export function ReownConnectButton({
         )}
       >
         <Wallet className="w-3.5 h-3.5" />
-        <span>Reown</span>
+        <span>Connect</span>
       </button>
     );
   }
@@ -106,7 +106,7 @@ export function ReownConnectButton({
         {dropOpen && (
           <div className="absolute right-0 top-full mt-2 w-56 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
             <div className="p-3 border-b border-border">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">Connected via Reown</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">EVM Wallet Connected</p>
               <p className="text-xs font-mono text-foreground break-all">{reownAddr}</p>
             </div>
             <div className="p-1.5 space-y-0.5">
@@ -155,7 +155,7 @@ export function ReownConnectButton({
       <svg viewBox="0 0 32 32" className={cn("shrink-0", size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4")} fill="none">
         <path d="M9.58 12.26c3.54-3.46 9.28-3.46 12.82 0l.43.42a.44.44 0 0 1 0 .63l-1.45 1.42a.23.23 0 0 1-.32 0l-.59-.57c-2.47-2.41-6.48-2.41-8.95 0l-.63.61a.23.23 0 0 1-.32 0L9.14 13.35a.44.44 0 0 1 0-.63l.44-.46Zm15.84 2.96 1.3 1.27a.44.44 0 0 1 0 .63l-5.84 5.7a.46.46 0 0 1-.64 0l-4.14-4.05a.11.11 0 0 0-.16 0l-4.14 4.05a.46.46 0 0 1-.64 0l-5.84-5.7a.44.44 0 0 1 0-.63l1.3-1.27a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0Z" fill="currentColor"/>
       </svg>
-      {variant !== "icon" && <span>Reown</span>}
+      {variant !== "icon" && <span>Connect Wallet</span>}
     </button>
   );
 }
