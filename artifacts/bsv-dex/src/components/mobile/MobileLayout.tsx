@@ -48,9 +48,9 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 border-b border-border/40 z-50 flex items-center px-3 py-2 gap-2 bg-card/95 backdrop-blur-sm">
+      <div className="shrink-0 border-b border-border/40 z-50 flex items-center pl-1 pr-3 py-2 gap-2 bg-card/95 backdrop-blur-sm">
 
-        {/* Brand — left */}
+        {/* Brand — top-left corner */}
         <button
           onClick={() => navigate("/")}
           className="active:opacity-70 transition-opacity flex-1"
