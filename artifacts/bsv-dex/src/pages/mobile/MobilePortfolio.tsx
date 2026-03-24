@@ -1,4 +1,8 @@
-import { Link2, TrendingUp, TrendingDown, ArrowDownToLine, ArrowUpFromLine, Copy, Check, RefreshCw } from "lucide-react";
+import {
+  Link2, TrendingUp, TrendingDown,
+  ArrowDownToLine, ArrowUpFromLine,
+  Copy, Check, RefreshCw,
+} from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -8,18 +12,18 @@ import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-// Demo holdings — amounts only; values computed from live prices
-const HOLDINGS = [
-  { asset: "BSV",  amount: 142.5,  color: "#22C55E" },
-  { asset: "USDT", amount: 4520.5, color: "#34D399" },
-  { asset: "BTC",  amount: 0.0824, color: "#F97316" },
-  { asset: "ETH",  amount: 1.25,   color: "#8B5CF6" },
-];
+const ASSET_COLORS: Record<string, string> = {
+  BSV:  "#22C55E",
+  USDT: "#34D399",
+  BTC:  "#F97316",
+  ETH:  "#8B5CF6",
+  BNB:  "#EAB308",
+};
 
 const ORDERS = [
-  { id: "1", symbol: "BSV/USDT",  side: "buy",  type: "limit",  price: 54.00,  qty: 10,   status: "open",      time: "09:15" },
-  { id: "2", symbol: "BTC/USDT",  side: "sell", type: "market", price: 65400,  qty: 0.01, status: "filled",    time: "08:42" },
-  { id: "3", symbol: "ETH/USDT",  side: "buy",  type: "limit",  price: 3150,   qty: 0.5,  status: "cancelled", time: "07:30" },
+  { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
+  { id: "2", symbol: "BTC/USDT", side: "sell", type: "market", price: 65400, qty: 0.01, status: "filled",    time: "08:42" },
+  { id: "3", symbol: "ETH/USDT", side: "buy",  type: "limit",  price: 3150,  qty: 0.5,  status: "cancelled", time: "07:30" },
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -30,50 +34,56 @@ const STATUS_COLOR: Record<string, string> = {
 
 type Tab = "assets" | "orders";
 
-interface MarketRow {
-  baseAsset: string;
-  lastPrice: number;
-  priceChangePercent24h: number;
+interface BalanceRow {
+  asset: string;
+  total: number;
+  free: number;
+  locked: number;
+  valueUSD: number;
+  price: number;
+  change24hPercent: number;
+  pnl24h: number;
 }
 
-function usePortfolioPrices() {
-  return useQuery<MarketRow[]>({
-    queryKey: ["portfolio-prices"],
+interface PortfolioData {
+  walletAddress: string;
+  totalValueUSD: number;
+  totalPnlUSD: number;
+  totalPnlPercent: number;
+  balances: BalanceRow[];
+  openOrdersCount: number;
+  openPositionsCount: number;
+}
+
+function usePortfolioData(address: string | null) {
+  return useQuery<PortfolioData>({
+    queryKey: ["portfolio", address],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch prices");
-      const all: MarketRow[] = await res.json();
-      return all.filter(m => HOLDINGS.some(h => h.asset === m.baseAsset));
+      const res = await fetch(
+        `${BASE}/api/portfolio?walletAddress=${encodeURIComponent(address!)}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error("Failed to fetch portfolio");
+      return res.json();
     },
+    enabled: !!address,
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
 }
 
 export function MobilePortfolio() {
-  const { address } = useWalletStore();
+  const { address, network, provider } = useWalletStore();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { data: prices, isLoading, refetch } = usePortfolioPrices();
+  const { data: portfolio, isLoading, refetch } = usePortfolioData(address);
 
-  // Merge live prices into holdings
-  const balances = HOLDINGS.map(h => {
-    if (h.asset === "USDT") {
-      return { ...h, price: 1, value: h.amount, change: 0 };
-    }
-    const mkt = prices?.find(m => m.baseAsset === h.asset);
-    const price  = mkt?.lastPrice ?? 0;
-    const change = mkt?.priceChangePercent24h ?? 0;
-    return { ...h, price, value: h.amount * price, change };
-  });
-
-  const total = balances.reduce((s, b) => s + b.value, 0);
-  const totalChange = total > 0
-    ? balances.reduce((s, b) => s + (b.value * b.change) / 100, 0) / total * 100
-    : 0;
+  const balances = portfolio?.balances ?? [];
+  const total = portfolio?.totalValueUSD ?? 0;
+  const totalChange = portfolio?.totalPnlPercent ?? 0;
 
   const handleCopy = () => {
     if (!address) return;
@@ -109,7 +119,14 @@ export function MobilePortfolio() {
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
         {/* Header */}
         <div className="px-4 pt-safe-top pb-3 pt-6 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
+            {network && (
+              <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">
+                {provider ?? network} · {network.toUpperCase()}
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 bg-card border border-border rounded-full px-3 py-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
@@ -131,7 +148,7 @@ export function MobilePortfolio() {
             <button
               onClick={() => refetch()}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-foreground transition-all"
-              title="Refresh prices"
+              title="Refresh"
             >
               <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} />
             </button>
@@ -142,8 +159,8 @@ export function MobilePortfolio() {
           {/* Total value card */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <p className="text-xs text-muted-foreground mb-1">Total Portfolio Value</p>
-            {isLoading && total === 0 ? (
-              <div className="h-9 w-40 bg-muted/40 rounded-lg animate-pulse mb-2" />
+            {isLoading ? (
+              <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
             ) : (
               <p className="text-3xl font-bold text-foreground tracking-tight">
                 ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -157,24 +174,32 @@ export function MobilePortfolio() {
                 {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}% today
               </span>
             </div>
+
             {/* Allocation bar */}
-            <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-              {balances.map(b => (
-                <div
-                  key={b.asset}
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ flex: total > 0 ? b.value / total : 1 / balances.length, backgroundColor: b.color }}
-                />
-              ))}
-            </div>
-            <div className="flex gap-3 mt-2 flex-wrap">
-              {balances.map(b => (
-                <div key={b.asset} className="flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color }} />
-                  <span className="text-[10px] text-muted-foreground">{b.asset}</span>
+            {balances.length > 0 && (
+              <>
+                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
+                  {balances.map(b => (
+                    <div
+                      key={b.asset}
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        flex: total > 0 ? b.valueUSD / total : 1 / balances.length,
+                        backgroundColor: ASSET_COLORS[b.asset] ?? "#6b7280",
+                      }}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+                <div className="flex gap-3 mt-2 flex-wrap">
+                  {balances.map(b => (
+                    <div key={b.asset} className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ASSET_COLORS[b.asset] ?? "#6b7280" }} />
+                      <span className="text-[10px] text-muted-foreground">{b.asset}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Deposit / Withdraw */}
@@ -193,7 +218,7 @@ export function MobilePortfolio() {
             </button>
           </div>
 
-          {/* Deposit QR hint */}
+          {/* Deposit QR banner */}
           <button
             onClick={() => setDepositOpen(true)}
             className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left"
@@ -228,42 +253,58 @@ export function MobilePortfolio() {
           {/* Assets tab */}
           {tab === "assets" && (
             <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-              {balances.map((b, i) => (
-                <div
-                  key={b.asset}
-                  className={`flex items-center gap-3 px-4 py-3.5 ${i < balances.length - 1 ? "border-b border-border" : ""}`}
-                >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                    style={{ backgroundColor: b.color + "22", borderColor: b.color + "44", color: b.color }}
-                  >
-                    {b.asset[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{b.asset}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {b.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                    </p>
-                    {b.price > 0 && b.asset !== "USDT" && (
-                      <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                        @ ${b.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: b.price < 1 ? 6 : 2 })}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    {isLoading && b.value === 0 ? (
-                      <div className="h-4 w-20 bg-muted/40 rounded animate-pulse mb-1" />
-                    ) : (
-                      <p className="text-sm font-bold text-foreground">
-                        ${b.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    )}
-                    <p className={`text-xs font-medium mt-0.5 ${b.change >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-              ))}
+              {isLoading
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className={`flex items-center gap-3 px-4 py-3.5 ${i < 4 ? "border-b border-border" : ""}`}>
+                      <div className="w-9 h-9 rounded-xl bg-muted/40 animate-pulse" />
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-3 w-14 bg-muted/40 rounded animate-pulse" />
+                        <div className="h-2.5 w-20 bg-muted/30 rounded animate-pulse" />
+                      </div>
+                      <div className="text-right space-y-1.5">
+                        <div className="h-3 w-20 bg-muted/40 rounded animate-pulse" />
+                        <div className="h-2.5 w-10 bg-muted/30 rounded animate-pulse" />
+                      </div>
+                    </div>
+                  ))
+                : balances.map((b, i) => {
+                    const color = ASSET_COLORS[b.asset] ?? "#6b7280";
+                    return (
+                      <div
+                        key={b.asset}
+                        className={`flex items-center gap-3 px-4 py-3.5 ${i < balances.length - 1 ? "border-b border-border" : ""}`}
+                      >
+                        <div
+                          className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                          style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                        >
+                          {b.asset[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{b.asset}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {b.total.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                          </p>
+                          {b.price > 0 && b.asset !== "USDT" && (
+                            <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                              @ ${b.price.toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: b.price < 1 ? 6 : 2,
+                              })}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-foreground">
+                            ${b.valueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className={`text-xs font-medium mt-0.5 ${b.change24hPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                            {b.change24hPercent >= 0 ? "+" : ""}{b.change24hPercent.toFixed(2)}%
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
             </div>
           )}
 
