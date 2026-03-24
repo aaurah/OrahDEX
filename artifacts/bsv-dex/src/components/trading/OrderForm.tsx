@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn, formatPrice } from "@/lib/utils";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
-  ExternalLink, Loader2, PenLine,
+  ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
 } from "lucide-react";
 
 type Side = "buy" | "sell";
@@ -133,6 +133,9 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
   } | null>(null);
+  const [slippage, setSlippage] = useState(0.5);
+  const [slippageOpen, setSlippageOpen] = useState(false);
+  const [customSlip, setCustomSlip] = useState("");
 
   const [base] = symbol.split("/");
 
@@ -357,6 +360,69 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             <span className="text-muted-foreground text-sm ml-2">{base}</span>
           </div>
 
+          {/* Slippage (market orders only) */}
+          {type === "market" && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setSlippageOpen(o => !o)}
+                className="flex items-center justify-between w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Settings2 className="w-3 h-3" />
+                  Slippage tolerance
+                </span>
+                <span className={cn(
+                  "font-semibold",
+                  slippage > 1 ? "text-amber-400" : "text-foreground"
+                )}>
+                  {slippage}%{slippage > 1 ? " ⚠" : ""}
+                </span>
+              </button>
+              {slippageOpen && (
+                <div className="mt-2 p-2.5 bg-secondary/60 border border-border rounded-xl space-y-2">
+                  <div className="flex gap-1.5">
+                    {[0.1, 0.5, 1.0, 2.0].map(s => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => { setSlippage(s); setCustomSlip(""); }}
+                        className={cn(
+                          "flex-1 py-1 rounded-md text-xs font-bold border transition-all",
+                          slippage === s && !customSlip
+                            ? "bg-primary/20 border-primary/50 text-primary"
+                            : "border-border text-muted-foreground hover:text-foreground hover:bg-card"
+                        )}
+                      >{s}%</button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      placeholder="Custom %"
+                      value={customSlip}
+                      min="0.01"
+                      max="50"
+                      step="0.1"
+                      onChange={e => {
+                        setCustomSlip(e.target.value);
+                        const v = parseFloat(e.target.value);
+                        if (v > 0 && v <= 50) setSlippage(v);
+                      }}
+                      className="w-full py-1 px-3 rounded-md text-xs border border-border bg-card text-foreground focus:outline-none focus:border-primary/50 text-center"
+                    />
+                  </div>
+                  {slippage > 1 && (
+                    <div className="flex items-center gap-1.5 text-[10px] text-amber-400">
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      High slippage — your trade may be front-run.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* % shortcuts */}
           <div className="flex justify-between gap-1">
             {[25, 50, 75, 100].map((pct) => (
@@ -378,12 +444,34 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             ))}
           </div>
 
-          {/* Total */}
+          {/* Total / Min Received */}
           {type === "limit" && (
             <div className="flex items-center bg-secondary/30 border border-transparent rounded-xl px-3 py-2.5">
               <span className="text-muted-foreground text-sm w-16">Total</span>
               <span className="flex-1 text-right text-foreground font-mono">{formatPrice(isNaN(total) ? 0 : total)}</span>
               <span className="text-muted-foreground text-sm ml-2">USDT</span>
+            </div>
+          )}
+          {type === "market" && !!amount && parseFloat(amount) > 0 && currentPrice > 0 && (
+            <div className="space-y-1 px-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Min received</span>
+                <span className="font-mono font-semibold text-foreground">
+                  {(parseFloat(amount) * (1 - slippage / 100)).toFixed(6)} {base}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Est. total</span>
+                <span className="font-mono text-foreground">
+                  ≈ {formatPrice(parseFloat(amount) * currentPrice)} USDT
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Route</span>
+                <span className="font-semibold text-green-400 text-[10px] flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> AMM → BSV Settlement
+                </span>
+              </div>
             </div>
           )}
 

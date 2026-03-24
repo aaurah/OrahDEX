@@ -47,6 +47,7 @@ import { MobileSettings } from "@/pages/mobile/MobileSettings";
 import { MobileTrade } from "@/pages/mobile/MobileTrade";
 import { MobileLiquidity } from "@/pages/mobile/MobileLiquidity";
 import { Liquidity } from "@/pages/Liquidity";
+import { BridgePage } from "@/pages/Bridge";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -256,6 +257,7 @@ function Router() {
               <Route path="/dex" component={DexHub} />
               <Route path="/liquidity" component={MobileLiquidity} />
               <Route path="/p2p" component={P2P} />
+              <Route path="/bridge" component={BridgePage} />
               <Route path="/portfolio" component={MobilePortfolio} />
               <Route path="/settings" component={MobileSettings} />
               <Route component={MobileMarkets} />
@@ -276,6 +278,7 @@ function Router() {
               <Route path="/dex" component={DexHub} />
               <Route path="/liquidity" component={Liquidity} />
               <Route path="/p2p" component={P2P} />
+              <Route path="/bridge" component={BridgePage} />
               <Route path="/portfolio" component={Portfolio} />
               <Route component={NotFound} />
             </Switch>

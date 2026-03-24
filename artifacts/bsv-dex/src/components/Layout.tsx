@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -38,6 +38,7 @@ const NAV_LINKS = [
   { href: "/futures/BSV-USDT-PERP", label: "Futures", icon: LineChart },
   { href: "/dex", label: "Market Hub", icon: Layers },
   { href: "/p2p", label: "P2P", icon: Users },
+  { href: "/bridge", label: "Bridge", icon: Link2 },
   { href: "/portfolio", label: "Portfolio", icon: LayoutDashboard },
 ];
 
