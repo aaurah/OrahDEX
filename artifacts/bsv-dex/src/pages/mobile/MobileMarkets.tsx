@@ -10,6 +10,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
+  BASE_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -49,7 +50,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
+type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs" },
@@ -64,6 +65,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP" },
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
+  { id: "base",      label: "BASE" },
   { id: "bch",       label: "BCH" },
   { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
@@ -97,6 +99,7 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
     case "op":      return hasApi ? apiAll.filter(m => m.quote === "OP")    : OP_MARKETS.map(normalise);
     case "ftm":     return hasApi ? apiAll.filter(m => m.quote === "FTM")   : FTM_MARKETS.map(normalise);
     case "cro":     return hasApi ? apiAll.filter(m => m.quote === "CRO")   : CRO_MARKETS.map(normalise);
+    case "base":    return hasApi ? apiAll.filter(m => m.quote === "BASE")  : BASE_MARKETS.map(normalise);
     case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
     case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV")  : BSV_MARKETS.map(normalise);
     case "ai":      return AI_MARKETS.map(normalise);
