@@ -157,7 +157,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0">
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
