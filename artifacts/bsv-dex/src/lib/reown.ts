@@ -48,9 +48,44 @@ export function setupReown(projectId: string): void {
     });
 
     _initialized = true;
+    suppressThirdPartyBranding();
   } catch (err) {
     console.error("[OrahDEX] Failed to initialize Reown AppKit:", err);
   }
+}
+
+/**
+ * Inject a <style> into the AppKit modal's shadow DOM to hide third-party
+ * branding elements ("UX by reown", footer links, etc.).
+ * Uses MutationObserver because the modal element is added dynamically.
+ */
+function suppressThirdPartyBranding(): void {
+  const STYLE_ID = "orahdex-no-brand";
+  const HIDE_CSS = `
+    wui-footer, w3m-legal-footer, wcm-footer { display: none !important; }
+    [data-testid="w3m-footer"] { display: none !important; }
+  `;
+
+  function injectIntoShadow(root: ShadowRoot) {
+    if (root.querySelector(`#${STYLE_ID}`)) return;
+    const s = document.createElement("style");
+    s.id = STYLE_ID;
+    s.textContent = HIDE_CSS;
+    root.appendChild(s);
+    // Recurse into nested custom elements inside the shadow root
+    root.querySelectorAll("*").forEach(el => {
+      if ((el as Element & { shadowRoot?: ShadowRoot }).shadowRoot) {
+        injectIntoShadow((el as Element & { shadowRoot: ShadowRoot }).shadowRoot);
+      }
+    });
+  }
+
+  const observer = new MutationObserver(() => {
+    const modal = document.querySelector("w3m-modal");
+    if (modal?.shadowRoot) injectIntoShadow(modal.shadowRoot);
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 type ReownView =
