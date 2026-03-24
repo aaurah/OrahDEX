@@ -98,23 +98,83 @@ export function getReownAccount(): { address?: string; isConnected: boolean } {
   }
 }
 
+/* ── Public RPC endpoints for every supported chain ──────────────────────── */
+export const CHAIN_RPC_URLS: Record<number, string> = {
+  1:      "https://ethereum.publicnode.com",
+  56:     "https://bsc-dataseed.binance.org",
+  137:    "https://polygon-rpc.com",
+  42161:  "https://arb1.arbitrum.io/rpc",
+  10:     "https://mainnet.optimism.io",
+  8453:   "https://mainnet.base.org",       // Base
+  59144:  "https://rpc.linea.build",
+  324:    "https://mainnet.era.zksync.io",
+  534352: "https://rpc.scroll.io",
+  5000:   "https://rpc.mantle.xyz",
+  43114:  "https://api.avax.network/ext/bc/C/rpc",
+  250:    "https://rpc.ftm.tools",
+  25:     "https://evm.cronos.org",
+};
+
 /**
- * Fetch native token balance for an EVM address.
+ * Fetch the native token balance for any EVM address on any chain.
+ * Uses a public JSON-RPC endpoint — works regardless of whether
+ * window.ethereum exists (covers MetaMask, WalletConnect/Reown, Coinbase, etc.)
  */
-export async function fetchEvmBalance(address: string): Promise<string | null> {
+export async function fetchEvmBalance(
+  address: string,
+  chainId?: number | null
+): Promise<string | null> {
   try {
+    /* 1. Try injected wallet provider first (fast path, already on correct chain) */
     const eth = (window as any).ethereum;
-    if (!eth) return null;
-    const hex: string = await eth.request({
-      method: "eth_getBalance",
-      params: [address, "latest"],
+    if (eth) {
+      try {
+        const hex: string = await eth.request({
+          method: "eth_getBalance",
+          params: [address, "latest"],
+        });
+        const wei = BigInt(hex);
+        const native = Number(wei) / 1e18;
+        return native.toFixed(6);
+      } catch {
+        /* fall through to public RPC */
+      }
+    }
+
+    /* 2. Fall back to public RPC (needed for WalletConnect / Reown) */
+    const rpc = chainId ? CHAIN_RPC_URLS[chainId] : null;
+    if (!rpc) return null;
+
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: [address, "latest"],
+      }),
     });
-    const wei = BigInt(hex);
-    const native = Number(wei) / 1e18;
-    return native.toFixed(4);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json?.result) return null;
+    const native = Number(BigInt(json.result)) / 1e18;
+    return native.toFixed(6);
   } catch {
     return null;
   }
+}
+
+/**
+ * Parse chainId from a CAIP-10 address string.
+ * e.g. "eip155:8453:0xabc..." → 8453
+ */
+export function parseChainFromCaip(caipAddress?: string): number | null {
+  if (!caipAddress) return null;
+  const parts = caipAddress.split(":");
+  if (parts.length < 2) return null;
+  const n = parseInt(parts[1], 10);
+  return isNaN(n) ? null : n;
 }
 
 export function getWagmiConfig() {
