@@ -2,7 +2,7 @@ import type { Market, Ticker, OrderBook, Trade, Order, Portfolio, AssetBalance, 
 
 function spot(base: string, quote: string, price: number, chg: number, vol: number, cap?: number): any {
   return {
-    symbol: `${base}-${quote}`, baseAsset: base, quoteAsset: quote,
+    symbol: `${base}/${quote}`, baseAsset: base, quoteAsset: quote,
     lastPrice: price, priceChange24h: price * chg / 100, priceChangePercent24h: chg,
     volume24h: vol, high24h: price * 1.02, low24h: price * 0.98,
     marketCap: cap, status: "active", type: "spot", makerFee: 0.001, takerFee: 0.001,
@@ -12,7 +12,7 @@ function spot(base: string, quote: string, price: number, chg: number, vol: numb
 
 function fut(base: string, price: number, chg: number, vol: number): any {
   return {
-    symbol: `${base}-USDT-PERP`, baseAsset: base, quoteAsset: "USDT",
+    symbol: `${base}/USDT-PERP`, baseAsset: base, quoteAsset: "USDT",
     lastPrice: price * 0.9999, priceChange24h: price * chg / 100, priceChangePercent24h: chg,
     volume24h: vol / 10, high24h: price * 1.02, low24h: price * 0.98,
     status: "active", type: "futures", makerFee: 0.0002, takerFee: 0.0005,

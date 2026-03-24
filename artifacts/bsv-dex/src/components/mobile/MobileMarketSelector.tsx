@@ -126,7 +126,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    staleTime: 30_000,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 
   const livePrice = new Map(
