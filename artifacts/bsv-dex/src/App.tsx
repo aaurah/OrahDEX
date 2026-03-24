@@ -28,6 +28,12 @@ import { AdminFeeWallet } from "@/pages/admin/FeeWallet";
 import { AdminIntegrations } from "@/pages/admin/Integrations";
 import { AdminBotProfit } from "@/pages/admin/BotProfit";
 import { AdminLogin } from "@/pages/admin/Login";
+import { AdminSiteSettings } from "@/pages/admin/SiteSettings";
+import { AdminHomeBuilder } from "@/pages/admin/HomeBuilder";
+import { AdminFeatureFlags } from "@/pages/admin/FeatureFlags";
+import { AdminSecuritySettings } from "@/pages/admin/SecuritySettings";
+import { AdminFeeConfig } from "@/pages/admin/FeeConfig";
+import { AdminAnnouncements } from "@/pages/admin/Announcements";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -148,6 +154,36 @@ function Router() {
       <Route path="/admin/bot-profit">
         <RequireAdminAuth>
           <AdminLayout><AdminBotProfit /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/site">
+        <RequireAdminAuth>
+          <AdminLayout><AdminSiteSettings /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/home">
+        <RequireAdminAuth>
+          <AdminLayout><AdminHomeBuilder /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/features">
+        <RequireAdminAuth>
+          <AdminLayout><AdminFeatureFlags /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/security">
+        <RequireAdminAuth>
+          <AdminLayout><AdminSecuritySettings /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/fees">
+        <RequireAdminAuth>
+          <AdminLayout><AdminFeeConfig /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/announcements">
+        <RequireAdminAuth>
+          <AdminLayout><AdminAnnouncements /></AdminLayout>
         </RequireAdminAuth>
       </Route>
 

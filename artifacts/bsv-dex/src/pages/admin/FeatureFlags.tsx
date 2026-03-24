@@ -1,0 +1,236 @@
+import { useState } from "react";
+import { Save, RefreshCw, Zap, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+
+interface Flag { id: string; label: string; description: string; enabled: boolean; beta?: boolean; danger?: boolean; }
+interface Group { title: string; icon: string; flags: Flag[]; }
+
+const DEFAULT_FLAGS: Record<string, boolean> = {
+  spot_trading: true, futures_trading: true, p2p_trading: true, margin_trading: false,
+  options_trading: false, copy_trading: false, amm_pools: true, dex_hub: true,
+  yield_farming: false, staking: false, lending: false, borrowing: false, nft_trading: false,
+  fiat_onramp: true, fiat_offramp: false, moonpay: true, transak: false, ramp_network: false,
+  kyc_required_withdraw: true, kyc_required_spot: false, kyc_required_futures: true, kyc_required_p2p: true,
+  kyc_level1: true, kyc_level2: true, kyc_level3: false,
+  referral_program: true, affiliate_program: false, vip_tiers: true, airdrop_manager: false,
+  launchpad: false, ido_platform: false,
+  api_access: true, websocket_streaming: true, advanced_charts: true, tradingview: true,
+  advanced_order_types: true, oco_orders: true, iceberg_orders: false, twap_orders: false,
+  email_notifications: true, sms_notifications: false, push_notifications: false,
+  telegram_bot: false, discord_bot: false,
+  mobile_app_links: true, qr_code_login: false, biometric_lock: true,
+  leaderboard: false, trading_competitions: false, demo_mode: false,
+  maintenance_mode: false,
+  cross_chain_bridge: true, bsv_settlement: true,
+  portfolio_page: true, market_hub: true,
+  deposit_page: true, withdraw_page: true,
+  public_api: true, private_api: true,
+};
+
+const GROUPS: Group[] = [
+  {
+    title: "Trading Products", icon: "📈",
+    flags: [
+      { id: "spot_trading",     label: "Spot Trading",          description: "Enable the spot trading page and order book" },
+      { id: "futures_trading",  label: "Futures / Perpetuals",  description: "Enable leveraged futures trading with funding rates" },
+      { id: "margin_trading",   label: "Margin Trading",        description: "Enable margin borrowing for spot positions", beta: true },
+      { id: "options_trading",  label: "Options Trading",       description: "Enable options contracts (calls/puts)", beta: true },
+      { id: "p2p_trading",      label: "P2P Marketplace",       description: "Enable peer-to-peer fiat/crypto trading" },
+      { id: "copy_trading",     label: "Copy Trading",          description: "Allow users to copy top traders automatically", beta: true },
+      { id: "amm_pools",        label: "AMM Liquidity Pools",   description: "Enable automated market maker pools" },
+      { id: "dex_hub",          label: "DEX Hub",               description: "Show the DEX/DeFi hub page" },
+      { id: "advanced_order_types", label: "Advanced Orders",   description: "Enable Stop-Limit, Take-Profit, Stop-Market" },
+      { id: "oco_orders",       label: "OCO Orders",            description: "One-Cancels-Other order type" },
+      { id: "iceberg_orders",   label: "Iceberg Orders",        description: "Hidden/iceberg order size", beta: true },
+      { id: "twap_orders",      label: "TWAP Orders",           description: "Time-weighted average price execution", beta: true },
+    ],
+  },
+  {
+    title: "DeFi & Earn", icon: "🏦",
+    flags: [
+      { id: "yield_farming",    label: "Yield Farming",         description: "LP token staking for additional rewards", beta: true },
+      { id: "staking",          label: "OrahToken Staking",     description: "Stake ORAH tokens for fee discounts and rewards", beta: true },
+      { id: "lending",          label: "Lending Protocol",      description: "Deposit assets to earn lending interest", beta: true },
+      { id: "borrowing",        label: "Borrowing Protocol",    description: "Borrow against collateral", beta: true },
+      { id: "nft_trading",      label: "NFT Trading",           description: "NFT marketplace integration", beta: true },
+      { id: "launchpad",        label: "Token Launchpad",       description: "IEO/IDO token launch platform", beta: true },
+      { id: "ido_platform",     label: "IDO Platform",          description: "Decentralized token offerings", beta: true },
+    ],
+  },
+  {
+    title: "Fiat & On-Ramps", icon: "💳",
+    flags: [
+      { id: "fiat_onramp",      label: "Fiat On-Ramp",          description: "Enable buying crypto with fiat currency" },
+      { id: "fiat_offramp",     label: "Fiat Off-Ramp",         description: "Enable selling crypto to bank account" },
+      { id: "moonpay",          label: "MoonPay Integration",   description: "Use MoonPay as the fiat on-ramp provider" },
+      { id: "transak",          label: "Transak Integration",   description: "Use Transak as an alternative fiat on-ramp", beta: true },
+      { id: "ramp_network",     label: "Ramp Network",          description: "Ramp.Network fiat gateway", beta: true },
+    ],
+  },
+  {
+    title: "KYC & Compliance", icon: "🪪",
+    flags: [
+      { id: "kyc_required_withdraw", label: "KYC for Withdrawal",    description: "Require KYC verification before any withdrawal" },
+      { id: "kyc_required_spot",     label: "KYC for Spot Trading",  description: "Require KYC before opening spot orders" },
+      { id: "kyc_required_futures",  label: "KYC for Futures",       description: "Require KYC before accessing leverage products" },
+      { id: "kyc_required_p2p",      label: "KYC for P2P",           description: "Require KYC before P2P marketplace access" },
+      { id: "kyc_level1",            label: "KYC Level 1 (ID)",      description: "Government ID verification tier" },
+      { id: "kyc_level2",            label: "KYC Level 2 (Address)", description: "Proof of address verification tier" },
+      { id: "kyc_level3",            label: "KYC Level 3 (Enhanced)","description": "Video verification for high-limit accounts", beta: true },
+    ],
+  },
+  {
+    title: "Growth & Rewards", icon: "🎁",
+    flags: [
+      { id: "referral_program",    label: "Referral Program",     description: "Users earn commission for referring new traders" },
+      { id: "affiliate_program",   label: "Affiliate Program",    description: "Tiered affiliate commission structure", beta: true },
+      { id: "vip_tiers",           label: "VIP Tiers",            description: "Volume-based VIP levels with fee discounts" },
+      { id: "airdrop_manager",     label: "Airdrop Manager",      description: "Admin tool to distribute token airdrops", beta: true },
+      { id: "leaderboard",         label: "Trading Leaderboard",  description: "Public ranking of top traders by PnL", beta: true },
+      { id: "trading_competitions","label": "Trading Competitions","description": "Time-limited trading competitions with prizes", beta: true },
+    ],
+  },
+  {
+    title: "Tech & Infrastructure", icon: "⚙️",
+    flags: [
+      { id: "api_access",          label: "Public API Access",     description: "Allow third-party applications to use the REST API" },
+      { id: "private_api",         label: "Private API (Auth)",    description: "Enable authenticated trading API for bots" },
+      { id: "websocket_streaming", label: "WebSocket Streaming",   description: "Real-time price and order updates via WebSocket" },
+      { id: "advanced_charts",     label: "Advanced Charts",       description: "Enable the full TradingView chart widget" },
+      { id: "tradingview",         label: "TradingView Integration","description": "Use TradingView as the charting library" },
+      { id: "public_api",          label: "Public REST API",       description: "Public endpoints for market data (no auth)" },
+      { id: "cross_chain_bridge",  label: "Cross-Chain Bridge",    description: "Enable cross-chain asset bridge via BSV settlement" },
+      { id: "bsv_settlement",      label: "BSV Settlement Layer",  description: "Core BSV on-chain settlement (critical — disable with caution)", danger: true },
+    ],
+  },
+  {
+    title: "Notifications & Comms", icon: "📣",
+    flags: [
+      { id: "email_notifications", label: "Email Notifications",   description: "Send transactional emails (trades, withdrawals, login)" },
+      { id: "sms_notifications",   label: "SMS Notifications",     description: "Send SMS alerts for security and large transactions" },
+      { id: "push_notifications",  label: "Push Notifications",    description: "Browser push notifications for price alerts" },
+      { id: "telegram_bot",        label: "Telegram Bot Alerts",   description: "Alert users via Telegram bot", beta: true },
+      { id: "discord_bot",         label: "Discord Bot Alerts",    description: "Post trade alerts to Discord channels", beta: true },
+    ],
+  },
+  {
+    title: "UI & Pages", icon: "🖼",
+    flags: [
+      { id: "portfolio_page",      label: "Portfolio Page",        description: "Show the Portfolio tab in navigation" },
+      { id: "market_hub",          label: "Market Hub Page",       description: "Show the Market Hub section" },
+      { id: "deposit_page",        label: "Deposit Feature",       description: "Allow users to access deposit flows" },
+      { id: "withdraw_page",       label: "Withdraw Feature",      description: "Allow users to access withdrawal flows" },
+      { id: "mobile_app_links",    label: "Mobile App Links",      description: "Show App Store / Google Play download links" },
+      { id: "qr_code_login",       label: "QR Code Login",         description: "Enable mobile QR code login", beta: true },
+      { id: "biometric_lock",      label: "Biometric Screen Lock", description: "App lock screen on mobile" },
+      { id: "demo_mode",           label: "Demo / Paper Trading",  description: "Allow paper trading without real funds", beta: true },
+    ],
+  },
+  {
+    title: "System", icon: "🔧",
+    flags: [
+      { id: "maintenance_mode", label: "Maintenance Mode", description: "Take the exchange offline and show a maintenance page", danger: true },
+    ],
+  },
+];
+
+export function AdminFeatureFlags() {
+  const { toast } = useToast();
+  const [flags, setFlags] = useState<Record<string, boolean>>(() => {
+    try { return { ...DEFAULT_FLAGS, ...JSON.parse(localStorage.getItem("orahdex_features") ?? "{}") }; }
+    catch { return DEFAULT_FLAGS; }
+  });
+  const [saving, setSaving] = useState(false);
+  const [maintenanceMsg, setMaintenanceMsg] = useState("OrahDEX is currently undergoing scheduled maintenance. We'll be back shortly.");
+
+  const toggle = (id: string) => setFlags(f => ({ ...f, [id]: !f[id] }));
+
+  const save = async () => {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 400));
+    localStorage.setItem("orahdex_features", JSON.stringify(flags));
+    setSaving(false);
+    toast({ title: "Feature flags saved", description: `${Object.values(flags).filter(Boolean).length} features enabled.` });
+  };
+
+  const enabledCount = Object.values(flags).filter(Boolean).length;
+  const totalCount = Object.keys(DEFAULT_FLAGS).length;
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Feature Flags</h1>
+          <p className="text-muted-foreground text-sm mt-1">{enabledCount}/{totalCount} features enabled · Toggle to instantly enable or disable platform features</p>
+        </div>
+        <button onClick={save} disabled={saving} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50">
+          {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          {saving ? "Saving…" : "Save Flags"}
+        </button>
+      </div>
+
+      {flags.maintenance_mode && (
+        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            <span className="text-sm font-semibold text-red-400">Maintenance Mode is ACTIVE — the exchange is offline for users</span>
+          </div>
+          <input
+            type="text"
+            value={maintenanceMsg}
+            onChange={e => setMaintenanceMsg(e.target.value)}
+            placeholder="Maintenance message shown to users"
+            className="w-full bg-background border border-red-500/30 rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-red-500"
+          />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {GROUPS.map(group => (
+          <div key={group.title} className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-border bg-secondary/20 flex items-center gap-2">
+              <span className="text-base">{group.icon}</span>
+              <h3 className="text-sm font-bold text-foreground">{group.title}</h3>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {group.flags.filter(f => flags[f.id]).length}/{group.flags.length} enabled
+              </span>
+            </div>
+            <div className="divide-y divide-border">
+              {group.flags.map(flag => {
+                const enabled = flags[flag.id] ?? false;
+                return (
+                  <div key={flag.id} className={cn("flex items-center gap-4 px-5 py-3.5 transition-colors", enabled ? "" : "opacity-60")}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{flag.label}</span>
+                        {flag.beta && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-violet-500/15 text-violet-400 border border-violet-500/25">BETA</span>
+                        )}
+                        {flag.danger && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/25">CRITICAL</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{flag.description}</p>
+                    </div>
+                    <button
+                      onClick={() => toggle(flag.id)}
+                      className={cn(
+                        "relative w-11 h-6 rounded-full border-2 transition-all duration-200 shrink-0",
+                        enabled
+                          ? flag.danger ? "bg-red-500 border-red-500" : "bg-primary border-primary"
+                          : "bg-muted/30 border-border"
+                      )}
+                    >
+                      <span className={cn("absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200", enabled ? "translate-x-5" : "translate-x-0.5")} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
