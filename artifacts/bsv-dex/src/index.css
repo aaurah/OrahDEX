@@ -163,3 +163,10 @@ input[type=number] { -moz-appearance: textfield; }
   0%, 100% { box-shadow: 0 0 6px 1px rgba(74,222,128,0.35); }
   50%       { box-shadow: 0 0 14px 3px rgba(74,222,128,0.65); }
 }
+
+/* Hide third-party branding in the wallet connect popup */
+wui-footer,
+w3m-footer,
+wcm-footer {
+  display: none !important;
+}
