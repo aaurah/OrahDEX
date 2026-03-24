@@ -27,7 +27,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 relative grid h-20 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
+      <div className="shrink-0 relative grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
         style={{ gridTemplateColumns: "1fr auto 1fr" }}>
 
         {/* Col 1: empty spacer */}
