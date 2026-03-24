@@ -2,17 +2,15 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check, RefreshCw } from 'lucide-react';
 import { useAdminAuthStore } from '@/store/useAdminAuthStore';
-import { TOTP_SECRET, TOTP_ISSUER, getQRCodeUrl, generateTOTP } from '@/lib/totp';
+import { generateTOTP } from '@/lib/totp';
+
+const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 type Step = 'credentials' | 'setup' | 'totp';
 
-function shake(fn: () => void) {
-  fn();
-}
-
 export function AdminLogin() {
   const [, navigate] = useLocation();
-  const { isAuthenticated, email, twoFaEnabled, twoFaSetupDone, login, verifyTotp, markSetupDone, error, clearError } = useAdminAuthStore();
+  const { isAuthenticated, twoFaEnabled, twoFaSetupDone, login, verifyTotp, markSetupDone, error, clearError } = useAdminAuthStore();
 
   const [step, setStep] = useState<Step>('credentials');
   const [emailVal, setEmailVal] = useState('');
@@ -24,17 +22,38 @@ export function AdminLogin() {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState('');
 
+  // TOTP setup data loaded from server (never hardcoded in source)
+  const [totpQrUrl, setTotpQrUrl] = useState('');
+  const [totpSecret, setTotpSecret] = useState('');
+  const [totpIssuer, setTotpIssuer] = useState('OrahDEX');
+
   useEffect(() => { if (isAuthenticated) navigate('/admin'); }, [isAuthenticated]);
   useEffect(() => { clearError(); }, [emailVal, password, totpCode]);
 
-  // Generate live preview code for setup page
+  // Fetch TOTP setup info from server when entering setup step
   useEffect(() => {
     if (step !== 'setup') return;
-    const refresh = () => generateTOTP().then(setPreviewCode);
+    fetch(`${API}/api/admin/auth/totp-uri`)
+      .then(r => r.json())
+      .then(d => {
+        setTotpQrUrl(d.qrUrl ?? '');
+        // Extract secret from URI for manual entry display only
+        const match = (d.uri ?? '').match(/secret=([^&]+)/);
+        if (match) setTotpSecret(match[1]);
+        const issuerMatch = (d.uri ?? '').match(/issuer=([^&]+)/);
+        if (issuerMatch) setTotpIssuer(decodeURIComponent(issuerMatch[1]));
+      })
+      .catch(() => {});
+  }, [step]);
+
+  // Generate live preview code using server-fetched secret
+  useEffect(() => {
+    if (step !== 'setup' || !totpSecret) return;
+    const refresh = () => generateTOTP(totpSecret).then(setPreviewCode);
     refresh();
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
-  }, [step]);
+  }, [step, totpSecret]);
 
   const triggerShake = () => {
     setShaking(true);
@@ -45,11 +64,9 @@ export function AdminLogin() {
     e.preventDefault();
     if (!emailVal || !password) return;
     setLoading(true);
-    await new Promise(r => setTimeout(r, 500));
-    const ok = login(emailVal, password);
+    const ok = await login(emailVal, password);
     setLoading(false);
     if (ok) {
-      // If 2FA is disabled, login() already set isAuthenticated=true → useEffect navigates
       if (twoFaEnabled) {
         setStep(twoFaSetupDone ? 'totp' : 'setup');
       }
@@ -76,7 +93,7 @@ export function AdminLogin() {
   };
 
   const copySecret = () => {
-    navigator.clipboard.writeText(TOTP_SECRET);
+    navigator.clipboard.writeText(totpSecret);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -91,7 +108,6 @@ export function AdminLogin() {
       </div>
 
       <div className="relative w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 via-primary to-orange-400 flex items-center justify-center shadow-lg shadow-primary/30">
@@ -107,7 +123,6 @@ export function AdminLogin() {
           </div>
         </div>
 
-        {/* Step indicators — only shown when 2FA is enabled */}
         {twoFaEnabled && (
           <div className="flex items-center justify-center gap-2 mb-6">
             {(['credentials', twoFaSetupDone ? 'totp' : 'setup', 'totp'] as const)
@@ -203,27 +218,35 @@ export function AdminLogin() {
 
             <div className="space-y-4">
               <div className="bg-secondary/50 rounded-xl p-3 flex flex-col items-center gap-3 border border-border">
-                <img
-                  src={getQRCodeUrl()}
-                  alt="TOTP QR Code"
-                  className="w-44 h-44 rounded-lg bg-white p-1"
-                  onError={e => (e.currentTarget.style.display = 'none')}
-                />
+                {totpQrUrl ? (
+                  <img
+                    src={totpQrUrl}
+                    alt="TOTP QR Code"
+                    className="w-44 h-44 rounded-lg bg-white p-1"
+                    onError={e => (e.currentTarget.style.display = 'none')}
+                  />
+                ) : (
+                  <div className="w-44 h-44 rounded-lg bg-secondary flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground text-center">
                   Scan with <span className="text-foreground font-medium">Google Authenticator</span>, Authy, or any TOTP app
                 </p>
               </div>
 
-              <div>
-                <p className="text-xs text-muted-foreground mb-1.5">Or enter this secret manually:</p>
-                <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
-                  <code className="flex-1 text-xs font-mono text-primary tracking-widest">{TOTP_SECRET}</code>
-                  <button onClick={copySecret} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
-                    {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
+              {totpSecret && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Or enter this secret manually:</p>
+                  <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+                    <code className="flex-1 text-xs font-mono text-primary tracking-widest">{totpSecret}</code>
+                    <button onClick={copySecret} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                      {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">Issuer: <span className="text-foreground">{totpIssuer}</span> · SHA-1 · 6 digits · 30 sec</p>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5">Issuer: <span className="text-foreground">{TOTP_ISSUER}</span> · SHA-1 · 6 digits · 30 sec</p>
-              </div>
+              )}
 
               {previewCode && (
                 <div className="flex items-center justify-between bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-2.5">

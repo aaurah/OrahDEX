@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-import { TOTP_SECRET, TOTP_ISSUER, getQRCodeUrl, generateTOTP } from "@/lib/totp";
+import { generateTOTP } from "@/lib/totp";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchAdmins = () => fetch(`${BASE}/api/admin/admins`).then(r => r.json());
@@ -26,16 +26,34 @@ const ALL_PERMISSIONS = ["all", "users", "pairs", "orders", "api", "contracts", 
 function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const [previewCode, setPreviewCode] = useState("");
+  const [totpQrUrl, setTotpQrUrl] = useState("");
+  const [totpSecret, setTotpSecret] = useState("");
+  const [totpIssuer, setTotpIssuer] = useState("OrahDEX");
+
+  // Load TOTP setup data from server (secret never hardcoded in source)
+  useEffect(() => {
+    fetch(`${BASE}/api/admin/auth/totp-uri`)
+      .then(r => r.json())
+      .then(d => {
+        setTotpQrUrl(d.qrUrl ?? "");
+        const match = (d.uri ?? "").match(/secret=([^&]+)/);
+        if (match) setTotpSecret(match[1]);
+        const issuerMatch = (d.uri ?? "").match(/issuer=([^&]+)/);
+        if (issuerMatch) setTotpIssuer(decodeURIComponent(issuerMatch[1]));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
-    const refresh = () => generateTOTP().then(setPreviewCode);
+    if (!totpSecret) return;
+    const refresh = () => generateTOTP(totpSecret).then(setPreviewCode);
     refresh();
     const t = setInterval(refresh, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [totpSecret]);
 
   const copySecret = () => {
-    navigator.clipboard.writeText(TOTP_SECRET);
+    navigator.clipboard.writeText(totpSecret);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -61,30 +79,38 @@ function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () =
         <div className="space-y-4">
           {/* QR Code */}
           <div className="bg-secondary/50 rounded-xl p-3 flex flex-col items-center gap-3 border border-border">
-            <img
-              src={getQRCodeUrl()}
-              alt="TOTP QR Code"
-              className="w-44 h-44 rounded-lg bg-white p-1"
-              onError={e => (e.currentTarget.style.display = 'none')}
-            />
+            {totpQrUrl ? (
+              <img
+                src={totpQrUrl}
+                alt="TOTP QR Code"
+                className="w-44 h-44 rounded-lg bg-white p-1"
+                onError={e => (e.currentTarget.style.display = 'none')}
+              />
+            ) : (
+              <div className="w-44 h-44 rounded-lg bg-secondary flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+              </div>
+            )}
             <p className="text-xs text-muted-foreground text-center">
               Scan with <span className="text-foreground font-medium">Google Authenticator</span>, Authy, or any TOTP app
             </p>
           </div>
 
           {/* Manual secret */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5">Or enter this secret manually:</p>
-            <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
-              <code className="flex-1 text-xs font-mono text-primary tracking-widest">{TOTP_SECRET}</code>
-              <button onClick={copySecret} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
-                {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-              </button>
+          {totpSecret && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Or enter this secret manually:</p>
+              <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+                <code className="flex-1 text-xs font-mono text-primary tracking-widest">{totpSecret}</code>
+                <button onClick={copySecret} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
+                  {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Issuer: <span className="text-foreground">{totpIssuer}</span> · SHA-1 · 6 digits · 30 sec
+              </p>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1.5">
-              Issuer: <span className="text-foreground">{TOTP_ISSUER}</span> · SHA-1 · 6 digits · 30 sec
-            </p>
-          </div>
+          )}
 
           {/* Live code preview */}
           {previewCode && (
@@ -147,7 +173,6 @@ function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string;
 
 // ── Reset Password Modal ───────────────────────────────────────────────────────
 function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: string; email: string }; onClose: () => void }) {
-  const { updatePassword } = useAdminAuthStore();
   const isSuperadmin = admin.id === '__superadmin__';
   const [newPw, setNewPw] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -156,19 +181,15 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
   const [error, setError] = useState("");
 
   const handleReset = async () => {
+    if (isSuperadmin) return;
     if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (newPw !== confirm) { setError("Passwords do not match."); return; }
     setError("");
-    if (isSuperadmin) {
-      // Superadmin password lives in the auth store (persisted to localStorage)
-      updatePassword(newPw);
-    } else {
-      await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPw }),
-      });
-    }
+    await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPw }),
+    });
     setDone(true);
     setTimeout(onClose, 1800);
   };
@@ -196,6 +217,21 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
               <Check className="w-7 h-7 text-green-400" />
             </div>
             <p className="text-sm font-semibold text-green-400">Password reset successfully</p>
+          </div>
+        ) : isSuperadmin ? (
+          <div className="space-y-4">
+            <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-4 flex gap-3">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-400 mb-1">Server-side credential</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  The superadmin password is protected server-side. To change it, update the <code className="text-amber-300">ADMIN_PASSWORD</code> secret in your Replit environment, then restart the server.
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+              Close
+            </button>
           </div>
         ) : (
           <div className="space-y-4">

@@ -7,6 +7,102 @@ import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 
 const router = Router();
 
+/* ─── SERVER-SIDE TOTP (RFC 6238) ─────────────────────────────────────────── */
+function base32Decode(input: string): Buffer {
+  const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const cleaned = input.toUpperCase().replace(/=+$/, "");
+  let bits = 0, value = 0;
+  const out: number[] = [];
+  for (const ch of cleaned) {
+    const idx = alpha.indexOf(ch);
+    if (idx === -1) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(out);
+}
+
+async function verifyTOTPServer(code: string, secret: string): Promise<boolean> {
+  const key = base32Decode(secret);
+  const now = Math.floor(Date.now() / 1000);
+  for (const delta of [-1, 0, 1]) {
+    const counter = Math.floor((now + delta * 30) / 30);
+    const buf = Buffer.alloc(8);
+    buf.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+    buf.writeUInt32BE(counter >>> 0, 4);
+    const sig = crypto.createHmac("sha1", key).update(buf).digest();
+    const offset = sig[sig.length - 1] & 0xf;
+    const otp = (
+      ((sig[offset] & 0x7f) << 24) |
+      ((sig[offset + 1] & 0xff) << 16) |
+      ((sig[offset + 2] & 0xff) << 8) |
+      (sig[offset + 3] & 0xff)
+    ) % 1_000_000;
+    if (code === otp.toString().padStart(6, "0")) return true;
+  }
+  return false;
+}
+
+/* ─── ADMIN AUTH ENDPOINTS ────────────────────────────────────────────────── */
+
+/**
+ * POST /admin/auth
+ * Validates email + password against ADMIN_EMAIL / ADMIN_PASSWORD env secrets.
+ * Credentials are NEVER stored in source code.
+ */
+router.post("/auth", (req, res) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+  const validEmail    = process.env.ADMIN_EMAIL;
+  const validPassword = process.env.ADMIN_PASSWORD;
+
+  if (!validEmail || !validPassword) {
+    res.status(503).json({ error: "Admin credentials are not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD secrets." });
+    return;
+  }
+  if (
+    !email || !password ||
+    email.trim().toLowerCase() !== validEmail.trim().toLowerCase() ||
+    password !== validPassword
+  ) {
+    res.status(401).json({ error: "Invalid email or password." });
+    return;
+  }
+  res.json({ success: true });
+});
+
+/**
+ * POST /admin/auth/totp
+ * Validates a 6-digit TOTP code against ADMIN_TOTP_SECRET env secret.
+ */
+router.post("/auth/totp", async (req, res) => {
+  const { code } = req.body as { code?: string };
+  if (!code || code.length !== 6) {
+    res.status(400).json({ error: "A 6-digit code is required." });
+    return;
+  }
+  const secret = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+  const ok = await verifyTOTPServer(code, secret);
+  if (ok) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: "Incorrect code. Try again." });
+  }
+});
+
+/**
+ * GET /admin/auth/totp-uri
+ * Returns the otpauth URI for QR-code generation (uses server-side secret).
+ */
+router.get("/auth/totp-uri", (_req, res) => {
+  const secret  = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+  const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
+  const issuer  = "OrahDEX";
+  const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
+  const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
+  res.json({ uri, qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}` });
+});
+
 const mockUsers = Array.from({ length: 24 }, (_, i) => ({
   id: `usr_${(i + 1).toString().padStart(4, "0")}`,
   walletAddress: i % 3 === 0

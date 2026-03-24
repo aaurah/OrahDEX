@@ -1,7 +1,6 @@
 // TOTP implementation using Web Crypto API (RFC 6238)
-export const TOTP_SECRET = 'JBSWY3DPEHPK3PXP'; // base32 secret
+// Secrets are never stored in source code — they are loaded from the server.
 export const TOTP_ISSUER = 'OrahDEX';
-export const TOTP_ACCOUNT = 'aaurah@protonmail.com';
 
 function base32Decode(input: string): ArrayBuffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -21,7 +20,11 @@ function base32Decode(input: string): ArrayBuffer {
   return new Uint8Array(output).buffer as ArrayBuffer;
 }
 
-export async function generateTOTP(secret = TOTP_SECRET, time = Date.now()): Promise<string> {
+/**
+ * Generate a TOTP code from a base32 secret.
+ * The secret must be provided — it is never stored in this module.
+ */
+export async function generateTOTP(secret: string, time = Date.now()): Promise<string> {
   const counter = Math.floor(time / 1000 / 30);
   const buf = new ArrayBuffer(8);
   new DataView(buf).setUint32(4, counter, false);
@@ -42,27 +45,15 @@ export async function generateTOTP(secret = TOTP_SECRET, time = Date.now()): Pro
   return code.toString().padStart(6, '0');
 }
 
-export async function verifyTOTP(code: string, secret = TOTP_SECRET): Promise<boolean> {
+/**
+ * Verify a TOTP code against a base32 secret (±1 window).
+ * The secret must be provided — it is never stored in this module.
+ */
+export async function verifyTOTP(code: string, secret: string): Promise<boolean> {
   const now = Date.now();
-  // Allow ±1 window (30s each side)
   for (const delta of [-1, 0, 1]) {
     const expected = await generateTOTP(secret, now + delta * 30_000);
     if (code === expected) return true;
   }
   return false;
-}
-
-export function getTOTPUri(): string {
-  const params = new URLSearchParams({
-    secret: TOTP_SECRET,
-    issuer: TOTP_ISSUER,
-    algorithm: 'SHA1',
-    digits: '6',
-    period: '30',
-  });
-  return `otpauth://totp/${encodeURIComponent(TOTP_ISSUER + ':' + TOTP_ACCOUNT)}?${params}`;
-}
-
-export function getQRCodeUrl(): string {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(getTOTPUri())}`;
 }
