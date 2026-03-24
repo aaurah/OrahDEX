@@ -18,15 +18,26 @@ function hashPersonalMessage(message: string): Uint8Array {
 }
 
 function recoverEthAddress(message: string, sigHex: string): string {
-  const sig = sigHex.startsWith("0x") ? sigHex.slice(2) : sigHex;
-  const v = parseInt(sig.slice(128, 130), 16);
+  const sigStr = sigHex.startsWith("0x") ? sigHex.slice(2) : sigHex;
+  if (sigStr.length !== 130) throw new Error("Invalid signature length");
+  const rBytes = Buffer.from(sigStr.slice(0, 64), "hex");
+  const sBytes = Buffer.from(sigStr.slice(64, 128), "hex");
+  const v = parseInt(sigStr.slice(128, 130), 16);
   const recovery = v >= 27 ? v - 27 : v;
-  const r = sig.slice(0, 64);
-  const s = sig.slice(64, 128);
   const msgHash = hashPersonalMessage(message);
-  const signature = secp.Signature.fromCompact(r + s).addRecoveryBit(recovery);
-  const pubKey = signature.recoverPublicKey(msgHash);
-  const pubKeyBytes = pubKey.toRawBytes(false).slice(1); // strip 0x04 prefix
+
+  // noble-secp256k1 v3 'recovered' format: [recovery_bit(1), r(32), s(32)]
+  const recoveredSig = new Uint8Array(65);
+  recoveredSig[0] = recovery;
+  recoveredSig.set(rBytes, 1);
+  recoveredSig.set(sBytes, 33);
+
+  // Returns compressed public key (33 bytes)
+  const compressedPubKey = secp.recoverPublicKey(recoveredSig, msgHash);
+  // Expand to uncompressed (65 bytes: 0x04 + x + y)
+  const uncompressedPubKey = secp.Point.fromBytes(compressedPubKey).toBytes(false);
+  // Derive Ethereum address: keccak256(x || y), take last 20 bytes
+  const pubKeyBytes = uncompressedPubKey.slice(1);
   const hash = keccak_256(pubKeyBytes);
   return "0x" + Buffer.from(hash).slice(-20).toString("hex");
 }
