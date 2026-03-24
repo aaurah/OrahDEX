@@ -27,18 +27,17 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 h-28 border-b border-border/40 z-50 flex items-center justify-between px-2 bg-card/95 backdrop-blur-sm">
+      <div className="shrink-0 border-b border-border/40 z-50 flex items-center justify-between px-2 py-1 bg-card/95 backdrop-blur-sm">
 
-        {/* Logo — sized to header height, aspect ratio preserved */}
+        {/* Logo — fixed size so header wraps tightly with no wasted space */}
         <button
           onClick={() => navigate("/")}
-          className="h-full active:opacity-80 transition-opacity"
+          className="active:opacity-80 transition-opacity"
         >
           <img
             src={import.meta.env.BASE_URL + "logo.png"}
             alt="OrahDEX"
-            className="h-full w-auto object-contain"
-            style={{ filter: "none" }}
+            className="h-16 w-16 object-contain"
           />
         </button>
 
