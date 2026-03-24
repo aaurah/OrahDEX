@@ -213,20 +213,21 @@ function AdminWalletWidget() {
                 </div>
               )}
 
-              <div className="p-2 space-y-1">
+              <div className="p-2 space-y-0.5">
                 <button
                   onClick={() => { setDropdownOpen(false); openWallet(); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all"
                 >
-                  <Layers className="w-3.5 h-3.5" />
-                  Switch Network / Wallet
+                  <Layers className="w-4 h-4 shrink-0" />
+                  <span>Switch Network / Wallet</span>
                 </button>
+                <div className="mx-3 h-px bg-border/60" />
                 <button
                   onClick={() => { walletStore.disconnect(); setDropdownOpen(false); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all"
                 >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Disconnect
+                  <LogOut className="w-4 h-4 shrink-0" />
+                  <span>Disconnect</span>
                 </button>
               </div>
             </div>

@@ -46,6 +46,14 @@ const fmtSm = (n: number) => n.toFixed(6);
 const fmtPct = (part: number, total: number) =>
   total > 0 ? ((part / total) * 100).toFixed(1) : "0.0";
 
+/* Compact: $8.06B / $1.23M / $456.78 */
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000)     return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000)         return `$${(n / 1_000).toFixed(2)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
 function elapsed(iso: string | null) {
   if (!iso) return "—";
   const ms = Date.now() - new Date(iso).getTime();
@@ -78,11 +86,13 @@ function StatCard({ icon: Icon, label, value, sub, color }: {
     orange: "text-orange-400 bg-orange-400/10",
   }[color];
   return (
-    <div className="bg-[#1a1a2e] border border-white/10 rounded-xl p-5">
-      <div className={cn("inline-flex p-2 rounded-lg mb-3", cls)}><Icon className="w-5 h-5" /></div>
-      <div className="text-2xl font-bold text-white mb-0.5">{value}</div>
-      <div className="text-xs text-white/50">{label}</div>
-      {sub && <div className="text-xs text-white/30 mt-1">{sub}</div>}
+    <div className="bg-[#1a1a2e] border border-white/10 rounded-xl p-4 flex flex-col gap-2.5">
+      <div className={cn("inline-flex p-2 rounded-lg w-fit", cls)}><Icon className="w-4 h-4" /></div>
+      <div>
+        <div className="text-xl font-bold text-white leading-tight tracking-tight">{value}</div>
+        <div className="text-xs text-white/50 mt-1">{label}</div>
+        {sub && <div className="text-[10px] text-white/30 mt-0.5">{sub}</div>}
+      </div>
     </div>
   );
 }
@@ -115,29 +125,34 @@ function SourceCard({
 
   return (
     <div className="bg-[#1a1a2e] border border-white/10 rounded-xl p-5 flex flex-col gap-3">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className={cn("p-2 rounded-lg", iconBg)}><Icon className="w-4 h-4" /></div>
-          <div>
-            <div className="text-sm font-semibold text-white">{source.label}</div>
-            <div className="text-xs text-white/40 mt-0.5 max-w-[220px]">{source.description}</div>
-          </div>
+      {/* Header row: icon + label + percentage badge */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={cn("p-2 rounded-lg shrink-0", iconBg)}><Icon className="w-4 h-4" /></div>
+          <span className="text-sm font-semibold text-white truncate">{source.label}</span>
         </div>
-        <div className="text-right shrink-0 ml-2">
-          <div className={cn("text-xl font-bold", text)}>${fmt(source.total)}</div>
-          <div className="text-xs text-white/40">{pct}% of total</div>
-        </div>
+        <span className="text-[10px] font-bold text-white/40 shrink-0 tabular-nums">{pct}% of total</span>
       </div>
 
-      {/* progress bar */}
+      {/* Big amount — full width, never clipped */}
+      <div className={cn("text-2xl font-bold tracking-tight leading-none", text)}>
+        {fmtCompact(source.total)}
+      </div>
+
+      {/* Description */}
+      <div className="text-xs text-white/40 leading-relaxed -mt-1">
+        {source.description}
+      </div>
+
+      {/* Progress bar */}
       <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-        <div className={cn("h-full rounded-full transition-all", bar)} style={{ width: `${Math.min(pct, 100)}%` }} />
+        <div className={cn("h-full rounded-full transition-all duration-700", bar)} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
 
-      {/* last cycle */}
-      <div className="flex items-center justify-between text-xs text-white/40">
-        <span>Last cycle: <span className="text-white/60">{fmtSm(source.lastCycle)} USD</span></span>
-        <span>{source.lastCycleAt ? new Date(source.lastCycleAt).toLocaleTimeString() : "pending…"}</span>
+      {/* Last cycle */}
+      <div className="flex items-center justify-between text-[11px] text-white/40 pt-0.5">
+        <span>Last cycle: <span className="text-white/60 font-mono">{fmtSm(source.lastCycle)} USD</span></span>
+        <span className="tabular-nums">{source.lastCycleAt ? new Date(source.lastCycleAt).toLocaleTimeString() : "pending…"}</span>
       </div>
     </div>
   );
@@ -285,10 +300,10 @@ export function AdminBotProfit() {
         </div>
       ) : data ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={TrendingUp} color="green"  label="Projected Total"    value={`$${fmt(data.cumulative)}`} sub={`Running ${elapsed(data.startTime)}`} />
-          <StatCard icon={DollarSign} color="yellow" label="Projected Available" value={`$${fmt(data.available)}`}  sub="Model estimate" />
-          <StatCard icon={Activity}   color="blue"   label="Projected Daily Rate" value={`$${fmt(data.dailyRate)}`}  sub="Based on seeded volume" />
-          <StatCard icon={Zap}        color="orange" label="Total Withdrawn"     value={`$${fmt(data.withdrawn)}`}  sub={`${data.history.length} withdrawals`} />
+          <StatCard icon={TrendingUp} color="green"  label="Projected Total"     value={fmtCompact(data.cumulative)} sub={`Running ${elapsed(data.startTime)}`} />
+          <StatCard icon={DollarSign} color="yellow" label="Projected Available"  value={fmtCompact(data.available)}  sub="Model estimate" />
+          <StatCard icon={Activity}   color="blue"   label="Projected Daily Rate" value={fmtCompact(data.dailyRate)}  sub="Based on seeded volume" />
+          <StatCard icon={Zap}        color="orange" label="Total Withdrawn"      value={fmtCompact(data.withdrawn)}  sub={`${data.history.length} withdrawals`} />
         </div>
       ) : null}
 
