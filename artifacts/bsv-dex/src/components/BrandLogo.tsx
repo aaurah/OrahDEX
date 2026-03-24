@@ -41,7 +41,7 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
           <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7">
             <animate
               attributeName="r"
-              from="13" to="24"
+              from="13" to="34"
               dur="1.2s"
               repeatCount="indefinite"
             />
