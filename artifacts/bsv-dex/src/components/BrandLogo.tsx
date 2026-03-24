@@ -6,43 +6,62 @@ interface Props {
 }
 
 /**
- * OrahDEX wordmark with connectivity dot perfectly centred
- * inside the hollow of the "O" glyph.
- *
- *  Green pulse = connected   •   Red = disconnected
+ * OrahDEX wordmark.
+ * The "O" is an SVG ring — dot is mathematically centred at the same cx/cy.
+ * Green pulse = connected  •  Red = disconnected
  */
 export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
   const online = useOnlineStatus();
 
   return (
-    <span className={`inline-flex items-center font-bold tracking-tight text-foreground leading-none ${textSize}`}>
-      {/* O with dot inside */}
-      <span
-        className="relative inline-block leading-none"
-        title={tooltip ? (online ? 'Connected to internet' : 'No internet connection') : undefined}
+    <span
+      className={`inline-flex items-center font-bold tracking-tight text-foreground leading-none ${textSize}`}
+      title={tooltip ? (online ? 'Connected to internet' : 'No internet connection') : undefined}
+    >
+      {/*
+        SVG "O": outer ring drawn with stroke, dot drawn at exact cx/cy centre.
+        viewBox is square; height matches 1em via className; width auto.
+      */}
+      <svg
+        viewBox="0 0 100 100"
+        className="inline-block h-[1em] w-[1em] overflow-visible shrink-0"
+        fill="none"
+        aria-hidden
       >
-        {/* The letter */}
-        <span className="leading-none select-none">O</span>
+        {/* O ring — stroke colour matches the surrounding text */}
+        <circle
+          cx="50" cy="50" r="40"
+          stroke="currentColor"
+          strokeWidth="16"
+          fill="none"
+        />
 
-        {/* Dot — absolutely centred over the glyph using translate trick */}
-        <span
-          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-          aria-hidden
-        >
-          <span className="relative flex items-center justify-center w-[5px] h-[5px]">
-            {online && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-70" />
-            )}
-            <span
-              className={`relative inline-flex rounded-full w-[5px] h-[5px] ${
-                online ? 'bg-green-400' : 'bg-red-500'
-              }`}
+        {/* Ping animation circle (online only) */}
+        {online && (
+          <circle cx="50" cy="50" r="10" fill="#4ade80" opacity="0.7">
+            <animate
+              attributeName="r"
+              from="8" to="22"
+              dur="1.2s"
+              repeatCount="indefinite"
             />
-          </span>
-        </span>
-      </span>
+            <animate
+              attributeName="opacity"
+              from="0.7" to="0"
+              dur="1.2s"
+              repeatCount="indefinite"
+            />
+          </circle>
+        )}
 
-      {/* Rest of name */}
+        {/* Solid dot — perfectly centred */}
+        <circle
+          cx="50" cy="50" r="10"
+          fill={online ? '#4ade80' : '#ef4444'}
+        />
+      </svg>
+
+      {/* Rest of wordmark */}
       <span>rah</span>
       <span className="text-green-400">DEX</span>
     </span>
