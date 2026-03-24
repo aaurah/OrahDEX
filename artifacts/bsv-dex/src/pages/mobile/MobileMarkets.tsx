@@ -110,9 +110,10 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
       return pool.filter(m => favorites.has(m.symbol));
     }
     case "new":     return NEW_MARKETS.map(normalise);
-    case "usd":     return hasApi
-      ? apiAll.filter(m => m.quote === usdSub && m.type === "spot")
-      : STABLE_MOCK[usdSub].map(normalise);
+    case "usd": {
+      const apiUsd = hasApi ? apiAll.filter(m => m.quote === usdSub && m.type === "spot") : [];
+      return apiUsd.length > 0 ? apiUsd : STABLE_MOCK[usdSub].map(normalise);
+    }
     case "btc":     return apiOrMock("BTC",   BTC_MARKETS.map(normalise));
     case "eth":     return apiOrMock("ETH",   ETH_MARKETS.map(normalise));
     case "bnb":     return apiOrMock("BNB",   BNB_MARKETS.map(normalise));
@@ -133,7 +134,10 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
     case "ai":      return AI_MARKETS.map(normalise);
     case "meme":    return MEME_MARKETS.map(normalise);
     case "defi":    return DEFI_MARKETS.map(normalise);
-    case "futures": return hasApi ? apiAll.filter(m => m.type === "futures") : FUTURES_MARKETS.map(normalise);
+    case "futures": {
+      const apiFut = hasApi ? apiAll.filter(m => m.type === "futures") : [];
+      return apiFut.length > 0 ? apiFut : FUTURES_MARKETS.map(normalise);
+    }
     default:        return [];
   }
 }
