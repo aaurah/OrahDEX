@@ -172,7 +172,7 @@ async function fetchLivePrices(): Promise<Record<string, CoinGeckoPrice>> {
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(40000),
   });
   if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
   return res.json() as Promise<Record<string, CoinGeckoPrice>>;
@@ -198,16 +198,16 @@ async function fetchLivePricesCMC(): Promise<Record<string, CoinGeckoPrice> | nu
   return out;
 }
 
-// Default fallback prices (approximate) when CoinGecko is down
+// Default fallback prices (approximate) when CoinGecko is down — updated Mar 2026
 const FALLBACK_PRICES: Record<string, number> = {
-  BSV:0.055,BTC:68000,ETH:3400,SOL:145,XRP:0.52,BNB:380,ADA:0.43,
-  DOGE:0.12,DOT:6.8,AVAX:35,MATIC:0.72,LINK:14.5,UNI:9.8,ATOM:8.5,
-  LTC:78,BCH:380,TRX:0.12,ETC:26,NEAR:6.5,ICP:11,VET:0.04,FIL:5.8,
-  SAND:0.43,MANA:0.42,APT:10.5,ARB:1.1,OP:2.4,SUI:1.2,INJ:28,
-  PEPE:0.0000082,SHIB:0.0000235,MKR:2900,AAVE:95,CRV:0.38,ENS:16,
-  LDO:2.1,SUSHI:1.2,COMP:52,GRT:0.19,SNX:2.8,YFI:6800,RUNE:5.5,
-  FTM:0.65,ALGO:0.18,XLM:0.11,HBAR:0.095,EGLD:42,THETA:1.4,EOS:0.72,
-  ZEC:28,DASH:28,XMR:125,CRO:0.13,
+  BSV:14.35,BTC:70725,ETH:2152,SOL:91.44,XRP:1.43,BNB:638,ADA:0.75,
+  DOGE:0.094,DOT:1.41,AVAX:9.55,MATIC:0.40,LINK:13.0,UNI:6.5,ATOM:4.5,
+  LTC:85,BCH:477,TRX:0.23,ETC:20,NEAR:2.5,ICP:8.0,VET:0.025,FIL:4.0,
+  SAND:0.30,MANA:0.30,APT:5.5,ARB:0.46,OP:0.75,SUI:2.5,INJ:18,
+  PEPE:0.0000090,SHIB:0.0000120,MKR:1800,AAVE:130,CRV:0.27,ENS:17,
+  LDO:0.90,SUSHI:0.60,COMP:43,GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,
+  FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
+  ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
 };
 
 export async function seedMarketsIfNeeded() {
@@ -378,16 +378,29 @@ export async function seedMarketsIfNeeded() {
 export async function updateMarketPrices() {
   try {
     let prices: Record<string, CoinGeckoPrice>;
+    let priceSource = "hardcoded-fallback";
     try {
       prices = await fetchLivePrices();
-      logger.info("Market prices updated from CoinGecko");
+      priceSource = "CoinGecko";
     } catch (cgErr: any) {
       logger.warn({ err: cgErr }, "CoinGecko price fetch failed — trying CoinMarketCap fallback");
-      const cmcPrices = await fetchLivePricesCMC();
-      if (!cmcPrices) throw new Error("Both CoinGecko and CoinMarketCap price fetches failed");
-      prices = cmcPrices;
-      logger.info("Market prices updated from CoinMarketCap (fallback)");
+      try {
+        const cmcPrices = await fetchLivePricesCMC();
+        if (cmcPrices) { prices = cmcPrices; priceSource = "CoinMarketCap"; }
+        else throw new Error("CMC returned null");
+      } catch {
+        // Both external APIs failed — build a synthetic prices map from FALLBACK_PRICES
+        // so the bot always has current-ish data to seed order books with.
+        logger.warn("Both APIs failed — using hardcoded fallback prices for bot continuity");
+        const fallback: Record<string, CoinGeckoPrice> = {};
+        for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
+          const usd = FALLBACK_PRICES[sym];
+          if (usd) fallback[cgId] = { usd, usd_24h_change: 0, usd_24h_vol: usd * 1_000_000, usd_market_cap: usd * 10_000_000 };
+        }
+        prices = fallback;
+      }
     }
+    logger.info({ source: priceSource }, "Market prices updated");
     const markets = await db.select().from(marketsTable);
 
     for (const market of markets) {
