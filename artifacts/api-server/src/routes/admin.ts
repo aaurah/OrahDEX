@@ -203,7 +203,7 @@ router.post("/contracts/deploy", (req, res) => {
 });
 
 /* ─── FEE WALLET CONFIG ─── */
-router.get("/admin/fee-wallet", async (_req, res) => {
+router.get("/fee-wallet", async (_req, res) => {
   try {
     const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, "fee_wallet_config"));
     if (!rows.length) { res.json({}); return; }
@@ -211,7 +211,7 @@ router.get("/admin/fee-wallet", async (_req, res) => {
   } catch (err) { res.json({}); }
 });
 
-router.put("/admin/fee-wallet", async (req, res) => {
+router.put("/fee-wallet", async (req, res) => {
   try {
     const cfg = req.body;
     const value = JSON.stringify(cfg);
