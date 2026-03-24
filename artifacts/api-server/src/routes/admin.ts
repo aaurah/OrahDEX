@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { db } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 
 const router = Router();
 
@@ -387,6 +388,31 @@ router.post("/bot-profit/withdraw", async (req, res) => {
     res.json({ success: true, txid, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
   } catch (err) {
     res.status(500).json({ error: "Withdrawal failed" });
+  }
+});
+
+// ── GET /admin/bsv-wallet — settlement wallet address, balance, UTXOs ─────────
+router.get("/bsv-wallet", async (req, res) => {
+  try {
+    const wallet  = await getOrCreateWallet();
+    const balance = await fetchWalletBalance(wallet.address);
+    res.json({
+      address:             wallet.address,
+      pubKeyHex:           wallet.pubKeyHex,
+      confirmedSatoshis:   balance.confirmedSatoshis,
+      unconfirmedSatoshis: balance.unconfirmedSatoshis,
+      totalSatoshis:       balance.totalSatoshis,
+      bsv:                 balance.bsv,
+      utxos:               balance.utxos,
+      funded:              balance.funded,
+      explorerUrl:         `https://whatsonchain.com/address/${wallet.address}`,
+      broadcastReady:      balance.funded,
+      notice: balance.funded
+        ? "Wallet is funded — all new trade settlements will be broadcast to BSV mainnet."
+        : "Send BSV to this address to enable real on-chain broadcasting of trade settlements.",
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load BSV wallet" });
   }
 });
 
