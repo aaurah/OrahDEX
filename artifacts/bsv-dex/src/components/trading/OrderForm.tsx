@@ -570,7 +570,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 type="button"
                 className="flex-1 py-1 text-xs bg-secondary hover:bg-secondary/80 border border-border rounded-md transition-colors"
                 onClick={() => {
-                  const portion = nativeBal * (pct / 100);
+                  const portion = availableAmt * (pct / 100);
                   if (side === "buy" && price && parseFloat(price) > 0) {
                     setAmount((portion / parseFloat(price)).toFixed(6));
                   } else {
