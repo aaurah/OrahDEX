@@ -332,11 +332,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
                   <button
                     onClick={() => pick(m)}
                     className={cn(
-                      "w-[58px] h-[30px] rounded flex items-center justify-center shrink-0",
-                      isUp ? "bg-green-500" : "bg-red-500"
+                      "px-2 py-[3px] rounded flex items-center justify-center shrink-0 tabular-nums",
+                      isUp
+                        ? "bg-green-500/15 text-green-400 border border-green-500/30"
+                        : "bg-red-500/15 text-red-400 border border-red-500/30"
                     )}
                   >
-                    <span className="text-[11px] font-bold text-white">
+                    <span className="text-[11px] font-bold">
                       {isUp ? "+" : ""}{m.chg.toFixed(2)}%
                     </span>
                   </button>
