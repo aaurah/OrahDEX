@@ -220,9 +220,13 @@ export function AdminBotProfit() {
       return j;
     },
     onSuccess: (j) => {
-      setSuccess(`Sent! TXID: ${j.txid}`);
+      const detail = j.satoshis
+        ? ` (${j.satoshis.toLocaleString()} sat @ $${j.bsvPriceUsd?.toFixed(2)}/BSV)`
+        : "";
+      setSuccess(`Sent! TXID: ${j.txid}${detail}`);
       setAmount(""); setAddress(""); setError("");
       qc.invalidateQueries({ queryKey: ["admin-bot-profit"] });
+      qc.invalidateQueries({ queryKey: ["admin-bsv-wallet"] });
     },
     onError: (e: Error) => { setError(e.message); setSuccess(""); },
   });
