@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -11,8 +11,10 @@ import {
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { Search, Star, ArrowRightLeft, CreditCard, Zap } from "lucide-react";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -121,6 +123,27 @@ export function Markets() {
   const handleBuy = (coin: string) => {
     setBuyCoin(coin);
     setBuyOpen(true);
+  };
+
+  const { address } = useWalletStore();
+  const openWalletModal = useWalletModalStore((s) => s.open);
+  const [, navigate] = useLocation();
+  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (address && pendingRoute) {
+      navigate(pendingRoute);
+      setPendingRoute(null);
+    }
+  }, [address, pendingRoute]);
+
+  const handleTrade = (href: string) => {
+    if (!address) {
+      setPendingRoute(href);
+      openWalletModal();
+    } else {
+      navigate(href);
+    }
   };
 
   const { data: apiMarkets } = useGetMarkets();
@@ -420,12 +443,12 @@ export function Markets() {
                           >
                             <CreditCard className="w-3 h-3" /> Buy
                           </button>
-                          <Link
-                            href={tradeHref}
+                          <button
+                            onClick={() => handleTrade(tradeHref)}
                             className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3.5 py-1.5 rounded-lg font-semibold text-xs hover:opacity-90 transition-opacity"
                           >
                             Trade <ArrowRightLeft className="w-3 h-3" />
-                          </Link>
+                          </button>
                         </div>
                       </td>
                     </tr>
