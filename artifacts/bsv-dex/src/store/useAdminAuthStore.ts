@@ -1,9 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { verifyTOTP } from '@/lib/totp';
 
-const ADMIN_EMAIL = 'aaurah@protonmail.com';
-const DEFAULT_PASSWORD = 'admin123';
+const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 interface AdminAuthState {
   isAuthenticated: boolean;
@@ -12,9 +10,8 @@ interface AdminAuthState {
   twoFaVerified: boolean;
   email: string | null;
   displayName: string;
-  storedPassword: string;
   error: string | null;
-  login: (email: string, password: string) => boolean;
+  login: (email: string, password: string) => Promise<boolean>;
   verifyTotp: (code: string) => Promise<boolean>;
   markSetupDone: () => void;
   enable2FA: () => void;
@@ -22,7 +19,6 @@ interface AdminAuthState {
   logout: () => void;
   clearError: () => void;
   updateProfile: (fields: { displayName?: string }) => void;
-  updatePassword: (newPassword: string) => void;
 }
 
 export const useAdminAuthStore = create<AdminAuthState>()(
@@ -33,40 +29,56 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       twoFaSetupDone: false,
       twoFaVerified: false,
       email: null,
-      displayName: 'Aaurah',
-      storedPassword: DEFAULT_PASSWORD,
+      displayName: 'Admin',
       error: null,
 
-      login: (email, password) => {
-        const { storedPassword } = get();
-        const validPassword = storedPassword || DEFAULT_PASSWORD;
-        if (email.trim().toLowerCase() === ADMIN_EMAIL && password === validPassword) {
-          const { twoFaEnabled } = get();
-          if (!twoFaEnabled) {
-            set({ email: ADMIN_EMAIL, isAuthenticated: true, error: null, twoFaVerified: false });
-          } else {
-            set({ email: ADMIN_EMAIL, error: null, twoFaVerified: false });
+      login: async (email, password) => {
+        try {
+          const res = await fetch(`${API}/api/admin/auth`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            const { twoFaEnabled } = get();
+            if (!twoFaEnabled) {
+              set({ email, isAuthenticated: true, error: null, twoFaVerified: false });
+            } else {
+              set({ email, error: null, twoFaVerified: false });
+            }
+            return true;
           }
-          return true;
+          set({ error: data.error ?? "Invalid email or password." });
+          return false;
+        } catch {
+          set({ error: "Could not reach the server. Please try again." });
+          return false;
         }
-        set({ error: 'Invalid email or password.' });
-        return false;
       },
 
       verifyTotp: async (code) => {
-        const ok = await verifyTOTP(code);
-        if (ok) {
-          set({ isAuthenticated: true, twoFaVerified: true, error: null });
-        } else {
-          set({ error: 'Incorrect code. Try again.' });
+        try {
+          const res = await fetch(`${API}/api/admin/auth/totp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            set({ isAuthenticated: true, twoFaVerified: true, error: null });
+            return true;
+          }
+          set({ error: data.error ?? "Incorrect code. Try again." });
+          return false;
+        } catch {
+          set({ error: "Could not reach the server. Please try again." });
+          return false;
         }
-        return ok;
       },
 
       markSetupDone: () => set({ twoFaSetupDone: true }),
-
       enable2FA: () => set({ twoFaEnabled: true, twoFaSetupDone: false }),
-
       disable2FA: () => set({ twoFaEnabled: false, twoFaSetupDone: false }),
 
       logout: () => set({
@@ -81,17 +93,13 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       updateProfile: (fields) => set((s) => ({
         displayName: fields.displayName ?? s.displayName,
       })),
-
-      updatePassword: (newPassword) => set({ storedPassword: newPassword }),
     }),
     {
-      name: 'aura-admin-auth',
+      name: 'orahdex-admin-auth',
       partialize: (s) => ({
         twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
         displayName: s.displayName,
-        storedPassword: s.storedPassword,
-        // Never persist isAuthenticated — require re-login each session
       }),
     }
   )
