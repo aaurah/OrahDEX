@@ -27,17 +27,18 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 h-14 bg-black border-b border-border/40 z-50 flex items-center justify-between px-3">
+      <div className="shrink-0 h-20 border-b border-border/40 z-50 flex items-center justify-between px-2 bg-card/95 backdrop-blur-sm">
 
         {/* Logo — sized to header height, aspect ratio preserved */}
         <button
           onClick={() => navigate("/")}
-          className="h-full py-1 active:opacity-80 transition-opacity"
+          className="h-full active:opacity-80 transition-opacity"
         >
           <img
             src={import.meta.env.BASE_URL + "logo.png"}
             alt="OrahDEX"
             className="h-full w-auto object-contain"
+            style={{ filter: "none" }}
           />
         </button>
 
@@ -46,7 +47,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           {address ? (
             <button
               onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-black/60 border border-white/20 backdrop-blur-sm px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
+              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
               <div className="flex flex-col items-start min-w-0">
