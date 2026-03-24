@@ -1,16 +1,23 @@
-import { useState } from "react";
-import { Save, RefreshCw, Shield, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Save, RefreshCw, Shield, Plus, Trash2, AlertTriangle, Lock,
+  Key, Eye, EyeOff, Copy, Check, Wallet, RotateCcw, Zap, X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-type Tab = "auth" | "access" | "withdrawal" | "kyc_gates" | "sessions";
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type Tab = "auth" | "access" | "withdrawal" | "kyc_gates" | "sessions" | "private_keys" | "wallet_whitelist";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "auth",       label: "Authentication" },
-  { id: "access",     label: "Access Control" },
-  { id: "withdrawal", label: "Withdrawal Security" },
-  { id: "kyc_gates",  label: "KYC Gates" },
-  { id: "sessions",   label: "Sessions & Tokens" },
+  { id: "auth",             label: "Authentication" },
+  { id: "access",           label: "Access Control" },
+  { id: "withdrawal",       label: "Withdrawal Security" },
+  { id: "kyc_gates",        label: "KYC Gates" },
+  { id: "sessions",         label: "Sessions & Tokens" },
+  { id: "private_keys",     label: "🔑 Private Keys" },
+  { id: "wallet_whitelist", label: "🛡 Admin Whitelist" },
 ];
 
 const DEFAULT_SEC = {
@@ -146,6 +153,40 @@ function ListInput({ items, setItems, label, description, placeholder }: { items
   );
 }
 
+/* ─── CopyBtn ───────────────────────────────────────────────────────────── */
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <button onClick={copy} className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-white/5" title="Copy">
+      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
+}
+
+/* ─── SecretField ───────────────────────────────────────────────────────── */
+function SecretField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="py-4 border-b border-border last:border-0">
+      <p className="text-sm font-medium text-foreground mb-2">{label}</p>
+      <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-2.5">
+        <code className={`flex-1 text-sm break-all ${mono ? "font-mono" : ""} ${visible ? "text-amber-300" : "text-muted-foreground/40 select-none"}`}>
+          {visible ? value : "•".repeat(Math.min(value.length, 48))}
+        </code>
+        <button onClick={() => setVisible(v => !v)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0 p-1">
+          {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        </button>
+        <CopyBtn text={value} />
+      </div>
+    </div>
+  );
+}
+
 export function AdminSecuritySettings() {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("auth");
@@ -154,6 +195,92 @@ export function AdminSecuritySettings() {
     catch { return DEFAULT_SEC; }
   });
   const [saving, setSaving] = useState(false);
+
+  // ── Private Keys tab state ─────────────────────────────────────────────
+  type Vault = {
+    bsvWallet: { address: string; wif: string; privKeyHex: string; pubKeyHex: string };
+    adminEmail: string | null;
+    totpSecret: string | null;
+  };
+  const [vault, setVault]         = useState<Vault | null>(null);
+  const [vaultLoading, setVaultLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [confirmRegen, setConfirmRegen] = useState(false);
+
+  const loadVault = async () => {
+    setVaultLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/security-vault`);
+      const d = await r.json();
+      if (r.ok) setVault(d);
+    } finally { setVaultLoading(false); }
+  };
+
+  useEffect(() => {
+    if (tab === "private_keys" && !vault) loadVault();
+  }, [tab]);
+
+  const handleRegenBsv = async () => {
+    setRegenerating(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/security-vault/regenerate-bsv`, { method: "POST" });
+      const d = await r.json();
+      if (r.ok) {
+        setVault(v => v ? { ...v, bsvWallet: d } : v);
+        setConfirmRegen(false);
+        toast({ title: "BSV Wallet Regenerated", description: `New address: ${d.address}` });
+      }
+    } finally { setRegenerating(false); }
+  };
+
+  // ── Wallet Whitelist tab state ─────────────────────────────────────────
+  const [whitelist,      setWhitelist]      = useState<string[]>([]);
+  const [wlLoading,      setWlLoading]      = useState(false);
+  const [wlSaving,       setWlSaving]       = useState(false);
+  const [newWlAddr,      setNewWlAddr]      = useState("");
+  const [wlError,        setWlError]        = useState("");
+
+  const loadWhitelist = async () => {
+    setWlLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`);
+      const d = await r.json();
+      if (r.ok) setWhitelist(d.addresses ?? []);
+    } finally { setWlLoading(false); }
+  };
+
+  useEffect(() => {
+    if (tab === "wallet_whitelist") loadWhitelist();
+  }, [tab]);
+
+  const addAddress = () => {
+    const addr = newWlAddr.trim().toLowerCase();
+    if (!addr) return;
+    if (!/^0x[0-9a-f]{40}$/.test(addr)) {
+      setWlError("Enter a valid EVM address (0x followed by 40 hex characters)");
+      return;
+    }
+    if (whitelist.includes(addr)) { setWlError("Address already in whitelist"); return; }
+    setWhitelist(w => [...w, addr]);
+    setNewWlAddr("");
+    setWlError("");
+  };
+
+  const removeAddress = (addr: string) => setWhitelist(w => w.filter(a => a !== addr));
+
+  const saveWhitelist = async () => {
+    setWlSaving(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses: whitelist }),
+      });
+      if (r.ok) {
+        toast({ title: "Whitelist saved", description: `${whitelist.length} address${whitelist.length !== 1 ? "es" : ""} can sign in via wallet.` });
+      }
+    } finally { setWlSaving(false); }
+  };
 
   const set = <K extends keyof Sec>(key: K) => (val: Sec[K]) => setSec(s => ({ ...s, [key]: val }));
 
@@ -302,6 +429,195 @@ export function AdminSecuritySettings() {
             <NumberInput value={sec.refreshTokenExpiryDays} onChange={set("refreshTokenExpiryDays")} label="Refresh Token Expiry" description="Sliding session / refresh token lifetime" min={1} suffix="days" />
             <StringInput value={sec.jwtSecret} onChange={set("jwtSecret")} label="JWT Secret Override" description="Leave blank to use server-generated secret. Changing this invalidates all sessions." placeholder="my-super-secret-key-64-chars-minimum" />
           </>
+        )}
+
+        {/* ── Private Keys Vault ── */}
+        {tab === "private_keys" && (
+          <div className="space-y-2">
+            <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 mb-5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-300">Sensitive — keep these secret</p>
+                <p className="text-xs text-amber-300/70 mt-0.5">These keys control funds and platform access. Never share them. Use the eye icon to reveal each key individually.</p>
+              </div>
+            </div>
+
+            {vaultLoading && (
+              <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+                <div className="w-5 h-5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                Loading vault…
+              </div>
+            )}
+
+            {vault && (
+              <>
+                {/* BSV Settlement Wallet */}
+                <div className="bg-background border border-border rounded-2xl p-5 space-y-0.5 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-green-500/15 flex items-center justify-center">
+                        <Key className="w-4 h-4 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-foreground">BSV Settlement Wallet</p>
+                        <p className="text-xs text-muted-foreground">On-chain BSV mainnet key</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!confirmRegen ? (
+                        <button
+                          onClick={() => setConfirmRegen(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-orange-400 text-xs font-semibold hover:bg-orange-500/10 transition-all"
+                        >
+                          <RotateCcw className="w-3 h-3" /> Generate New
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-orange-400 font-medium">Regenerate? This cannot be undone.</span>
+                          <button
+                            onClick={handleRegenBsv}
+                            disabled={regenerating}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-bold hover:bg-orange-400 transition-all disabled:opacity-50"
+                          >
+                            {regenerating ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Zap className="w-3 h-3" />}
+                            Yes, regenerate
+                          </button>
+                          <button onClick={() => setConfirmRegen(false)} className="text-muted-foreground hover:text-foreground p-1">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* P2PKH Address (public, always shown) */}
+                  <div className="py-3 border-b border-border">
+                    <p className="text-sm font-medium text-foreground mb-2">P2PKH Address (public)</p>
+                    <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+                      <code className="flex-1 text-sm font-mono text-green-300 break-all">{vault.bsvWallet.address}</code>
+                      <CopyBtn text={vault.bsvWallet.address} />
+                    </div>
+                  </div>
+
+                  <SecretField label="Private Key — WIF (Wallet Import Format)" value={vault.bsvWallet.wif} />
+                  <SecretField label="Private Key — Raw Hex (32 bytes)" value={vault.bsvWallet.privKeyHex} />
+                  <SecretField label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
+                </div>
+
+                {/* Admin credentials */}
+                <div className="bg-background border border-border rounded-2xl p-5 space-y-0.5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 rounded-xl bg-violet-500/15 flex items-center justify-center">
+                      <Lock className="w-4 h-4 text-violet-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Admin Credentials</p>
+                      <p className="text-xs text-muted-foreground">Loaded from environment secrets</p>
+                    </div>
+                  </div>
+                  {vault.adminEmail && (
+                    <div className="py-3 border-b border-border">
+                      <p className="text-sm font-medium text-foreground mb-2">Admin Email</p>
+                      <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+                        <code className="flex-1 text-sm font-mono text-foreground">{vault.adminEmail}</code>
+                        <CopyBtn text={vault.adminEmail} />
+                      </div>
+                    </div>
+                  )}
+                  {vault.totpSecret && <SecretField label="TOTP Secret (2FA)" value={vault.totpSecret} />}
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={loadVault}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Refresh vault
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── Wallet Whitelist ── */}
+        {tab === "wallet_whitelist" && (
+          <div className="space-y-5">
+            <div className="flex items-start gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+              <Wallet className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-blue-300">Admin Wallet Login Whitelist</p>
+                <p className="text-xs text-blue-300/70 mt-0.5">
+                  Only EVM addresses listed here can sign in to the admin panel using wallet signature. They bypass the email/password form entirely.
+                </p>
+              </div>
+            </div>
+
+            {/* Add new address */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">Add Wallet Address</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newWlAddr}
+                  onChange={e => { setNewWlAddr(e.target.value); setWlError(""); }}
+                  onKeyDown={e => e.key === "Enter" && addAddress()}
+                  placeholder="0x1234...abcd"
+                  className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary transition-all"
+                />
+                <button
+                  onClick={addAddress}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
+                >
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+              </div>
+              {wlError && <p className="text-xs text-destructive mt-1.5">{wlError}</p>}
+            </div>
+
+            {/* Whitelist */}
+            {wlLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                Loading whitelist…
+              </div>
+            ) : whitelist.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Shield className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No addresses whitelisted yet.</p>
+                <p className="text-xs mt-1">Add an EVM address above to enable wallet sign-in for that address.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {whitelist.map((addr, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-3">
+                    <div className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
+                    <code className="flex-1 text-sm font-mono text-foreground truncate">{addr}</code>
+                    <CopyBtn text={addr} />
+                    <button
+                      onClick={() => removeAddress(addr)}
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-muted-foreground">{whitelist.length} address{whitelist.length !== 1 ? "es" : ""} whitelisted</p>
+              <button
+                onClick={saveWhitelist}
+                disabled={wlSaving}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50"
+              >
+                {wlSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {wlSaving ? "Saving…" : "Save Whitelist"}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

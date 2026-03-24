@@ -9,9 +9,12 @@ interface AdminAuthState {
   twoFaSetupDone: boolean;
   twoFaVerified: boolean;
   email: string | null;
+  walletAddress: string | null;
+  loginMethod: "credentials" | "wallet" | null;
   displayName: string;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
+  loginViaWallet: (address: string, signature: string) => Promise<boolean>;
   verifyTotp: (code: string) => Promise<boolean>;
   markSetupDone: () => void;
   enable2FA: () => void;
@@ -29,8 +32,30 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       twoFaSetupDone: false,
       twoFaVerified: false,
       email: null,
+      walletAddress: null,
+      loginMethod: null,
       displayName: 'Admin',
       error: null,
+
+      loginViaWallet: async (address, signature) => {
+        try {
+          const res = await fetch(`${API}/api/admin/auth/wallet`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ address, signature }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            set({ isAuthenticated: true, walletAddress: address, loginMethod: "wallet", error: null });
+            return true;
+          }
+          set({ error: data.error ?? "Wallet login failed." });
+          return false;
+        } catch {
+          set({ error: "Could not reach the server. Please try again." });
+          return false;
+        }
+      },
 
       login: async (email, password) => {
         try {
@@ -85,6 +110,8 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         isAuthenticated: false,
         twoFaVerified: false,
         email: null,
+        walletAddress: null,
+        loginMethod: null,
         error: null,
       }),
 
