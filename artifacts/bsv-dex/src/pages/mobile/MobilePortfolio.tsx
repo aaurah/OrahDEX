@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn } from "@/lib/utils";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -69,17 +70,29 @@ export function MobilePortfolio() {
   const [copied, setCopied] = useState(false);
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
+  const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
+    network === "evm" ? address : null,
+    chainId,
+  );
 
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
 
-  // Build rows: native token gets the real wallet balance, everything else is 0
+  // Build rows:
+  // - EVM wallets: use real on-chain balances (native + ERC-20 tokens)
+  // - BSV/SOL/BTC: use stored native balance only
   const rows = PORTFOLIO_ASSETS.map(a => {
-    const mkt = prices?.[a.asset];
-    const price      = a.asset === "USDT" ? 1 : (mkt?.lastPrice ?? 0);
-    const change     = a.asset === "USDT" ? 0 : (mkt?.priceChangePercent24h ?? 0);
-    const amount     = a.asset === nativeAsset ? nativeBalance : 0;
-    const value      = amount * price;
+    const mkt    = prices?.[a.asset];
+    const price  = a.asset === "USDT" ? 1 : (mkt?.lastPrice ?? 0);
+    const change = a.asset === "USDT" ? 0 : (mkt?.priceChangePercent24h ?? 0);
+    let amount = 0;
+    if (network === "evm" && evmBalances.length > 0) {
+      const evmBal = evmBalances.find(b => b.symbol === a.asset);
+      amount = evmBal?.amount ?? 0;
+    } else {
+      amount = a.asset === nativeAsset ? nativeBalance : 0;
+    }
+    const value = amount * price;
     return { ...a, amount, price, change, value };
   });
 
