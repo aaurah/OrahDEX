@@ -200,14 +200,15 @@ export function ReownConnectPanel({ onConnected }: { onConnected?: (addr: string
     <div className="space-y-5">
       <div className="text-center space-y-2">
         <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          <svg viewBox="0 0 32 32" className="w-8 h-8 text-primary" fill="none">
-            <path d="M9.58 12.26c3.54-3.46 9.28-3.46 12.82 0l.43.42a.44.44 0 0 1 0 .63l-1.45 1.42a.23.23 0 0 1-.32 0l-.59-.57c-2.47-2.41-6.48-2.41-8.95 0l-.63.61a.23.23 0 0 1-.32 0L9.14 13.35a.44.44 0 0 1 0-.63l.44-.46Zm15.84 2.96 1.3 1.27a.44.44 0 0 1 0 .63l-5.84 5.7a.46.46 0 0 1-.64 0l-4.14-4.05a.11.11 0 0 0-.16 0l-4.14 4.05a.46.46 0 0 1-.64 0l-5.84-5.7a.44.44 0 0 1 0-.63l1.3-1.27a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0Z" fill="currentColor"/>
+          <svg viewBox="0 0 24 24" className="w-8 h-8 text-primary" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="5" width="20" height="14" rx="3" />
+            <path d="M2 10h20" />
           </svg>
         </div>
         <div>
-          <h3 className="text-base font-bold text-foreground">Reown AppKit</h3>
+          <h3 className="text-base font-bold text-foreground">Connect EVM Wallet</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            Connect via WalletConnect, MetaMask, Coinbase, Ledger, and 500+ wallets
+            MetaMask, Coinbase, Trust, Ledger, and 500+ wallets supported
           </p>
         </div>
       </div>
@@ -222,10 +223,11 @@ export function ReownConnectPanel({ onConnected }: { onConnected?: (addr: string
           onClick={() => openReownModal("Connect")}
           className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-gradient-to-r from-primary/20 to-blue-500/10 border border-primary/30 text-primary font-bold text-sm hover:from-primary/25 hover:to-blue-500/15 transition-all"
         >
-          <svg viewBox="0 0 32 32" className="w-5 h-5" fill="none">
-            <path d="M9.58 12.26c3.54-3.46 9.28-3.46 12.82 0l.43.42a.44.44 0 0 1 0 .63l-1.45 1.42a.23.23 0 0 1-.32 0l-.59-.57c-2.47-2.41-6.48-2.41-8.95 0l-.63.61a.23.23 0 0 1-.32 0L9.14 13.35a.44.44 0 0 1 0-.63l.44-.46Zm15.84 2.96 1.3 1.27a.44.44 0 0 1 0 .63l-5.84 5.7a.46.46 0 0 1-.64 0l-4.14-4.05a.11.11 0 0 0-.16 0l-4.14 4.05a.46.46 0 0 1-.64 0l-5.84-5.7a.44.44 0 0 1 0-.63l1.3-1.27a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0Z" fill="currentColor"/>
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="5" width="20" height="14" rx="3" />
+            <path d="M2 10h20" />
           </svg>
-          Open Reown Wallet Modal
+          Connect Wallet
         </button>
       )}
 
@@ -240,11 +242,12 @@ export function ReownConnectPanel({ onConnected }: { onConnected?: (addr: string
       </div>
 
       <div className="flex items-start gap-2 p-3 rounded-xl bg-primary/5 border border-primary/15">
-        <svg viewBox="0 0 32 32" className="w-4 h-4 text-primary shrink-0 mt-0.5" fill="none">
-          <path d="M9.58 12.26c3.54-3.46 9.28-3.46 12.82 0l.43.42a.44.44 0 0 1 0 .63l-1.45 1.42a.23.23 0 0 1-.32 0l-.59-.57c-2.47-2.41-6.48-2.41-8.95 0l-.63.61a.23.23 0 0 1-.32 0L9.14 13.35a.44.44 0 0 1 0-.63l.44-.46Zm15.84 2.96 1.3 1.27a.44.44 0 0 1 0 .63l-5.84 5.7a.46.46 0 0 1-.64 0l-4.14-4.05a.11.11 0 0 0-.16 0l-4.14 4.05a.46.46 0 0 1-.64 0l-5.84-5.7a.44.44 0 0 1 0-.63l1.3-1.27a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0l4.14 4.05c.04.04.12.04.16 0l4.14-4.05a.46.46 0 0 1 .64 0Z" fill="currentColor"/>
+        <svg viewBox="0 0 24 24" className="w-4 h-4 text-primary shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4M12 8h.01" />
         </svg>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Powered by <strong className="text-foreground">Reown (WalletConnect v2)</strong> — scan QR with your mobile wallet, or connect directly from the extension.
+          Scan QR with your mobile wallet, or connect directly from the browser extension.
         </p>
       </div>
     </div>
