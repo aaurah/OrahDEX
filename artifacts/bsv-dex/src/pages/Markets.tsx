@@ -386,7 +386,7 @@ export function Markets() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {filtered.map((m, idx) => {
                   const base  = m.baseAsset ?? m.symbol.split("-")[0];
                   const quote = m.quoteAsset ?? m.symbol.split("-")[1];

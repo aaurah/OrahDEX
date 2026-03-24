@@ -342,7 +342,7 @@ function MexcRow({
   const isUp = m.chg >= 0;
 
   return (
-    <div className="flex items-center px-4 py-[11px] border-b border-border/20 active:bg-secondary/30 transition-colors">
+    <div className="flex items-center px-4 py-[11px] active:bg-secondary/30 transition-colors">
       <button onClick={onFav} className="mr-2.5 shrink-0">
         <Star size={13} className={isFav ? "fill-green-400 text-green-400" : "text-muted-foreground/30"} />
       </button>
@@ -362,7 +362,7 @@ function MexcRow({
       <button
         onClick={onBuy}
         className={cn(
-          "w-[68px] h-[36px] rounded-md flex items-center justify-center shrink-0",
+          "w-[60px] h-[26px] rounded-md flex items-center justify-center shrink-0",
           isUp ? "bg-green-500" : "bg-red-500"
         )}
       >
