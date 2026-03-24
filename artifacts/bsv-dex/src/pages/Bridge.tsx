@@ -1,17 +1,36 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
   AlertTriangle, CheckCircle2, Lock, Unlock, RefreshCw, Info,
-  Layers, Link2, Globe
+  Layers, Link2, Globe, Copy, Check, ExternalLink, X, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useGetMarkets } from "@workspace/api-client-react";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Chain / Token definitions ────────────────────────────────────────────────
 
-type Layer = "L1" | "L2" | "L3";
+type Layer = "L1" | "L2";
 type SwapMode = "htlc" | "wrapped";
+
+type HtlcStatus = "pending" | "funded" | "minting" | "complete" | "refunded" | "expired";
+
+interface HtlcLock {
+  lockId: string;
+  htlcAddress: string;
+  redeemScript: string;
+  secretHash: string;
+  amountBsv: number;
+  locktimeBlocks: number;
+  currentBlock: number;
+  expiresIn: string;
+  status: HtlcStatus;
+  fundingTxid?: string | null;
+  mintTxHash?: string | null;
+  instructions?: string[];
+}
 
 interface Chain {
   id: string;
@@ -41,6 +60,15 @@ const SPOT_PRICES: Record<string, number> = {
 };
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
+
+const STATUS_LABEL: Record<HtlcStatus, string> = {
+  pending:  "Awaiting Deposit",
+  funded:   "BSV Received — Minting wBSV",
+  minting:  "Minting wBSV on EVM",
+  complete: "Complete",
+  refunded: "Refunded",
+  expired:  "Expired",
+};
 
 // ─── Route step component ─────────────────────────────────────────────────────
 
@@ -144,6 +172,254 @@ function ChainSelect({ value, onChange, exclude }: {
   );
 }
 
+// ─── Copy button ──────────────────────────────────────────────────────────────
+function CopyButton({ text, className }: { text: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handle = () => {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <button onClick={handle} className={cn("transition-colors", className)} title="Copy">
+      {copied
+        ? <Check className="w-3.5 h-3.5 text-green-400" />
+        : <Copy className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />}
+    </button>
+  );
+}
+
+// ─── HTLC status step map ─────────────────────────────────────────────────────
+function htlcStatusStep(status: HtlcStatus): number {
+  return { pending: 0, funded: 1, minting: 2, complete: 3, refunded: -1, expired: -1 }[status] ?? 0;
+}
+
+// ─── HTLC Deposit Panel ───────────────────────────────────────────────────────
+function HtlcDepositPanel({
+  lock, onCancel, onClose,
+}: {
+  lock: HtlcLock;
+  onCancel: () => void;
+  onClose: () => void;
+}) {
+  const step = htlcStatusStep(lock.status);
+  const isDone  = lock.status === "complete";
+  const isFailed = lock.status === "refunded" || lock.status === "expired";
+
+  const steps = [
+    {
+      icon: <Lock className="w-3.5 h-3.5" />,
+      label: "Send BSV to HTLC Address",
+      detail: `Send exactly ${lock.amountBsv} BSV — bridge detects within 1 confirmation`,
+    },
+    {
+      icon: <Link2 className="w-3.5 h-3.5" />,
+      label: "Bridge Confirms Deposit",
+      detail: `Relayer verifies BSV received at HTLC script address`,
+    },
+    {
+      icon: <Layers className="w-3.5 h-3.5" />,
+      label: "Mint wBSV on EVM",
+      detail: `Bridge contract mints 1:1 wBSV to your EVM address`,
+    },
+    {
+      icon: <Zap className="w-3.5 h-3.5" />,
+      label: "Settlement Complete",
+      detail: "wBSV delivered — swap on EVM AMM at any time",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-primary/20 flex items-center justify-center">
+              <Lock className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <div className="font-bold text-sm text-foreground">HTLC Bridge</div>
+              <div className="text-[10px] text-muted-foreground">
+                Lock ID: {lock.lockId.slice(0, 8)}…
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+              isDone   ? "text-green-400 border-green-500/30 bg-green-500/10" :
+              isFailed ? "text-red-400 border-red-500/30 bg-red-500/10" :
+                         "text-amber-400 border-amber-500/30 bg-amber-500/10"
+            )}>
+              {isDone ? "Complete" : isFailed ? lock.status.toUpperCase() : "In Progress"}
+            </span>
+            {isDone && (
+              <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="p-4 space-y-4">
+
+          {/* Status steps */}
+          <div className="space-y-2">
+            {steps.map((s, i) => (
+              <RouteStep
+                key={i}
+                icon={s.icon}
+                label={s.label}
+                detail={s.detail}
+                done={step > i || isDone}
+                active={step === i && !isFailed}
+              />
+            ))}
+          </div>
+
+          {/* Deposit address — only shown while pending */}
+          {lock.status === "pending" && (
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                Send {lock.amountBsv} BSV to this HTLC Address
+              </div>
+              <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2.5">
+                <span className="flex-1 font-mono text-xs text-foreground break-all select-all">
+                  {lock.htlcAddress}
+                </span>
+                <CopyButton text={lock.htlcAddress} />
+              </div>
+              <div className="flex items-start gap-2 text-[10px] text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-xl p-2.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                Send exactly {lock.amountBsv} BSV. This address is valid for {lock.expiresIn} (until block {lock.locktimeBlocks}). After expiry, the refund path opens.
+              </div>
+
+              {/* Secret hash — shows the script is real */}
+              <details className="text-[10px] text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground transition-colors">
+                  View HTLC details (advanced)
+                </summary>
+                <div className="mt-2 space-y-1.5">
+                  <div className="font-semibold text-foreground">Secret Hash (SHA-256):</div>
+                  <div className="flex items-center gap-2 bg-secondary/60 rounded-lg px-2 py-1.5">
+                    <span className="font-mono break-all flex-1">{lock.secretHash}</span>
+                    <CopyButton text={lock.secretHash} />
+                  </div>
+                  <div className="font-semibold text-foreground mt-1">Redeem Script:</div>
+                  <div className="flex items-center gap-2 bg-secondary/60 rounded-lg px-2 py-1.5">
+                    <span className="font-mono break-all flex-1 text-[9px]">{lock.redeemScript}</span>
+                    <CopyButton text={lock.redeemScript} />
+                  </div>
+                  <div className="text-muted-foreground/70 mt-1">
+                    Script type: P2SH HTLC · Path A: reveal SHA-256 preimage · Path B: CLTV refund after block {lock.locktimeBlocks}
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
+
+          {/* Funded — waiting for mint */}
+          {(lock.status === "funded" || lock.status === "minting") && (
+            <div className="flex items-center gap-3 bg-green-500/5 border border-green-500/20 rounded-xl p-3">
+              <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center shrink-0">
+                <Loader2 className="w-4 h-4 text-green-400 animate-spin" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-green-400">BSV Detected</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {lock.fundingTxid && (
+                    <a
+                      href={`https://whatsonchain.com/tx/${lock.fundingTxid}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                    >
+                      Tx: {lock.fundingTxid.slice(0, 16)}…
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  )}
+                  Minting wBSV on EVM — usually takes 30–60 seconds.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Mint tx hash */}
+          {lock.mintTxHash && (
+            <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2">
+              <span className="text-[10px] text-muted-foreground">EVM Mint Tx:</span>
+              <span className="font-mono text-[10px] text-foreground flex-1 truncate">{lock.mintTxHash}</span>
+              <CopyButton text={lock.mintTxHash} />
+            </div>
+          )}
+
+          {/* Complete */}
+          {isDone && (
+            <div className="flex items-center gap-3 bg-primary/5 border border-primary/30 rounded-xl p-3">
+              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-primary">Bridge Complete!</div>
+                <div className="text-[10px] text-muted-foreground">
+                  wBSV has been minted to your EVM address. You can now swap on the AMM.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Expired / refunded */}
+          {isFailed && (
+            <div className="flex items-center gap-3 bg-red-500/5 border border-red-500/20 rounded-xl p-3">
+              <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-red-400">
+                  {lock.status === "expired" ? "Lock Expired" : "Refunded"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {lock.status === "expired"
+                    ? `Locktime reached (block ${lock.locktimeBlocks}). Use the refund path in your BSV wallet to reclaim funds.`
+                    : "Bridge cancelled. Your BSV can be reclaimed via the HTLC refund path."}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            {lock.status === "pending" && (
+              <button
+                onClick={onCancel}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:border-red-500/40 hover:text-red-400 transition-all"
+              >
+                Cancel
+              </button>
+            )}
+            {isDone && (
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:brightness-110 transition-all"
+              >
+                Done — Go to Spot Trading
+              </button>
+            )}
+            {lock.status === "pending" && (
+              <div className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                Polling for deposit…
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function BridgePage() {
@@ -154,6 +430,9 @@ export function BridgePage() {
     url: "/bridge",
   });
 
+  const { address: evmAddress, network, chainId } = useWalletStore();
+  const { toast } = useToast();
+
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
   const [toChain, setToChain]     = useState<Chain>(CHAINS[2]);
   const [fromToken, setFromToken] = useState("BSV");
@@ -161,9 +440,14 @@ export function BridgePage() {
   const [amount, setAmount]       = useState("");
   const [slippage, setSlippage]   = useState(0.5);
   const [customSlip, setCustomSlip] = useState("");
-  const [mode, setMode]           = useState<SwapMode>("wrapped");
+  const [mode, setMode]           = useState<SwapMode>("htlc");
   const [simStep, setSimStep]     = useState(0);
   const [simRunning, setSimRunning] = useState(false);
+
+  // ── HTLC real flow state ──────────────────────────────────────────────────
+  const [htlcLock, setHtlcLock]       = useState<HtlcLock | null>(null);
+  const [htlcLoading, setHtlcLoading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: markets } = useGetMarkets();
 
@@ -188,10 +472,10 @@ export function BridgePage() {
     return n * fromPrice * (bridgeFee + networkFee);
   }, [amount, fromPrice, mode]);
 
-  const isSameChain = fromChain.id === toChain.id;
-  const isCrossLayer = fromChain.layer !== toChain.layer;
-
-  const htlcTime = mode === "htlc" ? "~5–30 min" : "~30–60 sec";
+  const isSameChain  = fromChain.id === toChain.id;
+  const htlcTime     = mode === "htlc" ? "~5–30 min" : "~30–60 sec";
+  const isBsvSource  = fromChain.id === "bsv" && fromToken === "BSV";
+  const isEvmDest    = ["eth","arb","op","base","poly"].includes(toChain.id);
 
   const routeSteps = useMemo(() => {
     if (mode === "htlc") {
@@ -204,7 +488,7 @@ export function BridgePage() {
     }
     return [
       { icon: <Lock className="w-3.5 h-3.5" />,   label: `Lock ${fromToken} on ${fromChain.name}`, detail: `Custodial bridge or multi-sig vault secures original asset` },
-      { icon: <Layers className="w-3.5 h-3.5" />, label: `Mint wrapped${fromToken} on EVM`, detail: `1:1 representation minted on Ethereum/L2` },
+      { icon: <Layers className="w-3.5 h-3.5" />, label: `Mint wrapped ${fromToken} on EVM`, detail: `1:1 representation minted on Ethereum/L2` },
       { icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: `Swap w${fromToken} → ${toToken} on AMM`, detail: `OrahDEX AMM pools with 0.3% fee` },
       { icon: <Globe className="w-3.5 h-3.5" />,  label: `Redeem ${toToken} on ${toChain.name}`, detail: `Burn wrapped token → release native asset` },
     ];
@@ -215,6 +499,98 @@ export function BridgePage() {
     setFromChain(tc); setToChain(fc); setFromToken(tt); setToToken(ft);
   };
 
+  // ── Poll HTLC status ──────────────────────────────────────────────────────
+  const pollHtlc = useCallback(async (lockId: string) => {
+    try {
+      const res = await fetch(`/api/bridge/htlc/${lockId}`);
+      if (!res.ok) return;
+      const data = await res.json() as HtlcLock & { id: string; amountBsv: string };
+      const lock: HtlcLock = {
+        lockId:         data.id ?? lockId,
+        htlcAddress:    data.htlcAddress,
+        redeemScript:   data.redeemScript,
+        secretHash:     data.secretHash,
+        amountBsv:      parseFloat(data.amountBsv as any),
+        locktimeBlocks: data.locktimeBlocks,
+        currentBlock:   data.currentBlock ?? 0,
+        expiresIn:      data.expiresIn ?? "~24 hours",
+        status:         data.status,
+        fundingTxid:    data.fundingTxid,
+        mintTxHash:     data.mintTxHash,
+      };
+      setHtlcLock(lock);
+
+      // Stop polling once terminal state reached
+      if (["complete", "refunded", "expired"].includes(lock.status)) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        if (lock.status === "complete") {
+          toast({ title: "Bridge Complete!", description: "wBSV minted to your EVM address." });
+        }
+      }
+    } catch { /* ignore transient errors */ }
+  }, [toast]);
+
+  // Start/stop polling when htlcLock changes
+  useEffect(() => {
+    if (!htlcLock?.lockId) return;
+    if (["complete", "refunded", "expired"].includes(htlcLock.status)) return;
+
+    pollRef.current = setInterval(() => pollHtlc(htlcLock.lockId), 4000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [htlcLock?.lockId, htlcLock?.status, pollHtlc]);
+
+  // ── Initiate real HTLC ────────────────────────────────────────────────────
+  const handleInitiateHtlc = async () => {
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0 || isSameChain) return;
+
+    setHtlcLoading(true);
+    try {
+      const res = await fetch("/api/bridge/htlc/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountBsv:           isBsvSource ? amt : undefined,
+          recipientEvmAddress: evmAddress ?? undefined,
+          evmChainId:          chainId ?? 1,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        toast({
+          title: "Failed to create HTLC",
+          description: err?.error ?? "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const data = await res.json() as HtlcLock & { lockId: string };
+      setHtlcLock({
+        lockId:         data.lockId,
+        htlcAddress:    data.htlcAddress,
+        redeemScript:   data.redeemScript,
+        secretHash:     data.secretHash,
+        amountBsv:      data.amountBsv,
+        locktimeBlocks: data.locktimeBlocks,
+        currentBlock:   data.currentBlock ?? 0,
+        expiresIn:      data.expiresIn ?? "~24 hours",
+        status:         "pending",
+        instructions:   data.instructions,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Network error",
+        description: "Could not reach the bridge API. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setHtlcLoading(false);
+    }
+  };
+
+  // ── Wrapped bridge simulation ─────────────────────────────────────────────
   const handleSimulate = () => {
     if (simRunning) return;
     setSimStep(0);
@@ -230,8 +606,40 @@ export function BridgePage() {
     setTimeout(tick, 600);
   };
 
+  // ── Cancel HTLC ───────────────────────────────────────────────────────────
+  const handleCancelHtlc = async () => {
+    if (!htlcLock) return;
+    try {
+      await fetch(`/api/bridge/htlc/${htlcLock.lockId}/cancel`, { method: "POST" });
+      setHtlcLock(null);
+      if (pollRef.current) clearInterval(pollRef.current);
+    } catch {
+      toast({ title: "Cancel failed", description: "Try again in a moment.", variant: "destructive" });
+    }
+  };
+
+  const handleCloseHtlc = () => {
+    setHtlcLock(null);
+    if (pollRef.current) clearInterval(pollRef.current);
+    setAmount("");
+  };
+
+  const handleBridgeClick = () => {
+    if (mode === "htlc") handleInitiateHtlc();
+    else handleSimulate();
+  };
+
   return (
     <div className="max-w-5xl mx-auto p-4 lg:p-8 w-full">
+
+      {/* HTLC deposit modal */}
+      {htlcLock && (
+        <HtlcDepositPanel
+          lock={htlcLock}
+          onCancel={handleCancelHtlc}
+          onClose={handleCloseHtlc}
+        />
+      )}
 
       {/* ── Header ── */}
       <div className="mb-8">
@@ -295,7 +703,7 @@ export function BridgePage() {
 
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 bg-secondary rounded-xl">
-            {(["wrapped", "htlc"] as SwapMode[]).map(m => (
+            {(["htlc", "wrapped"] as SwapMode[]).map(m => (
               <button
                 key={m}
                 onClick={() => { setMode(m); setSimStep(0); }}
@@ -324,10 +732,25 @@ export function BridgePage() {
           )}>
             <Info className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
             {mode === "htlc"
-              ? "Atomic HTLC: trustless peer-to-peer swap using Hash Time-Locked Contracts. No wrapped tokens, no custody. Slower (~5–30 min) but fully non-custodial."
+              ? "Atomic HTLC: trustless peer-to-peer swap using Hash Time-Locked Contracts. Real P2SH HTLC script generated server-side. Send BSV to the HTLC address — bridge detects and mints wBSV on EVM."
               : "Wrapped Bridge: assets locked in multi-sig vault, wrapped tokens minted on EVM for AMM trading. Fast (~30–60 sec) with pooled liquidity. Requires trusting bridge operators."
             }
           </div>
+
+          {/* HTLC: BSV→EVM wallet info banner */}
+          {mode === "htlc" && isBsvSource && (
+            <div className={cn(
+              "flex items-start gap-2.5 p-3 rounded-xl border text-xs",
+              evmAddress
+                ? "border-green-500/20 bg-green-500/5 text-green-400"
+                : "border-border bg-secondary/30 text-muted-foreground"
+            )}>
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              {evmAddress
+                ? `wBSV will mint to: ${evmAddress.slice(0, 10)}…${evmAddress.slice(-6)}`
+                : "Connect an EVM wallet to specify the wBSV recipient address."}
+            </div>
+          )}
 
           {/* From chain/token */}
           <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
@@ -491,14 +914,17 @@ export function BridgePage() {
 
           {/* Submit */}
           <button
-            onClick={handleSimulate}
-            disabled={!amount || parseFloat(amount) <= 0 || isSameChain || simRunning}
+            onClick={handleBridgeClick}
+            disabled={!amount || parseFloat(amount) <= 0 || isSameChain || simRunning || htlcLoading}
             className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 bg-gradient-to-r from-primary to-green-500 text-primary-foreground shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
-            {simRunning
-              ? <><RefreshCw className="w-5 h-5 animate-spin" /> Routing…</>
-              : <><ArrowRight className="w-5 h-5" /> {mode === "htlc" ? "Initiate HTLC Swap" : "Bridge Assets"}</>
-            }
+            {htlcLoading ? (
+              <><Loader2 className="w-5 h-5 animate-spin" /> Generating HTLC…</>
+            ) : simRunning ? (
+              <><RefreshCw className="w-5 h-5 animate-spin" /> Routing…</>
+            ) : (
+              <><ArrowRight className="w-5 h-5" /> {mode === "htlc" ? "Initiate HTLC Lock" : "Bridge Assets"}</>
+            )}
           </button>
         </div>
 
@@ -546,11 +972,43 @@ export function BridgePage() {
                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
                 </>
               )}
+              {mode === "htlc" && (
+                <>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 text-xs font-bold text-orange-400">
+                    <Lock className="w-3 h-3" /> HTLC
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                </>
+              )}
               <div className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold", toChain.bgColor, toChain.color)}>
                 <span>{toChain.icon}</span> {toChain.name}
               </div>
             </div>
           </div>
+
+          {/* HTLC Script info card */}
+          {mode === "htlc" && (
+            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                <Lock className="w-4 h-4 text-orange-400" />
+                HTLC Script
+              </div>
+              <div className="space-y-2 text-xs">
+                {[
+                  { label: "Script type", value: "P2SH HTLC" },
+                  { label: "Hash function", value: "SHA-256" },
+                  { label: "Claim path", value: "Reveal preimage → relayer claims" },
+                  { label: "Refund path", value: "CLTV + 144 blocks (~24 hrs)" },
+                  { label: "Network", value: "BSV Mainnet" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="font-mono font-semibold text-foreground">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Security callout */}
           <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
@@ -560,10 +1018,10 @@ export function BridgePage() {
             </div>
             <ul className="space-y-2">
               {[
-                { label: "Battle-tested patterns", detail: "Multi-sig, MPC, or light-client-based bridges only" },
-                { label: "HTLC timeouts", detail: "Carefully sized refund windows prevent stuck funds" },
+                { label: "Non-custodial HTLC", detail: "Funds locked by script — not by OrahDEX" },
+                { label: "HTLC timeouts", detail: "144-block refund window prevents stuck funds" },
                 { label: "Slippage protection", detail: "Min received guaranteed; tx reverts if breached" },
-                { label: "Simulate first", detail: "Route preview shown before any on-chain tx is signed" },
+                { label: "On-chain verifiable", detail: "Redeem script and secret hash are public" },
               ].map(({ label, detail }) => (
                 <li key={label} className="flex items-start gap-2 text-xs">
                   <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
