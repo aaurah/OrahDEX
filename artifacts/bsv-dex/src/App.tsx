@@ -65,6 +65,12 @@ function RequireAdminAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RedirectTo({ href }: { href: string }) {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate(href, { replace: true }); }, []);
+  return null;
+}
+
 function Router() {
   const isMobile = useIsMobile();
 
@@ -226,6 +232,10 @@ function Router() {
           <AdminLayout><AdminAnnouncements /></AdminLayout>
         </RequireAdminAuth>
       </Route>
+
+      {/* Bare /spot and /futures → redirect to default pairs */}
+      <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
+      <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
 
       {/* Mobile layout — rendered when on a phone/small screen */}
       {isMobile && (

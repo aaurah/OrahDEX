@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 
 type Side = "buy" | "sell";
-type OrderType = "limit" | "market";
+type OrderType = "limit" | "market" | "stop";
 
 // ── Wallet prompt shown when no wallet is connected ───────────────────────────
 function WalletPrompt() {
@@ -123,10 +123,11 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : "ETH";
   const nativeBal = balance ? parseFloat(balance) : 0;
 
-  const [side, setSide]   = useState<Side>("buy");
-  const [type, setType]   = useState<OrderType>("limit");
-  const [price, setPrice] = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
-  const [amount, setAmount] = useState<string>("");
+  const [side, setSide]       = useState<Side>("buy");
+  const [type, setType]       = useState<OrderType>("limit");
+  const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
+  const [stopPrice, setStopPrice] = useState<string>("");
+  const [amount, setAmount]   = useState<string>("");
 
   const [signing, setSigning] = useState(false);
   const [settlement, setSettlement] = useState<{
@@ -171,7 +172,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
    * For BSV wallets, no signing step is needed (BSV tx is built server-side).
    */
   const buildOrderMessage = () =>
-    `OrahDEX Order\nPair: ${symbol}\nSide: ${side.toUpperCase()}\nType: ${type.toUpperCase()}\nAmount: ${amount} ${base}${type === "limit" ? `\nPrice: $${price}` : ""}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
+    `OrahDEX Order\nPair: ${symbol}\nSide: ${side.toUpperCase()}\nType: ${type.toUpperCase()}\nAmount: ${amount} ${base}${type !== "market" ? `\nPrice: $${price}` : ""}${type === "stop" ? `\nTrigger: $${stopPrice}` : ""}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -205,8 +206,9 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         symbol,
         walletAddress: address,
         side,
-        type,
-        price:          type === "limit" ? parseFloat(price) : undefined,
+        type:           type === "stop" ? "limit" : type,
+        price:          type !== "market" ? parseFloat(price) : undefined,
+        stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
         quantity:       parseFloat(amount),
         evmSignature,
         networkType:    isEvm ? "evm" : "bsv",
@@ -217,7 +219,9 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   if (!address) return <WalletPrompt />;
 
   const isPending = placeOrder.isPending || signing;
-  const canSubmit = !isPending && !!amount && parseFloat(amount) > 0 && (type === "market" || (price && parseFloat(price) > 0));
+  const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
+  const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
+  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -266,17 +270,26 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         </div>
 
         {/* Order type */}
-        <div className="flex gap-2 text-xs font-medium bg-secondary p-1 rounded-lg">
-          {(["limit", "market"] as OrderType[]).map((t) => (
+        <div className="flex gap-1 text-xs font-medium bg-secondary p-1 rounded-lg">
+          {(["limit", "market", "stop"] as OrderType[]).map((t) => (
             <button key={t}
               className={cn("flex-1 py-1.5 rounded-md transition-colors capitalize",
                 type === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
               onClick={() => setType(t)}
             >
-              {t}
+              {t === "stop" ? "Stop" : t}
             </button>
           ))}
         </div>
+
+        {/* Stop order info */}
+        {type === "stop" && (
+          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <span className="text-amber-400 text-[10px] leading-relaxed">
+              <strong>Stop-Limit:</strong> When the market hits your <em>Trigger</em> price, a limit order is placed at your <em>Price</em>.
+            </span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* Available */}
@@ -289,10 +302,27 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             </span>
           </div>
 
+          {/* Trigger price for stop orders */}
+          {type === "stop" && (
+            <div className="group flex items-center bg-secondary border border-amber-500/40 rounded-xl px-3 py-2.5 focus-within:border-amber-400/70 focus-within:ring-1 focus-within:ring-amber-400/20 transition-all">
+              <span className="text-amber-400 text-sm w-16 shrink-0">Trigger</span>
+              <input
+                type="number"
+                value={stopPrice}
+                onChange={(e) => setStopPrice(e.target.value)}
+                className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
+                placeholder="0.00"
+                min="0"
+                step="any"
+              />
+              <span className="text-muted-foreground text-sm ml-2">USDT</span>
+            </div>
+          )}
+
           {/* Price */}
-          {type === "limit" ? (
+          {type === "limit" || type === "stop" ? (
             <div className="group flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-              <span className="text-muted-foreground text-sm w-16">Price</span>
+              <span className="text-muted-foreground text-sm w-16">{type === "stop" ? "Limit" : "Price"}</span>
               <input
                 type="number"
                 value={price}
@@ -384,8 +414,16 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             )}
           </button>
 
+          {/* Fee info & VIP discount */}
+          <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
+            <span>Fee: <span className="text-foreground font-mono">0.10%</span> maker / <span className="text-foreground font-mono">0.10%</span> taker</span>
+            <span className="text-primary font-medium cursor-pointer hover:underline" title="Pay fees in ORAH token for up to 25% discount. VIP tiers unlock lower rates.">
+              VIP discounts ↗
+            </span>
+          </div>
+
           {/* How it works */}
-          <div className="mt-1 p-3 rounded-xl bg-secondary/40 border border-border/50">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border/50">
             <p className="text-[10px] text-muted-foreground leading-relaxed">
               {isEvm
                 ? "Your EVM wallet signs the order intent (no gas). When matched, the trade settles permanently on the BSV blockchain via OP_RETURN."
