@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, TrendingUp, DollarSign, ArrowDownToLine, RefreshCw,
   CheckCircle, Clock, Copy, Check, AlertTriangle, Zap,
-  Flame, Droplets, Activity,
+  Flame, Droplets, Activity, Wallet, ExternalLink, Info,
+  Radio, ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -142,6 +143,20 @@ function SourceCard({
   );
 }
 
+type BsvWallet = {
+  address: string;
+  pubKeyHex: string;
+  confirmedSatoshis: number;
+  unconfirmedSatoshis: number;
+  totalSatoshis: number;
+  bsv: number;
+  utxos: Array<{ txid: string; vout: number; satoshis: number; height: number }>;
+  funded: boolean;
+  explorerUrl: string;
+  broadcastReady: boolean;
+  notice: string;
+};
+
 /* ─── main component ───────────────────────────────────────────────────── */
 export function AdminBotProfit() {
   const qc = useQueryClient();
@@ -159,6 +174,16 @@ export function AdminBotProfit() {
       return r.json();
     },
     refetchInterval: 15_000,
+  });
+
+  const { data: wallet, refetch: refetchWallet } = useQuery<BsvWallet>({
+    queryKey: ["admin-bsv-wallet"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/admin/bsv-wallet`);
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 60_000,
   });
 
   const withdrawMut = useMutation({
@@ -204,12 +229,23 @@ export function AdminBotProfit() {
           </p>
         </div>
         <button
-          onClick={() => refetch()}
+          onClick={() => { refetch(); refetchWallet(); }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-colors"
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
         </button>
+      </div>
+
+      {/* Methodology notice */}
+      <div className="flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-xl px-4 py-3">
+        <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+        <div className="text-xs text-blue-200/70 leading-relaxed">
+          <span className="font-semibold text-blue-300">Projected revenue model</span> — figures are calculated from
+          real market volumes and live prices using platform fee rates (0.01 % spread capture per 30 s cycle,
+          10 % of funding flows every 8 h, 0.5 % on liquidations). These represent estimated platform earnings
+          once the market is live with real user volume. No real funds have moved.
+        </div>
       </div>
 
       {/* Top stats */}
@@ -221,10 +257,10 @@ export function AdminBotProfit() {
         </div>
       ) : data ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={TrendingUp}      color="green"  label="Total Earned"      value={`$${fmt(data.cumulative)}`} sub={`Running ${elapsed(data.startTime)}`} />
-          <StatCard icon={DollarSign}      color="yellow" label="Available Balance" value={`$${fmt(data.available)}`}  sub="Ready to withdraw" />
-          <StatCard icon={Activity}        color="blue"   label="Est. Daily Rate"   value={`$${fmt(data.dailyRate)}`}  sub="Based on uptime" />
-          <StatCard icon={Zap}             color="orange" label="Total Withdrawn"   value={`$${fmt(data.withdrawn)}`}  sub={`${data.history.length} withdrawals`} />
+          <StatCard icon={TrendingUp} color="green"  label="Projected Total"    value={`$${fmt(data.cumulative)}`} sub={`Running ${elapsed(data.startTime)}`} />
+          <StatCard icon={DollarSign} color="yellow" label="Projected Available" value={`$${fmt(data.available)}`}  sub="Model estimate" />
+          <StatCard icon={Activity}   color="blue"   label="Projected Daily Rate" value={`$${fmt(data.dailyRate)}`}  sub="Based on seeded volume" />
+          <StatCard icon={Zap}        color="orange" label="Total Withdrawn"     value={`$${fmt(data.withdrawn)}`}  sub={`${data.history.length} withdrawals`} />
         </div>
       ) : null}
 
@@ -232,7 +268,7 @@ export function AdminBotProfit() {
       {data && (
         <div>
           <h2 className="text-sm font-semibold text-white/50 uppercase tracking-widest mb-3">
-            Income Sources — Live
+            Income Sources — Projected
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <SourceCard icon={Droplets} color="yellow" source={data.sources.spread}      total={data.cumulative} />
@@ -241,6 +277,107 @@ export function AdminBotProfit() {
           </div>
         </div>
       )}
+
+      {/* BSV Settlement Wallet */}
+      <div className="bg-[#1a1a2e] border border-white/10 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-white flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-amber-400" />
+            BSV Settlement Wallet
+          </h2>
+          <div className={cn(
+            "flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded border uppercase tracking-wider",
+            wallet?.broadcastReady
+              ? "bg-green-500/10 border-green-500/20 text-green-400"
+              : "bg-amber-500/10 border-amber-500/20 text-amber-400",
+          )}>
+            <Radio className="w-3 h-3" />
+            {wallet?.broadcastReady ? "BROADCAST READY" : "AWAITING FUNDS"}
+          </div>
+        </div>
+
+        {wallet ? (
+          <div className="space-y-4">
+            {/* Address */}
+            <div>
+              <p className="text-xs text-white/40 mb-1.5">Deposit Address (P2PKH Mainnet)</p>
+              <div className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2.5">
+                <code className="flex-1 font-mono text-sm text-amber-300 break-all">{wallet.address}</code>
+                <CopyBtn text={wallet.address} />
+                <a href={wallet.explorerUrl} target="_blank" rel="noreferrer"
+                  className="text-white/30 hover:text-white/70 transition-colors ml-1">
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Balance row */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <p className="text-xs text-white/40 mb-1">Confirmed</p>
+                <p className="font-mono text-sm font-bold text-white">{wallet.confirmedSatoshis.toLocaleString()}</p>
+                <p className="text-[10px] text-white/30">satoshis</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <p className="text-xs text-white/40 mb-1">BSV Balance</p>
+                <p className="font-mono text-sm font-bold text-amber-400">{wallet.bsv.toFixed(8)}</p>
+                <p className="text-[10px] text-white/30">BSV</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-3 text-center">
+                <p className="text-xs text-white/40 mb-1">UTXOs</p>
+                <p className="font-mono text-sm font-bold text-white">{wallet.utxos.length}</p>
+                <p className="text-[10px] text-white/30">spendable</p>
+              </div>
+            </div>
+
+            {/* Notice */}
+            <div className={cn(
+              "flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs",
+              wallet.broadcastReady
+                ? "bg-green-500/10 text-green-300"
+                : "bg-amber-500/10 text-amber-300",
+            )}>
+              <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{wallet.notice}</span>
+            </div>
+
+            {/* How it works */}
+            {!wallet.broadcastReady && (
+              <div className="text-xs text-white/30 leading-relaxed border-t border-white/5 pt-3">
+                Once funded, every matched trade will automatically build a real BSV OP_RETURN transaction
+                signed by this wallet's private key and broadcast to the BSV mainnet via WhatsOnChain.
+                The txid will be verifiable at <span className="text-amber-400">whatsonchain.com</span>.
+                Minimum recommended deposit: <span className="text-white/60">0.001 BSV</span> (~{(0.001 * 14.20).toFixed(3)} USD).
+              </div>
+            )}
+
+            {/* UTXOs table if funded */}
+            {wallet.utxos.length > 0 && (
+              <div>
+                <p className="text-xs text-white/40 mb-2">Available UTXOs</p>
+                <div className="space-y-1.5">
+                  {wallet.utxos.slice(0, 5).map(u => (
+                    <div key={`${u.txid}:${u.vout}`} className="flex items-center justify-between bg-white/5 rounded px-3 py-2 text-xs">
+                      <div className="flex items-center gap-2">
+                        <code className="font-mono text-white/50">{u.txid.slice(0, 12)}…:{u.vout}</code>
+                        <CopyBtn text={u.txid} />
+                      </div>
+                      <span className="font-mono text-green-400">{u.satoshis.toLocaleString()} sat</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="animate-pulse space-y-3">
+            <div className="h-10 bg-white/5 rounded-lg" />
+            <div className="grid grid-cols-3 gap-3">
+              {[0,1,2].map(i => <div key={i} className="h-16 bg-white/5 rounded-lg" />)}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Withdraw + History */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">

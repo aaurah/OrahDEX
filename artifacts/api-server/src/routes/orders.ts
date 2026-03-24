@@ -5,6 +5,8 @@ import { eq, and, lte, gte, ne } from "drizzle-orm";
 import crypto from "node:crypto";
 import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
+import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
+import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
 
 const router: IRouter = Router();
 
@@ -132,8 +134,21 @@ router.post("/orders", async (req, res) => {
         const fillTotal = (quantity * fillPrice).toFixed(8);
 
         // ── Settle on BSV chain ─────────────────────────────────────────────
-        const settlement = buildSettlement({
-          tradeId:       crypto.randomUUID(),
+        const tradeId = crypto.randomUUID();
+        const opReturnPayload = [
+          "ORAH", "v1",
+          tradeId.replace(/-/g, "").slice(0, 16),
+          body.symbol,
+          (body.side === "buy" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
+          (body.side === "sell" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
+          quantity.toString(),
+          fillPrice.toString(),
+          Date.now().toString(),
+        ].join("|");
+
+        // Build deterministic txid as fallback
+        const fallbackSettlement = buildSettlement({
+          tradeId,
           pair:          body.symbol,
           buyOrderId:    body.side === "buy" ? id : match.id,
           sellOrderId:   body.side === "sell" ? id : match.id,
@@ -147,13 +162,37 @@ router.post("/orders", async (req, res) => {
           timestamp:     Date.now(),
         });
 
-        settlementTxid = settlement.txid;
+        let broadcastTxid = fallbackSettlement.txid;
+        let wasRealBroadcast = false;
+
+        // Attempt real on-chain broadcast (non-blocking — fall back on any failure)
+        try {
+          const wallet  = await getOrCreateWallet();
+          const balance = await fetchWalletBalance(wallet.address);
+          if (balance.funded && balance.utxos.length > 0) {
+            const best = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
+            const result = await broadcastSettlement({
+              privKeyHex:      wallet.privKeyHex,
+              changeAddress:   wallet.address,
+              utxo:            best,
+              opReturnPayload,
+            });
+            if (result.broadcast) {
+              broadcastTxid    = result.txid;
+              wasRealBroadcast = true;
+            }
+          }
+        } catch (broadcastErr) {
+          req.log.warn({ broadcastErr }, "BSV broadcast attempt failed — using deterministic txid");
+        }
+
+        settlementTxid = broadcastTxid;
         matchedOrderId = match.id;
 
         req.log.info(
-          { txid: settlement.txid, buyOrder: id, sellOrder: match.id,
-            fillPrice, isBot: match.walletAddress === BOT_ADDRESS },
-          "BSV settlement committed"
+          { txid: broadcastTxid, buyOrder: id, sellOrder: match.id,
+            fillPrice, isBot: match.walletAddress === BOT_ADDRESS, realBroadcast: wasRealBroadcast },
+          wasRealBroadcast ? "BSV settlement BROADCAST to mainnet ✓" : "BSV settlement committed (deterministic txid)"
         );
 
         // If matched against the bot, just delete the consumed bot order
