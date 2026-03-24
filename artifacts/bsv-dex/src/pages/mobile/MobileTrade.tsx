@@ -483,8 +483,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
                 return (
                   <div key={i} className="flex items-center text-[11px] h-[22px]">
-                    {/* BID — depth bar fills from right edge inward (toward center) */}
-                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden">
+                    {/* BID — clickable, fills buy form */}
+                    <button
+                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-green-500/10 transition-colors"
+                      onClick={() => {
+                        if (bP == null) return;
+                        setPrice(String(bP));
+                        setAmount(bQ != null ? bQ.toFixed(3) : "");
+                        setSide("buy");
+                        setShowOrderForm(true);
+                      }}
+                    >
                       <div
                         className="absolute inset-y-0 right-0 bg-green-500/12"
                         style={{ width: `${bidPct}%` }}
@@ -499,13 +508,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </div>
+                    </button>
 
                     {/* Center vertical divider */}
                     <div className="w-px self-stretch bg-border/60 shrink-0" />
 
-                    {/* ASK — depth bar fills from left edge inward (toward center) */}
-                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden">
+                    {/* ASK — clickable, fills sell form */}
+                    <button
+                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-red-500/10 transition-colors"
+                      onClick={() => {
+                        if (aP == null) return;
+                        setPrice(String(aP));
+                        setAmount(aQ != null ? aQ.toFixed(3) : "");
+                        setSide("sell");
+                        setShowOrderForm(true);
+                      }}
+                    >
                       <div
                         className="absolute inset-y-0 left-0 bg-red-500/12"
                         style={{ width: `${askPct}%` }}
@@ -520,7 +538,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </div>
+                    </button>
                   </div>
                 );
               })}
@@ -755,18 +773,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
-                <span className="text-xs font-semibold text-foreground">
-                  {available.toFixed(2)}
-                  <button className="ml-1 w-4 h-4 inline-flex items-center justify-center rounded-full border border-primary/60 text-primary" style={{ fontSize: 9 }}>+</button>
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-foreground tabular-nums">
+                    {available.toFixed(2)} {side === "buy" ? quote : base}
+                  </span>
+                  <button
+                    onClick={() => openWallet()}
+                    className="w-[18px] h-[18px] flex items-center justify-center rounded-full border border-primary/70 text-primary text-[11px] font-bold leading-none shrink-0 active:bg-primary/20 transition-colors"
+                  >+</button>
+                </div>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
-                <span className="text-xs font-semibold text-foreground">{maxBuy}</span>
+                <span className="text-xs font-semibold text-foreground tabular-nums">{maxBuy}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Est. Trading Fee</span>
-                <span className="text-xs text-foreground">{estFee}</span>
+                <span className="text-xs text-foreground tabular-nums">{estFee}</span>
               </div>
             </div>
 
