@@ -37,7 +37,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           <img
             src={import.meta.env.BASE_URL + "logo.png"}
             alt="OrahDEX"
-            className="h-16 w-16 object-contain"
+            className="h-24 w-24 object-contain"
           />
         </button>
 
