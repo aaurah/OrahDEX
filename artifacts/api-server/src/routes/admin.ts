@@ -32,8 +32,8 @@ function recoverEthAddress(message: string, sigHex: string): string {
   recoveredSig.set(rBytes, 1);
   recoveredSig.set(sBytes, 33);
 
-  // Returns compressed public key (33 bytes)
-  const compressedPubKey = secp.recoverPublicKey(recoveredSig, msgHash);
+  // Returns compressed public key (33 bytes); prehash:false because msgHash is already keccak256
+  const compressedPubKey = secp.recoverPublicKey(recoveredSig, msgHash, { prehash: false });
   // Expand to uncompressed (65 bytes: 0x04 + x + y)
   const uncompressedPubKey = secp.Point.fromBytes(compressedPubKey).toBytes(false);
   // Derive Ethereum address: keccak256(x || y), take last 20 bytes
@@ -183,8 +183,10 @@ router.post("/auth/wallet", async (req, res) => {
   let recovered: string;
   try {
     recovered = recoverEthAddress(stored.message, signature);
-  } catch {
-    res.status(401).json({ error: "Invalid signature format" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[wallet-auth] recoverEthAddress threw:", msg);
+    res.status(401).json({ error: `Invalid signature format: ${msg}` });
     return;
   }
   if (recovered.toLowerCase() !== address.toLowerCase()) {
