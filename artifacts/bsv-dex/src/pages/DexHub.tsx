@@ -285,7 +285,7 @@ export function DexHub() {
         <h1 className="text-3xl lg:text-5xl font-bold tracking-tight mb-2">
           All Exchanges — CEX &amp; DEX
         </h1>
-        <p className="text-primary/80 italic font-medium text-sm mb-3">✦ Trade means DEX</p>
+        <p className="text-green-400/80 italic font-medium text-sm mb-3">✦ Trade means DEX</p>
         <p className="text-muted-foreground text-base lg:text-lg max-w-3xl">
           Every centralised and decentralised exchange ranked by volume &amp; market cap — live data from CoinGecko. Trade any pair on OrahDEX with on-chain BSV settlement.
         </p>

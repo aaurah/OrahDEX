@@ -131,7 +131,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-8">
           {/* Brand */}
           <Link href="/" className="flex items-center group">
-            <span className="text-xl font-bold tracking-tight text-foreground group-hover:text-primary transition-colors">OrahDEX</span>
+            <span className="text-xl font-bold tracking-tight text-foreground">Orah<span className="text-green-400">DEX</span></span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

@@ -245,9 +245,9 @@ export function MobileSettings() {
       {/* Branding */}
       <div className="flex flex-col items-center py-8 px-4">
         <p className="text-2xl font-bold text-foreground">
-          Orah<span className="text-primary">DEX</span>
+          Orah<span className="text-green-400">DEX</span>
         </p>
-        <p className="text-xs text-primary mt-1 opacity-80">✦ Trade means DEX</p>
+        <p className="text-xs text-green-400 mt-1 opacity-80">✦ Trade means DEX</p>
         <p className="text-[11px] text-muted-foreground mt-2">Non-custodial · On-chain settlement · BSV</p>
       </div>
 

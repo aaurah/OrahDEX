@@ -42,11 +42,11 @@ export function BiometricLockScreen() {
 
       {/* Logo */}
       <div className="mb-16 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-primary/10">
-          <span className="text-2xl font-black text-primary">O</span>
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500 via-emerald-400 to-green-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-500/20">
+          <span className="text-2xl font-black text-white">O</span>
         </div>
-        <h1 className="text-2xl font-bold text-foreground">OrahDEX</h1>
-        <p className="text-xs text-primary/70 mt-1 italic">✦ Trade means DEX</p>
+        <h1 className="text-2xl font-bold text-foreground">Orah<span className="text-green-400">DEX</span></h1>
+        <p className="text-xs text-green-400/70 mt-1 italic">✦ Trade means DEX</p>
       </div>
 
       {/* Biometric ring */}
