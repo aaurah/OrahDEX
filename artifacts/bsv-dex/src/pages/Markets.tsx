@@ -5,7 +5,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS,
+  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -17,7 +17,7 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "meme" | "defi" | "futures";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -52,6 +52,11 @@ const TAB_META: TabMeta[] = [
   { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
   { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
   { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "All pairs quoted in BASE · Coinbase L2" },
+  { id: "linea",     label: "LINEA",        color: "text-violet-400",  desc: "All pairs quoted in LINEA · MetaMask L2" },
+  { id: "zk",        label: "ZK",           color: "text-indigo-300",  desc: "All pairs quoted in ZK · zkSync Era" },
+  { id: "scr",       label: "SCROLL",       color: "text-orange-300",  desc: "All pairs quoted in SCR · Scroll L2" },
+  { id: "mnt",       label: "MNT",          color: "text-teal-400",    desc: "All pairs quoted in MNT · Mantle L2" },
+  { id: "sol",       label: "SOL",          color: "text-purple-400",  desc: "Solana ecosystem tokens" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
   { id: "bsv",       label: "BSV",          color: "text-amber-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },
@@ -138,7 +143,12 @@ export function Markets() {
       case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP")    : OP_MARKETS.map(normalise);
       case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM")   : FTM_MARKETS.map(normalise);
       case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO")   : CRO_MARKETS.map(normalise);
-      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE")  : BASE_MARKETS.map(normalise);
+      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE")   : BASE_MARKETS.map(normalise);
+      case "linea":     return hasApi ? raw.filter(m => m.quoteAsset === "LINEA")  : LINEA_MARKETS.map(normalise);
+      case "zk":        return hasApi ? raw.filter(m => m.quoteAsset === "ZK")     : ZK_MARKETS.map(normalise);
+      case "scr":       return hasApi ? raw.filter(m => m.quoteAsset === "SCR")    : SCR_MARKETS.map(normalise);
+      case "mnt":       return hasApi ? raw.filter(m => m.quoteAsset === "MNT")    : MNT_MARKETS.map(normalise);
+      case "sol":       return SOL_MARKETS.map(normalise);
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH")   : BCH_MARKETS.map(normalise);
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV")   : BSV_MARKETS.map(normalise);
       case "ai":        return AI_MARKETS.map(normalise);
@@ -165,7 +175,12 @@ export function Markets() {
       case "op":        return hasApi ? raw.filter(m => m.quoteAsset === "OP").length    : OP_MARKETS.length;
       case "ftm":       return hasApi ? raw.filter(m => m.quoteAsset === "FTM").length   : FTM_MARKETS.length;
       case "cro":       return hasApi ? raw.filter(m => m.quoteAsset === "CRO").length   : CRO_MARKETS.length;
-      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE").length : BASE_MARKETS.length;
+      case "base":      return hasApi ? raw.filter(m => m.quoteAsset === "BASE").length  : BASE_MARKETS.length;
+      case "linea":     return hasApi ? raw.filter(m => m.quoteAsset === "LINEA").length : LINEA_MARKETS.length;
+      case "zk":        return hasApi ? raw.filter(m => m.quoteAsset === "ZK").length    : ZK_MARKETS.length;
+      case "scr":       return hasApi ? raw.filter(m => m.quoteAsset === "SCR").length   : SCR_MARKETS.length;
+      case "mnt":       return hasApi ? raw.filter(m => m.quoteAsset === "MNT").length   : MNT_MARKETS.length;
+      case "sol":       return SOL_MARKETS.length;
       case "bch":       return hasApi ? raw.filter(m => m.quoteAsset === "BCH").length  : BCH_MARKETS.length;
       case "bsv":       return hasApi ? raw.filter(m => m.quoteAsset === "BSV").length  : BSV_MARKETS.length;
       case "ai":        return AI_MARKETS.length;

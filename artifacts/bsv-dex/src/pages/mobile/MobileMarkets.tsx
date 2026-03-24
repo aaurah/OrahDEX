@@ -10,7 +10,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS,
+  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -50,7 +50,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "bch" | "bsv" | "ai" | "meme" | "defi" | "sol" | "futures";
+type Cat = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs" },
@@ -66,6 +66,11 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
   { id: "base",      label: "BASE" },
+  { id: "linea",     label: "LINEA" },
+  { id: "zk",        label: "ZK" },
+  { id: "scr",       label: "SCROLL" },
+  { id: "mnt",       label: "MNT" },
+  { id: "sol",       label: "SOL" },
   { id: "bch",       label: "BCH" },
   { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
@@ -100,6 +105,11 @@ function getCatRows(cat: Cat, usdSub: UsdSub, apiAll: MktRow[], favorites: Set<s
     case "ftm":     return hasApi ? apiAll.filter(m => m.quote === "FTM")   : FTM_MARKETS.map(normalise);
     case "cro":     return hasApi ? apiAll.filter(m => m.quote === "CRO")   : CRO_MARKETS.map(normalise);
     case "base":    return hasApi ? apiAll.filter(m => m.quote === "BASE")  : BASE_MARKETS.map(normalise);
+    case "linea":   return hasApi ? apiAll.filter(m => m.quote === "LINEA") : LINEA_MARKETS.map(normalise);
+    case "zk":      return hasApi ? apiAll.filter(m => m.quote === "ZK")    : ZK_MARKETS.map(normalise);
+    case "scr":     return hasApi ? apiAll.filter(m => m.quote === "SCR")   : SCR_MARKETS.map(normalise);
+    case "mnt":     return hasApi ? apiAll.filter(m => m.quote === "MNT")   : MNT_MARKETS.map(normalise);
+    case "sol":     return SOL_MARKETS.map(normalise);
     case "bch":     return hasApi ? apiAll.filter(m => m.quote === "BCH")  : BCH_MARKETS.map(normalise);
     case "bsv":     return hasApi ? apiAll.filter(m => m.quote === "BSV")  : BSV_MARKETS.map(normalise);
     case "ai":      return AI_MARKETS.map(normalise);
