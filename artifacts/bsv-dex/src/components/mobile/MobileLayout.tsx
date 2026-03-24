@@ -26,31 +26,31 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header ── */}
-      <div className="shrink-0 relative grid h-12 border-b border-border/40 bg-card/95 backdrop-blur-sm z-50"
-        style={{ gridTemplateColumns: "1fr auto 1fr" }}>
+      {/* ── Global brand header — edge-to-edge logo ── */}
+      <div className="shrink-0 relative h-16 border-b border-border/40 z-50 overflow-hidden">
 
-        {/* Col 1: empty spacer */}
-        <div />
-
-        {/* Col 2: centred brand text */}
+        {/* Logo fills edge to edge */}
         <button
           onClick={() => navigate("/")}
-          className="flex items-center justify-center active:opacity-70 transition-opacity"
+          className="absolute inset-0 w-full h-full active:opacity-80 transition-opacity"
         >
-          <span className="text-lg font-bold tracking-tight text-foreground">OrahDEX</span>
+          <img
+            src={import.meta.env.BASE_URL + "logo.png"}
+            alt="OrahDEX"
+            className="w-full h-full object-cover object-center"
+          />
         </button>
 
-        {/* Col 3: Wallet, right-aligned */}
-        <div className="flex items-center justify-end gap-2 pr-4">
+        {/* Wallet button overlaid on right */}
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10">
           {address ? (
             <button
               onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
+              className="flex items-center gap-1.5 bg-black/60 border border-white/20 backdrop-blur-sm px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
             >
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
               <div className="flex flex-col items-start min-w-0">
-                <span className="text-[11px] font-mono text-foreground leading-tight truncate">{shortenAddress(address)}</span>
+                <span className="text-[11px] font-mono text-white leading-tight truncate">{shortenAddress(address)}</span>
                 {balance && (
                   <span className="text-[9px] text-green-400 font-semibold leading-tight">{balance} ETH</span>
                 )}
