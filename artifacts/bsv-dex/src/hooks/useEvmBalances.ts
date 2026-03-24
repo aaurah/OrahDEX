@@ -142,20 +142,18 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
       const result: TokenBalance[] = [];
 
-      // Add native token if balance > 0
-      if (nativeAmount > 0) {
-        result.push({
-          symbol: nativeDef.symbol,
-          name: nativeDef.name,
-          amount: nativeAmount,
-          usdValue: nativeAmount * nativePrice.usd,
-          price: nativePrice.usd,
-          change24h: nativePrice.change24h,
-          color: nativeDef.color,
-          decimals: 6,
-          isNative: true,
-        });
-      }
+      // Always include native token (even dust or zero)
+      result.push({
+        symbol: nativeDef.symbol,
+        name: nativeDef.name,
+        amount: nativeAmount,
+        usdValue: nativeAmount * nativePrice.usd,
+        price: nativePrice.usd,
+        change24h: nativePrice.change24h,
+        color: nativeDef.color,
+        decimals: 18,
+        isNative: true,
+      });
 
       // 3. Fetch ERC-20 balances for this chain
       const tokens = ERC20_TOKENS[chainId] ?? [];

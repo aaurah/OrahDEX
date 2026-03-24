@@ -192,33 +192,39 @@ export function Portfolio() {
 
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
-  const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
 
   // Build balance rows:
-  // - EVM wallets: use real on-chain balances from useEvmBalances (native + ERC-20)
-  // - BSV/SOL/BTC: use balance from wallet store for the native asset only
-  const balances = PORTFOLIO_ASSETS.map(a => {
-    // For EVM, prefer real on-chain data from the hook
+  // EVM wallets → use ALL real on-chain token data from useEvmBalances
+  // BSV/SOL/BTC → native asset only from wallet store
+  const stableSet = new Set(["USDT","USDC","DAI","BUSD","TUSD"]);
+  const balances = (() => {
     if (network === "evm" && evmBalances.length > 0) {
-      const evmBal = evmBalances.find(b => b.symbol === a.asset);
-      if (evmBal) {
-        const pnl24h = evmBal.usdValue * evmBal.change24h / 100;
-        return { ...a, total: evmBal.amount, free: evmBal.amount, locked: 0,
-                 price: evmBal.price, change24hPercent: evmBal.change24h,
-                 valueUSD: evmBal.usdValue, pnl24h };
-      }
+      return evmBalances.map(b => {
+        const isStable = stableSet.has(b.symbol);
+        const mkt    = prices?.[b.symbol];
+        const price  = b.price > 0 ? b.price : isStable ? 1 : (mkt?.lastPrice ?? 0);
+        const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+        const valueUSD = b.usdValue > 0 ? b.usdValue : b.amount * price;
+        const pnl24h   = valueUSD * change / 100;
+        const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
+        return { asset: b.symbol, color, marketKey: b.symbol,
+                 total: b.amount, free: b.amount, locked: 0,
+                 price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
+      });
     }
-    // Fallback: native token from wallet store, everything else 0
-    const mkt    = prices?.[a.asset];
-    const price  = (a.asset === "USDT" || a.asset === "USDC") ? 1 : (mkt?.lastPrice ?? 0);
-    const change = (a.asset === "USDT" || a.asset === "USDC") ? 0 : (mkt?.priceChangePercent24h ?? 0);
-    const total  = a.asset === nativeAsset ? nativeBalance : 0;
-    const free   = total;
-    const locked = 0;
-    const valueUSD = total * price;
-    const pnl24h   = valueUSD * change / 100;
-    return { ...a, total, free, locked, price, change24hPercent: change, valueUSD, pnl24h };
-  });
+    // Non-EVM: fallback list of known assets, only native has a balance
+    const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
+    return PORTFOLIO_ASSETS.map(a => {
+      const isStable = stableSet.has(a.asset);
+      const mkt    = prices?.[a.asset];
+      const price  = isStable ? 1 : (mkt?.lastPrice ?? 0);
+      const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+      const total  = a.asset === nativeAsset ? nativeBalance : 0;
+      const valueUSD = total * price;
+      const pnl24h   = valueUSD * change / 100;
+      return { ...a, total, free: total, locked: 0, price, change24hPercent: change, valueUSD, pnl24h, isNative: a.asset === nativeAsset };
+    });
+  })();
 
   const totalValueUSD  = balances.reduce((s, b) => s + b.valueUSD, 0);
   const totalPnlUSD    = balances.reduce((s, b) => s + b.pnl24h, 0);
@@ -396,18 +402,18 @@ export function Portfolio() {
             <div>
               <h3 className="text-lg font-bold">Asset Balances</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {nativeAsset} balance from <span className="font-semibold">{networkLabel}</span> · other assets require a deposit
+                {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets require a deposit"}
               </p>
             </div>
             <span className="text-xs text-muted-foreground">Live prices · 30s refresh</span>
           </div>
 
-          {/* Deposit notice for empty assets */}
-          {nonZero.length < balances.length && (
+          {/* Notice about chain scope */}
+          {network === "evm" && (
             <div className="mx-4 mt-4 flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/15">
               <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Your connected {nativeAsset} balance is shown below. To trade other assets on OrahDEX, use the <strong className="text-primary">Deposit</strong> button to fund your trading account.
+                Showing live on-chain token balances for your currently connected network. Switch chains in your wallet to view assets on other networks (BNB Chain, Polygon, etc.).
               </p>
             </div>
           )}
@@ -448,38 +454,38 @@ export function Portfolio() {
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-bold text-foreground">{bal.asset}</span>
-                                {bal.asset === nativeAsset && bal.total > 0 && (
+                                {bal.isNative && bal.total > 0 && (
                                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/25 shrink-0">
-                                    WALLET
+                                    NATIVE
                                   </span>
                                 )}
-                                {bal.asset === nativeAsset && chainInfo?.isL2 && (
+                                {bal.isNative && chainInfo?.isL2 && (
                                   <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: chainInfo.color + "22", color: chainInfo.color, borderWidth: 1, borderColor: chainInfo.color + "44" }}>
                                     L{chainInfo.layer ?? 2}
                                   </span>
                                 )}
                               </div>
-                              {bal.asset === nativeAsset && chainInfo && (
+                              {bal.isNative && chainInfo && (
                                 <p className="text-[10px] text-muted-foreground truncate">{chainInfo.name}</p>
                               )}
-                              {(bal.asset === "USDT" || bal.asset === "USDC") && (
+                              {stableSet.has(bal.asset) && (
                                 <p className="text-[10px] text-muted-foreground">Stablecoin</p>
                               )}
                             </div>
                           </div>
                         </td>
                         <td className="p-4 text-right font-mono text-sm">
-                          {(bal.asset === "USDT" || bal.asset === "USDC") ? "$1.00" : bal.price > 0 ? `$${formatPrice(bal.price)}` : "—"}
+                          {stableSet.has(bal.asset) ? "$1.00" : bal.price > 0 ? `$${formatPrice(bal.price)}` : "—"}
                         </td>
                         <td className={`p-4 text-right text-sm font-semibold ${bal.change24hPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
-                          {(bal.asset === "USDT" || bal.asset === "USDC") ? "0.00%" : `${bal.change24hPercent >= 0 ? "+" : ""}${bal.change24hPercent.toFixed(2)}%`}
+                          {stableSet.has(bal.asset) ? "0.00%" : `${bal.change24hPercent >= 0 ? "+" : ""}${bal.change24hPercent.toFixed(2)}%`}
                         </td>
                         <td className="p-4 text-right font-mono">
                           {hideBalances
                             ? "•••"
                             : bal.total > 0
-                              ? bal.total.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                              : <span className="text-muted-foreground/50 text-xs italic">deposit to trade</span>}
+                              ? bal.total.toLocaleString(undefined, { maximumFractionDigits: bal.total < 0.0001 ? 8 : 6 })
+                              : <span className="text-muted-foreground/50 text-xs italic">—</span>}
                         </td>
                         <td className="p-4 text-right font-mono font-medium">
                           {hideBalances ? "•••" : `$${formatPrice(bal.valueUSD)}`}
