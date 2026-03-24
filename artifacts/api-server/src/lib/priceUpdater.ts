@@ -534,13 +534,20 @@ export async function updateMarketPrices() {
         vol = vol / 10;
       }
 
+      // Skip markets with invalid prices (Infinity / NaN) to avoid DB overflow
+      const safePrice = (n: number) => Number.isFinite(n) && n > 0;
+      if (!safePrice(lastPrice)) {
+        logger.warn({ symbol: market.symbol, lastPrice }, "Skipping market update — price is Infinity or NaN");
+        continue;
+      }
+
       await db.update(marketsTable).set({
         lastPrice: lastPrice.toFixed(8),
         priceChange24h: change.toFixed(8),
         priceChangePercent24h: changePercent.toFixed(4),
-        volume24h: vol.toFixed(2),
-        high24h: high24h.toFixed(8),
-        low24h: Math.max(low24h, 0.00000001).toFixed(8),
+        volume24h: (safePrice(vol) ? vol : 0).toFixed(2),
+        high24h: (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
+        low24h: Math.max(safePrice(low24h) ? low24h : lastPrice * 0.99, 0.00000001).toFixed(8),
         marketCap: data.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
     }

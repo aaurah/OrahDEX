@@ -1,32 +1,39 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import {
-  Droplets, Plus, Minus, TrendingUp, ChevronDown, ChevronUp,
-  Zap, Award, BarChart3, X, Info, Layers
+  Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
+  X, Info, AlertTriangle, ChevronRight, BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// ─── Pool data ────────────────────────────────────────────────────────────────
 const POOLS = [
-  { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  apr: 12.3,  farmApr: 4.2,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "eth-usdt",  base: "ETH",  quote: "USDT", tvl: 187_400_000, vol24: 44_100_000,  apr: 15.7,  farmApr: 6.1,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "sol-usdt",  base: "SOL",  quote: "USDT", tvl: 95_700_000,  vol24: 21_300_000,  apr: 22.1,  farmApr: 8.4,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "bsv-usdt",  base: "BSV",  quote: "USDT", tvl: 8_240_000,   vol24: 1_920_000,   apr: 47.5,  farmApr: 18.2, fee: 0.2,  userLp: 1240.5, chain: "BSV" },
-  { id: "bnb-usdt",  base: "BNB",  quote: "USDT", tvl: 67_300_000,  vol24: 14_800_000,  apr: 18.4,  farmApr: 5.9,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "xrp-usdt",  base: "XRP",  quote: "USDT", tvl: 52_100_000,  vol24: 12_700_000,  apr: 19.8,  farmApr: 7.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "ada-usdt",  base: "ADA",  quote: "USDT", tvl: 29_800_000,  vol24: 6_400_000,   apr: 24.6,  farmApr: 9.1,  fee: 0.3,  userLp: 640.0,  chain: "BSV" },
-  { id: "doge-usdt", base: "DOGE", quote: "USDT", tvl: 41_200_000,  vol24: 9_300_000,   apr: 21.3,  farmApr: 7.8,  fee: 0.25, userLp: 0,      chain: "BSV" },
-  { id: "dot-usdt",  base: "DOT",  quote: "USDT", tvl: 18_600_000,  vol24: 3_900_000,   apr: 28.7,  farmApr: 11.2, fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   apr: 26.4,  farmApr: 10.1, fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     apr: 55.2,  farmApr: 22.8, fee: 0.2,  userLp: 320.0,  chain: "BSV" },
-  { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  apr: 14.1,  farmApr: 5.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  fee: 0.3,  farmApr: 4.2,  userLp: 0,      chain: "BSV" },
+  { id: "eth-usdt",  base: "ETH",  quote: "USDT", tvl: 187_400_000, vol24: 44_100_000,  fee: 0.3,  farmApr: 6.1,  userLp: 0,      chain: "BSV" },
+  { id: "sol-usdt",  base: "SOL",  quote: "USDT", tvl: 95_700_000,  vol24: 21_300_000,  fee: 0.3,  farmApr: 8.4,  userLp: 0,      chain: "BSV" },
+  { id: "bsv-usdt",  base: "BSV",  quote: "USDT", tvl: 8_240_000,   vol24: 1_920_000,   fee: 0.2,  farmApr: 18.2, userLp: 1240.5, chain: "BSV" },
+  { id: "bnb-usdt",  base: "BNB",  quote: "USDT", tvl: 67_300_000,  vol24: 14_800_000,  fee: 0.3,  farmApr: 5.9,  userLp: 0,      chain: "BSV" },
+  { id: "xrp-usdt",  base: "XRP",  quote: "USDT", tvl: 52_100_000,  vol24: 12_700_000,  fee: 0.3,  farmApr: 7.3,  userLp: 0,      chain: "BSV" },
+  { id: "ada-usdt",  base: "ADA",  quote: "USDT", tvl: 29_800_000,  vol24: 6_400_000,   fee: 0.3,  farmApr: 9.1,  userLp: 640.0,  chain: "BSV" },
+  { id: "doge-usdt", base: "DOGE", quote: "USDT", tvl: 41_200_000,  vol24: 9_300_000,   fee: 0.25, farmApr: 7.8,  userLp: 0,      chain: "BSV" },
+  { id: "dot-usdt",  base: "DOT",  quote: "USDT", tvl: 18_600_000,  vol24: 3_900_000,   fee: 0.3,  farmApr: 11.2, userLp: 0,      chain: "BSV" },
+  { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   fee: 0.3,  farmApr: 10.1, userLp: 0,      chain: "BSV" },
+  { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     fee: 0.2,  farmApr: 22.8, userLp: 320.0,  chain: "BSV" },
+  { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  fee: 0.3,  farmApr: 5.3,  userLp: 0,      chain: "BSV" },
 ];
 
-const COIN_COLORS: Record<string, string> = {
-  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
-  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
-  DOT: "#EC4899", LINK: "#3B82F6",
+// Approximate spot prices used only for UI ratio calculations
+const SPOT: Record<string, number> = {
+  BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
+  XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1,
 };
 
+// Pool APR derived from AMM fee revenue: vol24 * fee% / tvl * 365
+function poolApr(p: typeof POOLS[0]) {
+  return (p.vol24 * (p.fee / 100) / p.tvl) * 365 * 100;
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
 function fmtTvl(n: number) {
   if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
@@ -34,28 +41,33 @@ function fmtTvl(n: number) {
   return "$" + n.toFixed(0);
 }
 
-type Tab = "pools" | "positions" | "farming";
+const COIN_COLORS: Record<string, string> = {
+  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
+  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
+  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a",
+};
 
 function TokenPair({ base, quote }: { base: string; quote: string }) {
-  const cA = COIN_COLORS[base] ?? "#EAB308";
+  const cA = COIN_COLORS[base]  ?? "#EAB308";
   const cB = COIN_COLORS[quote] ?? "#16a34a";
   return (
     <div className="flex items-center gap-2">
       <div className="flex -space-x-2">
         {[base, quote].map((t, i) => (
           <div key={i} className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
-            style={{ backgroundColor: (i === 0 ? cA : cB) + "33", color: i === 0 ? cA : cB }}>{t[0]}</div>
+            style={{ backgroundColor: (i === 0 ? cA : cB) + "33", color: i === 0 ? cA : cB }}>
+            {t[0]}
+          </div>
         ))}
       </div>
-      <div>
-        <span className="text-sm font-bold">{base}/{quote}</span>
-      </div>
+      <span className="text-sm font-bold">{base}/{quote}</span>
     </div>
   );
 }
 
+// ─── Add / Remove modal ───────────────────────────────────────────────────────
 function LiquidityModal({
-  pool, mode, onClose
+  pool, mode, onClose,
 }: {
   pool: typeof POOLS[0] | null;
   mode: "add" | "remove";
@@ -63,19 +75,60 @@ function LiquidityModal({
 }) {
   const [amtA, setAmtA] = useState("");
   const [amtB, setAmtB] = useState("");
-  const [pct, setPct] = useState(50);
+  const [pct, setPct]   = useState(50);
+  const [showIlInfo, setShowIlInfo] = useState(false);
+
+  const handleAmtAChange = useCallback((val: string, p: typeof POOLS[0]) => {
+    setAmtA(val);
+    const n = parseFloat(val);
+    if (!isNaN(n) && n > 0) {
+      const priceA = SPOT[p.base]  ?? 1;
+      const priceB = SPOT[p.quote] ?? 1;
+      const ratio  = priceA / priceB;          // how many B per 1 A
+      setAmtB((n * ratio).toFixed(6));
+    } else {
+      setAmtB("");
+    }
+  }, []);
+
+  const handleAmtBChange = useCallback((val: string, p: typeof POOLS[0]) => {
+    setAmtB(val);
+    const n = parseFloat(val);
+    if (!isNaN(n) && n > 0) {
+      const priceA = SPOT[p.base]  ?? 1;
+      const priceB = SPOT[p.quote] ?? 1;
+      const ratio  = priceB / priceA;
+      setAmtA((n * ratio).toFixed(6));
+    } else {
+      setAmtA("");
+    }
+  }, []);
 
   if (!pool) return null;
 
-  const colorA = COIN_COLORS[pool.base] ?? "#EAB308";
-  const colorB = COIN_COLORS[pool.quote] ?? "#16a34a";
-  const totalApr = pool.apr + pool.farmApr;
+  const colorA   = COIN_COLORS[pool.base]  ?? "#EAB308";
+  const colorB   = COIN_COLORS[pool.quote] ?? "#16a34a";
+  const totalApr = poolApr(pool) + pool.farmApr;
+
+  // Remove: how many tokens user receives
+  const lpValue      = pool.userLp * 12.5;           // est. USD value of all LP tokens
+  const removeValue  = lpValue * (pct / 100);         // USD value being withdrawn
+  const priceA       = SPOT[pool.base]  ?? 1;
+  const priceB       = SPOT[pool.quote] ?? 1;
+  const receiveA     = removeValue / 2 / priceA;      // 50/50 constant-product split
+  const receiveB     = removeValue / 2 / priceB;
+
+  // Add: pool share you'd receive (approximate)
+  const addValueUsd  = (parseFloat(amtA) || 0) * priceA + (parseFloat(amtB) || 0) * priceB;
+  const shareOfPool  = addValueUsd > 0 ? addValueUsd / (pool.tvl + addValueUsd) * 100 : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <div className="relative w-full max-w-md bg-background rounded-2xl border border-border shadow-2xl p-6"
+      <div className="relative w-full max-w-md bg-background rounded-2xl border border-border shadow-2xl p-6 max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
@@ -86,64 +139,112 @@ function LiquidityModal({
             </div>
             <div>
               <div className="font-bold text-base">{pool.base}/{pool.quote}</div>
-              <div className="text-xs text-muted-foreground">{pool.fee}% pool fee</div>
+              <div className="text-xs text-muted-foreground">{pool.fee}% AMM fee · BSV settled</div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
-            <X size={18} />
-          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
         {mode === "add" ? (
           <>
+            {/* ── ADD ── */}
+
+            {/* AMM ratio notice */}
+            <div className="flex items-start gap-2 bg-blue-500/8 border border-blue-500/20 rounded-xl p-3 mb-4">
+              <Info size={14} className="text-blue-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-blue-300/90 leading-relaxed">
+                This pool uses <strong>x·y=k</strong> constant-product pricing. Both tokens must be deposited in the current pool ratio — entering one amount auto-fills the other.
+              </p>
+            </div>
+
+            {/* Token A */}
             <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.base} amount</span>
-                <span className="text-xs text-muted-foreground">Balance: 0.00</span>
+                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtA) || 0) * priceA).toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-xl font-bold outline-none"
-                  placeholder="0.00" value={amtA} onChange={e => setAmtA(e.target.value)} />
-                <button className="text-xs text-primary font-bold px-2 py-1 hover:bg-primary/10 rounded-lg transition-colors">MAX</button>
+                  placeholder="0.00" value={amtA}
+                  onChange={e => handleAmtAChange(e.target.value, pool)} />
+                <button onClick={() => handleAmtAChange("1", pool)}
+                  className="text-xs text-primary font-bold px-2 py-1 hover:bg-primary/10 rounded-lg transition-colors">MAX</button>
                 <div className="px-2.5 py-1.5 bg-background border border-border rounded-lg">
                   <span className="text-sm font-bold" style={{ color: colorA }}>{pool.base}</span>
                 </div>
               </div>
             </div>
+
+            {/* Ratio connector */}
+            <div className="flex items-center justify-center my-1 text-muted-foreground">
+              <span className="text-xs bg-secondary/60 border border-border rounded-full px-3 py-1">
+                1 {pool.base} = {(priceA / priceB).toLocaleString(undefined, { maximumFractionDigits: 6 })} {pool.quote}
+              </span>
+            </div>
+
+            {/* Token B */}
             <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-4">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
-                <span className="text-xs text-muted-foreground">Balance: 0.00</span>
+                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtB) || 0) * priceB).toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-xl font-bold outline-none"
-                  placeholder="0.00" value={amtB} onChange={e => setAmtB(e.target.value)} />
-                <button className="text-xs text-primary font-bold px-2 py-1 hover:bg-primary/10 rounded-lg transition-colors">MAX</button>
+                  placeholder="0.00" value={amtB}
+                  onChange={e => handleAmtBChange(e.target.value, pool)} />
                 <div className="px-2.5 py-1.5 bg-background border border-border rounded-lg">
                   <span className="text-sm font-bold" style={{ color: colorB }}>{pool.quote}</span>
                 </div>
               </div>
             </div>
-            <div className="bg-secondary/30 rounded-xl p-3 mb-4 space-y-2">
+
+            {/* Stats */}
+            <div className="bg-secondary/30 rounded-xl p-3 mb-3 space-y-2">
               {[
-                ["Pool fee", `${pool.fee}%`],
-                ["Pool APR", `${pool.apr.toFixed(1)}%`],
-                ["Farm APR", `+${pool.farmApr.toFixed(1)}%`],
-                ["Total APR", `${totalApr.toFixed(1)}%`],
-                ["You receive", "LP tokens"],
+                ["Pool fee (per swap)", `${pool.fee}%`],
+                ["Fee APR (from trading volume)", `${poolApr(pool).toFixed(1)}%`],
+                ["Farm APR (LP staking rewards)", `+${pool.farmApr.toFixed(1)}%`],
+                ["Combined APR", `${totalApr.toFixed(1)}%`],
+                ["Your est. pool share", shareOfPool > 0 ? `${shareOfPool.toFixed(4)}%` : "—"],
+                ["You receive", "LP tokens (redeemable anytime)"],
               ].map(([l, v]) => (
                 <div key={l} className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{l}</span>
-                  <span className={cn("font-semibold", l === "Total APR" ? "text-green-500" : "")}>{v}</span>
+                  <span className={cn("font-semibold", l === "Combined APR" ? "text-green-500" : "")}>{v}</span>
                 </div>
               ))}
             </div>
-            <button className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors">
-              Add Liquidity
+
+            {/* Impermanent loss warning */}
+            <div className="rounded-xl border border-orange-500/25 bg-orange-500/8 p-3 mb-4">
+              <button
+                className="w-full flex items-center gap-2 text-left"
+                onClick={() => setShowIlInfo(v => !v)}
+              >
+                <AlertTriangle size={14} className="text-orange-400 shrink-0" />
+                <span className="text-xs font-semibold text-orange-300">Impermanent Loss Risk</span>
+                <ChevronRight size={12} className={cn("ml-auto text-orange-400 transition-transform", showIlInfo && "rotate-90")} />
+              </button>
+              {showIlInfo && (
+                <p className="text-xs text-orange-300/80 leading-relaxed mt-2 pl-5">
+                  When the price of {pool.base} changes relative to {pool.quote}, the AMM rebalances the pool automatically.
+                  This means you may end up with a different token ratio than you deposited. If prices diverge significantly,
+                  the total value of your position may be less than if you had simply held the tokens. Fees earned can offset this loss.
+                </p>
+              )}
+            </div>
+
+            <button
+              disabled={!amtA || !amtB}
+              className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {amtA && amtB ? "Add Liquidity" : "Enter amounts"}
             </button>
           </>
         ) : (
           <>
+            {/* ── REMOVE ── */}
+
             <div className="bg-secondary/50 border border-border rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm text-muted-foreground">Remove amount</span>
@@ -162,17 +263,40 @@ function LiquidityModal({
                 ))}
               </div>
             </div>
+
+            {/* You receive */}
             <div className="bg-secondary/30 rounded-xl p-3 mb-4 space-y-2">
-              {[
-                [`${pool.base} you receive`, `${(pool.userLp * 0.01 * pct * 0.5).toFixed(6)}`],
-                [`${pool.quote} you receive`, `${(pool.userLp * 0.01 * pct * 0.5 * 43000).toFixed(2)}`],
-              ].map(([l, v]) => (
-                <div key={l} className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{l}</span>
-                  <span className="font-semibold">{v}</span>
-                </div>
-              ))}
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">You receive</p>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
+                    style={{ backgroundColor: colorA + "33", color: colorA }}>{pool.base[0]}</span>
+                  {pool.base}
+                </span>
+                <span className="font-mono font-semibold">{receiveA.toFixed(6)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
+                    style={{ backgroundColor: colorB + "33", color: colorB }}>{pool.quote[0]}</span>
+                  {pool.quote}
+                </span>
+                <span className="font-mono font-semibold">{receiveB.toFixed(pool.quote === "USDT" ? 2 : 6)}</span>
+              </div>
+              <div className="border-t border-border/50 pt-2 flex justify-between text-sm">
+                <span className="text-muted-foreground">Total value</span>
+                <span className="font-semibold text-green-400">{fmtTvl(removeValue)}</span>
+              </div>
             </div>
+
+            {/* IL note */}
+            <div className="flex items-start gap-2 bg-secondary/50 rounded-xl p-3 mb-4">
+              <Info size={13} className="text-muted-foreground shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Amounts are split 50/50 by the AMM constant-product formula. Actual amounts depend on the pool's live reserves at the time of removal.
+              </p>
+            </div>
+
             <button className="w-full py-3.5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition-colors">
               Remove Liquidity
             </button>
@@ -182,6 +306,9 @@ function LiquidityModal({
     </div>
   );
 }
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+type Tab = "pools" | "positions" | "farming";
 
 export function Liquidity() {
   useSEO({
@@ -198,25 +325,27 @@ export function Liquidity() {
     }
   });
 
-  const [tab, setTab] = useState<Tab>("pools");
-  const [sortBy, setSortBy] = useState<"apr" | "tvl" | "vol">("tvl");
+  const [tab, setTab]         = useState<Tab>("pools");
+  const [sortBy, setSortBy]   = useState<"apr" | "tvl" | "vol">("tvl");
   const [modalPool, setModalPool] = useState<typeof POOLS[0] | null>(null);
   const [modalMode, setModalMode] = useState<"add" | "remove">("add");
+  const [showAmmInfo, setShowAmmInfo] = useState(false);
 
-  const openAdd = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("add"); };
+  const openAdd    = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("add"); };
   const openRemove = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("remove"); };
 
   const sorted = [...POOLS].sort((a, b) =>
-    sortBy === "apr" ? (b.apr + b.farmApr) - (a.apr + a.farmApr)
+    sortBy === "apr" ? (poolApr(b) + b.farmApr) - (poolApr(a) + a.farmApr)
     : sortBy === "tvl" ? b.tvl - a.tvl
     : b.vol24 - a.vol24
   );
 
   const totalTvl = POOLS.reduce((s, p) => s + p.tvl, 0);
-  const myPools = POOLS.filter(p => p.userLp > 0);
+  const myPools  = POOLS.filter(p => p.userLp > 0);
 
   return (
     <div className="min-h-screen bg-background p-6">
+
       {/* Page header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -225,9 +354,53 @@ export function Liquidity() {
           </div>
           <div>
             <h1 className="text-2xl font-bold">Liquidity Pools</h1>
-            <p className="text-sm text-muted-foreground">Provide liquidity and earn fees + farming rewards</p>
+            <p className="text-sm text-muted-foreground">Provide liquidity · earn AMM fees + farming rewards</p>
           </div>
         </div>
+      </div>
+
+      {/* ── How AMM works (collapsible) ────────────────────────────────── */}
+      <div className="mb-6 rounded-2xl border border-border bg-card overflow-hidden">
+        <button
+          onClick={() => setShowAmmInfo(v => !v)}
+          className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-secondary/30 transition-colors"
+        >
+          <BookOpen size={16} className="text-primary shrink-0" />
+          <span className="font-semibold text-sm">How OrahDEX AMM Works</span>
+          <ChevronRight size={14} className={cn("ml-auto text-muted-foreground transition-transform", showAmmInfo && "rotate-90")} />
+        </button>
+        {showAmmInfo && (
+          <div className="px-5 pb-5 grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-border/50">
+            {[
+              {
+                icon: "💧",
+                title: "Liquidity Pools",
+                body: "Instead of matching buyers with sellers, DEXs use token pools funded by LPs. Anyone can trade against the pool at any time.",
+              },
+              {
+                icon: "∑",
+                title: "x · y = k Formula",
+                body: "The constant-product formula keeps x × y constant. Every trade shifts the ratio, automatically re-pricing the pair. Larger trades = more slippage.",
+              },
+              {
+                icon: "💸",
+                title: "Fee Revenue",
+                body: `Every swap pays a pool fee (${POOLS[0].fee}%–${POOLS[6].fee}%). Fees are added back to the pool and distributed to LPs proportional to their share.`,
+              },
+              {
+                icon: "⚖️",
+                title: "Arbitrage = Accuracy",
+                body: "AMMs don't know real-world prices. Arbitrage traders close any gap between the pool price and the market price, keeping everything accurate.",
+              },
+            ].map(c => (
+              <div key={c.title} className="pt-4">
+                <div className="text-2xl mb-2">{c.icon}</div>
+                <div className="font-bold text-sm mb-1">{c.title}</div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{c.body}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Stats row */}
@@ -235,8 +408,8 @@ export function Liquidity() {
         {[
           ["Total Value Locked", fmtTvl(totalTvl), "text-foreground"],
           ["Total Pools", `${POOLS.length}`, "text-foreground"],
-          ["Your Positions", `${myPools.length}`, "text-primary"],
-          ["Best Pool APR", `${Math.max(...POOLS.map(p => p.apr + p.farmApr)).toFixed(1)}%`, "text-green-500"],
+          ["My Positions", `${myPools.length}`, "text-primary"],
+          ["Best Pool APR", `${(Math.max(...POOLS.map(p => poolApr(p) + p.farmApr))).toFixed(1)}%`, "text-green-500"],
         ].map(([l, v, cls]) => (
           <div key={l} className="bg-card border border-border rounded-xl p-4">
             <div className="text-xs text-muted-foreground mb-1">{l}</div>
@@ -260,9 +433,9 @@ export function Liquidity() {
         ))}
       </div>
 
+      {/* ── POOLS tab ── */}
       {tab === "pools" && (
         <>
-          {/* Sort + filter */}
           <div className="flex items-center gap-3 mb-4">
             <span className="text-sm text-muted-foreground">Sort by:</span>
             {(["tvl", "apr", "vol"] as const).map(s => (
@@ -274,23 +447,26 @@ export function Liquidity() {
             ))}
           </div>
 
-          {/* Table */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 border-b border-border text-xs font-semibold text-muted-foreground">
               <span>Pool</span>
               <span className="text-right">TVL</span>
               <span className="text-right">24h Volume</span>
-              <span className="text-right">Pool APR</span>
+              <span className="text-right" title="Derived from: vol24 × fee / TVL × 365">Fee APR ⓘ</span>
               <span className="text-right">Farm APR</span>
-              <span className="text-right">Fee</span>
+              <span className="text-right">Total APR</span>
               <span className="text-right">Action</span>
             </div>
-            {sorted.map((pool, i) => {
-              const hasPos = pool.userLp > 0;
+            {sorted.map(pool => {
+              const hasPos   = pool.userLp > 0;
+              const feeApr   = poolApr(pool);
+              const totalApr = feeApr + pool.farmApr;
               return (
                 <div key={pool.id}
-                  className={cn("grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors",
-                    hasPos ? "bg-primary/3" : "")}>
+                  className={cn(
+                    "grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors",
+                    hasPos && "bg-primary/3"
+                  )}>
                   <div className="flex items-center gap-2">
                     <TokenPair base={pool.base} quote={pool.quote} />
                     {hasPos && <span className="text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded font-bold">MY POS</span>}
@@ -298,9 +474,9 @@ export function Liquidity() {
                   </div>
                   <span className="text-right text-sm font-semibold">{fmtTvl(pool.tvl)}</span>
                   <span className="text-right text-sm">{fmtTvl(pool.vol24)}</span>
-                  <span className="text-right text-sm font-bold text-green-500">{pool.apr.toFixed(1)}%</span>
+                  <span className="text-right text-sm font-bold text-green-500">{feeApr.toFixed(1)}%</span>
                   <span className="text-right text-sm font-bold text-green-500">+{pool.farmApr.toFixed(1)}%</span>
-                  <span className="text-right text-sm text-muted-foreground">{pool.fee}%</span>
+                  <span className="text-right text-sm font-bold text-green-400">{totalApr.toFixed(1)}%</span>
                   <div className="flex items-center gap-1.5 justify-end">
                     <button onClick={() => openAdd(pool)}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">
@@ -317,44 +493,70 @@ export function Liquidity() {
               );
             })}
           </div>
+
+          {/* APR formula footnote */}
+          <p className="mt-3 text-xs text-muted-foreground/70">
+            ⓘ Fee APR = (24h Volume × Pool Fee) / TVL × 365. Reflects current trading activity and will vary.
+            Impermanent loss is not reflected — see risk disclosure in each pool.
+          </p>
         </>
       )}
 
+      {/* ── POSITIONS tab ── */}
       {tab === "positions" && (
         <div>
           {myPools.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <Droplets size={48} className="text-muted-foreground/30" />
-              <p className="text-muted-foreground">No liquidity positions yet. Add liquidity to a pool to get started.</p>
+              <p className="text-muted-foreground">No liquidity positions yet. Add to a pool to start earning fees.</p>
             </div>
           ) : (
-            <div className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 border-b border-border text-xs font-semibold text-muted-foreground">
-                <span>Pool</span><span className="text-right">LP Tokens</span>
-                <span className="text-right">Est. Value</span><span className="text-right">Pool Share</span>
-                <span className="text-right">Fees Earned</span><span className="text-right">Action</span>
+            <>
+              {/* IL reminder */}
+              <div className="flex items-start gap-2.5 bg-orange-500/8 border border-orange-500/20 rounded-xl px-4 py-3 mb-4">
+                <AlertTriangle size={14} className="text-orange-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-orange-300/90 leading-relaxed">
+                  <strong>Impermanent Loss reminder:</strong> Your LP position value is affected by price divergence between the two assets. Fee earnings reduce — but may not fully offset — IL in volatile markets.
+                </p>
               </div>
-              {myPools.map(pool => (
-                <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0">
-                  <TokenPair base={pool.base} quote={pool.quote} />
-                  <span className="text-right text-sm font-semibold">{pool.userLp.toFixed(4)}</span>
-                  <span className="text-right text-sm">${(pool.userLp * 12.5).toLocaleString()}</span>
-                  <span className="text-right text-sm text-muted-foreground">0.003%</span>
-                  <span className="text-right text-sm text-green-500 font-semibold">${(pool.vol24 * pool.fee / 100 * 0.003).toFixed(2)}</span>
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <button onClick={() => openAdd(pool)} className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">Add</button>
-                    <button onClick={() => openRemove(pool)} className="px-2.5 py-1.5 rounded-lg bg-secondary border border-border hover:border-primary/30 text-xs transition-colors">Remove</button>
-                  </div>
+
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3 border-b border-border text-xs font-semibold text-muted-foreground">
+                  <span>Pool</span>
+                  <span className="text-right">LP Tokens</span>
+                  <span className="text-right">Est. Value</span>
+                  <span className="text-right">Pool Share</span>
+                  <span className="text-right">Fees Earned</span>
+                  <span className="text-right">Action</span>
                 </div>
-              ))}
-            </div>
+                {myPools.map(pool => {
+                  const lpValue    = pool.userLp * 12.5;
+                  const poolShare  = (lpValue / pool.tvl) * 100;
+                  const feesEarned = pool.vol24 * (pool.fee / 100) * (poolShare / 100);
+                  return (
+                    <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0">
+                      <TokenPair base={pool.base} quote={pool.quote} />
+                      <span className="text-right text-sm font-semibold">{pool.userLp.toFixed(4)}</span>
+                      <span className="text-right text-sm">{fmtTvl(lpValue)}</span>
+                      <span className="text-right text-sm text-muted-foreground">{poolShare.toFixed(4)}%</span>
+                      <span className="text-right text-sm text-green-500 font-semibold">${feesEarned.toFixed(2)}</span>
+                      <div className="flex items-center gap-1.5 justify-end">
+                        <button onClick={() => openAdd(pool)} className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">Add</button>
+                        <button onClick={() => openRemove(pool)} className="px-2.5 py-1.5 rounded-lg bg-secondary border border-border hover:border-primary/30 text-xs transition-colors">Remove</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
 
+      {/* ── FARMING tab ── */}
       {tab === "farming" && (
         <div className="grid grid-cols-3 gap-6">
-          {/* Left: Market Maker Rebates */}
+          {/* Left: Market Maker Rebates + BSV Staking */}
           <div className="col-span-1 space-y-4">
             <div className="bg-card border border-green-500/25 rounded-xl p-5">
               <div className="flex items-center gap-2 mb-3">
@@ -362,7 +564,9 @@ export function Liquidity() {
                 <span className="font-bold">Market Maker Rebates</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 bg-primary/15 text-primary rounded font-bold">NEW</span>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">Place limit orders within mid-price range to earn fee rebates. The tighter your spread, the higher the rebate.</p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Place limit orders within the mid-price spread to earn fee rebates. The tighter your quote, the higher the rebate — same incentive structure as Curve's concentrated liquidity.
+              </p>
               <div className="space-y-2 mb-4">
                 {[
                   ["Within 1.0%", "0.01% rebate", "Tier 1"],
@@ -378,7 +582,8 @@ export function Liquidity() {
                   </div>
                 ))}
               </div>
-              <a href="/trade/BTC-USDT" className="block w-full py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold text-center hover:bg-primary/20 transition-colors">
+              <a href="/trade/BTC-USDT"
+                className="block w-full py-2.5 rounded-xl bg-primary/15 border border-primary/30 text-primary text-sm font-bold text-center hover:bg-primary/20 transition-colors">
                 Go to Trade
               </a>
             </div>
@@ -388,7 +593,7 @@ export function Liquidity() {
                 <BarChart3 size={18} className="text-primary" />
                 <span className="font-bold">BSV Staking</span>
               </div>
-              <p className="text-xs text-muted-foreground mb-4">Stake native BSV to earn platform revenue share. Minimum 100 BSV.</p>
+              <p className="text-xs text-muted-foreground mb-4">Stake native BSV to earn a share of platform revenue. Min. 100 BSV.</p>
               {[
                 ["30-day lock", "8.5% APR"],
                 ["90-day lock", "14.2% APR"],
@@ -410,32 +615,44 @@ export function Liquidity() {
             <div className="bg-card border border-border rounded-xl overflow-hidden">
               <div className="px-5 py-4 border-b border-border">
                 <h3 className="font-bold">LP Token Farming</h3>
-                <p className="text-xs text-muted-foreground mt-1">Stake your LP tokens to earn additional OrahDEX rewards on top of pool fees.</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Stake your LP tokens to earn additional OrahDEX rewards on top of AMM fees. Fee APR is generated by the x·y=k pool formula.
+                </p>
               </div>
               <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-border text-xs font-semibold text-muted-foreground">
-                <span>Pool</span><span className="text-right">Pool APR</span>
-                <span className="text-right">Farm APR</span><span className="text-right">Total APR</span>
-                <span className="text-right">Your LP</span><span className="text-right">Action</span>
+                <span>Pool</span>
+                <span className="text-right">Fee APR</span>
+                <span className="text-right">Farm APR</span>
+                <span className="text-right">Total APR</span>
+                <span className="text-right">Your LP</span>
+                <span className="text-right">Action</span>
               </div>
-              {POOLS.map(pool => (
-                <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3.5 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors">
-                  <TokenPair base={pool.base} quote={pool.quote} />
-                  <span className="text-right text-sm font-semibold text-green-500">{pool.apr.toFixed(1)}%</span>
-                  <span className="text-right text-sm font-semibold text-green-500">+{pool.farmApr.toFixed(1)}%</span>
-                  <span className="text-right text-sm font-bold text-green-400">{(pool.apr + pool.farmApr).toFixed(1)}%</span>
-                  <span className="text-right text-sm">{pool.userLp > 0 ? pool.userLp.toFixed(2) : "—"}</span>
-                  <div className="flex gap-1.5 justify-end">
-                    {pool.userLp > 0 ? (
-                      <>
-                        <button className="px-2.5 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-black text-xs font-bold transition-colors">Stake</button>
-                        <button className="px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">Harvest</button>
-                      </>
-                    ) : (
-                      <button onClick={() => openAdd(pool)} className="px-2.5 py-1.5 rounded-lg bg-secondary border border-border hover:border-primary/30 text-xs transition-colors">Add LP</button>
-                    )}
+              {POOLS.map(pool => {
+                const feeApr   = poolApr(pool);
+                const totalApr = feeApr + pool.farmApr;
+                return (
+                  <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3.5 items-center border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors">
+                    <TokenPair base={pool.base} quote={pool.quote} />
+                    <span className="text-right text-sm font-semibold text-green-500">{feeApr.toFixed(1)}%</span>
+                    <span className="text-right text-sm font-semibold text-green-500">+{pool.farmApr.toFixed(1)}%</span>
+                    <span className="text-right text-sm font-bold text-green-400">{totalApr.toFixed(1)}%</span>
+                    <span className="text-right text-sm">{pool.userLp > 0 ? pool.userLp.toFixed(2) : "—"}</span>
+                    <div className="flex gap-1.5 justify-end">
+                      {pool.userLp > 0 ? (
+                        <>
+                          <button className="px-2.5 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-black text-xs font-bold transition-colors">Stake</button>
+                          <button className="px-2.5 py-1.5 rounded-lg bg-secondary border border-border text-xs transition-colors">Unstake</button>
+                        </>
+                      ) : (
+                        <button onClick={() => openAdd(pool)}
+                          className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/20 transition-colors">
+                          Get LP
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

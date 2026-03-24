@@ -2,25 +2,36 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import {
   Droplets, Plus, Minus, TrendingUp, ArrowLeft, Info,
-  ChevronDown, ChevronUp, Zap, Award, BarChart3, Layers
+  ChevronDown, ChevronUp, Zap, Award, BarChart3, Layers, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/* ─── mock pool data ─── */
+/* ─── pool data ─── */
 const POOLS = [
-  { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  apr: 12.3,  farmApr: 4.2,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "eth-usdt",  base: "ETH",  quote: "USDT", tvl: 187_400_000, vol24: 44_100_000,  apr: 15.7,  farmApr: 6.1,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "sol-usdt",  base: "SOL",  quote: "USDT", tvl: 95_700_000,  vol24: 21_300_000,  apr: 22.1,  farmApr: 8.4,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "bsv-usdt",  base: "BSV",  quote: "USDT", tvl: 8_240_000,   vol24: 1_920_000,   apr: 47.5,  farmApr: 18.2, fee: 0.2,  userLp: 1240.5, chain: "BSV" },
-  { id: "bnb-usdt",  base: "BNB",  quote: "USDT", tvl: 67_300_000,  vol24: 14_800_000,  apr: 18.4,  farmApr: 5.9,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "xrp-usdt",  base: "XRP",  quote: "USDT", tvl: 52_100_000,  vol24: 12_700_000,  apr: 19.8,  farmApr: 7.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "ada-usdt",  base: "ADA",  quote: "USDT", tvl: 29_800_000,  vol24: 6_400_000,   apr: 24.6,  farmApr: 9.1,  fee: 0.3,  userLp: 640.0,  chain: "BSV" },
-  { id: "doge-usdt", base: "DOGE", quote: "USDT", tvl: 41_200_000,  vol24: 9_300_000,   apr: 21.3,  farmApr: 7.8,  fee: 0.25, userLp: 0,      chain: "BSV" },
-  { id: "dot-usdt",  base: "DOT",  quote: "USDT", tvl: 18_600_000,  vol24: 3_900_000,   apr: 28.7,  farmApr: 11.2, fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   apr: 26.4,  farmApr: 10.1, fee: 0.3,  userLp: 0,      chain: "BSV" },
-  { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     apr: 55.2,  farmApr: 22.8, fee: 0.2,  userLp: 320.0,  chain: "BSV" },
-  { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  apr: 14.1,  farmApr: 5.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  farmApr: 4.2,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "eth-usdt",  base: "ETH",  quote: "USDT", tvl: 187_400_000, vol24: 44_100_000,  farmApr: 6.1,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "sol-usdt",  base: "SOL",  quote: "USDT", tvl: 95_700_000,  vol24: 21_300_000,  farmApr: 8.4,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "bsv-usdt",  base: "BSV",  quote: "USDT", tvl: 8_240_000,   vol24: 1_920_000,   farmApr: 18.2, fee: 0.2,  userLp: 1240.5, chain: "BSV" },
+  { id: "bnb-usdt",  base: "BNB",  quote: "USDT", tvl: 67_300_000,  vol24: 14_800_000,  farmApr: 5.9,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "xrp-usdt",  base: "XRP",  quote: "USDT", tvl: 52_100_000,  vol24: 12_700_000,  farmApr: 7.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "ada-usdt",  base: "ADA",  quote: "USDT", tvl: 29_800_000,  vol24: 6_400_000,   farmApr: 9.1,  fee: 0.3,  userLp: 640.0,  chain: "BSV" },
+  { id: "doge-usdt", base: "DOGE", quote: "USDT", tvl: 41_200_000,  vol24: 9_300_000,   farmApr: 7.8,  fee: 0.25, userLp: 0,      chain: "BSV" },
+  { id: "dot-usdt",  base: "DOT",  quote: "USDT", tvl: 18_600_000,  vol24: 3_900_000,   farmApr: 11.2, fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   farmApr: 10.1, fee: 0.3,  userLp: 0,      chain: "BSV" },
+  { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     farmApr: 22.8, fee: 0.2,  userLp: 320.0,  chain: "BSV" },
+  { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  farmApr: 5.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
 ];
+
+// Approximate spot prices for UI ratio calculations only
+const SPOT: Record<string, number> = {
+  BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
+  XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1,
+};
+
+// Pool APR = fee revenue / TVL × 365  (x·y=k constant-product formula)
+function poolApr(p: typeof POOLS[0]) {
+  return (p.vol24 * (p.fee / 100) / p.tvl) * 365 * 100;
+}
 
 const FARM_POOLS = POOLS.filter(p => p.userLp > 0).map(p => ({
   ...p,
@@ -58,9 +69,30 @@ function LiquidityModal({
 
   if (!pool) return null;
 
-  const colorA = COIN_COLORS[pool.base] ?? "#EAB308";
-  const colorB = COIN_COLORS[pool.quote] ?? "#16a34a";
-  const totalApr = pool.apr + pool.farmApr;
+  const colorA   = COIN_COLORS[pool.base]  ?? "#EAB308";
+  const colorB   = COIN_COLORS[pool.quote] ?? "#16a34a";
+  const feeApr   = poolApr(pool);
+  const totalApr = feeApr + pool.farmApr;
+  const priceA   = SPOT[pool.base]  ?? 1;
+  const priceB   = SPOT[pool.quote] ?? 1;
+
+  // Remove: user receives tokens proportional to 50/50 pool split
+  const lpValue     = pool.userLp * 12.5;
+  const removeValue = lpValue * (pct / 100);
+  const receiveA    = removeValue / 2 / priceA;
+  const receiveB    = removeValue / 2 / priceB;
+
+  // Add: auto-fill token B from token A ratio
+  const handleAmtAChange = (val: string) => {
+    setAmtA(val);
+    const n = parseFloat(val);
+    setAmtB((!isNaN(n) && n > 0) ? (n * priceA / priceB).toFixed(6) : "");
+  };
+  const handleAmtBChange = (val: string) => {
+    setAmtB(val);
+    const n = parseFloat(val);
+    setAmtA((!isNaN(n) && n > 0) ? (n * priceB / priceA).toFixed(6) : "");
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
@@ -90,34 +122,38 @@ function LiquidityModal({
 
         {mode === "add" ? (
           <>
-            <p className="text-xs text-muted-foreground mb-3">Deposit equal value of both tokens to provide liquidity and earn fees.</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              Both tokens auto-balance using the pool ratio (x·y=k). Enter one amount — the other fills automatically.
+            </p>
             {/* Input A */}
-            <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-2">
+            <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-1">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.base} amount</span>
-                <span className="text-xs text-muted-foreground">Balance: 0.00</span>
+                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtA)||0)*priceA).toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-lg font-bold outline-none"
                   placeholder="0.00" value={amtA}
-                  onChange={e => setAmtA(e.target.value)} inputMode="decimal" />
-                <button className="text-xs text-primary font-bold">MAX</button>
+                  onChange={e => handleAmtAChange(e.target.value)} inputMode="decimal" />
                 <div className="px-2 py-1 bg-background border border-border rounded-lg">
                   <span className="text-xs font-bold" style={{ color: colorA }}>{pool.base}</span>
                 </div>
               </div>
             </div>
+            {/* Ratio connector */}
+            <div className="text-center py-1">
+              <span className="text-[10px] text-muted-foreground">1 {pool.base} = {(priceA/priceB).toLocaleString(undefined,{maximumFractionDigits:6})} {pool.quote}</span>
+            </div>
             {/* Input B */}
             <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-4">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
-                <span className="text-xs text-muted-foreground">Balance: 0.00</span>
+                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtB)||0)*priceB).toFixed(2)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 bg-transparent text-lg font-bold outline-none"
                   placeholder="0.00" value={amtB}
-                  onChange={e => setAmtB(e.target.value)} inputMode="decimal" />
-                <button className="text-xs text-primary font-bold">MAX</button>
+                  onChange={e => handleAmtBChange(e.target.value)} inputMode="decimal" />
                 <div className="px-2 py-1 bg-background border border-border rounded-lg">
                   <span className="text-xs font-bold" style={{ color: colorB }}>{pool.quote}</span>
                 </div>
@@ -126,18 +162,29 @@ function LiquidityModal({
             {/* Info rows */}
             <div className="space-y-2 mb-5">
               {[
-                ["Pool fee", `${pool.fee}%`],
-                ["Total APR", <span className="text-green-500 font-bold">{totalApr.toFixed(1)}%</span>],
+                ["Pool fee (per swap)", `${pool.fee}%`],
+                ["Fee APR (from vol)", `${feeApr.toFixed(1)}%`],
+                ["Farm APR", `+${pool.farmApr.toFixed(1)}%`],
+                ["Total APR", totalApr.toFixed(1) + "%"],
                 ["You receive", "LP tokens"],
               ].map(([l, v], i) => (
                 <div key={i} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{l}</span>
-                  <span className="font-medium">{v}</span>
+                  <span className={cn("font-medium", l === "Total APR" ? "text-green-500 font-bold" : "")}>{v}</span>
                 </div>
               ))}
             </div>
-            <button className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80">
-              Add Liquidity
+            <div className="flex items-start gap-2 bg-orange-500/8 border border-orange-500/20 rounded-xl p-2.5 mb-4">
+              <AlertTriangle size={12} className="text-orange-400 mt-0.5 shrink-0" />
+              <p className="text-[10px] text-orange-300/80 leading-relaxed">
+                <strong>Impermanent loss risk:</strong> If {pool.base} price diverges from {pool.quote}, your withdrawal ratio will differ from your deposit.
+              </p>
+            </div>
+            <button
+              disabled={!amtA || !amtB}
+              className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
+            >
+              {amtA && amtB ? "Add Liquidity" : "Enter amounts"}
             </button>
           </>
         ) : (
@@ -165,12 +212,13 @@ function LiquidityModal({
             {/* Receive info */}
             <div className="space-y-2 mb-5">
               {[
-                [`${pool.base} you receive`, `${(pool.userLp * 0.01 * pct * 0.5).toFixed(6)}`],
-                [`${pool.quote} you receive`, `${(pool.userLp * 0.01 * pct * 0.5 * 43000).toFixed(2)}`],
+                [`${pool.base} you receive`, receiveA.toFixed(6)],
+                [`${pool.quote} you receive`, receiveB.toFixed(pool.quote === "USDT" ? 2 : 6)],
+                ["Total value", `$${removeValue.toFixed(2)}`],
               ].map(([l, v], i) => (
                 <div key={i} className="flex justify-between text-xs">
                   <span className="text-muted-foreground">{l}</span>
-                  <span className="font-semibold">{v}</span>
+                  <span className={cn("font-semibold", l === "Total value" ? "text-green-400" : "")}>{v}</span>
                 </div>
               ))}
             </div>
@@ -191,9 +239,9 @@ function PoolCard({ pool, onAdd, onRemove }: {
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const colorA = COIN_COLORS[pool.base] ?? "#EAB308";
-  const colorB = COIN_COLORS[pool.quote] ?? "#16a34a";
-  const totalApr = pool.apr + pool.farmApr;
+  const colorA   = COIN_COLORS[pool.base]  ?? "#EAB308";
+  const colorB   = COIN_COLORS[pool.quote] ?? "#16a34a";
+  const totalApr = poolApr(pool) + pool.farmApr;
   const hasPosition = pool.userLp > 0;
 
   return (
@@ -234,7 +282,7 @@ function PoolCard({ pool, onAdd, onRemove }: {
         <div className="px-4 pb-4 border-t border-border/50 pt-3">
           <div className="grid grid-cols-3 gap-3 mb-4">
             {[
-              ["Pool APR", `${pool.apr.toFixed(1)}%`, "text-green-500"],
+              ["Fee APR", `${poolApr(pool).toFixed(1)}%`, "text-green-500"],
               ["Farm APR", `+${pool.farmApr.toFixed(1)}%`, "text-green-500"],
               ["24h Vol", fmtTvl(pool.vol24), "text-foreground"],
             ].map(([label, val, cls]) => (
@@ -296,15 +344,15 @@ function MyPositions({ onAdd, onRemove }: { onAdd: (p: typeof POOLS[0]) => void;
               </div>
               <span className="font-bold text-sm">{pool.base}/{pool.quote}</span>
               <span className="ml-auto text-[10px] px-2 py-0.5 bg-green-500/15 text-green-500 rounded-full font-bold">
-                {(pool.apr + pool.farmApr).toFixed(1)}% APR
+                {(poolApr(pool) + pool.farmApr).toFixed(1)}% APR
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-3">
               {[
                 ["LP Tokens", `${pool.userLp.toFixed(4)}`],
                 ["Est. Value", `$${(pool.userLp * 12.5).toLocaleString()}`],
-                ["Pool Share", "0.003%"],
-                ["Fees Earned", `$${(pool.vol24 * pool.fee / 100 * 0.003).toFixed(2)}`],
+                ["Pool Share", `${((pool.userLp * 12.5) / pool.tvl * 100).toFixed(4)}%`],
+                ["Fees Earned (24h)", `$${(pool.vol24 * (pool.fee / 100) * ((pool.userLp * 12.5) / pool.tvl)).toFixed(2)}`],
               ].map(([l, v]) => (
                 <div key={l} className="bg-secondary/40 rounded-lg p-2">
                   <div className="text-[10px] text-muted-foreground">{l}</div>
@@ -426,7 +474,7 @@ export function MobileLiquidity() {
   const openRemove = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("remove"); };
 
   const sorted = [...POOLS].sort((a, b) =>
-    sortBy === "apr" ? (b.apr + b.farmApr) - (a.apr + a.farmApr)
+    sortBy === "apr" ? (poolApr(b) + b.farmApr) - (poolApr(a) + a.farmApr)
     : sortBy === "tvl" ? b.tvl - a.tvl
     : b.vol24 - a.vol24
   );
@@ -451,7 +499,7 @@ export function MobileLiquidity() {
           {[
             ["Total TVL", fmtTvl(totalTvl)],
             ["Your Pools", `${myPools.length}`],
-            ["Best APR", `${Math.max(...POOLS.map(p => p.apr + p.farmApr)).toFixed(1)}%`],
+            ["Best APR", `${Math.max(...POOLS.map(p => poolApr(p) + p.farmApr)).toFixed(1)}%`],
           ].map(([l, v]) => (
             <div key={l} className="bg-secondary/40 rounded-xl p-2.5 text-center">
               <div className="text-[11px] text-muted-foreground">{l}</div>
