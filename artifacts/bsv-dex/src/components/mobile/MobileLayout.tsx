@@ -4,7 +4,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
-import { shortenAddress } from "@/lib/utils";
+import { WalletOptionsDropdown } from "@/components/WalletOptionsDropdown";
 
 const TABS = [
   { path: "/", label: "Markets", Icon: BarChart2, exact: true },
@@ -18,7 +18,7 @@ const TABS = [
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
-  const { address, balance, disconnect } = useWalletStore();
+  const { address } = useWalletStore();
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === "/";
     return location.startsWith(tab.path);
@@ -41,18 +41,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {/* Wallet button on right */}
         <div>
           {address ? (
-            <button
-              onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[140px]"
-            >
-              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
-              <div className="flex flex-col items-start min-w-0">
-                <span className="text-[11px] font-mono text-white leading-tight truncate">{shortenAddress(address)}</span>
-                {balance && (
-                  <span className="text-[9px] text-green-400 font-semibold leading-tight">{balance} ETH</span>
-                )}
-              </div>
-            </button>
+            <WalletOptionsDropdown compact />
           ) : (
             <button
               onClick={() => openWallet()}
