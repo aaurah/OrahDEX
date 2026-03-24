@@ -43,12 +43,17 @@ async function accumulateCycleProfit(markets: { volume24h: string | null }[]): P
     const totalVolume = markets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
     const cycleProfit = totalVolume * 0.0001 / 2880;
 
-    const prev = parseFloat((await getSetting("bot_cumulative_profit")) ?? "0") || 0;
-    const newTotal = prev + cycleProfit;
+    const prevSpread = parseFloat((await getSetting("bot_spread_profit"))   ?? "0") || 0;
+    const prevFunding = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
+    const prevLiquid  = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
 
-    await setSetting("bot_cumulative_profit", newTotal.toFixed(6));
+    const newSpread = prevSpread + cycleProfit;
+    const grandTotal = newSpread + prevFunding + prevLiquid;
+
+    await setSetting("bot_spread_profit",    newSpread.toFixed(6));
+    await setSetting("bot_cumulative_profit", grandTotal.toFixed(6));
     await setSetting("bot_last_cycle_profit", cycleProfit.toFixed(6));
-    await setSetting("bot_last_cycle_at", new Date().toISOString());
+    await setSetting("bot_last_cycle_at",     new Date().toISOString());
     if (!(await getSetting("bot_start_time"))) {
       await setSetting("bot_start_time", new Date().toISOString());
     }
