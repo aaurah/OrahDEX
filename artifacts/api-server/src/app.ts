@@ -45,6 +45,21 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
+/* ── Health check — returns system status ────────────────────────────────── */
+app.get("/api/health", async (_req, res) => {
+  try {
+    const bsv = await getBsvChainStatus();
+    res.json({
+      status: "ok",
+      uptime: Math.floor(process.uptime()),
+      bsvChain: { online: bsv.online, blockHeight: bsv.blockHeight },
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    res.json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+  }
+});
+
 /* ── BSV chain status — public endpoint ─────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {
   try {
