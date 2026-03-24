@@ -72,6 +72,25 @@ export function privKeyToPubKey(privKey: Buffer): Buffer {
   return Buffer.from(secp.getPublicKey(privKey, true));
 }
 
+/** Derive P2PKH address from a compressed public key (33-byte hex or Buffer) */
+export function pubKeyToAddress(pubKeyHexOrBuf: string | Buffer | Uint8Array): string {
+  const buf = typeof pubKeyHexOrBuf === "string"
+    ? Buffer.from(pubKeyHexOrBuf.replace(/^0x/, ""), "hex")
+    : Buffer.from(pubKeyHexOrBuf);
+  const h160 = hash160(buf);
+  return base58Check(h160, 0x00);
+}
+
+/** Check whether a string looks like a BSV P2PKH address (starts with 1, 26-35 chars) */
+export function isBsvAddress(addr: string): boolean {
+  return /^1[1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+}
+
+/** Check whether a string looks like a paymail address (user@domain.tld) */
+export function isPaymail(addr: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr);
+}
+
 /* ── Persistent key storage ─────────────────────────────────────────────── */
 
 async function getSetting(key: string): Promise<string | null> {

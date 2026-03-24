@@ -39,6 +39,7 @@ import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
+import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
 import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
@@ -73,6 +74,9 @@ function RedirectTo({ href }: { href: string }) {
 
 function Router() {
   const isMobile = useIsMobile();
+
+  // Auto-fetch and refresh BSV balance whenever a BSV wallet is connected
+  useBsvBalance();
 
   useEffect(() => {
     applyStoredTheme();
