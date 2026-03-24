@@ -45,7 +45,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           ) : (
             <button
               onClick={() => openWallet()}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-violet-600 to-primary text-white px-3.5 py-[7px] rounded-lg text-[12px] font-semibold shadow-md shadow-primary/20 active:opacity-80 transition-opacity"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-3.5 py-[7px] rounded-lg text-[12px] font-semibold shadow-md shadow-primary/20 active:opacity-80 transition-opacity"
             >
               Connect
             </button>
