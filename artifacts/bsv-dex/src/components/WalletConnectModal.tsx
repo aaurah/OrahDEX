@@ -214,6 +214,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [bsvHandleState, setBsvHandleState] = useState<"idle"|"loading"|"found"|"error">("idle");
   const [bsvHandleErr, setBsvHandleErr] = useState("");
   const [bsvResolvedAddr, setBsvResolvedAddr] = useState("");
+  const [bsvHandleFallback, setBsvHandleFallback] = useState(false);
+  const [bsvDisplayName, setBsvDisplayName] = useState("");
+  const [bsvAvatarUrl, setBsvAvatarUrl] = useState<string | null>(null);
   const [bsvManualAddr, setBsvManualAddr] = useState("");
   const [bsvManualWallet, setBsvManualWallet] = useState("");
 
@@ -237,6 +240,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setBsvHandleState("idle");
       setBsvHandleErr("");
       setBsvResolvedAddr("");
+      setBsvHandleFallback(false);
+      setBsvDisplayName("");
+      setBsvAvatarUrl(null);
       setBsvManualAddr("");
       setPrepAddr("");
       setPrepNetwork("bsv");
@@ -623,27 +629,41 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setBsvStep("manual");
   };
 
-  /* ── HandCash handle lookup ───────────────────────────────────────────── */
+  /* ── HandCash handle lookup (via API server proxy to avoid CORS) ─────── */
   const lookupHandCash = async () => {
-    const handle = bsvHandle.trim().replace(/^\$/, "");
+    const handle = bsvHandle.trim().replace(/^\$/, "").toLowerCase();
     if (!handle) return;
+    if (!/^[a-z0-9_.-]{1,50}$/i.test(handle)) {
+      setBsvHandleState("error");
+      setBsvHandleErr("Invalid handle — use only letters, numbers, underscores and dots.");
+      return;
+    }
     setBsvHandleState("loading");
     setBsvHandleErr("");
     setBsvResolvedAddr("");
+    setBsvHandleFallback(false);
+    setBsvDisplayName("");
+    setBsvAvatarUrl(null);
     try {
-      const res = await fetch(`https://api.handcash.io/api/users/public-data?alias=${encodeURIComponent(handle)}`);
-      if (!res.ok) throw new Error(`Handle not found (HTTP ${res.status}). Check the spelling.`);
-      const data = await res.json();
-      const addr: string =
-        data?.publicProfile?.receivingAddress ??
-        data?.publicProfile?.paymail ??
-        `${handle}@handcash.io`;
-      if (!addr) throw new Error("HandCash returned no address for that handle.");
-      setBsvResolvedAddr(addr);
+      const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const res = await fetch(`${BASE_URL}/api/bsv/resolve-handle/${encodeURIComponent(handle)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as any;
+        throw new Error(err?.error ?? `Resolution failed (HTTP ${res.status}).`);
+      }
+      const data = await res.json() as {
+        handle: string; address: string; paymail: string;
+        displayName?: string; avatarUrl?: string | null;
+        resolved: boolean; fallback?: boolean;
+      };
+      setBsvResolvedAddr(data.address);
+      setBsvHandleFallback(data.fallback ?? false);
+      setBsvDisplayName(data.displayName ?? `$${handle}`);
+      setBsvAvatarUrl(data.avatarUrl ?? null);
       setBsvHandleState("found");
     } catch (err: any) {
       setBsvHandleState("error");
-      setBsvHandleErr(err?.message ?? "Handle not found. Check spelling or use your paymail instead.");
+      setBsvHandleErr(err?.message ?? "Could not resolve handle. Check spelling or enter your paymail directly.");
     }
   };
 
@@ -1122,7 +1142,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 <div className="w-11 h-11 rounded-xl bg-secondary/60 flex items-center justify-center text-2xl shrink-0">✋</div>
                                 <div>
                                   <p className="font-bold text-base">HandCash</p>
-                                  <p className="text-xs text-muted-foreground">Enter your $handle to look up your receiving address</p>
+                                  <p className="text-xs text-muted-foreground">Enter your $handle — your BSV paymail address</p>
                                 </div>
                               </div>
 
@@ -1137,25 +1157,51 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                       setBsvHandleState("idle");
                                       setBsvHandleErr("");
                                       setBsvResolvedAddr("");
+                                      setBsvHandleFallback(false);
+                                      setBsvDisplayName("");
+                                      setBsvAvatarUrl(null);
                                     }}
                                     onKeyDown={e => e.key === "Enter" && lookupHandCash()}
                                     placeholder="yourhandle"
+                                    autoFocus
                                     className="w-full bg-secondary/40 border border-border rounded-xl pl-8 pr-4 py-3 text-sm font-mono focus:outline-none focus:border-primary/60 transition-all"
                                   />
                                 </div>
                               </div>
 
                               {bsvHandleState === "found" && bsvResolvedAddr && (
-                                <div className="p-3.5 bg-green-500/10 border border-green-500/30 rounded-xl space-y-1">
-                                  <p className="text-[11px] text-green-400 font-bold uppercase tracking-wider">Address found</p>
+                                <div className={`p-3.5 rounded-xl space-y-2 ${bsvHandleFallback ? "bg-amber-500/10 border border-amber-500/30" : "bg-green-500/10 border border-green-500/30"}`}>
+                                  <div className="flex items-center gap-2">
+                                    {bsvAvatarUrl && (
+                                      <img src={bsvAvatarUrl} alt="" className="w-8 h-8 rounded-full border border-border shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <p className={`text-[11px] font-bold uppercase tracking-wider ${bsvHandleFallback ? "text-amber-400" : "text-green-400"}`}>
+                                        {bsvHandleFallback ? "✦ Using paymail format" : "✓ Handle resolved"}
+                                      </p>
+                                      {bsvDisplayName && bsvDisplayName !== `$${bsvHandle}` && (
+                                        <p className="text-xs text-foreground font-semibold">{bsvDisplayName}</p>
+                                      )}
+                                    </div>
+                                  </div>
                                   <p className="text-xs font-mono text-foreground break-all">{bsvResolvedAddr}</p>
+                                  {bsvHandleFallback && (
+                                    <p className="text-[10px] text-amber-400/80 leading-relaxed">
+                                      HandCash's API is currently unreachable — your paymail address (<span className="font-mono">{bsvHandle}@handcash.io</span>) is used directly, which is valid for BSV payments.
+                                    </p>
+                                  )}
                                 </div>
                               )}
 
                               {bsvHandleState === "error" && (
                                 <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-xl">
                                   <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-                                  <p className="text-xs text-red-300 leading-relaxed">{bsvHandleErr}</p>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-red-300 leading-relaxed">{bsvHandleErr}</p>
+                                    <p className="text-[10px] text-muted-foreground mt-1">
+                                      You can also enter your paymail directly: <span className="font-mono text-foreground">{bsvHandle || "handle"}@handcash.io</span>
+                                    </p>
+                                  </div>
                                 </div>
                               )}
 
@@ -1166,23 +1212,31 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                   className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 >
                                   {bsvHandleState === "loading" ? (
-                                    <span className="flex items-center justify-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" /> Looking up...</span>
+                                    <span className="flex items-center justify-center gap-2"><RefreshCw className="w-4 h-4 animate-spin" /> Resolving handle…</span>
                                   ) : "Look Up $Handle"}
                                 </button>
                               ) : (
-                                <button
-                                  onClick={() => {
-                                    connect({ address: bsvResolvedAddr, provider: "handcash", network: "bsv" });
-                                    goToPrep(bsvResolvedAddr, "bsv", "handcash");
-                                  }}
-                                  className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" /> Connect HandCash
-                                </button>
+                                <div className="space-y-2">
+                                  <button
+                                    onClick={() => {
+                                      connect({ address: bsvResolvedAddr, provider: "handcash", network: "bsv" });
+                                      goToPrep(bsvResolvedAddr, "bsv", "handcash");
+                                    }}
+                                    className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" /> Connect as ${bsvHandle}
+                                  </button>
+                                  <button
+                                    onClick={() => { setBsvHandleState("idle"); setBsvResolvedAddr(""); setBsvHandleFallback(false); }}
+                                    className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                  >
+                                    ← Try a different handle
+                                  </button>
+                                </div>
                               )}
 
                               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
-                                Your address is resolved via the HandCash public API — OrahDEX never stores your handle.
+                                Your BSV paymail is <span className="font-mono">{bsvHandle || "handle"}@handcash.io</span> — OrahDEX never stores your keys.
                               </p>
                             </>
                           )}
