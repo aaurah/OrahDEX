@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, Plus, Minus } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { cn } from "@/lib/utils";
@@ -149,7 +149,17 @@ const PERIODS = [
 
 type BottomTab = "orderbook" | "trades" | "orders";
 type Side = "buy" | "sell";
-type OrderType = "limit" | "market";
+type OrderType = "limit" | "market" | "stop-limit" | "stop-market" | "trailing-stop" | "post-only";
+
+const ORDER_TYPES: OrderType[] = ["limit", "market", "stop-limit", "stop-market", "trailing-stop", "post-only"];
+const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+  "limit":         "Limit",
+  "market":        "Market",
+  "stop-limit":    "Stop-Limit",
+  "stop-market":   "Stop-Market",
+  "trailing-stop": "Trailing Stop",
+  "post-only":     "Post Only",
+};
 
 const MOCK_OPEN_ORDERS = [
   { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
@@ -191,7 +201,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setTimeout(() => setShareToastVisible(false), 2200);
   };
   const [orderType, setOrderType] = useState<OrderType>("limit");
+  const [orderTypeOpen, setOrderTypeOpen] = useState(false);
   const [price, setPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
+  const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
   const [showOrderForm, setShowOrderForm] = useState(false);
 
@@ -234,7 +247,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const handleIntervalChange = useCallback((iv: string) => setInterval(iv), []);
 
-  const total = (parseFloat(price || "0") * parseFloat(amount || "0")).toFixed(4);
+  const needsLimitPrice = orderType === "limit" || orderType === "stop-limit" || orderType === "post-only";
+  const effectivePrice  = needsLimitPrice
+    ? (parseFloat(price || "0") || lastPrice)
+    : lastPrice;
+  const amtNum  = parseFloat(amount || "0");
+  const total   = (effectivePrice * amtNum).toFixed(4);
+  const FEE_RATE = 0.001;
+  const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
+  const available = 0;
+  const maxBuyNum = effectivePrice > 0 ? (available / effectivePrice) : 0;
+  const maxBuy = maxBuyNum > 0 ? maxBuyNum.toFixed(6) : "0";
+
+  function stepPrice(delta: number) {
+    const cur = parseFloat(price || String(lastPrice)) || lastPrice;
+    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
+    setPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+  }
+  function stepStopPrice(delta: number) {
+    const cur = parseFloat(stopPrice || String(lastPrice)) || lastPrice;
+    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
+    setStopPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+  }
+  function stepAmount(delta: number) {
+    const cur = parseFloat(amount || "0");
+    const step = 0.001;
+    setAmount(Math.max(0, cur + delta * step).toFixed(3));
+  }
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
@@ -589,68 +628,148 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         {/* ── ORDER FORM (slide-up panel) ── */}
         {showOrderForm && (
-          <div className="px-4 pt-4 pb-2 border-t border-border mt-2">
-            <div className="flex gap-2 mb-3">
-              {(["limit", "market"] as OrderType[]).map(t => (
-                <button
-                  key={t}
-                  onClick={() => setOrderType(t)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-lg text-xs font-semibold border transition-all",
-                    orderType === t
-                      ? "bg-primary/15 border-primary/40 text-primary"
-                      : "bg-card border-border text-muted-foreground"
-                  )}
-                >
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </button>
-              ))}
+          <div className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
+
+            {/* Order type dropdown row */}
+            <div className="flex items-center gap-2">
+              <button className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground shrink-0">
+                <Info size={13} />
+              </button>
+              <button
+                onClick={() => setOrderTypeOpen(true)}
+                className="flex-1 h-9 bg-card border border-border rounded-xl px-3 flex items-center justify-between text-sm font-semibold text-foreground"
+              >
+                <span>{ORDER_TYPE_LABELS[orderType]}</span>
+                <ChevronDown size={14} className="text-muted-foreground" />
+              </button>
             </div>
-            {orderType === "limit" && (
-              <div className="mb-3">
-                <p className="text-xs text-muted-foreground mb-1 font-medium">Price ({quote})</p>
-                <div className="flex items-center bg-card border border-border rounded-xl px-3 h-11 focus-within:border-primary/50">
+
+            {/* Stop Price — for stop-limit & stop-market */}
+            {(orderType === "stop-limit" || orderType === "stop-market") && (
+              <div className="flex items-center gap-1.5 h-11 bg-card border border-border rounded-xl overflow-hidden">
+                <button onClick={() => stepStopPrice(-1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40">
+                  <Minus size={14} />
+                </button>
+                <div className="flex-1 flex items-center px-1">
                   <input
-                    className="flex-1 bg-transparent text-sm outline-none"
+                    className="flex-1 bg-transparent text-sm text-center outline-none tabular-nums"
+                    placeholder={`Stop (${quote})`}
+                    value={stopPrice}
+                    onChange={e => setStopPrice(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+                <button onClick={() => stepStopPrice(1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-l border-border shrink-0 active:bg-border/40">
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Trailing rate — for trailing-stop */}
+            {orderType === "trailing-stop" && (
+              <div className="flex items-center gap-1.5 h-11 bg-card border border-border rounded-xl overflow-hidden">
+                <button onClick={() => setTrailingRate(r => String(Math.max(0, parseFloat(r||"0") - 0.1).toFixed(1)) as string)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40">
+                  <Minus size={14} />
+                </button>
+                <div className="flex-1 flex items-center px-1">
+                  <input
+                    className="flex-1 bg-transparent text-sm text-center outline-none tabular-nums"
+                    placeholder="Callback Rate (%)"
+                    value={trailingRate}
+                    onChange={e => setTrailingRate(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+                <button onClick={() => setTrailingRate(r => String((parseFloat(r||"0") + 0.1).toFixed(1)) as string)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-l border-border shrink-0 active:bg-border/40">
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
+
+            {/* Limit Price — for limit, stop-limit, post-only */}
+            {needsLimitPrice && (
+              <div className="flex items-center gap-1.5 h-11 bg-card border border-border rounded-xl overflow-hidden">
+                <button onClick={() => stepPrice(-1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40">
+                  <Minus size={14} />
+                </button>
+                <div className="flex-1 flex items-center px-1">
+                  <input
+                    className="flex-1 bg-transparent text-sm text-center outline-none tabular-nums"
                     placeholder={fmt(lastPrice)}
                     value={price}
                     onChange={e => setPrice(e.target.value)}
                     inputMode="decimal"
                   />
-                  <span className="text-xs text-muted-foreground">{quote}</span>
                 </div>
+                <button onClick={() => stepPrice(1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-l border-border shrink-0 active:bg-border/40">
+                  <Plus size={14} />
+                </button>
               </div>
             )}
-            <div className="mb-3">
-              <p className="text-xs text-muted-foreground mb-1 font-medium">Amount ({base})</p>
-              <div className="flex items-center bg-card border border-border rounded-xl px-3 h-11 focus-within:border-primary/50">
+
+            {/* Amount */}
+            <div className="flex items-center gap-1.5 h-11 bg-card border border-border rounded-xl overflow-hidden">
+              <button onClick={() => stepAmount(-1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40">
+                <Minus size={14} />
+              </button>
+              <div className="flex-1 flex items-center px-1">
                 <input
-                  className="flex-1 bg-transparent text-sm outline-none"
-                  placeholder="0.00"
+                  className="flex-1 bg-transparent text-sm text-center outline-none tabular-nums"
+                  placeholder={`Amount (${base})`}
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
                   inputMode="decimal"
                 />
-                <span className="text-xs text-muted-foreground">{base}</span>
+              </div>
+              <button onClick={() => stepAmount(1)} className="w-10 h-full flex items-center justify-center text-muted-foreground border-l border-border shrink-0 active:bg-border/40">
+                <Plus size={14} />
+              </button>
+            </div>
+
+            {/* % quick-fill bar */}
+            <div className="relative pt-1 pb-1">
+              <div className="flex justify-between px-1 mb-1">
+                {[25, 50, 75, 100].map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setAmount((0.1 * p / 100).toFixed(3))}
+                    className="text-[10px] text-muted-foreground font-semibold"
+                  >{p}%</button>
+                ))}
+              </div>
+              <div className="h-[2px] bg-border rounded-full mx-1">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${Math.min(100, (amtNum / 0.1) * 100)}%` }}
+                />
               </div>
             </div>
-            <div className="flex gap-2 mb-3">
-              {[25, 50, 75, 100].map(p => (
-                <button
-                  key={p}
-                  onClick={() => setAmount((10 * p / 100).toFixed(3))}
-                  className="flex-1 py-1 text-xs font-semibold bg-card border border-border rounded-lg text-muted-foreground"
-                >
-                  {p}%
-                </button>
-              ))}
+
+            {/* Total */}
+            <div className="flex items-center h-10 bg-card/50 border border-border rounded-xl px-3">
+              <span className="text-sm text-muted-foreground flex-1">Total ({quote})</span>
+              <span className="text-sm font-semibold tabular-nums">{amtNum > 0 ? total : ""}</span>
             </div>
-            {orderType === "limit" && (
-              <div className="flex justify-between text-xs text-muted-foreground mb-2 px-1">
-                <span>Estimated Total</span>
-                <span className="font-semibold text-foreground">{total} {quote}</span>
+
+            {/* Available / Max Buy / Est. Fee */}
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
+                <span className="text-xs font-semibold text-foreground">
+                  {available.toFixed(2)}
+                  <button className="ml-1 w-4 h-4 inline-flex items-center justify-center rounded-full border border-primary/60 text-primary" style={{ fontSize: 9 }}>+</button>
+                </span>
               </div>
-            )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
+                <span className="text-xs font-semibold text-foreground">{maxBuy}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Est. Trading Fee</span>
+                <span className="text-xs text-foreground">{estFee}</span>
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -661,23 +780,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}
       >
-        {/* Order type quick pills */}
-        <div className="flex gap-1.5 mr-1">
-          {(["limit", "market"] as OrderType[]).map(t => (
-            <button
-              key={t}
-              onClick={() => { setOrderType(t); setShowOrderForm(true); }}
-              className={cn(
-                "px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-all",
-                orderType === t && showOrderForm
-                  ? "bg-primary/15 border-primary/40 text-primary"
-                  : "bg-card border-border text-muted-foreground"
-              )}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
+        {/* Order type quick selector */}
+        <button
+          onClick={() => { setOrderTypeOpen(true); setShowOrderForm(true); }}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border bg-card border-border text-foreground shrink-0"
+        >
+          {ORDER_TYPE_LABELS[orderType]}
+          <ChevronDown size={11} className="text-muted-foreground" />
+        </button>
 
         {!address ? (
           /* Connect Wallet CTA */
@@ -716,6 +826,34 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </>
         )}
       </div>
+
+      {/* ── ORDER TYPE SHEET ── */}
+      {orderTypeOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            onClick={() => setOrderTypeOpen(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-2xl shadow-2xl overflow-hidden"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
+          >
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-2" />
+            {ORDER_TYPES.map((t, i) => (
+              <button
+                key={t}
+                onClick={() => { setOrderType(t); setOrderTypeOpen(false); }}
+                className={cn(
+                  "w-full px-6 py-4 text-left text-[15px] font-medium transition-colors",
+                  i < ORDER_TYPES.length - 1 && "border-b border-border/50",
+                  orderType === t ? "text-primary font-semibold" : "text-foreground hover:bg-white/5"
+                )}
+              >
+                {ORDER_TYPE_LABELS[t]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ── MARKET SELECTOR DRAWER ── */}
       <MobileMarketSelector
