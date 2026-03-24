@@ -2,11 +2,30 @@ import { useGetPortfolio } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
 import { MOCK_PORTFOLIO } from "@/lib/mock-data";
 import { useWalletStore } from "@/store/useWalletStore";
-import { formatPrice, formatPercent, cn, shortenAddress } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check } from "lucide-react";
-import { useState } from "react";
+import { formatPrice, formatPercent, cn } from "@/lib/utils";
+import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface MarketRow { baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+
+function useLivePrices() {
+  return useQuery<Record<string, MarketRow>>({
+    queryKey: ["portfolio-live-prices"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
+      if (!res.ok) throw new Error("price fetch failed");
+      const rows: MarketRow[] = await res.json();
+      return Object.fromEntries(rows.map(r => [r.baseAsset, r]));
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}
 
 export function Portfolio() {
   useSEO({
@@ -28,6 +47,7 @@ export function Portfolio() {
     { walletAddress: address || '' }, 
     { query: { enabled: !!address } }
   );
+  const { data: livePrices, isLoading: pricesLoading, refetch: refetchPrices } = useLivePrices();
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -56,7 +76,22 @@ export function Portfolio() {
     );
   }
 
-  const portfolio = apiPortfolio || MOCK_PORTFOLIO;
+  const rawPortfolio = apiPortfolio || MOCK_PORTFOLIO;
+
+  // Apply live prices to balance valueUSD calculations
+  const portfolio = useMemo(() => {
+    if (!livePrices) return rawPortfolio;
+    const balances = rawPortfolio.balances.map((bal: { asset: string; total: number; free: number; locked: number; valueUSD: number }) => {
+      if (bal.asset === "USDT" || bal.asset === "USDC" || bal.asset === "TUSD" || bal.asset === "USDD") {
+        return { ...bal, valueUSD: bal.total };
+      }
+      const mkt = livePrices[bal.asset];
+      const valueUSD = mkt ? bal.total * mkt.lastPrice : bal.valueUSD;
+      return { ...bal, valueUSD };
+    });
+    const totalValueUSD = balances.reduce((s: number, b: { valueUSD: number }) => s + b.valueUSD, 0);
+    return { ...rawPortfolio, balances, totalValueUSD };
+  }, [rawPortfolio, livePrices]);
 
   return (
     <>
@@ -81,7 +116,14 @@ export function Portfolio() {
               </button>
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={() => refetchPrices()}
+              className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+              title="Refresh live prices"
+            >
+              <RefreshCw className={`w-4 h-4 ${pricesLoading ? "animate-spin" : ""}`} />
+            </button>
             <button
               onClick={() => setDepositOpen(true)}
               className="flex items-center gap-2 bg-primary text-primary-foreground hover:opacity-90 px-5 py-2.5 rounded-xl transition-all font-semibold text-sm shadow-lg shadow-primary/20"
