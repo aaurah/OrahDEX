@@ -27,7 +27,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 h-20 border-b border-border/40 z-50 flex items-center justify-between px-2 bg-card/95 backdrop-blur-sm">
+      <div className="shrink-0 h-28 border-b border-border/40 z-50 flex items-center justify-between px-2 bg-card/95 backdrop-blur-sm">
 
         {/* Logo — sized to header height, aspect ratio preserved */}
         <button
