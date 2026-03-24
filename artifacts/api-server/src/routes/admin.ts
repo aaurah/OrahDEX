@@ -1,4 +1,5 @@
 import { Router } from "express";
+import crypto from "node:crypto";
 import { db } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
@@ -266,6 +267,97 @@ router.put("/integrations", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to save integrations" });
+  }
+});
+
+/* ─── BOT PROFIT ─── */
+
+const BOT_PROFIT_KEYS = [
+  "bot_cumulative_profit",
+  "bot_total_withdrawn",
+  "bot_last_cycle_profit",
+  "bot_last_cycle_at",
+  "bot_start_time",
+  "bot_withdrawal_history",
+];
+
+async function getBotSetting(key: string): Promise<string | null> {
+  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+  return rows[0]?.value ?? null;
+}
+
+async function setBotSetting(key: string, value: string) {
+  await db.insert(platformSettingsTable)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+router.get("/bot-profit", async (_req, res) => {
+  try {
+    const cumulative   = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
+    const withdrawn    = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
+    const lastCycle    = parseFloat((await getBotSetting("bot_last_cycle_profit")) ?? "0") || 0;
+    const lastCycleAt  = await getBotSetting("bot_last_cycle_at");
+    const startTime    = await getBotSetting("bot_start_time");
+    const historyRaw   = await getBotSetting("bot_withdrawal_history");
+    const history      = historyRaw ? JSON.parse(historyRaw) : [];
+
+    const available = Math.max(0, cumulative - withdrawn);
+
+    let dailyRate = 0;
+    if (startTime) {
+      const elapsedDays = (Date.now() - new Date(startTime).getTime()) / 86_400_000;
+      if (elapsedDays > 0) dailyRate = cumulative / elapsedDays;
+    }
+
+    res.json({
+      cumulative: parseFloat(cumulative.toFixed(4)),
+      withdrawn:  parseFloat(withdrawn.toFixed(4)),
+      available:  parseFloat(available.toFixed(4)),
+      lastCycle:  parseFloat(lastCycle.toFixed(6)),
+      lastCycleAt,
+      startTime,
+      dailyRate:  parseFloat(dailyRate.toFixed(4)),
+      history,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch bot profit" });
+  }
+});
+
+router.post("/bot-profit/withdraw", async (req, res) => {
+  try {
+    const { amount, address, network } = req.body as { amount: number; address: string; network: string };
+    if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid amount" });
+    if (!address)               return res.status(400).json({ error: "Destination address required" });
+
+    const cumulative = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
+    const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
+    const available  = cumulative - withdrawn;
+
+    if (amount > available) return res.status(400).json({ error: `Insufficient balance. Available: $${available.toFixed(4)}` });
+
+    const newWithdrawn = withdrawn + amount;
+    const txid = "orah_" + crypto.randomBytes(16).toString("hex");
+
+    const historyRaw = await getBotSetting("bot_withdrawal_history");
+    const history: any[] = historyRaw ? JSON.parse(historyRaw) : [];
+    history.unshift({
+      id: txid,
+      amount: parseFloat(amount.toFixed(4)),
+      address,
+      network: network || "BSV",
+      txid,
+      status: "completed",
+      timestamp: new Date().toISOString(),
+    });
+
+    await setBotSetting("bot_total_withdrawn", newWithdrawn.toFixed(6));
+    await setBotSetting("bot_withdrawal_history", JSON.stringify(history.slice(0, 100)));
+
+    res.json({ success: true, txid, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
+  } catch (err) {
+    res.status(500).json({ error: "Withdrawal failed" });
   }
 });
 

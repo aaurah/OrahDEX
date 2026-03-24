@@ -11,10 +11,51 @@
  */
 
 import { db } from "@workspace/db";
-import { ordersTable, marketsTable } from "@workspace/db/schema";
+import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
+
+/* ── Bot profit accumulation helpers ────────────────────────────────────── */
+
+async function getSetting(key: string): Promise<string | null> {
+  try {
+    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    return rows[0]?.value ?? null;
+  } catch { return null; }
+}
+
+async function setSetting(key: string, value: string) {
+  await db.insert(platformSettingsTable)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+/**
+ * Called each bot cycle.  Sums market volumes and credits the bot's
+ * spread-capture income to the cumulative profit counter.
+ *
+ * Model: bot captures 0.01 % (1 bp) of total seeded volume per 24-h period.
+ * Per 30-s cycle that equals  totalVolume24h × 0.0001 / 2880.
+ */
+async function accumulateCycleProfit(markets: { volume24h: string | null }[]): Promise<void> {
+  try {
+    const totalVolume = markets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
+    const cycleProfit = totalVolume * 0.0001 / 2880;
+
+    const prev = parseFloat((await getSetting("bot_cumulative_profit")) ?? "0") || 0;
+    const newTotal = prev + cycleProfit;
+
+    await setSetting("bot_cumulative_profit", newTotal.toFixed(6));
+    await setSetting("bot_last_cycle_profit", cycleProfit.toFixed(6));
+    await setSetting("bot_last_cycle_at", new Date().toISOString());
+    if (!(await getSetting("bot_start_time"))) {
+      await setSetting("bot_start_time", new Date().toISOString());
+    }
+  } catch (err) {
+    logger.warn({ err }, "Bot: failed to accumulate profit");
+  }
+}
 
 export const BOT_ADDRESS = "BOT_LIQUIDITY_ENGINE";
 
@@ -148,6 +189,8 @@ async function runCycle(): Promise<void> {
         ),
       ),
     );
+
+    await accumulateCycleProfit(active);
 
     logger.info({ markets: active.length }, "Liquidity bot cycle complete");
   } catch (err) {
