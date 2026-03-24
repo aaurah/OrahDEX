@@ -10,6 +10,7 @@ import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
+import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 
 /* ── Wallet definitions ───────────────────────────────────────────────────── */
 interface WalletDef {
@@ -174,6 +175,7 @@ const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
+  const setBalance = useWalletStore((s) => s.setBalance);
 
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
@@ -1218,8 +1220,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               ) : (
                                 <div className="space-y-2">
                                   <button
-                                    onClick={() => {
+                                    onClick={async () => {
                                       connect({ address: bsvResolvedAddr, provider: "handcash", network: "bsv" });
+                                      // Fetch BSV balance in background after connecting
+                                      fetchBsvBalance(bsvResolvedAddr).then(result => {
+                                        if (result && result.balance !== undefined && result.error !== "paymail_unresolved") {
+                                          setBalance(result.balance.toFixed(8));
+                                        }
+                                      }).catch(() => {});
                                       goToPrep(bsvResolvedAddr, "bsv", "handcash");
                                     }}
                                     className="w-full py-3 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold text-sm transition-all flex items-center justify-center gap-2"

@@ -11,6 +11,7 @@ import globalMarketsRouter from "./globalMarkets.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger.js";
+import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 
 const router: IRouter = Router();
 
@@ -118,6 +119,136 @@ router.get("/bsv/resolve-handle/:handle", async (req, res) => {
     fallback: true,
     message: "Resolved via paymail format — HandCash API unreachable",
   });
+});
+
+/* ── BSV address / paymail balance lookup ─────────────────────────────────── */
+router.get("/bsv/balance/:address", async (req, res) => {
+  const raw = decodeURIComponent(req.params.address ?? "").trim();
+
+  if (!raw) {
+    res.status(400).json({ error: "Address is required." });
+    return;
+  }
+
+  let bsvAddress: string | null = null;
+  let paymailResolved = false;
+
+  // If it's already a P2PKH address, use it directly
+  if (isBsvAddress(raw)) {
+    bsvAddress = raw;
+  } else if (isPaymail(raw)) {
+    // Try paymail PKI resolution to get the P2PKH address
+    const [alias, domain] = raw.split("@");
+
+    // Strategy 1: Try well-known bsvalias to find pki endpoint
+    const paymailDomains = [domain, `bsvalias.${domain}`];
+    for (const d of paymailDomains) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 3000);
+        const wk = await fetch(`https://${d}/.well-known/bsvalias`, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (wk.ok) {
+          const caps = await wk.json() as any;
+          const pkiTmpl: string | undefined = caps?.capabilities?.pki;
+          if (pkiTmpl) {
+            const pkiUrl = pkiTmpl
+              .replace("{alias}", alias)
+              .replace("{domain.tld}", domain);
+            const ctrl2 = new AbortController();
+            const t2 = setTimeout(() => ctrl2.abort(), 3000);
+            const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
+            clearTimeout(t2);
+            if (pkiRes.ok) {
+              const pkiData = await pkiRes.json() as any;
+              const pubkey: string | undefined = pkiData?.pubkey ?? pkiData?.publicKey;
+              if (pubkey && pubkey.length >= 66) {
+                bsvAddress = pubKeyToAddress(pubkey);
+                paymailResolved = true;
+                break;
+              }
+            }
+          }
+        }
+      } catch { /* try next */ }
+      if (bsvAddress) break;
+    }
+
+    // Strategy 2: Try well-known direct PKI endpoint patterns
+    if (!bsvAddress) {
+      const pkiPatterns = [
+        `https://bsvalias.${domain}/${alias}@${domain}/id-key`,
+        `https://bsvalias.${domain}/${alias}@${domain}/public-key`,
+        `https://${domain}/${alias}@${domain}/id-key`,
+      ];
+      for (const url of pkiPatterns) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 2500);
+          const r = await fetch(url, { signal: ctrl.signal });
+          clearTimeout(timer);
+          if (r.ok) {
+            const d = await r.json() as any;
+            const pubkey = d?.pubkey ?? d?.publicKey ?? d?.key;
+            if (pubkey && pubkey.length >= 66) {
+              bsvAddress = pubKeyToAddress(pubkey);
+              paymailResolved = true;
+              break;
+            }
+          }
+        } catch { /* try next */ }
+      }
+    }
+  }
+
+  if (!bsvAddress) {
+    // Return zero balance with explanation — paymail couldn't be resolved to on-chain address
+    res.json({
+      input: raw,
+      bsvAddress: null,
+      paymailResolved: false,
+      balance: 0,
+      balanceSatoshis: 0,
+      confirmed: 0,
+      unconfirmed: 0,
+      error: "paymail_unresolved",
+      message: "Could not resolve paymail to a BSV address — the paymail provider's PKI service is unavailable.",
+    });
+    return;
+  }
+
+  // Fetch balance from WhatsOnChain
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const wocRes = await fetch(
+      `https://api.whatsonchain.com/v1/bsv/main/address/${bsvAddress}/balance`,
+      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+    );
+    clearTimeout(timer);
+
+    if (!wocRes.ok) {
+      res.json({ input: raw, bsvAddress, paymailResolved, balance: 0, balanceSatoshis: 0, confirmed: 0, unconfirmed: 0 });
+      return;
+    }
+
+    const data = await wocRes.json() as { confirmed: number; unconfirmed: number };
+    const totalSatoshis = (data.confirmed ?? 0) + (data.unconfirmed ?? 0);
+    const bsvBalance = totalSatoshis / 1e8;
+
+    res.json({
+      input: raw,
+      bsvAddress,
+      paymailResolved,
+      balance: bsvBalance,
+      balanceSatoshis: totalSatoshis,
+      confirmed: (data.confirmed ?? 0) / 1e8,
+      unconfirmed: (data.unconfirmed ?? 0) / 1e8,
+    });
+  } catch (err: any) {
+    logger.warn({ bsvAddress, err: err?.message }, "WhatsOnChain balance fetch failed");
+    res.json({ input: raw, bsvAddress, paymailResolved, balance: 0, balanceSatoshis: 0, confirmed: 0, unconfirmed: 0 });
+  }
 });
 
 export default router;

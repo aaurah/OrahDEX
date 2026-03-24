@@ -1,11 +1,12 @@
 import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info } from "lucide-react";
-import { useState } from "react";
+import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
+import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -132,7 +133,7 @@ export function Portfolio() {
     }
   });
 
-  const { address, network, provider, chainId, balance } = useWalletStore();
+  const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
 
   const [hideBalances, setHideBalances] = useState(false);
@@ -140,9 +141,30 @@ export function Portfolio() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState("USDT");
   const [copiedAddr, setCopiedAddr] = useState(false);
+  const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
+  const [bsvBalFetching, setBsvBalFetching] = useState(false);
 
   const chainInfo  = getChainInfo(chainId);
   const networkLabel = getNetworkLabel(network, chainId, provider);
+
+  const isPaymailAddr = network === "bsv" && address?.includes("@");
+
+  const refreshBsvBalance = useCallback(async () => {
+    if (!address || network !== "bsv") return;
+    setBsvBalFetching(true);
+    const result = await fetchBsvBalance(address);
+    setBsvBalResult(result);
+    if (result && result.error !== "paymail_unresolved" && result.balance !== undefined) {
+      setBalance(result.balance.toFixed(8));
+    }
+    setBsvBalFetching(false);
+  }, [address, network, setBalance]);
+
+  useEffect(() => {
+    if (network === "bsv" && address) {
+      refreshBsvBalance();
+    }
+  }, [address, network, refreshBsvBalance]);
 
   const handleCopyAddr = () => {
     if (!address) return;
@@ -231,11 +253,11 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => refetch()}
+              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
-              title="Refresh prices"
+              title="Refresh prices & balance"
             >
-              <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${isFetching || bsvBalFetching ? "animate-spin" : ""}`} />
             </button>
             <button
               onClick={() => setDepositOpen(true)}
@@ -251,6 +273,37 @@ export function Portfolio() {
             </button>
           </div>
         </div>
+
+        {/* BSV paymail unresolved notice */}
+        {isPaymailAddr && bsvBalResult?.error === "paymail_unresolved" && (
+          <div className="mb-4 p-4 rounded-2xl border border-amber-500/30 bg-amber-500/8 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-300">Live balance unavailable for this paymail</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                The HandCash PKI service is currently unreachable, so your on-chain balance could not be retrieved
+                automatically. Your paymail address (<span className="font-mono text-amber-400/90">{address}</span>) is
+                valid and can still receive BSV payments.
+              </p>
+              <button
+                onClick={refreshBsvBalance}
+                disabled={bsvBalFetching}
+                className="mt-2 flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${bsvBalFetching ? "animate-spin" : ""}`} /> Retry balance fetch
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* BSV balance resolved from paymail → show resolved address */}
+        {isPaymailAddr && bsvBalResult?.bsvAddress && !bsvBalResult?.error && (
+          <div className="mb-4 p-3 rounded-2xl border border-green-500/20 bg-green-500/5 flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="w-2 h-2 rounded-full bg-green-400 shrink-0 animate-pulse" />
+            On-chain balance fetched via{" "}
+            <span className="font-mono text-green-400 truncate max-w-xs">{bsvBalResult.bsvAddress}</span>
+          </div>
+        )}
 
         {/* Deposit notice */}
         <div
