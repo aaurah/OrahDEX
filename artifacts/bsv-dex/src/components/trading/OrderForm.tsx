@@ -527,31 +527,6 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
         )}
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          {/* Available balance — shows correct asset per side */}
-          <div className="flex justify-between items-center text-xs text-muted-foreground">
-            <span>Available</span>
-            <div className="flex items-center gap-1.5">
-              {balancesLoading && isEvm ? (
-                <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/50" />
-              ) : (
-                <span className="font-mono text-foreground">
-                  {availableAmt > 0
-                    ? `${availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} ${availableSym}`
-                    : `0 ${availableSym}`}
-                </span>
-              )}
-              {!balancesLoading && isEvm && (
-                <button
-                  type="button"
-                  onClick={refreshBalances}
-                  className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                  title="Refresh balance"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-          </div>
 
           {/* Trigger price for stop orders */}
           {type === "stop" && (
@@ -566,7 +541,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 min="0"
                 step="any"
               />
-              <span className="text-muted-foreground text-sm ml-2">USDT</span>
+              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
             </div>
           )}
 
@@ -583,13 +558,13 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
                 min="0"
                 step="any"
               />
-              <span className="text-muted-foreground text-sm ml-2">USDT</span>
+              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
             </div>
           ) : (
             <div className="flex items-center bg-secondary/50 border border-border rounded-xl px-3 py-2.5 cursor-not-allowed">
               <span className="text-muted-foreground text-sm w-16">Price</span>
               <span className="flex-1 text-right text-muted-foreground font-mono">Market Price</span>
-              <span className="text-muted-foreground text-sm ml-2">USDT</span>
+              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
             </div>
           )}
 
@@ -671,25 +646,63 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             </div>
           )}
 
-          {/* % shortcuts */}
-          <div className="flex justify-between gap-1">
-            {[25, 50, 75, 100].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                className="flex-1 py-1 text-xs bg-secondary hover:bg-secondary/80 border border-border rounded-md transition-colors"
-                onClick={() => {
-                  const portion = availableAmt * (pct / 100);
-                  if (side === "buy" && price && parseFloat(price) > 0) {
-                    setAmount((portion / parseFloat(price)).toFixed(6));
-                  } else {
-                    setAmount(portion.toFixed(6));
-                  }
-                }}
-              >
-                {pct}%
-              </button>
-            ))}
+          {/* Balance + % shortcuts */}
+          <div className="space-y-1.5">
+            {/* Balance row — shown right above the % buttons */}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Available ({side === "sell" ? base : quote})
+              </span>
+              <div className="flex items-center gap-1.5">
+                {balancesLoading && isEvm ? (
+                  <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/50" />
+                ) : (
+                  <span className="font-mono font-semibold text-foreground">
+                    {availableAmt > 0
+                      ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 8 })
+                      : "0"}{" "}
+                    <span className="text-muted-foreground font-normal">{availableSym}</span>
+                  </span>
+                )}
+                {!balancesLoading && isEvm && (
+                  <button
+                    type="button"
+                    onClick={refreshBalances}
+                    className="text-muted-foreground/40 hover:text-primary transition-colors"
+                    title="Refresh balance"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* % shortcut buttons */}
+            <div className="flex justify-between gap-1">
+              {[25, 50, 75, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  className={cn(
+                    "flex-1 py-1.5 text-xs font-semibold border rounded-md transition-all",
+                    pct === 100
+                      ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                      : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => {
+                    const maxAmt = availableAmt;
+                    const portion = maxAmt * (pct / 100);
+                    if (side === "buy" && price && parseFloat(price) > 0) {
+                      setAmount((portion / parseFloat(price)).toFixed(6));
+                    } else {
+                      setAmount(portion > 0 ? portion.toFixed(6) : "");
+                    }
+                  }}
+                >
+                  {pct === 100 ? "MAX" : `${pct}%`}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Total / Min Received */}
@@ -697,7 +710,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
             <div className="flex items-center bg-secondary/30 border border-transparent rounded-xl px-3 py-2.5">
               <span className="text-muted-foreground text-sm w-16">Total</span>
               <span className="flex-1 text-right text-foreground font-mono">{formatPrice(isNaN(total) ? 0 : total)}</span>
-              <span className="text-muted-foreground text-sm ml-2">USDT</span>
+              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
             </div>
           )}
           {type === "market" && !!amount && parseFloat(amount) > 0 && currentPrice > 0 && (
@@ -711,7 +724,7 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Est. total</span>
                 <span className="font-mono text-foreground">
-                  ≈ {formatPrice(parseFloat(amount) * currentPrice)} USDT
+                  ≈ {formatPrice(parseFloat(amount) * currentPrice)} {quote}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs">

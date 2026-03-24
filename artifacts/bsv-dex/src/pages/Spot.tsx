@@ -81,7 +81,9 @@ export function SpotTrading() {
   );
   const { data: apiMarkets } = useGetMarkets();
 
-  const ticker     = apiTicker || MOCK_TICKER[rawSymbol] || MOCK_TICKER["BSV-USDT"];
+  const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
+    ?? MOCK_TICKER[rawSymbol]
+    ?? MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
   const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
   const trades     = apiTrades  || generateMockTrades(ticker.lastPrice);
