@@ -468,15 +468,59 @@ export function AdminIntegrations() {
         configuredCount={countSet("smtp_host", "smtp_user")}
         totalCount={2}
       >
-        {/* Quick-start guide */}
-        <div className="p-4 bg-primary/5 border border-primary/15 rounded-xl text-xs space-y-1.5 mb-2">
-          <p className="font-bold text-foreground">Quick setup options:</p>
-          <ul className="space-y-1 text-muted-foreground">
-            <li>• <span className="font-semibold text-foreground">SendGrid</span> — host: <code className="font-mono text-primary">smtp.sendgrid.net</code>, port <code className="font-mono text-primary">587</code>, user: <code className="font-mono text-primary">apikey</code>, pass: your SG API key</li>
-            <li>• <span className="font-semibold text-foreground">Mailgun</span> — host: <code className="font-mono text-primary">smtp.mailgun.org</code>, port <code className="font-mono text-primary">587</code>, user: your Mailgun SMTP login</li>
-            <li>• <span className="font-semibold text-foreground">Gmail</span> — host: <code className="font-mono text-primary">smtp.gmail.com</code>, port <code className="font-mono text-primary">587</code>, user: your Gmail, pass: App Password</li>
-            <li>• <span className="font-semibold text-foreground">AWS SES</span> — host: <code className="font-mono text-primary">email-smtp.us-east-1.amazonaws.com</code>, port <code className="font-mono text-primary">587</code></li>
-          </ul>
+        {/* One-click provider presets */}
+        <div className="space-y-3 mb-4">
+          <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-primary" />
+            Quick Fill — click a provider to auto-fill all SMTP fields:
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {([
+              {
+                label: "SendGrid",
+                color: "text-blue-400 border-blue-500/30 bg-blue-500/8 hover:bg-blue-500/15",
+                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orahdex.org" },
+                note: "Username = apikey\nPassword = your SG API key\nFree: 100 emails/day",
+              },
+              {
+                label: "Mailgun",
+                color: "text-red-400 border-red-500/30 bg-red-500/8 hover:bg-red-500/15",
+                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orahdex.org" },
+                note: "Username = your Mailgun SMTP login\nPassword = Mailgun SMTP password\nFree: 100 emails/day (sandbox)",
+              },
+              {
+                label: "Gmail",
+                color: "text-yellow-400 border-yellow-500/30 bg-yellow-500/8 hover:bg-yellow-500/15",
+                fill: { smtp_host: "smtp.gmail.com", smtp_port: "587", smtp_user: "", smtp_from: "" },
+                note: "Username = your Gmail address\nPassword = App Password (not your login password)\nEnable 2FA then create App Password at myaccount.google.com/apppasswords",
+              },
+              {
+                label: "Zoho Mail",
+                color: "text-orange-400 border-orange-500/30 bg-orange-500/8 hover:bg-orange-500/15",
+                fill: { smtp_host: "smtp.zoho.com", smtp_port: "587", smtp_user: "", smtp_from: "" },
+                note: "Username = your Zoho email\nPassword = your Zoho password\nFree plan: 5 users, 5GB each",
+              },
+            ] as const).map(({ label, color, fill, note }) => (
+              <button
+                key={label}
+                type="button"
+                title={note}
+                onClick={() => {
+                  setForm(f => ({ ...f, ...fill }));
+                  setSmtpTestResult(null);
+                  toast({ title: `${label} preset loaded`, description: "Fields pre-filled — add your password and click Save All." });
+                }}
+                className={cn(
+                  "flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl border text-xs font-bold transition-all",
+                  color
+                )}
+              >
+                <span className="text-sm">{label}</span>
+                <span className="text-[10px] font-normal opacity-70 text-left leading-tight whitespace-pre-line">{note.split("\n")[2]}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-muted-foreground/60 italic">Hover a provider card to see full setup notes. After selecting, add your password and click Save All.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
