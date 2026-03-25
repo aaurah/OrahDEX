@@ -324,7 +324,7 @@ export function FuturesTrading() {
                     return rows.map(m => {
                       const perpSymbol = `${m.baseAsset}-USDT-PERP`;
                       const isActive = perpSymbol === rawSymbol;
-                      const isUp = (m.priceChangePercent ?? 0) >= 0;
+                      const isUp = (m.priceChangePercent24h ?? m.priceChangePercent ?? 0) >= 0;
                       return (
                         <button
                           key={m.symbol}
@@ -345,7 +345,7 @@ export function FuturesTrading() {
                             {formatPrice(m.lastPrice)}
                           </span>
                           <span className={cn("w-14 text-right text-[10px] font-bold tabular-nums", isUp ? "text-green-400" : "text-red-400")}>
-                            {isUp ? "+" : ""}{(m.priceChangePercent ?? 0).toFixed(2)}%
+                            {isUp ? "+" : ""}{(m.priceChangePercent24h ?? m.priceChangePercent ?? 0).toFixed(2)}%
                           </span>
                         </button>
                       );
