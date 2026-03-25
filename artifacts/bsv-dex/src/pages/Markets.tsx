@@ -224,7 +224,6 @@ export function Markets() {
         <div className="max-w-7xl mx-auto">
           <div>
             <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
-            <p className="text-xs text-green-400/70 italic mt-0.5">✦ Trade means DEX</p>
           </div>
 
           {/* Main tabs — slim Poloniex-style */}
