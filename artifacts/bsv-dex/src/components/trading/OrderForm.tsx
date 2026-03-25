@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -120,8 +120,19 @@ function SettlementBanner({
   );
 }
 
+export interface OrderFormFill {
+  price: string;
+  amount: string;
+  side: "buy" | "sell";
+  ts: number;
+}
+
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; currentPrice?: number }) {
+export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
+  symbol: string;
+  currentPrice?: number;
+  externalFill?: OrderFormFill | null;
+}) {
   const { address, network, balance, chainId: walletChainId } = useWalletStore();
   const { toast } = useToast();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
@@ -141,6 +152,15 @@ export function OrderForm({ symbol, currentPrice = 0 }: { symbol: string; curren
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
+
+  // When the user clicks a row in the Order Book, fill price + amount here
+  useEffect(() => {
+    if (!externalFill) return;
+    setPrice(externalFill.price);
+    setAmount(externalFill.amount);
+    setSide(externalFill.side);
+    setType("limit");
+  }, [externalFill?.ts]);
 
   const [signing, setSigning]       = useState(false);
   const [approvalStep, setApprovalStep] = useState<

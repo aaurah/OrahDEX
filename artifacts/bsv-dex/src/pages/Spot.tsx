@@ -2,6 +2,8 @@ import { useParams, Link } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets } from "@workspace/api-client-react";
+import type { OrderBookFill } from "@/components/trading/OrderBook";
+import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
@@ -49,10 +51,15 @@ export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address } = useWalletStore();
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
-  const [leftTab, setLeftTab] = useState<LeftTab>("markets");
+  const [leftTab, setLeftTab] = useState<LeftTab>("orderbook");
   const [quoteTab, setQuoteTab] = useState<QuoteTab>("USDT");
   const [marketSearch, setMarketSearch] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
+  const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
+
+  const handleOrderBookFill = (fill: OrderBookFill) => {
+    setOrderBookFill(fill as OrderFormFill);
+  };
 
   const symbol = rawSymbol.replace(/-/g, '/');
   const [base, quote] = rawSymbol.split("-");
@@ -73,7 +80,9 @@ export function SpotTrading() {
 
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
-  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
+  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
+    query: { refetchInterval: 2000, staleTime: 0 },
+  });
   const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || '' },
@@ -317,7 +326,7 @@ export function SpotTrading() {
           {/* Order Book Panel */}
           {leftTab === "orderbook" && (
             <div className="flex-1 min-h-0">
-              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} />
+              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} onFill={handleOrderBookFill} />
             </div>
           )}
         </div>
@@ -496,7 +505,7 @@ export function SpotTrading() {
         {/* Right Column: Order Form & Recent Trades */}
         <div className="w-full lg:w-[300px] shrink-0 flex flex-col min-h-0 order-3 border-l border-border bg-card">
           <div className="flex-1 lg:flex-none">
-            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} />
+            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
           </div>
           <div className="flex-1 min-h-0 hidden lg:flex flex-col">
             <div className="p-3 border-y border-border bg-secondary/50 font-semibold text-sm">Market Trades</div>
