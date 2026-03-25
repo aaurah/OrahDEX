@@ -1,6 +1,6 @@
 kind = "web"
-  previewPath = "/admin"
-  title = "OrahDEX Admin Panel"
+  previewPath = "/"
+  title = "OrahDEX"
   version = "1.0.0"
   id = "artifacts/bsv-dex"
   router = "path"

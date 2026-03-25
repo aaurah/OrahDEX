@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -13,8 +13,6 @@ import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp } from "lucide-react";
 import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { useWalletStore } from "@/store/useWalletStore";
-import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -125,28 +123,10 @@ export function Markets() {
     setBuyOpen(true);
   };
 
-  const { address } = useWalletStore();
-  const openWalletModal = useWalletModalStore((s) => s.open);
-  const closeWalletModal = useWalletModalStore((s) => s.close);
   const [, navigate] = useLocation();
-  const [pendingRoute, setPendingRoute] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (address && pendingRoute) {
-      // Close the wallet modal first so the user lands on the trade page unobstructed
-      closeWalletModal();
-      navigate(pendingRoute);
-      setPendingRoute(null);
-    }
-  }, [address, pendingRoute]);
 
   const handleTrade = (href: string) => {
-    if (!address) {
-      setPendingRoute(href);
-      openWalletModal();
-    } else {
-      navigate(href);
-    }
+    navigate(href);
   };
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 15_000 } });
