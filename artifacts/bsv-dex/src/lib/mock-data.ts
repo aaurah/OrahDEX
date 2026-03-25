@@ -710,9 +710,40 @@ export const FUTURES_MARKETS: any[] = [
 export const MOCK_MARKETS: any[] = [...USDT_MARKETS, ...BSV_MARKETS, ...FUTURES_MARKETS];
 
 const BSV_ETH_PRICE = 55.42 / 3415; // ≈ 0.016228 ETH per BSV
+
+function mkTicker(sym: string, price: number, chgPct: number, vol: number, qVol: number): any {
+  const chg = price * chgPct / 100;
+  return {
+    symbol: sym, lastPrice: price, bidPrice: price * 0.9998, askPrice: price * 1.0002,
+    openPrice: price - chg, highPrice: price * 1.02, lowPrice: price * 0.98,
+    volume: vol, quoteVolume: qVol, priceChange: chg, priceChangePercent: chgPct,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export const MOCK_TICKER: Record<string, any> = {
-  "BSV-USDT": { symbol: "BSV-USDT", lastPrice: 55.42,           bidPrice: 55.40,            askPrice: 55.44,            openPrice: 53.10,           highPrice: 56.50,           lowPrice: 52.80,           volume: 18_500_000, quoteVolume: 1_025_000_000,        priceChange: 2.32,          priceChangePercent: 4.41,  timestamp: new Date().toISOString() },
-  "BSV-ETH":  { symbol: "BSV-ETH",  lastPrice: BSV_ETH_PRICE,   bidPrice: BSV_ETH_PRICE * 0.9997, askPrice: BSV_ETH_PRICE * 1.0003, openPrice: BSV_ETH_PRICE * 0.958, highPrice: BSV_ETH_PRICE * 1.02, lowPrice: BSV_ETH_PRICE * 0.952, volume: 5_420_000, quoteVolume: 5_420_000 * BSV_ETH_PRICE, priceChange: BSV_ETH_PRICE * 0.044, priceChangePercent: 4.41, timestamp: new Date().toISOString() },
+  /* ── Spot ── */
+  "BSV-USDT": mkTicker("BSV-USDT",  55.42,    4.41,  18_500_000,  1_025_000_000),
+  "BSV-ETH":  { symbol: "BSV-ETH",  lastPrice: BSV_ETH_PRICE, bidPrice: BSV_ETH_PRICE * 0.9997, askPrice: BSV_ETH_PRICE * 1.0003, openPrice: BSV_ETH_PRICE * 0.958, highPrice: BSV_ETH_PRICE * 1.02, lowPrice: BSV_ETH_PRICE * 0.952, volume: 5_420_000, quoteVolume: 5_420_000 * BSV_ETH_PRICE, priceChange: BSV_ETH_PRICE * 0.044, priceChangePercent: 4.41, timestamp: new Date().toISOString() },
+  /* ── Perp futures ── */
+  "BSV-USDT-PERP":  mkTicker("BSV-USDT-PERP",   55.42,   4.41,  18_500_000,   1_025_000_000),
+  "BTC-USDT-PERP":  mkTicker("BTC-USDT-PERP",   68310,  -1.85,  2_450_000_000, 167_400_000_000),
+  "ETH-USDT-PERP":  mkTicker("ETH-USDT-PERP",   3415,    1.32,  950_000_000,   3_245_000_000),
+  "SOL-USDT-PERP":  mkTicker("SOL-USDT-PERP",   148.5,   3.21,  420_000_000,    62_370_000),
+  "XRP-USDT-PERP":  mkTicker("XRP-USDT-PERP",   0.5242, -0.64,  110_000_000,     57_660_000),
+  "BNB-USDT-PERP":  mkTicker("BNB-USDT-PERP",   392,     0.88,  320_000_000,   125_440_000),
+  "ADA-USDT-PERP":  mkTicker("ADA-USDT-PERP",   0.4421, -2.10,   45_000_000,    19_895_000),
+  "DOGE-USDT-PERP": mkTicker("DOGE-USDT-PERP",  0.1185,  5.42,   78_000_000,     9_243_000),
+  "DOT-USDT-PERP":  mkTicker("DOT-USDT-PERP",   6.82,   -1.20,   38_000_000,   259_160_000),
+  "AVAX-USDT-PERP": mkTicker("AVAX-USDT-PERP",  36.4,    2.15,   62_000_000,  2_256_800_000),
+  "MATIC-USDT-PERP":mkTicker("MATIC-USDT-PERP", 0.718,  -0.92,   54_000_000,    38_772_000),
+  "LINK-USDT-PERP": mkTicker("LINK-USDT-PERP",  14.52,   3.64,   48_000_000,   696_960_000),
+  "ARB-USDT-PERP":  mkTicker("ARB-USDT-PERP",   1.12,    2.85,   28_000_000,    31_360_000),
+  "OP-USDT-PERP":   mkTicker("OP-USDT-PERP",    2.41,    3.10,   22_000_000,    53_020_000),
+  "SUI-USDT-PERP":  mkTicker("SUI-USDT-PERP",   1.22,    6.45,   35_000_000,    42_700_000),
+  "INJ-USDT-PERP":  mkTicker("INJ-USDT-PERP",   28.4,    4.21,   15_000_000,   426_000_000),
+  "NEAR-USDT-PERP": mkTicker("NEAR-USDT-PERP",  6.55,    4.82,   24_000_000,   157_200_000),
+  "APT-USDT-PERP":  mkTicker("APT-USDT-PERP",   10.5,    5.21,   18_000_000,   189_000_000),
 };
 
 export const generateMockOrderBook = (basePrice: number): OrderBook => {
