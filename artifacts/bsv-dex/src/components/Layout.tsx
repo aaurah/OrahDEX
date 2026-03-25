@@ -6,8 +6,8 @@ import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "./WalletConnectModal";
 import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
-import { ReownConnectButton } from "./ReownConnectButton";
-import { BrandLogo, OrahInline } from "./BrandLogo";
+import { BrandLogo } from "./BrandLogo";
+import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { TxStatusBar } from "./TxStatusBar";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -142,6 +142,30 @@ export function Layout({ children }: { children: ReactNode }) {
   };
 
   const prevAddressRef = useRef<string | null>(null);
+
+  // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
+  useEffect(() => {
+    let ready = false;
+    let tries = 0;
+    const check = setInterval(() => {
+      if (isReownReady()) { ready = true; clearInterval(check); startSync(); }
+      if (++tries > 40) clearInterval(check);
+    }, 200);
+    function startSync() {
+      subscribeReownAccount(async (state) => {
+        if (state.isConnected && state.address) {
+          const { address: current, connect, setBalance } = useWalletStore.getState();
+          if (!current) {
+            const chainId = parseChainFromCaip(state.caipAddress) ?? undefined;
+            connect({ address: state.address, provider: "reown", network: "evm", chainId });
+            const bal = await fetchEvmBalance(state.address, chainId ?? null);
+            if (bal !== null) setBalance(bal);
+          }
+        }
+      });
+    }
+    return () => clearInterval(check);
+  }, []);
   useEffect(() => {
     const prev = prevAddressRef.current;
     if (!prev && address) {
@@ -172,45 +196,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      {/* BSV Chain Status Bar */}
-      <div className="sticky top-0 z-50 h-7 bg-gradient-to-r from-green-950/90 via-green-900/80 to-green-950/90 border-b border-green-500/30 backdrop-blur-sm flex items-center justify-between overflow-hidden px-3">
-        {/* Scrolling ticker */}
-        <div className="flex-1 overflow-hidden">
-          <div className="flex items-center gap-0 animate-[bsv-ticker_40s_linear_infinite] whitespace-nowrap">
-            {[0,1,2].map(i => (
-              <span key={i} className="flex items-center gap-6 px-6 text-[11px] font-semibold text-green-300">
-                <span className="flex items-center gap-1.5"><span className="animate-pulse text-green-400">⚡</span> BSV — World&apos;s Fastest Settlement Chain</span>
-                <span className="text-green-500">·</span>
-                <span>Instant On-Chain Settlement · No Bridges · No L2s</span>
-                <span className="text-green-500">·</span>
-                <span>Every trade settled on BSV in seconds</span>
-                <span className="text-green-500">·</span>
-                <span className="font-bold flex items-center gap-1"><OrahInline /> — Trade means DEX</span>
-                <span className="text-green-500">·</span>
-              </span>
-            ))}
-          </div>
-        </div>
-        {/* Live chain status badge — always visible on right */}
-        <a
-          href={bsvBlock > 0 ? `https://whatsonchain.com/block-height/${bsvBlock}` : "https://whatsonchain.com"}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 flex items-center gap-1.5 ml-3 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider hover:bg-black/50 transition-colors"
-        >
-          <span className={cn(
-            "w-1.5 h-1.5 rounded-full",
-            bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400"
-          )} />
-          <span className={bsvOnline ? "text-green-400" : "text-red-400"}>
-            BSV {bsvOnline ? "LIVE" : "—"}
-          </span>
-          {bsvBlock > 0 && (
-            <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>
-          )}
-        </a>
-      </div>
-      <header className="sticky top-7 h-20 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
+      <header className="sticky top-0 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Brand */}
           <Link href="/" className="flex items-center group">
@@ -327,11 +313,15 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
+          {/* BSV LIVE badge */}
+          <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none">
+            <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+            <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
+            {bsvBlock > 0 && <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>}
+          </span>
+
           {address ? (
-            <div className="flex items-center gap-2">
-              <ReownConnectButton size="sm" />
-              <WalletOptionsDropdown />
-            </div>
+            <WalletOptionsDropdown />
           ) : (
             <button
               onClick={() => openWalletModal()}
