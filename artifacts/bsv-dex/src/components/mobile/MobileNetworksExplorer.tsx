@@ -18,8 +18,8 @@ interface Pool {
     address: string;
     base_token_price_usd: string;
     quote_token_price_usd: string;
-    price_change_percentage?: { h24?: number; h6?: number; h1?: number };
-    volume_usd?: { h24?: number; h6?: number; h1?: number };
+    price_change_percentage?: { h24?: number | string | null; h6?: number | string | null; h1?: number | string | null };
+    volume_usd?: { h24?: number | string | null; h6?: number | string | null; h1?: number | string | null };
     reserve_in_usd?: string;
     pool_created_at?: string;
     transactions?: { h24?: { buys: number; sells: number } };
@@ -123,9 +123,10 @@ function fmtUsd(s: string | number | null | undefined, prefix = true): string {
   return `${p}${n.toExponential(2)}`;
 }
 
-function fmtChg(chg: number | undefined): { text: string; up: boolean } {
-  if (chg == null) return { text: "—", up: true };
-  return { text: `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%`, up: chg >= 0 };
+function fmtChg(chg: number | string | null | undefined): { text: string; up: boolean } {
+  const n = chg == null ? NaN : typeof chg === "string" ? parseFloat(chg) : chg;
+  if (!isFinite(n)) return { text: "—", up: true };
+  return { text: `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`, up: n >= 0 };
 }
 
 function timeAgo(iso: string | undefined): string {
