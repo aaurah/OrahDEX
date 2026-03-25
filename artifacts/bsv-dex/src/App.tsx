@@ -34,6 +34,7 @@ import { AdminFeatureFlags } from "@/pages/admin/FeatureFlags";
 import { AdminSecuritySettings } from "@/pages/admin/SecuritySettings";
 import { AdminFeeConfig } from "@/pages/admin/FeeConfig";
 import { AdminAnnouncements } from "@/pages/admin/Announcements";
+import { AdminSetupGuide } from "@/pages/admin/SetupGuide";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -277,6 +278,11 @@ function Router() {
       <Route path="/admin/announcements">
         <RequireAdminAuth>
           <AdminLayout><AdminAnnouncements /></AdminLayout>
+        </RequireAdminAuth>
+      </Route>
+      <Route path="/admin/setup">
+        <RequireAdminAuth>
+          <AdminLayout><AdminSetupGuide /></AdminLayout>
         </RequireAdminAuth>
       </Route>
 
