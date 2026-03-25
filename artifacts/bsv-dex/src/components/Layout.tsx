@@ -313,12 +313,14 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          {/* BSV LIVE badge */}
-          <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none">
-            <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
-            <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
-            {bsvBlock > 0 && <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>}
-          </span>
+          {/* BSV LIVE badge — hide when wallet is connected to save header space */}
+          {!address && (
+            <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none">
+              <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+              <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
+              {bsvBlock > 0 && <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>}
+            </span>
+          )}
 
           {address ? (
             <WalletOptionsDropdown />
