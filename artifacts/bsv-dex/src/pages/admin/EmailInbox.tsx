@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail, Inbox, Send, Star, Trash2, RefreshCw, Search, Plus,
-  X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Paperclip, Circle,
+  X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Circle,
   CheckCircle2, AlertCircle, Settings, Zap, Shield,
+  AlertTriangle, WifiOff, Wifi, Copy, Check, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +59,33 @@ export function AdminEmailInbox() {
   const [composing, setComposing] = useState(false);
   const [compose, setCompose] = useState({ from: "support@orahdex.org", to: "", subject: "", body: "" });
   const [fromOpen, setFromOpen] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
+
+  const { data: smtpStatus } = useQuery<{ configured: boolean; host?: string; from?: string }>({
+    queryKey: ["smtp-status"],
+    queryFn: () => fetch(`${BASE}/api/admin/mail/smtp-status`).then(r => r.json()),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  const testSmtp = useMutation({
+    mutationFn: () => fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json()),
+    onSuccess: (data: { success: boolean; error?: string }) => {
+      if (data.success) {
+        toast({ title: "SMTP connection OK", description: "Your mail server is reachable and credentials are valid." });
+      } else {
+        toast({ title: "SMTP test failed", description: data.error ?? "Connection failed", variant: "destructive" });
+      }
+      qc.invalidateQueries({ queryKey: ["smtp-status"] });
+    },
+  });
+
+  const webhookUrl = `${window.location.origin}${BASE}/api/webhook/email-inbound`;
+  const copyWebhook = () => {
+    navigator.clipboard?.writeText(webhookUrl);
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2000);
+  };
 
   const FROM_OPTIONS = [
     { value: "support@orahdex.org",  label: "support@orahdex.org",  color: "text-primary" },
@@ -106,11 +134,21 @@ export function AdminEmailInbox() {
           category: "general",
         }),
       }).then(r => r.json()),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setComposing(false);
       setCompose({ from: "support@orahdex.org", to: "", subject: "", body: "" });
-      toast({ title: "Email sent", description: "Message added to Sent folder" });
+      if (data?.smtpSent) {
+        toast({ title: "Email delivered", description: "Sent via SMTP and saved to Sent folder." });
+      } else if (data?.smtpError && data.smtpError !== "Not attempted") {
+        toast({
+          title: "Saved but not delivered",
+          description: `SMTP error: ${data.smtpError}`,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Saved to Sent folder", description: "Configure SMTP in Setup → Step D to send real emails." });
+      }
     },
   });
 
@@ -169,6 +207,42 @@ export function AdminEmailInbox() {
           </button>
         </div>
       </div>
+
+      {/* SMTP Status Banner */}
+      {smtpStatus !== undefined && !smtpStatus.configured && (
+        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/8 border border-amber-500/25">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-amber-300">SMTP not configured — emails are saved locally only</p>
+            <p className="text-[10px] text-amber-400/70 mt-0.5">
+              Go to <strong>Admin → Setup → Step D</strong> to add your mail server (Gmail SMTP, Mailgun, SendGrid, etc.)
+            </p>
+          </div>
+          <a
+            href="/admin/setup"
+            className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
+          >
+            Configure →
+          </a>
+        </div>
+      )}
+      {smtpStatus?.configured && (
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
+          <Wifi className="w-4 h-4 text-green-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-green-300">SMTP connected — {smtpStatus.host}</p>
+            <p className="text-[10px] text-green-400/70">Sending from: {smtpStatus.from}</p>
+          </div>
+          <button
+            onClick={() => testSmtp.mutate()}
+            disabled={testSmtp.isPending}
+            className="shrink-0 flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/25 text-green-300 hover:bg-green-500/20 transition-colors"
+          >
+            {testSmtp.isPending ? <div className="w-3 h-3 border border-green-400/30 border-t-green-400 rounded-full animate-spin" /> : <Wifi className="w-3 h-3" />}
+            Test
+          </button>
+        </div>
+      )}
 
       {/* Compose Modal */}
       {composing && (
@@ -308,6 +382,27 @@ export function AdminEmailInbox() {
                 {e.label}
               </div>
             ))}
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-border">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold px-3 mb-2">Inbound Webhook</p>
+            <div className="px-3 space-y-2">
+              <p className="text-[9px] text-muted-foreground/70 leading-relaxed">
+                Point Mailgun / SendGrid / Postmark inbound routing to this URL to receive emails in this inbox:
+              </p>
+              <div className="flex items-center gap-1.5 p-2 bg-secondary/50 border border-border rounded-lg">
+                <span className="text-[8px] font-mono text-primary/80 flex-1 min-w-0 truncate">/api/webhook/email-inbound</span>
+                <button onClick={copyWebhook} className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors">
+                  {copiedWebhook ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+              {!smtpStatus?.configured && (
+                <a href="/admin/setup" className="flex items-center gap-1 text-[9px] text-amber-400/80 hover:text-amber-300 transition-colors">
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                  Setup SMTP to send
+                </a>
+              )}
+            </div>
           </div>
         </div>
 
@@ -472,14 +567,14 @@ export function AdminEmailInbox() {
                         className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
                         onKeyDown={e => {
                           if (e.key === "Enter") {
-                            setCompose({ to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: (e.target as HTMLInputElement).value });
+                            setCompose({ from: selected.toAddress ?? "support@orahdex.org", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: (e.target as HTMLInputElement).value });
                             setComposing(true);
                           }
                         }}
                       />
                       <button
                         onClick={() => {
-                          setCompose({ to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: "" });
+                          setCompose({ from: selected.toAddress ?? "support@orahdex.org", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: "" });
                           setComposing(true);
                         }}
                         className="px-4 py-2.5 bg-primary/10 border border-primary/20 text-primary rounded-xl font-semibold text-sm hover:bg-primary/20 transition-all flex items-center gap-1.5"
