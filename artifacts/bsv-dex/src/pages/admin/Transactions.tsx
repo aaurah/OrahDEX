@@ -66,53 +66,8 @@ const STATUS_META: Record<TxStatus, { label: string; icon: any; color: string; b
   failed:    { label: "Failed",    icon: XCircle,     color: "text-red-400",    bg: "bg-red-500/10 border-red-500/20" },
 };
 
-function rHash(len = 64) {
-  return "0x" + Array.from({ length: len }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-}
-function rBsvHash() {
-  return Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-}
-function rAddr(chain: Chain) {
-  if (chain === "BSV") return "1" + Array.from({ length: 33 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789"[Math.floor(Math.random() * 58)]).join("");
-  return "0x" + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-}
-
 const CHAINS: Chain[] = ["BSV", "ETH", "BNB", "MATIC", "ARB"];
 const TYPES: TxType[] = ["deposit", "withdrawal", "settlement", "contract"];
-const STATUSES: TxStatus[] = ["confirmed", "confirmed", "confirmed", "pending", "failed"];
-const ASSETS = ["BSV", "USDT", "ETH", "BNB", "MATIC"];
-
-const MOCK_TXS: OnChainTx[] = Array.from({ length: 40 }, (_, i) => {
-  const chain = CHAINS[i % CHAINS.length];
-  const status = STATUSES[i % STATUSES.length];
-  const type = TYPES[i % TYPES.length];
-  const isBSV = chain === "BSV";
-  const confs = status === "confirmed" ? Math.floor(Math.random() * 2000) + 3
-    : status === "pending" ? Math.floor(Math.random() * 2)
-    : 0;
-  const reqConfs = isBSV ? 3 : chain === "ETH" ? 12 : 6;
-  const ms = Date.now() - i * 1_800_000 - Math.random() * 900_000;
-  return {
-    id: `tx-${i}`,
-    txHash: isBSV ? rBsvHash() : rHash(),
-    chain,
-    type,
-    status,
-    from: rAddr(chain),
-    to: rAddr(chain),
-    amount: parseFloat((Math.random() * 5000 + 0.001).toFixed(isBSV ? 8 : 4)),
-    asset: ASSETS[i % ASSETS.length],
-    fee: parseFloat((Math.random() * 0.05 + 0.0001).toFixed(8)),
-    feeCurrency: isBSV ? "BSV" : chain,
-    blockHeight: status !== "pending" ? 800_000 + i * 3 : null,
-    confirmations: confs,
-    requiredConfirmations: reqConfs,
-    timestamp: new Date(ms).toISOString(),
-    userId: `user_${String(i * 7 % 100).padStart(3, "0")}`,
-    orderId: type === "settlement" ? `ord_${String(i * 13 % 999).padStart(5, "0")}` : undefined,
-    note: type === "contract" ? "Smart contract execution — DEX router" : undefined,
-  };
-});
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 function shortHash(h: string) {
@@ -253,16 +208,25 @@ export function AdminTransactions() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
-  const PAGE_SIZE = 15;
+  const PAGE_SIZE = 20;
 
-  /* ── Real BSV settlements from the API ─── */
-  const { data: settlementData, refetch: refetchSettlements } = useQuery({
-    queryKey: ["admin-settlements", refreshKey],
+  /* ── Real transactions from the admin API ─── */
+  const { data: txData, isLoading: txLoading, refetch: refetchTxs } = useQuery({
+    queryKey: ["admin-transactions", refreshKey, chainFilter, typeFilter, statusFilter, search, page],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/settlements?limit=100`);
-      return r.ok ? r.json() : { settlements: [] };
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: PAGE_SIZE.toString(),
+        ...(chainFilter !== "all" && { chain: chainFilter }),
+        ...(typeFilter !== "all" && { type: typeFilter }),
+        ...(statusFilter !== "all" && { status: statusFilter }),
+        ...(search && { search }),
+      });
+      const r = await fetch(`${BASE}/api/admin/transactions?${params}`);
+      return r.ok ? r.json() : { transactions: [], total: 0 };
     },
     refetchInterval: 30_000,
+    staleTime: 10_000,
   });
 
   /* ── Live BSV chain status ─── */
@@ -275,51 +239,37 @@ export function AdminTransactions() {
     refetchInterval: 30_000,
   });
 
-  /* Convert real settlements → OnChainTx rows (prepend before mock data) */
-  const realTxs: OnChainTx[] = useMemo(() => {
-    const raw = settlementData?.settlements ?? [];
-    return raw.map((s: any, i: number) => ({
-      id:          s.id,
-      txHash:      s.txid,
-      chain:       "BSV" as Chain,
-      type:        "settlement" as TxType,
-      status:      "confirmed" as TxStatus,
-      from:        s.walletAddress,
-      to:          s.matchedOrderId ? "OrahDEX-Matched-Order" : "BOT_LIQUIDITY_ENGINE",
-      amount:      s.quantity,
-      asset:       s.symbol?.split("/")[0] ?? "BSV",
-      fee:         s.fee,
-      feeCurrency: s.feeAsset ?? "USDT",
-      blockHeight: bsvStatus?.blockHeight ? bsvStatus.blockHeight - i : null,
-      confirmations: 6,
-      requiredConfirmations: 3,
-      timestamp:   s.timestamp,
-      orderId:     s.id,
-      note:        `${s.symbol} ${s.side?.toUpperCase()} @ $${s.price?.toFixed?.(4) ?? s.price} — OP_RETURN settlement`,
+  const paginated: OnChainTx[] = useMemo(() => {
+    return (txData?.transactions ?? []).map((t: any) => ({
+      id:                    t.id,
+      txHash:                t.txHash,
+      chain:                 t.chain as Chain,
+      type:                  t.type as TxType,
+      status:                t.status as TxStatus,
+      from:                  t.from,
+      to:                    t.to,
+      amount:                t.amount,
+      asset:                 t.asset,
+      fee:                   t.fee,
+      feeCurrency:           t.feeCurrency,
+      blockHeight:           t.blockHeight ?? (bsvStatus?.blockHeight ? bsvStatus.blockHeight - 10 : null),
+      confirmations:         t.confirmations,
+      requiredConfirmations: t.requiredConfirmations,
+      timestamp:             t.timestamp,
+      userId:                t.walletAddress ? `${t.walletAddress.slice(0,10)}…` : undefined,
+      orderId:               t.orderId,
+      note:                  t.note,
     }));
-  }, [settlementData, bsvStatus]);
+  }, [txData, bsvStatus]);
 
-  const allTxs = useMemo(() => [...realTxs, ...MOCK_TXS], [realTxs]);
+  const total = txData?.total ?? 0;
+  const totalPages = txData?.pages ?? 1;
 
-  const filtered = useMemo(() => allTxs.filter(tx => {
-    if (chainFilter !== "all" && tx.chain !== chainFilter) return false;
-    if (typeFilter !== "all" && tx.type !== typeFilter) return false;
-    if (statusFilter !== "all" && tx.status !== statusFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      if (!tx.txHash.includes(q) && !tx.userId?.includes(q) && !tx.orderId?.includes(q) && !tx.asset.toLowerCase().includes(q)) return false;
-    }
-    return true;
-  }), [allTxs, chainFilter, typeFilter, statusFilter, search]);
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Stats
-  const confirmed = allTxs.filter(t => t.status === "confirmed").length;
-  const pending = allTxs.filter(t => t.status === "pending").length;
-  const failed = allTxs.filter(t => t.status === "failed").length;
-  const totalVolume = allTxs.reduce((sum, t) => sum + t.amount, 0);
+  /* Stats derived from visible page (server gives full totals via separate stats call) */
+  const confirmed = paginated.filter(t => t.status === "confirmed").length;
+  const pending = paginated.filter(t => t.status === "pending").length;
+  const failed = paginated.filter(t => t.status === "failed").length;
+  const totalVolume = paginated.reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="space-y-5">
@@ -329,11 +279,11 @@ export function AdminTransactions() {
           <h2 className="text-2xl font-bold">On-Chain Transactions</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Live BSV & EVM chain settlement data
-            {realTxs.length > 0 && <span className="ml-2 text-green-400 font-medium">· {realTxs.length} real BSV settlements</span>}
+            {total > 0 && <span className="ml-2 text-primary font-medium">· {total.toLocaleString()} real transactions</span>}
           </p>
         </div>
         <button
-          onClick={() => { setRefreshKey(k => k + 1); setPage(1); refetchSettlements(); }}
+          onClick={() => { setRefreshKey(k => k + 1); setPage(1); refetchTxs(); }}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border px-3 py-2 rounded-xl hover:bg-white/5 transition-all"
         >
           <RefreshCw className="w-4 h-4" /> Refresh
@@ -389,7 +339,7 @@ export function AdminTransactions() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Transactions" value={allTxs.length.toString()} sub={`${confirmed} confirmed`} icon={Hash} color="bg-primary/15 text-primary" />
+        <StatCard label="Total Transactions" value={total.toLocaleString()} sub={`${confirmed} confirmed this page`} icon={Hash} color="bg-primary/15 text-primary" />
         <StatCard label="Pending" value={pending.toString()} sub="Awaiting confirmations" icon={Clock} color="bg-green-500/15 text-green-400" />
         <StatCard label="Failed" value={failed.toString()} sub="Require attention" icon={XCircle} color="bg-red-500/15 text-red-400" />
         <StatCard label="Total Volume" value={`$${(totalVolume * 45).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub="Across all chains" icon={Activity} color="bg-green-500/15 text-green-400" />
@@ -466,9 +416,31 @@ export function AdminTransactions() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {paginated.length === 0 ? (
+              {txLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 8 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3">
+                        <div className="h-4 bg-secondary rounded animate-pulse w-full" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-14 text-muted-foreground">No transactions found</td>
+                  <td colSpan={8} className="py-16">
+                    <div className="text-center space-y-3">
+                      <div className="w-14 h-14 rounded-2xl bg-secondary/60 flex items-center justify-center mx-auto">
+                        <Activity className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">No transactions yet</p>
+                      <p className="text-xs text-muted-foreground max-w-xs mx-auto">
+                        {(chainFilter !== "all" || typeFilter !== "all" || statusFilter !== "all" || search)
+                          ? "No results match your current filters."
+                          : "On-chain transactions will appear here when traders connect wallets and execute orders on the exchange."}
+                      </p>
+                    </div>
+                  </td>
                 </tr>
               ) : paginated.map(tx => {
                 const sm = STATUS_META[tx.status];
@@ -563,7 +535,7 @@ export function AdminTransactions() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/20">
-            <span className="text-xs text-muted-foreground">{filtered.length} transactions</span>
+            <span className="text-xs text-muted-foreground">{total.toLocaleString()} transactions</span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}

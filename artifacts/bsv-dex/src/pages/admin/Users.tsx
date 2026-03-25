@@ -369,7 +369,17 @@ export function AdminUsers() {
           </table>
         </div>
         {!isLoading && users.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">No users found</div>
+          <div className="text-center py-16 space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-secondary/60 flex items-center justify-center mx-auto">
+              <Wallet className="w-7 h-7 text-muted-foreground" />
+            </div>
+            <p className="text-base font-semibold text-foreground">No traders yet</p>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+              {statusFilter !== "all" || search
+                ? "No users match your current filter. Try clearing the search or status filter."
+                : "Traders appear here automatically once a wallet connects to the exchange and places their first order. All fields are sourced directly from on-chain activity."}
+            </p>
+          </div>
         )}
       </div>
 
