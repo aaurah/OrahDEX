@@ -491,12 +491,28 @@ const PUBLIC_KEYS = ["reown_project_id"];
 const INTEGRATION_KEYS = [
   "reown_project_id",
   "coingecko_api_key",
+  "cmc_api_key",
+  "dexscreener_api_key",
+  "geckoterm_api_key",
   "moonpay_api_key",
   "transak_api_key",
   "banxa_api_key",
   "simplex_api_key",
   "ramp_api_key",
   "bsv_rpc_url",
+  "whatsonchain_api_key",
+  "smtp_host",
+  "smtp_port",
+  "smtp_user",
+  "smtp_pass",
+  "smtp_from",
+  "recaptcha_site_key",
+  "recaptcha_secret_key",
+  "google_analytics_id",
+  "intercom_app_id",
+  "discord_webhook_url",
+  "telegram_bot_token",
+  "telegram_chat_id",
 ];
 
 router.get("/integrations", async (_req, res) => {
