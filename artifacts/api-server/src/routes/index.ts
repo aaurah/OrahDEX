@@ -17,6 +17,7 @@ import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspac
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
+import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 
 const router: IRouter = Router();
 
@@ -437,6 +438,26 @@ router.post("/users/ping", async (req, res) => {
     logger.error({ err: err?.message }, "Failed to ping wallet");
     res.status(500).json({ error: err?.message ?? "Failed to register wallet" });
   }
+});
+
+/**
+ * GET /api/notifications?address=0x…&since=<timestamp>
+ * Returns latest notifications for a wallet address.
+ */
+router.get("/notifications", (req, res) => {
+  const addr = (req.query.address as string | undefined);
+  if (!addr) return res.json({ notifications: [] });
+  const since = Number(req.query.since ?? 0);
+  return res.json({ notifications: getNotifications(addr, since) });
+});
+
+/**
+ * DELETE /api/notifications?address=0x…
+ */
+router.delete("/notifications", (req, res) => {
+  const addr = (req.query.address as string | undefined);
+  if (addr) clearNotifications(addr);
+  res.json({ success: true });
 });
 
 export default router;

@@ -527,21 +527,33 @@ export const AI_MARKETS: any[] = [
   spot("ALT",   "USDT", 0.182, -5.42,  22_000_000),
 ];
 
+// ─── SOL PAIRS (X/SOL — quoted in SOL, consistent with BTC/ETH/BNB tabs) ─────
+const SOL_PRICE = 148.5;
+function solPair(base: string, usdtPrice: number, chg: number, vol: number): any {
+  const p = usdtPrice / SOL_PRICE;
+  return spot(base, "SOL", p, chg, vol / SOL_PRICE);
+}
 export const SOL_MARKETS: any[] = [
-  spot("SOL",   "USDT", 148.5,  3.21, 420_000_000),
-  spot("BONK",  "USDT", 0.0000248, 12.5, 185_000_000),
-  spot("WIF",   "USDT", 0.892,  8.42,  82_000_000),
-  spot("JUP",   "USDT", 0.842, -2.18,  48_000_000),
-  spot("PYTH",  "USDT", 0.382,  4.85,  28_000_000),
-  spot("ORCA",  "USDT", 2.84,   3.42,  12_000_000),
-  spot("JTO",   "USDT", 2.42,  -1.82,  18_000_000),
-  spot("BOME",  "USDT", 0.00842, 18.5, 92_000_000),
-  spot("MEW",   "USDT", 0.00582, 9.21, 45_000_000),
-  spot("POPCAT","USDT", 0.842,  15.42, 62_000_000),
-  spot("SLERF", "USDT", 0.00482, 4.82, 12_000_000),
-  spot("GRASS", "USDT", 0.282,   8.70, 18_000_000),
-  spot("W",     "USDT", 0.242,  -3.42, 28_000_000),
-  spot("ZEUS",  "USDT", 0.182,   6.15,  8_000_000),
+  solPair("BTC",    68310,    -1.85, 2_450_000_000),
+  solPair("ETH",    3415,      1.32,   950_000_000),
+  solPair("USDT",   1.00,      0.00,   420_000_000),
+  solPair("USDC",   1.00,      0.00,   380_000_000),
+  solPair("BNB",    392,       0.88,   320_000_000),
+  solPair("XRP",    0.5242,   -0.64,   110_000_000),
+  solPair("JUP",    0.842,    -2.18,    48_000_000),
+  solPair("PYTH",   0.382,     4.85,    28_000_000),
+  solPair("JTO",    2.42,     -1.82,    18_000_000),
+  solPair("ORCA",   2.84,      3.42,    12_000_000),
+  solPair("RAY",    2.12,      5.84,    38_000_000),
+  solPair("RENDER", 7.82,      6.42,    82_000_000),
+  solPair("HNT",    8.42,     -2.15,    22_000_000),
+  solPair("MSOL",   172.5,     3.28,    18_000_000),
+  solPair("GRASS",  0.282,     8.70,    18_000_000),
+  solPair("ZEUS",   0.182,     6.15,     8_000_000),
+  solPair("STEP",   0.0482,    4.21,     4_000_000),
+  solPair("SAMO",   0.0182,    7.84,     6_000_000),
+  solPair("MEAN",   0.0842,    3.42,     2_800_000),
+  solPair("PORT",   0.242,    -1.84,     3_200_000),
 ];
 
 export const LINEA_MARKETS: any[] = [
@@ -637,20 +649,29 @@ export const MNT_MARKETS: any[] = [
 ];
 
 export const MEME_MARKETS: any[] = [
-  spot("DOGE",   "USDT", 0.1185,  5.42,  78_000_000),
-  spot("SHIB",   "USDT", 0.0000235, 6.1, 92_000_000),
-  spot("PEPE",   "USDT", 0.0000082, 8.5, 185_000_000),
-  spot("BONK",   "USDT", 0.0000248, 12.5, 185_000_000),
-  spot("WIF",    "USDT", 0.892,   8.42,  82_000_000),
-  spot("FLOKI",  "USDT", 0.000182, 9.84, 48_000_000),
-  spot("BABYDOGE","USDT",0.00000000242, 14.5, 12_000_000),
-  spot("COQ",    "USDT", 0.00000012, 22.4, 8_000_000),
-  spot("BRETT",  "USDT", 0.082,   18.42, 42_000_000),
-  spot("MOG",    "USDT", 0.00000082, 11.5, 22_000_000),
-  spot("TURBO",  "USDT", 0.00842, 15.84, 18_000_000),
-  spot("TRUMP",  "USDT", 8.42,    -4.21, 182_000_000),
-  spot("FWOG",   "USDT", 0.0842,   7.45, 12_000_000),
-  spot("POPCAT", "USDT", 0.842,   15.42, 62_000_000),
+  /* ── Tier 1: blue-chip memes ── */
+  spot("DOGE",    "USDT", 0.1185,    5.42,  780_000_000),
+  spot("SHIB",    "USDT", 0.0000235, 6.10,  420_000_000),
+  spot("PEPE",    "USDT", 0.0000082, 8.50,  385_000_000),
+  spot("FLOKI",   "USDT", 0.000182,  9.84,  148_000_000),
+  spot("TRUMP",   "USDT", 8.42,     -4.21,  482_000_000),
+  /* ── Tier 2: established memes ── */
+  spot("BONK",    "USDT", 0.0000248, 12.50, 185_000_000),
+  spot("WIF",     "USDT", 0.892,      8.42,  82_000_000),
+  spot("POPCAT",  "USDT", 0.842,     15.42,  62_000_000),
+  spot("BRETT",   "USDT", 0.1142,    18.42,  42_000_000),
+  spot("MOG",     "USDT", 0.0000082, 11.50,  22_000_000),
+  spot("TURBO",   "USDT", 0.00842,   15.84,  18_000_000),
+  spot("BOME",    "USDT", 0.00842,   18.50,  92_000_000),
+  spot("MEW",     "USDT", 0.00582,    9.21,  45_000_000),
+  /* ── Tier 3: rising memes ── */
+  spot("NEIRO",   "USDT", 0.000482,  22.84,  38_000_000),
+  spot("MAGA",    "USDT", 3.42,      -8.12,  28_000_000),
+  spot("PONKE",   "USDT", 0.182,     14.21,  18_000_000),
+  spot("SLERF",   "USDT", 0.00482,    4.82,  12_000_000),
+  spot("FWOG",    "USDT", 0.0842,     7.45,  12_000_000),
+  spot("GIGA",    "USDT", 0.0482,    11.32,   8_000_000),
+  spot("MICHI",   "USDT", 0.382,      9.84,  14_000_000),
 ];
 
 export const DEFI_MARKETS: any[] = [
