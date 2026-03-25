@@ -8,6 +8,7 @@ import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { MobileBaseMarket } from "@/components/mobile/MobileBaseMarket";
 import { MobileNetworksExplorer } from "@/components/mobile/MobileNetworksExplorer";
+import { MobileCoinVote } from "@/components/mobile/MobileCoinVote";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
@@ -62,9 +63,10 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
+type Cat = "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote";
 
 const CATS: { id: Cat; label: string }[] = [
+  { id: "vote",      label: "🗳️ Vote" },
   { id: "favorites", label: "Favs" },
   { id: "new",       label: "NEW" },
   { id: "chains",    label: "🌐 Chains" },
@@ -212,7 +214,7 @@ export function MobileMarkets() {
 
   return (
     <>
-    <div className={cn("flex flex-col bg-background", (cat === "base" || cat === "chains") ? "h-full" : "h-full overflow-y-auto pb-24")}>
+    <div className={cn("flex flex-col bg-background", (cat === "base" || cat === "chains" || cat === "vote") ? "h-full" : "h-full overflow-y-auto pb-24")}>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
         {/* Spot label + Search bar + Buy on one line */}
@@ -303,6 +305,8 @@ export function MobileMarkets() {
         <MobileNetworksExplorer />
       ) : cat === "base" ? (
         <MobileBaseMarket />
+      ) : cat === "vote" ? (
+        <MobileCoinVote />
       ) : (
         <>
           {/* ── Column headers ── aligned to match MexcRow exactly ── */}
