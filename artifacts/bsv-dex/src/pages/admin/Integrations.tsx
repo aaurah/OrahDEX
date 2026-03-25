@@ -4,9 +4,10 @@ import {
   Eye, EyeOff, Check, Save, RefreshCw,
   AlertTriangle, CheckCircle2, Cpu, Globe, Zap,
   Wallet, Bell, Shield, Mail, BarChart3, MessageSquare,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Wifi, WifiOff, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -185,8 +186,10 @@ function Section({ icon, title, description, badge, badgeColor, children, defaul
 
 export function AdminIntegrations() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [form, setForm] = useState<IntegrationSettings>(DEFAULTS);
   const [saved, setSaved] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; error?: string } | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-integrations"],
@@ -197,15 +200,40 @@ export function AdminIntegrations() {
     if (data) setForm({ ...DEFAULTS, ...data });
   }, [data]);
 
-  const set = (key: keyof IntegrationSettings) => (value: string) =>
+  const set = (key: keyof IntegrationSettings) => (value: string) => {
+    setSmtpTestResult(null); // Reset test result when credentials change
     setForm(f => ({ ...f, [key]: value }));
+  };
 
   const mutation = useMutation({
     mutationFn: saveIntegrations,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-integrations"] });
+      qc.invalidateQueries({ queryKey: ["smtp-status"] });
       setSaved(true);
+      setSmtpTestResult(null);
       setTimeout(() => setSaved(false), 3000);
+      toast({ title: "Settings saved", description: "All integration settings have been saved." });
+    },
+    onError: () => {
+      toast({ title: "Save failed", description: "Could not save settings. Please try again.", variant: "destructive" });
+    },
+  });
+
+  const testSmtpMutation = useMutation({
+    mutationFn: async () => {
+      // Save first so the API reads the latest values from DB
+      await saveIntegrations(form);
+      return fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
+    },
+    onSuccess: (data: { success: boolean; error?: string }) => {
+      setSmtpTestResult(data);
+      qc.invalidateQueries({ queryKey: ["smtp-status"] });
+      if (data.success) {
+        toast({ title: "SMTP connection OK", description: "Your mail server is reachable and credentials are valid." });
+      } else {
+        toast({ title: "SMTP test failed", description: data.error ?? "Connection failed", variant: "destructive" });
+      }
     },
   });
 
@@ -431,13 +459,26 @@ export function AdminIntegrations() {
       <Section
         icon={<Mail className="w-4 h-4" />}
         title="Email / SMTP"
-        description="Outbound email configuration for KYC alerts, trade confirmations, password resets, and security notifications."
-        badge="Optional"
-        badgeColor="bg-secondary text-muted-foreground border-border"
-        defaultOpen={false}
+        description="Outbound email for KYC alerts, trade confirmations, password resets, and security notifications."
+        badge={countSet("smtp_host", "smtp_user") === 2 ? "Configured" : "Not configured"}
+        badgeColor={countSet("smtp_host", "smtp_user") === 2
+          ? "bg-green-400/10 text-green-400 border-green-400/20"
+          : "bg-amber-400/10 text-amber-400 border-amber-400/20"}
+        defaultOpen={true}
         configuredCount={countSet("smtp_host", "smtp_user")}
         totalCount={2}
       >
+        {/* Quick-start guide */}
+        <div className="p-4 bg-primary/5 border border-primary/15 rounded-xl text-xs space-y-1.5 mb-2">
+          <p className="font-bold text-foreground">Quick setup options:</p>
+          <ul className="space-y-1 text-muted-foreground">
+            <li>• <span className="font-semibold text-foreground">SendGrid</span> — host: <code className="font-mono text-primary">smtp.sendgrid.net</code>, port <code className="font-mono text-primary">587</code>, user: <code className="font-mono text-primary">apikey</code>, pass: your SG API key</li>
+            <li>• <span className="font-semibold text-foreground">Mailgun</span> — host: <code className="font-mono text-primary">smtp.mailgun.org</code>, port <code className="font-mono text-primary">587</code>, user: your Mailgun SMTP login</li>
+            <li>• <span className="font-semibold text-foreground">Gmail</span> — host: <code className="font-mono text-primary">smtp.gmail.com</code>, port <code className="font-mono text-primary">587</code>, user: your Gmail, pass: App Password</li>
+            <li>• <span className="font-semibold text-foreground">AWS SES</span> — host: <code className="font-mono text-primary">email-smtp.us-east-1.amazonaws.com</code>, port <code className="font-mono text-primary">587</code></li>
+          </ul>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <MaskedField
             label="SMTP Host"
@@ -453,7 +494,7 @@ export function AdminIntegrations() {
             onChange={set("smtp_port")}
             placeholder="587"
             type="number"
-            hint="Common ports: 587 (STARTTLS), 465 (SSL), 25 (plain). Use 587 with TLS for best compatibility."
+            hint="Common ports: 587 (STARTTLS), 465 (SSL). Use 587 for most providers."
           />
           <MaskedField
             label="SMTP Username"
@@ -461,23 +502,59 @@ export function AdminIntegrations() {
             onChange={set("smtp_user")}
             placeholder="apikey or your@email.com"
             type="text"
-            hint="Your SMTP login. For SendGrid use 'apikey' as username."
+            hint="Your SMTP login. For SendGrid use 'apikey' as the username."
           />
           <MaskedField
             label="SMTP Password / API Key"
             value={form.smtp_pass}
             onChange={set("smtp_pass")}
             placeholder="SG.xxxxxxxxxxxxxxxxxxxx"
-            hint="SMTP password or API key. For SendGrid, this is your SG API key."
+            hint="SMTP password or API key. For SendGrid this is your SG API key."
           />
           <MaskedField
             label="From Email Address"
             value={form.smtp_from}
             onChange={set("smtp_from")}
-            placeholder="noreply@orahdex.io"
+            placeholder="noreply@orahdex.org"
             type="email"
-            hint="Sender address shown in all outgoing emails."
+            hint="Sender address shown in all outgoing emails. Must match a verified sender in your provider."
           />
+        </div>
+
+        {/* Test Connection */}
+        <div className="pt-2 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <button
+            onClick={() => testSmtpMutation.mutate()}
+            disabled={testSmtpMutation.isPending || !form.smtp_host || !form.smtp_user || !form.smtp_pass}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm border transition-all",
+              !form.smtp_host || !form.smtp_user || !form.smtp_pass
+                ? "opacity-40 cursor-not-allowed border-border text-muted-foreground"
+                : "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+            )}
+          >
+            {testSmtpMutation.isPending
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Wifi className="w-3.5 h-3.5" />}
+            {testSmtpMutation.isPending ? "Testing connection…" : "Test Connection"}
+          </button>
+
+          {smtpTestResult && (
+            <div className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold",
+              smtpTestResult.success
+                ? "bg-green-500/10 border-green-500/25 text-green-400"
+                : "bg-red-500/10 border-red-500/25 text-red-400"
+            )}>
+              {smtpTestResult.success
+                ? <><CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Connection successful — SMTP is working</>
+                : <><WifiOff className="w-3.5 h-3.5 shrink-0" /> {smtpTestResult.error ?? "Connection failed"}</>}
+            </div>
+          )}
+
+          {!form.smtp_host && (
+            <p className="text-[10px] text-muted-foreground/60">Fill in Host, Username and Password to test</p>
+          )}
         </div>
       </Section>
 

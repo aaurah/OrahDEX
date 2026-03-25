@@ -215,11 +215,11 @@ export function AdminEmailInbox() {
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-amber-300">SMTP not configured — emails are saved locally only</p>
             <p className="text-[10px] text-amber-400/70 mt-0.5">
-              Go to <strong>Admin → Setup → Step D</strong> to add your mail server (Gmail SMTP, Mailgun, SendGrid, etc.)
+              Go to <strong>Admin → Integrations → Email / SMTP</strong> to add your mail server (Gmail, Mailgun, SendGrid, AWS SES…)
             </p>
           </div>
           <a
-            href="/admin/setup"
+            href="/admin/integrations"
             className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
           >
             Configure →
@@ -397,7 +397,7 @@ export function AdminEmailInbox() {
                 </button>
               </div>
               {!smtpStatus?.configured && (
-                <a href="/admin/setup" className="flex items-center gap-1 text-[9px] text-amber-400/80 hover:text-amber-300 transition-colors">
+                <a href="/admin/integrations" className="flex items-center gap-1 text-[9px] text-amber-400/80 hover:text-amber-300 transition-colors">
                   <AlertTriangle className="w-2.5 h-2.5" />
                   Setup SMTP to send
                 </a>
