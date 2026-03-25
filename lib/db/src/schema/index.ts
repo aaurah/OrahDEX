@@ -5,3 +5,4 @@ export * from "./futures";
 export * from "./platform";
 export * from "./bridge";
 export * from "./coinVotes";
+export * from "./adminEmails";

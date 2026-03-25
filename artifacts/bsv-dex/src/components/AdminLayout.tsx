@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
-  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket,
+  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -55,7 +55,8 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Overview",
     items: [
       { href: "/admin",              label: "Dashboard",          icon: LayoutDashboard, exact: true },
-      { href: "/admin/setup",        label: "Setup Guide A–Z",    icon: Rocket, badge: "Start Here" },
+      { href: "/admin/setup",        label: "Setup",              icon: Rocket, badge: "A–Z" },
+      { href: "/admin/mail",         label: "Email Inbox",        icon: Mail },
     ],
   },
   {
