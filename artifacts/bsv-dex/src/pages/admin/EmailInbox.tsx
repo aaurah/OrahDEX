@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail, Inbox, Send, Star, Trash2, RefreshCw, Search, Plus,
-  X, ChevronLeft, Eye, EyeOff, ArrowUp, Paperclip, Circle,
+  X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Paperclip, Circle,
   CheckCircle2, AlertCircle, Settings, Zap, Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,15 @@ export function AdminEmailInbox() {
   const [selected, setSelected] = useState<Email | null>(null);
   const [search, setSearch] = useState("");
   const [composing, setComposing] = useState(false);
-  const [compose, setCompose] = useState({ to: "", subject: "", body: "" });
+  const [compose, setCompose] = useState({ from: "support@orahdex.org", to: "", subject: "", body: "" });
+  const [fromOpen, setFromOpen] = useState(false);
+
+  const FROM_OPTIONS = [
+    { value: "support@orahdex.org",  label: "support@orahdex.org",  color: "text-primary" },
+    { value: "legal@orahdex.org",    label: "legal@orahdex.org",    color: "text-violet-400" },
+    { value: "privacy@orahdex.org",  label: "privacy@orahdex.org",  color: "text-blue-400" },
+    { value: "admin@orahdex.org",    label: "admin@orahdex.org",    color: "text-muted-foreground" },
+  ];
 
   const { data: emails = [], isLoading, refetch } = useQuery<Email[]>({
     queryKey: ["admin-mail", folder],
@@ -91,7 +99,7 @@ export function AdminEmailInbox() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           folder: "sent",
-          fromAddress: "admin@orahdex.org",
+          fromAddress: data.from,
           toAddress: data.to,
           subject: data.subject,
           body: data.body,
@@ -101,7 +109,7 @@ export function AdminEmailInbox() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setComposing(false);
-      setCompose({ to: "", subject: "", body: "" });
+      setCompose({ from: "support@orahdex.org", to: "", subject: "", body: "" });
       toast({ title: "Email sent", description: "Message added to Sent folder" });
     },
   });
@@ -176,6 +184,38 @@ export function AdminEmailInbox() {
               </button>
             </div>
             <div className="p-5 space-y-3">
+              {/* From selector */}
+              <div className="flex flex-col gap-1 relative">
+                <label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">From</label>
+                <button
+                  type="button"
+                  onClick={() => setFromOpen(o => !o)}
+                  className="w-full flex items-center justify-between bg-secondary border border-border rounded-xl px-4 py-2.5 text-sm text-foreground hover:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+                >
+                  <span className={cn("font-mono font-medium", FROM_OPTIONS.find(o => o.value === compose.from)?.color ?? "text-foreground")}>
+                    {compose.from}
+                  </span>
+                  <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", fromOpen && "rotate-180")} />
+                </button>
+                {fromOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+                    {FROM_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => { setCompose(c => ({ ...c, from: opt.value })); setFromOpen(false); }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-4 py-2.5 text-sm text-left hover:bg-white/5 transition-colors",
+                          compose.from === opt.value && "bg-primary/8"
+                        )}
+                      >
+                        <span className={cn("font-mono font-medium", opt.color)}>{opt.label}</span>
+                        {compose.from === opt.value && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">To</label>
                 <input
