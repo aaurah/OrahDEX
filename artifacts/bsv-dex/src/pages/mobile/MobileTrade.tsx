@@ -169,7 +169,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
   const color = COIN_COLORS[base] ?? "#EAB308";
 
-  const { address } = useWalletStore();
+  const { address, balance: walletBalance } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
 
@@ -282,9 +282,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const total   = (effectivePrice * amtNum).toFixed(4);
   const FEE_RATE = 0.001;
   const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
-  const available = 0;
-  const maxBuyNum = effectivePrice > 0 ? (available / effectivePrice) : 0;
+  // Use the real wallet balance (ETH/EVM native) as available quote balance
+  const walletBal = address && walletBalance ? parseFloat(walletBalance) : 0;
+  const available = side === "buy" ? walletBal : 0; // quote when buying, base when selling (base unknown)
+  const maxBuyNum = effectivePrice > 0 ? (walletBal / effectivePrice) : 0;
   const maxBuy = maxBuyNum > 0 ? maxBuyNum.toFixed(6) : "0";
+
+  // Click available → fill max amount
+  const handleFillMax = () => {
+    if (!address || walletBal <= 0 || effectivePrice <= 0) return;
+    if (side === "buy") {
+      // max base units = available ETH / price, leave a small buffer for fees
+      const maxBase = (walletBal * 0.999) / effectivePrice;
+      setAmount(maxBase.toFixed(6));
+    }
+  };
 
   function stepPrice(delta: number) {
     const cur = parseFloat(price || String(lastPrice)) || lastPrice;
@@ -829,7 +841,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 {[25, 50, 75, 100].map(p => (
                   <button
                     key={p}
-                    onClick={() => setAmount((0.1 * p / 100).toFixed(3))}
+                    onClick={() => {
+                      if (side === "buy" && walletBal > 0 && effectivePrice > 0) {
+                        const maxBase = (walletBal * 0.999) / effectivePrice;
+                        setAmount((maxBase * p / 100).toFixed(6));
+                      }
+                    }}
                     className="text-[10px] text-muted-foreground font-semibold"
                   >{p}%</button>
                 ))}
@@ -853,9 +870,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-foreground tabular-nums">
-                    {available.toFixed(2)} {side === "buy" ? quote : base}
-                  </span>
+                  <button
+                    onClick={handleFillMax}
+                    disabled={!address || walletBal <= 0}
+                    className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity"
+                  >
+                    {available > 0 ? available.toFixed(4) : "0.00"} {side === "buy" ? quote : base}
+                  </button>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
                     className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors"
