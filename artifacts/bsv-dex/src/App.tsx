@@ -28,6 +28,11 @@ const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default
 const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
 
+/* Legal / Info — standalone full-screen pages (no Layout wrapper) */
+const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
+const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
+const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
+
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
 const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
@@ -238,6 +243,17 @@ function Router() {
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
       <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
+
+      {/* ── Standalone legal / info pages (no nav wrapper) ── */}
+      <Route path="/terms">
+        <Suspense fallback={<PageSkeleton />}><TermsOfService /></Suspense>
+      </Route>
+      <Route path="/privacy">
+        <Suspense fallback={<PageSkeleton />}><PrivacyPolicy /></Suspense>
+      </Route>
+      <Route path="/whitepaper">
+        <Suspense fallback={<PageSkeleton />}><WhitePaper /></Suspense>
+      </Route>
 
       {/* ── Mobile layout ── */}
       {isMobile && (
