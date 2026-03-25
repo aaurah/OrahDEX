@@ -3,8 +3,9 @@ import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
-  Moon, Sun, Smartphone, Monitor, Palette,
+  Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
@@ -96,6 +97,7 @@ export function MobileSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { isEnabled, credentialId, setEnabled } = useBiometricStore();
   const { theme, setTheme } = useThemeStore();
+  const [, navigate] = useLocation();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [bioLoading, setBioLoading] = useState(false);
@@ -238,8 +240,9 @@ export function MobileSettings() {
 
       <Section title="About">
         <Row icon={Info} label="Version" value="1.0.0" />
-        <Row icon={FileText} label="Terms of Service" onClick={() => {}} />
-        <Row icon={Shield} label="Privacy Policy" onClick={() => {}} />
+        <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
+        <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
+        <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
       </Section>
 
       {/* Branding */}
