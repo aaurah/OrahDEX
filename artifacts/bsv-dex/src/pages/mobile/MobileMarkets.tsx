@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X, Star, ChevronUp, ChevronDown, CreditCard } from "lucide-react";
+import { Search, X, Star, ChevronUp, ChevronDown, CreditCard, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
+import { getWalletMarketTab } from "@/lib/walletMarket";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
@@ -152,6 +153,8 @@ export function MobileMarkets() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [buyOpen, setBuyOpen]     = useState(false);
   const [buyCoin, setBuyCoin]     = useState("BSV");
+  const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
+  const prevAddressRef = useRef<string | null>(null);
   const handleBuy = (coin: string) => {
     setBuyCoin(coin);
     setBuyOpen(true);
@@ -159,7 +162,25 @@ export function MobileMarkets() {
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  const { address } = useWalletStore();
+  const { address, network, chainId } = useWalletStore();
+
+  /* Auto-switch to correct market category when wallet connects / chain changes */
+  useEffect(() => {
+    const prev = prevAddressRef.current;
+    prevAddressRef.current = address;
+    const { tab: walletCat, isAutoSelected } = getWalletMarketTab(address, network, chainId);
+    if (isAutoSelected) {
+      setCat(walletCat as Cat);
+      setWalletBannerDismissed(false);
+    } else if (!address && prev) {
+      setCat("usd");
+      setWalletBannerDismissed(false);
+    }
+  }, [address, network, chainId]);
+
+  const { tab: walletCatTab, label: walletChainLabel, isAutoSelected: isWalletCat } = getWalletMarketTab(address, network, chainId);
+  /* Show banner only when the visible tab is the wallet's auto-selected category */
+  const showWalletBanner = isWalletCat && !walletBannerDismissed && cat === walletCatTab;
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
@@ -267,6 +288,23 @@ export function MobileMarkets() {
             );
           })}
         </div>
+
+        {/* Wallet-aware market banner */}
+        {showWalletBanner && (
+          <div className="mx-4 mt-2 mb-0 flex items-center gap-2 px-3 py-2.5 bg-primary/10 border border-primary/25 rounded-xl">
+            <Wallet className="w-4 h-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-bold text-primary leading-tight">Showing {walletChainLabel} Markets</p>
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Auto-filtered for your wallet · tap any tab to browse all</p>
+            </div>
+            <button
+              onClick={() => setWalletBannerDismissed(true)}
+              className="text-muted-foreground p-1 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* BSV fastest settlement banner — mobile */}
         {cat === "bsv" && (
