@@ -112,8 +112,8 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
-/* ── Health check ─────────────────────────────────────────────────────────── */
-app.get("/api/health", async (_req, res) => {
+/* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
+async function healthHandler(_req: any, res: any) {
   try {
     const bsv = await getBsvChainStatus();
     res.json({
@@ -125,7 +125,9 @@ app.get("/api/health", async (_req, res) => {
   } catch {
     res.json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
   }
-});
+}
+app.get("/api/health", healthHandler);
+app.get("/api/healthz", healthHandler);
 
 /* ── BSV chain status ─────────────────────────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {
