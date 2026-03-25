@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
-  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink,
+  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -55,6 +55,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Overview",
     items: [
       { href: "/admin",              label: "Dashboard",          icon: LayoutDashboard, exact: true },
+      { href: "/admin/setup",        label: "Setup Guide A–Z",    icon: Rocket, badge: "Start Here" },
     ],
   },
   {
