@@ -117,7 +117,7 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId } = useWalletStore();
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
@@ -181,7 +181,26 @@ export function FuturesTrading() {
 
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const nativeBal = balance ? parseFloat(balance) : 0;
-  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : "ETH";
+
+  // Canonical L2 chain awareness — BaseETH/ArbETH/OPETH all = ETH at 1:1
+  const CHAIN_INFO_FUT: Record<number, { nativeSymbol: string; l2Label: string | null }> = {
+    1:      { nativeSymbol: "ETH",  l2Label: null      },
+    8453:   { nativeSymbol: "ETH",  l2Label: "Base"    },  // BaseETH
+    42161:  { nativeSymbol: "ETH",  l2Label: "Arb"     },  // ArbETH
+    10:     { nativeSymbol: "ETH",  l2Label: "OP"      },  // OPETH
+    137:    { nativeSymbol: "ETH",  l2Label: "Polygon"  },  // bridged ETH
+    56:     { nativeSymbol: "BNB",  l2Label: null      },
+    43114:  { nativeSymbol: "AVAX", l2Label: null      },
+    59144:  { nativeSymbol: "ETH",  l2Label: "Linea"   },
+    534352: { nativeSymbol: "ETH",  l2Label: "Scroll"  },
+    5000:   { nativeSymbol: "MNT",  l2Label: null      },
+  };
+  const futChainInfo = walletChainId ? CHAIN_INFO_FUT[walletChainId] : null;
+  const nativeSymbol: string = network === "bsv" ? "BSV"
+    : network === "btc" ? "BTC"
+    : network === "sol" ? "SOL"
+    : futChainInfo?.nativeSymbol ?? "ETH";
+  const balSourceLabel = futChainInfo?.l2Label ? `${nativeSymbol} (${futChainInfo.l2Label})` : nativeSymbol;
 
   const placeOrder = usePlaceOrder({
     mutation: {
@@ -594,7 +613,15 @@ export function FuturesTrading() {
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Available</span>
                 {address ? (
-                  <span className="font-mono text-foreground">{nativeBal.toFixed(4)} {nativeSymbol}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-foreground">{nativeBal.toFixed(4)}</span>
+                    <span className="font-mono text-foreground">{nativeSymbol}</span>
+                    {futChainInfo?.l2Label && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                        {futChainInfo.l2Label}
+                      </span>
+                    )}
+                  </div>
                 ) : (
                   <button onClick={openModal} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
                     <Wallet className="w-3 h-3" /> Connect Wallet

@@ -169,7 +169,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
   const color = COIN_COLORS[base] ?? "#EAB308";
 
-  const { address, balance: walletBalance } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
 
@@ -282,17 +282,43 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const total   = (effectivePrice * amtNum).toFixed(4);
   const FEE_RATE = 0.001;
   const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
-  // Use the real wallet balance (ETH/EVM native) as available quote balance
+
+  // ── Canonical L2 chain awareness ──────────────────────────────────────────
+  // Each L2 chain carries a canonical native asset that's 1:1 with its L1.
+  // e.g. ETH on Base (BaseETH) = ETH. ETH on Arb (ArbETH) = ETH. All tradeable in ETH markets.
+  const CHAIN_INFO: Record<number, { name: string; nativeSymbol: string; l2Label: string | null }> = {
+    1:      { name: "Ethereum",  nativeSymbol: "ETH",  l2Label: null },
+    8453:   { name: "Base",      nativeSymbol: "ETH",  l2Label: "Base" },     // BaseETH = canonical ETH
+    42161:  { name: "Arbitrum",  nativeSymbol: "ETH",  l2Label: "Arb"  },     // ArbETH = canonical ETH
+    10:     { name: "Optimism",  nativeSymbol: "ETH",  l2Label: "OP"   },     // OPETH = canonical ETH
+    137:    { name: "Polygon",   nativeSymbol: "ETH",  l2Label: "Polygon" },   // bridged ETH
+    56:     { name: "BSC",       nativeSymbol: "BNB",  l2Label: null },
+    43114:  { name: "Avalanche", nativeSymbol: "AVAX", l2Label: null },
+    59144:  { name: "Linea",     nativeSymbol: "ETH",  l2Label: "Linea" },
+    534352: { name: "Scroll",    nativeSymbol: "ETH",  l2Label: "Scroll" },
+    5000:   { name: "Mantle",    nativeSymbol: "MNT",  l2Label: null },
+  };
+  const chainInfo = walletChainId ? CHAIN_INFO[walletChainId] : null;
+  // Native symbol for non-EVM networks (BSV, BTC, SOL)
+  const nativeSymbol: string = network === "bsv" ? "BSV"
+    : network === "btc" ? "BTC"
+    : network === "sol" ? "SOL"
+    : chainInfo?.nativeSymbol ?? "ETH";
+  // Source label for display: "ETH (Base)", "ETH (Arb)", or just "ETH"
+  const balanceSourceLabel = chainInfo?.l2Label ? `${nativeSymbol} (${chainInfo.l2Label})` : nativeSymbol;
+  // True if the wallet's native token is compatible with the quote currency
+  // BaseETH, ArbETH, OPETH all trade 1:1 as ETH in ETH-quoted markets
+  const isBalanceCompatible = nativeSymbol === quote || (nativeSymbol === "ETH" && quote === "ETH");
+
   const walletBal = address && walletBalance ? parseFloat(walletBalance) : 0;
-  const available = side === "buy" ? walletBal : 0; // quote when buying, base when selling (base unknown)
-  const maxBuyNum = effectivePrice > 0 ? (walletBal / effectivePrice) : 0;
+  const available = side === "buy" && isBalanceCompatible ? walletBal : 0;
+  const maxBuyNum = effectivePrice > 0 && isBalanceCompatible ? (walletBal / effectivePrice) : 0;
   const maxBuy = maxBuyNum > 0 ? maxBuyNum.toFixed(6) : "0";
 
   // Click available → fill max amount
   const handleFillMax = () => {
-    if (!address || walletBal <= 0 || effectivePrice <= 0) return;
+    if (!address || walletBal <= 0 || effectivePrice <= 0 || !isBalanceCompatible) return;
     if (side === "buy") {
-      // max base units = available ETH / price, leave a small buffer for fees
       const maxBase = (walletBal * 0.999) / effectivePrice;
       setAmount(maxBase.toFixed(6));
     }
@@ -872,10 +898,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFillMax}
-                    disabled={!address || walletBal <= 0}
-                    className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity"
+                    disabled={!address || walletBal <= 0 || !isBalanceCompatible}
+                    className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
                   >
-                    {available > 0 ? available.toFixed(4) : "0.00"} {side === "buy" ? quote : base}
+                    {available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{side === "buy" ? nativeSymbol : base}
+                    {side === "buy" && chainInfo?.l2Label && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                        {chainInfo.l2Label}
+                      </span>
+                    )}
                   </button>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
@@ -886,6 +917,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
+              {/* Incompatible balance warning */}
+              {address && walletBal > 0 && !isBalanceCompatible && side === "buy" && (
+                <div className="text-[10px] text-amber-400 leading-tight px-0.5">
+                  Your {nativeSymbol} balance can't be used in {quote}-quoted markets. Deposit {quote} or switch to a compatible market.
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
                 <span className="text-xs font-semibold text-foreground tabular-nums">{maxBuy}</span>
