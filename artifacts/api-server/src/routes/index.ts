@@ -11,6 +11,7 @@ import globalMarketsRouter from "./globalMarkets.js";
 import bridgeRouter from "./bridge.js";
 import dexscreenerRouter from "./dexscreener.js";
 import geckoTerminalRouter from "./geckoTerminal.js";
+import coinVotesRouter from "./coinVotes.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger.js";
@@ -46,6 +47,7 @@ router.use("/global-markets", globalMarketsRouter);
 router.use("/bridge", bridgeRouter);
 router.use(dexscreenerRouter);
 router.use(geckoTerminalRouter);
+router.use(coinVotesRouter);
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {
