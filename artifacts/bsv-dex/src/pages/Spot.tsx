@@ -1,7 +1,7 @@
 import { useParams, Link } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets } from "@workspace/api-client-react";
+import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets, useCancelOrder } from "@workspace/api-client-react";
 import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
@@ -10,7 +10,7 @@ import { OrderForm } from "@/components/trading/OrderForm";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
-import { ExternalLink, CheckCircle2, Clock, Search } from "lucide-react";
+import { ExternalLink, CheckCircle2, Search } from "lucide-react";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 type BottomTab = "open" | "history" | "trades";
@@ -103,6 +103,12 @@ export function SpotTrading() {
   const orderBook = (rawOB?.bids && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
     : (apiOrderBook || generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
+
+  const cancelOrder = useCancelOrder({
+    mutation: {
+      onSuccess: () => { refetchOrders(); },
+    },
+  });
 
   const allOrders    = (apiOrders as any[]) || [];
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
@@ -338,9 +344,13 @@ export function SpotTrading() {
                             </span>
                           </td>
                           <td className="p-3 text-right">
-                            <span className="text-[10px] text-muted-foreground flex items-center justify-end gap-1">
-                              <Clock className="w-3 h-3" /> Matching…
-                            </span>
+                            <button
+                              onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                              disabled={cancelOrder.isPending}
+                              className="text-[10px] font-semibold px-2.5 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {cancelOrder.isPending ? "…" : "Cancel"}
+                            </button>
                           </td>
                         </tr>
                       ))}

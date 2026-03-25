@@ -1,7 +1,7 @@
 import { useParams } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder } from "@workspace/api-client-react";
+import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook } from "@/lib/mock-data";
@@ -147,6 +147,19 @@ export function FuturesTrading() {
   const [price, setPrice] = useState("");
   const [chartInterval, setChartInterval] = useState("1h");
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
+  const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "history">("positions");
+
+  const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
+    { walletAddress: address || "" },
+    { query: { enabled: !!address, refetchInterval: 5000 } }
+  );
+  const cancelOrder = useCancelOrder({
+    mutation: { onSuccess: () => refetchOrders() },
+  });
+
+  const allOrders = (apiOrders as any[]) || [];
+  const openOrders = allOrders.filter((o: any) => o.status === "open");
+  const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
   const countdown = useFundingCountdown();
 
@@ -291,28 +304,125 @@ export function FuturesTrading() {
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
-              <div className="flex gap-6 px-4 border-b border-border text-sm font-medium shrink-0">
-                {["Positions (0)", "Open Orders (0)", "Trade History"].map((t, i) => (
+              <div className="flex gap-0 px-3 border-b border-border text-xs font-medium shrink-0">
+                {([
+                  { key: "positions", label: "Positions (0)" },
+                  { key: "orders",    label: `Open Orders (${openOrders.length})` },
+                  { key: "history",   label: `Trade History (${filledOrders.length})` },
+                ] as { key: "positions" | "orders" | "history"; label: string }[]).map((t) => (
                   <button
-                    key={t}
+                    key={t.key}
+                    onClick={() => setBottomTab(t.key)}
                     className={cn(
-                      "py-3 border-b-2 transition-colors",
-                      i === 0
+                      "py-2 px-3 border-b-2 transition-colors whitespace-nowrap",
+                      bottomTab === t.key
                         ? "border-primary text-primary"
                         : "border-transparent text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    {t}
+                    {t.label}
                   </button>
                 ))}
               </div>
-              <div className="flex-1 overflow-auto p-4 flex items-center justify-center text-muted-foreground text-sm">
-                {address ? (
-                  <span className="text-muted-foreground">No open positions · Place a trade to get started</span>
-                ) : (
-                  <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
-                    <Wallet className="w-4 h-4" /> Connect wallet to view positions
-                  </button>
+
+              <div className="flex-1 overflow-auto">
+                {/* Positions tab */}
+                {bottomTab === "positions" && (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                    {address ? (
+                      <span>No open positions · Place a trade to get started</span>
+                    ) : (
+                      <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                        <Wallet className="w-4 h-4" /> Connect wallet to view positions
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Open Orders tab */}
+                {bottomTab === "orders" && (
+                  openOrders.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      {address ? "No open orders." : (
+                        <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                          <Wallet className="w-4 h-4" /> Connect wallet to view orders
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-muted-foreground font-sans border-b border-border">
+                          <th className="p-2 font-medium">Date</th>
+                          <th className="p-2 font-medium">Pair</th>
+                          <th className="p-2 font-medium">Side</th>
+                          <th className="p-2 font-medium text-right">Price</th>
+                          <th className="p-2 font-medium text-right">Size</th>
+                          <th className="p-2 font-medium text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {openOrders.map((o: any, i: number) => (
+                          <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                            <td className="p-2 text-muted-foreground">{new Date(o.createdAt).toLocaleTimeString()}</td>
+                            <td className="p-2">{o.symbol}</td>
+                            <td className={cn("p-2 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                            <td className="p-2 text-right">{formatPrice(o.price)}</td>
+                            <td className="p-2 text-right">{Number(o.quantity).toFixed(4)}</td>
+                            <td className="p-2 text-right">
+                              <button
+                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                                disabled={cancelOrder.isPending}
+                                className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
+                              >
+                                {cancelOrder.isPending ? "…" : "Cancel"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                )}
+
+                {/* Trade History tab */}
+                {bottomTab === "history" && (
+                  filledOrders.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      {address ? "No trade history yet." : (
+                        <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                          <Wallet className="w-4 h-4" /> Connect wallet to view history
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-muted-foreground font-sans border-b border-border">
+                          <th className="p-2 font-medium">Date</th>
+                          <th className="p-2 font-medium">Pair</th>
+                          <th className="p-2 font-medium">Side</th>
+                          <th className="p-2 font-medium text-right">Price</th>
+                          <th className="p-2 font-medium text-right">Size</th>
+                          <th className="p-2 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {filledOrders.map((o: any, i: number) => (
+                          <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                            <td className="p-2 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString()}</td>
+                            <td className="p-2">{o.symbol}</td>
+                            <td className={cn("p-2 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                            <td className="p-2 text-right">{formatPrice(o.price)}</td>
+                            <td className="p-2 text-right">{Number(o.quantity).toFixed(4)}</td>
+                            <td className={cn("p-2 capitalize text-[10px] font-semibold", o.status === "filled" ? "text-green-400" : "text-muted-foreground")}>
+                              {o.status}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
                 )}
               </div>
             </div>
