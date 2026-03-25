@@ -10,7 +10,7 @@ import {
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
-import { Search, Star, ArrowRightLeft, CreditCard, Zap } from "lucide-react";
+import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp } from "lucide-react";
 import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -247,10 +247,12 @@ export function Markets() {
             <p className="text-xs text-green-400/70 italic mt-0.5">✦ Trade means DEX</p>
           </div>
 
-          {/* Main tabs */}
-          <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+          {/* Main tabs — slim Poloniex-style */}
+          <div className="mt-3 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
             {TAB_META.map(t => {
-              const isBsv = t.id === "bsv";
+              const isBsv    = t.id === "bsv";
+              const isFav    = t.id === "favorites";
+              const isUsd    = t.id === "usd";
               const isActive = tab === t.id;
               return (
                 <button
@@ -258,30 +260,34 @@ export function Markets() {
                   onClick={() => { setTab(t.id); setSearch(""); }}
                   style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
                   className={cn(
-                    "shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
-                    isActive && isBsv
-                      ? "bg-green-500 text-black border-green-400 shadow-lg shadow-green-500/40"
+                    "shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all border",
+                    isActive && isFav
+                      ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
+                      : isActive && isBsv
+                      ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
+                      : isActive && isUsd
+                      ? "bg-primary text-primary-foreground border-primary shadow shadow-primary/20"
                       : isActive
-                      ? "bg-primary text-primary-foreground border-primary shadow-lg shadow-primary/20"
+                      ? "bg-primary/90 text-primary-foreground border-primary shadow shadow-primary/20"
+                      : isFav
+                      ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
                       : isBsv
-                      ? "text-green-400 border-green-500/50 bg-green-500/10 hover:bg-green-500/20"
-                      : "text-muted-foreground border-border hover:border-primary/40 hover:text-foreground hover:bg-white/5"
+                      ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
+                      : "text-muted-foreground border-border/50 hover:border-primary/30 hover:text-foreground hover:bg-white/5"
                   )}
                 >
-                  {isBsv && <span className="text-[13px] leading-none">⚡</span>}
-                  {t.label}
+                  {isBsv && <span className="text-[11px] leading-none">⚡</span>}
+                  {isFav && <Star className="w-2.5 h-2.5" />}
+                  <span>{isFav ? "Favorites" : t.label}</span>
                   <span className={cn(
-                    "text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center",
-                    isActive && isBsv ? "bg-black/20 text-black"
+                    "text-[9px] font-black px-1 py-px rounded min-w-[16px] text-center",
+                    (isActive && (isFav || isBsv)) ? "bg-black/20 text-black"
                     : isActive ? "bg-white/20 text-white"
-                    : isBsv ? "bg-green-500/20 text-green-300"
-                    : "bg-secondary text-muted-foreground"
+                    : isFav || isBsv ? "bg-green-500/20 text-green-300"
+                    : "bg-white/8 text-muted-foreground"
                   )}>
                     {tabCount(t.id)}
                   </span>
-                  {isBsv && !isActive && (
-                    <span className="text-[8px] font-black uppercase tracking-wider bg-green-500 text-black px-1 py-0.5 rounded ml-0.5">FASTEST</span>
-                  )}
                 </button>
               );
             })}
@@ -438,19 +444,19 @@ export function Markets() {
                       <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
                         {m.marketCap ? formatVolume(parseFloat(m.marketCap) || 0) : <span className="text-muted-foreground/30">—</span>}
                       </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleBuy(base)}
-                            className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 border border-green-500/25 px-2.5 py-1.5 rounded-lg font-semibold text-[11px] hover:bg-green-500/25 transition-colors opacity-0 group-hover:opacity-100"
+                            className="inline-flex items-center gap-0.5 bg-white/5 text-muted-foreground border border-border px-2 py-1 rounded-md font-semibold text-[10px] hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors opacity-0 group-hover:opacity-100"
                           >
-                            <CreditCard className="w-3 h-3" /> Buy
+                            <CreditCard className="w-2.5 h-2.5" /> Buy
                           </button>
                           <button
                             onClick={() => handleTrade(tradeHref)}
-                            className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3.5 py-1.5 rounded-lg font-semibold text-xs hover:opacity-90 transition-opacity"
+                            className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1 rounded-md font-bold text-[11px] hover:brightness-110 transition-all active:scale-95"
                           >
-                            Trade <ArrowRightLeft className="w-3 h-3" />
+                            <TrendingUp className="w-3 h-3" /> Trade
                           </button>
                         </div>
                       </td>

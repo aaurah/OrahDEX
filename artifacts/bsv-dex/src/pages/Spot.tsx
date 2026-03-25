@@ -7,16 +7,14 @@ import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
-import { RecentTrades } from "@/components/trading/RecentTrades";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
-import { ExternalLink, CheckCircle2, Clock, Search, BookOpen, BarChart2, ShoppingCart } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, Search } from "lucide-react";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 type BottomTab = "open" | "history" | "trades";
 type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
-type LeftTab = "markets" | "orderbook";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "USDT", label: "USDT", color: "text-green-400" },
@@ -51,7 +49,6 @@ export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address } = useWalletStore();
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
-  const [leftTab, setLeftTab] = useState<LeftTab>("orderbook");
   const [quoteTab, setQuoteTab] = useState<QuoteTab>("USDT");
   const [marketSearch, setMarketSearch] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
@@ -181,166 +178,109 @@ export function SpotTrading() {
         </div>
       </div>
 
-      {/* Main Trading Area */}
-      <div className="flex-1 flex overflow-hidden lg:flex-row flex-col">
+      {/* Main Trading Area — Poloniex-style: Pairs | Chart | OrderBook+Form */}
+      <div className="flex-1 flex overflow-hidden">
 
-        {/* Left Column: Markets + OrderBook tabs */}
-        <div className="w-full lg:w-[280px] border-r border-border shrink-0 flex flex-col min-h-0 order-2 lg:order-1">
-          {/* Left tab switcher */}
-          <div className="flex border-b border-border shrink-0">
-            <button
-              onClick={() => setLeftTab("markets")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold border-b-2 transition-colors",
-                leftTab === "markets"
-                  ? "border-primary text-primary bg-primary/5"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <BarChart2 className="w-3.5 h-3.5" />
-              Markets
-            </button>
-            <button
-              onClick={() => setLeftTab("orderbook")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold border-b-2 transition-colors",
-                leftTab === "orderbook"
-                  ? "border-primary text-primary bg-primary/5"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              Order Book
-            </button>
+        {/* LEFT: Pair Selector — always visible, slim */}
+        <div className="hidden lg:flex w-[200px] shrink-0 border-r border-border flex-col min-h-0 bg-card">
+          {/* Search + Quote tabs */}
+          <div className="px-1.5 pt-1.5 pb-1 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={marketSearch}
+                onChange={e => setMarketSearch(e.target.value)}
+                className="w-full pl-6 pr-2 py-1 text-[10px] bg-secondary/60 border border-border rounded-md outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
+              />
+            </div>
           </div>
-
-          {/* Markets Panel */}
-          {leftTab === "markets" && (
-            <div className="flex-1 flex flex-col min-h-0">
-              {/* Search + Buy */}
-              <div className="px-2 pt-2 pb-1 shrink-0 flex items-center gap-1.5">
-                <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    placeholder="Search pairs…"
-                    value={marketSearch}
-                    onChange={e => setMarketSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
-                  />
-                </div>
+          <div className="flex px-1.5 pb-1 gap-0.5 shrink-0 overflow-x-auto scrollbar-hide">
+            {QUOTE_TABS.map(t => {
+              const isBsv = t.id === "BSV";
+              const isActive = quoteTab === t.id;
+              return (
                 <button
-                  onClick={() => setBuyOpen(true)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 active:scale-95 transition-all shrink-0 whitespace-nowrap"
+                  key={t.id}
+                  onClick={() => setQuoteTab(t.id)}
+                  className={cn(
+                    "shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold transition-all",
+                    isActive && isBsv
+                      ? "bg-green-500/20 text-green-400"
+                      : isActive
+                      ? "bg-primary/15 text-primary"
+                      : isBsv
+                      ? "text-green-500/70 hover:text-green-400"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  <ShoppingCart className="w-3 h-3" />
-                  Buy
+                  {isBsv ? "⚡BSV" : t.label}
                 </button>
-              </div>
-
-              {/* Quote tabs */}
-              <div className="flex px-2 pb-1 gap-1 shrink-0 overflow-x-auto scrollbar-hide">
-                {QUOTE_TABS.map(t => {
-                  const isBsv = t.id === "BSV";
-                  const isActive = quoteTab === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setQuoteTab(t.id)}
-                      className={cn(
-                        "shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
-                        isActive && isBsv
-                          ? "bg-green-500/20 border-green-500/50 text-green-400"
-                          : isActive
-                          ? "bg-primary/15 border-primary/40 text-primary"
-                          : isBsv
-                          ? "border-green-500/30 text-green-500/70 hover:text-green-400 hover:bg-green-500/10"
-                          : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/60"
-                      )}
+              );
+            })}
+          </div>
+          {/* Column headers */}
+          <div className="flex items-center px-1.5 py-0.5 text-[9px] text-muted-foreground font-medium shrink-0 border-b border-border/50">
+            <span className="flex-1">Pair</span>
+            <span className="w-16 text-right">Price</span>
+            <span className="w-10 text-right">%</span>
+          </div>
+          {/* Pair list */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {filteredMarkets.length === 0 ? (
+              <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">No pairs</div>
+            ) : (
+              filteredMarkets.map(m => {
+                const urlSymbol = m.symbol.replace('/', '-');
+                const isActivePair = urlSymbol === rawSymbol;
+                const isUp = m.priceChangePercent24h >= 0;
+                const bgColor = COIN_COLORS[m.baseAsset] ?? "#6B7280";
+                return (
+                  <Link
+                    key={m.symbol}
+                    href={`/trade/${urlSymbol}`}
+                    className={cn(
+                      "flex items-center px-1.5 py-1 gap-1 hover:bg-white/5 cursor-pointer transition-colors",
+                      isActivePair && "bg-primary/10 border-l-2 border-l-primary"
+                    )}
+                  >
+                    <div
+                      className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black text-white shrink-0"
+                      style={{ background: bgColor }}
                     >
-                      {isBsv && <span className="mr-0.5">⚡</span>}
-                      {t.label}
-                      {quoteCounts[t.id] > 0 && (
-                        <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Column headers */}
-              <div className="flex items-center px-2 py-1 text-[10px] text-muted-foreground font-medium shrink-0 border-b border-border/50">
-                <span className="flex-1">Pair</span>
-                <span className="w-20 text-right">Price</span>
-                <span className="w-14 text-right">Change</span>
-              </div>
-
-              {/* Pair list */}
-              <div className="flex-1 overflow-y-auto min-h-0">
-                {filteredMarkets.length === 0 ? (
-                  <div className="flex items-center justify-center h-20 text-xs text-muted-foreground">
-                    No pairs found
-                  </div>
-                ) : (
-                  filteredMarkets.map(m => {
-                    const urlSymbol = m.symbol.replace('/', '-');
-                    const isActive = urlSymbol === rawSymbol;
-                    const isUp = m.priceChangePercent24h >= 0;
-                    const bgColor = COIN_COLORS[m.baseAsset] ?? "#6B7280";
-                    return (
-                      <Link
-                        key={m.symbol}
-                        href={`/trade/${urlSymbol}`}
-                        className={cn(
-                          "flex items-center px-2 py-1.5 gap-2 hover:bg-white/5 cursor-pointer transition-colors",
-                          isActive && "bg-primary/10 border-l-2 border-l-primary"
-                        )}
-                      >
-                        <div
-                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black text-white shrink-0"
-                          style={{ background: bgColor }}
-                        >
-                          {m.baseAsset.slice(0, 2)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[11px] font-semibold text-foreground">{m.baseAsset}</span>
-                          <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
-                        </div>
-                        <span className="w-20 text-right text-[11px] font-mono text-foreground">
-                          {formatPrice(m.lastPrice)}
-                        </span>
-                        <span className={cn(
-                          "w-14 text-right text-[10px] font-semibold",
-                          isUp ? "text-buy" : "text-sell"
-                        )}>
-                          {isUp ? "+" : ""}{m.priceChangePercent24h.toFixed(2)}%
-                        </span>
-                      </Link>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Order Book Panel */}
-          {leftTab === "orderbook" && (
-            <div className="flex-1 min-h-0">
-              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} onFill={handleOrderBookFill} />
-            </div>
-          )}
+                      {m.baseAsset.slice(0, 2)}
+                    </div>
+                    <div className="flex-1 min-w-0 leading-tight">
+                      <span className="text-[10px] font-semibold text-foreground">{m.baseAsset}</span>
+                      <span className="text-[9px] text-muted-foreground">/{m.quoteAsset}</span>
+                    </div>
+                    <span className="w-16 text-right text-[9px] font-mono text-foreground truncate">
+                      {formatPrice(m.lastPrice)}
+                    </span>
+                    <span className={cn(
+                      "w-10 text-right text-[9px] font-bold",
+                      isUp ? "text-buy" : "text-sell"
+                    )}>
+                      {isUp ? "+" : ""}{m.priceChangePercent24h.toFixed(1)}%
+                    </span>
+                  </Link>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Center Column: Chart & Open Orders */}
-        <div className="flex-1 flex flex-col min-w-0 order-1 lg:order-2">
-          <div className="h-[50vh] lg:flex-1 border-b border-border relative">
+        {/* CENTER: Chart & Bottom Tabs */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 border-b border-border relative min-h-0" style={{ minHeight: "320px" }}>
             <Chart data={candles} />
           </div>
-          <div className="h-[250px] lg:h-[300px] shrink-0 bg-card flex flex-col">
+          <div className="h-[200px] shrink-0 bg-card flex flex-col">
             {/* Tab bar */}
-            <div className="flex gap-0 px-4 border-b border-border text-sm font-medium shrink-0">
+            <div className="flex gap-0 px-3 border-b border-border text-xs font-medium shrink-0">
               {([
-                { key: "open",    label: `Open (${openOrders.length})` },
+                { key: "open",    label: `Open Orders (${openOrders.length})` },
                 { key: "history", label: `History (${filledOrders.length})` },
                 { key: "trades",  label: "Market Trades" },
               ] as { key: BottomTab; label: string }[]).map(t => (
@@ -348,7 +288,7 @@ export function SpotTrading() {
                   key={t.key}
                   onClick={() => setBottomTab(t.key)}
                   className={cn(
-                    "py-3 px-4 border-b-2 transition-colors whitespace-nowrap",
+                    "py-2 px-3 border-b-2 transition-colors whitespace-nowrap text-xs",
                     bottomTab === t.key
                       ? "border-primary text-primary"
                       : "border-transparent text-muted-foreground hover:text-foreground"
@@ -502,15 +442,21 @@ export function SpotTrading() {
           </div>
         </div>
 
-        {/* Right Column: Order Form & Recent Trades */}
-        <div className="w-full lg:w-[300px] shrink-0 flex flex-col min-h-0 order-3 border-l border-border bg-card">
-          <div className="flex-1 lg:flex-none">
+        {/* RIGHT: Order Book (top) + Order Form (bottom) — Poloniex style */}
+        <div className="hidden lg:flex w-[280px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
+          {/* Order Book — takes top ~55% of right panel */}
+          <div className="border-b border-border" style={{ height: "55%" }}>
+            <OrderBook data={orderBook} lastPrice={ticker.lastPrice} onFill={handleOrderBookFill} />
+          </div>
+          {/* Order Form — takes bottom ~45% */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
           </div>
-          <div className="flex-1 min-h-0 hidden lg:flex flex-col">
-            <div className="p-3 border-y border-border bg-secondary/50 font-semibold text-sm">Market Trades</div>
-            <RecentTrades trades={trades} />
-          </div>
+        </div>
+
+        {/* MOBILE: full-width order form below chart */}
+        <div className="lg:hidden w-full shrink-0 border-t border-border bg-card">
+          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
         </div>
       </div>
 
