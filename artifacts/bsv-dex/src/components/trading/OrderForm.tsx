@@ -478,24 +478,43 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
 
+  const [autoBorrow, setAutoBorrow] = useState(false);
+
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
-      {/* Buy / Sell tabs */}
-      <div className="flex">
+      {/* Buy / Sell tabs + Auto Borrow */}
+      <div className="flex items-stretch border-b border-border shrink-0">
         <button
-          className={cn("flex-1 py-4 text-center font-bold text-sm transition-colors border-b-2",
+          className={cn("flex-1 py-3 text-center font-bold text-sm transition-colors border-b-2",
             side === "buy" ? "text-buy border-buy bg-buy/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("buy")}
         >
-          Buy {base}
+          Buy
         </button>
         <button
-          className={cn("flex-1 py-4 text-center font-bold text-sm transition-colors border-b-2",
+          className={cn("flex-1 py-3 text-center font-bold text-sm transition-colors border-b-2",
             side === "sell" ? "text-sell border-sell bg-sell/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("sell")}
         >
-          Sell {base}
+          Sell
         </button>
+        {/* Auto Borrow toggle */}
+        <div className="flex items-center gap-1.5 px-3 border-l border-border shrink-0">
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">Auto Borrow</span>
+          <button
+            type="button"
+            onClick={() => setAutoBorrow(v => !v)}
+            className={cn(
+              "relative w-8 h-4 rounded-full transition-colors shrink-0",
+              autoBorrow ? "bg-primary" : "bg-secondary border border-border"
+            )}
+          >
+            <span className={cn(
+              "absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform shadow-sm",
+              autoBorrow ? "translate-x-4" : "translate-x-0"
+            )} />
+          </button>
+        </div>
       </div>
 
       {/* Settlement banner */}
@@ -508,33 +527,39 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         />
       )}
 
-      <div className="p-4 flex-1 flex flex-col gap-4 overflow-y-auto">
-        {/* Network badge */}
-        <div className="flex items-center gap-2">
-          <span className={cn(
-            "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border",
-            isEvm
-              ? "text-violet-400 border-violet-500/30 bg-violet-500/10"
-              : "text-green-400 border-green-500/30 bg-green-500/10"
-          )}>
-            {isEvm ? "⬡ EVM" : "₿ BSV"}
-          </span>
-          <span className="text-[10px] text-muted-foreground">
-            {isEvm ? "Signs with MetaMask · settles on BSV chain" : "Native BSV · on-chain settlement"}
-          </span>
-        </div>
-
+      <div className="p-3 flex-1 flex flex-col gap-3 overflow-y-auto">
         {/* Order type */}
-        <div className="flex gap-1 text-xs font-medium bg-secondary p-1 rounded-lg">
+        <div className="flex gap-0 text-xs font-medium bg-secondary p-0.5 rounded-lg">
           {(["limit", "market", "stop"] as OrderType[]).map((t) => (
             <button key={t}
               className={cn("flex-1 py-1.5 rounded-md transition-colors capitalize",
                 type === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
               onClick={() => setType(t)}
             >
-              {t === "stop" ? "Stop" : t}
+              {t === "stop" ? "TP/SL" : t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
+        </div>
+
+        {/* Available balance row */}
+        <div className="flex items-center justify-between text-xs px-0.5">
+          <span className="text-muted-foreground">Available</span>
+          <div className="flex items-center gap-1">
+            {balancesLoading && isEvm ? (
+              <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
+            ) : (
+              <span className="font-mono font-semibold text-foreground">
+                {availableAmt > 0
+                  ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
+                  : "0.0000"}{" "}{availableSym}
+              </span>
+            )}
+            {!balancesLoading && isEvm && (
+              <button type="button" onClick={refreshBalances} className="text-muted-foreground/30 hover:text-primary transition-colors">
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Stop order info */}
@@ -588,50 +613,19 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             </div>
           )}
 
-          {/* Amount — header shows live available balance */}
-          <div className="flex flex-col bg-secondary border border-border rounded-xl focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-            <div className="flex items-center justify-between px-3 pt-2 pb-0.5">
-              <span className="text-muted-foreground text-xs">Amount ({base})</span>
-              <div className="flex items-center gap-1">
-                {balancesLoading && isEvm ? (
-                  <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    Available:{" "}
-                    <span className={cn(
-                      "font-semibold font-mono",
-                      availableAmt > 0 ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {availableAmt > 0
-                        ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
-                        : "0"}{" "}{availableSym}
-                    </span>
-                  </span>
-                )}
-                {!balancesLoading && isEvm && (
-                  <button
-                    type="button"
-                    onClick={refreshBalances}
-                    className="text-muted-foreground/30 hover:text-primary transition-colors ml-0.5"
-                    title="Refresh balance"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center px-3 pb-2.5 pt-1 gap-2">
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="flex-1 bg-transparent text-foreground font-mono focus:outline-none text-base"
-                placeholder="0.00"
-                min="0"
-                step="any"
-              />
-              <span className="text-muted-foreground text-sm shrink-0">{base}</span>
-            </div>
+          {/* Amount */}
+          <div className="group flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+            <span className="text-muted-foreground text-sm w-16 shrink-0">Amount</span>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
+              placeholder="0.00"
+              min="0"
+              step="any"
+            />
+            <span className="text-muted-foreground text-sm ml-2 shrink-0">{base}</span>
           </div>
 
           {/* Slippage (market orders only) */}
@@ -797,15 +791,30 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             </span>
           </div>
 
-          {/* How it works */}
-          <div className="p-3 rounded-xl bg-secondary/40 border border-border/50">
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
-              {isEvm
-                ? "Your EVM wallet signs the order intent (no gas). When matched, the trade settles permanently on the BSV blockchain via OP_RETURN."
-                : "Your BSV wallet trades natively on-chain. Settlement is recorded on the Bitcoin SV blockchain via OP_RETURN."}
-            </p>
-          </div>
         </form>
+
+        {/* Assets panel */}
+        <div className="mt-1 border-t border-border pt-3 space-y-1.5">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assets</p>
+          {[
+            { label: `${base} Available`, value: `${baseAvailable > 0 ? baseAvailable.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "0.0000"} ${base}` },
+            { label: `${quote} Available`, value: `${quoteAvailable > 0 ? quoteAvailable.toLocaleString("en-US", { maximumFractionDigits: 2 }) : "0.00"} ${quote}` },
+          ].map(row => (
+            <div key={row.label} className="flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">{row.label}</span>
+              <span className="font-mono text-foreground">{row.value}</span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between text-[11px] mt-1 pt-1.5 border-t border-border/50">
+            <span className="text-muted-foreground">Network</span>
+            <span className={cn(
+              "font-bold text-[10px] uppercase px-1.5 py-0.5 rounded border",
+              isEvm ? "text-violet-400 border-violet-500/30 bg-violet-500/10" : "text-green-400 border-green-500/30 bg-green-500/10"
+            )}>
+              {isEvm ? "⬡ EVM" : "₿ BSV"}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );
