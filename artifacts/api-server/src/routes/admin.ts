@@ -1,8 +1,8 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db } from "@workspace/db";
-import { marketsTable, platformSettingsTable, adminEmailsTable } from "@workspace/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable } from "@workspace/db/schema";
+import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
@@ -265,22 +265,57 @@ router.post("/security-vault/regenerate-bsv", async (_req, res) => {
   } catch { res.status(500).json({ error: "Failed to regenerate BSV wallet" }); }
 });
 
-const mockUsers = Array.from({ length: 24 }, (_, i) => ({
-  id: `usr_${(i + 1).toString().padStart(4, "0")}`,
-  walletAddress: i % 3 === 0
-    ? `0x${Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join("")}`
-    : `1${Array.from({length: 33}, () => "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"[Math.floor(Math.random()*58)]).join("")}`,
-  network: i % 3 === 0 ? "evm" : "bsv",
-  provider: ["handcash","relayx","panda","metamask","walletconnect","coinbase","trust","phantom"][i % 8],
-  volume24h: parseFloat((Math.random() * 500000).toFixed(2)),
-  totalTrades: Math.floor(Math.random() * 2000),
-  balance: parseFloat((Math.random() * 100000).toFixed(2)),
-  status: i === 3 ? "banned" : i === 7 ? "suspended" : "active",
-  verified: i % 4 !== 0,
-  joinedAt: new Date(Date.now() - Math.random() * 180 * 86400 * 1000).toISOString(),
-  lastActive: new Date(Date.now() - Math.random() * 3 * 86400 * 1000).toISOString(),
-  country: ["US","UK","SG","JP","AU","DE","CA","KR"][i % 8],
-}));
+/* ── In-memory user metadata (status, country, provider, verified, balance override) ─ */
+/* Indexed by walletAddress.toLowerCase() */
+const userMeta: Map<string, {
+  status: string; country: string; provider: string; verified: boolean; balanceOverride?: number;
+}> = new Map();
+
+function getUserMeta(addr: string) {
+  return userMeta.get(addr.toLowerCase()) ?? {
+    status: "active",
+    country: "US",
+    provider: addr.startsWith("0x") ? "walletconnect" : "handcash",
+    verified: false,
+  };
+}
+
+async function buildRealUserList(): Promise<any[]> {
+  /* Aggregate orders by wallet_address (skip bot) */
+  const rows = await db
+    .select({
+      walletAddress: ordersTable.walletAddress,
+      networkType: ordersTable.networkType,
+      orderCount: sql<number>`count(*)::int`,
+      filledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
+      totalVolume: sql<string>`coalesce(sum(case when ${ordersTable.status}='filled' then cast(${ordersTable.total} as numeric) else 0 end),0)`,
+      firstSeen: sql<string>`min(${ordersTable.createdAt})`,
+      lastActive: sql<string>`max(${ordersTable.updatedAt})`,
+    })
+    .from(ordersTable)
+    .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
+    .groupBy(ordersTable.walletAddress, ordersTable.networkType)
+    .orderBy(sql`max(${ordersTable.updatedAt}) desc`);
+
+  return rows.map((r, i) => {
+    const meta = getUserMeta(r.walletAddress);
+    const isEvm = r.walletAddress.startsWith("0x");
+    return {
+      id: `usr_${r.walletAddress.slice(0, 8)}`,
+      walletAddress: r.walletAddress,
+      network: r.networkType ?? (isEvm ? "evm" : "bsv"),
+      provider: meta.provider,
+      volume24h: parseFloat(r.totalVolume ?? "0"),
+      totalTrades: r.filledCount ?? 0,
+      balance: meta.balanceOverride ?? 0,
+      status: meta.status,
+      verified: meta.verified,
+      joinedAt: r.firstSeen,
+      lastActive: r.lastActive,
+      country: meta.country,
+    };
+  });
+}
 
 // No pre-seeded admins — only the owner (aaurah@protonmail.com) is shown as
 // the virtual pinned row on the frontend. Any admins added via the UI live here.
@@ -301,14 +336,21 @@ const deployedContracts: any[] = [
 /* ─── STATS ─── */
 router.get("/stats", async (_req, res) => {
   const allMarkets = await db.select().from(marketsTable);
+  const realUsers = await buildRealUserList();
+  const [tradeAgg] = await db.select({
+    total24h: sql<number>`count(*) filter (where ${tradesTable.timestamp} > now() - interval '24 hours')::int`,
+    vol24h: sql<string>`coalesce(sum(case when ${tradesTable.timestamp} > now() - interval '24 hours' then cast(${tradesTable.total} as numeric) else 0 end),0)`,
+  }).from(tradesTable);
+  const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` })
+    .from(ordersTable).where(eq(ordersTable.status, "open"));
   res.json({
-    totalUsers: mockUsers.length,
-    activeUsers24h: 18,
-    totalVolume24h: mockUsers.reduce((s, u) => s + u.volume24h, 0),
-    totalTrades24h: 14823,
+    totalUsers: realUsers.length,
+    activeUsers24h: realUsers.filter(u => u.status === "active").length,
+    totalVolume24h: parseFloat(tradeAgg?.vol24h ?? "0"),
+    totalTrades24h: tradeAgg?.total24h ?? 0,
     activePairs: allMarkets.filter(m => m.status === "active").length,
     totalPairs: allMarkets.length,
-    openOrders: 2341,
+    openOrders: openOrdersRow?.cnt ?? 0,
     deployedContracts: deployedContracts.length,
     revenue24h: 12450.88,
     tvl: 845000000,
@@ -317,37 +359,159 @@ router.get("/stats", async (_req, res) => {
   });
 });
 
-/* ─── USERS ─── */
-router.get("/users", (_req, res) => {
-  const { search, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
-  let users = [...mockUsers];
-  if (search) users = users.filter(u => u.walletAddress.toLowerCase().includes(search.toLowerCase()) || u.provider.includes(search.toLowerCase()));
-  if (status && status !== "all") users = users.filter(u => u.status === status);
-  const total = users.length;
-  const p = parseInt(page), l = parseInt(limit);
-  users = users.slice((p - 1) * l, p * l);
-  res.json({ users, total, page: p, pages: Math.ceil(total / l) });
+/* ─── TRANSACTIONS (real DB: trades + BSV settlement orders) ─── */
+router.get("/transactions", async (_req, res) => {
+  try {
+    const { search, chain, type, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
+    const PAGE = parseInt(page), LIMIT = parseInt(limit);
+
+    /* 1. Real trades from tradesTable */
+    const rawTrades = await db.select().from(tradesTable)
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(500);
+
+    const tradeTxs = rawTrades.map(t => {
+      const isBsv = !!(t.walletAddress && !t.walletAddress.startsWith("0x"));
+      const chain = isBsv ? "BSV" : "ETH";
+      return {
+        id: `trade-${t.id}`,
+        txHash: t.txid ?? `0x${t.id.replace(/-/g, "").padEnd(64, "0")}`,
+        chain,
+        type: "settlement",
+        status: "confirmed",
+        from: t.walletAddress ?? "BOT_LIQUIDITY_ENGINE",
+        to: "OrahDEX Settlement",
+        amount: parseFloat(t.quantity as string),
+        asset: t.symbol?.split("/")?.[0] ?? "BSV",
+        fee: parseFloat(t.fee as string),
+        feeCurrency: t.feeAsset ?? "USDT",
+        blockHeight: null as number | null,
+        confirmations: isBsv ? 6 : 12,
+        requiredConfirmations: isBsv ? 3 : 12,
+        timestamp: t.timestamp?.toISOString?.() ?? new Date().toISOString(),
+        walletAddress: t.walletAddress ?? "",
+        orderId: undefined as string | undefined,
+        symbol: t.symbol,
+        side: t.side,
+        price: t.price,
+        note: `${t.symbol} ${t.side?.toUpperCase()} @ $${parseFloat(t.price as string).toFixed(4)} — DEX trade`,
+        hasTxid: !!t.txid,
+      };
+    });
+
+    /* 2. BSV settlement orders (orders with txid) */
+    const rawOrders = await db.select().from(ordersTable)
+      .where(and(isNotNull(ordersTable.txid), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(200);
+
+    const settlementTxs = rawOrders.map(o => ({
+      id: `order-${o.id}`,
+      txHash: o.txid!,
+      chain: "BSV",
+      type: "settlement",
+      status: "confirmed",
+      from: o.walletAddress,
+      to: o.matchedOrderId ? `Order ${o.matchedOrderId}` : "OrahDEX BOT",
+      amount: parseFloat(o.quantity as string),
+      asset: o.symbol?.split("/")?.[0] ?? "BSV",
+      fee: parseFloat(o.fee as string),
+      feeCurrency: o.feeAsset ?? "USDT",
+      blockHeight: null as number | null,
+      confirmations: 6,
+      requiredConfirmations: 3,
+      timestamp: o.createdAt?.toISOString?.() ?? new Date().toISOString(),
+      walletAddress: o.walletAddress,
+      orderId: o.id,
+      symbol: o.symbol,
+      side: o.side,
+      price: o.price,
+      note: `${o.symbol} ${o.side?.toUpperCase()} @ $${parseFloat(o.price as string || "0").toFixed(4)} — OP_RETURN settlement`,
+      hasTxid: true,
+    }));
+
+    /* Merge & deduplicate by txHash */
+    const seen = new Set<string>();
+    const merged = [...settlementTxs, ...tradeTxs].filter(tx => {
+      if (seen.has(tx.txHash)) return false;
+      seen.add(tx.txHash);
+      return true;
+    });
+
+    /* Filters */
+    let filtered = merged;
+    if (chain && chain !== "all") filtered = filtered.filter(t => t.chain === chain);
+    if (type && type !== "all") filtered = filtered.filter(t => t.type === type);
+    if (status && status !== "all") filtered = filtered.filter(t => t.status === status);
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(t =>
+        t.txHash.toLowerCase().includes(q) ||
+        t.walletAddress.toLowerCase().includes(q) ||
+        (t.orderId?.toLowerCase().includes(q)) ||
+        t.asset.toLowerCase().includes(q)
+      );
+    }
+
+    const total = filtered.length;
+    const paged = filtered.slice((PAGE - 1) * LIMIT, PAGE * LIMIT);
+    res.json({ transactions: paged, total, page: PAGE, pages: Math.ceil(total / LIMIT) });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to load transactions" });
+  }
 });
 
-router.patch("/users/:id/status", (req, res) => {
+/* ─── USERS (real DB) ─── */
+router.get("/users", async (_req, res) => {
+  try {
+    const { search, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
+    let users = await buildRealUserList();
+    if (search) {
+      const q = search.toLowerCase();
+      users = users.filter(u =>
+        u.walletAddress.toLowerCase().includes(q) ||
+        u.provider.toLowerCase().includes(q) ||
+        u.country.toLowerCase().includes(q)
+      );
+    }
+    if (status && status !== "all") users = users.filter(u => u.status === status);
+    const total = users.length;
+    const p = parseInt(page), l = parseInt(limit);
+    const paged = users.slice((p - 1) * l, p * l);
+    res.json({ users: paged, total, page: p, pages: Math.ceil(total / l) });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to load users" });
+  }
+});
+
+router.patch("/users/:id/status", async (req, res) => {
+  /* id is "usr_<addr-prefix>" — find user by matching prefix */
   const { status } = req.body;
-  const user = mockUsers.find(u => u.id === req.params.id);
+  const users = await buildRealUserList();
+  const user = users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
-  user.status = status;
-  res.json({ success: true, user });
+  const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
+  userMeta.set(user.walletAddress.toLowerCase(), { ...existing, status });
+  res.json({ success: true, user: { ...user, status } });
 });
 
-router.patch("/users/:id", (req, res) => {
-  const user = mockUsers.find(u => u.id === req.params.id);
+router.patch("/users/:id", async (req, res) => {
+  const users = await buildRealUserList();
+  const user = users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
   const { status, country, verified, balance, network, provider } = req.body;
-  if (status !== undefined) user.status = status;
-  if (country !== undefined) user.country = country;
-  if (verified !== undefined) user.verified = verified;
-  if (balance !== undefined) user.balance = parseFloat(balance);
-  if (network !== undefined) user.network = network;
-  if (provider !== undefined) user.provider = provider;
-  res.json({ success: true, user });
+  const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
+  const updated = {
+    ...existing,
+    ...(status !== undefined && { status }),
+    ...(country !== undefined && { country }),
+    ...(verified !== undefined && { verified }),
+    ...(balance !== undefined && { balanceOverride: parseFloat(balance) }),
+    ...(provider !== undefined && { provider }),
+  };
+  userMeta.set(user.walletAddress.toLowerCase(), updated);
+  const updatedUser = { ...user, ...updated, balance: updated.balanceOverride ?? user.balance };
+  res.json({ success: true, user: updatedUser });
 });
 
 /* ─── ADMINS ─── */
