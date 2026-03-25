@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -161,11 +161,6 @@ const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   "post-only":     "Post Only",
 };
 
-const MOCK_OPEN_ORDERS = [
-  { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
-  { id: "2", symbol: "BTC/USDT", side: "sell", type: "market", price: 65400, qty: 0.01, status: "filled",    time: "08:42" },
-  { id: "3", symbol: "ETH/USDT", side: "buy",  type: "limit",  price: 3150,  qty: 0.5,  status: "cancelled", time: "07:30" },
-];
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const symbol = rawSymbol.replace(/-/g, "/");
@@ -176,6 +171,37 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { address } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
+  const queryClient = useQueryClient();
+
+  const { data: myOrdersData } = useQuery({
+    queryKey: ["orders", address],
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
+    enabled: !!address,
+    refetchInterval: 5000,
+  });
+
+  const myOrders: any[] = Array.isArray(myOrdersData) ? myOrdersData : [];
+  const openOrders = myOrders.filter(o => o.status === "open");
+  const historyOrders = myOrders.filter(o => o.status !== "open");
+
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const cancelMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const res = await fetch(`${BASE}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      if (!res.ok) throw new Error("Failed to cancel");
+      return res.json();
+    },
+    onMutate: (orderId) => setCancellingId(orderId),
+    onSettled: () => {
+      setCancellingId(null);
+      queryClient.invalidateQueries({ queryKey: ["orders", address] });
+    },
+  });
 
   const [interval, setInterval] = useState<string>("1h");
   const [activeIndicator, setActiveIndicator] = useState("MACD");
@@ -613,33 +639,85 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   Connect Wallet
                 </button>
               </div>
+            ) : myOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+                <ListOrdered size={28} className="opacity-30" />
+                <p className="text-sm">No orders yet</p>
+                <p className="text-xs opacity-60">Place a trade to see your orders here</p>
+              </div>
             ) : (
               <>
-                <div className="flex text-[9px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-1.5 border-b border-border/50">
-                  <span className="flex-1">Pair</span>
-                  <span className="w-16 text-right">Price</span>
-                  <span className="w-16 text-right">Amount</span>
-                  <span className="w-18 text-right pr-1">Status</span>
-                </div>
-                {MOCK_OPEN_ORDERS.map(o => (
-                  <div key={o.id} className="flex items-center px-4 py-2.5 border-b border-border/20">
-                    <div className="flex-1 min-w-0">
-                      <span className={cn("text-[10px] font-bold uppercase mr-1.5", o.side === "buy" ? "text-green-400" : "text-red-400")}>
-                        {o.side.toUpperCase()}
-                      </span>
-                      <span className="text-xs text-foreground font-medium">{o.symbol}</span>
-                      <span className="text-[10px] text-muted-foreground ml-1">{o.type}</span>
+                {/* Open Orders section */}
+                {openOrders.length > 0 && (
+                  <>
+                    <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
+                      <button
+                        onClick={() => openOrders.forEach(o => cancelMutation.mutate(String(o.id)))}
+                        className="text-[10px] font-semibold text-red-400 hover:text-red-300"
+                      >
+                        Cancel All
+                      </button>
                     </div>
-                    <span className="w-16 text-right text-xs font-mono text-foreground">{o.price.toLocaleString()}</span>
-                    <span className="w-16 text-right text-xs font-mono text-muted-foreground">{o.qty}</span>
-                    <span className={cn(
-                      "w-18 text-right text-[10px] font-semibold pr-1",
-                      o.status === "open" ? "text-green-400" : o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
-                    )}>
-                      {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                    </span>
-                  </div>
-                ))}
+                    <div className="border-b border-border/50" />
+                    {openOrders.map((o: any) => (
+                      <div key={o.id} className="flex items-center px-4 py-3 border-b border-border/20 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>
+                              {o.side}
+                            </span>
+                            <span className="text-xs text-foreground font-semibold">{o.symbol}</span>
+                            <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                            <span>Price: <span className="text-foreground font-mono">{Number(o.price).toLocaleString()}</span></span>
+                            <span>Qty: <span className="text-foreground font-mono">{Number(o.quantity).toFixed(4)}</span></span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => cancelMutation.mutate(String(o.id))}
+                          disabled={cancellingId === String(o.id)}
+                          className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
+                        >
+                          {cancellingId === String(o.id) ? "…" : "Cancel"}
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* History section */}
+                {historyOrders.length > 0 && (
+                  <>
+                    <div className="px-4 pt-3 pb-1">
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">History ({historyOrders.length})</span>
+                    </div>
+                    <div className="border-b border-border/50" />
+                    <div className="flex text-[9px] uppercase tracking-wider text-muted-foreground font-semibold px-4 py-1.5 border-b border-border/30">
+                      <span className="flex-1">Pair</span>
+                      <span className="w-16 text-right">Price</span>
+                      <span className="w-14 text-right">Qty</span>
+                      <span className="w-16 text-right">Status</span>
+                    </div>
+                    {historyOrders.map((o: any) => (
+                      <div key={o.id} className="flex items-center px-4 py-2 border-b border-border/20">
+                        <div className="flex-1 min-w-0 flex items-center gap-1">
+                          <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
+                          <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                        </div>
+                        <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
+                        <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
+                        <span className={cn(
+                          "w-16 text-right text-[10px] font-semibold",
+                          o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                        )}>
+                          {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </div>
