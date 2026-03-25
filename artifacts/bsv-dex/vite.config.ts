@@ -57,6 +57,49 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          /* ── Vendor chunks — browser caches these across deploys ── */
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/react-is/")) {
+            return "vendor-react";
+          }
+          if (id.includes("node_modules/@tanstack/")) {
+            return "vendor-query";
+          }
+          if (id.includes("node_modules/wagmi") || id.includes("node_modules/viem") || id.includes("node_modules/@wagmi/")) {
+            return "vendor-wagmi";
+          }
+          if (id.includes("node_modules/@reown/") || id.includes("node_modules/@walletconnect/")) {
+            return "vendor-reown";
+          }
+          if (id.includes("node_modules/lightweight-charts")) {
+            return "vendor-charts";
+          }
+          if (id.includes("node_modules/lucide-react")) {
+            return "vendor-icons";
+          }
+          if (id.includes("node_modules/framer-motion")) {
+            return "vendor-motion";
+          }
+          if (id.includes("node_modules/zustand")) {
+            return "vendor-state";
+          }
+          if (id.includes("node_modules/wouter")) {
+            return "vendor-router";
+          }
+          /* ── Admin pages — one chunk for the whole admin section ── */
+          if (id.includes("/pages/admin/")) {
+            return "pages-admin";
+          }
+          /* ── Mobile pages — one chunk for mobile views ── */
+          if (id.includes("/pages/mobile/") || id.includes("/components/mobile/")) {
+            return "pages-mobile";
+          }
+        },
+      },
+    },
   },
   server: {
     port,
