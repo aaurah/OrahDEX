@@ -1,6 +1,7 @@
-import { ReactNode, useState, useRef, useEffect } from "react";
+import { ReactNode, useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2 } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2 } from "lucide-react";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -80,25 +81,34 @@ interface PlatformNotif {
   audience: string; createdAt: string; active: boolean;
 }
 
-const NOTIF_ICONS = {
-  info: Info,
-  warning: AlertTriangle,
-  success: CheckCheck,
-  error: AlertTriangle,
+const NOTIF_TYPE_ICON: Record<string, typeof Info> = {
+  order_placed:    ShoppingCart,
+  order_filled:    CheckCheck,
+  order_cancelled: AlertTriangle,
+  trade:           Zap,
+  bridge:          Link2,
+  price_alert:     Activity,
+  info:            Info,
+  warning:         AlertTriangle,
+  success:         CheckCheck,
+  error:           AlertTriangle,
 };
 
-const NOTIF_COLORS = {
-  info:    "text-blue-400",
-  warning: "text-amber-400",
-  success: "text-green-400",
-  error:   "text-red-400",
+const NOTIF_TYPE_COLOR: Record<string, string> = {
+  order_placed:    "text-blue-400",
+  order_filled:    "text-green-400",
+  order_cancelled: "text-amber-400",
+  trade:           "text-violet-400",
+  bridge:          "text-cyan-400",
+  price_alert:     "text-orange-400",
+  info:            "text-blue-400",
+  warning:         "text-amber-400",
+  success:         "text-green-400",
+  error:           "text-red-400",
 };
 
-function usePlatformNotifs() {
+function usePlatformAnnouncements() {
   const [notifs, setNotifs] = useState<PlatformNotif[]>([]);
-  const [read, setRead] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("orahdex_notif_read") ?? "[]")); } catch { return new Set(); }
-  });
   useEffect(() => {
     const load = () => {
       try {
@@ -110,14 +120,7 @@ function usePlatformNotifs() {
     window.addEventListener("storage", load);
     return () => window.removeEventListener("storage", load);
   }, []);
-  const markAllRead = () => {
-    const ids = notifs.map(n => n.id);
-    const next = new Set([...read, ...ids]);
-    setRead(next);
-    localStorage.setItem("orahdex_notif_read", JSON.stringify([...next]));
-  };
-  const unread = notifs.filter(n => !read.has(n.id)).length;
-  return { notifs, unread, markAllRead };
+  return notifs;
 }
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -131,7 +134,31 @@ export function Layout({ children }: { children: ReactNode }) {
   const { data: bsvStatus } = useBsvStatus();
   const bsvOnline = bsvStatus?.online ?? false;
   const bsvBlock  = bsvStatus?.blockHeight ?? 0;
-  const { notifs, unread, markAllRead } = usePlatformNotifs();
+  const announcements = usePlatformAnnouncements();
+  const { notifications, addNotification, markAllRead, clearAll, unreadCount } = useNotificationStore();
+  const unread = unreadCount() + announcements.length;
+  const lastPollRef = useRef<number>(0);
+
+  /* Poll /api/notifications every 20 s when wallet is connected */
+  const pollNotifications = useCallback(async (addr: string) => {
+    try {
+      const since = lastPollRef.current;
+      const r = await fetch(`${BASE}/api/notifications?address=${encodeURIComponent(addr)}&since=${since}`);
+      if (!r.ok) return;
+      const { notifications: fresh } = await r.json() as { notifications: Array<{ id: string; type: string; title: string; body: string; timestamp: number; pair?: string; txid?: string; side?: string }> };
+      if (fresh?.length) {
+        lastPollRef.current = Date.now();
+        fresh.forEach(n => addNotification({ type: n.type as any, title: n.title, body: n.body, pair: n.pair, txid: n.txid, side: n.side as any }));
+      }
+    } catch { /* network error — ignore */ }
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (!address) return;
+    pollNotifications(address);
+    const interval = setInterval(() => pollNotifications(address), 20_000);
+    return () => clearInterval(interval);
+  }, [address, pollNotifications]);
   const { toast } = useToast();
 
   const safeTheme = (THEME_CYCLE as readonly string[]).includes(theme) ? (theme as typeof THEME_CYCLE[number]) : "dark";
@@ -252,7 +279,10 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Notification bell */}
           <div className="relative" ref={notifRef}>
             <button
-              onClick={() => { setNotifOpen(o => !o); if (!notifOpen) markAllRead(); }}
+              onClick={() => {
+                setNotifOpen(o => !o);
+                if (!notifOpen) markAllRead();
+              }}
               className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
               title="Notifications"
             >
@@ -265,21 +295,31 @@ export function Layout({ children }: { children: ReactNode }) {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col" style={{ maxHeight: "480px" }}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30 shrink-0">
                   <div className="flex items-center gap-2">
                     <Megaphone className="w-3.5 h-3.5 text-primary" />
                     <span className="font-semibold text-sm">Notifications</span>
-                    {notifs.length > 0 && (
-                      <span className="text-[10px] text-muted-foreground">({notifs.length})</span>
+                    {(notifications.length + announcements.length) > 0 && (
+                      <span className="text-[10px] text-muted-foreground">({notifications.length + announcements.length})</span>
                     )}
                   </div>
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
+                      title="Clear all"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Clear
+                    </button>
+                  )}
                 </div>
 
-                {/* Wallet status row (when connected) */}
+                {/* Wallet status row */}
                 {address && (
-                  <div className="px-4 py-2.5 border-b border-border/50 bg-green-500/5">
+                  <div className="px-4 py-2.5 border-b border-border/50 bg-green-500/5 shrink-0">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -293,32 +333,75 @@ export function Layout({ children }: { children: ReactNode }) {
                   </div>
                 )}
 
-                {/* Platform notifications */}
-                <div className="max-h-72 overflow-y-auto">
-                  {notifs.length === 0 ? (
+                {/* Unified notification feed */}
+                <div className="overflow-y-auto flex-1">
+                  {notifications.length === 0 && announcements.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
                       <Bell className="w-6 h-6 opacity-30" />
-                      <p className="text-xs">No notifications right now</p>
+                      <p className="text-xs">No notifications yet</p>
+                      {!address && (
+                        <p className="text-[10px] text-center px-4">Connect your wallet to receive order and trade updates</p>
+                      )}
                     </div>
                   ) : (
-                    notifs.map(n => {
-                      const Icon = NOTIF_ICONS[n.type as keyof typeof NOTIF_ICONS] ?? Info;
-                      const color = NOTIF_COLORS[n.type as keyof typeof NOTIF_COLORS] ?? "text-blue-400";
-                      return (
-                        <div key={n.id} className="px-4 py-3 border-b border-border/40 hover:bg-white/3 transition-colors last:border-0">
-                          <div className="flex items-start gap-2.5">
-                            <Icon className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
-                              <p className="text-[10px] text-muted-foreground/50 mt-1">
-                                {new Date(n.createdAt).toLocaleDateString()}
-                              </p>
+                    <>
+                      {/* Trade / order notifications from store */}
+                      {notifications.map(n => {
+                        const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
+                        const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
+                        return (
+                          <div key={n.id} className={cn("px-4 py-3 border-b border-border/40 hover:bg-white/3 transition-colors last:border-0", !n.read && "bg-primary/5")}>
+                            <div className="flex items-start gap-2.5">
+                              <Icon className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-1">
+                                  <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
+                                  {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
+                                {n.txid && (
+                                  <a
+                                    href={`https://whatsonchain.com/tx/${n.txid}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[10px] text-primary hover:underline font-mono"
+                                    onClick={e => e.stopPropagation()}
+                                  >
+                                    {n.txid.slice(0, 12)}… ↗
+                                  </a>
+                                )}
+                                <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                                  {new Date(n.timestamp).toLocaleTimeString()}
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+
+                      {/* Platform announcements (from admin panel) */}
+                      {announcements.map(n => {
+                        const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
+                        const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
+                        return (
+                          <div key={n.id} className="px-4 py-3 border-b border-border/40 hover:bg-white/3 transition-colors last:border-0 bg-secondary/10">
+                            <div className="flex items-start gap-2.5">
+                              <Megaphone className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className="text-[9px] font-bold text-primary uppercase tracking-widest">Platform</span>
+                                </div>
+                                <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
+                                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
+                                <p className="text-[10px] text-muted-foreground/50 mt-1">
+                                  {new Date(n.createdAt).toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </>
                   )}
                 </div>
               </div>

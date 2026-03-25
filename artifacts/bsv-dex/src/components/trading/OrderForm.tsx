@@ -3,6 +3,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { getTxExplorerUrl } from "@/store/useWalletStore";
 import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
@@ -135,6 +136,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
 }) {
   const { address, network, balance, chainId: walletChainId } = useWalletStore();
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
 
   const chainId = walletChainId ?? 1;
@@ -202,16 +204,39 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               ? `Settled on BSV chain · ${txid.slice(0, 12)}…`
               : `${side.toUpperCase()} ${amount} ${base} matched`,
           });
+          addNotification({
+            type: "order_filled",
+            title: `${side.toUpperCase()} Order Filled ✓`,
+            body: txid
+              ? `${amount} ${base} settled on BSV chain · ${txid.slice(0, 12)}…`
+              : `${amount} ${base} @ market · matched instantly`,
+            pair: symbol,
+            side: side as "buy" | "sell",
+            txid: txid ?? undefined,
+          });
         } else {
           toast({
             title: "Order Open",
             description: `${side.toUpperCase()} ${amount} ${base} @ $${price} · waiting for match`,
+          });
+          addNotification({
+            type: "order_placed",
+            title: `${side.toUpperCase()} Order Placed`,
+            body: `${amount} ${base} @ $${price || "market"} · open, waiting for match`,
+            pair: symbol,
+            side: side as "buy" | "sell",
           });
         }
         setAmount("");
       },
       onError: () => {
         toast({ title: "Order Failed", description: "Could not place order. Please try again.", variant: "destructive" });
+        addNotification({
+          type: "error",
+          title: "Order Failed",
+          body: "Could not place order — please check your balance and try again.",
+          pair: symbol,
+        });
       },
     },
   });

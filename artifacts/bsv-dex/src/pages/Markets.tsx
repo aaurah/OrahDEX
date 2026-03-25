@@ -57,7 +57,7 @@ const TAB_META: TabMeta[] = [
   { id: "zk",        label: "ZK",           color: "text-indigo-300",  desc: "All pairs quoted in ZK · zkSync Era" },
   { id: "scr",       label: "SCROLL",       color: "text-orange-300",  desc: "All pairs quoted in SCR · Scroll L2" },
   { id: "mnt",       label: "MNT",          color: "text-teal-400",    desc: "All pairs quoted in MNT · Mantle L2" },
-  { id: "sol",       label: "SOL",          color: "text-purple-400",  desc: "Solana ecosystem tokens" },
+  { id: "sol",       label: "SOL",          color: "text-purple-400",  desc: "All pairs quoted in SOL · Solana" },
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
   { id: "bsv",       label: "BSV",          color: "text-green-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },

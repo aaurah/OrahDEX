@@ -7,6 +7,7 @@ import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
+import { pushNotification } from "../lib/notifQueue.js";
 
 const router: IRouter = Router();
 
@@ -92,6 +93,17 @@ router.post("/orders", async (req, res) => {
 
     await db.insert(ordersTable).values(newOrder);
     req.log.info({ orderId: id, side: body.side, networkType }, "Order placed");
+
+    /* Push order-placed notification to the user */
+    const orderPair = body.symbol;
+    const orderSide = (body.side as string).toUpperCase();
+    pushNotification(body.walletAddress, {
+      type: "order_placed",
+      title: `${orderSide} Order Placed`,
+      body: `${quantity} ${orderPair.split("/")[0]} @ ${price ? `$${price}` : "market"} · waiting for match`,
+      pair: orderPair,
+      side: body.side,
+    });
 
     // ── Attempt order matching ───────────────────────────────────────────────
     // Works for BOTH limit orders (match if price crosses) and market orders
@@ -225,6 +237,18 @@ router.post("/orders", async (req, res) => {
             updatedAt:         new Date(),
           })
           .where(eq(ordersTable.id, id));
+
+        /* Push order-filled notification */
+        const fillSymbol = body.symbol as string;
+        const fillBase   = fillSymbol.split("/")[0];
+        pushNotification(body.walletAddress, {
+          type:  "order_filled",
+          title: `Order Filled ✓`,
+          body:  `${quantity} ${fillBase} @ $${fillPrice.toFixed(4)} · BSV settled on-chain`,
+          pair:  fillSymbol,
+          txid:  settlement.txid ?? undefined,
+          side:  body.side,
+        });
       }
     }
 
