@@ -4,6 +4,7 @@ import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
   AlertTriangle, CheckCircle2, Lock, Unlock, RefreshCw, Info,
   Layers, Link2, Globe, Copy, Check, ExternalLink, X, Loader2,
+  ArrowDown, ArrowUp, Coins, Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useGetMarkets } from "@workspace/api-client-react";
@@ -60,6 +61,359 @@ const SPOT_PRICES: Record<string, number> = {
 };
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
+
+// ─── Canonical L1 → L2 asset mapping ─────────────────────────────────────────
+interface CanonicalL2 {
+  chainId: string; chain: string; symbol: string; label: string;
+  type: "canonical" | "wrapped"; bridge: string; time: string; color: string; bg: string;
+}
+interface CanonicalAsset {
+  l1: { chainId: string; chain: string; symbol: string; color: string; icon: string };
+  l2: CanonicalL2[];
+}
+const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
+  BSV: {
+    l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
+    l2: [
+      { chainId: "eth",  chain: "Ethereum", symbol: "wBSV", label: "wBSV (ERC-20)",  type: "wrapped",   bridge: "OrahDEX HTLC", time: "~5 min",   color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "base", chain: "Base",     symbol: "wBSV", label: "wBSV on Base",   type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb",  chain: "Arbitrum", symbol: "wBSV", label: "wBSV on Arb",   type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op",   chain: "Optimism", symbol: "wBSV", label: "wBSV on OP",    type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
+    ],
+  },
+  BTC: {
+    l1: { chainId: "btc", chain: "Bitcoin", symbol: "BTC", color: "text-orange-400", icon: "₿" },
+    l2: [
+      { chainId: "eth",  chain: "Ethereum", symbol: "WBTC",  label: "WBTC (ERC-20)", type: "wrapped",   bridge: "BitGo WBTC DAO",    time: "~6 hrs",  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+      { chainId: "base", chain: "Base",     symbol: "cbBTC", label: "cbBTC on Base", type: "wrapped",   bridge: "Coinbase cbBTC",    time: "~1 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+    ],
+  },
+  ETH: {
+    l1: { chainId: "eth", chain: "Ethereum", symbol: "ETH", color: "text-violet-400", icon: "⬡" },
+    l2: [
+      { chainId: "base", chain: "Base",     symbol: "ETH",  label: "ETH on Base (canonical)",   type: "canonical", bridge: "Base Canonical Bridge",     time: "~7 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb",  chain: "Arbitrum", symbol: "ETH",  label: "ETH on Arbitrum (canonical)",type: "canonical", bridge: "Arbitrum Canonical Bridge",  time: "~10 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op",   chain: "Optimism", symbol: "ETH",  label: "ETH on Optimism (canonical)",type: "canonical", bridge: "OP Canonical Bridge",        time: "~1 min",  color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "poly", chain: "Polygon",  symbol: "ETH",  label: "ETH on Polygon (bridged)",   type: "wrapped",   bridge: "Polygon PoS Bridge",         time: "~7 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+    ],
+  },
+  SOL: {
+    l1: { chainId: "sol", chain: "Solana", symbol: "SOL", color: "text-cyan-400", icon: "◎" },
+    l2: [
+      { chainId: "eth",  chain: "Ethereum", symbol: "wSOL", label: "wSOL (ERC-20)", type: "wrapped", bridge: "Wormhole Bridge", time: "~15 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
+    ],
+  },
+};
+
+const L1_COINS = Object.keys(CANONICAL_ASSETS);
+
+// ─── Canonical Deposit / Withdraw panel ──────────────────────────────────────
+
+function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
+  const [coin, setCoin] = useState("BSV");
+  const [l2ChainIdx, setL2ChainIdx] = useState(0);
+  const [amount, setAmount] = useState("");
+  const [step, setStep] = useState<0|1|2|3|4>(0); // 0=idle, 1..4=progress
+  const [running, setRunning] = useState(false);
+  const { address } = useWalletStore();
+
+  const asset = CANONICAL_ASSETS[coin];
+  const l2Options = asset.l2;
+  const l2 = l2Options[Math.min(l2ChainIdx, l2Options.length - 1)];
+  const l1Price = SPOT_PRICES[coin] ?? 1;
+  const usdValue = parseFloat(amount || "0") * l1Price;
+
+  // deposit steps: lock → detect → mint → trade
+  // withdraw steps: burn → verify → unlock → received
+  const STEPS = mode === "deposit"
+    ? [
+        { icon: <Lock className="w-4 h-4" />,        label: `Lock ${coin} on ${asset.l1.chain}`,  detail: `Send ${coin} to the canonical bridge contract — funds locked as collateral` },
+        { icon: <Shield className="w-4 h-4" />,      label: "Bridge verifies deposit",             detail: `${l2.bridge} detects your L1 ${coin} within 1 confirmation` },
+        { icon: <Coins className="w-4 h-4" />,       label: `Mint ${l2.symbol} on ${l2.chain}`,   detail: `1:1 ${l2.label} minted to your address — ready for trading` },
+        { icon: <Zap className="w-4 h-4" />,         label: "Trade on OrahDEX",                   detail: `${l2.symbol} trades as ${coin} — same price, instant L2 settlement` },
+      ]
+    : [
+        { icon: <Flame className="w-4 h-4" />,       label: `Burn ${l2.symbol} on ${l2.chain}`,   detail: `Your ${l2.symbol} is burned — supply reduced, proof submitted to L1` },
+        { icon: <Shield className="w-4 h-4" />,      label: "L1 bridge verifies proof",            detail: `${l2.bridge} validates the burn proof on ${asset.l1.chain}` },
+        { icon: <Unlock className="w-4 h-4" />,      label: `Unlock ${coin} on ${asset.l1.chain}`, detail: `Canonical bridge contract releases your locked ${coin}` },
+        { icon: <CheckCircle2 className="w-4 h-4" />, label: `${coin} received on L1`,             detail: `Real ${coin} in your wallet — fully on-chain, non-custodial` },
+      ];
+
+  const handleRun = () => {
+    if (running || !amount || parseFloat(amount) <= 0) return;
+    setRunning(true); setStep(1);
+    let s = 1;
+    const tick = () => { s++; setStep(s as 0|1|2|3|4); if (s < 4) setTimeout(tick, 1100); else { setRunning(false); } };
+    setTimeout(tick, 1200);
+  };
+
+  const isDeposit = mode === "deposit";
+  const accentColor = isDeposit ? "text-green-400" : "text-orange-400";
+  const accentBg    = isDeposit ? "from-green-500/10 to-green-500/5 border-green-500/20" : "from-orange-500/10 to-orange-500/5 border-orange-500/20";
+  const btnGrad     = isDeposit ? "from-green-500 to-primary" : "from-orange-500 to-red-500";
+
+  return (
+    <div className="grid lg:grid-cols-[1fr_340px] gap-6">
+
+      {/* ── Left: form ── */}
+      <div className="space-y-4">
+
+        {/* Canonical architecture explainer */}
+        <div className={cn("rounded-2xl border bg-gradient-to-br p-4", accentBg)}>
+          <div className={cn("flex items-center gap-2 mb-2", accentColor)}>
+            {isDeposit ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
+            <span className="font-bold text-sm">{isDeposit ? "Deposit: L1 → L2 Canonical Bridge" : "Withdraw: L2 → L1 Canonical Bridge"}</span>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {isDeposit
+              ? `Your ${coin} is locked in the canonical bridge contract on L1. The bridge mints an equivalent ${l2.symbol} on ${l2.chain} — a 1:1 claim on your locked ${coin}. You trade ${l2.symbol} on OrahDEX exactly as if it were ${coin}. Arbitrage bots keep the peg at 1:1.`
+              : `Burning ${l2.symbol} on ${l2.chain} submits a proof to the ${asset.l1.chain} L1 bridge contract. The contract verifies the burn and releases your original ${coin}. This is fully non-custodial — only you can unlock your ${coin}.`
+            }
+          </p>
+        </div>
+
+        {/* L1 coin selector */}
+        <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            {isDeposit ? "L1 Coin to Deposit" : "L2 Token to Burn"}
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {L1_COINS.map(c => (
+              <button key={c} onClick={() => { setCoin(c); setL2ChainIdx(0); setStep(0); }}
+                className={cn("px-3 py-1.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1.5",
+                  coin === c ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                )}>
+                <span>{CANONICAL_ASSETS[c].l1.icon}</span> {c}
+              </button>
+            ))}
+          </div>
+
+          {/* Amount */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <input
+                type="number"
+                placeholder="0.00"
+                value={amount}
+                onChange={e => { setAmount(e.target.value); setStep(0); }}
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-foreground font-mono font-semibold text-lg focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div className="px-3 py-2 bg-secondary/50 border border-border rounded-xl text-sm font-bold text-foreground">
+              {isDeposit ? coin : l2.symbol}
+            </div>
+          </div>
+          {usdValue > 0 && (
+            <div className="text-xs text-muted-foreground text-right">≈ ${usdValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+          )}
+        </div>
+
+        {/* L2 destination selector */}
+        <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            {isDeposit ? "L2 Destination Chain" : "L2 Source Chain"}
+          </div>
+          <div className="space-y-2">
+            {l2Options.map((l2opt, idx) => (
+              <button key={l2opt.chainId} onClick={() => { setL2ChainIdx(idx); setStep(0); }}
+                className={cn("w-full flex items-center justify-between p-3 rounded-xl border transition-all",
+                  l2ChainIdx === idx ? cn("bg-card border-primary/50 shadow-sm") : "border-border hover:border-border/80 hover:bg-secondary/30"
+                )}>
+                <div className="flex items-center gap-2.5">
+                  <div className={cn("w-2 h-2 rounded-full shrink-0", l2opt.color.replace("text-","bg-"))} />
+                  <div className="text-left">
+                    <div className="text-xs font-bold text-foreground">{l2opt.chain}</div>
+                    <div className="text-[10px] text-muted-foreground">{l2opt.bridge}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={cn("text-xs font-bold", l2opt.color)}>{l2opt.symbol}</div>
+                  <div className="flex items-center justify-end gap-1 mt-0.5">
+                    <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border", l2opt.type === "canonical" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400")}>
+                      {l2opt.type === "canonical" ? "CANONICAL" : "WRAPPED"}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{l2opt.time}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* You will receive / you will unlock */}
+        {amount && parseFloat(amount) > 0 && (
+          <div className={cn("rounded-2xl border p-4 space-y-2", isDeposit ? "border-green-500/20 bg-green-500/5" : "border-orange-500/20 bg-orange-500/5")}>
+            <div className={cn("text-xs font-semibold uppercase tracking-wide", accentColor)}>
+              {isDeposit ? "You Will Receive" : "You Will Unlock"}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-2xl font-black text-foreground">{parseFloat(amount).toFixed(6)}</span>
+              <span className={cn("text-lg font-bold", accentColor)}>{isDeposit ? l2.symbol : coin}</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {isDeposit
+                ? `1:1 peg · ${l2.label} · Redeemable for ${coin} at any time`
+                : `Original ${coin} released from ${asset.l1.chain} canonical bridge contract`
+              }
+            </div>
+          </div>
+        )}
+
+        {/* Wallet warning */}
+        {!address && (
+          <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            Connect your wallet to {isDeposit ? "initiate a deposit" : "initiate a withdrawal"}.
+          </div>
+        )}
+
+        {/* Action button */}
+        <button
+          onClick={handleRun}
+          disabled={!amount || parseFloat(amount) <= 0 || running}
+          className={cn(
+            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 text-white shadow-lg",
+            `bg-gradient-to-r ${btnGrad}`,
+            "hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          )}
+        >
+          {running ? (
+            <><RefreshCw className="w-5 h-5 animate-spin" /> Processing…</>
+          ) : isDeposit ? (
+            <><ArrowDown className="w-5 h-5" /> Deposit {coin} → {l2.chain}</>
+          ) : (
+            <><ArrowUp className="w-5 h-5" /> Withdraw {l2.symbol} → {coin}</>
+          )}
+        </button>
+      </div>
+
+      {/* ── Right: visual flow ── */}
+      <div className="space-y-4">
+
+        {/* Canonical flow diagram */}
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-sm font-bold text-foreground mb-4">
+            {isDeposit ? "Deposit Flow" : "Withdrawal Flow"}
+          </div>
+
+          {/* L1 box */}
+          <div className={cn("rounded-xl border p-3 mb-2", "border-green-500/30 bg-green-500/5")}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-wider text-green-400">L1 · Source of Truth</div>
+                <div className="font-bold text-sm text-foreground mt-0.5">{asset.l1.chain}</div>
+              </div>
+              <div className="text-right">
+                <div className={cn("text-lg font-black", asset.l1.color)}>{asset.l1.icon} {coin}</div>
+                <div className="text-[10px] text-muted-foreground">Native · Canonical</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bridge connector */}
+          <div className="flex items-center justify-center my-1 gap-2">
+            <div className="flex-1 h-px bg-border/50" />
+            <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold",
+              isDeposit ? "border-green-500/30 bg-green-500/10 text-green-400" : "border-orange-500/30 bg-orange-500/10 text-orange-400"
+            )}>
+              {isDeposit ? <><Lock className="w-3 h-3" /> Lock → Mint</> : <><Flame className="w-3 h-3" /> Burn → Unlock</>}
+            </div>
+            <div className="flex-1 h-px bg-border/50" />
+          </div>
+
+          {/* L2 box */}
+          <div className={cn("rounded-xl border p-3 mt-1", l2.bg)}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className={cn("text-[10px] font-black uppercase tracking-wider", l2.color)}>L2 · Execution Layer</div>
+                <div className="font-bold text-sm text-foreground mt-0.5">{l2.chain}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{l2.bridge}</div>
+              </div>
+              <div className="text-right">
+                <div className={cn("text-lg font-black", l2.color)}>{l2.symbol}</div>
+                <div className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border mt-0.5 inline-block", l2.type === "canonical" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400")}>
+                  {l2.type === "canonical" ? "1:1 CANONICAL" : "1:1 WRAPPED"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Trading note */}
+          <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-secondary/50 border border-border/50">
+            <Zap className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              Trades on OrahDEX use <span className="font-bold text-foreground">{l2.symbol}</span> — priced 1:1 with <span className="font-bold text-foreground">{coin}</span>. Arbitrage bots enforce the peg. You always see "{coin}" in the UI.
+            </p>
+          </div>
+        </div>
+
+        {/* Step-by-step progress */}
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-sm font-bold text-foreground mb-3">
+            {isDeposit ? "Bridge Steps" : "Withdrawal Steps"}
+          </div>
+          <div className="space-y-2">
+            {STEPS.map((s, i) => {
+              const isActive = step === i + 1;
+              const isDone   = step > i + 1;
+              return (
+                <div key={i} className={cn(
+                  "flex items-start gap-3 p-2.5 rounded-xl border transition-all",
+                  isDone   ? "border-green-500/30 bg-green-500/5" :
+                  isActive ? (isDeposit ? "border-primary/30 bg-primary/5" : "border-orange-500/30 bg-orange-500/5") :
+                             "border-transparent bg-transparent opacity-50"
+                )}>
+                  <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                    isDone   ? "bg-green-500 text-white" :
+                    isActive ? (isDeposit ? "bg-primary text-primary-foreground" : "bg-orange-500 text-white") :
+                               "bg-secondary text-muted-foreground"
+                  )}>
+                    {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : isActive ? <RefreshCw className="w-3 h-3 animate-spin" /> : s.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-foreground leading-tight">{s.label}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{s.detail}</div>
+                  </div>
+                  <div className="text-[10px] font-bold text-muted-foreground/60 tabular-nums">
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Universal formula */}
+        <div className="bg-card border border-border rounded-2xl p-4">
+          <div className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-3">Universal Bridge Formula</div>
+          <div className="space-y-1 font-mono text-[10px] text-muted-foreground">
+            <div className={cn("px-2 py-1 rounded", isDeposit ? "bg-green-500/10 text-green-400" : "opacity-40")}>
+              Lock({coin} on L1) → Mint({l2.symbol} on {l2.chain})
+            </div>
+            <div className="px-2 py-1 rounded bg-primary/5 text-primary">
+              Trade({l2.symbol} ↔ tokens) on L2 DEX
+            </div>
+            <div className={cn("px-2 py-1 rounded", !isDeposit ? "bg-orange-500/10 text-orange-400" : "opacity-40")}>
+              Burn({l2.symbol}) → Unlock({coin} on L1)
+            </div>
+          </div>
+          <div className="mt-3 text-[10px] text-muted-foreground">
+            Same logic as: BaseETH ↔ ETH · ArbETH ↔ ETH · wBTC ↔ BTC · wBSV ↔ BSV
+          </div>
+        </div>
+
+        {/* BSV settlement badge */}
+        <div className="rounded-2xl border border-green-500/25 bg-green-500/5 p-3 flex items-center gap-3">
+          <span className="text-2xl animate-pulse">⚡</span>
+          <div>
+            <div className="text-sm font-bold text-green-400">BSV Final Settlement</div>
+            <div className="text-[10px] text-muted-foreground mt-0.5">All bridge proofs anchored on BSV · &lt;5s · ~$0.001</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const STATUS_LABEL: Record<HtlcStatus, string> = {
   pending:  "Awaiting Deposit",
@@ -433,6 +787,8 @@ export function BridgePage() {
   const { address: evmAddress, network, chainId } = useWalletStore();
   const { toast } = useToast();
 
+  const [pageTab, setPageTab] = useState<"swap" | "deposit" | "withdraw">("swap");
+
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
   const [toChain, setToChain]     = useState<Chain>(CHAINS[2]);
   const [fromToken, setFromToken] = useState("BSV");
@@ -651,9 +1007,42 @@ export function BridgePage() {
           Swap Across Any Chain
         </h1>
         <p className="text-muted-foreground max-w-2xl">
-          Move assets between L1 chains (BSV, BTC, ETH, SOL) and L2 rollups (Arbitrum, Optimism, Base) via atomic HTLC swaps or wrapped asset bridging. Every trade settles on BSV.
+          Move assets between L1 chains (BSV, BTC, ETH, SOL) and L2 rollups (Arbitrum, Optimism, Base). Direct L1/L2 trading with original coins — deposits and withdrawals go through canonical bridge layers.
         </p>
       </div>
+
+      {/* ── Top-level page tabs ── */}
+      <div className="flex gap-1 p-1 bg-secondary rounded-2xl mb-8 w-full max-w-md">
+        {([
+          { id: "swap",     icon: <ArrowLeftRight className="w-4 h-4" />, label: "Swap"     },
+          { id: "deposit",  icon: <ArrowDown className="w-4 h-4" />,      label: "Deposit"  },
+          { id: "withdraw", icon: <ArrowUp className="w-4 h-4" />,        label: "Withdraw" },
+        ] as const).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setPageTab(tab.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all",
+              pageTab === tab.id
+                ? tab.id === "deposit"
+                  ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
+                  : tab.id === "withdraw"
+                    ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
+                    : "bg-card text-foreground shadow-sm border border-border/50"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Deposit / Withdraw canonical panels ── */}
+      {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
+      {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
+      {pageTab !== "swap"     && null}
+
+      {pageTab === "swap" && <>
 
       {/* ── L1/L2/L3 Architecture strip ── */}
       <div className="grid grid-cols-3 gap-3 mb-8">
@@ -1048,6 +1437,7 @@ export function BridgePage() {
           </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }
