@@ -1,12 +1,12 @@
-import { useParams } from "wouter";
+import { useParams, useLocation } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
-import { MOCK_TICKER, generateMockCandles, generateMockOrderBook } from "@/lib/mock-data";
+import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
-import { X, ChevronDown, AlertTriangle, Wallet, Loader2 } from "lucide-react";
+import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
@@ -149,6 +149,22 @@ export function FuturesTrading() {
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "history">("positions");
 
+  const [pairDropOpen, setPairDropOpen] = useState(false);
+  const [dropSearch, setDropSearch] = useState("");
+  const pairDropRef = useRef<HTMLDivElement>(null);
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (pairDropRef.current && !pairDropRef.current.contains(e.target as Node)) {
+        setPairDropOpen(false);
+        setDropSearch("");
+      }
+    }
+    if (pairDropOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [pairDropOpen]);
+
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || "" },
     { query: { enabled: !!address, refetchInterval: 5000 } }
@@ -249,17 +265,95 @@ export function FuturesTrading() {
 
         {/* ── Ticker header ── */}
         <div className="flex items-center gap-6 px-4 py-2.5 border-b border-border bg-card shrink-0 overflow-x-auto">
-          <div className="shrink-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold">{base}/USDT Perpetual</h1>
-              <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] font-black rounded">PERP</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="font-mono text-primary cursor-pointer hover:underline">
-                Funding {countdown}
-              </span>
-              <span>· Rate: <span className="text-green-400 font-mono">+0.0100%</span></span>
-            </div>
+          {/* Pair selector with dropdown */}
+          <div className="relative shrink-0" ref={pairDropRef}>
+            <button
+              onClick={() => { setPairDropOpen(v => !v); setDropSearch(""); }}
+              className="flex flex-col items-start group"
+            >
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-lg font-bold group-hover:text-primary transition-colors">{base}/USDT Perpetual</h1>
+                <ChevronDown className={cn(
+                  "w-4 h-4 text-muted-foreground group-hover:text-primary transition-all shrink-0",
+                  pairDropOpen && "rotate-180"
+                )} />
+                <span className="px-1.5 py-0.5 bg-primary/20 text-primary text-[10px] font-black rounded">PERP</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-mono text-primary">Funding {countdown}</span>
+                <span>· Rate: <span className="text-green-400 font-mono">+0.0100%</span></span>
+              </div>
+            </button>
+
+            {/* Futures pair dropdown */}
+            {pairDropOpen && (
+              <div className="absolute top-full left-0 mt-2 w-[300px] bg-card border border-border rounded-xl shadow-2xl z-50 flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-border shrink-0">
+                  <span className="text-xs font-semibold">Choose a futures pair</span>
+                  <button onClick={() => setPairDropOpen(false)} className="text-muted-foreground hover:text-foreground">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="px-3 py-2 border-b border-border shrink-0">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Search perpetuals…"
+                      value={dropSearch}
+                      onChange={e => setDropSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center px-3 py-1 text-[9px] font-medium text-muted-foreground border-b border-border/50 shrink-0">
+                  <span className="flex-1">Pair</span>
+                  <span className="w-20 text-right">Price</span>
+                  <span className="w-14 text-right">24h %</span>
+                </div>
+                <div className="overflow-y-auto max-h-64 min-h-0">
+                  {(() => {
+                    const q = dropSearch.toLowerCase();
+                    const rows = FUTURES_MARKETS.filter(m =>
+                      !q || m.baseAsset?.toLowerCase().includes(q) || m.symbol?.toLowerCase().includes(q)
+                    );
+                    if (rows.length === 0) return (
+                      <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">No pairs found</div>
+                    );
+                    return rows.map(m => {
+                      const perpSymbol = `${m.baseAsset}-USDT-PERP`;
+                      const isActive = perpSymbol === rawSymbol;
+                      const isUp = (m.priceChangePercent ?? 0) >= 0;
+                      return (
+                        <button
+                          key={m.symbol}
+                          onClick={() => { navigate(`/futures/${perpSymbol}`); setPairDropOpen(false); setDropSearch(""); }}
+                          className={cn(
+                            "w-full flex items-center px-3 py-2 gap-2.5 hover:bg-white/5 cursor-pointer transition-colors text-left",
+                            isActive && "bg-primary/10 border-l-2 border-l-primary"
+                          )}
+                        >
+                          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[8px] font-black text-primary shrink-0">
+                            {m.baseAsset?.slice(0, 2)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold">{m.baseAsset}</span>
+                            <span className="text-[10px] text-muted-foreground">/USDT PERP</span>
+                          </div>
+                          <span className="w-20 text-right text-[11px] font-mono tabular-nums">
+                            {formatPrice(m.lastPrice)}
+                          </span>
+                          <span className={cn("w-14 text-right text-[10px] font-bold tabular-nums", isUp ? "text-green-400" : "text-red-400")}>
+                            {isUp ? "+" : ""}{(m.priceChangePercent ?? 0).toFixed(2)}%
+                          </span>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col shrink-0 border-l border-border pl-5">
