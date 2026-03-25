@@ -12,6 +12,7 @@ import { useBiometricStore } from "@/store/useBiometricStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/BrandLogo";
 
 const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
   { id: "dark",   label: "Dark",   Icon: Moon,       color: "#6366f1" },
@@ -246,12 +247,18 @@ export function MobileSettings() {
       </Section>
 
       {/* Branding */}
-      <div className="flex flex-col items-center py-8 px-4">
-        <p className="text-2xl font-bold text-foreground">
-          Orah<span className="text-green-400">DEX</span>
+      <div className="flex flex-col items-center py-10 px-4 gap-1.5">
+        <BrandLogo textSize="text-2xl" tooltip={false} />
+        <p className="text-xs font-semibold text-green-400 tracking-widest uppercase mt-0.5">
+          Trade means DEX
         </p>
-        <p className="text-xs text-green-400 mt-1 opacity-80">✦ Trade means DEX</p>
-        <p className="text-[11px] text-muted-foreground mt-2">Non-custodial · On-chain settlement · BSV</p>
+        <p className="text-[11px] text-muted-foreground mt-1 tracking-wide">
+          Non-custodial · On-chain settlement · BSV
+        </p>
+        <div className="flex items-center gap-1 mt-2">
+          <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-[10px] text-green-400/60 font-medium">Live</span>
+        </div>
       </div>
 
       {/* Toast notification */}

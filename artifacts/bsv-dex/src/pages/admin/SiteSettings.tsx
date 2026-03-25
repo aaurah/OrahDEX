@@ -58,12 +58,15 @@ const DEFAULT_SETTINGS = {
   twitterCard: "summary_large_image",
   twitterSite: "@orahdex",
   // Legal
-  termsUrl: "/legal/terms",
-  privacyUrl: "/legal/privacy",
+  termsUrl: "/terms",
+  privacyUrl: "/privacy",
+  whitepaperUrl: "/whitepaper",
   cookiesUrl: "/legal/cookies",
   amlUrl: "/legal/aml",
-  contactEmail: "support@orahdex.io",
-  supportUrl: "https://support.orahdex.io",
+  contactEmail: "support@orahdex.org",
+  legalEmail: "legal@orahdex.org",
+  privacyEmail: "privacy@orahdex.org",
+  supportUrl: "https://support.orahdex.org",
   companyName: "OrahDEX Ltd.",
   companyAddress: "",
   registrationNumber: "",
@@ -414,11 +417,88 @@ export function AdminSiteSettings() {
         {/* ── LEGAL ── */}
         {activeTab === "legal" && (
           <div className="space-y-0">
-            <Field label="Terms of Service URL">
-              <Input value={settings.termsUrl} onChange={set("termsUrl")} placeholder="/legal/terms" />
+            {/* Email Addresses */}
+            <div className="px-4 pt-4 pb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3 flex items-center gap-2">
+                <span className="w-4 h-px bg-border inline-block" />
+                Contact Emails
+                <span className="flex-1 h-px bg-border inline-block" />
+              </p>
+            </div>
+            <Field label="Support Email" description="General user support — shown on help pages and onboarding">
+              <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                <span className="text-xs font-black text-primary shrink-0">@</span>
+                <input
+                  type="email"
+                  value={settings.contactEmail}
+                  onChange={e => set("contactEmail")(e.target.value)}
+                  placeholder="support@orahdex.org"
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
+                />
+                <a href={`mailto:${settings.contactEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
+              </div>
             </Field>
-            <Field label="Privacy Policy URL">
-              <Input value={settings.privacyUrl} onChange={set("privacyUrl")} placeholder="/legal/privacy" />
+            <Field label="Legal Email" description="Terms of service, legal notices, compliance — legal@orahdex.org">
+              <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                <span className="text-xs font-black text-violet-400 shrink-0">@</span>
+                <input
+                  type="email"
+                  value={settings.legalEmail}
+                  onChange={e => set("legalEmail")(e.target.value)}
+                  placeholder="legal@orahdex.org"
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
+                />
+                <a href={`mailto:${settings.legalEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
+              </div>
+            </Field>
+            <Field label="Privacy Email" description="GDPR requests, data subject rights, privacy complaints — privacy@orahdex.org">
+              <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                <span className="text-xs font-black text-blue-400 shrink-0">@</span>
+                <input
+                  type="email"
+                  value={settings.privacyEmail}
+                  onChange={e => set("privacyEmail")(e.target.value)}
+                  placeholder="privacy@orahdex.org"
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
+                />
+                <a href={`mailto:${settings.privacyEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
+              </div>
+            </Field>
+            <Field label="Support Portal URL" description="External help desk or support portal">
+              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orahdex.org" />
+            </Field>
+
+            {/* Quick email summary card */}
+            <div className="mx-4 my-3 p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-2">Active Email Summary</p>
+              {[
+                { label: "Support", email: settings.contactEmail || "support@orahdex.org", color: "text-primary" },
+                { label: "Legal",   email: settings.legalEmail   || "legal@orahdex.org",   color: "text-violet-400" },
+                { label: "Privacy", email: settings.privacyEmail || "privacy@orahdex.org", color: "text-blue-400" },
+              ].map(({ label, email, color }) => (
+                <div key={label} className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-muted-foreground w-14">{label}</span>
+                  <span className={`font-mono ${color} flex-1 text-right`}>{email}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Legal URLs */}
+            <div className="px-4 pt-2 pb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1 flex items-center gap-2">
+                <span className="w-4 h-px bg-border inline-block" />
+                Policy Page URLs
+                <span className="flex-1 h-px bg-border inline-block" />
+              </p>
+            </div>
+            <Field label="Terms of Service URL" description="Path or URL to your terms page">
+              <Input value={settings.termsUrl} onChange={set("termsUrl")} placeholder="/terms" />
+            </Field>
+            <Field label="Privacy Policy URL" description="Path or URL to your privacy policy page">
+              <Input value={settings.privacyUrl} onChange={set("privacyUrl")} placeholder="/privacy" />
+            </Field>
+            <Field label="White Paper URL" description="Path or URL to your project white paper">
+              <Input value={settings.whitepaperUrl} onChange={set("whitepaperUrl")} placeholder="/whitepaper" />
             </Field>
             <Field label="Cookie Policy URL">
               <Input value={settings.cookiesUrl} onChange={set("cookiesUrl")} placeholder="/legal/cookies" />
