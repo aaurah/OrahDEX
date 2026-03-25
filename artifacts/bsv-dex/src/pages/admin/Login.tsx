@@ -580,9 +580,24 @@ export function AdminLogin() {
           </div>
         )}
 
-        <div className="text-center mt-6">
-          <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            ← Back to <OrahInline className="text-xs" /> Exchange
+        <div className="flex justify-center mt-7">
+          <a
+            href="/"
+            className="group inline-flex items-center gap-2.5 px-5 py-3 rounded-2xl bg-white/5 border border-border hover:bg-white/8 hover:border-primary/30 transition-all duration-200 shadow-sm hover:shadow-primary/10 hover:shadow-lg"
+          >
+            <svg
+              className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors duration-200"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <path d="M19 12H5M12 5l-7 7 7 7" />
+            </svg>
+            <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors duration-200">
+              Back to
+            </span>
+            <OrahInline className="text-sm font-black" />
+            <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors duration-200">
+              Exchange
+            </span>
           </a>
         </div>
       </div>
