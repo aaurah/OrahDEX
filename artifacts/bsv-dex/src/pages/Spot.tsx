@@ -56,6 +56,8 @@ export function SpotTrading() {
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
   const [dropQuote, setDropQuote] = useState<QuoteTab>("USDT");
+  const [hideOtherPairs, setHideOtherPairs] = useState(false);
+  const [cancelPairOnly, setCancelPairOnly] = useState(false);
   const pairDropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -410,166 +412,199 @@ export function SpotTrading() {
           <div className="flex-1 border-b border-border relative min-h-0" style={{ minHeight: "320px" }}>
             <Chart data={candles} />
           </div>
-          <div className="h-[200px] shrink-0 bg-card flex flex-col">
-            {/* Tab bar */}
-            <div className="flex gap-0 px-3 border-b border-border text-xs font-medium shrink-0">
-              {([
-                { key: "open",    label: `Open Orders (${openOrders.length})` },
-                { key: "history", label: `History (${filledOrders.length})` },
-                { key: "trades",  label: "Market Trades" },
-              ] as { key: BottomTab; label: string }[]).map(t => (
-                <button
-                  key={t.key}
-                  onClick={() => setBottomTab(t.key)}
-                  className={cn(
-                    "py-2 px-3 border-b-2 transition-colors whitespace-nowrap text-xs",
-                    bottomTab === t.key
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
+          <div className="h-[220px] shrink-0 bg-card flex flex-col border-t border-border">
+            {/* Tab bar + controls row */}
+            <div className="flex items-center justify-between px-2 border-b border-border shrink-0">
+              <div className="flex gap-0">
+                {([
+                  { key: "open",    label: `Open Orders(${openOrders.length})` },
+                  { key: "history", label: `Order History(${filledOrders.length})` },
+                  { key: "trades",  label: "Trade History" },
+                ] as { key: BottomTab; label: string }[]).map(t => (
+                  <button
+                    key={t.key}
+                    onClick={() => setBottomTab(t.key)}
+                    className={cn(
+                      "py-2 px-3 border-b-2 transition-colors whitespace-nowrap text-[11px] font-medium",
+                      bottomTab === t.key
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {/* Right controls */}
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground shrink-0">
+                {bottomTab === "open" && openOrders.length > 0 && (
+                  <label className="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={cancelPairOnly}
+                      onChange={e => setCancelPairOnly(e.target.checked)}
+                      className="w-3 h-3 accent-primary"
+                    />
+                    Cancel orders of the current trading pair
+                  </label>
+                )}
+                <label className="flex items-center gap-1.5 cursor-pointer hover:text-foreground transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={hideOtherPairs}
+                    onChange={e => setHideOtherPairs(e.target.checked)}
+                    className="w-3 h-3 accent-primary"
+                  />
+                  Hide Other Pairs
+                </label>
+              </div>
             </div>
 
             {/* Tab content */}
             <div className="flex-1 overflow-auto">
               {/* ── Open Orders ── */}
-              {bottomTab === "open" && (
-                openOrders.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                    {address ? "No open orders." : "Connect your wallet to view open orders."}
+              {bottomTab === "open" && (() => {
+                const rows = hideOtherPairs
+                  ? openOrders.filter((o: any) => o.symbol === symbol)
+                  : openOrders;
+                return rows.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                    {address ? "No open orders." : "Log in or connect wallet to view open orders."}
                   </div>
                 ) : (
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="sticky top-0 bg-card">
+                  <table className="w-full text-left text-[11px] font-mono">
+                    <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-muted-foreground font-sans border-b border-border">
-                        <th className="p-3 font-medium">Date</th>
-                        <th className="p-3 font-medium">Pair</th>
-                        <th className="p-3 font-medium">Side</th>
-                        <th className="p-3 font-medium text-right">Price</th>
-                        <th className="p-3 font-medium text-right">Amount</th>
-                        <th className="p-3 font-medium text-right">Network</th>
-                        <th className="p-3 font-medium text-right">Action</th>
+                        <th className="px-3 py-1.5 font-medium">Time</th>
+                        <th className="px-3 py-1.5 font-medium">Pair</th>
+                        <th className="px-3 py-1.5 font-medium">Type</th>
+                        <th className="px-3 py-1.5 font-medium">Side</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Price</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Amount</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Total</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Filled</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Unfilled</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
-                      {openOrders.map((o: any, i: number) => (
-                        <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
-                          <td className="p-3 text-muted-foreground">{new Date(o.createdAt).toLocaleTimeString()}</td>
-                          <td className="p-3">{o.symbol}</td>
-                          <td className={cn("p-3 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
-                          <td className="p-3 text-right">{formatPrice(o.price)}</td>
-                          <td className="p-3 text-right">{Number(o.quantity).toFixed(4)}</td>
-                          <td className="p-3 text-right">
-                            <span className={cn("text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border",
-                              o.networkType === "evm"
-                                ? "text-violet-400 border-violet-500/30"
-                                : "text-green-400 border-green-500/30"
-                            )}>
-                              {o.networkType === "evm" ? "EVM" : "BSV"}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right">
-                            <button
-                              onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
-                              disabled={cancelOrder.isPending}
-                              className="text-[10px] font-semibold px-2.5 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                              {cancelOrder.isPending ? "…" : "Cancel"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-border/50">
+                      {rows.map((o: any, i: number) => {
+                        const qty = Number(o.quantity);
+                        const filled = Number(o.filledQuantity ?? 0);
+                        const unfilled = Math.max(0, qty - filled);
+                        const total = Number(o.price ?? 0) * qty;
+                        return (
+                          <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-3 py-1.5 text-muted-foreground">{new Date(o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                            <td className="px-3 py-1.5">{o.symbol}</td>
+                            <td className="px-3 py-1.5 capitalize text-muted-foreground">{o.type ?? "limit"}</td>
+                            <td className={cn("px-3 py-1.5 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                            <td className="px-3 py-1.5 text-right">{formatPrice(o.price)}</td>
+                            <td className="px-3 py-1.5 text-right">{qty.toFixed(4)}</td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">{filled.toFixed(4)}</td>
+                            <td className="px-3 py-1.5 text-right">{unfilled.toFixed(4)}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              <button
+                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                                disabled={cancelOrder.isPending}
+                                className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
+                              >
+                                {cancelOrder.isPending ? "…" : "Cancel"}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                )
-              )}
+                );
+              })()}
 
               {/* ── Order History ── */}
-              {bottomTab === "history" && (
-                filledOrders.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center gap-1 text-muted-foreground text-sm">
-                    {!address
-                      ? "Connect your wallet to view order history."
-                      : <><span>No completed orders yet.</span><span className="text-xs opacity-60">Filled orders show BSV settlement txid.</span></>
-                    }
+              {bottomTab === "history" && (() => {
+                const rows = hideOtherPairs
+                  ? filledOrders.filter((o: any) => o.symbol === symbol)
+                  : filledOrders;
+                return rows.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                    {!address ? "Log in or connect wallet to view order history." : "No completed orders yet."}
                   </div>
                 ) : (
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="sticky top-0 bg-card">
+                  <table className="w-full text-left text-[11px] font-mono">
+                    <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-muted-foreground font-sans border-b border-border">
-                        <th className="p-3 font-medium">Date</th>
-                        <th className="p-3 font-medium">Pair</th>
-                        <th className="p-3 font-medium">Side</th>
-                        <th className="p-3 font-medium text-right">Price</th>
-                        <th className="p-3 font-medium text-right">Amount</th>
-                        <th className="p-3 font-medium">BSV Settlement</th>
+                        <th className="px-3 py-1.5 font-medium">Time</th>
+                        <th className="px-3 py-1.5 font-medium">Pair</th>
+                        <th className="px-3 py-1.5 font-medium">Type</th>
+                        <th className="px-3 py-1.5 font-medium">Side</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Price</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Amount</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Total</th>
+                        <th className="px-3 py-1.5 font-medium">Status</th>
+                        <th className="px-3 py-1.5 font-medium">BSV Settlement</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
-                      {filledOrders.map((o: any, i: number) => (
-                        <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
-                          <td className="p-3 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString()}</td>
-                          <td className="p-3">{o.symbol}</td>
-                          <td className={cn("p-3 font-semibold capitalize", o.side === "buy" ? "text-buy" : o.side === "sell" ? "text-sell" : "text-muted-foreground")}>{o.side}</td>
-                          <td className="p-3 text-right">{formatPrice(o.price)}</td>
-                          <td className="p-3 text-right">{Number(o.quantity).toFixed(4)}</td>
-                          <td className="p-3">
-                            {o.status === "filled" && o.txid ? (
-                              <div className="flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3 h-3 text-green-400 shrink-0" />
-                                <span className="text-green-400 font-mono text-[10px]">
-                                  {o.txid.slice(0, 10)}…{o.txid.slice(-6)}
-                                </span>
-                                <a
-                                  href={`https://whatsonchain.com/tx/${o.txid}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:text-primary/80"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
+                    <tbody className="divide-y divide-border/50">
+                      {rows.map((o: any, i: number) => {
+                        const qty = Number(o.quantity);
+                        const total = Number(o.price ?? 0) * qty;
+                        return (
+                          <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-3 py-1.5 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                            <td className="px-3 py-1.5">{o.symbol}</td>
+                            <td className="px-3 py-1.5 capitalize text-muted-foreground">{o.type ?? "limit"}</td>
+                            <td className={cn("px-3 py-1.5 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                            <td className="px-3 py-1.5 text-right">{formatPrice(o.price)}</td>
+                            <td className="px-3 py-1.5 text-right">{qty.toFixed(4)}</td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
+                            <td className={cn("px-3 py-1.5 capitalize font-semibold text-[10px]", o.status === "filled" ? "text-buy" : "text-muted-foreground")}>{o.status}</td>
+                            <td className="px-3 py-1.5">
+                              {o.txid ? (
+                                <a href={`https://whatsonchain.com/tx/${o.txid}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                  <span className="text-[10px] font-mono">{o.txid.slice(0, 8)}…</span>
+                                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                                 </a>
-                              </div>
-                            ) : o.status === "cancelled" ? (
-                              <span className="text-muted-foreground text-[10px]">Cancelled</span>
-                            ) : (
-                              <span className="text-muted-foreground text-[10px]">Pending…</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                              ) : (
+                                <span className="text-muted-foreground text-[10px]">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                )
-              )}
+                );
+              })()}
 
-              {/* ── Trade History ── */}
+              {/* ── Trade History (market trades) ── */}
               {bottomTab === "trades" && (
                 trades.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                    No trades to show.
+                  <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+                    No trade history for this pair.
                   </div>
                 ) : (
-                  <table className="w-full text-left text-xs font-mono">
-                    <thead className="sticky top-0 bg-card">
+                  <table className="w-full text-left text-[11px] font-mono">
+                    <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-muted-foreground font-sans border-b border-border">
-                        <th className="p-3 font-medium">Time</th>
-                        <th className="p-3 font-medium">Side</th>
-                        <th className="p-3 font-medium text-right">Price</th>
-                        <th className="p-3 font-medium text-right">Amount</th>
-                        <th className="p-3 font-medium text-right">Total</th>
+                        <th className="px-3 py-1.5 font-medium">Time</th>
+                        <th className="px-3 py-1.5 font-medium">Pair</th>
+                        <th className="px-3 py-1.5 font-medium">Side</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Price</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Amount</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border">
-                      {(trades as any[]).slice(0, 30).map((t: any, i: number) => (
+                    <tbody className="divide-y divide-border/50">
+                      {(trades as any[]).slice(0, 50).map((t: any, i: number) => (
                         <tr key={t.id ?? i} className="hover:bg-white/5 transition-colors">
-                          <td className="p-3 text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString()}</td>
-                          <td className={cn("p-3 font-semibold capitalize", t.side === "buy" ? "text-buy" : "text-sell")}>{t.side}</td>
-                          <td className={cn("p-3 text-right", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</td>
-                          <td className="p-3 text-right">{Number(t.quantity).toFixed(4)}</td>
-                          <td className="p-3 text-right text-muted-foreground">{formatPrice(t.price * t.quantity)}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                          <td className="px-3 py-1.5">{symbol}</td>
+                          <td className={cn("px-3 py-1.5 font-semibold capitalize", t.side === "buy" ? "text-buy" : "text-sell")}>{t.side}</td>
+                          <td className={cn("px-3 py-1.5 text-right font-mono", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</td>
+                          <td className="px-3 py-1.5 text-right">{Number(t.quantity).toFixed(4)}</td>
+                          <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(t.price * t.quantity)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -580,16 +615,20 @@ export function SpotTrading() {
           </div>
         </div>
 
-        {/* RIGHT: Order Book (top) + Order Form (bottom) — Poloniex style */}
-        <div className="hidden lg:flex w-[280px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
-          {/* Order Book — takes top ~55% of right panel */}
-          <div className="border-b border-border" style={{ height: "55%" }}>
-            <OrderBook data={orderBook} lastPrice={ticker.lastPrice} onFill={handleOrderBookFill} />
-          </div>
-          {/* Order Form — takes bottom ~45% */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
-          </div>
+        {/* CENTER-RIGHT: Order Book + Market Trades */}
+        <div className="hidden lg:flex w-[210px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
+          <OrderBook
+            data={orderBook}
+            lastPrice={ticker.lastPrice}
+            onFill={handleOrderBookFill}
+            symbol={symbol}
+            trades={trades as any}
+          />
+        </div>
+
+        {/* FAR-RIGHT: Order Form */}
+        <div className="hidden lg:flex w-[230px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
+          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
         </div>
 
         {/* MOBILE: full-width order form below chart */}
