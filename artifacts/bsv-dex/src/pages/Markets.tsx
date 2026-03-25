@@ -222,10 +222,6 @@ export function Markets() {
       {/* Header */}
       <div className="px-6 lg:px-10 pt-0 pb-4 border-b border-border bg-card/40">
         <div className="max-w-7xl mx-auto">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">Markets</h1>
-          </div>
-
           {/* Main tabs — slim Poloniex-style */}
           <div className="mt-3 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
             {TAB_META.map(t => {
