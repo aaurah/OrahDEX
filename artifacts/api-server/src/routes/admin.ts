@@ -1,8 +1,8 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db } from "@workspace/db";
-import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { marketsTable, platformSettingsTable, adminEmailsTable } from "@workspace/db/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
@@ -768,6 +768,170 @@ router.put("/bsv-wallet", async (req, res) => {
     res.json({ customAddress, message: "Settlement address updated" });
   } catch (err) {
     res.status(500).json({ error: "Failed to update BSV wallet address" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN MAIL INBOX
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Seed welcome email if inbox is empty
+async function seedWelcomeEmail() {
+  try {
+    const existing = await db.select().from(adminEmailsTable).limit(1);
+    if (existing.length > 0) return;
+    const welcomeEmails = [
+      {
+        folder: "inbox",
+        fromAddress: "system@orahdex.org",
+        toAddress: "admin@orahdex.org",
+        subject: "🎉 Welcome to OrahDEX Admin Panel",
+        body: `Hi Admin,\n\nWelcome to OrahDEX! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orahdex.org\nLegal: legal@orahdex.org\nPrivacy: privacy@orahdex.org\n\nBest,\nOrahDEX System`,
+        isRead: false,
+        isStarred: true,
+        category: "system",
+      },
+      {
+        folder: "inbox",
+        fromAddress: "setup@orahdex.org",
+        toAddress: "admin@orahdex.org",
+        subject: "⚙️ Setup Checklist — Action Required",
+        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] CoinGecko / CMC API keys\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
+        isRead: false,
+        isStarred: false,
+        category: "system",
+      },
+      {
+        folder: "inbox",
+        fromAddress: "security@orahdex.org",
+        toAddress: "admin@orahdex.org",
+        subject: "🔐 Security Recommendation",
+        body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrahDEX Security`,
+        isRead: true,
+        isStarred: false,
+        category: "system",
+      },
+    ];
+    for (const email of welcomeEmails) {
+      await db.insert(adminEmailsTable).values(email);
+    }
+  } catch {}
+}
+seedWelcomeEmail();
+
+// GET /admin/mail — list emails (with optional folder filter)
+router.get("/mail", async (req, res) => {
+  try {
+    const { folder } = req.query as { folder?: string };
+    const rows = await db
+      .select()
+      .from(adminEmailsTable)
+      .where(folder ? eq(adminEmailsTable.folder, folder) : undefined)
+      .orderBy(desc(adminEmailsTable.createdAt));
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch emails" });
+  }
+});
+
+// GET /admin/mail/:id — single email (marks as read)
+router.get("/mail/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [row] = await db.select().from(adminEmailsTable).where(eq(adminEmailsTable.id, id));
+    if (!row) return res.status(404).json({ error: "Email not found" });
+    await db.update(adminEmailsTable).set({ isRead: true }).where(eq(adminEmailsTable.id, id));
+    res.json({ ...row, isRead: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch email" });
+  }
+});
+
+// POST /admin/mail — create (compose / system insert)
+router.post("/mail", async (req, res) => {
+  try {
+    const { folder = "sent", fromAddress, toAddress, subject, body, category = "general" } = req.body as {
+      folder?: string; fromAddress: string; toAddress: string;
+      subject: string; body: string; category?: string;
+    };
+    if (!fromAddress || !toAddress || !subject || !body) {
+      return res.status(400).json({ error: "fromAddress, toAddress, subject, body are required" });
+    }
+    const [inserted] = await db.insert(adminEmailsTable).values({
+      folder, fromAddress, toAddress, subject, body, category, isRead: true,
+    }).returning();
+    res.json(inserted);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to create email" });
+  }
+});
+
+// PATCH /admin/mail/:id — update (read/star/move folder)
+router.patch("/mail/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { isRead, isStarred, folder } = req.body as { isRead?: boolean; isStarred?: boolean; folder?: string };
+    const update: Record<string, any> = {};
+    if (isRead   !== undefined) update.isRead   = isRead;
+    if (isStarred!== undefined) update.isStarred = isStarred;
+    if (folder)                 update.folder    = folder;
+    if (!Object.keys(update).length) return res.status(400).json({ error: "Nothing to update" });
+    const [updated] = await db.update(adminEmailsTable).set(update).where(eq(adminEmailsTable.id, id)).returning();
+    if (!updated) return res.status(404).json({ error: "Email not found" });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to update email" });
+  }
+});
+
+// DELETE /admin/mail/:id — delete email
+router.delete("/mail/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(adminEmailsTable).where(eq(adminEmailsTable.id, id));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to delete email" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SITE SETTINGS (DB-backed — prefix: site__)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SITE_PREFIX = "site__";
+
+router.get("/site-settings", async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable);
+    const result: Record<string, string> = {};
+    for (const r of rows) {
+      if (r.key.startsWith(SITE_PREFIX)) {
+        result[r.key.slice(SITE_PREFIX.length)] = r.value;
+      }
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to load site settings" });
+  }
+});
+
+router.put("/site-settings", async (req, res) => {
+  try {
+    const updates = req.body as Record<string, string>;
+    for (const [key, value] of Object.entries(updates)) {
+      if (typeof value !== "string") continue;
+      await db
+        .insert(platformSettingsTable)
+        .values({ key: `${SITE_PREFIX}${key}`, value })
+        .onConflictDoUpdate({
+          target: platformSettingsTable.key,
+          set: { value, updatedAt: new Date() },
+        });
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to save site settings" });
   }
 });
 

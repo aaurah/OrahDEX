@@ -60,6 +60,7 @@ const AdminFeatureFlags   = lazy(() => import("@/pages/admin/FeatureFlags").then
 const AdminSecuritySettings = lazy(() => import("@/pages/admin/SecuritySettings").then(m => ({ default: m.AdminSecuritySettings })));
 const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m => ({ default: m.AdminFeeConfig })));
 const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
+const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
 
 /* ─── QueryClient — aggressive caching so API is hit far less often ─── */
 const queryClient = new QueryClient({
@@ -239,6 +240,7 @@ function Router() {
       <Route path="/admin/security"><AdminRoute><AdminSecuritySettings /></AdminRoute></Route>
       <Route path="/admin/fees">    <AdminRoute><AdminFeeConfig /></AdminRoute></Route>
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
+      <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
