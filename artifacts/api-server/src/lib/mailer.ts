@@ -96,8 +96,22 @@ export async function testSmtpConnection(): Promise<MailResult> {
   }
 }
 
-export async function getSmtpStatus(): Promise<{ configured: boolean; host?: string; from?: string }> {
+export async function getSmtpStatus(): Promise<{
+  configured: boolean;
+  host?: string;
+  port?: number;
+  user?: string;
+  from?: string;
+  secure?: boolean;
+}> {
   const cfg = await getSmtpConfig();
   if (!cfg) return { configured: false };
-  return { configured: true, host: cfg.host, from: cfg.from };
+  return {
+    configured: true,
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    from: cfg.from,
+    secure: cfg.secure,
+  };
 }

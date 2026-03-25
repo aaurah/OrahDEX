@@ -5,6 +5,7 @@ import {
   X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Circle,
   CheckCircle2, AlertCircle, Settings, Zap, Shield,
   AlertTriangle, WifiOff, Wifi, Copy, Check, ExternalLink,
+  Server, Lock, User, AtSign, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -64,8 +65,23 @@ export function AdminEmailInbox() {
   const [fromOpen, setFromOpen] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
+  const [showMailSetup, setShowMailSetup] = useState(false);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const { data: smtpStatus } = useQuery<{ configured: boolean; host?: string; from?: string }>({
+  const copyField = (key: string, value: string) => {
+    navigator.clipboard?.writeText(value);
+    setCopiedField(key);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const { data: smtpStatus } = useQuery<{
+    configured: boolean;
+    host?: string;
+    port?: number;
+    user?: string;
+    from?: string;
+    secure?: boolean;
+  }>({
     queryKey: ["smtp-status"],
     queryFn: () => fetch(`${BASE}/api/admin/mail/smtp-status`).then(r => r.json()),
     refetchInterval: 60_000,
@@ -206,8 +222,16 @@ export function AdminEmailInbox() {
           <button
             onClick={() => refetch()}
             className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+            title="Refresh"
           >
             <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowMailSetup(true)}
+            className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+            title="Mail client setup (Thunderbird / Apple Mail)"
+          >
+            <Server className="w-4 h-4" />
           </button>
           <button
             onClick={() => setComposing(true)}
@@ -252,6 +276,134 @@ export function AdminEmailInbox() {
             {testSmtp.isPending ? <div className="w-3 h-3 border border-green-400/30 border-t-green-400 rounded-full animate-spin" /> : <Wifi className="w-3 h-3" />}
             Test
           </button>
+        </div>
+      )}
+
+      {/* Mail Client Setup Modal */}
+      {showMailSetup && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl shadow-black/40 overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Server className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Mail Client Setup</h3>
+                  <p className="text-[10px] text-muted-foreground">Thunderbird · Apple Mail · Outlook</p>
+                </div>
+              </div>
+              <button onClick={() => setShowMailSetup(false)} className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto p-5 space-y-5">
+              {!smtpStatus?.configured ? (
+                /* Not configured yet */
+                <div className="p-4 bg-amber-500/8 border border-amber-500/25 rounded-xl flex items-start gap-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-300">SMTP not configured yet</p>
+                    <p className="text-xs text-amber-400/70 mt-1 leading-relaxed">
+                      First add your SMTP credentials in <strong>Admin → Integrations → Email / SMTP</strong>, then come back here for the full connection details.
+                    </p>
+                    <a
+                      href="/admin/integrations"
+                      onClick={() => setShowMailSetup(false)}
+                      className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors"
+                    >
+                      Configure SMTP →
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                /* SMTP is configured — show connection details */
+                <>
+                  <div className="p-3 bg-green-500/8 border border-green-500/20 rounded-xl flex items-center gap-2.5">
+                    <Wifi className="w-4 h-4 text-green-400 shrink-0" />
+                    <p className="text-xs font-semibold text-green-300">SMTP is configured — use the details below in your mail client</p>
+                  </div>
+
+                  {/* SMTP / Outgoing */}
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                      <Send className="w-3 h-3" /> Outgoing Mail (SMTP)
+                    </p>
+                    <div className="space-y-2">
+                      {[
+                        { key: "smtp_host",   icon: Server,  label: "SMTP Server / Host",     value: smtpStatus.host ?? "" },
+                        { key: "smtp_port",   icon: Lock,    label: "Port",                   value: String(smtpStatus.port ?? 587) },
+                        { key: "smtp_user",   icon: User,    label: "Username",                value: smtpStatus.user ?? "" },
+                        { key: "smtp_sec",    icon: Shield,  label: "Security",               value: smtpStatus.secure ? "SSL/TLS (port 465)" : "STARTTLS (port 587)" },
+                        { key: "smtp_from",   icon: AtSign,  label: "From / Sender address",  value: smtpStatus.from ?? smtpStatus.user ?? "" },
+                      ].map(({ key, icon: Icon, label, value }) => (
+                        <div key={key} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl">
+                          <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-bold">{label}</p>
+                            <p className="text-sm font-mono text-foreground mt-0.5 truncate">{value || "—"}</p>
+                          </div>
+                          {value && (
+                            <button
+                              onClick={() => copyField(key, value)}
+                              className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                            >
+                              {copiedField === key ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex items-start gap-3 p-3 bg-red-500/5 border border-red-500/15 rounded-xl">
+                        <Lock className="w-3.5 h-3.5 text-red-400/70 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[9px] uppercase tracking-widest text-red-400/70 font-bold">Password</p>
+                          <p className="text-sm font-mono text-foreground mt-0.5">••••••••••••</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">Use the SMTP password you entered in Integrations → Email / SMTP. It is not shown here for security.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Thunderbird step-by-step */}
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                      <Info className="w-3 h-3" /> Thunderbird Setup (step by step)
+                    </p>
+                    <ol className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                      {[
+                        "Open Thunderbird → Account Settings → Account Actions → Add Mail Account",
+                        `Your name: OrahDEX Admin`,
+                        `Email address: ${smtpStatus.from ?? smtpStatus.user ?? "support@orahdex.org"}`,
+                        "Click Configure Manually",
+                        `Outgoing SMTP: ${smtpStatus.host}  Port: ${smtpStatus.port ?? 587}  Auth: Normal password`,
+                        `Username: ${smtpStatus.user}  Password: (your SMTP password)`,
+                        "For incoming mail (IMAP/POP3): use your domain email provider's details (Google Workspace, Zoho, etc.)",
+                        "Click Done / Re-test — Thunderbird will verify the connection",
+                      ].map((step, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-[9px] font-black text-primary mt-0.5">
+                            {i + 1}
+                          </span>
+                          <span className={step.includes("SMTP") || step.includes("Username") || step.includes("Outgoing") ? "font-mono text-foreground/90" : ""}>{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  {/* IMAP note */}
+                  <div className="p-3.5 bg-secondary/40 border border-border rounded-xl">
+                    <p className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-primary" /> About incoming mail (IMAP)</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      OrahDEX uses this SMTP server only to <strong>send</strong> outbound emails. To also <strong>receive</strong> emails in Thunderbird, you need an IMAP account with your domain provider (e.g. Google Workspace for <code className="font-mono text-primary">@orahdex.org</code>). Your IMAP host, port, and credentials will come from that provider, not from here.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
