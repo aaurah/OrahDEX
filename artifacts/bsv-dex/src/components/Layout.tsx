@@ -333,17 +333,14 @@ export function Layout({ children }: { children: ReactNode }) {
               <WalletOptionsDropdown />
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <ReownConnectButton size="sm" className="hidden sm:flex" />
-              <button
-                onClick={() => openWalletModal()}
-                className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/30 hover:brightness-110 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/40 active:scale-95 transition-all"
-              >
-                <Wallet className="w-4 h-4" />
-                <span className="hidden sm:inline">Connect Wallet</span>
-                <span className="sm:hidden">Connect</span>
-              </button>
-            </div>
+            <button
+              onClick={() => openWalletModal()}
+              className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 hover:brightness-110 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/40 active:scale-95 transition-all"
+            >
+              <Wallet className="w-4 h-4" />
+              <span className="hidden sm:inline">Connect Wallet</span>
+              <span className="sm:hidden">Connect</span>
+            </button>
           )}
 
           <button
