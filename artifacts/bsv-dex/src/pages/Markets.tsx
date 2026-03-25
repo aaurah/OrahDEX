@@ -5,7 +5,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -17,7 +17,7 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -51,7 +51,8 @@ const TAB_META: TabMeta[] = [
   { id: "op",        label: "OP",           color: "text-red-400",     desc: "All pairs quoted in OP · Optimism" },
   { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
   { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
-  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "All pairs quoted in BASE · Coinbase L2" },
+  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "Curated Base L2 pairs · Excludes Zora social coins" },
+  { id: "zora",      label: "ZORA",         color: "text-pink-400",    desc: "Zora social / creator coins · Every post is a coin" },
   { id: "linea",     label: "LINEA",        color: "text-violet-400",  desc: "All pairs quoted in LINEA · MetaMask L2" },
   { id: "zk",        label: "ZK",           color: "text-indigo-300",  desc: "All pairs quoted in ZK · zkSync Era" },
   { id: "scr",       label: "SCROLL",       color: "text-orange-300",  desc: "All pairs quoted in SCR · Scroll L2" },
@@ -161,6 +162,7 @@ export function Markets() {
       case "ftm":       return enrich(FTM_MARKETS.map(normalise));
       case "cro":       return enrich(CRO_MARKETS.map(normalise));
       case "base":      return enrich(BASE_MARKETS.map(normalise));
+      case "zora":      return enrich(ZORA_MARKETS.map(normalise));
       case "linea":     return enrich(LINEA_MARKETS.map(normalise));
       case "zk":        return enrich(ZK_MARKETS.map(normalise));
       case "scr":       return enrich(SCR_MARKETS.map(normalise));
@@ -191,6 +193,7 @@ export function Markets() {
       case "ftm":       return FTM_MARKETS.length;
       case "cro":       return CRO_MARKETS.length;
       case "base":      return BASE_MARKETS.length;
+      case "zora":      return ZORA_MARKETS.length;
       case "linea":     return LINEA_MARKETS.length;
       case "zk":        return ZK_MARKETS.length;
       case "scr":       return SCR_MARKETS.length;
@@ -286,6 +289,31 @@ export function Markets() {
                   <p className="text-[10px] text-green-500/60 uppercase tracking-wider">Fees</p>
                   <p className="text-sm font-black text-green-400">~$0.001</p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* BASE curated notice */}
+          {tab === "base" && (
+            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+              <span className="text-xl leading-none">🔵</span>
+              <div>
+                <p className="text-xs font-bold text-blue-400">Base L2 — Curated Pairs Only</p>
+                <p className="text-[11px] text-blue-300/70 mt-0.5">Showing verified Base-native tokens (AERO, BRETT, TOSHI, DEGEN…) and bridged blue-chips. Zora social/creator coins are listed separately under the ZORA tab.</p>
+              </div>
+            </div>
+          )}
+
+          {/* ZORA social coins notice */}
+          {tab === "zora" && (
+            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-pink-500/10 border border-pink-500/30 rounded-xl">
+              <span className="text-xl leading-none">🎨</span>
+              <div>
+                <p className="text-xs font-bold text-pink-400">Zora Social Coins — Creator Economy</p>
+                <p className="text-[11px] text-pink-300/70 mt-0.5">On Zora Network, every post, photo, or artwork mints a tradeable ERC-20 coin. Sorted by 24h volume. Extremely high volatility — trade carefully.</p>
+              </div>
+              <div className="ml-auto shrink-0">
+                <span className="px-2 py-1 rounded-lg bg-pink-500/20 border border-pink-500/30 text-[10px] font-bold text-pink-400 uppercase tracking-wider">High Risk</span>
               </div>
             </div>
           )}

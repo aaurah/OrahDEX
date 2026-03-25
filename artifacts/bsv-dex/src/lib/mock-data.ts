@@ -270,28 +270,30 @@ function maticPair(base: string, usdtPrice: number, chg: number, vol: number): a
   return spot(base, "MATIC", p, chg, vol / MATIC_PRICE);
 }
 export const MATIC_MARKETS: any[] = [
-  maticPair("BTC",   68310,  -1.85, 2_450_000_000),
+  // Bridged blue-chips
   maticPair("ETH",   3415,    1.32,  950_000_000),
-  maticPair("BNB",   392,     0.88,  320_000_000),
-  maticPair("SOL",   148.5,   3.21,  420_000_000),
-  maticPair("XRP",   0.5242, -0.64,  110_000_000),
-  maticPair("ADA",   0.4421, -2.10,   45_000_000),
-  maticPair("DOGE",  0.1185,  5.42,   78_000_000),
-  maticPair("DOT",   6.82,   -1.20,   38_000_000),
-  maticPair("AVAX",  36.4,    2.15,   62_000_000),
-  maticPair("LINK",  14.52,   3.64,   48_000_000),
-  maticPair("UNI",   9.84,    1.55,   22_000_000),
-  maticPair("ATOM",  8.42,   -0.78,   18_000_000),
-  maticPair("LTC",   78.2,    0.45,   32_000_000),
-  maticPair("BCH",   384,     1.10,   28_000_000),
-  maticPair("BSV",   55.42,   4.41,   18_500_000),
-  maticPair("TRX",   0.1205,  2.31,   35_000_000),
-  maticPair("NEAR",  6.55,    4.82,   24_000_000),
-  maticPair("APT",   10.5,    5.21,   18_000_000),
-  maticPair("ARB",   1.12,    2.85,   28_000_000),
-  maticPair("OP",    2.41,    3.10,   22_000_000),
-  maticPair("SUI",   1.22,    6.45,   35_000_000),
-  maticPair("INJ",   28.4,    4.21,   15_000_000),
+  maticPair("BTC",   68310,  -1.85, 2_450_000_000),
+  maticPair("USDC",  1.00,    0.01,  840_000_000),
+  maticPair("USDT",  1.00,    0.00,  620_000_000),
+  maticPair("DAI",   0.9998,  0.02,  280_000_000),
+  // Polygon-native ecosystem
+  maticPair("QUICK", 0.042,   8.42,   22_000_000),  // QuickSwap DEX token
+  maticPair("GHST",  1.42,    5.15,   18_000_000),  // Aavegotchi
+  maticPair("SAND",  0.382,   3.84,   48_000_000),  // The Sandbox (Polygon)
+  maticPair("MANA",  0.282,   2.15,   35_000_000),  // Decentraland
+  maticPair("AXS",   6.82,    4.21,   28_000_000),  // Axie Infinity
+  maticPair("IMX",   1.82,    6.45,   42_000_000),  // Immutable X
+  maticPair("AAVE",  96.5,    1.82,   32_000_000),  // Aave (Polygon)
+  maticPair("CRV",   0.382,  -1.15,   24_000_000),  // Curve (Polygon)
+  maticPair("SUSHI", 1.22,   -0.85,   16_000_000),  // SushiSwap
+  maticPair("LINK",  14.52,   3.64,   28_000_000),  // Chainlink (Polygon)
+  maticPair("UNI",   9.84,    1.55,   18_000_000),  // Uniswap v3 (Polygon)
+  maticPair("WBTC",  68215,  -1.92,   82_000_000),  // Wrapped BTC
+  maticPair("stMATIC", 0.702, 0.85,   45_000_000),  // Lido staked MATIC
+  maticPair("BAL",   4.82,    3.15,   12_000_000),  // Balancer (Polygon)
+  maticPair("1INCH", 0.542,   5.21,   10_000_000),  // 1inch (Polygon)
+  maticPair("DFYN",  0.0482,  7.84,    5_000_000),  // DFYN Exchange (Polygon-native)
+  maticPair("DQUICK",82.4,    9.12,    8_000_000),  // Dragon's QUICK
 ];
 
 // ─── AVAX PAIRS (Avalanche) ───────────────────────────────────────────────────
@@ -331,25 +333,30 @@ function arbPair(base: string, usdtPrice: number, chg: number, vol: number): any
   return spot(base, "ARB", p, chg, vol / ARB_PRICE);
 }
 export const ARB_MARKETS: any[] = [
-  arbPair("BTC",   68310,  -1.85, 2_450_000_000),
+  // Bridged blue-chips
   arbPair("ETH",   3415,    1.32,  950_000_000),
-  arbPair("BNB",   392,     0.88,  320_000_000),
-  arbPair("SOL",   148.5,   3.21,  420_000_000),
-  arbPair("XRP",   0.5242, -0.64,  110_000_000),
-  arbPair("ADA",   0.4421, -2.10,   45_000_000),
-  arbPair("DOGE",  0.1185,  5.42,   78_000_000),
-  arbPair("DOT",   6.82,   -1.20,   38_000_000),
-  arbPair("AVAX",  36.4,    2.15,   62_000_000),
-  arbPair("MATIC", 0.718,  -0.92,   54_000_000),
-  arbPair("LINK",  14.52,   3.64,   48_000_000),
-  arbPair("UNI",   9.84,    1.55,   22_000_000),
-  arbPair("ATOM",  8.42,   -0.78,   18_000_000),
-  arbPair("NEAR",  6.55,    4.82,   24_000_000),
-  arbPair("OP",    2.41,    3.10,   22_000_000),
-  arbPair("SUI",   1.22,    6.45,   35_000_000),
-  arbPair("INJ",   28.4,    4.21,   15_000_000),
-  arbPair("AAVE",  96.5,    1.82,   12_000_000),
-  arbPair("CRV",   0.382,  -1.15,   18_000_000),
+  arbPair("BTC",   68310,  -1.85, 2_450_000_000),
+  arbPair("USDC",  1.00,    0.01,  780_000_000),
+  arbPair("USDT",  1.00,    0.00,  520_000_000),
+  arbPair("DAI",   0.9998,  0.02,  220_000_000),
+  arbPair("WBTC",  68215,  -1.92,  180_000_000),
+  // Arbitrum-native ecosystem
+  arbPair("GMX",   28.4,    4.21,  182_000_000),  // GMX perps — #1 Arb protocol
+  arbPair("PENDLE",5.42,    9.12,  142_000_000),  // Pendle yield trading
+  arbPair("MAGIC", 0.482,   6.84,   82_000_000),  // Treasure ecosystem
+  arbPair("RDNT",  0.082,   8.42,   62_000_000),  // Radiant Capital
+  arbPair("GNS",   1.82,    5.15,   48_000_000),  // Gains Network
+  arbPair("GRAIL", 2124,    3.42,   38_000_000),  // Camelot DEX
+  arbPair("JONES", 5.84,    7.21,   28_000_000),  // Jones DAO
+  arbPair("UMAMI", 28.4,    4.85,   22_000_000),  // Umami Finance
+  arbPair("VELA",  0.842,   6.42,   18_000_000),  // Vela Exchange
+  arbPair("AEVO",  1.42,   11.84,   32_000_000),  // Aevo options
+  arbPair("LYRA",  0.082,   4.21,   14_000_000),  // Lyra options
+  arbPair("AAVE",  96.5,    1.82,   28_000_000),  // Aave (Arbitrum)
+  arbPair("CRV",   0.382,  -1.15,   22_000_000),  // Curve (Arbitrum)
+  arbPair("SUSHI", 1.22,   -0.85,   15_000_000),  // SushiSwap (Arbitrum)
+  arbPair("LINK",  14.52,   3.64,   24_000_000),  // Chainlink
+  arbPair("UNI",   9.84,    1.55,   18_000_000),  // Uniswap v3 (Arbitrum)
 ];
 
 // ─── OP PAIRS (Optimism) ─────────────────────────────────────────────────────
@@ -406,33 +413,48 @@ export const FTM_MARKETS: any[] = [
   ftmPair("AAVE",  96.5,    1.82,   12_000_000),
 ];
 
-// ─── BASE PAIRS (Base L2 · Coinbase) ─────────────────────────────────────────
-const BASE_ETH_PRICE = 3415;
-function basePair(base: string, usdtPrice: number, chg: number, vol: number): any {
-  const p = usdtPrice / BASE_ETH_PRICE;
-  return spot(base, "BASE", p, chg, vol / BASE_ETH_PRICE);
-}
+// ─── BASE PAIRS (Base L2 · Coinbase) — curated, excludes Zora social coins ───
+// Only Base-native blue-chips + established bridged assets. Creator coins → ZORA tab.
 export const BASE_MARKETS: any[] = [
-  basePair("ETH",   3415,    2.15, 2_100_000_000),
-  basePair("BTC",   68310,  -1.85, 1_850_000_000),
-  basePair("SOL",   148.5,   3.21,   520_000_000),
-  basePair("USDC",  1.00,    0.01,   980_000_000),
-  basePair("DAI",   1.00,    0.02,   420_000_000),
-  basePair("LINK",  14.52,   3.64,   148_000_000),
-  basePair("UNI",   9.84,    1.55,    82_000_000),
-  basePair("AAVE",  96.5,    1.82,    62_000_000),
-  basePair("ARB",   1.12,    2.85,   128_000_000),
-  basePair("OP",    2.41,    3.10,    92_000_000),
-  basePair("DOGE",  0.1185,  5.42,    78_000_000),
-  basePair("SHIB",  0.0000235, 6.10, 142_000_000),
-  basePair("PEPE",  0.0000082, 8.50, 285_000_000),
-  basePair("MKR",   2920,   -0.45,    28_000_000),
-  basePair("CRV",   0.382,  -1.15,    48_000_000),
-  basePair("LDO",   2.15,    1.95,    44_000_000),
-  basePair("COMP",  52.5,    0.62,    15_000_000),
-  basePair("GRT",   0.192,   3.15,    32_000_000),
-  basePair("SNX",   2.82,   -1.32,    16_000_000),
-  basePair("RUNE",  5.52,    4.85,    22_000_000),
+  spot("WETH",   "USDC",  3415,       2.15, 2_100_000_000), // wrapped ETH on Base
+  spot("CBETH",  "USDC",  3596,       2.04,   420_000_000), // Coinbase staked ETH
+  spot("USDC",   "USDT",  1.0001,     0.01, 1_820_000_000), // native USDC on Base
+  spot("DAI",    "USDC",  0.9998,     0.02,   480_000_000),
+  spot("AERO",   "USDC",  2.84,      12.45,   285_000_000), // Aerodrome — #1 Base DEX
+  spot("BRETT",  "USDC",  0.1142,    18.42,   242_000_000), // biggest Base meme coin
+  spot("TOSHI",  "USDC",  0.000185,  22.15,   168_000_000), // Coinbase mascot meme
+  spot("DEGEN",  "USDC",  0.00842,   14.82,   138_000_000), // Farcaster social token
+  spot("HIGHER", "USDC",  0.00215,    9.64,    82_000_000), // Base cultural token
+  spot("MOCHI",  "USDC",  0.00142,   11.25,    58_000_000), // Base cat meme
+  spot("DOGINME","USDC",  0.000428,  16.84,    52_000_000), // Base dog meme
+  spot("BALD",   "USDC",  0.00284,    8.42,    42_000_000), // first Base meme coin
+  spot("NORMIE", "USDC",  0.00182,   13.10,    38_000_000), // Base meme
+  spot("MORPHO", "USDC",  1.82,       5.21,    48_000_000), // Morpho lending on Base
+  spot("MOONWELL","USDC", 0.182,      4.85,    28_000_000), // Moonwell lending
+  spot("SEAM",   "USDC",  4.82,       7.42,    22_000_000), // Seamless Protocol
+  spot("WELL",   "USDC",  0.082,      3.15,    18_000_000), // Moonwell governance
+  spot("COMP",   "USDC",  52.5,       0.62,    15_000_000), // Compound on Base
+  spot("SNX",    "USDC",  2.82,      -1.32,    12_000_000), // Synthetix on Base
+];
+
+// ─── ZORA MARKETS — creator / social coins (Zora Network + Base social layer) ─
+// On Zora, every post creates a tradeable ERC-20. Sorted by 24h volume.
+export const ZORA_MARKETS: any[] = [
+  spot("ZORA",   "USDC",  0.00182,   24.82,   142_000_000), // Zora Protocol token
+  spot("ENJOY",  "USDC",  0.000042,  31.50,    62_000_000), // ENJOY — Zora OG social
+  spot("BUILD",  "USDC",  0.000285,  42.15,    32_000_000), // BUILD ecosystem
+  spot("IMAGINE","USDC",  0.0000182, 18.42,    28_000_000), // Zora creator coin
+  spot("ONCHAIN","USDC",  0.0000842, 15.42,    24_000_000), // onchain culture
+  spot("BASED",  "USDC",  0.000142,  19.10,    22_000_000), // Base culture token
+  spot("FRIEND", "USDC",  0.00482,    6.84,    18_000_000), // friend.tech derivative
+  spot("NOMAD",  "USDC",  0.000182,  22.84,    16_000_000), // Zora social coin
+  spot("COINAGE","USDC",  0.00182,    8.42,    14_000_000), // Coinage media token
+  spot("RAINBOW","USDC",  0.0000285, 11.25,    12_000_000), // Rainbow wallet social
+  spot("ALFA",   "USDC",  0.000882,  28.42,    10_000_000), // Alfa social coin
+  spot("NOTES",  "USDC",  0.0000482, 14.85,     8_500_000), // creator notes coin
+  spot("POST",   "USDC",  0.0000185,  9.42,     7_200_000), // post-as-coin
+  spot("VIRAL",  "USDC",  0.000242,  35.84,     6_800_000), // viral post coin
+  spot("MINT",   "USDC",  0.00142,    4.15,     5_400_000), // Zora Mint
 ];
 
 // ─── CRO PAIRS (Cronos) ───────────────────────────────────────────────────────
