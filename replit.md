@@ -143,6 +143,15 @@ Express 5 API server. Routes in `src/routes/`. Uses `@workspace/db` for DB and `
 - Mock data generators in `src/lib/mockData.ts` for order books, candles, trades
 - `pnpm --filter @workspace/api-server run dev` — dev server
 
+**Email / SMTP System:**
+- `src/lib/mailer.ts` — `sendMail()`, `testSmtpConnection()`, `getSmtpStatus()` via Nodemailer
+- SMTP config read from `platform_settings` table: `smtp_host`, `smtp_port`, `smtp_user`, `smtp_pass`, `smtp_from`
+- `GET  /api/admin/mail/smtp-status` — returns `{ configured, host, from }` (must be before `/:id` in route order)
+- `POST /api/admin/mail/test-smtp` — verifies SMTP connection; returns `{ success, error? }`
+- `POST /api/admin/mail` — saves email to DB; if `folder=sent` also attempts real SMTP delivery; returns `smtpSent`, `smtpError`
+- `POST /api/webhook/email-inbound` — inbound webhook compatible with Mailgun, SendGrid, Postmark; normalises fields and inserts to `inbox` folder
+- Admin email inbox UI (`/admin/mail`) shows SMTP status banner, "Test" button, copyable webhook URL in sidebar
+
 ### `lib/db` (`@workspace/db`)
 Database layer using Drizzle ORM.
 - `pnpm --filter @workspace/db run push` — push schema changes

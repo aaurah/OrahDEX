@@ -13,7 +13,7 @@ import dexscreenerRouter from "./dexscreener.js";
 import geckoTerminalRouter from "./geckoTerminal.js";
 import coinVotesRouter from "./coinVotes.js";
 import { db } from "@workspace/db";
-import { platformSettingsTable } from "@workspace/db/schema";
+import { platformSettingsTable, adminEmailsTable } from "@workspace/db/schema";
 import { logger } from "../lib/logger.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 
@@ -326,6 +326,66 @@ router.post("/bsv/broadcast", async (req, res) => {
   } catch (err: any) {
     logger.warn({ err: err?.message }, "BSV broadcast failed");
     res.status(500).json({ error: err?.message ?? "Broadcast failed" });
+  }
+});
+
+/* ── Inbound Email Webhook ───────────────────────────────────────────────────
+ * POST /api/webhook/email-inbound
+ *
+ * Receives inbound emails from Mailgun, SendGrid, Postmark, or any
+ * email forwarding service. Each provider posts different fields — we
+ * parse the common ones and store the email in the admin inbox.
+ *
+ * Mailgun:  sender, recipient, subject, body-plain, body-html, timestamp
+ * SendGrid: from, to, subject, text, html
+ * Postmark: From, To, Subject, TextBody, HtmlBody
+ * Generic:  from / fromAddress, to / toAddress, subject, body / text
+ *
+ * The webhook URL to configure in your provider:
+ *   https://YOUR_DOMAIN/api/webhook/email-inbound
+ */
+router.post("/webhook/email-inbound", async (req, res) => {
+  try {
+    const b = req.body as Record<string, any>;
+
+    // Normalise across providers
+    const from: string =
+      b.sender ?? b.from ?? b.From ?? b.fromAddress ?? b.from_email ?? "unknown@unknown.com";
+
+    const to: string =
+      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.org";
+
+    const subject: string =
+      b.subject ?? b.Subject ?? "(no subject)";
+
+    const body: string =
+      b["body-plain"] ?? b.text ?? b.TextBody ?? b.body ?? b.plain ??
+      b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
+
+    // Strip basic HTML tags for storage if we only got HTML
+    const cleanBody = body.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+
+    if (!from || !subject) {
+      res.status(400).json({ error: "Missing required fields: from, subject" });
+      return;
+    }
+
+    const [inserted] = await db.insert(adminEmailsTable).values({
+      folder: "inbox",
+      fromAddress: from,
+      toAddress: to,
+      subject,
+      body: cleanBody || body,
+      category: "contact",
+      isRead: false,
+      isStarred: false,
+    }).returning();
+
+    logger.info({ from, to, subject, id: inserted.id }, "Inbound email received via webhook");
+    res.json({ success: true, id: inserted.id });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "Failed to process inbound email webhook");
+    res.status(500).json({ error: err?.message ?? "Failed to process inbound email" });
   }
 });
 

@@ -6,6 +6,7 @@ import { eq, desc, and } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
+import { sendMail, testSmtpConnection, getSmtpStatus } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -834,6 +835,26 @@ router.get("/mail", async (req, res) => {
   }
 });
 
+// GET /admin/mail/smtp-status — check if SMTP is configured (MUST be before /:id)
+router.get("/mail/smtp-status", async (_req, res) => {
+  try {
+    const status = await getSmtpStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to check SMTP status" });
+  }
+});
+
+// POST /admin/mail/test-smtp — verify SMTP connection (MUST be before /:id)
+router.post("/mail/test-smtp", async (_req, res) => {
+  try {
+    const result = await testSmtpConnection();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message ?? "Test failed" });
+  }
+});
+
 // GET /admin/mail/:id — single email (marks as read)
 router.get("/mail/:id", async (req, res) => {
   try {
@@ -847,7 +868,8 @@ router.get("/mail/:id", async (req, res) => {
   }
 });
 
-// POST /admin/mail — create (compose / system insert)
+// POST /admin/mail — create email (compose / system insert)
+// When folder="sent" and SMTP is configured, actually sends the email
 router.post("/mail", async (req, res) => {
   try {
     const { folder = "sent", fromAddress, toAddress, subject, body, category = "general" } = req.body as {
@@ -857,10 +879,19 @@ router.post("/mail", async (req, res) => {
     if (!fromAddress || !toAddress || !subject || !body) {
       return res.status(400).json({ error: "fromAddress, toAddress, subject, body are required" });
     }
+
+    // Save to DB first
     const [inserted] = await db.insert(adminEmailsTable).values({
       folder, fromAddress, toAddress, subject, body, category, isRead: true,
     }).returning();
-    res.json(inserted);
+
+    // If composing an outbound email (folder=sent), attempt real SMTP delivery
+    let smtpResult = { success: false, error: "Not attempted" };
+    if (folder === "sent") {
+      smtpResult = await sendMail({ from: fromAddress, to: toAddress, subject, text: body });
+    }
+
+    res.json({ ...inserted, smtpSent: smtpResult.success, smtpError: smtpResult.error ?? null });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to create email" });
   }
