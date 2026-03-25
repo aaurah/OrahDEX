@@ -1,23 +1,24 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Copy, Check, QrCode, ChevronDown } from "lucide-react";
+import { X, Copy, Check, QrCode, ChevronDown, AlertTriangle, Wallet, Link2, ArrowRight } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
 
 const NETWORKS = [
-  { id: "evm-eth",   label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1" },
-  { id: "evm-bsc",   label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1" },
-  { id: "evm-poly",  label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2" },
-  { id: "evm-arb",   label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2" },
-  { id: "evm-op",    label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2" },
-  { id: "evm-base",  label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2" },
-  { id: "evm-zk",    label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3" },
-  { id: "bsv",       label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV" },
+  { id: "evm-eth",   label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1", type: "evm" },
+  { id: "evm-bsc",   label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1", type: "evm" },
+  { id: "evm-poly",  label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2", type: "evm" },
+  { id: "evm-arb",   label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
+  { id: "evm-op",    label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2", type: "evm" },
+  { id: "evm-base",  label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
+  { id: "evm-zk",    label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3", type: "evm" },
+  { id: "bsv",       label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV", type: "bsv" },
 ];
 
 const BADGE_COLOR: Record<string, string> = {
   blue:   "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  yellow: "bg-green-500/10 text-green-400 border-green-500/30",
+  yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
   violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
   red:    "bg-red-500/10 text-red-400 border-red-500/30",
   amber:  "bg-green-500/10 text-green-400 border-green-500/30",
@@ -43,18 +44,39 @@ function QRCodeImage({ address }: { address: string }) {
 
 export function DepositModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { address, network } = useWalletStore();
+  const { open: openWalletModal } = useWalletModalStore();
   const [selectedNet, setSelectedNet] = useState(network === "bsv" ? "bsv" : "evm-eth");
   const [copied, setCopied] = useState(false);
   const [netOpen, setNetOpen] = useState(false);
+  const [bsvManual, setBsvManual] = useState("");
 
   const currentNet = NETWORKS.find(n => n.id === selectedNet) ?? NETWORKS[0];
-  const displayAddress = address ?? "Connect your wallet first";
+  const isBsvSelected = currentNet.type === "bsv";
+  const isEvmWallet = network === "evm";
+  const isBsvWallet = network === "bsv";
+
+  // Address logic: when BSV network is selected but EVM wallet connected → use manual input
+  // When EVM selected and EVM connected → use EVM address
+  // When BSV selected and BSV wallet connected → use BSV address from store
+  const showAddressMismatch = isBsvSelected && !isBsvWallet && !!address;
+  const activeAddress = (() => {
+    if (!address) return null;
+    if (isBsvSelected && isBsvWallet) return address;
+    if (isBsvSelected && !isBsvWallet) return bsvManual || null;
+    if (!isBsvSelected && isEvmWallet) return address;
+    return address;
+  })();
 
   const handleCopy = () => {
-    if (!address) return;
-    navigator.clipboard?.writeText(address);
+    if (!activeAddress) return;
+    navigator.clipboard?.writeText(activeAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleConnectBsv = () => {
+    onClose();
+    setTimeout(() => openWalletModal(), 150);
   };
 
   return (
@@ -114,7 +136,7 @@ export function DepositModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                         {NETWORKS.map(n => (
                           <button
                             key={n.id}
-                            onClick={() => { setSelectedNet(n.id); setNetOpen(false); }}
+                            onClick={() => { setSelectedNet(n.id); setNetOpen(false); setBsvManual(""); }}
                             className={cn(
                               "w-full flex items-center gap-2.5 px-4 py-2.5 text-sm hover:bg-white/5 transition-colors text-left",
                               selectedNet === n.id && "bg-primary/10 text-primary"
@@ -131,39 +153,125 @@ export function DepositModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
                   </AnimatePresence>
                 </div>
 
-                {/* QR Code */}
-                {address ? (
-                  <QRCodeImage address={address} />
-                ) : (
-                  <div className="w-44 h-44 rounded-2xl border border-dashed border-border bg-secondary/50 flex flex-col items-center justify-center mx-auto gap-2">
-                    <QrCode className="w-10 h-10 text-muted-foreground/40" />
-                    <p className="text-xs text-muted-foreground text-center px-4">Connect wallet to see QR</p>
-                  </div>
-                )}
-
-                {/* Address */}
-                <div>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Your Wallet Address</p>
-                  <div className="flex items-stretch gap-2">
-                    <div className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-xl font-mono text-xs text-foreground break-all leading-relaxed">
-                      {displayAddress}
+                {/* BSV with non-BSV wallet → show connect panel */}
+                {showAddressMismatch ? (
+                  <div className="space-y-4">
+                    {/* Warning banner */}
+                    <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/8 border border-amber-500/25">
+                      <AlertTriangle className="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="text-xs text-amber-300/90 leading-relaxed">
+                        <p className="font-semibold text-amber-300 mb-1">EVM address cannot receive BSV</p>
+                        Your connected EVM wallet uses a different address format (0x…). 
+                        BSV requires a native Bitcoin SV address. Connect a BSV wallet or enter your BSV address manually below.
+                      </div>
                     </div>
+
+                    {/* Connect BSV wallet button */}
                     <button
-                      onClick={handleCopy}
-                      disabled={!address}
-                      className={cn(
-                        "px-3 rounded-xl border text-sm font-medium transition-all flex items-center gap-1.5 shrink-0",
-                        address
-                          ? copied
-                            ? "bg-green-500/15 border-green-500/40 text-green-400"
-                            : "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                          : "bg-secondary border-border text-muted-foreground/40 cursor-not-allowed"
-                      )}
+                      onClick={handleConnectBsv}
+                      className="w-full flex items-center justify-between px-4 py-3.5 rounded-xl bg-green-500/10 border border-green-500/30 hover:border-green-500/50 hover:bg-green-500/15 transition-all group"
                     >
-                      {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                          <Wallet className="w-4 h-4 text-green-400" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-semibold text-green-300">Connect BSV Wallet</p>
+                          <p className="text-[11px] text-green-400/70">HandCash · RelayX · Panda · manual address</p>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-green-400 group-hover:translate-x-0.5 transition-transform" />
                     </button>
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">or paste address</span>
+                      <div className="flex-1 h-px bg-border" />
+                    </div>
+
+                    {/* Manual BSV address input */}
+                    <div>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Your BSV Address</p>
+                      <input
+                        value={bsvManual}
+                        onChange={e => setBsvManual(e.target.value)}
+                        placeholder="e.g. 1FsBsvAddressExample..."
+                        className="w-full px-4 py-3 bg-secondary border border-border rounded-xl font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary/50 transition-all"
+                      />
+                    </div>
+
+                    {/* QR + address display if manual entered */}
+                    {bsvManual.trim().length > 10 && (
+                      <>
+                        <QRCodeImage address={bsvManual.trim()} />
+                        <div className="flex items-stretch gap-2">
+                          <div className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-xl font-mono text-xs text-foreground break-all leading-relaxed">
+                            {bsvManual.trim()}
+                          </div>
+                          <button
+                            onClick={handleCopy}
+                            className={cn(
+                              "px-3 rounded-xl border text-sm font-medium transition-all flex items-center gap-1.5 shrink-0",
+                              copied
+                                ? "bg-green-500/15 border-green-500/40 text-green-400"
+                                : "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                            )}
+                          >
+                            {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
+                ) : (
+                  <>
+                    {/* QR Code */}
+                    {activeAddress ? (
+                      <QRCodeImage address={activeAddress} />
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="w-44 h-44 rounded-2xl border border-dashed border-border bg-secondary/50 flex flex-col items-center justify-center mx-auto gap-2">
+                          <QrCode className="w-10 h-10 text-muted-foreground/40" />
+                          <p className="text-xs text-muted-foreground text-center px-4">Connect wallet to see QR</p>
+                        </div>
+                        {/* Connect wallet CTA when no wallet at all */}
+                        {!address && (
+                          <button
+                            onClick={handleConnectBsv}
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary/10 border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/15 transition-all"
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Connect Wallet
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Address display */}
+                    {activeAddress && (
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Your Wallet Address</p>
+                        <div className="flex items-stretch gap-2">
+                          <div className="flex-1 px-3 py-2.5 bg-secondary border border-border rounded-xl font-mono text-xs text-foreground break-all leading-relaxed">
+                            {activeAddress}
+                          </div>
+                          <button
+                            onClick={handleCopy}
+                            className={cn(
+                              "px-3 rounded-xl border text-sm font-medium transition-all flex items-center gap-1.5 shrink-0",
+                              copied
+                                ? "bg-green-500/15 border-green-500/40 text-green-400"
+                                : "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                            )}
+                          >
+                            {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 {/* Warning */}
                 <div className="p-4 rounded-xl bg-green-500/8 border border-green-500/20 text-xs text-green-300/80 leading-relaxed">

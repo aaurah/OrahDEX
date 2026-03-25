@@ -1,9 +1,11 @@
 import {
-  Link2, TrendingUp, TrendingDown,
+  TrendingUp, TrendingDown,
   ArrowDownToLine, ArrowUpFromLine,
   Copy, Check, RefreshCw, Info,
+  LogOut, Zap,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
@@ -61,7 +63,8 @@ const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e
 type Tab = "assets" | "orders";
 
 export function MobilePortfolio() {
-  const { address, network, provider, chainId, balance } = useWalletStore();
+  const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
+  const { open: openWallet } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -111,18 +114,103 @@ export function MobilePortfolio() {
 
   if (!address) {
     return (
-      <div className="flex flex-col h-full bg-background">
-        <div className="px-4 pt-safe-top pb-4 pt-6">
+      <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
+        <div className="px-4 pt-6 pb-4">
           <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center px-10 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-            <Link2 size={36} className="text-primary" />
+
+        {/* Hero card */}
+        <div className="mx-4 mt-2 rounded-3xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-6 text-center space-y-2">
+          <div className="w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto mb-3">
+            <Zap size={28} className="text-primary" />
           </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Connect Your Wallet</h2>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Connect your BSV, EVM, or Solana wallet to view your portfolio and start trading.
+          <h2 className="text-2xl font-black text-foreground tracking-tight">Login to Trade</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
+            Connect your wallet to view balances, track P&amp;L, deposit, withdraw, and start trading instantly.
           </p>
+        </div>
+
+        {/* Wallet options */}
+        <div className="mx-4 mt-5 space-y-3">
+          <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground px-1">Choose your wallet type</p>
+
+          {/* EVM */}
+          <button
+            onClick={() => openWallet()}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-blue-500/40 hover:bg-blue-500/5 active:opacity-80 transition-all text-left group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+              🦊
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">EVM Wallets</p>
+              <p className="text-xs text-muted-foreground mt-0.5">MetaMask · Coinbase · Trust · Ledger + all L2s</p>
+              <div className="flex gap-1 mt-1.5">
+                {["ETH","BNB","MATIC","ARB","BASE"].map(s => (
+                  <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{s}</span>
+                ))}
+              </div>
+            </div>
+            <span className="text-blue-400 text-xs font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+          </button>
+
+          {/* BSV */}
+          <button
+            onClick={() => openWallet()}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-primary/40 hover:bg-primary/5 active:opacity-80 transition-all text-left group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+              ⚡
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">Bitcoin SV Wallet</p>
+              <p className="text-xs text-muted-foreground mt-0.5">HandCash · RelayX · Panda · Sensilet · manual</p>
+              <div className="flex gap-1 mt-1.5">
+                {["BSV","FAST","LOW FEE"].map(s => (
+                  <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{s}</span>
+                ))}
+              </div>
+            </div>
+            <span className="text-primary text-xs font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+          </button>
+
+          {/* SOL / BTC */}
+          <button
+            onClick={() => openWallet()}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-violet-500/40 hover:bg-violet-500/5 active:opacity-80 transition-all text-left group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+              🌐
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">Other Wallets</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Phantom (SOL) · UniSat · Xverse (BTC) · more</p>
+              <div className="flex gap-1 mt-1.5">
+                {["SOL","BTC","ORDINALS"].map(s => (
+                  <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">{s}</span>
+                ))}
+              </div>
+            </div>
+            <span className="text-violet-400 text-xs font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+          </button>
+        </div>
+
+        {/* Features list */}
+        <div className="mx-4 mt-5 p-4 rounded-2xl bg-secondary/40 border border-border">
+          <p className="text-xs font-semibold text-muted-foreground mb-3">After connecting you can:</p>
+          <div className="space-y-2">
+            {[
+              { icon: "📊", text: "View live portfolio balance & P&L" },
+              { icon: "💸", text: "Deposit & withdraw instantly" },
+              { icon: "⚡", text: "Trade spot & futures markets" },
+              { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
+            ].map(f => (
+              <div key={f.text} className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                <span className="text-base leading-none">{f.icon}</span>
+                {f.text}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -144,9 +232,9 @@ export function MobilePortfolio() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div className="flex items-center gap-1.5 bg-card border border-border rounded-full px-3 py-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
               <span className="text-xs text-muted-foreground font-mono font-medium">
                 {address.slice(0, 6)}...{address.slice(-4)}
               </span>
@@ -159,6 +247,7 @@ export function MobilePortfolio() {
                   ? "border-green-500/40 text-green-400 bg-green-500/10"
                   : "border-border text-muted-foreground hover:text-foreground"
               )}
+              title="Copy address"
             >
               {copied ? <Check size={13} /> : <Copy size={13} />}
             </button>
@@ -169,13 +258,31 @@ export function MobilePortfolio() {
             >
               <RefreshCw size={13} className={pricesLoading ? "animate-spin" : ""} />
             </button>
+            <button
+              onClick={() => disconnect()}
+              className="p-2 rounded-full border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-all"
+              title="Disconnect wallet"
+            >
+              <LogOut size={13} />
+            </button>
           </div>
         </div>
 
         <div className="px-4 space-y-4">
           {/* Total value card */}
           <div className="bg-card border border-border rounded-2xl p-5">
-            <p className="text-xs text-muted-foreground mb-1">Wallet Balance</p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-muted-foreground">Wallet Balance</p>
+              <span className={cn(
+                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
+                  : network === "evm" ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
+                  : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
+                  : "bg-secondary text-muted-foreground border-border"
+              )}>
+                {(provider ?? network ?? "").toUpperCase()}
+              </span>
+            </div>
             {pricesLoading && total === 0 ? (
               <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
             ) : (
@@ -184,16 +291,23 @@ export function MobilePortfolio() {
               </p>
             )}
 
-            {total > 0 && (
-              <div className="flex items-center gap-1.5 mt-2">
-                {totalChange >= 0
-                  ? <TrendingUp size={14} className="text-green-500" />
-                  : <TrendingDown size={14} className="text-red-500" />}
-                <span className={`text-sm font-semibold ${totalChange >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}% today
-                </span>
-              </div>
-            )}
+            {total > 0 && (() => {
+              const pnlUsd = total * totalChange / 100;
+              return (
+                <div className="flex items-center gap-3 mt-2">
+                  <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
+                    {totalChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                    <span className="text-sm font-bold">
+                      {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%
+                    </span>
+                  </div>
+                  <span className="text-muted-foreground/40 text-xs">·</span>
+                  <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
+                    {pnlUsd >= 0 ? "+" : "−"}${Math.abs(pnlUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} today
+                  </span>
+                </div>
+              );
+            })()}
 
             {/* Allocation bar — only show if there's a real balance */}
             {total > 0 && (
