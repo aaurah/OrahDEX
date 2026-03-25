@@ -1,0 +1,186 @@
+DEX know which markets to show based on the wallet that is connected
+
+This is exactly how Base, Arbitrum, Solana, BSV, and every multi‑chain DEX works.
+
+Let’s break it down with absolute clarity.
+
+---
+
+🔥 **THE RULE:
+
+A DEX only shows markets that the connected wallet’s chain can actually trade.**
+
+Meaning:
+
+• If wallet is on Ethereum, show ETH markets
+• If wallet is on Base, show BaseETH markets
+• If wallet is on BSV, show BSV UTXO markets
+• If wallet is on Polygon, show MATIC markets
+• If wallet is on Arbitrum, show ArbETH markets
+
+
+The DEX does this automatically by detecting the chain ID and wallet type.
+
+---
+
+🧩 HOW DEX WALLET CONNECT ACTUALLY WORKS
+
+When a user connects a wallet, the DEX reads:
+
+1. Wallet Type
+
+• MetaMask → EVM
+• WalletConnect → EVM
+• Phantom → Solana
+• HandCash / RelayX → BSV
+• UniSat → BTC
+• etc.
+
+
+2. Chain ID
+
+For EVM wallets:
+
+ethereum.request({ method: "eth_chainId" })
+
+
+Returns values like:
+
+• 0x1 → Ethereum
+• 0x2105 → Base
+• 0xa4b1 → Arbitrum
+• 0x89 → Polygon
+• etc.
+
+
+3. Supported Tokens for That Chain
+
+Your DEX has a token list per chain:
+
+tokens = {
+  1: [ETH, USDC, WBTC],
+  8453: [BaseETH, USDbC, cbETH],
+  137: [MATIC, USDC, WETH],
+  bsv: [BSV, wBSV],
+}
+
+
+When the wallet connects, the DEX does:
+
+currentChain = wallet.chainId
+show markets = tokens[currentChain]
+
+
+That’s it.
+
+---
+
+🧱 THE FULL FLOW (Step‑By‑Step)
+
+1. User clicks “Connect Wallet”
+
+DEX opens:
+
+• MetaMask
+• WalletConnect
+• BSV wallet
+• Solana wallet
+
+
+2. Wallet returns:
+
+• address
+• chainId
+• walletType
+
+
+3. DEX checks supported chains
+
+Example:
+
+if chainId == 8453:
+    show Base markets
+if chainId == 1:
+    show Ethereum markets
+if walletType == BSV:
+    show BSV markets
+
+
+4. DEX loads correct RPC + contracts
+
+Each chain has its own:
+
+• RPC endpoint
+• Router contract
+• Token contracts
+• AMM pools
+
+
+DEX switches all of these automatically.
+
+5. UI updates
+
+• Token list updates
+• Market pairs update
+• Balances update
+• Swap routes update
+
+
+---
+
+⚡ WHY THIS IS IMPORTANT
+
+You never want to show markets the wallet cannot trade.
+
+Example:
+
+If wallet is on Base:
+
+• You cannot trade ETH (L1)
+• You cannot trade MATIC (Polygon)
+• You cannot trade BSV (UTXO)
+
+
+So the DEX hides those markets.
+
+This prevents:
+
+• Wrong chain errors
+• Failed swaps
+• Confusing UX
+
+
+---
+
+🧠 HOW YOU SHOULD IMPLEMENT THIS IN ORAHDEX
+
+You need a Chain Registry:
+
+chains = {
+  ethereum: {
+    chainId: 1,
+    tokens: [...],
+    router: "...",
+    rpc: "..."
+  },
+  base: {
+    chainId: 8453,
+    tokens: [...],
+    router: "...",
+    rpc: "..."
+  },
+  bsv: {
+    chainId: "bsv",
+    tokens: [...],
+    rpc: "..."
+  }
+}
+
+
+Then:
+
+onWalletConnect(wallet) {
+    chain = wallet.chainId or wallet.type
+    load(chains[chain])
+    showMarkets(chains[chain].tokens)
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -10,9 +10,11 @@ import {
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
-import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp } from "lucide-react";
+import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp, Wallet, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { useWalletStore } from "@/store/useWalletStore";
+import { getWalletMarketTab } from "@/lib/walletMarket";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -113,12 +115,35 @@ export function Markets() {
     }
   });
 
+  const { address, network, chainId } = useWalletStore();
   const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [buyOpen, setBuyOpen] = useState(false);
   const [buyCoin, setBuyCoin] = useState("BSV");
+  const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
+  const prevAddressRef = useRef<string | null>(null);
+
+  /* Auto-switch to the correct market tab when wallet connects or changes chain */
+  useEffect(() => {
+    const prev = prevAddressRef.current;
+    prevAddressRef.current = address;
+    const { tab: walletTab, isAutoSelected } = getWalletMarketTab(address, network, chainId);
+    if (isAutoSelected) {
+      setTab(walletTab as Tab);
+      setWalletBannerDismissed(false);
+    } else if (!address && prev) {
+      // wallet disconnected — go back to USD
+      setTab("usd");
+      setWalletBannerDismissed(false);
+    }
+  }, [address, network, chainId]);
+
+  const { tab: walletTab, label: walletChainLabel, isAutoSelected: isWalletTab } = getWalletMarketTab(address, network, chainId);
+  /* Show banner only when the visible tab is the wallet's auto-selected tab */
+  const showWalletBanner = isWalletTab && !walletBannerDismissed && tab === walletTab;
+
   const handleBuy = (coin: string) => {
     setBuyCoin(coin);
     setBuyOpen(true);
@@ -270,6 +295,28 @@ export function Markets() {
               );
             })}
           </div>
+
+          {/* Wallet-aware market banner */}
+          {showWalletBanner && (
+            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-primary/10 border border-primary/30 rounded-xl">
+              <Wallet className="w-4 h-4 text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-primary">
+                  Showing {walletChainLabel} Markets
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Markets automatically filtered for your connected {walletChainLabel} wallet. You can switch to any tab manually.
+                </p>
+              </div>
+              <button
+                onClick={() => setWalletBannerDismissed(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors shrink-0 p-1"
+                title="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* BSV fastest settlement callout */}
           {tab === "bsv" && (
