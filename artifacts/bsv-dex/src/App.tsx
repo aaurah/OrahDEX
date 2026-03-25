@@ -1,4 +1,4 @@
-import { useEffect, useRef, ReactNode } from "react";
+import { useEffect, useRef, ReactNode, lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,33 +8,6 @@ import { Layout } from "@/components/Layout";
 import { BiometricLockScreen } from "@/components/BiometricLockScreen";
 import { useBiometricStore } from "@/store/useBiometricStore";
 import { AdminLayout } from "@/components/AdminLayout";
-import { Markets } from "@/pages/Markets";
-import { SpotTrading } from "@/pages/Spot";
-import { FuturesTrading } from "@/pages/Futures";
-import { Portfolio } from "@/pages/Portfolio";
-import { DexHub } from "@/pages/DexHub";
-import { P2P } from "@/pages/P2P";
-import NotFound from "@/pages/not-found";
-
-import { AdminDashboard } from "@/pages/admin/Dashboard";
-import { AdminUsers } from "@/pages/admin/Users";
-import { AdminAdmins } from "@/pages/admin/Admins";
-import { AdminTradePairs } from "@/pages/admin/TradePairs";
-import { AdminApiSettings } from "@/pages/admin/ApiSettings";
-import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
-import { AdminThemes } from "@/pages/admin/Themes";
-import { AdminTransactions } from "@/pages/admin/Transactions";
-import { AdminFeeWallet } from "@/pages/admin/FeeWallet";
-import { AdminIntegrations } from "@/pages/admin/Integrations";
-import { AdminBotProfit } from "@/pages/admin/BotProfit";
-import { AdminLogin } from "@/pages/admin/Login";
-import { AdminSiteSettings } from "@/pages/admin/SiteSettings";
-import { AdminHomeBuilder } from "@/pages/admin/HomeBuilder";
-import { AdminFeatureFlags } from "@/pages/admin/FeatureFlags";
-import { AdminSecuritySettings } from "@/pages/admin/SecuritySettings";
-import { AdminFeeConfig } from "@/pages/admin/FeeConfig";
-import { AdminAnnouncements } from "@/pages/admin/Announcements";
-import { AdminSetupGuide } from "@/pages/admin/SetupGuide";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -43,19 +16,70 @@ import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCai
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
-import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
-import { MobilePortfolio } from "@/pages/mobile/MobilePortfolio";
-import { MobileSettings } from "@/pages/mobile/MobileSettings";
-import { MobileTrade } from "@/pages/mobile/MobileTrade";
-import { MobileLiquidity } from "@/pages/mobile/MobileLiquidity";
-import { Liquidity } from "@/pages/Liquidity";
-import { BridgePage } from "@/pages/Bridge";
 
+/* ─── Lazy page imports — each becomes its own JS chunk ─── */
+const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
+const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
+const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
+const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
+const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
+const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
+const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
+const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
+const NotFound     = lazy(() => import("@/pages/not-found"));
+
+/* Mobile */
+const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
+const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
+const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then(m => ({ default: m.MobileLiquidity })));
+
+/* Admin — single chunk group for the whole admin section */
+const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
+const AdminDashboard      = lazy(() => import("@/pages/admin/Dashboard").then(m => ({ default: m.AdminDashboard })));
+const AdminSetupGuide     = lazy(() => import("@/pages/admin/SetupGuide").then(m => ({ default: m.AdminSetupGuide })));
+const AdminUsers          = lazy(() => import("@/pages/admin/Users").then(m => ({ default: m.AdminUsers })));
+const AdminAdmins         = lazy(() => import("@/pages/admin/Admins").then(m => ({ default: m.AdminAdmins })));
+const AdminTradePairs     = lazy(() => import("@/pages/admin/TradePairs").then(m => ({ default: m.AdminTradePairs })));
+const AdminApiSettings    = lazy(() => import("@/pages/admin/ApiSettings").then(m => ({ default: m.AdminApiSettings })));
+const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").then(m => ({ default: m.AdminContractBuilder })));
+const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
+const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
+const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
+const AdminIntegrations   = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
+const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
+const AdminSiteSettings   = lazy(() => import("@/pages/admin/SiteSettings").then(m => ({ default: m.AdminSiteSettings })));
+const AdminHomeBuilder    = lazy(() => import("@/pages/admin/HomeBuilder").then(m => ({ default: m.AdminHomeBuilder })));
+const AdminFeatureFlags   = lazy(() => import("@/pages/admin/FeatureFlags").then(m => ({ default: m.AdminFeatureFlags })));
+const AdminSecuritySettings = lazy(() => import("@/pages/admin/SecuritySettings").then(m => ({ default: m.AdminSecuritySettings })));
+const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m => ({ default: m.AdminFeeConfig })));
+const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
+
+/* ─── QueryClient — aggressive caching so API is hit far less often ─── */
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: false, refetchOnWindowFocus: false, staleTime: 5000 },
+    queries: {
+      retry: 1,
+      retryDelay: 1000,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,       // 30 s — data considered fresh; no re-fetch during this window
+      gcTime: 5 * 60_000,      // 5 min — keep unused data in memory cache
+    },
   },
 });
+
+/* ─── Lightweight skeleton shown while a lazy chunk is downloading ─── */
+function PageSkeleton() {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <span className="text-xs text-muted-foreground">Loading…</span>
+      </div>
+    </div>
+  );
+}
 
 function RequireAdminAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAdminAuthStore();
@@ -75,13 +99,21 @@ function RedirectTo({ href }: { href: string }) {
   return null;
 }
 
+/* Tiny helper to keep route definitions DRY */
+function AdminRoute({ children }: { children: ReactNode }) {
+  return (
+    <RequireAdminAuth>
+      <AdminLayout>
+        <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
+      </AdminLayout>
+    </RequireAdminAuth>
+  );
+}
+
 function Router() {
   const isMobile = useIsMobile();
 
-  // Auto-fetch and refresh BSV balance whenever a BSV wallet is connected
   useBsvBalance();
-
-  // Poll pending EVM tx receipts and refresh balance on confirmation
   useTxTracker();
 
   useEffect(() => {
@@ -89,8 +121,6 @@ function Router() {
 
     const eth = (window as any).ethereum;
 
-    // On startup: verify any EVM wallet saved in localStorage is still genuinely connected.
-    // eth_accounts is silent (no popup). If it returns nothing, the stored address is stale.
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
     if (network === "evm" && storedProvider !== "reown") {
       if (!eth) {
@@ -112,10 +142,9 @@ function Router() {
       }
     }
 
-    // ── accountsChanged — user switched wallet account ─────────────────────
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
-      if (p === "reown") return; // Reown handles its own state
+      if (p === "reown") return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
@@ -127,15 +156,12 @@ function Router() {
       }
     };
 
-    // ── chainChanged — user switched network ───────────────────────────────
     const onChainChanged = async (chainHex: string) => {
       const { address: addr, provider: p } = useWalletStore.getState();
       if (p === "reown" || !addr) return;
       const chainId = parseInt(chainHex, 16);
-      // Clear stale balance immediately so the UI doesn't show the old chain's value
       useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
-      // Fetch fresh balance for the new chain
       const bal = await fetchEvmBalance(addr, chainId);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
     };
@@ -145,8 +171,6 @@ function Router() {
       eth.on?.("chainChanged", onChainChanged);
     }
 
-    // Subscribe to Reown AppKit account changes and sync to wallet store.
-    // Polls until Reown is initialized (it's async — project ID fetch happens after mount).
     let reownUnsub: (() => void) | null = null;
     let pollTries = 0;
     const pollReown = setInterval(() => {
@@ -155,18 +179,13 @@ function Router() {
         reownUnsub = subscribeReownAccount(async (state) => {
           const { provider: current } = useWalletStore.getState();
           if (state.isConnected && state.address) {
-            // Parse chainId from CAIP address (e.g. "eip155:8453:0xabc..." → 8453)
             const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
-
-            // Connect immediately with address + chainId so UI updates fast
             useWalletStore.getState().connect({
               address: state.address,
               provider: "reown",
               network: "evm",
               chainId,
             });
-
-            // Fetch balance in background using public RPC (works for all wallet types)
             const bal = await fetchEvmBalance(state.address, chainId);
             if (bal !== null) {
               useWalletStore.getState().setBalance(bal);
@@ -191,146 +210,80 @@ function Router() {
 
   return (
     <Switch>
-      {/* Admin login — no auth required */}
-      <Route path="/admin/login" component={AdminLogin} />
-
-      {/* Protected admin routes */}
-      <Route path="/admin">
-        <RequireAdminAuth>
-          <AdminLayout><AdminDashboard /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/users">
-        <RequireAdminAuth>
-          <AdminLayout><AdminUsers /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/admins">
-        <RequireAdminAuth>
-          <AdminLayout><AdminAdmins /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/pairs">
-        <RequireAdminAuth>
-          <AdminLayout><AdminTradePairs /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/api">
-        <RequireAdminAuth>
-          <AdminLayout><AdminApiSettings /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/contracts">
-        <RequireAdminAuth>
-          <AdminLayout><AdminContractBuilder /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/themes">
-        <RequireAdminAuth>
-          <AdminLayout><AdminThemes /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/transactions">
-        <RequireAdminAuth>
-          <AdminLayout><AdminTransactions /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/fee-wallet">
-        <RequireAdminAuth>
-          <AdminLayout><AdminFeeWallet /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/integrations">
-        <RequireAdminAuth>
-          <AdminLayout><AdminIntegrations /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/bot-profit">
-        <RequireAdminAuth>
-          <AdminLayout><AdminBotProfit /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/site">
-        <RequireAdminAuth>
-          <AdminLayout><AdminSiteSettings /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/home">
-        <RequireAdminAuth>
-          <AdminLayout><AdminHomeBuilder /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/features">
-        <RequireAdminAuth>
-          <AdminLayout><AdminFeatureFlags /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/security">
-        <RequireAdminAuth>
-          <AdminLayout><AdminSecuritySettings /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/fees">
-        <RequireAdminAuth>
-          <AdminLayout><AdminFeeConfig /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/announcements">
-        <RequireAdminAuth>
-          <AdminLayout><AdminAnnouncements /></AdminLayout>
-        </RequireAdminAuth>
-      </Route>
-      <Route path="/admin/setup">
-        <RequireAdminAuth>
-          <AdminLayout><AdminSetupGuide /></AdminLayout>
-        </RequireAdminAuth>
+      {/* ── Admin login ── */}
+      <Route path="/admin/login">
+        <Suspense fallback={<PageSkeleton />}><AdminLogin /></Suspense>
       </Route>
 
-      {/* Bare /spot and /futures → redirect to default pairs */}
+      {/* ── Admin panel routes ── */}
+      <Route path="/admin">         <AdminRoute><AdminDashboard /></AdminRoute></Route>
+      <Route path="/admin/setup">   <AdminRoute><AdminSetupGuide /></AdminRoute></Route>
+      <Route path="/admin/users">   <AdminRoute><AdminUsers /></AdminRoute></Route>
+      <Route path="/admin/admins">  <AdminRoute><AdminAdmins /></AdminRoute></Route>
+      <Route path="/admin/pairs">   <AdminRoute><AdminTradePairs /></AdminRoute></Route>
+      <Route path="/admin/api">     <AdminRoute><AdminApiSettings /></AdminRoute></Route>
+      <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
+      <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
+      <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
+      <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>
+      <Route path="/admin/integrations"><AdminRoute><AdminIntegrations /></AdminRoute></Route>
+      <Route path="/admin/bot-profit"><AdminRoute><AdminBotProfit /></AdminRoute></Route>
+      <Route path="/admin/site">    <AdminRoute><AdminSiteSettings /></AdminRoute></Route>
+      <Route path="/admin/home">    <AdminRoute><AdminHomeBuilder /></AdminRoute></Route>
+      <Route path="/admin/features"><AdminRoute><AdminFeatureFlags /></AdminRoute></Route>
+      <Route path="/admin/security"><AdminRoute><AdminSecuritySettings /></AdminRoute></Route>
+      <Route path="/admin/fees">    <AdminRoute><AdminFeeConfig /></AdminRoute></Route>
+      <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
+
+      {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
       <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
 
-      {/* Mobile layout — rendered when on a phone/small screen */}
+      {/* ── Mobile layout ── */}
       {isMobile && (
         <Route>
           <MobileLayout>
-            <Switch>
-              <Route path="/" component={MobileMarkets} />
-              <Route path="/markets" component={MobileMarkets} />
-              <Route path="/trade/:symbol">
-                {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
-              </Route>
-              <Route path="/futures/:symbol">
-                {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
-              </Route>
-              <Route path="/dex" component={DexHub} />
-              <Route path="/liquidity" component={MobileLiquidity} />
-              <Route path="/p2p" component={P2P} />
-              <Route path="/bridge" component={BridgePage} />
-              <Route path="/portfolio" component={MobilePortfolio} />
-              <Route path="/settings" component={MobileSettings} />
-              <Route component={MobileMarkets} />
-            </Switch>
+            <Suspense fallback={<PageSkeleton />}>
+              <Switch>
+                <Route path="/"          component={MobileMarkets} />
+                <Route path="/markets"   component={MobileMarkets} />
+                <Route path="/trade/:symbol">
+                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+                </Route>
+                <Route path="/futures/:symbol">
+                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+                </Route>
+                <Route path="/dex"        component={DexHub} />
+                <Route path="/liquidity"  component={MobileLiquidity} />
+                <Route path="/p2p"        component={P2P} />
+                <Route path="/bridge"     component={BridgePage} />
+                <Route path="/portfolio"  component={MobilePortfolio} />
+                <Route path="/settings"   component={MobileSettings} />
+                <Route component={MobileMarkets} />
+              </Switch>
+            </Suspense>
           </MobileLayout>
         </Route>
       )}
 
-      {/* Desktop layout */}
+      {/* ── Desktop layout ── */}
       {!isMobile && (
         <Route>
           <Layout>
-            <Switch>
-              <Route path="/" component={Markets} />
-              <Route path="/markets" component={Markets} />
-              <Route path="/trade/:symbol" component={SpotTrading} />
-              <Route path="/futures/:symbol" component={FuturesTrading} />
-              <Route path="/dex" component={DexHub} />
-              <Route path="/liquidity" component={Liquidity} />
-              <Route path="/p2p" component={P2P} />
-              <Route path="/bridge" component={BridgePage} />
-              <Route path="/portfolio" component={Portfolio} />
-              <Route component={NotFound} />
-            </Switch>
+            <Suspense fallback={<PageSkeleton />}>
+              <Switch>
+                <Route path="/"               component={Markets} />
+                <Route path="/markets"        component={Markets} />
+                <Route path="/trade/:symbol"  component={SpotTrading} />
+                <Route path="/futures/:symbol" component={FuturesTrading} />
+                <Route path="/dex"            component={DexHub} />
+                <Route path="/liquidity"      component={Liquidity} />
+                <Route path="/p2p"            component={P2P} />
+                <Route path="/bridge"         component={BridgePage} />
+                <Route path="/portfolio"      component={Portfolio} />
+                <Route component={NotFound} />
+              </Switch>
+            </Suspense>
           </Layout>
         </Route>
       )}
