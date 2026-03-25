@@ -7,7 +7,7 @@ import {
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn } from "@/lib/utils";
@@ -53,11 +53,6 @@ function useLivePrices() {
   });
 }
 
-const ORDERS = [
-  { id: "1", symbol: "BSV/USDT", side: "buy",  type: "limit",  price: 54.00, qty: 10,   status: "open",      time: "09:15" },
-  { id: "2", symbol: "BTC/USDT", side: "sell", type: "market", price: 65400, qty: 0.01, status: "filled",    time: "08:42" },
-  { id: "3", symbol: "ETH/USDT", side: "buy",  type: "limit",  price: 3150,  qty: 0.5,  status: "cancelled", time: "07:30" },
-];
 const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e", cancelled: "#6b7280" };
 
 type Tab = "assets" | "orders";
@@ -69,6 +64,8 @@ export function MobilePortfolio() {
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
   const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
@@ -78,6 +75,31 @@ export function MobilePortfolio() {
 
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
+
+  const { data: ordersData } = useQuery({
+    queryKey: ["portfolio-orders", address],
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
+    enabled: !!address,
+    refetchInterval: 5000,
+  });
+  const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
+
+  const cancelMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const res = await fetch(`${BASE}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      if (!res.ok) throw new Error("Failed to cancel");
+      return res.json();
+    },
+    onMutate: (id) => setCancellingId(id),
+    onSettled: () => {
+      setCancellingId(null);
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+    },
+  });
 
   // Build rows from real on-chain data where available
   const rows = (() => {
@@ -447,38 +469,57 @@ export function MobilePortfolio() {
 
           {/* Orders tab */}
           {tab === "orders" && (
-            <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-              {ORDERS.map((o, i) => (
-                <div
-                  key={o.id}
-                  className={`flex items-center gap-3 px-4 py-3.5 ${i < ORDERS.length - 1 ? "border-b border-border" : ""}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-sm font-semibold text-foreground">{o.symbol}</span>
-                      <span
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                        style={{
-                          backgroundColor: o.side === "buy" ? "#22c55e18" : "#ef444418",
-                          color: o.side === "buy" ? "#22c55e" : "#ef4444",
-                        }}
-                      >
-                        {o.side.toUpperCase()}
-                      </span>
+            myOrders.length === 0 ? (
+              <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                <p className="text-sm font-medium">No orders yet</p>
+                <p className="text-xs opacity-60 text-center">Your open and past orders will appear here</p>
+              </div>
+            ) : (
+              <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                {myOrders.map((o: any, i: number) => (
+                  <div
+                    key={o.id}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < myOrders.length - 1 ? "border-b border-border" : ""}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-semibold text-foreground">{o.symbol}</span>
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                          style={{
+                            backgroundColor: o.side === "buy" ? "#22c55e18" : "#ef444418",
+                            color: o.side === "buy" ? "#22c55e" : "#ef4444",
+                          }}
+                        >
+                          {o.side.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {o.type ?? "limit"} · {Number(o.quantity).toFixed(4)} @ ${Number(o.price).toLocaleString()}
+                      </p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {o.type} · {o.qty} @ ${o.price.toLocaleString()}
-                    </p>
+                    {o.status === "open" ? (
+                      <button
+                        onClick={() => cancelMutation.mutate(String(o.id))}
+                        disabled={cancellingId === String(o.id)}
+                        className="shrink-0 px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
+                      >
+                        {cancellingId === String(o.id) ? "…" : "Cancel"}
+                      </button>
+                    ) : (
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] ?? "#6b7280" }}>
+                          {o.status}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] }}>
-                      {o.status}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{o.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )
           )}
         </div>
       </div>
