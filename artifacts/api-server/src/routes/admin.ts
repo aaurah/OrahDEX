@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db } from "@workspace/db";
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
@@ -281,38 +281,50 @@ function getUserMeta(addr: string) {
 }
 
 async function buildRealUserList(): Promise<any[]> {
-  /* Aggregate orders by wallet_address (skip bot) */
-  const rows = await db
+  /* 1. All registered wallets (from /api/users/ping on connect) */
+  const wallets = await db.select().from(walletsTable)
+    .orderBy(desc(walletsTable.lastSeen));
+
+  /* 2. Order stats per wallet (skip bot) */
+  const orderStats = await db
     .select({
       walletAddress: ordersTable.walletAddress,
-      networkType: ordersTable.networkType,
-      orderCount: sql<number>`count(*)::int`,
+      orderCount:  sql<number>`count(*)::int`,
       filledCount: sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
       totalVolume: sql<string>`coalesce(sum(case when ${ordersTable.status}='filled' then cast(${ordersTable.total} as numeric) else 0 end),0)`,
-      firstSeen: sql<string>`min(${ordersTable.createdAt})`,
-      lastActive: sql<string>`max(${ordersTable.updatedAt})`,
+      lastOrder:   sql<string>`max(${ordersTable.updatedAt})`,
     })
     .from(ordersTable)
     .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
-    .groupBy(ordersTable.walletAddress, ordersTable.networkType)
-    .orderBy(sql`max(${ordersTable.updatedAt}) desc`);
+    .groupBy(ordersTable.walletAddress);
 
-  return rows.map((r, i) => {
-    const meta = getUserMeta(r.walletAddress);
-    const isEvm = r.walletAddress.startsWith("0x");
+  const statsMap = new Map(orderStats.map(s => [s.walletAddress.toLowerCase(), s]));
+
+  return wallets.map(w => {
+    const meta = getUserMeta(w.address);
+    /* Merge in-memory overrides with DB row (DB row wins unless override set) */
+    const status   = userMeta.get(w.address.toLowerCase())?.status    ?? w.status    ?? "active";
+    const country  = userMeta.get(w.address.toLowerCase())?.country   ?? w.country   ?? "US";
+    const provider = userMeta.get(w.address.toLowerCase())?.provider  ?? w.provider  ?? (w.address.startsWith("0x") ? "walletconnect" : "handcash");
+    const verified = userMeta.get(w.address.toLowerCase())?.verified  ?? (w.verified === "true");
+    const balOvr   = userMeta.get(w.address.toLowerCase())?.balanceOverride;
+
+    const stats = statsMap.get(w.address.toLowerCase());
     return {
-      id: `usr_${r.walletAddress.slice(0, 8)}`,
-      walletAddress: r.walletAddress,
-      network: r.networkType ?? (isEvm ? "evm" : "bsv"),
-      provider: meta.provider,
-      volume24h: parseFloat(r.totalVolume ?? "0"),
-      totalTrades: r.filledCount ?? 0,
-      balance: meta.balanceOverride ?? 0,
-      status: meta.status,
-      verified: meta.verified,
-      joinedAt: r.firstSeen,
-      lastActive: r.lastActive,
-      country: meta.country,
+      id:           `usr_${w.address.replace("0x", "").slice(0, 8)}`,
+      walletAddress: w.address,
+      network:      w.networkType ?? (w.address.startsWith("0x") ? "evm" : "bsv"),
+      provider,
+      chainId:      w.chainId ?? null,
+      volume24h:    parseFloat(stats?.totalVolume ?? "0"),
+      totalTrades:  stats?.filledCount ?? 0,
+      orderCount:   stats?.orderCount ?? 0,
+      balance:      balOvr ?? 0,
+      status,
+      verified,
+      joinedAt:     w.firstSeen,
+      lastActive:   stats?.lastOrder ?? w.lastSeen,
+      country,
     };
   });
 }
@@ -485,13 +497,15 @@ router.get("/users", async (_req, res) => {
 });
 
 router.patch("/users/:id/status", async (req, res) => {
-  /* id is "usr_<addr-prefix>" — find user by matching prefix */
   const { status } = req.body;
   const users = await buildRealUserList();
   const user = users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
-  const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
-  userMeta.set(user.walletAddress.toLowerCase(), { ...existing, status });
+  /* Persist to DB */
+  await db.update(walletsTable)
+    .set({ status })
+    .where(eq(walletsTable.address, user.walletAddress));
+  userMeta.set(user.walletAddress.toLowerCase(), { ...getUserMeta(user.walletAddress), status });
   res.json({ success: true, user: { ...user, status } });
 });
 
@@ -500,17 +514,22 @@ router.patch("/users/:id", async (req, res) => {
   const user = users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: "User not found" });
   const { status, country, verified, balance, network, provider } = req.body;
-  const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
-  const updated = {
-    ...existing,
-    ...(status !== undefined && { status }),
-    ...(country !== undefined && { country }),
-    ...(verified !== undefined && { verified }),
-    ...(balance !== undefined && { balanceOverride: parseFloat(balance) }),
-    ...(provider !== undefined && { provider }),
-  };
-  userMeta.set(user.walletAddress.toLowerCase(), updated);
-  const updatedUser = { ...user, ...updated, balance: updated.balanceOverride ?? user.balance };
+  /* Persist to DB */
+  const dbPatch: Record<string, any> = {};
+  if (status   !== undefined) dbPatch.status   = status;
+  if (country  !== undefined) dbPatch.country  = country;
+  if (verified !== undefined) dbPatch.verified = String(verified);
+  if (provider !== undefined) dbPatch.provider = provider;
+  if (Object.keys(dbPatch).length > 0) {
+    await db.update(walletsTable).set(dbPatch).where(eq(walletsTable.address, user.walletAddress));
+  }
+  /* In-memory balance override (no DB column for this yet) */
+  if (balance !== undefined) {
+    const existing = userMeta.get(user.walletAddress.toLowerCase()) ?? getUserMeta(user.walletAddress);
+    userMeta.set(user.walletAddress.toLowerCase(), { ...existing, balanceOverride: parseFloat(balance) });
+  }
+  const updatedUsers = await buildRealUserList();
+  const updatedUser  = updatedUsers.find(u => u.id === req.params.id) ?? user;
   res.json({ success: true, user: updatedUser });
 });
 

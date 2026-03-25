@@ -177,6 +177,18 @@ export function Layout({ children }: { children: ReactNode }) {
         title: "Wallet Connected",
         description: `${provider ?? networkLabel} · ${shortAddr}`,
       });
+      /* Register wallet in the DB so it shows in the admin user list */
+      const { chainId: cid } = useWalletStore.getState();
+      fetch(`${BASE}/api/users/ping`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address,
+          network: network ?? "evm",
+          provider: provider ?? "walletconnect",
+          chainId: cid ?? undefined,
+        }),
+      }).catch(() => {});
     } else if (prev && !address) {
       toast({ title: "Wallet Disconnected", description: "You have been disconnected from your wallet." });
     }

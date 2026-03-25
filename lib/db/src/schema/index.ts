@@ -6,3 +6,4 @@ export * from "./platform";
 export * from "./bridge";
 export * from "./coinVotes";
 export * from "./adminEmails";
+export * from "./wallets";

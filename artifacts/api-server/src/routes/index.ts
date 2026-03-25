@@ -13,7 +13,8 @@ import dexscreenerRouter from "./dexscreener.js";
 import geckoTerminalRouter from "./geckoTerminal.js";
 import coinVotesRouter from "./coinVotes.js";
 import { db } from "@workspace/db";
-import { platformSettingsTable, adminEmailsTable } from "@workspace/db/schema";
+import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
+import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 
@@ -386,6 +387,55 @@ router.post("/webhook/email-inbound", async (req, res) => {
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to process inbound email webhook");
     res.status(500).json({ error: err?.message ?? "Failed to process inbound email" });
+  }
+});
+
+/* ── Wallet ping — register / refresh a connected wallet in the DB ───────────
+ * POST /api/users/ping
+ * Body: { address, network, provider, chainId? }
+ * Called by the frontend every time a wallet connects.
+ * Uses an upsert so repeated calls are idempotent.
+ */
+router.post("/users/ping", async (req, res) => {
+  try {
+    const { address, network, provider, chainId } = req.body as {
+      address?: string;
+      network?: string;
+      provider?: string;
+      chainId?: string | number;
+    };
+
+    if (!address || typeof address !== "string" || address.trim().length < 10) {
+      res.status(400).json({ error: "Valid address is required" });
+      return;
+    }
+
+    const addr = address.trim().toLowerCase();
+    const networkType = (network ?? (addr.startsWith("0x") ? "evm" : "bsv")).toLowerCase();
+
+    await db.insert(walletsTable)
+      .values({
+        address: addr,
+        networkType,
+        provider: provider ?? null,
+        chainId: chainId != null ? String(chainId) : null,
+        firstSeen: new Date(),
+        lastSeen: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: walletsTable.address,
+        set: {
+          lastSeen: new Date(),
+          ...(provider && { provider }),
+          ...(chainId != null && { chainId: String(chainId) }),
+          ...(network && { networkType }),
+        },
+      });
+
+    res.json({ success: true, address: addr });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "Failed to ping wallet");
+    res.status(500).json({ error: err?.message ?? "Failed to register wallet" });
   }
 });
 
