@@ -50,6 +50,9 @@ function timeAgo(date: string) {
   return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+// Mobile panel navigation: 'sidebar' → 'list' → 'detail'
+type MobilePanel = "sidebar" | "list" | "detail";
+
 export function AdminEmailInbox() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -60,6 +63,7 @@ export function AdminEmailInbox() {
   const [compose, setCompose] = useState({ from: "support@orahdex.org", to: "", subject: "", body: "" });
   const [fromOpen, setFromOpen] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
 
   const { data: smtpStatus } = useQuery<{ configured: boolean; host?: string; from?: string }>({
     queryKey: ["smtp-status"],
@@ -154,9 +158,16 @@ export function AdminEmailInbox() {
 
   const openEmail = async (email: Email) => {
     setSelected(email);
+    setMobilePanel("detail");
     if (!email.isRead) {
       patchEmail.mutate({ id: email.id, data: { isRead: true } });
     }
+  };
+
+  const selectFolder = (id: string) => {
+    setFolder(id);
+    setSelected(null);
+    setMobilePanel("list");
   };
 
   const filtered = emails.filter(e =>
@@ -342,15 +353,43 @@ export function AdminEmailInbox() {
         </div>
       )}
 
-      <div className="flex gap-4 h-[calc(100vh-220px)] min-h-[500px]">
-        {/* Sidebar */}
-        <div className="w-44 shrink-0 flex flex-col gap-1">
+      {/* Mobile top nav bar (shown only on mobile) */}
+      <div className="flex md:hidden items-center gap-1 bg-card border border-border rounded-2xl p-1.5">
+        {(["sidebar", "list", "detail"] as MobilePanel[]).filter(p => p !== "detail" || !!selected).map((p, i) => {
+          const labels: Record<MobilePanel, string> = { sidebar: "Folders", list: folder === "inbox" ? "Inbox" : "Sent", detail: "Message" };
+          const isActive = mobilePanel === p;
+          return (
+            <button
+              key={p}
+              onClick={() => {
+                if (p === "detail" && selected) setMobilePanel("detail");
+                else if (p === "list") setMobilePanel("list");
+                else setMobilePanel("sidebar");
+              }}
+              className={cn(
+                "flex-1 py-2 rounded-xl text-xs font-semibold transition-all",
+                isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {labels[p]}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-4 h-[calc(100vh-260px)] min-h-[480px]">
+        {/* Sidebar — full screen on mobile when mobilePanel=sidebar, w-56 on desktop */}
+        <div className={cn(
+          "flex flex-col gap-1 md:w-52 md:shrink-0",
+          "md:flex", // always show on desktop
+          mobilePanel === "sidebar" ? "flex w-full" : "hidden" // mobile: show only when sidebar panel active
+        )}>
           {FOLDERS.map(f => {
             const count = f.id === "inbox" ? unreadCount : 0;
             return (
               <button
                 key={f.id}
-                onClick={() => { setFolder(f.id); setSelected(null); }}
+                onClick={() => selectFolder(f.id)}
                 className={cn(
                   "flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
                   folder === f.id
@@ -406,8 +445,12 @@ export function AdminEmailInbox() {
           </div>
         </div>
 
-        {/* Email list */}
-        <div className="flex-1 flex flex-col bg-card border border-border rounded-2xl overflow-hidden min-w-0">
+        {/* Email list — hidden on mobile when not in list panel, OR when detail is open (desktop shows split) */}
+        <div className={cn(
+          "flex flex-col bg-card border border-border rounded-2xl overflow-hidden min-w-0",
+          "md:flex", // always show on desktop
+          mobilePanel === "list" ? "flex flex-1" : "hidden md:flex md:flex-1", // mobile: only show when list panel active
+        )}>
           {/* Search bar */}
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2 bg-secondary border border-border rounded-xl px-3 py-2">
@@ -482,11 +525,15 @@ export function AdminEmailInbox() {
 
             {/* Email detail */}
             {selected ? (
-              <div className="flex-1 flex flex-col overflow-hidden">
+              <div className={cn(
+                "flex-1 flex-col overflow-hidden",
+                "md:flex", // always on desktop
+                mobilePanel === "detail" ? "flex" : "hidden md:flex" // mobile: only when detail panel active
+              )}>
                 {/* Detail header */}
                 <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
                   <button
-                    onClick={() => setSelected(null)}
+                    onClick={() => { setSelected(null); setMobilePanel("list"); }}
                     className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors md:hidden"
                   >
                     <ChevronLeft className="w-4 h-4" />
@@ -592,9 +639,7 @@ export function AdminEmailInbox() {
                   <Mail className="w-7 h-7 text-primary/40" />
                 </div>
                 <p className="text-sm font-medium">Select an email to read</p>
-                <p className="text-xs text-center max-w-48">
-                  Platform emails, system alerts, and contact form submissions appear here
-                </p>
+                <p className="text-xs text-center max-w-48">Tap any email in the list to open it</p>
               </div>
             )}
           </div>
