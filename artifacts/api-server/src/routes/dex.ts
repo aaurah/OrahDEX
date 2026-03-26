@@ -91,7 +91,7 @@ async function fetchCoinMarketCaps() {
   const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
   const result = { defiMcByName: {} as Record<string,number>, defiMcById: {} as Record<string,number>, cefiMcByName: {} as Record<string,number>, cefiMcById: {} as Record<string,number>, defiTotal: 0, cefiTotal: 0 };
   try {
-    const defiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?category=decentralized-exchange&vs_currency=usd&order=market_cap_desc&per_page=100&sparkline=false", { headers: { Accept: "application/json" } });
+    const defiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?category=decentralized-exchange&vs_currency=usd&order=market_cap_desc&per_page=100&sparkline=false", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
     if (defiResp.ok) {
       const coins: any[] = await defiResp.json();
       for (const c of coins) if (c.market_cap) {
@@ -101,7 +101,7 @@ async function fetchCoinMarketCaps() {
       }
     }
     await delay(1200);
-    const cefiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?ids=binancecoin,okb,crypto-com-chain,kucoin-shares,bitget-token,gatechain-token,leo-token,woo-network,mexc-token,huobi-token&vs_currency=usd&sparkline=false", { headers: { Accept: "application/json" } });
+    const cefiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?ids=binancecoin,okb,crypto-com-chain,kucoin-shares,bitget-token,gatechain-token,leo-token,woo-network,mexc-token,huobi-token&vs_currency=usd&sparkline=false", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
     if (cefiResp.ok) {
       const coins: any[] = await cefiResp.json();
       for (const c of coins) if (c.market_cap) {
@@ -123,7 +123,7 @@ router.get("/dex/prices", async (_req, res) => {
     if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) return res.json(priceCache.data);
     const resp = await fetch(
       "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,bitcoin-cash-sv,tether&vs_currencies=usd&include_24hr_change=true",
-      { headers: { Accept: "application/json" } }
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) }
     );
     if (!resp.ok) throw new Error("CoinGecko price fetch failed");
     const raw = await resp.json();
@@ -160,8 +160,8 @@ router.get("/dex/exchanges", async (req, res) => {
 
     // Fetch exchange list + BTC price in parallel (both are lightweight)
     const [exRes, btcRes] = await Promise.allSettled([
-      fetch("https://api.coingecko.com/api/v3/exchanges?per_page=250&page=1", { headers: { Accept: "application/json" } }),
-      fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", { headers: { Accept: "application/json" } }),
+      fetch("https://api.coingecko.com/api/v3/exchanges?per_page=250&page=1", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }),
+      fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) }),
     ]);
 
     if (exRes.status === "rejected" || !(exRes.value as Response).ok) {
