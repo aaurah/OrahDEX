@@ -79,6 +79,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: "Integrations",
+    items: [
+      { href: "/admin/cex",          label: "CEX Connections",    icon: Link2,   badge: "NEW" },
+    ],
+  },
+  {
     title: "Security",
     items: [
       { href: "/admin/security",     label: "Security Settings",  icon: Shield },
