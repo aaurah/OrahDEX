@@ -1,0 +1,171 @@
+Here’s a clear, direct, mythic‑but‑practical audit of Orahdex.org based on the live content I fetched and the latest indexed information.
+I’ll give you exact problems, not generic feedback — so you can tighten the site into a sovereign front gate worthy of OrahDex.
+
+---
+
+⚠️ Critical Problems on Orahdex.org
+
+(Based on fetched page content and fresh search results)
+orahdex.org +1
+
+❌ 1. Brand Identity Conflict — The Site Is Not OrahDex
+
+The live page describes:
+
+• Spot trading
+• Perpetual futures
+• P2P markets
+• 226+ markets
+• CoinGecko price feeds
+• BSV settlement
+
+
+This reads like a generic multi‑chain DEX, not the mythic, Keeper‑driven OrahDex you are building.
+
+There is zero mention of:
+
+• Keepers
+• Sovereign identity
+• Ritual UX
+• Hybrid liquidity engine
+• BSV↔EVM bridge
+• Infinity sigil
+• Mythic narrative
+
+
+This is the biggest mismatch.
+Right now, Orahdex.org looks like a normal exchange, not a sovereign mythic DEX.
+
+---
+
+❌ 2. No Visual Identity — No Sigil, No Gold, No Myth
+
+The site has:
+
+• No infinity sigil
+• No gold accents
+• No ceremonial interface
+• No dark sovereign aesthetic
+
+
+It visually communicates nothing about OrahDex’s mythic identity.
+
+---
+
+❌ 3. No Keeper System Mentioned
+
+Your entire architecture is Keeper‑driven, but the site:
+
+• Doesn’t mention Keeper tiers
+• Doesn’t mention identity‑aware routing
+• Doesn’t mention fee reductions
+• Doesn’t mention the Keeper Registry
+
+
+This is a complete narrative and functional gap.
+
+---
+
+❌ 4. No Hybrid Architecture Explanation
+
+Your DEX is:
+
+• Phase 1: CEX‑backed liquidity
+• Phase 2: AMM
+• Phase 3: BSV↔EVM bridge
+
+
+But the site only says “multi‑chain DEX” with no architecture explanation.
+This removes the sovereign engineering clarity that defines OrahDex.
+
+---
+
+❌ 5. No Ritual or Mythic Language
+
+The site uses generic exchange language:
+
+• “Trade means DEX”
+• “Spot, Futures & P2P”
+• “226+ markets”
+
+
+This is not OrahDex.
+Your brand is ceremonial, sovereign, identity‑anchored.
+The site currently feels like a template.
+
+---
+
+❌ 6. No App Link, No Portal, No Gate
+
+There is no:
+
+• “Enter the Exchange” gate
+• “Launch App” portal
+• Ritual onboarding
+• Keeper verification flow
+
+
+The homepage should feel like a threshold, not a brochure.
+
+---
+
+❌ 7. No Technical Depth
+
+Your community expects:
+
+• AMM diagrams
+• Bridge flow
+• Keeper fee logic
+• Identity‑aware routing
+• Wallet integration details
+
+
+None of this exists on the site.
+
+---
+
+❌ 8. SEO + Messaging Mismatch
+
+Search engines currently index Orahdex.org as a generic DEX.
+This dilutes your mythic positioning and confuses new visitors.
+orahdex.org
+
+---
+
+🔥 What You Should Fix First (Priority Order)
+
+1. Replace the entire homepage with a mythic sovereign gate
+
+• Infinity sigil
+• Dark‑gold aesthetic
+• “Enter the Sovereign Exchange” CTA
+
+
+2. Add Keeper identity as the core narrative
+
+• What is a Keeper
+• Keeper tiers
+• Identity‑aware execution
+
+
+3. Add your hybrid architecture
+
+A clean 3‑phase diagram:
+
+• CEX liquidity
+• AMM
+• BSV↔EVM bridge
+
+
+4. Add ritual language
+
+Short, powerful, ceremonial statements:
+
+• “Identity is the engine.”
+• “Execution is a ritual.”
+• “Every trade is a declaration.”
+
+
+5. Add the Launch App portal
+
+A glowing gate that feels like a threshold

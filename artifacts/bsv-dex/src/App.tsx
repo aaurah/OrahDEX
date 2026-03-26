@@ -18,6 +18,7 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
+const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
 const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
@@ -284,6 +285,11 @@ function Router() {
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
       <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/cex">       <AdminRoute><AdminCexConnections /></AdminRoute></Route>
+
+      {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
+      <Route path="/">
+        <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+      </Route>
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
