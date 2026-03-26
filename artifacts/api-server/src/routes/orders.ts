@@ -217,7 +217,7 @@ router.post("/orders", async (req, res) => {
               status:            "filled",
               filledQuantity:    match.quantity,
               remainingQuantity: "0",
-              txid:              settlement.txid,
+              txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
@@ -232,7 +232,7 @@ router.post("/orders", async (req, res) => {
             remainingQuantity: "0",
             price:             isMarket ? fillPrice.toString() : undefined,
             total:             fillTotal,
-            txid:              settlement.txid,
+            txid:              broadcastTxid,
             matchedOrderId:    match.id,
             updatedAt:         new Date(),
           })
@@ -246,7 +246,7 @@ router.post("/orders", async (req, res) => {
           title: `Order Filled ✓`,
           body:  `${quantity} ${fillBase} @ $${fillPrice.toFixed(4)} · BSV settled on-chain`,
           pair:  fillSymbol,
-          txid:  settlement.txid ?? undefined,
+          txid:  broadcastTxid ?? undefined,
           side:  body.side,
         });
       }
