@@ -1041,7 +1041,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 icon: <CreditCard size={20} />,
                 label: "Buy Crypto",
                 desc: "Simplex, Mercuryo, Banxa",
-                href: "/market-hub",
+                href: "/dex",
               },
             ] as const).map(({ icon, label, desc, href }) => (
               <button
