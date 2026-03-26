@@ -688,6 +688,200 @@ export const DEFI_MARKETS: any[] = [
   spot("DYDX",  "USDT", 1.84,    3.42,  12_000_000),
   spot("GMX",   "USDT", 28.4,   -0.85,   8_000_000),
   spot("RUNE",  "USDT", 5.52,    4.85,  12_000_000),
+  spot("PENDLE","USDT", 3.5,     9.12,  18_000_000),
+  spot("CVX",   "USDT", 2.8,     2.84,   6_000_000),
+  spot("FXS",   "USDT", 2.1,    -1.42,   4_000_000),
+  spot("SPELL", "USDT", 0.00082, 5.82,   3_000_000),
+  spot("PERP",  "USDT", 0.42,   -0.85,   2_500_000),
+  spot("ENS",   "USDT", 17,      2.48,   6_000_000),
+  spot("GRT",   "USDT", 0.12,    3.15,  12_000_000),
+];
+
+// ─── GAMING / METAVERSE ───────────────────────────────────────────────────────
+export const GAMING_MARKETS: any[] = [
+  /* ── Tier 1: Blue-chip gaming ── */
+  spot("AXS",     "USDT", 6.82,    4.21,  82_000_000),  // Axie Infinity — pioneer P2E
+  spot("SAND",    "USDT", 0.30,    3.42,  48_000_000),  // The Sandbox metaverse
+  spot("MANA",    "USDT", 0.30,    2.15,  35_000_000),  // Decentraland
+  spot("ENJ",     "USDT", 0.18,    5.82,  28_000_000),  // Enjin — NFT gaming SDK
+  spot("GALA",    "USDT", 0.022,   6.48,  42_000_000),  // Gala Games platform
+  spot("IMX",     "USDT", 1.85,    8.42,  58_000_000),  // ImmutableX — ZK gaming L2
+  spot("RON",     "USDT", 2.42,    5.21,  38_000_000),  // Ronin — Axie Infinity chain
+  /* ── Tier 2: Mid-cap gaming ── */
+  spot("ILV",     "USDT", 35,      3.84,  22_000_000),  // Illuvium AAA RPG
+  spot("BEAM",    "USDT", 0.018,   7.82,  18_000_000),  // Beam gaming chain
+  spot("PRIME",   "USDT", 2.8,     4.15,  15_000_000),  // Parallel — sci-fi TCG
+  spot("PIXEL",   "USDT", 0.14,    9.42,  28_000_000),  // Pixels — farming RPG
+  spot("BIGTIME", "USDT", 0.082,  12.84,  22_000_000),  // Big Time MMO
+  spot("MC",      "USDT", 0.12,    5.42,  12_000_000),  // Merit Circle — gaming DAO
+  spot("ALICE",   "USDT", 0.82,    6.21,  10_000_000),  // My Neighbor Alice
+  spot("WAXP",    "USDT", 0.042,   4.82,  14_000_000),  // WAX — NFT gaming chain
+  /* ── Tier 3: Niche gaming ── */
+  spot("TLM",     "USDT", 0.012,   8.42,   8_000_000),  // Alien Worlds mining
+  spot("SLP",     "USDT", 0.0028,  5.15,   6_000_000),  // Smooth Love Potion (Axie)
+  spot("GODS",    "USDT", 0.082,   7.84,   5_000_000),  // Gods Unchained card game
+  spot("GHST",    "USDT", 1.42,    5.15,   4_500_000),  // Aavegotchi (Polygon)
+  spot("MAGIC",   "USDT", 0.48,    6.84,  12_000_000),  // Treasure / TreasureDAO
+];
+
+// ─── COSMOS ECOSYSTEM ─────────────────────────────────────────────────────────
+export const COSMOS_MARKETS: any[] = [
+  /* ── IBC Hub chains ── */
+  spot("ATOM",  "USDT", 4.5,     2.84,  48_000_000),  // Cosmos Hub
+  spot("OSMO",  "USDT", 0.48,    5.21,  22_000_000),  // Osmosis DEX
+  spot("INJ",   "USDT", 18,      4.21,  42_000_000),  // Injective — DeFi L1
+  spot("TIA",   "USDT", 3.5,     8.42,  35_000_000),  // Celestia — modular DA
+  spot("DYM",   "USDT", 2.1,     6.84,  18_000_000),  // Dymension rollups
+  spot("SEI",   "USDT", 0.24,    7.42,  28_000_000),  // Sei — parallelized EVM
+  /* ── Cosmos DeFi ── */
+  spot("KAVA",  "USDT", 0.48,    3.15,  14_000_000),  // Kava — lending
+  spot("BAND",  "USDT", 1.2,     4.82,   8_000_000),  // Band Protocol — oracle
+  spot("EVMOS", "USDT", 0.018,  -2.15,   3_500_000),  // Evmos EVM on Cosmos
+  /* ── Cosmos app-chains ── */
+  spot("AKT",   "USDT", 2.8,     9.42,  12_000_000),  // Akash — decentralized cloud
+  spot("SCRT",  "USDT", 0.38,    4.21,   4_500_000),  // Secret Network — privacy
+  spot("STRD",  "USDT", 0.82,    5.84,   3_800_000),  // Stride — liquid staking
+  spot("JUNO",  "USDT", 0.28,   -1.42,   2_800_000),  // Juno — CosmWasm hub
+  spot("STARS", "USDT", 0.0085,  8.42,   2_200_000),  // Stargaze NFT platform
+  spot("NTRN",  "USDT", 0.42,    3.84,   3_200_000),  // Neutron — IBC + DeFi
+  /* ── Terra ecosystem ── */
+  spot("LUNA",  "USDT", 0.42,    5.21,  18_000_000),  // Terra Luna 2.0
+  spot("LUNC",  "USDT", 0.000085, 2.84,  8_000_000),  // Terra Classic
+];
+
+// ─── LAYER 1 (L1) ─────────────────────────────────────────────────────────────
+export const L1_MARKETS: any[] = [
+  /* ── Top 10 L1s ── */
+  spot("BTC",  "USDT", 70725,     -1.85, 2_450_000_000),
+  spot("ETH",  "USDT", 2152,       1.32,  950_000_000),
+  spot("SOL",  "USDT", 91.44,      3.21,  420_000_000),
+  spot("BNB",  "USDT", 638,        0.88,  320_000_000),
+  spot("ADA",  "USDT", 0.75,      -2.10,   45_000_000),
+  spot("AVAX", "USDT", 9.55,       2.15,   62_000_000),
+  spot("DOT",  "USDT", 1.41,      -1.20,   38_000_000),
+  spot("TON",  "USDT", 2.8,        8.42,  285_000_000),  // Telegram Open Network
+  spot("KAS",  "USDT", 0.085,      5.84,   42_000_000),  // Kaspa — PoW DAG
+  spot("NEAR", "USDT", 2.5,        4.82,   24_000_000),
+  spot("APT",  "USDT", 5.5,        5.21,   18_000_000),
+  spot("SUI",  "USDT", 2.5,        6.45,   35_000_000),
+  spot("SEI",  "USDT", 0.24,       7.42,   28_000_000),
+  spot("TIA",  "USDT", 3.5,        8.42,   35_000_000),
+  /* ── Established L1s ── */
+  spot("XRP",  "USDT", 1.43,      -0.64,  110_000_000),
+  spot("ADA",  "USDT", 0.75,      -2.10,   45_000_000),
+  spot("DOGE", "USDT", 0.094,      5.42,   78_000_000),
+  spot("LTC",  "USDT", 85,         0.45,   32_000_000),
+  spot("BCH",  "USDT", 477,        1.10,   28_000_000),
+  spot("XMR",  "USDT", 155,        0.42,    5_000_000),
+  spot("EGLD", "USDT", 25,         1.62,    5_000_000),
+  spot("ALGO", "USDT", 0.14,      -0.95,    8_000_000),
+  spot("XLM",  "USDT", 0.11,       1.42,   12_000_000),
+  spot("HBAR", "USDT", 0.17,       2.18,    9_000_000),
+  spot("VET",  "USDT", 0.025,      1.25,    8_000_000),
+  spot("THETA","USDT", 0.90,      -0.75,    4_000_000),
+  spot("FTM",  "USDT", 0.20,       3.28,   18_000_000),
+  spot("ONE",  "USDT", 0.012,      4.85,    3_500_000),  // Harmony
+  spot("KAVA", "USDT", 0.48,       3.15,    4_200_000),
+  spot("CELO", "USDT", 0.48,       2.84,    3_800_000),
+  spot("CORE", "USDT", 0.85,       5.21,    5_200_000),  // Core DAO
+  spot("CFX",  "USDT", 0.10,       4.42,    3_000_000),  // Conflux
+  spot("ROSE", "USDT", 0.048,      3.84,    2_800_000),  // Oasis Network
+  spot("FLR",  "USDT", 0.014,      2.15,    2_200_000),  // Flare
+  spot("ICX",  "USDT", 0.16,       3.42,    2_000_000),  // ICON
+  spot("ZEN",  "USDT", 9.5,        1.84,    1_800_000),  // Horizen
+  spot("KDA",  "USDT", 0.75,       4.21,    1_500_000),  // Kadena
+];
+
+// ─── LAYER 2 / SCALING ────────────────────────────────────────────────────────
+export const L2_MARKETS: any[] = [
+  /* ── Major L2s ── */
+  spot("ARB",   "USDT", 0.46,    2.85,  28_000_000),   // Arbitrum
+  spot("OP",    "USDT", 0.75,    3.10,  22_000_000),   // Optimism
+  spot("MATIC", "USDT", 0.40,   -0.92,  54_000_000),   // Polygon
+  spot("STRK",  "USDT", 0.42,    4.82,  18_000_000),   // StarkNet
+  spot("IMX",   "USDT", 1.85,    8.42,  22_000_000),   // ImmutableX
+  spot("MNT",   "USDT", 1.02,    2.84,  12_000_000),   // Mantle
+  spot("ZK",    "USDT", 0.15,    6.42,  15_000_000),   // zkSync
+  spot("SCR",   "USDT", 0.52,    4.21,   8_000_000),   // Scroll
+  spot("METIS", "USDT", 28,      3.84,   6_000_000),   // Metis
+  spot("BOBA",  "USDT", 0.18,    5.42,   3_500_000),   // Boba Network
+  /* ── Bridge / interop ── */
+  spot("ZRO",   "USDT", 2.52,   -2.18,  42_000_000),  // LayerZero
+  spot("EIGEN", "USDT", 2.42,   -5.84,  28_000_000),  // EigenLayer restaking
+  spot("W",     "USDT", 0.24,   -3.42,  22_000_000),  // Wormhole
+  spot("1INCH", "USDT", 0.35,    2.84,  18_000_000),  // 1inch aggregator
+  spot("STRK",  "USDT", 0.42,    4.82,  18_000_000),  // StarkNet
+];
+
+// ─── REAL WORLD ASSETS (RWA) ──────────────────────────────────────────────────
+export const RWA_MARKETS: any[] = [
+  /* ── Gold-backed ── */
+  spot("PAXG",  "USDT", 2182,    1.42,  28_000_000),  // PAX Gold — 1 PAXG = 1 troy oz gold
+  spot("XAUT",  "USDT", 2182,    1.38,  22_000_000),  // Tether Gold
+  /* ── Real world finance ── */
+  spot("ONDO",  "USDT", 0.85,   12.84,  42_000_000),  // Ondo Finance — tokenized T-bills
+  spot("MKR",   "USDT", 1800,   -0.45,   8_000_000),  // MakerDAO — DAI / RWA collateral
+  spot("CFG",   "USDT", 0.42,    5.21,   4_500_000),  // Centrifuge — invoice tokenization
+  spot("MPL",   "USDT", 14,      3.84,   3_200_000),  // Maple Finance — institutional lending
+  /* ── Stablecoins & yield ── */
+  spot("USDT",  "USDC", 1.0001,  0.01, 1_820_000_000),
+  spot("USDC",  "USDT", 1.0001,  0.01,  980_000_000),
+  spot("DAI",   "USDT", 0.9998,  0.02,  480_000_000),
+  spot("FRAX",  "USDT", 0.9998,  0.01,  182_000_000),
+  spot("LUSD",  "USDT", 1.001,   0.02,   82_000_000),
+];
+
+// ─── EXCHANGE TOKENS ──────────────────────────────────────────────────────────
+export const EXCHANGE_MARKETS: any[] = [
+  spot("BNB",   "USDT", 638,      0.88, 320_000_000),  // Binance
+  spot("OKB",   "USDT", 42,       2.84,  48_000_000),  // OKX
+  spot("CRO",   "USDT", 0.09,     1.42,  22_000_000),  // Crypto.com
+  spot("KCS",   "USDT", 8.5,      3.21,  18_000_000),  // KuCoin
+  spot("GT",    "USDT", 6.5,      4.82,  14_000_000),  // Gate.io
+  spot("HT",    "USDT", 2.8,      1.85,   8_000_000),  // Huobi (legacy)
+  spot("BGB",   "USDT", 3.5,      5.42,  12_000_000),  // Bitget
+  spot("WBT",   "USDT", 22,       3.84,   6_000_000),  // WhiteBIT
+];
+
+// ─── DEPIN (Decentralized Physical Infrastructure) ────────────────────────────
+export const DEPIN_MARKETS: any[] = [
+  /* ── Wireless / connectivity ── */
+  spot("HNT",   "USDT", 8.42,    -2.15,  22_000_000),  // Helium — LoRaWAN IoT
+  spot("IOTX",  "USDT", 0.042,    4.82,   8_000_000),  // IoTeX — device chain
+  spot("POWR",  "USDT", 0.22,     3.42,   3_500_000),  // Power Ledger — energy grid
+  /* ── Compute / storage ── */
+  spot("RNDR",  "USDT", 7.42,     6.82,  62_000_000),  // Render — GPU compute
+  spot("FIL",   "USDT", 4.0,     -2.18,  10_000_000),  // Filecoin — storage
+  spot("STORJ", "USDT", 0.45,     5.21,   4_200_000),  // Storj — storage
+  spot("GLM",   "USDT", 0.28,     3.84,   3_800_000),  // Golem — compute market
+  spot("LPT",   "USDT", 7.5,      4.21,   3_200_000),  // Livepeer — video transcoding
+  /* ── Data / oracle ── */
+  spot("FET",   "USDT", 1.82,     8.45,  85_000_000),  // Fetch.ai — AI agents
+  spot("OCEAN", "USDT", 0.612,    5.14,  28_000_000),  // Ocean Protocol — data market
+  spot("GRT",   "USDT", 0.12,     3.15,  12_000_000),  // The Graph — indexing
+  spot("BAND",  "USDT", 1.2,      4.82,   8_000_000),  // Band Protocol — oracle
+  /* ── AI DePIN ── */
+  spot("TAO",   "USDT", 482,      4.21, 320_000_000),  // Bittensor — AI compute
+  spot("ALT",   "USDT", 0.18,    -5.42,  22_000_000),  // AltLayer — rollup infra
+  spot("WLD",   "USDT", 2.84,    -1.45,  98_000_000),  // Worldcoin — iris biometrics
+];
+
+// ─── BRC-20 / ORDINALS / RUNES ────────────────────────────────────────────────
+export const BRC20_MARKETS: any[] = [
+  /* ── BRC-20 (Bitcoin fungible tokens) ── */
+  spot("ORDI",  "USDT", 28,    -4.82,  48_000_000),  // #1 BRC-20 by market cap
+  spot("SATS",  "USDT", 0.00000035, 8.42, 38_000_000), // 1000SATS — BRC-20 meme
+  spot("RATS",  "USDT", 0.00000042, 5.84, 18_000_000), // RATS — BRC-20 meme
+  /* ── Stacks (Bitcoin L2) ── */
+  spot("STX",   "USDT", 1.52,    6.42,  22_000_000),  // Stacks — Bitcoin smart contracts
+  /* ── Bitcoin ecosystem ── */
+  spot("WBTC",  "USDT", 70215,  -1.92, 120_000_000),  // Wrapped Bitcoin (ERC-20)
+  spot("CBBTC", "USDT", 70725,  -1.85,  85_000_000),  // Coinbase Wrapped BTC (Base)
+  spot("RBTC",  "USDT", 70215,  -1.92,  12_000_000),  // RSK smart Bitcoin
+  spot("TBTC",  "USDT", 70215,  -1.92,   8_000_000),  // tBTC — decentralized bridge
+  /* ── Bitcoin Cash ecosystem ── */
+  spot("BCH",   "USDT", 477,     1.10,  28_000_000),
+  spot("BSV",   "USDT", 14.35,   4.41,  18_500_000),
 ];
 
 export const NEW_MARKETS: any[] = [

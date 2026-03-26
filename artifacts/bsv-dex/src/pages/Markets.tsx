@@ -8,6 +8,8 @@ import {
   BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
+  RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -20,7 +22,7 @@ import { getWalletMarketTab } from "@/lib/walletMarket";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -64,8 +66,16 @@ const TAB_META: TabMeta[] = [
   { id: "bch",       label: "BCH",          color: "text-green-400",   desc: "All pairs quoted in Bitcoin Cash" },
   { id: "bsv",       label: "BSV",          color: "text-green-400",   desc: "All pairs quoted in BSV · On-chain settlement" },
   { id: "ai",        label: "AI",           color: "text-cyan-400",    desc: "Artificial Intelligence tokens" },
+  { id: "depin",     label: "DePIN",        color: "text-teal-400",    desc: "Decentralized Physical Infrastructure · compute, storage, wireless" },
   { id: "meme",      label: "MEME",         color: "text-pink-400",    desc: "Meme tokens" },
-  { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols" },
+  { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols · DEXs, lending, yield" },
+  { id: "gaming",    label: "GAMING",       color: "text-violet-400",  desc: "Gaming & Metaverse · P2E, NFT games, virtual worlds" },
+  { id: "cosmos",    label: "COSMOS",       color: "text-purple-400",  desc: "Cosmos IBC ecosystem · app-chains, DEXs, data availability" },
+  { id: "l1",        label: "LAYER 1",      color: "text-amber-400",   desc: "Layer 1 blockchains · all major base chains" },
+  { id: "l2",        label: "LAYER 2",      color: "text-sky-400",     desc: "Layer 2 scaling · rollups, bridges, interop" },
+  { id: "rwa",       label: "RWA",          color: "text-yellow-400",  desc: "Real World Assets · tokenized gold, T-bills, real estate" },
+  { id: "exchange",  label: "EXCHANGE",     color: "text-orange-400",  desc: "Exchange tokens · CEX utility & governance tokens" },
+  { id: "brc20",     label: "BRC-20",       color: "text-orange-400",  desc: "BRC-20 tokens & Bitcoin Ordinals · on-chain Bitcoin assets" },
   { id: "futures",   label: "Futures",      color: "text-red-400",     desc: "Perpetual futures · Up to 100× leverage" },
 ];
 
@@ -98,13 +108,15 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
 const ALL_MOCK = () => [
   ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
-  ...AI_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...AI_MARKETS, ...DEPIN_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
 ].map(normalise);
 
 export function Markets() {
   useSEO({
-    title: "Crypto Markets — 226+ Trading Pairs",
-    description: "Live cryptocurrency prices and markets on OrahDEX. Trade 226+ spot pairs including BTC, ETH, BSV, BCH, SOL, BNB and more with real-time CoinGecko data.",
+    title: "Crypto Markets — 500+ Trading Pairs · Every Coin",
+    description: "Trade every cryptocurrency on OrahDEX — 500+ spot pairs across BTC, ETH, SOL, all Layer 1s, Layer 2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20 & more. Live prices from CoinGecko.",
     keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, OrahDEX markets",
     url: "/",
     jsonLd: {
@@ -173,14 +185,32 @@ export function Markets() {
       return { ...m, lastPrice: live.lastPrice, priceChangePercent24h: live.priceChangePercent24h, volume24h: live.volume24h, marketCap: live.marketCap ?? m.marketCap };
     });
 
+  /** Live markets from API grouped by quote asset (for full pair display). */
+  const liveByQuote = (quote: string) => {
+    const live = raw.filter(m => m.quoteAsset === quote && m.type !== "futures");
+    return live.length > 0 ? live : null;
+  };
+  const liveBsv = liveByQuote("BSV");
+  const liveBtc = liveByQuote("BTC");
+  const liveEth = liveByQuote("ETH");
+  const liveBnb = liveByQuote("BNB");
+  const liveBch = liveByQuote("BCH");
+
   function getMarkets(): any[] {
     switch (tab) {
-      case "favorites": return enrich(ALL_MOCK()).filter(m => stars.has(m.symbol));
+      case "favorites": {
+        const favLive = raw.filter(m => stars.has(m.symbol));
+        return favLive.length > 0 ? favLive : enrich(ALL_MOCK()).filter(m => stars.has(m.symbol));
+      }
       case "new":       return NEW_MARKETS.map(normalise);
-      case "usd":       return enrich(STABLE_MOCK[usdSub].map(normalise));
-      case "btc":       return enrich(BTC_MARKETS.map(normalise));
-      case "eth":       return enrich(ETH_MARKETS.map(normalise));
-      case "bnb":       return enrich(BNB_MARKETS.map(normalise));
+      case "usd": {
+        /* Use live API data when available — shows ALL pairs in DB */
+        const live = raw.filter(m => m.quoteAsset === usdSub && m.type !== "futures");
+        return live.length > 0 ? live : enrich(STABLE_MOCK[usdSub].map(normalise));
+      }
+      case "btc":       return liveBtc ?? enrich(BTC_MARKETS.map(normalise));
+      case "eth":       return liveEth ?? enrich(ETH_MARKETS.map(normalise));
+      case "bnb":       return liveBnb ?? enrich(BNB_MARKETS.map(normalise));
       case "matic":     return enrich(MATIC_MARKETS.map(normalise));
       case "avax":      return enrich(AVAX_MARKETS.map(normalise));
       case "arb":       return enrich(ARB_MARKETS.map(normalise));
@@ -194,24 +224,33 @@ export function Markets() {
       case "scr":       return enrich(SCR_MARKETS.map(normalise));
       case "mnt":       return enrich(MNT_MARKETS.map(normalise));
       case "sol":       return enrich(SOL_MARKETS.map(normalise));
-      case "bch":       return enrich(BCH_MARKETS.map(normalise));
-      case "bsv":       return enrich(BSV_MARKETS.map(normalise));
+      case "bch":       return liveBch ?? enrich(BCH_MARKETS.map(normalise));
+      case "bsv":       return liveBsv ?? enrich(BSV_MARKETS.map(normalise));
       case "ai":        return enrich(AI_MARKETS.map(normalise));
+      case "depin":     return enrich(DEPIN_MARKETS.map(normalise));
       case "meme":      return enrich(MEME_MARKETS.map(normalise));
       case "defi":      return enrich(DEFI_MARKETS.map(normalise));
+      case "gaming":    return enrich(GAMING_MARKETS.map(normalise));
+      case "cosmos":    return enrich(COSMOS_MARKETS.map(normalise));
+      case "l1":        return enrich(L1_MARKETS.map(normalise));
+      case "l2":        return enrich(L2_MARKETS.map(normalise));
+      case "rwa":       return enrich(RWA_MARKETS.map(normalise));
+      case "exchange":  return enrich(EXCHANGE_MARKETS.map(normalise));
+      case "brc20":     return enrich(BRC20_MARKETS.map(normalise));
       case "futures":   return enrich(FUTURES_MARKETS.map(normalise));
       default:          return [];
     }
   }
 
   function tabCount(t: Tab): number {
+    const liveCount = (q: string) => raw.filter(m => m.quoteAsset === q && m.type !== "futures").length;
     switch (t) {
-      case "favorites": return ALL_MOCK().filter(m => stars.has(m.symbol)).length;
+      case "favorites": return raw.filter(m => stars.has(m.symbol)).length || ALL_MOCK().filter(m => stars.has(m.symbol)).length;
       case "new":       return NEW_MARKETS.length;
-      case "usd":       return STABLE_MOCK[usdSub].length;
-      case "btc":       return BTC_MARKETS.length;
-      case "eth":       return ETH_MARKETS.length;
-      case "bnb":       return BNB_MARKETS.length;
+      case "usd":       return liveCount(usdSub) || STABLE_MOCK[usdSub].length;
+      case "btc":       return liveCount("BTC") || BTC_MARKETS.length;
+      case "eth":       return liveCount("ETH") || ETH_MARKETS.length;
+      case "bnb":       return liveCount("BNB") || BNB_MARKETS.length;
       case "matic":     return MATIC_MARKETS.length;
       case "avax":      return AVAX_MARKETS.length;
       case "arb":       return ARB_MARKETS.length;
@@ -225,11 +264,19 @@ export function Markets() {
       case "scr":       return SCR_MARKETS.length;
       case "mnt":       return MNT_MARKETS.length;
       case "sol":       return SOL_MARKETS.length;
-      case "bch":       return BCH_MARKETS.length;
-      case "bsv":       return BSV_MARKETS.length;
+      case "bch":       return liveCount("BCH") || BCH_MARKETS.length;
+      case "bsv":       return liveCount("BSV") || BSV_MARKETS.length;
       case "ai":        return AI_MARKETS.length;
+      case "depin":     return DEPIN_MARKETS.length;
       case "meme":      return MEME_MARKETS.length;
       case "defi":      return DEFI_MARKETS.length;
+      case "gaming":    return GAMING_MARKETS.length;
+      case "cosmos":    return COSMOS_MARKETS.length;
+      case "l1":        return L1_MARKETS.length;
+      case "l2":        return L2_MARKETS.length;
+      case "rwa":       return RWA_MARKETS.length;
+      case "exchange":  return EXCHANGE_MARKETS.length;
+      case "brc20":     return BRC20_MARKETS.length;
       case "futures":   return FUTURES_MARKETS.length;
       default:          return 0;
     }
@@ -384,7 +431,7 @@ export function Markets() {
                 </button>
               ))}
               <span className="text-xs text-muted-foreground ml-1">
-                · {STABLE_MOCK[usdSub].length} pairs
+                · {tabCount("usd")} pairs
               </span>
             </div>
           )}
