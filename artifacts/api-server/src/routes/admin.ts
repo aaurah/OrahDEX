@@ -596,6 +596,21 @@ router.patch("/pairs/:symbol/fees", async (req, res) => {
   res.json({ success: true });
 });
 
+router.patch("/pairs/:symbol/contracts", async (req, res) => {
+  try {
+    const { contractAddresses } = req.body as { contractAddresses?: Record<string, string> };
+    const symbolDecoded = decodeURIComponent(req.params.symbol);
+    if (!contractAddresses || typeof contractAddresses !== "object") {
+      res.status(400).json({ error: "contractAddresses must be an object" });
+      return;
+    }
+    await db.update(marketsTable).set({ contractAddresses }).where(eq(marketsTable.symbol, symbolDecoded));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to update contracts" });
+  }
+});
+
 /* ─── API SETTINGS ─── */
 router.get("/api-keys", (_req, res) => res.json(mockApiKeys));
 

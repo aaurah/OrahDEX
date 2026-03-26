@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ToggleLeft, ToggleRight, Pencil, Check, X, Plus } from "lucide-react";
+import { ToggleLeft, ToggleRight, Pencil, Check, X, Plus, Trash2, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ContractAddressBadge } from "@/components/ContractAddressBadge";
+import { KNOWN_CONTRACTS } from "@/lib/contracts";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchPairs = () => fetch(`${BASE}/api/admin/pairs`).then(r => r.json());
@@ -10,20 +12,126 @@ type Market = {
   symbol: string; baseAsset: string; quoteAsset: string;
   type: string; status: string; makerFee: string; takerFee: string;
   lastPrice: string; volume24h: string;
+  contractAddresses?: Record<string, string> | null;
 };
 
+// ── Contract edit modal ────────────────────────────────────────────────────
+function ContractModal({ pair, onClose, onSave }: {
+  pair: Market;
+  onClose: () => void;
+  onSave: (addresses: Record<string, string>) => void;
+}) {
+  const known = KNOWN_CONTRACTS[pair.baseAsset.toUpperCase()] ?? {};
+  const [entries, setEntries] = useState<[string, string][]>(() => {
+    const merged = { ...known, ...(pair.contractAddresses ?? {}) };
+    return Object.entries(merged);
+  });
+  const [newChain, setNewChain] = useState("");
+  const [newAddr,  setNewAddr]  = useState("");
+
+  const updateEntry = (idx: number, field: "chain" | "addr", val: string) => {
+    setEntries(prev => {
+      const next = [...prev];
+      next[idx] = field === "chain" ? [val, next[idx][1]] : [next[idx][0], val];
+      return next;
+    });
+  };
+
+  const removeEntry = (idx: number) => setEntries(prev => prev.filter((_, i) => i !== idx));
+
+  const addEntry = () => {
+    if (!newChain.trim() || !newAddr.trim()) return;
+    setEntries(prev => [...prev, [newChain.trim(), newAddr.trim()]]);
+    setNewChain(""); setNewAddr("");
+  };
+
+  const handleSave = () => {
+    const obj: Record<string, string> = {};
+    entries.forEach(([k, v]) => { if (k.trim()) obj[k.trim()] = v.trim(); });
+    onSave(obj);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+          <div>
+            <h3 className="font-bold text-base flex items-center gap-2">
+              <FileCode size={16} className="text-primary" />
+              Contract Addresses — {pair.baseAsset}/{pair.quoteAsset}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Pre-filled from known lookup. Edit or add chain → address entries.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Entries */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {entries.map(([chain, addr], idx) => (
+            <div key={idx} className="flex gap-2 items-center">
+              <input value={chain} onChange={e => updateEntry(idx, "chain", e.target.value)}
+                className="w-36 shrink-0 bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary"
+                placeholder="Chain name" />
+              <input value={addr} onChange={e => updateEntry(idx, "addr", e.target.value)}
+                className="flex-1 min-w-0 bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-primary"
+                placeholder="0x… or native" />
+              <button onClick={() => removeEntry(idx)}
+                className="p-1.5 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors shrink-0">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+
+          {/* Add new row */}
+          <div className="flex gap-2 items-center pt-2 border-t border-border/50">
+            <input value={newChain} onChange={e => setNewChain(e.target.value)}
+              className="w-36 shrink-0 bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary"
+              placeholder="New chain" />
+            <input value={newAddr} onChange={e => setNewAddr(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && addEntry()}
+              className="flex-1 min-w-0 bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-primary"
+              placeholder="0x… or native" />
+            <button onClick={addEntry} disabled={!newChain.trim() || !newAddr.trim()}
+              className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors disabled:opacity-40 shrink-0">
+              <Plus size={12} />
+            </button>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 p-5 border-t border-border shrink-0">
+          <button onClick={onClose}
+            className="flex-1 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleSave}
+            className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
+            Save Addresses
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
 export function AdminTradePairs() {
   const qc = useQueryClient();
   const { data: pairs = [], isLoading } = useQuery({ queryKey: ["admin-pairs"], queryFn: fetchPairs });
-  const [editFees, setEditFees] = useState<string | null>(null);
-  const [feeForm, setFeeForm] = useState({ maker: "", taker: "" });
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [editFees,      setEditFees]     = useState<string | null>(null);
+  const [feeForm,       setFeeForm]      = useState({ maker: "", taker: "" });
+  const [typeFilter,    setTypeFilter]   = useState("all");
+  const [contractPair,  setContractPair] = useState<Market | null>(null);
 
   const toggleStatus = useMutation({
     mutationFn: ({ symbol, status }: { symbol: string; status: string }) =>
       fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-pairs"] }),
@@ -32,11 +140,19 @@ export function AdminTradePairs() {
   const updateFees = useMutation({
     mutationFn: ({ symbol }: { symbol: string }) =>
       fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/fees`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ makerFee: feeForm.maker, takerFee: feeForm.taker }),
       }).then(r => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-pairs"] }); setEditFees(null); },
+  });
+
+  const updateContracts = useMutation({
+    mutationFn: ({ symbol, contractAddresses }: { symbol: string; contractAddresses: Record<string, string> }) =>
+      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/contracts`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contractAddresses }),
+      }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-pairs"] }); setContractPair(null); },
   });
 
   const filtered = pairs.filter((p: Market) => typeFilter === "all" || p.type === typeFilter);
@@ -46,7 +162,7 @@ export function AdminTradePairs() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold">Trade Pairs</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Enable, disable, and configure all trading pairs</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Enable, disable, configure fees, and manage contract addresses for all trading pairs</p>
         </div>
         <div className="flex gap-2 bg-card border border-border rounded-xl p-1 text-xs font-medium">
           {["all", "spot", "futures"].map(t => (
@@ -97,10 +213,26 @@ export function AdminTradePairs() {
                 ))
               ) : filtered.map((p: Market) => (
                 <tr key={p.symbol} className="hover:bg-secondary/20 transition-colors">
+                  {/* Pair + contract address */}
                   <td className="px-4 py-3">
                     <div className="font-bold text-foreground">{p.baseAsset}<span className="text-muted-foreground font-normal">/{p.quoteAsset}</span></div>
                     <div className="text-xs text-muted-foreground font-mono">{p.symbol}</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <ContractAddressBadge
+                        baseAsset={p.baseAsset}
+                        dbAddresses={p.contractAddresses}
+                        variant="full"
+                      />
+                      <button
+                        onClick={() => setContractPair(p)}
+                        title="Edit contract addresses"
+                        className="p-0.5 text-muted-foreground/60 hover:text-primary transition-colors rounded"
+                      >
+                        <Pencil size={9} />
+                      </button>
+                    </div>
                   </td>
+
                   <td className="px-4 py-3">
                     <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded uppercase",
                       p.type === "spot" ? "bg-blue-400/10 text-blue-400" : "bg-violet-400/10 text-violet-400"
@@ -150,7 +282,8 @@ export function AdminTradePairs() {
                         </>
                       ) : (
                         <button onClick={() => { setEditFees(p.symbol); setFeeForm({ maker: p.makerFee, taker: p.takerFee }); }}
-                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors">
+                          className="p-1.5 text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                          title="Edit fees">
                           <Pencil className="w-4 h-4" />
                         </button>
                       )}
@@ -162,6 +295,15 @@ export function AdminTradePairs() {
           </table>
         </div>
       </div>
+
+      {/* Contract address edit modal */}
+      {contractPair && (
+        <ContractModal
+          pair={contractPair}
+          onClose={() => setContractPair(null)}
+          onSave={addresses => updateContracts.mutate({ symbol: contractPair.symbol, contractAddresses: addresses })}
+        />
+      )}
     </div>
   );
 }

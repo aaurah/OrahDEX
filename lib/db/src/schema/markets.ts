@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -20,6 +20,7 @@ export const marketsTable = pgTable("markets", {
   tickSize: numeric("tick_size", { precision: 20, scale: 8 }).notNull().default("0.01"),
   makerFee: numeric("maker_fee", { precision: 10, scale: 6 }).notNull().default("0.001"),
   takerFee: numeric("taker_fee", { precision: 10, scale: 6 }).notNull().default("0.001"),
+  contractAddresses: jsonb("contract_addresses").$type<Record<string, string>>(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
