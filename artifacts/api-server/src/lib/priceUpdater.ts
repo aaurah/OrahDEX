@@ -254,7 +254,7 @@ async function fetchLivePrices(): Promise<Record<string, CoinGeckoPrice>> {
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
   const res = await fetch(url, {
     headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(40000),
+    signal: AbortSignal.timeout(6000),
   });
   if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
   return res.json() as Promise<Record<string, CoinGeckoPrice>>;

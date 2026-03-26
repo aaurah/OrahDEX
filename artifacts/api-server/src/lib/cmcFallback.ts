@@ -28,7 +28,7 @@ export async function cmcFetchPrices(symbols: string[]): Promise<Record<string, 
   if (!CMC_KEY) return null;
   try {
     const url = `${CMC_BASE}/cryptocurrency/quotes/latest?symbol=${symbols.join(",")}&convert=USD`;
-    const res = await fetch(url, { headers: cmcHeaders(), signal: AbortSignal.timeout(35000) });
+    const res = await fetch(url, { headers: cmcHeaders(), signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
     const json = await res.json();
     const out: Record<string, any> = {};
@@ -58,7 +58,7 @@ export async function cmcFetchMarkets(limit = 250): Promise<any[] | null> {
     const all: any[] = [];
     for (let start = 1; start <= pages * 200; start += 200) {
       const url = `${CMC_BASE}/cryptocurrency/listings/latest?start=${start}&limit=200&convert=USD&sort=market_cap`;
-      const res = await fetch(url, { headers: cmcHeaders(), signal: AbortSignal.timeout(35000) });
+      const res = await fetch(url, { headers: cmcHeaders(), signal: AbortSignal.timeout(8000) });
       if (!res.ok) break;
       const json = await res.json();
       const batch: any[] = json.data ?? [];
