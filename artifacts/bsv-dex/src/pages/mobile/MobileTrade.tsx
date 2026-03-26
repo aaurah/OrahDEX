@@ -7,6 +7,7 @@ import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 /* ── Notifications drawer ── */
 const NOTIF_ICONS: Record<string, React.ReactNode> = {
@@ -171,6 +172,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const color = COIN_COLORS[base] ?? "#EAB308";
 
   const { address, balance: walletBalance, chainId: walletChainId, network } = useWalletStore();
+  const isEvm = network === "evm" || (!network && !!walletChainId);
+  const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
 
@@ -305,23 +308,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     : network === "btc" ? "BTC"
     : network === "sol" ? "SOL"
     : chainInfo?.nativeSymbol ?? "ETH";
-  // Source label for display: "ETH (Base)", "ETH (Arb)", or just "ETH"
-  const balanceSourceLabel = chainInfo?.l2Label ? `${nativeSymbol} (${chainInfo.l2Label})` : nativeSymbol;
-  // True if the wallet's native token is compatible with the quote currency
-  // BaseETH, ArbETH, OPETH all trade 1:1 as ETH in ETH-quoted markets
-  const isBalanceCompatible = nativeSymbol === quote || (nativeSymbol === "ETH" && quote === "ETH");
-
   const walletBal = address && walletBalance ? parseFloat(walletBalance) : 0;
-  const available = side === "buy" && isBalanceCompatible ? walletBal : 0;
-  const maxBuyNum = effectivePrice > 0 && isBalanceCompatible ? (walletBal / effectivePrice) : 0;
+
+  // Resolve ERC-20 balances for base and quote tokens
+  const erc20BaseBalance  = evmTokenBalances.find(t => t.symbol.toUpperCase() === base.toUpperCase())?.amount  ?? 0;
+  const erc20QuoteBalance = evmTokenBalances.find(t => t.symbol.toUpperCase() === quote.toUpperCase())?.amount ?? 0;
+
+  // Native token is usable as base (e.g. ETH on Base selling in ETH/USDT)
+  const isNativeBase  = nativeSymbol === base;
+  // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
+  const isNativeQuote = nativeSymbol === quote;
+
+  // Effective balances per side
+  const sellBalance = isNativeBase  ? walletBal          : erc20BaseBalance;   // what the user can sell
+  const buyBalance  = isNativeQuote ? walletBal          : erc20QuoteBalance;  // what the user can spend to buy
+
+  const available    = side === "sell" ? sellBalance : buyBalance;
+  const availableSym = side === "sell" ? base        : quote;
+
+  const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
   const maxBuy = maxBuyNum > 0 ? maxBuyNum.toFixed(6) : "0";
 
   // Click available → fill max amount
   const handleFillMax = () => {
-    if (!address || walletBal <= 0 || effectivePrice <= 0 || !isBalanceCompatible) return;
+    if (!address || available <= 0 || effectivePrice <= 0) return;
     if (side === "buy") {
-      const maxBase = (walletBal * 0.999) / effectivePrice;
+      const maxBase = (buyBalance * 0.999) / effectivePrice;
       setAmount(maxBase.toFixed(6));
+    } else {
+      setAmount((sellBalance * 0.999).toFixed(6));
     }
   };
 
@@ -870,9 +885,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <button
                     key={p}
                     onClick={() => {
-                      if (side === "buy" && walletBal > 0 && effectivePrice > 0) {
-                        const maxBase = (walletBal * 0.999) / effectivePrice;
+                      if (side === "buy" && buyBalance > 0 && effectivePrice > 0) {
+                        const maxBase = (buyBalance * 0.999) / effectivePrice;
                         setAmount((maxBase * p / 100).toFixed(6));
+                      } else if (side === "sell" && sellBalance > 0) {
+                        setAmount((sellBalance * 0.999 * p / 100).toFixed(6));
                       }
                     }}
                     className="text-[10px] text-muted-foreground font-semibold"
@@ -900,11 +917,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFillMax}
-                    disabled={!address || walletBal <= 0 || !isBalanceCompatible}
+                    disabled={!address || available <= 0}
                     className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
                   >
-                    {available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{side === "buy" ? nativeSymbol : base}
-                    {side === "buy" && chainInfo?.l2Label && (
+                    {available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{availableSym}
+                    {side === "sell" && isNativeBase && chainInfo?.l2Label && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         {chainInfo.l2Label}
                       </span>
@@ -919,10 +936,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
-              {/* Incompatible balance warning */}
-              {address && walletBal > 0 && !isBalanceCompatible && side === "buy" && (
+              {/* Low / zero balance hint */}
+              {address && available === 0 && (
                 <div className="text-[10px] text-amber-400 leading-tight px-0.5">
-                  Your {nativeSymbol} balance can't be used in {quote}-quoted markets. Deposit {quote} or switch to a compatible market.
+                  {side === "buy"
+                    ? `No ${quote} balance found. Deposit ${quote} to place a buy order.`
+                    : `No ${base} balance found. Deposit ${base} to place a sell order.`
+                  }
                 </div>
               )}
               <div className="flex items-center justify-between">

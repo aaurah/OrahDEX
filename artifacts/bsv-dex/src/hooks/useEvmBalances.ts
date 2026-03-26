@@ -45,8 +45,12 @@ const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; address
     { symbol: "DAI",   name: "Dai Stablecoin",  address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", decimals: 18, color: "#EAB308" },
   ],
   8453: [ // Base
-    { symbol: "USDC",  name: "USD Coin",        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6,  color: "#3B82F6" },
-    { symbol: "DAI",   name: "Dai Stablecoin",  address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18, color: "#EAB308" },
+    { symbol: "USDT",  name: "Tether USD",      address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6,  color: "#22C55E" },
+    { symbol: "USDC",  name: "USD Coin",         address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6,  color: "#3B82F6" },
+    { symbol: "USDbC", name: "USD Base Coin",    address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA", decimals: 6,  color: "#3B82F6" },
+    { symbol: "DAI",   name: "Dai Stablecoin",   address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18, color: "#EAB308" },
+    { symbol: "cbBTC", name: "Coinbase BTC",     address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8,  color: "#F97316" },
+    { symbol: "cbETH", name: "Coinbase ETH",     address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", decimals: 18, color: "#8B5CF6" },
   ],
 };
 
