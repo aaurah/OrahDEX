@@ -66,7 +66,7 @@ export const useNotificationStore = create<NotificationState>()(
       unreadCount: () => get().notifications.filter((n) => !n.read).length,
     }),
     {
-      name: "orahdex_notifs_v2",
+      name: "orahdex_notifs_v3",
       partialize: (s) => ({ notifications: s.notifications.slice(0, 50) }),
     },
   ),

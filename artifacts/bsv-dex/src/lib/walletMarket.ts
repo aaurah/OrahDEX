@@ -9,22 +9,25 @@ export type MarketTab =
   | "scr" | "mnt" | "sol" | "bch" | "zora" | "favorites"
   | "new" | "ai" | "meme" | "defi" | "futures";
 
-/** EVM chainId → market tab */
+/** EVM chainId → market tab
+ *  ETH L2s (Base, Arbitrum, Optimism, Linea, zkSync, Scroll, Zora) all use
+ *  ETH as their native asset — map them to "eth" so the user lands on
+ *  tradeable ETH pairs, not a chain-specific quote-currency tab. */
 const CHAIN_TAB: Record<number, MarketTab> = {
   1:       "eth",    // Ethereum mainnet
-  8453:    "base",   // Base
-  42161:   "arb",    // Arbitrum One
-  10:      "op",     // Optimism
+  8453:    "eth",    // Base   (ETH L2 — native: ETH)
+  42161:   "eth",    // Arbitrum One (ETH L2 — native: ETH)
+  10:      "eth",    // Optimism     (ETH L2 — native: ETH)
+  59144:   "eth",    // Linea        (ETH L2 — native: ETH)
+  324:     "eth",    // zkSync Era   (ETH L2 — native: ETH)
+  534352:  "eth",    // Scroll       (ETH L2 — native: ETH)
+  7777777: "eth",    // Zora Network (ETH L2 — native: ETH)
   137:     "matic",  // Polygon
   56:      "bnb",    // BNB Chain / BSC
   43114:   "avax",   // Avalanche C-Chain
   250:     "ftm",    // Fantom
   25:      "cro",    // Cronos
-  59144:   "linea",  // Linea
-  324:     "zk",     // zkSync Era
-  534352:  "scr",    // Scroll
-  5000:    "mnt",    // Mantle
-  7777777: "zora",   // Zora Network
+  5000:    "mnt",    // Mantle       (native: MNT)
   100:     "eth",    // Gnosis → show ETH markets (bridged)
   1101:    "matic",  // Polygon zkEVM
 };
