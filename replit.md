@@ -4,6 +4,16 @@
 
 pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform comparable to Binance, Poloniex, and Bitfinex with on-chain BSV settlement.
 
+## AMM Liquidity System
+
+- **Fee split**: `LP_FEE_RATIO = 5/6`, `PROTOCOL_FEE_RATIO = 1/6` — e.g. 0.3% pool → 0.25% LP + 0.05% protocol treasury
+- **AMM formula**: `Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))` ; `k = x·y` ; `priceImpact = Δx/(x+Δx)`
+- **AmmSwapSimulator** (desktop): Full live x·y=k calculator in `Liquidity.tsx` — pool selector, direction toggle, quick amounts, full math breakdown (price impact, slippage, fee split, k constant)
+- **MobileAmmSimulator** (mobile): Collapsible card version in `MobileLiquidity.tsx` with same math
+- **Stats row**: 5 cards — TVL, 24h LP Fee Revenue, 24h Protocol Revenue, My Positions, Best Pool APR
+- **Modal fee breakdown**: Shows LP share (5/6) and protocol share (1/6) in the Add Liquidity stats
+- **How AMM Works panel**: Expanded to 8 cards + Solidity core logic callout (composability, protocol revenue, network effects, BSV settlement)
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces

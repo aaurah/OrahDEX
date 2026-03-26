@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import {
   Droplets, Plus, Minus, TrendingUp, ArrowLeft, Info,
-  ChevronDown, ChevronUp, Zap, Award, BarChart3, Layers, AlertTriangle,
+  ChevronDown, ChevronUp, Zap, Award, BarChart3, AlertTriangle,
+  Calculator, ArrowRight, Code2, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,12 @@ const SPOT: Record<string, number> = {
   BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
   XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1,
 };
+
+// ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
+const LP_FEE_RATIO       = 5 / 6;
+const PROTOCOL_FEE_RATIO = 1 / 6;
+function lpFee(poolFee: number)       { return poolFee * LP_FEE_RATIO; }
+function protocolFee(poolFee: number) { return poolFee * PROTOCOL_FEE_RATIO; }
 
 // Pool APR = fee revenue / TVL × 365  (x·y=k constant-product formula)
 function poolApr(p: typeof POOLS[0]) {
@@ -54,6 +61,154 @@ const COIN_COLORS: Record<string, string> = {
 };
 
 type MainTab = "pools" | "positions" | "farming";
+
+/* ── Mobile AMM Swap Simulator ── */
+function MobileAmmSimulator() {
+  const [open, setOpen]         = useState(false);
+  const [poolId, setPoolId]     = useState("btc-usdt");
+  const [amtIn, setAmtIn]       = useState("");
+  const [direction, setDir]     = useState<"AtoB" | "BtoA">("AtoB");
+
+  const pool   = POOLS.find(p => p.id === poolId) ?? POOLS[0];
+  const priceA = SPOT[pool.base]  ?? 1;
+  const priceB = SPOT[pool.quote] ?? 1;
+  const resX   = pool.tvl / 2 / priceA;
+  const resY   = pool.tvl / 2 / priceB;
+
+  const tokenIn  = direction === "AtoB" ? pool.base  : pool.quote;
+  const tokenOut = direction === "AtoB" ? pool.quote : pool.base;
+  const resIn    = direction === "AtoB" ? resX : resY;
+  const resOut   = direction === "AtoB" ? resY : resX;
+  const priceIn  = direction === "AtoB" ? priceA : priceB;
+  const priceOut = direction === "AtoB" ? priceB : priceA;
+
+  const n            = parseFloat(amtIn);
+  const valid        = !isNaN(n) && n > 0;
+  const feeMult      = 1 - pool.fee / 100;
+  const amtInFee     = valid ? n * feeMult : 0;
+  const amtOut       = valid ? (amtInFee * resOut) / (resIn + amtInFee) : 0;
+  const spotRate     = resOut / resIn;
+  const effectiveRate= valid ? amtOut / n : spotRate;
+  const priceImpact  = valid ? (n / (resIn + n)) * 100 : 0;
+  const feeAmt       = valid ? n * (pool.fee / 100) : 0;
+  const feeLp        = feeAmt * LP_FEE_RATIO;
+  const feeProto     = feeAmt * PROTOCOL_FEE_RATIO;
+
+  const colorA = COIN_COLORS[pool.base]  ?? "#EAB308";
+  const colorB = COIN_COLORS[pool.quote] ?? "#16a34a";
+
+  return (
+    <div className="bg-card border border-border rounded-xl mb-3 overflow-hidden">
+      {/* Collapsed header */}
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-4 py-3">
+        <Calculator size={14} className="text-primary shrink-0" />
+        <span className="text-sm font-semibold">AMM Swap Simulator</span>
+        <span className="text-[10px] px-1.5 py-0.5 bg-primary/15 text-primary rounded font-bold ml-1">x·y=k</span>
+        <ChevronRight size={13} className={cn("ml-auto text-muted-foreground transition-transform", open && "rotate-90")} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
+          {/* Pool + direction */}
+          <select value={poolId} onChange={e => { setPoolId(e.target.value); setAmtIn(""); }}
+            className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm font-semibold outline-none">
+            {POOLS.map(p => (
+              <option key={p.id} value={p.id}>{p.base}/{p.quote} — {p.fee}% fee</option>
+            ))}
+          </select>
+
+          <div className="flex rounded-xl overflow-hidden border border-border">
+            <button onClick={() => { setDir("AtoB"); setAmtIn(""); }}
+              className={cn("flex-1 py-1.5 text-xs font-bold transition-colors",
+                direction === "AtoB" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+              {pool.base} → {pool.quote}
+            </button>
+            <button onClick={() => { setDir("BtoA"); setAmtIn(""); }}
+              className={cn("flex-1 py-1.5 text-xs font-bold transition-colors",
+                direction === "BtoA" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}>
+              {pool.quote} → {pool.base}
+            </button>
+          </div>
+
+          {/* Input */}
+          <div className="bg-secondary/50 border border-border rounded-xl px-3 py-2.5">
+            <div className="text-[10px] text-muted-foreground mb-1">You send ({tokenIn})</div>
+            <div className="flex items-center gap-2">
+              <input className="flex-1 bg-transparent text-xl font-bold outline-none"
+                placeholder="0.00" type="number" min="0" step="any"
+                value={amtIn} onChange={e => setAmtIn(e.target.value)} inputMode="decimal" />
+              <span className="text-sm font-bold" style={{ color: direction === "AtoB" ? colorA : colorB }}>{tokenIn}</span>
+            </div>
+            {valid && <div className="text-[10px] text-muted-foreground mt-0.5">≈ ${(n * priceIn).toFixed(2)}</div>}
+          </div>
+
+          {/* Quick amounts */}
+          <div className="flex gap-1.5">
+            {["0.01","0.1","1","10"].map(v => (
+              <button key={v} onClick={() => setAmtIn(v)}
+                className="flex-1 py-1 rounded-lg text-xs font-bold border border-border text-muted-foreground hover:text-primary transition-colors">
+                {v}
+              </button>
+            ))}
+          </div>
+
+          {/* Arrow */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-border" />
+            <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center">
+              <ArrowRight size={13} className="text-primary" />
+            </div>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          {/* Output */}
+          <div className={cn("bg-secondary/50 border rounded-xl px-3 py-2.5 transition-colors",
+            valid ? "border-primary/40" : "border-border")}>
+            <div className="text-[10px] text-muted-foreground mb-1">You receive ({tokenOut})</div>
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xl font-bold", valid ? "text-foreground" : "text-muted-foreground/40")}>
+                {valid ? amtOut.toLocaleString(undefined, { maximumFractionDigits: 8 }) : "0.00"}
+              </span>
+              <span className="text-sm font-bold" style={{ color: direction === "AtoB" ? colorB : colorA }}>{tokenOut}</span>
+            </div>
+            {valid && <div className="text-[10px] text-muted-foreground mt-0.5">≈ ${(amtOut * priceOut).toFixed(2)}</div>}
+          </div>
+
+          {/* Breakdown */}
+          <div className="bg-secondary/30 rounded-xl p-3 space-y-1.5">
+            {[
+              ["Pool price (y/x)", `1 ${tokenIn} = ${spotRate.toLocaleString(undefined,{maximumFractionDigits:4})} ${tokenOut}`],
+              ["Effective rate",   valid ? `1 ${tokenIn} = ${effectiveRate.toLocaleString(undefined,{maximumFractionDigits:4})} ${tokenOut}` : "—"],
+              ["Price impact",     valid ? (
+                <span className={cn("font-bold", priceImpact<0.5?"text-green-500":priceImpact<2?"text-yellow-500":"text-red-500")}>
+                  {priceImpact.toFixed(3)}%
+                </span>
+              ) : "—"],
+              ["Total fee",        valid ? `${feeAmt.toFixed(6)} ${tokenIn}` : "—"],
+              ["→ LP share (5/6)", valid ? `${feeLp.toFixed(6)} ${tokenIn}` : "—"],
+              ["→ Protocol (1/6)", valid ? `${feeProto.toFixed(6)} ${tokenIn}` : "—"],
+              ["k = x·y",         `${(resX*resY).toExponential(3)}`],
+            ].map(([l, v]) => (
+              <div key={String(l)} className="flex justify-between items-center">
+                <span className={cn("text-[11px] text-muted-foreground", String(l).startsWith("→") ? "pl-2" : "")}>{l}</span>
+                <span className="text-[11px] font-mono font-semibold text-right">{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Formula */}
+          <div className="flex items-start gap-2">
+            <Code2 size={11} className="text-muted-foreground shrink-0 mt-0.5" />
+            <p className="text-[10px] text-muted-foreground font-mono leading-relaxed">
+              Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Add/Remove Liquidity Modal ── */
 function LiquidityModal({
@@ -162,15 +317,21 @@ function LiquidityModal({
             {/* Info rows */}
             <div className="space-y-2 mb-5">
               {[
-                ["Pool fee (per swap)", `${pool.fee}%`],
+                ["Pool fee (total)", `${pool.fee}%`],
+                ["  → LP share (5/6)", `${lpFee(pool.fee).toFixed(4)}% (you earn)`],
+                ["  → Protocol (1/6)", `${protocolFee(pool.fee).toFixed(4)}% (treasury)`],
                 ["Fee APR (from vol)", `${feeApr.toFixed(1)}%`],
                 ["Farm APR", `+${pool.farmApr.toFixed(1)}%`],
                 ["Total APR", totalApr.toFixed(1) + "%"],
                 ["You receive", "LP tokens"],
               ].map(([l, v], i) => (
                 <div key={i} className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">{l}</span>
-                  <span className={cn("font-medium", l === "Total APR" ? "text-green-500 font-bold" : "")}>{v}</span>
+                  <span className={cn("text-muted-foreground", l.startsWith("  →") ? "pl-3 text-[10px]" : "")}>{l}</span>
+                  <span className={cn("font-medium text-right",
+                    l === "Total APR" ? "text-green-500 font-bold" :
+                    l.startsWith("  → LP") ? "text-green-400 text-[10px]" :
+                    l.startsWith("  → Protocol") ? "text-blue-400 text-[10px]" : ""
+                  )}>{v}</span>
                 </div>
               ))}
             </div>
@@ -495,18 +656,24 @@ export function MobileLiquidity() {
           <span className="text-base font-bold">Liquidity Pools</span>
         </div>
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            ["Total TVL", fmtTvl(totalTvl)],
-            ["Your Pools", `${myPools.length}`],
-            ["Best APR", `${Math.max(...POOLS.map(p => poolApr(p) + p.farmApr)).toFixed(1)}%`],
-          ].map(([l, v]) => (
-            <div key={l} className="bg-secondary/40 rounded-xl p-2.5 text-center">
-              <div className="text-[11px] text-muted-foreground">{l}</div>
-              <div className="text-sm font-bold mt-0.5">{v}</div>
+        {(() => {
+          const protocolRev24 = POOLS.reduce((s, p) => s + p.vol24 * (protocolFee(p.fee) / 100), 0);
+          return (
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["Total TVL",       fmtTvl(totalTvl),          ""],
+                ["Protocol Rev 24h",fmtTvl(protocolRev24),     "text-blue-400"],
+                ["Your Pools",      `${myPools.length}`,        "text-primary"],
+                ["Best APR",        `${Math.max(...POOLS.map(p => poolApr(p) + p.farmApr)).toFixed(1)}%`, "text-green-500"],
+              ].map(([l, v, cls]) => (
+                <div key={l} className="bg-secondary/40 rounded-xl p-2.5 text-center">
+                  <div className="text-[10px] text-muted-foreground">{l}</div>
+                  <div className={cn("text-sm font-bold mt-0.5", cls)}>{v}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          );
+        })()}
       </div>
 
       {/* Tabs */}
@@ -528,6 +695,9 @@ export function MobileLiquidity() {
       <div className="flex-1 overflow-y-auto overscroll-contain px-4 pt-4 pb-24">
         {tab === "pools" && (
           <>
+            {/* AMM Swap Simulator (collapsible) */}
+            <MobileAmmSimulator />
+
             {/* Sort controls */}
             <div className="flex items-center gap-2 mb-3">
               <span className="text-xs text-muted-foreground">Sort:</span>
