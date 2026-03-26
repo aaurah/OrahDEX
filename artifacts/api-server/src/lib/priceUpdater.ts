@@ -101,6 +101,24 @@ export const COINGECKO_IDS: Record<string, string> = {
   WBTC:  "wrapped-bitcoin",
   WSTETH:"wrapped-steth",
   RETH:  "rocket-pool-eth",
+  // ── Base chain native / canonical assets ────────────────────────────────
+  CBBTC: "coinbase-wrapped-btc",        // cbBTC — Coinbase Wrapped BTC on Base
+  CBETH: "coinbase-wrapped-staked-eth", // cbETH — Coinbase Staked ETH on Base
+  // ── Base ecosystem tokens ────────────────────────────────────────────────
+  AERO:     "aerodrome-finance",   // Aerodrome — #1 Base DEX
+  BRETT:    "brett",               // Brett — biggest Base meme
+  TOSHI:    "toshi",               // Toshi — Coinbase mascot meme
+  DEGEN:    "degen-base",          // Degen — Farcaster social token
+  HIGHER:   "higher",              // Higher — Base cultural token
+  MORPHO:   "morpho",             // Morpho — Base lending protocol
+  MOONWELL: "moonwell-artemis",    // Moonwell — Base money market
+  SEAM:     "seamless-protocol",   // Seamless Protocol
+  BALD:     "bald",                // Bald — first Base meme
+  NORMIE:   "normie",              // Normie — Base meme
+  // ── Zora ecosystem ──────────────────────────────────────────────────────
+  ZORA:   "zora-network-token",    // Zora Protocol
+  ENJOY:  "enjoytech",             // ENJOY — Zora social
+  BUILD:  "build-on-base",         // BUILD ecosystem
 };
 
 // USDT pairs — all major coins
@@ -121,6 +139,11 @@ export const USDT_PAIRS = [
   "TRUMP",
   // L2 / bridge
   "1INCH","ZRO","ZK","SCR","MNT","WBTC","WSTETH","RETH",
+  // ── Base chain assets ──────────────────────────────────────────────────
+  "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
+  "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
+  // ── Zora ecosystem ────────────────────────────────────────────────────
+  "ZORA","ENJOY","BUILD",
 ];
 
 // BTC pairs — major coins vs BTC
@@ -144,7 +167,14 @@ const STABLE_BASE_PAIRS = [
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
   "MATIC","LINK","UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
 ];
-export const USDC_PAIRS = STABLE_BASE_PAIRS;
+export const USDC_PAIRS = [
+  ...STABLE_BASE_PAIRS,
+  // ── Base chain assets vs USDC ────────────────────────────────────────────
+  "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
+  "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
+  // ── Zora ecosystem vs USDC ──────────────────────────────────────────────
+  "ZORA","ENJOY","BUILD",
+];
 export const TUSD_PAIRS = STABLE_BASE_PAIRS;
 export const USDD_PAIRS = STABLE_BASE_PAIRS;
 
@@ -303,6 +333,13 @@ const FALLBACK_PRICES: Record<string, number> = {
   "1INCH":0.35,ZRO:2.52,RETH:3980,
   // Stablecoins / other
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
+  // ── Base chain assets ──────────────────────────────────────────────────
+  CBBTC:70725, CBETH:3400,
+  BRETT:0.114, TOSHI:0.000185, DEGEN:0.0084,
+  HIGHER:0.00215, MORPHO:1.82, MOONWELL:0.182, SEAM:4.82,
+  BALD:0.00284, NORMIE:0.00182,
+  // ── Zora ecosystem ────────────────────────────────────────────────────
+  ZORA:0.00182, ENJOY:0.000042, BUILD:0.000285,
 };
 
 export async function seedMarketsIfNeeded() {

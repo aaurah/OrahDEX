@@ -1,87 +1,104 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
+
 /**
  * Reliable internet-connectivity monitor.
  *
  * Three-layer detection:
  *  1. navigator.onLine — fires instantly when the radio drops
- *  2. Fetch /api/ping with a 5 s timeout — confirms packets actually flow
- *  3. Poll every 10 s — keeps state fresh; shrinks recovery detection lag
+ *  2. Fetch ${BASE_URL}/api/ping with a 5 s timeout — confirms packets flow
+ *  3. Poll every 5 s — keeps state fresh; shrinks recovery detection lag
  *
- * Pinning our own /api/ping means:
- *  • No CORS issues (same origin through the Replit proxy)
- *  • If the device has no network at all, the request throws immediately
- *  • If /api/ping is unreachable, the 5 s timeout marks us offline
+ * On reconnection: retries every 2 s up to 8 times before falling back to
+ * the normal 5-second poll — ensures near-instant UI recovery after a dropout.
  */
 export function useOnlineStatus(): boolean {
   const [online, setOnline] = useState<boolean>(navigator.onLine);
-  const timerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activeRef = useRef<{ controller: AbortController; timeout: ReturnType<typeof setTimeout> } | null>(null);
+  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef  = useRef<{ controller: AbortController; timeout: ReturnType<typeof setTimeout> } | null>(null);
+  const retryCount = useRef(0);
 
-  const ping = useCallback(async () => {
-    // Cancel any previous in-flight ping cleanly (mark as superseded, not offline)
+  const cancelActive = useCallback(() => {
     if (activeRef.current) {
       activeRef.current.controller.abort('superseded');
       clearTimeout(activeRef.current.timeout);
       activeRef.current = null;
     }
+  }, []);
 
-    // Trust the browser immediately if it says offline
+  const ping = useCallback(async (): Promise<boolean> => {
+    cancelActive();
+
     if (!navigator.onLine) {
       setOnline(false);
-      return;
+      return false;
     }
 
     const controller = new AbortController();
-    // Kill after 5 s — counts as offline
     const timeout = setTimeout(() => controller.abort('timeout'), 5_000);
     activeRef.current = { controller, timeout };
 
     try {
-      await fetch('/api/ping', {
+      const res = await fetch(`${BASE_URL}/api/ping`, {
         method: 'GET',
         cache: 'no-store',
         signal: controller.signal,
       });
-      setOnline(true);
+      if (res.ok || res.status === 204) {
+        setOnline(true);
+        return true;
+      }
+      setOnline(false);
+      return false;
     } catch (err: unknown) {
-      const reason = (err as { name?: string; message?: string; cause?: unknown })?.cause ?? err;
+      const reason = (err as { cause?: unknown })?.cause ?? err;
       const isSuperseded =
         controller.signal.reason === 'superseded' ||
         (reason as { message?: string })?.message === 'superseded';
-
-      // Don't flip offline for pings we intentionally cancelled
-      if (!isSuperseded) {
-        setOnline(false);
-      }
+      if (!isSuperseded) setOnline(false);
+      return false;
     } finally {
       clearTimeout(timeout);
-      if (activeRef.current?.controller === controller) {
-        activeRef.current = null;
-      }
+      if (activeRef.current?.controller === controller) activeRef.current = null;
     }
-  }, []);
+  }, [cancelActive]);
+
+  /** After network reconnects: retry every 2 s up to 8 times. */
+  const startReconnectRetry = useCallback(() => {
+    retryCount.current = 0;
+
+    const attempt = async () => {
+      if (retryRef.current) clearTimeout(retryRef.current);
+      const success = await ping();
+      if (!success && retryCount.current < 8) {
+        retryCount.current++;
+        retryRef.current = setTimeout(attempt, 2_000);
+      }
+    };
+
+    attempt();
+  }, [ping]);
 
   useEffect(() => {
-    const goOnline  = () => { setOnline(true);  ping(); };
-    const goOffline = () => { setOnline(false); };
+    const goOnline  = () => { setOnline(true); startReconnectRetry(); };
+    const goOffline = () => { setOnline(false); cancelActive(); };
 
     window.addEventListener('online',  goOnline);
     window.addEventListener('offline', goOffline);
 
     ping();
-    timerRef.current = setInterval(ping, 10_000);
+    timerRef.current = setInterval(ping, 5_000);
 
     return () => {
       window.removeEventListener('online',  goOnline);
       window.removeEventListener('offline', goOffline);
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (activeRef.current) {
-        activeRef.current.controller.abort('superseded');
-        clearTimeout(activeRef.current.timeout);
-      }
+      if (timerRef.current)  clearInterval(timerRef.current);
+      if (retryRef.current)  clearTimeout(retryRef.current);
+      cancelActive();
     };
-  }, [ping]);
+  }, [ping, startReconnectRetry, cancelActive]);
 
   return online;
 }
