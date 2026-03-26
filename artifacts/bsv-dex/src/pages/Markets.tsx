@@ -10,6 +10,7 @@ import {
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
+import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp, Wallet, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
@@ -461,15 +462,22 @@ export function Markets() {
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">
                           {coinBadge(base)}
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-sm text-foreground">{base}</span>
-                            <span className="text-muted-foreground text-xs">/{quote}</span>
-                            {tab === "futures" && (
-                              <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
-                            )}
-                            {tab === "new" && (
-                              <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
-                            )}
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-sm text-foreground">{base}</span>
+                              <span className="text-muted-foreground text-xs">/{quote}</span>
+                              {tab === "futures" && (
+                                <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
+                              )}
+                              {tab === "new" && (
+                                <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
+                              )}
+                            </div>
+                            <ContractAddressBadge
+                              baseAsset={base}
+                              dbAddresses={(m as any).contractAddresses}
+                              variant="full"
+                            />
                           </div>
                         </div>
                       </td>

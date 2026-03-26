@@ -11,6 +11,7 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTr
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X } from "lucide-react";
+import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 type BottomTab = "open" | "history" | "trades";
@@ -137,6 +138,11 @@ export function SpotTrading() {
     return raw.filter(m => m.type === "spot");
   }, [apiMarkets]);
 
+  const currentMarket = useMemo(
+    () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
+    [allMarkets, base, quote]
+  );
+
   const filteredMarkets = useMemo(() => {
     const q = marketSearch.toLowerCase();
     return allMarkets
@@ -165,18 +171,25 @@ export function SpotTrading() {
       <div className="flex items-center gap-6 px-4 py-3 border-b border-border bg-card shrink-0">
         {/* Pair selector trigger + dropdown */}
         <div className="relative shrink-0" ref={pairDropRef}>
-          <button
-            onClick={() => { setPairDropOpen(v => !v); setDropSearch(""); }}
-            className="flex items-center gap-1.5 group"
-          >
-            <h1 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">
-              {symbol.replace('-', '/')}
-            </h1>
-            <ChevronDown className={cn(
-              "w-4 h-4 text-muted-foreground group-hover:text-primary transition-all",
-              pairDropOpen && "rotate-180"
-            )} />
-          </button>
+          <div className="flex flex-col gap-0.5">
+            <button
+              onClick={() => { setPairDropOpen(v => !v); setDropSearch(""); }}
+              className="flex items-center gap-1.5 group"
+            >
+              <h1 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">
+                {symbol.replace('-', '/')}
+              </h1>
+              <ChevronDown className={cn(
+                "w-4 h-4 text-muted-foreground group-hover:text-primary transition-all",
+                pairDropOpen && "rotate-180"
+              )} />
+            </button>
+            <ContractAddressBadge
+              baseAsset={base}
+              dbAddresses={(currentMarket as any)?.contractAddresses}
+              variant="full"
+            />
+          </div>
 
           {/* Dropdown panel */}
           {pairDropOpen && (
