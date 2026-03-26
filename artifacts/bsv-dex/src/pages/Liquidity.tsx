@@ -3,10 +3,19 @@ import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
   X, Info, AlertTriangle, ChevronRight, BookOpen, Wallet,
+  Calculator, ArrowRight, Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+
+// ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
+// e.g. 0.3% pool fee → 0.25% to LPs + 0.05% to protocol (mirrors Uniswap v2)
+const LP_FEE_RATIO       = 5 / 6;
+const PROTOCOL_FEE_RATIO = 1 / 6;
+
+function lpFee(poolFee: number)       { return poolFee * LP_FEE_RATIO; }
+function protocolFee(poolFee: number) { return poolFee * PROTOCOL_FEE_RATIO; }
 
 // ─── Pool data ────────────────────────────────────────────────────────────────
 const POOLS = [
@@ -63,6 +72,186 @@ function TokenPair({ base, quote }: { base: string; quote: string }) {
         ))}
       </div>
       <span className="text-sm font-bold">{base}/{quote}</span>
+    </div>
+  );
+}
+
+// ─── AMM Swap Simulator ───────────────────────────────────────────────────────
+// Implements the x·y=k formula from the document:
+//   amountInWithFee = amountIn × (1 − fee)
+//   Δy = (amountInWithFee × reserveOut) / (reserveIn + amountInWithFee)
+//   price impact = amountIn / (reserveIn + amountIn) × 100
+function AmmSwapSimulator() {
+  const [poolId, setPoolId]   = useState("btc-usdt");
+  const [amtIn, setAmtIn]     = useState("");
+  const [direction, setDir]   = useState<"AtoB" | "BtoA">("AtoB");
+
+  const pool = POOLS.find(p => p.id === poolId) ?? POOLS[0];
+
+  // Derive reserves from TVL + spot prices (equal-value 50/50 split)
+  const priceA    = SPOT[pool.base]  ?? 1;
+  const priceB    = SPOT[pool.quote] ?? 1;
+  const reserveX  = pool.tvl / 2 / priceA;   // token A reserve
+  const reserveY  = pool.tvl / 2 / priceB;   // token B reserve
+  const k         = reserveX * reserveY;
+
+  const tokenIn  = direction === "AtoB" ? pool.base  : pool.quote;
+  const tokenOut = direction === "AtoB" ? pool.quote : pool.base;
+  const resIn    = direction === "AtoB" ? reserveX : reserveY;
+  const resOut   = direction === "AtoB" ? reserveY : reserveX;
+  const priceIn  = direction === "AtoB" ? priceA : priceB;
+  const priceOut = direction === "AtoB" ? priceB : priceA;
+
+  const n = parseFloat(amtIn);
+  const valid = !isNaN(n) && n > 0;
+
+  const feeMultiplier  = 1 - pool.fee / 100;
+  const amtInWithFee   = valid ? n * feeMultiplier : 0;
+  const amtOut         = valid ? (amtInWithFee * resOut) / (resIn + amtInWithFee) : 0;
+  const spotRate       = resOut / resIn;                          // y/x pool price
+  const effectiveRate  = valid && n > 0 ? amtOut / n : spotRate; // Δy / Δx
+  const priceImpact    = valid ? (n / (resIn + n)) * 100 : 0;
+  const feeInTokenIn   = valid ? n * (pool.fee / 100) : 0;
+  const feeLp          = feeInTokenIn * LP_FEE_RATIO;
+  const feeProto       = feeInTokenIn * PROTOCOL_FEE_RATIO;
+  const feeUsd         = feeInTokenIn * priceIn;
+  const amtOutUsd      = amtOut * priceOut;
+  const slippage       = valid && spotRate > 0 ? Math.abs(effectiveRate - spotRate) / spotRate * 100 : 0;
+
+  const colorA = COIN_COLORS[pool.base]  ?? "#EAB308";
+  const colorB = COIN_COLORS[pool.quote] ?? "#16a34a";
+
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
+        <Calculator size={16} className="text-primary shrink-0" />
+        <span className="font-semibold text-sm">AMM Swap Simulator</span>
+        <span className="ml-2 text-[10px] px-2 py-0.5 bg-primary/15 text-primary rounded font-bold">x·y=k</span>
+        <span className="ml-auto text-xs text-muted-foreground">Live pool math — no wallet required</span>
+      </div>
+
+      <div className="p-5 grid grid-cols-[1fr_auto_1fr] gap-4 items-start">
+        {/* Input side */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+            <span>Input Pool</span>
+          </div>
+          <select
+            value={poolId}
+            onChange={e => { setPoolId(e.target.value); setAmtIn(""); }}
+            className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm font-semibold outline-none">
+            {POOLS.map(p => (
+              <option key={p.id} value={p.id}>{p.base}/{p.quote} — {p.fee}% fee</option>
+            ))}
+          </select>
+
+          {/* Direction toggle */}
+          <div className="flex rounded-xl overflow-hidden border border-border">
+            <button onClick={() => { setDir("AtoB"); setAmtIn(""); }}
+              className={cn("flex-1 py-1.5 text-xs font-bold transition-colors",
+                direction === "AtoB" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/50")}>
+              {pool.base} → {pool.quote}
+            </button>
+            <button onClick={() => { setDir("BtoA"); setAmtIn(""); }}
+              className={cn("flex-1 py-1.5 text-xs font-bold transition-colors",
+                direction === "BtoA" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary/50")}>
+              {pool.quote} → {pool.base}
+            </button>
+          </div>
+
+          {/* Amount input */}
+          <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3">
+            <div className="text-xs text-muted-foreground mb-1">
+              You send ({tokenIn}) · Pool reserve: {resIn.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                className="flex-1 bg-transparent text-2xl font-bold outline-none"
+                placeholder="0.00" type="number" min="0" step="any"
+                value={amtIn} onChange={e => setAmtIn(e.target.value)} />
+              <span className="text-sm font-bold" style={{ color: direction === "AtoB" ? colorA : colorB }}>{tokenIn}</span>
+            </div>
+            {valid && <div className="text-xs text-muted-foreground mt-1">≈ ${(n * priceIn).toFixed(2)} USD</div>}
+          </div>
+
+          {/* Quick amount buttons */}
+          <div className="flex gap-1.5">
+            {["0.01", "0.1", "1", "10"].map(v => (
+              <button key={v} onClick={() => setAmtIn(v)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-bold border border-border hover:border-primary/40 text-muted-foreground hover:text-primary transition-colors">
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Arrow */}
+        <div className="flex flex-col items-center justify-center pt-20">
+          <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center">
+            <ArrowRight size={16} className="text-primary" />
+          </div>
+          <div className="text-[10px] text-muted-foreground mt-2 text-center">x·y=k</div>
+        </div>
+
+        {/* Output + math breakdown */}
+        <div className="space-y-3">
+          <div className="text-xs text-muted-foreground font-semibold uppercase tracking-wider">Output</div>
+
+          {/* Output token box */}
+          <div className={cn(
+            "bg-secondary/50 border rounded-xl px-4 py-3 transition-colors",
+            valid ? "border-primary/40" : "border-border"
+          )}>
+            <div className="text-xs text-muted-foreground mb-1">
+              You receive ({tokenOut}) · Pool reserve: {resOut.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={cn("text-2xl font-bold", valid ? "text-foreground" : "text-muted-foreground/40")}>
+                {valid ? amtOut.toLocaleString(undefined, { maximumFractionDigits: 8 }) : "0.00"}
+              </span>
+              <span className="text-sm font-bold" style={{ color: direction === "AtoB" ? colorB : colorA }}>{tokenOut}</span>
+            </div>
+            {valid && <div className="text-xs text-muted-foreground mt-1">≈ ${amtOutUsd.toFixed(2)} USD</div>}
+          </div>
+
+          {/* Math breakdown */}
+          <div className="bg-secondary/30 rounded-xl p-3 space-y-2 text-xs">
+            <div className="font-bold text-muted-foreground uppercase tracking-wider text-[10px] mb-1">Calculation breakdown</div>
+            {[
+              ["Pool price (y/x)", `1 ${tokenIn} = ${spotRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tokenOut}`],
+              ["Effective rate", valid ? `1 ${tokenIn} = ${effectiveRate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tokenOut}` : "—"],
+              ["Price impact", valid ? <span className={cn("font-bold", priceImpact < 0.5 ? "text-green-500" : priceImpact < 2 ? "text-yellow-500" : "text-red-500")}>{priceImpact.toFixed(4)}%</span> : "—"],
+              ["Slippage vs spot", valid ? `${slippage.toFixed(4)}%` : "—"],
+              ["Total fee paid", valid ? `${feeInTokenIn.toFixed(8)} ${tokenIn} ≈ $${feeUsd.toFixed(4)}` : "—"],
+              ["→ LP share (5/6)", valid ? `${feeLp.toFixed(8)} ${tokenIn}` : "—"],
+              ["→ Protocol (1/6)", valid ? `${feeProto.toFixed(8)} ${tokenIn}` : "—"],
+              ["k = x·y (constant)", `${k.toExponential(4)}`],
+            ].map(([label, value]) => (
+              <div key={String(label)} className="flex justify-between items-center">
+                <span className="text-muted-foreground">{label}</span>
+                <span className="font-mono font-semibold text-right">{value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Impact colour key */}
+          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Low (&lt;0.5%)</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" /> Medium (&lt;2%)</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> High (&gt;2%)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Formula callout */}
+      <div className="border-t border-border/50 px-5 py-3 bg-secondary/10 flex items-start gap-3">
+        <Code2 size={13} className="text-muted-foreground shrink-0 mt-0.5" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed font-mono">
+          Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))
+          &nbsp;·&nbsp; k = x·y&nbsp;·&nbsp; priceImpact = Δx / (x + Δx)
+        </p>
+      </div>
     </div>
   );
 }
@@ -239,7 +428,9 @@ function LiquidityModal({
             {/* Stats */}
             <div className="bg-secondary/30 rounded-xl p-3 mb-3 space-y-2">
               {[
-                ["Pool fee (per swap)", `${pool.fee}%`],
+                ["Pool fee (total per swap)", `${pool.fee}%`],
+                ["  → LP share (5/6)", `${lpFee(pool.fee).toFixed(4)}% → you earn this`],
+                ["  → Protocol (1/6)", `${protocolFee(pool.fee).toFixed(4)}% → treasury`],
                 ["Fee APR (from trading volume)", `${poolApr(pool).toFixed(1)}%`],
                 ["Farm APR (LP staking rewards)", `+${pool.farmApr.toFixed(1)}%`],
                 ["Combined APR", `${totalApr.toFixed(1)}%`],
@@ -247,8 +438,8 @@ function LiquidityModal({
                 ["You receive", "LP tokens (redeemable anytime)"],
               ].map(([l, v]) => (
                 <div key={l} className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{l}</span>
-                  <span className={cn("font-semibold", l === "Combined APR" ? "text-green-500" : "")}>{v}</span>
+                  <span className={cn("text-muted-foreground", l.startsWith("  →") ? "text-[11px] pl-3" : "")}>{l}</span>
+                  <span className={cn("font-semibold text-right", l === "Combined APR" ? "text-green-500" : l.startsWith("  → LP") ? "text-green-400 text-[11px]" : l.startsWith("  → Protocol") ? "text-blue-400 text-[11px]" : "")}>{v}</span>
                 </div>
               ))}
             </div>
@@ -408,53 +599,99 @@ export function Liquidity() {
           <ChevronRight size={14} className={cn("ml-auto text-muted-foreground transition-transform", showAmmInfo && "rotate-90")} />
         </button>
         {showAmmInfo && (
-          <div className="px-5 pb-5 grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-border/50">
-            {[
-              {
-                icon: "💧",
-                title: "Liquidity Pools",
-                body: "Instead of matching buyers with sellers, DEXs use token pools funded by LPs. Anyone can trade against the pool at any time.",
-              },
-              {
-                icon: "∑",
-                title: "x · y = k Formula",
-                body: "The constant-product formula keeps x × y constant. Every trade shifts the ratio, automatically re-pricing the pair. Larger trades = more slippage.",
-              },
-              {
-                icon: "💸",
-                title: "Fee Revenue",
-                body: `Every swap pays a pool fee (${POOLS[0].fee}%–${POOLS[6].fee}%). Fees are added back to the pool and distributed to LPs proportional to their share.`,
-              },
-              {
-                icon: "⚖️",
-                title: "Arbitrage = Accuracy",
-                body: "AMMs don't know real-world prices. Arbitrage traders close any gap between the pool price and the market price, keeping everything accurate.",
-              },
-            ].map(c => (
-              <div key={c.title} className="pt-4">
-                <div className="text-2xl mb-2">{c.icon}</div>
-                <div className="font-bold text-sm mb-1">{c.title}</div>
-                <p className="text-xs text-muted-foreground leading-relaxed">{c.body}</p>
+          <div className="border-t border-border/50">
+            <div className="px-5 pb-4 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                {
+                  icon: "💧",
+                  title: "Liquidity Pools",
+                  body: "Instead of matching buyers with sellers, DEXs use token pools funded by LPs. Anyone can trade against the pool at any time. LPs earn fees proportional to their share.",
+                },
+                {
+                  icon: "∑",
+                  title: "x · y = k Formula",
+                  body: "The constant-product formula keeps x × y constant. Every trade shifts the ratio, auto-pricing the pair. Bigger trades cause more slippage. The price is always y/x.",
+                },
+                {
+                  icon: "💸",
+                  title: "Fee Split",
+                  body: `Every swap pays a pool fee (0.2%–0.3%). 5/6 goes to LPs (you), 1/6 goes to the protocol treasury. Fees compound inside the pool — k grows over time.`,
+                },
+                {
+                  icon: "⚖️",
+                  title: "Arbitrage",
+                  body: "AMMs don't know real-world prices — only their reserves. Arb bots constantly buy cheap / sell expensive until the pool price matches the global market.",
+                },
+                {
+                  icon: "🏗️",
+                  title: "Composability",
+                  body: "LP tokens are ERC-20 receipts. Other protocols can accept them as collateral (lending), stake them for extra yield (farms), or route through them (aggregators).",
+                },
+                {
+                  icon: "📈",
+                  title: "Protocol Revenue",
+                  body: "The 1/6 protocol fee accrues to the treasury. At current volumes that's real daily revenue — the foundation for token buybacks, grants, and development.",
+                },
+                {
+                  icon: "🔁",
+                  title: "Network Effects",
+                  body: "Deeper pools → better prices → more traders → more fees → more LPs → deeper pools. Once critical mass is reached, the flywheel sustains itself.",
+                },
+                {
+                  icon: "⚡",
+                  title: "BSV Settlement",
+                  body: "Every OrahDEX pool trade settles on BSV with sub-5s finality and ~$0.001 fees. No L2 bridges. No optimistic rollup delays. One canonical chain.",
+                },
+              ].map(c => (
+                <div key={c.title} className="pt-2">
+                  <div className="text-2xl mb-2">{c.icon}</div>
+                  <div className="font-bold text-sm mb-1">{c.title}</div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{c.body}</p>
+                </div>
+              ))}
+            </div>
+            {/* Solidity core logic callout */}
+            <div className="mx-5 mb-5 bg-secondary/40 border border-border rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Code2 size={14} className="text-muted-foreground" />
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Swap Core Logic (simplified)</span>
               </div>
-            ))}
+              <pre className="text-[11px] text-muted-foreground font-mono leading-relaxed overflow-x-auto">{`// 1. Apply fee: amountInWithFee = amountIn × (1 − fee)
+// 2. Solve x·y=k:  amountOut = (amountInWithFee × reserveOut)
+//                             / (reserveIn + amountInWithFee)
+// 3. Update reserves:  reserveIn += amountInWithFee
+//                      reserveOut -= amountOut
+// 4. k grows from fees → LP share appreciates over time`}</pre>
+            </div>
           </div>
         )}
       </div>
 
+      {/* AMM Swap Simulator */}
+      <AmmSwapSimulator />
+
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        {[
-          ["Total Value Locked", fmtTvl(totalTvl), "text-foreground"],
-          ["Total Pools", `${POOLS.length}`, "text-foreground"],
-          ["My Positions", `${myPools.length}`, "text-primary"],
-          ["Best Pool APR", `${(Math.max(...POOLS.map(p => poolApr(p) + p.farmApr))).toFixed(1)}%`, "text-green-500"],
-        ].map(([l, v, cls]) => (
-          <div key={l} className="bg-card border border-border rounded-xl p-4">
-            <div className="text-xs text-muted-foreground mb-1">{l}</div>
-            <div className={cn("text-2xl font-bold", cls)}>{v}</div>
+      {(() => {
+        const totalVol24    = POOLS.reduce((s, p) => s + p.vol24, 0);
+        const protocolRev24 = POOLS.reduce((s, p) => s + p.vol24 * (protocolFee(p.fee) / 100), 0);
+        const lpRev24       = POOLS.reduce((s, p) => s + p.vol24 * (lpFee(p.fee) / 100), 0);
+        return (
+          <div className="grid grid-cols-5 gap-4 mb-6">
+            {[
+              ["Total Value Locked",    fmtTvl(totalTvl),         "text-foreground"],
+              ["24h LP Fee Revenue",    fmtTvl(lpRev24),           "text-green-500"],
+              ["24h Protocol Revenue",  fmtTvl(protocolRev24),     "text-blue-400"],
+              ["My Positions",          `${myPools.length}`,       "text-primary"],
+              ["Best Pool APR",         `${(Math.max(...POOLS.map(p => poolApr(p) + p.farmApr))).toFixed(1)}%`, "text-green-500"],
+            ].map(([l, v, cls]) => (
+              <div key={l} className="bg-card border border-border rounded-xl p-4">
+                <div className="text-xs text-muted-foreground mb-1">{l}</div>
+                <div className={cn("text-2xl font-bold", cls)}>{v}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 border-b border-border">
