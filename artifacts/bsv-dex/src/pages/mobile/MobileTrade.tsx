@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
+import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -403,6 +404,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5">≈${fmt(lastPrice)}</p>
+          <ContractAddressBadge baseAsset={base} variant="inline" className="mt-1" />
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2">
