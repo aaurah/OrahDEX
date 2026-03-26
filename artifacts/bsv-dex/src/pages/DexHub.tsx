@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { BrandLogo, OrahInline } from "@/components/BrandLogo";
+import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 
 /* ── Curated Base / Zora ecosystem tokens ── */
 const ZORA_COINS = [
@@ -119,6 +120,7 @@ export function DexHub() {
   });
 
   const [, navigate] = useLocation();
+  const online = useOnlineStatus();
   const [view, setView]         = useState<View>("exchanges");
   const [search, setSearch]     = useState("");
   const [exType, setExType]     = useState<ExType>("all");
@@ -997,16 +999,9 @@ export function DexHub() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {ex.id === "orahdex" ? (
-                        /* OrahDEX custom O logo with pulsing green ring */
-                        <span className="relative inline-flex items-center justify-center shrink-0" style={{ width: 28, height: 28 }}>
-                          {/* Outer pulsing ping ring */}
-                          <span className="animate-ping absolute inline-flex rounded-full bg-green-400 opacity-40" style={{ width: 28, height: 28 }} />
-                          {/* Solid green ring border */}
-                          <span className="absolute inline-flex rounded-full" style={{ width: 28, height: 28, border: "1.5px solid rgba(74,222,128,0.55)" }} />
-                          {/* Inner circle */}
-                          <span className="relative inline-flex rounded-full items-center justify-center" style={{ width: 28, height: 28, background: "rgba(74,222,128,0.12)" }}>
-                            <span style={{ color: "#4ade80", fontWeight: 900, fontSize: 15, lineHeight: 1, letterSpacing: "-0.5px" }}>O</span>
-                          </span>
+                        /* OrahDEX brand O logo — same SVG as nav, scales to 28px */
+                        <span className="inline-flex items-center justify-center shrink-0" style={{ width: 28, height: 28, fontSize: 28 }}>
+                          <OrahO online={online} />
                         </span>
                       ) : ex.image ? (
                         <img src={ex.image} alt={ex.name}
