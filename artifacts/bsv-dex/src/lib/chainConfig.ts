@@ -123,10 +123,15 @@ export const CHAINS: Record<number, ChainConfig> = {
     nativeSymbol: "ETH",
     nativeName: "Ethereum",
     nativeColor: "#8B5CF6",
-    router: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24", // UniswapV2 on Base
+    router: "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24", // BaseSwap V2 router
     tokens: {
-      USDC: { symbol: "USDC", address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
-      DAI:  { symbol: "DAI",  address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18 },
+      USDT:  { symbol: "USDT",  address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6 },
+      USDC:  { symbol: "USDC",  address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
+      USDbC: { symbol: "USDbC", address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA", decimals: 6 },
+      DAI:   { symbol: "DAI",   address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", decimals: 18 },
+      cbBTC: { symbol: "cbBTC", address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8 },
+      WBTC:  { symbol: "WBTC",  address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8 },
+      cbETH: { symbol: "cbETH", address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", decimals: 18 },
     },
   },
   59144: {
