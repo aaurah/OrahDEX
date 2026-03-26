@@ -71,6 +71,10 @@ export const COINGECKO_IDS: Record<string, string> = {
   JTO:   "jito-governance-token",
   ORCA:  "orca",
   BOME:  "book-of-meme",
+  RAY:   "raydium",
+  MSOL:  "msol",
+  W:     "wormhole",
+  TNSR:  "tensor",
   // AI / DePIN
   FET:   "fetch-ai",
   AGIX:  "singularitynet",
@@ -81,6 +85,15 @@ export const COINGECKO_IDS: Record<string, string> = {
   NMR:   "numeraire",
   ORAI:  "oraichain-token",
   CTXC:  "cortex",
+  WLD:   "worldcoin-wld",
+  ALT:   "altlayer",
+  // DePIN
+  HNT:   "helium",
+  IOTX:  "iotex",
+  GLM:   "golem",
+  STORJ: "storj",
+  POWR:  "power-ledger",
+  LPT:   "livepeer",
   // DeFi
   GMX:   "gmx",
   DYDX:  "dydx-chain",
@@ -88,15 +101,107 @@ export const COINGECKO_IDS: Record<string, string> = {
   BAL:   "balancer",
   STX:   "blockstack",
   FLOKI: "floki",
-  WLD:   "worldcoin-wld",
+  CVX:   "convex-finance",
+  FXS:   "frax-share",
+  SPELL: "spell-token",
+  PERP:  "perpetual-protocol",
   // Meme / culture
   TRUMP: "official-trump",
+  TURBO: "turbo",
+  MOG:   "mog-coin",
+  POPCAT:"popcat",
+  MEW:   "cat-in-a-dogs-world",
+  NEIRO: "first-neiro-on-ethereum",
+  BABYDOGE:"baby-doge-coin",
+  MEME:  "memecoin-2",
+  NOT:   "notcoin",
+  HMSTR: "hamster-kombat",
+  DOGS:  "dogs",
+  EIGEN: "eigenlayer",
   // L2 / bridge tokens
   ZK:    "zksync",
   SCR:   "scroll",
   MNT:   "mantle",
   "1INCH":"1inch",
   ZRO:   "layerzero",
+  STRK:  "starknet",
+  IMX:   "immutable-x",
+  BOBA:  "boba-network",
+  METIS: "metis-token",
+  // Gaming / Metaverse
+  AXS:   "axie-infinity",
+  ENJ:   "enjincoin",
+  GALA:  "gala",
+  ILV:   "illuvium",
+  ALICE: "my-neighbor-alice",
+  TLM:   "alien-worlds",
+  SLP:   "smooth-love-potion",
+  WAXP:  "wax",
+  PIXEL: "pixels",
+  BIGTIME:"big-time",
+  BEAM:  "beam-2",
+  PRIME: "echelon-prime",
+  RON:   "ronin",
+  MC:    "merit-circle",
+  GODS:  "gods-unchained",
+  // Cosmos ecosystem
+  OSMO:  "osmosis",
+  STARS: "stargaze",
+  JUNO:  "juno-network",
+  EVMOS: "evmos",
+  STRD:  "stride",
+  AKT:   "akash-network",
+  SCRT:  "secret",
+  LUNA:  "terra-luna-2",
+  LUNC:  "terra-luna",
+  DYM:   "dymension",
+  NTRN:  "neutron-3",
+  BAND:  "band-protocol",
+  // Real World Assets (RWA)
+  ONDO:  "ondo-finance",
+  PAXG:  "pax-gold",
+  XAUT:  "tether-gold",
+  CFG:   "centrifuge",
+  MPL:   "maple",
+  // Exchange tokens
+  OKB:   "okb",
+  GT:    "gatechain-token",
+  KCS:   "kucoin-shares",
+  HT:    "huobi-token",
+  BGB:   "bitget-token",
+  WBT:   "whitebit",
+  // BRC-20 / Ordinals
+  ORDI:  "ordinals",
+  SATS:  "1000sats-ordinals",
+  RATS:  "rats-ordinals",
+  // Polkadot ecosystem
+  KSM:   "kusama",
+  ACA:   "acala",
+  ASTR:  "astar",
+  PHA:   "pha",
+  // More L1s
+  TON:   "the-open-network",
+  KAS:   "kaspa",
+  SEI:   "sei-network",
+  TIA:   "celestia",
+  KAVA:  "kava",
+  ONE:   "harmony",
+  ZIL:   "zilliqa",
+  ICX:   "icon",
+  WAVES: "waves",
+  NEO:   "neo",
+  CFX:   "conflux-token",
+  ROSE:  "oasis-network",
+  FLR:   "flare-networks",
+  CELO:  "celo",
+  CKB:   "nervos-network",
+  CORE:  "coredaoorg",
+  BTT:   "bittorrent",
+  XDC:   "xdce-crowd-sale",
+  GLMR:  "moonbeam",
+  MOVR:  "moonriver",
+  KDA:   "kadena",
+  ZEN:   "zencash",
   // Wrapped assets
   WBTC:  "wrapped-bitcoin",
   WSTETH:"wrapped-steth",
@@ -121,51 +226,83 @@ export const COINGECKO_IDS: Record<string, string> = {
   BUILD:  "build-on-base",         // BUILD ecosystem
 };
 
-// USDT pairs — all major coins
+// USDT pairs — maximum coin coverage
 export const USDT_PAIRS = [
+  // ── Top L1 blue-chips ───────────────────────────────────────────────────────
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
   "MATIC","LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP",
-  "VET","FIL","SAND","MANA","APT","ARB","OP","SUI","INJ","PEPE",
-  "SHIB","MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX",
-  "YFI","RUNE","FTM","ALGO","XLM","HBAR","EGLD","THETA","EOS","ZEC",
-  "DASH","XMR",
-  // Solana ecosystem
-  "BONK","WIF","JUP","PYTH","JTO","ORCA","BOME",
-  // AI / DePIN
-  "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC",
-  // DeFi
-  "GMX","DYDX","PENDLE","BAL","STX","FLOKI","WLD",
-  // Meme / culture
-  "TRUMP",
-  // L2 / bridge
-  "1INCH","ZRO","ZK","SCR","MNT","WBTC","WSTETH","RETH",
-  // ── Base chain assets ──────────────────────────────────────────────────
+  "VET","FIL","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
+  // ── DeFi ────────────────────────────────────────────────────────────────────
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX",
+  "YFI","RUNE","BAL","GMX","DYDX","PENDLE","CVX","FXS","SPELL","PERP",
+  // ── L1 alts ─────────────────────────────────────────────────────────────────
+  "FTM","ALGO","XLM","HBAR","EGLD","THETA","EOS","ZEC","DASH","XMR",
+  "SAND","MANA","CRO","KAVA","ONE","ZIL","ICX","WAVES","NEO","CFX",
+  "ROSE","FLR","CELO","CKB","CORE","BTT","XDC","GLMR","MOVR","KDA","ZEN",
+  "TON","KAS","SEI","TIA",
+  // ── Solana ecosystem ────────────────────────────────────────────────────────
+  "BONK","WIF","JUP","PYTH","JTO","ORCA","BOME","RAY","MSOL","W","TNSR",
+  // ── AI / DePIN ──────────────────────────────────────────────────────────────
+  "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
+  "HNT","IOTX","GLM","STORJ","POWR","LPT",
+  // ── Gaming / Metaverse ──────────────────────────────────────────────────────
+  "AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "BEAM","PRIME","RON","MC","GODS",
+  // ── Cosmos ecosystem ────────────────────────────────────────────────────────
+  "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
+  // ── RWA ─────────────────────────────────────────────────────────────────────
+  "ONDO","PAXG","XAUT","CFG","MPL",
+  // ── Exchange tokens ──────────────────────────────────────────────────────────
+  "OKB","GT","KCS","HT","BGB","WBT",
+  // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
+  "ORDI","SATS","RATS",
+  // ── Polkadot ecosystem ───────────────────────────────────────────────────────
+  "KSM","ACA","ASTR","PHA",
+  // ── Meme coins ───────────────────────────────────────────────────────────────
+  "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
+  "BABYDOGE","MEME","NOT","HMSTR","DOGS","EIGEN",
+  // ── L2 / bridge ──────────────────────────────────────────────────────────────
+  "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
+  "WBTC","WSTETH","RETH",
+  // ── Base chain assets ────────────────────────────────────────────────────────
   "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
   "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
-  // ── Zora ecosystem ────────────────────────────────────────────────────
+  // ── Zora ecosystem ───────────────────────────────────────────────────────────
   "ZORA","ENJOY","BUILD",
 ];
 
-// BTC pairs — major coins vs BTC
+// BTC pairs — wide coverage vs BTC
 export const BTC_PAIRS = [
   "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  // DeFi / alts commonly traded vs BTC
   "AAVE","DASH","XMR","ZEC","PEPE","SHIB","MKR","CRV","RUNE","YFI",
   "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
   "ETC","FTM","EOS","THETA","VET","BSV","BCH",
+  "TON","KAS","SEI","TIA","KAVA","ONE","ZIL","AXS","GALA","ENJ",
+  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI","SATS",
+  "STX","GMX","DYDX","PENDLE","FET","RNDR","TAO","WLD",
+  "BONK","WIF","JUP","PYTH","RON","AKT","LUNA",
 ];
 
 // ETH pairs — top coins vs ETH
 export const ETH_PAIRS = [
   "BTC","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
+  "AAVE","MKR","CRV","LDO","COMP","SNX","GRT","RUNE","YFI",
+  "TON","SEI","TIA","AXS","GALA","ENJ","IMX","SAND","MANA",
+  "OSMO","ONDO","ORDI","STX","FET","RNDR","TAO","BONK","WIF",
 ];
 
-// Stablecoin pairs — USDC, TUSD, USDD quote assets
+// Stablecoin pairs — USDC, TUSD, USDD quote assets (same as USDT, minus niche tokens)
 const STABLE_BASE_PAIRS = [
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
-  "MATIC","LINK","UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
+  "MATIC","LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP",
+  "VET","FIL","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX","RUNE",
+  "FTM","ALGO","XLM","HBAR","EGLD","EOS","ZEC","DASH","XMR","SAND","MANA",
+  "TON","KAS","SEI","TIA","KAVA","AXS","ENJ","GALA","IMX","RON",
+  "OSMO","ATOM","ONDO","PAXG","OKB","KCS","ORDI","SATS",
+  "BONK","WIF","JUP","PYTH","FET","RNDR","TAO","WLD","STX","GMX","DYDX",
 ];
 export const USDC_PAIRS = [
   ...STABLE_BASE_PAIRS,
@@ -312,34 +449,62 @@ async function fetchLivePricesCMC(): Promise<Record<string, CoinGeckoPrice> | nu
 
 // Default fallback prices (approximate) when CoinGecko is down — updated Mar 2026
 const FALLBACK_PRICES: Record<string, number> = {
+  // ── Top L1s ─────────────────────────────────────────────────────────────────
   BSV:14.35,BTC:70725,ETH:2152,SOL:91.44,XRP:1.43,BNB:638,ADA:0.75,
   DOGE:0.094,DOT:1.41,AVAX:9.55,MATIC:0.40,LINK:13.0,UNI:6.5,ATOM:4.5,
   LTC:85,BCH:477,TRX:0.23,ETC:20,NEAR:2.5,ICP:8.0,VET:0.025,FIL:4.0,
   SAND:0.30,MANA:0.30,APT:5.5,ARB:0.46,OP:0.75,SUI:2.5,INJ:18,
-  PEPE:0.0000090,SHIB:0.0000120,MKR:1800,AAVE:130,CRV:0.27,ENS:17,
-  LDO:0.90,SUSHI:0.60,COMP:43,GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,
+  PEPE:0.0000090,SHIB:0.0000120,
+  // ── DeFi ─────────────────────────────────────────────────────────────────────
+  MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
+  GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,
+  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,
+  // ── L1 alts ──────────────────────────────────────────────────────────────────
   FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
   ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
-  BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,DAI:1.00,WBTC:70215,WSTETH:3981,
-  // Solana ecosystem
-  BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,BOME:0.00842,
-  // AI / DePIN
-  FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
-  ORAI:4.82,CTXC:0.142,
-  // DeFi
-  GMX:25,DYDX:1.24,PENDLE:3.5,BAL:3.2,STX:1.52,FLOKI:0.000152,
-  WLD:2.84,TRUMP:15,
-  // L2 / bridge
+  KAVA:0.48,ONE:0.012,ZIL:0.012,ICX:0.16,WAVES:1.5,NEO:8.5,
+  CFX:0.10,ROSE:0.048,FLR:0.014,CELO:0.48,CKB:0.012,CORE:0.85,
+  BTT:0.00000085,XDC:0.042,GLMR:0.14,MOVR:8.5,KDA:0.75,ZEN:9.5,
+  TON:2.8,KAS:0.085,SEI:0.24,TIA:3.5,
+  // ── L2 / Scaling ─────────────────────────────────────────────────────────────
+  BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
+  STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
   "1INCH":0.35,ZRO:2.52,RETH:3980,
-  // Stablecoins / other
+  DAI:1.00,WBTC:70215,WSTETH:3981,
+  // ── Solana ecosystem ─────────────────────────────────────────────────────────
+  BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
+  BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
+  // ── AI / DePIN ───────────────────────────────────────────────────────────────
+  FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
+  ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
+  HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
+  // ── Gaming / Metaverse ───────────────────────────────────────────────────────
+  AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
+  WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
+  MC:0.12,GODS:0.082,
+  // ── Cosmos ecosystem ─────────────────────────────────────────────────────────
+  OSMO:0.48,STARS:0.0085,JUNO:0.28,EVMOS:0.018,STRD:0.82,
+  AKT:2.8,SCRT:0.38,LUNA:0.42,LUNC:0.000085,DYM:2.1,NTRN:0.42,BAND:1.2,
+  // ── RWA ──────────────────────────────────────────────────────────────────────
+  ONDO:0.85,PAXG:2182,XAUT:2182,CFG:0.42,MPL:14,
+  // ── Exchange tokens ──────────────────────────────────────────────────────────
+  OKB:42,GT:6.5,KCS:8.5,HT:2.8,BGB:3.5,WBT:22,
+  // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
+  ORDI:28,SATS:0.00000035,RATS:0.00000042,
+  // ── Polkadot ecosystem ───────────────────────────────────────────────────────
+  KSM:22,ACA:0.052,ASTR:0.042,PHA:0.082,
+  // ── Meme / culture ───────────────────────────────────────────────────────────
+  TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
+  POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
+  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,
+  // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
-  // ── Base chain assets ──────────────────────────────────────────────────
-  CBBTC:70725, CBETH:3400,
-  BRETT:0.114, TOSHI:0.000185, DEGEN:0.0084,
-  HIGHER:0.00215, MORPHO:1.82, MOONWELL:0.182, SEAM:4.82,
-  BALD:0.00284, NORMIE:0.00182,
-  // ── Zora ecosystem ────────────────────────────────────────────────────
-  ZORA:0.00182, ENJOY:0.000042, BUILD:0.000285,
+  // ── Base chain assets ────────────────────────────────────────────────────────
+  CBBTC:70725,CBETH:3400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
+  BALD:0.00284,NORMIE:0.00182,
+  // ── Zora ecosystem ───────────────────────────────────────────────────────────
+  ZORA:0.00182,ENJOY:0.000042,BUILD:0.000285,
 };
 
 export async function seedMarketsIfNeeded() {
