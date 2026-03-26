@@ -7,3 +7,4 @@ export * from "./bridge";
 export * from "./coinVotes";
 export * from "./adminEmails";
 export * from "./wallets";
+export * from "./cexAccounts";
