@@ -7,6 +7,7 @@ import { getWalletMarketTab } from "@/lib/walletMarket";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { MobileBaseMarket } from "@/components/mobile/MobileBaseMarket";
 import { MobileNetworksExplorer } from "@/components/mobile/MobileNetworksExplorer";
 import { MobileCoinVote } from "@/components/mobile/MobileCoinVote";
@@ -410,24 +411,27 @@ function MexcRow({
         <Star size={13} className={isFav ? "fill-green-400 text-green-400" : "text-muted-foreground/30"} />
       </button>
 
-      <button onClick={onTrade} className="flex-1 text-left min-w-0 flex flex-col gap-[2px]">
-        <div className="flex items-center gap-1">
-          <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
-          <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
-          {m.type === "futures" && (
-            <span className="ml-1 text-[9px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded border border-green-500/25">PERP</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium leading-none">
-          <span>Vol {fmtShort(m.vol)}</span>
-          {m.cap > 0 && (
-            <>
-              <span className="opacity-30">·</span>
-              <span>Cap {fmtShort(m.cap)}</span>
-            </>
-          )}
-        </div>
-      </button>
+      <div className="flex-1 text-left min-w-0 flex flex-col gap-[2px]">
+        <button onClick={onTrade} className="text-left">
+          <div className="flex items-center gap-1">
+            <span className="text-[14px] font-semibold text-foreground leading-tight">{m.base}</span>
+            <span className="text-[12px] text-muted-foreground font-normal">/{m.quote}</span>
+            {m.type === "futures" && (
+              <span className="ml-1 text-[9px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded border border-green-500/25">PERP</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 font-medium leading-none">
+            <span>Vol {fmtShort(m.vol)}</span>
+            {m.cap > 0 && (
+              <>
+                <span className="opacity-30">·</span>
+                <span>Cap {fmtShort(m.cap)}</span>
+              </>
+            )}
+          </div>
+        </button>
+        <ContractAddressBadge baseAsset={m.base} variant="inline" className="mt-[1px]" />
+      </div>
 
       <button onClick={onTrade} className="text-right pr-3">
         <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">{fmt(m.price)}</span>
