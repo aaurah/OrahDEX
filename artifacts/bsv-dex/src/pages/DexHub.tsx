@@ -996,11 +996,23 @@ export function DexHub() {
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {ex.image && (
+                      {ex.id === "orahdex" ? (
+                        /* OrahDEX custom O logo with pulsing green ring */
+                        <span className="relative inline-flex items-center justify-center shrink-0" style={{ width: 28, height: 28 }}>
+                          {/* Outer pulsing ping ring */}
+                          <span className="animate-ping absolute inline-flex rounded-full bg-green-400 opacity-40" style={{ width: 28, height: 28 }} />
+                          {/* Solid green ring border */}
+                          <span className="absolute inline-flex rounded-full" style={{ width: 28, height: 28, border: "1.5px solid rgba(74,222,128,0.55)" }} />
+                          {/* Inner circle */}
+                          <span className="relative inline-flex rounded-full items-center justify-center" style={{ width: 28, height: 28, background: "rgba(74,222,128,0.12)" }}>
+                            <span style={{ color: "#4ade80", fontWeight: 900, fontSize: 15, lineHeight: 1, letterSpacing: "-0.5px" }}>O</span>
+                          </span>
+                        </span>
+                      ) : ex.image ? (
                         <img src={ex.image} alt={ex.name}
                           className="w-7 h-7 rounded-full object-cover bg-secondary shrink-0"
                           onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      )}
+                      ) : null}
                       <div>
                         <p className="text-sm font-semibold text-foreground leading-tight">{ex.name}</p>
                         {ex.yearEstablished && (
