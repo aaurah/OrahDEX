@@ -125,7 +125,7 @@ function usePlatformAnnouncements() {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, network, provider } = useWalletStore();
+  const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -168,7 +168,8 @@ export function Layout({ children }: { children: ReactNode }) {
     setTheme(THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]);
   };
 
-  const prevAddressRef = useRef<string | null>(null);
+  const prevAddressRef  = useRef<string | null>(null);
+  const prevChainIdRef  = useRef<number | null>(null);
 
   // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
   useEffect(() => {
@@ -181,11 +182,17 @@ export function Layout({ children }: { children: ReactNode }) {
     function startSync() {
       subscribeReownAccount(async (state) => {
         if (state.isConnected && state.address) {
-          const { address: current, connect, setBalance } = useWalletStore.getState();
+          const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
+          const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
           if (!current) {
-            const chainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-            connect({ address: state.address, provider: "reown", network: "evm", chainId });
-            const bal = await fetchEvmBalance(state.address, chainId ?? null);
+            /* First connect */
+            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
+            if (bal !== null) setBalance(bal);
+          } else if (newChainId && newChainId !== currentChainId) {
+            /* User switched chains in their wallet — update chainId so markets auto-switch */
+            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
             if (bal !== null) setBalance(bal);
           }
         }
@@ -221,6 +228,37 @@ export function Layout({ children }: { children: ReactNode }) {
     }
     prevAddressRef.current = address;
   }, [address]);
+
+  /* Detect chain switch while wallet already connected — toast + DB update */
+  useEffect(() => {
+    const prev = prevChainIdRef.current;
+    prevChainIdRef.current = chainId;
+    if (!address || !chainId || prev === null || prev === chainId) return;
+    // User switched chains — find the human-readable name
+    const chainName =
+      chainId === 1       ? "Ethereum"   :
+      chainId === 8453    ? "Base"        :
+      chainId === 42161   ? "Arbitrum"   :
+      chainId === 10      ? "Optimism"   :
+      chainId === 137     ? "Polygon"    :
+      chainId === 56      ? "BNB Chain"  :
+      chainId === 43114   ? "Avalanche"  :
+      chainId === 250     ? "Fantom"     :
+      chainId === 25      ? "Cronos"     :
+      chainId === 59144   ? "Linea"      :
+      chainId === 324     ? "zkSync Era" :
+      chainId === 534352  ? "Scroll"     :
+      chainId === 5000    ? "Mantle"     :
+      chainId === 7777777 ? "Zora"       :
+      `Chain ${chainId}`;
+    toast({ title: `Switched to ${chainName}`, description: "Markets updated for your new network." });
+    /* Keep DB in sync with new chainId */
+    fetch(`${BASE}/api/users/ping`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, network: "evm", provider: provider ?? "walletconnect", chainId }),
+    }).catch(() => {});
+  }, [chainId]);
 
   useEffect(() => {
     if (!notifOpen) return;
