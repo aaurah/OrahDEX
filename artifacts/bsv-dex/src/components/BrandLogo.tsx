@@ -33,7 +33,7 @@ export function OrahInline({ className = "" }: { className?: string }) {
 }
 
 /** Just the animated O glyph — reused by both exports */
-function OrahO({ online }: { online: boolean }) {
+export function OrahO({ online }: { online: boolean }) {
   return (
     <svg
       viewBox="0 0 100 100"
