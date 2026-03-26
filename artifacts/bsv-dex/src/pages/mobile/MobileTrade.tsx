@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -8,31 +8,38 @@ import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useNotificationStore } from "@/store/useNotificationStore";
 
-/* ── Notifications drawer ── */
-const NOTIF_ICONS: Record<string, React.ReactNode> = {
-  price:  <TrendingUp size={15} className="text-green-400" />,
-  order:  <CheckCircle2 size={15} className="text-green-500" />,
-  alert:  <AlertCircle size={15} className="text-red-400" />,
-  system: <Info size={15} className="text-blue-400" />,
-  promo:  <Zap size={15} className="text-purple-400" />,
+/* ── Notifications drawer — backed by the real notification store ── */
+const TYPE_ICON: Record<string, React.ReactNode> = {
+  order_placed:    <ShoppingCart size={15} className="text-blue-400" />,
+  order_filled:    <CheckCircle2 size={15} className="text-green-400" />,
+  order_cancelled: <AlertCircle  size={15} className="text-amber-400" />,
+  trade:           <Zap          size={15} className="text-violet-400" />,
+  bridge:          <Link2        size={15} className="text-cyan-400" />,
+  price_alert:     <TrendingUp   size={15} className="text-orange-400" />,
+  info:            <Info         size={15} className="text-blue-400" />,
+  warning:         <AlertCircle  size={15} className="text-amber-400" />,
+  success:         <CheckCircle2 size={15} className="text-green-400" />,
+  error:           <AlertCircle  size={15} className="text-red-400" />,
 };
 
-const BASE_NOTIFS = [
-  { id: 1, type: "order",  title: "Buy order filled",        body: "0.05 BTC bought at $65,200",          time: "2m ago",  read: false },
-  { id: 2, type: "price",  title: "Price alert triggered",   body: "ETH/USDT crossed $3,400",             time: "18m ago", read: false },
-  { id: 3, type: "alert",  title: "Stop-loss executed",      body: "SOL/USDT stop at $142 triggered",     time: "1h ago",  read: false },
-  { id: 4, type: "promo",  title: "Fee rebate earned",       body: "You earned $2.34 in maker rebates",   time: "3h ago",  read: true  },
-  { id: 5, type: "system", title: "Liquidity pool reward",   body: "Harvest 0.0084 BSV from BSV/USDT pool","time": "5h ago", read: true },
-  { id: 6, type: "system", title: "System maintenance",      body: "Scheduled: Sunday 02:00–03:00 UTC",   time: "1d ago",  read: true  },
-];
+function relTime(ts: number) {
+  const diff = Date.now() - ts;
+  if (diff < 60_000)     return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000)  return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
 
 function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [notifs, setNotifs] = useState(BASE_NOTIFS);
-  const unread = notifs.filter(n => !n.read).length;
+  const { notifications, markAllRead, clearAll, markRead } = useNotificationStore();
+  const unread = notifications.filter(n => !n.read).length;
 
-  const markAll = () => setNotifs(n => n.map(x => ({ ...x, read: true })));
-  const dismiss = (id: number) => setNotifs(n => n.filter(x => x.id !== id));
+  const handleMarkAll = () => markAllRead();
+  const dismiss = (id: string) => {
+    markRead(id);
+  };
 
   return (
     <>
@@ -51,12 +58,12 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
             <Bell size={16} className="text-foreground" />
             <span className="font-bold text-base">Notifications</span>
             {unread > 0 && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-red-500 text-white rounded-full">{unread}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 bg-primary text-primary-foreground rounded-full">{unread}</span>
             )}
           </div>
           <div className="flex items-center gap-2">
             {unread > 0 && (
-              <button onClick={markAll} className="text-xs text-primary font-semibold">Mark all read</button>
+              <button onClick={handleMarkAll} className="text-xs text-primary font-semibold">Mark all read</button>
             )}
             <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
               <X size={16} />
@@ -66,16 +73,17 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
 
         {/* Notif list */}
         <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-border/50">
-          {notifs.length === 0 ? (
+          {notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
               <Bell size={32} className="opacity-30" />
-              <p className="text-sm">No notifications</p>
+              <p className="text-sm">No notifications yet</p>
+              <p className="text-xs text-center px-6 opacity-70">Place an order to see trade updates here</p>
             </div>
-          ) : notifs.map(n => (
+          ) : notifications.map(n => (
             <div key={n.id} className={cn("flex gap-3 px-4 py-3.5 relative", !n.read && "bg-primary/4")}>
               {!n.read && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full" />}
               <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
-                {NOTIF_ICONS[n.type]}
+                {TYPE_ICON[n.type] ?? <Info size={15} className="text-blue-400" />}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-1">
@@ -85,7 +93,10 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
-                <p className="text-[10px] text-muted-foreground/50 mt-1">{n.time}</p>
+                {n.txid && (
+                  <p className="text-[10px] text-primary font-mono mt-0.5">{n.txid.slice(0, 10)}…</p>
+                )}
+                <p className="text-[10px] text-muted-foreground/50 mt-1">{relTime(n.timestamp)}</p>
               </div>
             </div>
           ))}
@@ -93,7 +104,7 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
 
         {/* Footer */}
         <div className="shrink-0 border-t border-border px-4 py-3">
-          <button onClick={() => setNotifs([])} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors">
+          <button onClick={clearAll} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors">
             Clear all notifications
           </button>
         </div>
