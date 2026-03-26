@@ -226,7 +226,7 @@ router.get("/dex/exchanges", async (req, res) => {
       id: "orahdex",
       name: "OrahDEX",
       url: "https://orahdex.org",
-      image: null,
+      image: "/orahdex-logo.jpg",
       country: null,
       yearEstablished: 2026,
       type: "dex",
@@ -267,7 +267,7 @@ router.get("/dex/exchanges", async (req, res) => {
         const orahVolBtc = 120;
         const btcFallback = 65000;
         cmcResult.exchanges.unshift({
-          id: "orahdex", name: "OrahDEX", url: "https://orahdex.org", image: null,
+          id: "orahdex", name: "OrahDEX", url: "https://orahdex.org", image: "/orahdex-logo.jpg",
           country: null, yearEstablished: 2026, type: "dex", chain: "BSV", rank: 1,
           trustScore: 9, tradeVolume24hBtc: orahVolBtc,
           tradeVolume24hUsd: orahVolBtc * btcFallback, marketCap: 28000000,
