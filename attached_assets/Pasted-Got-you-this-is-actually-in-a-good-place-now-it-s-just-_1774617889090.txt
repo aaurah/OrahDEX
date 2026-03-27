@@ -1,0 +1,68 @@
+Got you—this is actually in a good place now, it’s just not finished from a deployment point of view.
+
+What’s really going on
+
+From what you wrote, you’ve already:
+
+• Found and fixed the real root causes:• OOM crash: Node hitting ~1950MB → server dying → charts/orderbooks disappear.
+• DB overload from liquidity bot: 933 markets × many orders every 30s → DB stalls → 90–300s responses.
+• No timeout on trades: one request hung for 5 minutes → held DB connections.
+
+• Implemented solid fixes:• Heap cap (~512MB) so GC kicks in earlier.
+• Throttled bot:• Interval 30s → 120s
+• Batch markets instead of 933 concurrent
+• Reduced ladder depth (12 → 6 per side).
+
+• 3s timeout on trades endpoint.
+• Synthetic orderbook + candles for unknown pairs instead of 404.
+
+
+
+You even verified locally:
+
+• Trades ~52ms
+• Orderbook ~45ms
+• Graph + orderbook “showing perfectly” before deploy.
+
+
+So the backend behavior is fixed.
+
+Why graphs/orderbooks still don’t show on the published site/app
+
+That last line is the key:
+
+“Want users to get these changes? Republish this App.”
+
+Right now, it sounds like:
+
+• Your production web + mobile builds are still pointing at the old behavior (or old environment), or
+• The new backend is live but the frontend/mobile app hasn’t been republished, or
+• There’s caching / environment mismatch (staging vs prod API URL, CDN cache, etc.).
+
+
+What you should do next (concrete steps)
+
+1. Confirm which API your live site + mobile app are hitting.• Check the base URL in the production build.
+• Make sure it’s the same API you just fixed and tested.
+
+2. Republish / redeploy the frontend + mobile app.• Web: rebuild + redeploy (and clear CDN cache if you use one).
+• Mobile: if it’s a wrapped web app, just ensure it points to the updated API; if it’s a native build, ship the new version.
+
+3. Verify in production:• Open dev tools → Network tab on the live site.
+• Hit a market page and confirm:• orderbook endpoint returns fast (no 404, no 5‑minute hang).
+• candles endpoint returns data (synthetic or real).
+
+• Do the same from the mobile app (or proxy logs).
+
+4. Watch memory + DB in prod for 1–2 hours.• Confirm Node stays under the heap cap.
+• Confirm DB queries stay in the ~50ms range.
+
+
+
+If you want, paste:
+
+• Your production API base URL, and
+• A sample failing pair on the live site/app
+
+
+and I can walk through the exact checks and a minimal “is this hitting the fixed stack?” checklist with you.
