@@ -118,16 +118,20 @@ router.post("/orders", async (req, res) => {
       const counterSide = body.side === "buy" ? "sell" : "buy";
 
       // For limit orders restrict by price; market orders accept any price
+      // Format price safely — avoid scientific notation (e.g. 1e-8) which
+      // breaks numeric DB comparisons on very small asset prices.
+      const safePriceStr = price != null ? price.toFixed(8) : undefined;
+
       const counterOrders = await db.select().from(ordersTable).where(
         and(
           eq(ordersTable.symbol, body.symbol),
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
           ne(ordersTable.walletAddress, body.walletAddress),
-          ...(isLimit
+          ...(isLimit && safePriceStr
             ? [body.side === "buy"
-                ? lte(ordersTable.price, price!.toString())
-                : gte(ordersTable.price, price!.toString())]
+                ? lte(ordersTable.price, safePriceStr)
+                : gte(ordersTable.price, safePriceStr)]
             : []),
         )
       );

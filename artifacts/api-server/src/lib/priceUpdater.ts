@@ -448,7 +448,7 @@ async function fetchLivePricesCMC(): Promise<Record<string, CoinGeckoPrice> | nu
 }
 
 // Default fallback prices (approximate) when CoinGecko is down — updated Mar 2026
-const FALLBACK_PRICES: Record<string, number> = {
+export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
   BSV:14.35,BTC:70725,ETH:2152,SOL:91.44,XRP:1.43,BNB:638,ADA:0.75,
   DOGE:0.094,DOT:1.41,AVAX:9.55,MATIC:0.40,LINK:13.0,UNI:6.5,ATOM:4.5,
@@ -774,54 +774,61 @@ export async function updateMarketPrices() {
       let lastPrice = baseUSD;
       let vol = data?.usd_24h_vol ?? baseUSD * 1_000_000;
 
+      // Helper: safely get USD price for a quote asset — prefers live data,
+      // falls back to FALLBACK_PRICES, never returns 0 (would cause division by zero).
+      const getQuoteUSD = (sym: string, defaultVal: number): number => {
+        const id = COINGECKO_IDS[sym];
+        const live = id ? prices[id]?.usd : undefined;
+        // Use || (not ??) so that live prices of 0 also trigger the fallback
+        return live || FALLBACK_PRICES[sym] || defaultVal;
+      };
+
       // Stablecoin quote (USDC/TUSD/USDD) — price ≈ same as USD value
       if (STABLECOIN_QUOTES.has(market.quoteAsset) && market.quoteAsset !== "USDT") {
-        const stableCgId = COINGECKO_IDS[market.quoteAsset];
-        const stableUSD  = stableCgId ? (prices[stableCgId]?.usd ?? 1) : 1;
+        const stableUSD = getQuoteUSD(market.quoteAsset, 1);
         lastPrice = baseUSD / stableUSD;
         vol = vol / stableUSD;
       }
 
       // ETH quote — compute cross rate
       if (market.quoteAsset === "ETH") {
-        const ethUSD = prices[COINGECKO_IDS["ETH"]]?.usd ?? FALLBACK_PRICES["ETH"] ?? 3400;
+        const ethUSD = getQuoteUSD("ETH", 3400);
         lastPrice = baseUSD / ethUSD;
         vol = vol / ethUSD;
       }
 
       // BNB quote — compute cross rate
       if (market.quoteAsset === "BNB") {
-        const bnbUSD = prices[COINGECKO_IDS["BNB"]]?.usd ?? FALLBACK_PRICES["BNB"] ?? 380;
+        const bnbUSD = getQuoteUSD("BNB", 380);
         lastPrice = baseUSD / bnbUSD;
         vol = vol / bnbUSD;
       }
 
-      // EVM chain quote — generic cross rate handler (MATIC, AVAX, ARB, OP, FTM, CRO)
-      const EVM_QUOTE_ASSETS = ["MATIC","AVAX","ARB","OP","FTM","CRO"];
+      // EVM chain quote — generic cross rate handler (MATIC, AVAX, ARB, OP, FTM, CRO, MNT)
+      const EVM_QUOTE_ASSETS = ["MATIC","AVAX","ARB","OP","FTM","CRO","MNT"];
       if (EVM_QUOTE_ASSETS.includes(market.quoteAsset)) {
-        const cgId = COINGECKO_IDS[market.quoteAsset];
-        const quoteUSD = cgId ? (prices[cgId]?.usd ?? FALLBACK_PRICES[market.quoteAsset] ?? 1) : (FALLBACK_PRICES[market.quoteAsset] ?? 1);
+        const quoteUSD = getQuoteUSD(market.quoteAsset, 1);
         lastPrice = baseUSD / quoteUSD;
         vol = vol / quoteUSD;
       }
 
       // BCH quote — compute cross rate
       if (market.quoteAsset === "BCH") {
-        const bchUSD = prices[COINGECKO_IDS["BCH"]]?.usd ?? FALLBACK_PRICES["BCH"] ?? 380;
+        const bchUSD = getQuoteUSD("BCH", 380);
         lastPrice = baseUSD / bchUSD;
         vol = vol / bchUSD;
       }
 
       // BTC quote — compute cross rate
       if (market.quoteAsset === "BTC") {
-        const btcUSD = prices[COINGECKO_IDS["BTC"]]?.usd ?? FALLBACK_PRICES["BTC"] ?? 68000;
+        const btcUSD = getQuoteUSD("BTC", 68000);
         lastPrice = baseUSD / btcUSD;
         vol = vol / btcUSD;
       }
 
       // BSV quote — compute cross rate
       if (market.quoteAsset === "BSV") {
-        const bsvUSD = prices[COINGECKO_IDS["BSV"]]?.usd ?? FALLBACK_PRICES["BSV"] ?? 0.055;
+        const bsvUSD = getQuoteUSD("BSV", 14);
         lastPrice = baseUSD / bsvUSD;
         vol = vol / bsvUSD;
       }

@@ -15,6 +15,7 @@ import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/
 import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
+import { FALLBACK_PRICES } from "./priceUpdater.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
 const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
@@ -136,7 +137,12 @@ async function refreshMarket(
   midPrice: number,
   volume24h: number,
 ): Promise<void> {
-  if (!midPrice || midPrice <= 0) return;
+  // If the live price is missing, try the static fallback map
+  if (!midPrice || midPrice <= 0) {
+    const baseAsset = symbol.split("/")[0];
+    midPrice = baseAsset ? (FALLBACK_PRICES[baseAsset] ?? 0) : 0;
+  }
+  if (!midPrice || midPrice <= 0) return; // truly unknown — skip
 
   const bSize = baseSize(volume24h, midPrice);
   const orders: LevelOrder[] = [
@@ -188,13 +194,18 @@ async function runCycle(): Promise<void> {
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
     // All stablecoins are pegged 1:1. Every other asset's USD price comes
     // from its USDT market price, which was just updated by the price updater.
+    // Seed from FALLBACK_PRICES first so every known asset has at least an
+    // approximate price — live data overwrites the fallback when available.
     const usdMap = new Map<string, number>();
     for (const s of STABLECOINS) usdMap.set(s, 1);
+    for (const [sym, px] of Object.entries(FALLBACK_PRICES)) {
+      if (px > 0) usdMap.set(sym, px);
+    }
 
     for (const m of active) {
       if (m.quoteAsset === "USDT" && m.type === "spot") {
         const p = parseFloat(m.lastPrice as string);
-        if (p > 0) usdMap.set(m.baseAsset, p);
+        if (p > 0) usdMap.set(m.baseAsset, p); // live price overwrites fallback
       }
     }
 
