@@ -226,8 +226,8 @@ async function runCycle(): Promise<void> {
     await Promise.all(crossUpdates);
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
-    // Process in batches of 40 to avoid overwhelming the DB connection pool.
-    const BATCH_SIZE = 40;
+    // Process in batches of 20 to avoid overwhelming the DB connection pool.
+    const BATCH_SIZE = 20;
     const marketJobs = active.map(m => {
       let midPrice: number;
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
