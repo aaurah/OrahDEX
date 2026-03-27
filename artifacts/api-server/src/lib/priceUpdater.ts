@@ -711,19 +711,37 @@ export async function updateMarketPrices() {
   try {
     let prices: Record<string, CoinGeckoPrice>;
     let priceSource = "hardcoded-fallback";
-    try {
-      prices = await fetchLivePrices();
-      priceSource = "CoinGecko";
-    } catch (cgErr: any) {
-      logger.warn({ err: cgErr }, "CoinGecko price fetch failed — trying CoinMarketCap fallback");
+
+    // Prefer CMC when key is set (production) — CoinGecko is unreliable in
+    // sandboxed/deployed environments; only fall back to it when CMC is absent.
+    const hasCmcKey = !!process.env.CMC_API_KEY;
+    if (hasCmcKey) {
       try {
         const cmcPrices = await fetchLivePricesCMC();
         if (cmcPrices) { prices = cmcPrices; priceSource = "CoinMarketCap"; }
         else throw new Error("CMC returned null");
-      } catch {
-        // Both external APIs failed — build a synthetic prices map from FALLBACK_PRICES
-        // so the bot always has current-ish data to seed order books with.
-        logger.warn("Both APIs failed — using hardcoded fallback prices for bot continuity");
+      } catch (cmcErr: any) {
+        logger.warn({ err: cmcErr }, "CoinMarketCap price fetch failed — trying CoinGecko");
+        try {
+          prices = await fetchLivePrices();
+          priceSource = "CoinGecko";
+        } catch {
+          logger.warn("Both APIs failed — using hardcoded fallback prices");
+          const fallback: Record<string, CoinGeckoPrice> = {};
+          for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
+            const usd = FALLBACK_PRICES[sym];
+            if (usd) fallback[cgId] = { usd, usd_24h_change: 0, usd_24h_vol: usd * 1_000_000, usd_market_cap: usd * 10_000_000 };
+          }
+          prices = fallback;
+        }
+      }
+    } else {
+      // No CMC key — try CoinGecko first (free, no key needed)
+      try {
+        prices = await fetchLivePrices();
+        priceSource = "CoinGecko";
+      } catch (cgErr: any) {
+        logger.warn({ err: cgErr }, "CoinGecko price fetch failed — using hardcoded fallback");
         const fallback: Record<string, CoinGeckoPrice> = {};
         for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
           const usd = FALLBACK_PRICES[sym];
