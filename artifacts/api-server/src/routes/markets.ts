@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
 
@@ -151,8 +152,27 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     const interval = (req.query.interval as string) || "1h";
     const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1000);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    if (!market) { res.status(404).json({ error: "Market not found" }); return; }
-    const candles = await fetchRealCandles(market.symbol, parseFloat(market.lastPrice), interval, limit);
+
+    let price: number;
+    let sym: string;
+    if (!market) {
+      // Unknown pair — derive price from fallback map
+      const [base, quote] = symbol.split("/");
+      const baseUsd  = base  ? (FALLBACK_PRICES[base]  ?? 0) : 0;
+      const quoteUsd = quote ? (FALLBACK_PRICES[quote] ?? (quote === "USDT" || quote === "USDC" ? 1 : 0)) : 0;
+      price = (baseUsd > 0 && quoteUsd > 0) ? baseUsd / quoteUsd : 0;
+      sym   = symbol;
+    } else {
+      price = parseFloat(market.lastPrice);
+      sym   = market.symbol;
+    }
+
+    if (!price || price <= 0) {
+      res.json([]);
+      return;
+    }
+
+    const candles = await fetchRealCandles(sym, price, interval, limit);
     res.json(candles);
   } catch (err) {
     req.log.error({ err }, "Failed to get candles");
@@ -172,9 +192,22 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
 
     // Fetch market price (fast single-row lookup)
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    if (!market) { res.status(404).json({ error: "Market not found" }); return; }
 
-    const lastPrice = parseFloat(market.lastPrice);
+    // For unknown markets, attempt to build a synthetic book from fallback prices
+    let lastPrice: number;
+    if (!market) {
+      const [base, quote] = symbol.split("/");
+      const baseUsd  = base  ? (FALLBACK_PRICES[base]  ?? 0) : 0;
+      const quoteUsd = quote ? (FALLBACK_PRICES[quote] ?? (quote === "USDT" || quote === "USDC" ? 1 : 0)) : 0;
+      lastPrice = (baseUsd > 0 && quoteUsd > 0) ? baseUsd / quoteUsd : 0;
+      if (lastPrice <= 0) {
+        // Completely unknown — return empty book, not an error
+        res.json({ bids: [], asks: [], lastPrice: 0 });
+        return;
+      }
+    } else {
+      lastPrice = parseFloat(market.lastPrice);
+    }
 
     // A market with no price yet can't produce meaningful synthetic depth
     if (!lastPrice || lastPrice <= 0) {
@@ -269,15 +302,22 @@ router.get("/markets/:symbol/trades", async (req, res) => {
 
     const lastPrice = parseFloat(market.lastPrice);
 
-    // Fetch real filled orders for this symbol — these are actual matched trades
+    // Fetch real filled orders for this symbol — with a 3s wall-clock limit
     let trades: any[];
     try {
-      const filledOrders = await db
+      const filledOrdersQuery = db
         .select()
         .from(ordersTable)
         .where(and(eq(ordersTable.symbol, symbol), eq(ordersTable.status, "filled")))
         .orderBy(desc(ordersTable.updatedAt))
         .limit(limit);
+
+      const filledOrders = await Promise.race([
+        filledOrdersQuery,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("trades db timeout")), 3000)
+        ),
+      ]) as Awaited<typeof filledOrdersQuery>;
 
       if (filledOrders.length >= 5) {
         // Use real trades, enriched with display fields
