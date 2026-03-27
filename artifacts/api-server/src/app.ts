@@ -3,6 +3,7 @@ import cors from "cors";
 import compression from "compression";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
@@ -101,6 +102,7 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use("/api", router);
+app.use("/v1", v1Router);
 
 startPriceUpdater();
 startLiquidityBot();

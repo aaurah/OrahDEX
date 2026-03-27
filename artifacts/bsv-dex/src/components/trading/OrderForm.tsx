@@ -10,10 +10,11 @@ import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
 import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
+import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
-  Lock, ShieldCheck, RefreshCw,
+  Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
 } from "lucide-react";
 
 type Side = "buy" | "sell";
@@ -242,6 +243,23 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   });
 
   const total = parseFloat(price || "0") * parseFloat(amount || "0");
+
+  // ── Live quote from Sovereign Routing API ────────────────────────────────
+  // tokenIn/tokenOut depend on side: buying ETH with USDT → tokenIn=USDT, tokenOut=ETH
+  const quoteTokenIn  = side === "buy"  ? quote : base;
+  const quoteTokenOut = side === "buy"  ? base  : quote;
+  const quoteAmount   = side === "buy"
+    ? (type !== "market" && price && amount ? (parseFloat(price) * parseFloat(amount)).toFixed(8) : amount)
+    : amount;
+
+  const { quote: liveQuote, loading: quoteLoading } = useQuote({
+    tokenIn:       quoteTokenIn,
+    tokenOut:      quoteTokenOut,
+    amount:        quoteAmount,
+    chainId:       chainId,
+    keeperAddress: isEvm ? address : undefined,
+    enabled:       !!amount && parseFloat(amount) > 0,
+  });
 
   /**
    * Sign the order intent with MetaMask (EVM) before submitting.
@@ -742,34 +760,117 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             ))}
           </div>
 
-          {/* Total / Min Received */}
-          {type === "limit" && (
+          {/* ── Live Quote Panel (Sovereign Routing API) ─────────────── */}
+          {!!amount && parseFloat(amount) > 0 && (
+            <div className={cn(
+              "rounded-xl border px-3 py-2.5 space-y-1.5 transition-all",
+              liveQuote
+                ? "bg-secondary/40 border-border"
+                : "bg-secondary/20 border-border/40"
+            )}>
+              {/* Expected output */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  {side === "buy" ? "You receive" : "You get"}
+                </span>
+                <span className="font-mono font-semibold text-foreground flex items-center gap-1">
+                  {quoteLoading
+                    ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/50" />
+                    : liveQuote
+                      ? <>{liveQuote.expectedOut.toFixed(6)} {quoteTokenOut}</>
+                      : <>≈ {type === "limit" && price
+                          ? formatPrice(total)
+                          : formatPrice(parseFloat(amount) * currentPrice)} {type === "limit" ? quote : base}</>
+                  }
+                </span>
+              </div>
+
+              {/* Min received with slippage */}
+              {liveQuote && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Min received</span>
+                  <span className="font-mono text-foreground/80">
+                    {liveQuote.minOut.toFixed(6)} {quoteTokenOut}
+                  </span>
+                </div>
+              )}
+
+              {/* Price impact */}
+              {liveQuote && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <TrendingDown className="w-3 h-3" />
+                    Price impact
+                  </span>
+                  <span className={cn(
+                    "font-mono font-semibold",
+                    liveQuote.priceImpactPct < 0.5 ? "text-green-400"
+                    : liveQuote.priceImpactPct < 2 ? "text-amber-400"
+                    : "text-red-400"
+                  )}>
+                    {liveQuote.priceImpactPct < 0.01
+                      ? "< 0.01%"
+                      : `${liveQuote.priceImpactPct.toFixed(2)}%`}
+                  </span>
+                </div>
+              )}
+
+              {/* Fee */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Fee</span>
+                <span className="font-mono text-foreground/80">
+                  {liveQuote
+                    ? `${(liveQuote.feeBps / 100).toFixed(2)}% · ~$${liveQuote.feeUsd.toFixed(4)}`
+                    : "0.30%"
+                  }
+                </span>
+              </div>
+
+              {/* Route */}
+              <div className="flex items-center justify-between text-xs pt-0.5">
+                <span className="text-muted-foreground">Route</span>
+                <span className="font-semibold text-green-400 text-[10px] flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  {liveQuote ? "AMM → BSV Settlement" : "AMM → BSV Settlement"}
+                </span>
+              </div>
+
+              {/* Keeper Tier badge */}
+              {liveQuote && liveQuote.keeper.tier > 0 && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-border/40">
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Crown className="w-3 h-3" />
+                    Keeper discount
+                  </span>
+                  <span
+                    className="font-bold text-[10px] px-1.5 py-0.5 rounded-md border"
+                    style={{
+                      color: KEEPER_TIER_COLORS[liveQuote.keeper.tier],
+                      borderColor: `${KEEPER_TIER_COLORS[liveQuote.keeper.tier]}40`,
+                      background: `${KEEPER_TIER_COLORS[liveQuote.keeper.tier]}15`,
+                    }}
+                  >
+                    {liveQuote.keeper.tierName} · -{liveQuote.keeper.discountPct}% fee
+                  </span>
+                </div>
+              )}
+
+              {/* MEV warning for large orders */}
+              {liveQuote && liveQuote.mevRisk === "high" && (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400 pt-0.5">
+                  <Flame className="w-3 h-3 shrink-0" />
+                  High MEV risk — consider smaller trades or upgrading Keeper tier
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Total (limit orders, when no amount typed yet) */}
+          {type === "limit" && !amount && (
             <div className="flex items-center bg-secondary/30 border border-transparent rounded-xl px-3 py-2.5">
               <span className="text-muted-foreground text-sm w-16">Total</span>
               <span className="flex-1 text-right text-foreground font-mono">{formatPrice(isNaN(total) ? 0 : total)}</span>
               <span className="text-muted-foreground text-sm ml-2">{quote}</span>
-            </div>
-          )}
-          {type === "market" && !!amount && parseFloat(amount) > 0 && currentPrice > 0 && (
-            <div className="space-y-1 px-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Min received</span>
-                <span className="font-mono font-semibold text-foreground">
-                  {(parseFloat(amount) * (1 - slippage / 100)).toFixed(6)} {base}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Est. total</span>
-                <span className="font-mono text-foreground">
-                  ≈ {formatPrice(parseFloat(amount) * currentPrice)} {quote}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Route</span>
-                <span className="font-semibold text-green-400 text-[10px] flex items-center gap-1">
-                  <Zap className="w-3 h-3" /> AMM → BSV Settlement
-                </span>
-              </div>
             </div>
           )}
 
@@ -808,12 +909,32 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             )}
           </button>
 
-          {/* Fee info & VIP discount */}
+          {/* Fee info & Keeper tier */}
           <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
-            <span>Fee: <span className="text-foreground font-mono">0.10%</span> maker / <span className="text-foreground font-mono">0.10%</span> taker</span>
-            <span className="text-primary font-medium cursor-pointer hover:underline" title="Pay fees in ORAH token for up to 25% discount. VIP tiers unlock lower rates.">
-              VIP discounts ↗
-            </span>
+            {liveQuote ? (
+              <span>
+                Fee:{" "}
+                <span className="text-foreground font-mono font-bold">
+                  {(liveQuote.feeBps / 100).toFixed(2)}%
+                </span>
+                {" "}· {liveQuote.keeper.tierName}
+              </span>
+            ) : (
+              <span>Fee: <span className="text-foreground font-mono">0.30%</span> standard</span>
+            )}
+            {liveQuote && liveQuote.keeper.tier > 0 ? (
+              <span
+                className="font-bold flex items-center gap-0.5"
+                style={{ color: KEEPER_TIER_COLORS[liveQuote.keeper.tier] }}
+              >
+                <Crown className="w-2.5 h-2.5" />
+                {liveQuote.keeper.discountPct}% off
+              </span>
+            ) : (
+              <span className="text-primary font-medium cursor-pointer hover:underline" title="Volume-based Keeper tiers unlock fee discounts: Guardian 0.25%, Elder 0.20%, Archon 0.15%">
+                Keeper discounts ↗
+              </span>
+            )}
           </div>
 
         </form>
