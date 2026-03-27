@@ -73,17 +73,11 @@ export const BOT_ADDRESS = "BOT_LIQUIDITY_ENGINE";
 // Tightest spread closest to mid-price, widening out.
 const LEVELS = [
   [0.0003, 3.5],
-  [0.0007, 3.0],
-  [0.0012, 2.6],
-  [0.0020, 2.2],
-  [0.0032, 1.9],
-  [0.0050, 1.6],
-  [0.0075, 1.3],
-  [0.0110, 1.0],
-  [0.0160, 0.8],
-  [0.0230, 0.6],
-  [0.0330, 0.4],
-  [0.0480, 0.3],
+  [0.0010, 2.8],
+  [0.0025, 2.2],
+  [0.0055, 1.7],
+  [0.0120, 1.2],
+  [0.0280, 0.8],
 ] as const;
 
 /* ── Compute sane base order size from 24-h volume ──────────────────────── */
@@ -232,34 +226,37 @@ async function runCycle(): Promise<void> {
     await Promise.all(crossUpdates);
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
-    // Cross pairs use the derived USD ratio — never the (potentially stale)
-    // stored price — so NO triangular arbitrage path can ever be profitable.
-    await Promise.all(
-      active.map(m => {
-        let midPrice: number;
+    // Process in batches of 40 to avoid overwhelming the DB connection pool.
+    const BATCH_SIZE = 40;
+    const marketJobs = active.map(m => {
+      let midPrice: number;
+      if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
+        midPrice = parseFloat(m.lastPrice as string) || 0;
+      } else {
+        const baseUSD  = usdMap.get(m.baseAsset);
+        const quoteUSD = usdMap.get(m.quoteAsset);
+        midPrice = (baseUSD && quoteUSD && quoteUSD > 0)
+          ? baseUSD / quoteUSD
+          : parseFloat(m.lastPrice as string) || 0;
+      }
+      return { m, midPrice };
+    });
 
-        if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
-          // USD-quoted and futures: use stored price (kept fresh by price updater)
-          midPrice = parseFloat(m.lastPrice as string) || 0;
-        } else {
-          // Cross pair: always derive from same-cycle USD snapshot
-          const baseUSD  = usdMap.get(m.baseAsset);
-          const quoteUSD = usdMap.get(m.quoteAsset);
-          midPrice = (baseUSD && quoteUSD && quoteUSD > 0)
-            ? baseUSD / quoteUSD
-            : parseFloat(m.lastPrice as string) || 0;
-        }
-
-        return refreshMarket(
-          m.symbol,
-          m.quoteAsset,
-          midPrice,
-          parseFloat(m.volume24h as string) || 0,
-        ).catch(err =>
-          logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
-        );
-      }),
-    );
+    for (let i = 0; i < marketJobs.length; i += BATCH_SIZE) {
+      const batch = marketJobs.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(({ m, midPrice }) =>
+          refreshMarket(
+            m.symbol,
+            m.quoteAsset,
+            midPrice,
+            parseFloat(m.volume24h as string) || 0,
+          ).catch(err =>
+            logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
+          )
+        ),
+      );
+    }
 
     await accumulateCycleProfit(active);
     logger.info({ markets: active.length }, "Liquidity bot cycle complete");
@@ -271,7 +268,7 @@ async function runCycle(): Promise<void> {
 /* ── Public start function ──────────────────────────────────────────────── */
 export function startLiquidityBot(): void {
   logger.info("Liquidity bot starting — seeding order books…");
-  // First run immediately, then every 30 s
+  // First run immediately, then every 120 s
   runCycle();
-  setInterval(runCycle, 30_000);
+  setInterval(runCycle, 120_000);
 }
