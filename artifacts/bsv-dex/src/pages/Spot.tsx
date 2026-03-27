@@ -13,6 +13,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 
 type BottomTab = "open" | "history" | "trades";
 type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
@@ -549,9 +550,12 @@ export function SpotTrading() {
           />
         </div>
 
-        {/* FAR-RIGHT: Order Form */}
+        {/* FAR-RIGHT: Order Form + AI Analysis */}
         <div className="hidden lg:flex w-[230px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
           <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
+          <div className="p-2 border-t border-border">
+            <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
+          </div>
         </div>
 
         {/* MOBILE: full-width order form below chart */}
