@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, Globe, ChevronDown, ExternalLink } from "lucide-react";
+import { ArrowRight, Zap, Shield, Globe, ChevronDown, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -149,17 +149,138 @@ function BsvBlockPill({ blockHeight, blockHash }: { blockHeight: number; blockHa
       href={explorerUrl}
       target="_blank"
       rel="noreferrer"
-      className="group flex flex-col items-center gap-0.5 px-6 py-4 rounded-2xl border border-green-500/25 bg-green-500/6 hover:bg-green-500/10 hover:border-green-500/40 min-w-[130px] transition-all hover:scale-[1.02] cursor-pointer"
+      className="flex flex-col items-center gap-1 px-6 py-4 rounded-2xl border border-green-500/30 bg-green-500/8 hover:bg-green-500/14 hover:border-green-500/50 min-w-[120px] transition-all active:scale-95 cursor-pointer"
     >
-      <span className="text-[9px] uppercase tracking-[0.25em] text-green-500/60 font-bold flex items-center gap-1">
-        Explore
-        <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </span>
-      <span className="text-xl font-black text-green-400">
+      <span className="text-2xl font-black text-green-400 leading-none">
         {blockHeight > 0 ? `#${blockHeight.toLocaleString()}` : "Live"}
       </span>
-      <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">BSV Block</span>
+      <span className="text-xs text-green-500/70 font-semibold flex items-center gap-1">
+        BSV Block <ExternalLink className="w-3 h-3" />
+      </span>
     </a>
+  );
+}
+
+/* ── Ora AI section ──────────────────────────────────────────────────────── */
+function OraAiSection() {
+  const [insights, setInsights] = useState<{ id: number; content: string; sentiment?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${BASE}/api/ai/insights`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!cancelled && Array.isArray(data?.insights)) {
+          setInsights(data.insights.slice(0, 3));
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const sentimentIcon = (s?: string) => {
+    if (s === "bullish") return <TrendingUp className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />;
+    if (s === "bearish") return <TrendingDown className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />;
+    return <Minus className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />;
+  };
+
+  const sentimentColor = (s?: string) =>
+    s === "bullish" ? "border-green-500/25 bg-green-500/5" :
+    s === "bearish" ? "border-red-500/25 bg-red-500/5" :
+    "border-white/8 bg-white/3";
+
+  const openOra = () => window.dispatchEvent(new CustomEvent("ora:open", { detail: { message: "Give me today's top market intelligence." } }));
+
+  return (
+    <section className="relative px-6 lg:px-10 py-24" style={{ background: "linear-gradient(180deg, rgba(74,222,128,0.02) 0%, transparent 100%)" }}>
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <span className="inline-flex items-center gap-2 text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-4">
+            <Sparkles className="w-3.5 h-3.5" /> AI Intelligence
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            Meet <span className="text-green-400">Ora</span>
+          </h2>
+          <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+            Your AI co-pilot for every trade. Ora monitors 900+ markets in real-time,
+            generates trade signals, spots emerging patterns, and answers your questions
+            instantly — all powered by sovereign intelligence.
+          </p>
+        </div>
+
+        {/* Capabilities row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+          {[
+            { icon: Brain, label: "Market Intelligence", desc: "Real-time analysis across every pair. Ora spots breakouts, volume surges, and sentiment shifts before they happen.", color: "#4ade80" },
+            { icon: TrendingUp, label: "Trade Signals", desc: "Buy, sell, or hold signals for every major pair — with confidence scores and Ora's reasoning behind each call.", color: "#F5A623" },
+            { icon: MessageSquare, label: "Always Available", desc: "Ask Ora anything: price targets, portfolio breakdowns, chart explanations, or what a BSV settlement actually means.", color: "#60a5fa" },
+          ].map(({ icon: Icon, label, desc, color }) => (
+            <div key={label} className="flex flex-col gap-3 p-5 rounded-2xl border border-white/8 bg-white/3 hover:bg-white/5 transition-colors">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
+                <Icon className="w-4.5 h-4.5" style={{ color }} />
+              </div>
+              <div>
+                <p className="font-bold text-white text-sm mb-1">{label}</p>
+                <p className="text-xs text-gray-400 leading-relaxed">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Live insights */}
+        <div className="rounded-2xl border border-green-500/15 bg-green-500/4 p-6 mb-8">
+          <div className="flex items-center gap-2 mb-5">
+            <Sparkles className="w-4 h-4 text-green-400" />
+            <span className="text-sm font-black text-white">Live Market Insights</span>
+            <span className="ml-auto text-[10px] text-green-500/60 font-bold uppercase tracking-wider">Powered by Ora</span>
+          </div>
+
+          {loading ? (
+            <div className="flex flex-col gap-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-12 rounded-xl bg-white/4 animate-pulse" />
+              ))}
+            </div>
+          ) : insights.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {insights.map(ins => (
+                <div key={ins.id} className={`flex items-start gap-3 p-4 rounded-xl border ${sentimentColor(ins.sentiment)}`}>
+                  {sentimentIcon(ins.sentiment)}
+                  <p className="text-sm text-gray-300 leading-relaxed">{ins.content}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-white/8 bg-white/3">
+              <Sparkles className="w-4 h-4 text-green-400 shrink-0" />
+              <p className="text-sm text-gray-400">Ora is analysing the markets. Insights will appear shortly.</p>
+            </div>
+          )}
+        </div>
+
+        {/* CTA */}
+        <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
+          <button
+            onClick={openOra}
+            className="group flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-black transition-all hover:scale-[1.02] hover:shadow-2xl active:scale-95"
+            style={{ background: "linear-gradient(135deg, #4ade80, #22c55e)", boxShadow: "0 0 40px rgba(74,222,128,0.3)" }}
+          >
+            <Sparkles className="w-5 h-5" />
+            Chat with Ora
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </button>
+          <Link
+            href="/trade/BSV-USDT"
+            className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-white border border-white/12 hover:bg-white/6 transition-all text-sm"
+          >
+            View Trade Signals <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -295,7 +416,7 @@ export function LandingPage() {
           </div>
 
           {/* Live stats bar */}
-          <div className={`flex flex-wrap justify-center gap-3 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
+          <div className={`grid grid-cols-2 sm:flex sm:flex-wrap justify-center gap-3 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
             style={{ transitionDelay: "600ms" }}>
             <StatPill label="Markets" value={marketCount.toLocaleString()} />
             <StatPill label="Chains" value="20+" color="text-amber-400" />
@@ -374,6 +495,9 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── ORA AI ───────────────────────────────────────────────────────── */}
+      <OraAiSection />
 
       {/* ── ARCHITECTURE ──────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-24" style={{ background: "rgba(255,255,255,0.01)" }}>
