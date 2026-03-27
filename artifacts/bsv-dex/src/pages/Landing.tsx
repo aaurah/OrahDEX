@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, Globe, ChevronDown } from "lucide-react";
+import { ArrowRight, Zap, Shield, Globe, ChevronDown, ExternalLink } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -138,6 +138,31 @@ function StatPill({ label, value, color = "text-green-400" }: {
   );
 }
 
+/* ── Explore Live BSV Block pill ─────────────────────────────────────────── */
+function BsvBlockPill({ blockHeight, blockHash }: { blockHeight: number; blockHash?: string }) {
+  const explorerUrl = blockHash
+    ? `https://whatsonchain.com/block/${blockHash}`
+    : `https://whatsonchain.com`;
+
+  return (
+    <a
+      href={explorerUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="group flex flex-col items-center gap-0.5 px-6 py-4 rounded-2xl border border-green-500/25 bg-green-500/6 hover:bg-green-500/10 hover:border-green-500/40 min-w-[130px] transition-all hover:scale-[1.02] cursor-pointer"
+    >
+      <span className="text-[9px] uppercase tracking-[0.25em] text-green-500/60 font-bold flex items-center gap-1">
+        Explore
+        <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+      </span>
+      <span className="text-xl font-black text-green-400">
+        {blockHeight > 0 ? `#${blockHeight.toLocaleString()}` : "Live"}
+      </span>
+      <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">BSV Block</span>
+    </a>
+  );
+}
+
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -168,7 +193,8 @@ export function LandingPage() {
   });
 
   const marketCount = markets?.length ?? 933;
-  const bsvBlock = bsvStatus?.blockHeight ?? 0;
+  const bsvBlock     = bsvStatus?.blockHeight ?? 0;
+  const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 
   const scrollDown = () => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -274,7 +300,7 @@ export function LandingPage() {
             <StatPill label="Markets" value={marketCount.toLocaleString()} />
             <StatPill label="Chains" value="20+" color="text-amber-400" />
             <StatPill label="Settlement" value="BSV" color="text-blue-400" />
-            <StatPill label="BSV Block" value={bsvBlock > 0 ? `#${bsvBlock.toLocaleString()}` : "Live"} color="text-green-400" />
+            <BsvBlockPill blockHeight={bsvBlock} blockHash={bsvBlockHash} />
           </div>
 
           {/* Scroll indicator */}
