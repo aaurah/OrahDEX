@@ -695,6 +695,82 @@ export const DEFI_MARKETS: any[] = [
   spot("PERP",  "USDT", 0.42,   -0.85,   2_500_000),
   spot("ENS",   "USDT", 17,      2.48,   6_000_000),
   spot("GRT",   "USDT", 0.12,    3.15,  12_000_000),
+  spot("CAKE",  "USDT", 2.24,    3.85,  42_000_000),
+];
+
+// ─── UNISWAP — v2 & v3 pools (Ethereum mainnet + multi-chain) ─────────────────
+// Pairs that are live on Uniswap protocol. Quoted in USDC to match Uniswap UI.
+export const UNISWAP_MARKETS: any[] = [
+  /* ── Uniswap v3 — Ethereum flagship pools ── */
+  spot("WETH",  "USDC",  3415,      2.15, 1_850_000_000),  // ETH/USDC 0.05% pool — #1 by TVL
+  spot("WBTC",  "USDC",  68310,    -1.85,   820_000_000),  // WBTC/USDC 0.3% pool
+  spot("WBTC",  "WETH",  20.02,    -1.52,   480_000_000),  // WBTC/ETH pool (cross)
+  spot("UNI",   "USDC",  9.84,      1.55,   185_000_000),  // UNI/USDC 0.3% pool
+  spot("UNI",   "WETH",  0.00288,   1.35,    82_000_000),  // UNI/ETH pool
+  spot("LINK",  "USDC",  14.82,     3.42,   145_000_000),  // LINK/USDC pool
+  spot("LINK",  "WETH",  0.00434,   3.18,    62_000_000),  // LINK/ETH pool
+  spot("AAVE",  "USDC",  96.5,      1.82,    98_000_000),  // AAVE/USDC pool
+  spot("MKR",   "USDC",  2920,     -0.45,    72_000_000),  // MKR/USDC pool
+  spot("CRV",   "USDC",  0.382,    -1.15,    58_000_000),  // CRV/USDC pool
+  /* ── Uniswap v3 — stablecoin pools ── */
+  spot("DAI",   "USDC",  0.9999,    0.01, 2_100_000_000),  // DAI/USDC 0.01% — stable pool
+  spot("USDT",  "USDC",  1.0001,    0.01, 1_950_000_000),  // USDT/USDC 0.01%
+  spot("FRAX",  "USDC",  0.9982,   -0.02,   420_000_000),  // FRAX/USDC stable pool
+  /* ── Uniswap v3 — multi-chain pools (Arbitrum, Polygon, Optimism) ── */
+  spot("ARB",   "USDC",  1.12,      4.85,   185_000_000),  // ARB/USDC on Arbitrum
+  spot("OP",    "USDC",  2.41,      3.10,   125_000_000),  // OP/USDC on Optimism
+  spot("MATIC", "USDC",  0.82,      2.48,   145_000_000),  // MATIC/USDC on Polygon
+  spot("PEPE",  "WETH",  0.00000000412, 8.42, 385_000_000),// PEPE/WETH meme pool
+  spot("SHIB",  "USDC",  0.0000198, 5.21,   285_000_000),  // SHIB/USDC
+  spot("LDO",   "USDC",  2.15,      1.95,    62_000_000),  // Lido on Uniswap
+  spot("GRT",   "USDC",  0.12,      3.15,    48_000_000),  // The Graph / USDC
+  spot("ENS",   "USDC",  17,        2.48,    38_000_000),  // ENS/USDC pool
+  spot("RPL",   "USDC",  14.5,      2.84,    28_000_000),  // Rocket Pool
+  spot("SSV",   "USDC",  22.4,      5.42,    18_000_000),  // SSV Network pool
+  spot("PENDLE","USDC",  3.5,       9.12,    42_000_000),  // Pendle / USDC
+  spot("SUSHI", "USDC",  1.22,     -0.85,    22_000_000),  // SushiSwap on Uniswap
+];
+
+// ─── PANCAKESWAP — BNB Smart Chain & multi-chain pools ───────────────────────
+// Pairs from PancakeSwap v2/v3 — BSC-native, CAKE ecosystem, and bridged assets.
+export const PANCAKE_MARKETS: any[] = [
+  /* ── CAKE token — PancakeSwap native ── */
+  spot("CAKE",  "USDT",  2.24,      3.85,  42_000_000,  580_000_000),  // CAKE/USDT — flagship pair
+  spot("CAKE",  "BNB",   0.00572,   3.61,  18_000_000),                // CAKE/BNB direct
+  spot("CAKE",  "USDC",  2.24,      3.80,   8_000_000),                // CAKE/USDC v3
+  /* ── BSC blue-chip pairs ── */
+  spot("BNB",   "USDT",  392,       0.88, 820_000_000),  // BNB/USDT — most liquid BSC pair
+  spot("BNB",   "USDC",  392,       0.85, 420_000_000),  // BNB/USDC pool
+  spot("WBNB",  "USDT",  392,       0.88, 385_000_000),  // Wrapped BNB pairs
+  spot("BTC",   "BNB",   174.1,    -1.85, 285_000_000),  // BTC/BNB cross pair
+  spot("ETH",   "BNB",   8.72,      1.32, 195_000_000),  // ETH/BNB
+  spot("USDT",  "USDC",  1.0001,    0.01, 650_000_000),  // stable pool
+  spot("DAI",   "USDT",  0.9998,    0.02, 320_000_000),  // stablecoin pool
+  spot("BUSD",  "USDT",  0.9997,    0.01, 480_000_000),  // BUSD — legacy BSC stable
+  /* ── BSC DeFi tokens ── */
+  spot("XRP",   "BNB",   0.00122,   1.42,  82_000_000),  // XRP/BNB cross pair
+  spot("ADA",   "BNB",   0.00118,   0.85,  58_000_000),  // ADA/BNB
+  spot("DOGE",  "BNB",   0.000240,  4.21,  48_000_000),  // DOGE/BNB
+  spot("DOT",   "BNB",   0.00360,   1.65,  38_000_000),  // DOT/BNB
+  spot("LTC",   "BNB",   0.220,     0.42,  28_000_000),  // LTC/BNB
+  spot("LINK",  "BNB",   0.0378,    3.18,  35_000_000),  // LINK/BNB
+  spot("UNI",   "BNB",   0.0251,    1.35,  22_000_000),  // UNI/BNB
+  spot("AAVE",  "BNB",   0.246,     1.62,  18_000_000),  // AAVE/BNB
+  spot("ATOM",  "BNB",   0.0115,    2.84,  15_000_000),  // ATOM/BNB
+  /* ── BSC meme / ecosystem ── */
+  spot("PEPE",  "USDT",  0.0000182, 8.42,  85_000_000),  // PEPE on BSC
+  spot("SHIB",  "USDT",  0.0000198, 5.21,  62_000_000),  // SHIB on BSC
+  spot("FLOKI", "USDT",  0.000182,  6.84,  42_000_000),  // FLOKI — BSC-native meme
+  spot("BABYDOGE","USDT",0.000000002, 9.15, 28_000_000), // Baby Doge Coin
+  spot("GMT",   "USDT",  0.182,     4.85,  35_000_000),  // STEPN / GMT
+  spot("TWT",   "USDT",  1.12,      2.84,  18_000_000),  // Trust Wallet Token
+  spot("BAKE",  "USDT",  0.182,     5.42,  12_000_000),  // BakerySwap token
+  spot("ALPACA","USDT",  0.282,     3.15,   8_000_000),  // Alpaca Finance
+  /* ── PancakeSwap v3 on other chains ── */
+  spot("ARB",   "USDC",  1.12,      4.85,  28_000_000),  // PCS v3 on Arbitrum
+  spot("ETH",   "USDC",  3415,      2.15,  82_000_000),  // PCS v3 on Ethereum
+  spot("MATIC", "USDC",  0.82,      2.48,  22_000_000),  // PCS v3 on Polygon
+  spot("OP",    "USDC",  2.41,      3.10,  18_000_000),  // PCS v3 on Optimism
 ];
 
 // ─── GAMING / METAVERSE ───────────────────────────────────────────────────────
