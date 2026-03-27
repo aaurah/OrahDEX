@@ -1,0 +1,309 @@
+I’ll give you the complete system, broken into layers, endpoints, flows, and Keeper‑aware logic — the kind of blueprint you can hand directly to engineers.
+
+This is the OrahDex API, mythic in identity, precise in engineering.
+
+---
+
+🜂 I. The Three‑Layer OrahDex API Architecture
+
+Every DEX API in the world fits into one of three categories — but OrahDex is the rare one that uses all three at once, in a sovereign hybrid stack.
+
+Here’s your architecture:
+
+Layer 1 — Off‑Chain Sovereign Routing Engine (Phase 1)
+
+This is where:
+
+• CEX liquidity is fetched
+• Prices are aggregated
+• Routes are computed
+• Swap calldata is built
+
+
+This is your “brain” before the AMM exists.
+
+Layer 2 — On‑Chain AMM Contract API (Phase 2)
+
+This is the pure DEX layer:
+
+• Router contract
+• Factory contract
+• Pools
+• Keeper fee logic
+• Identity‑aware routing
+
+
+This is your sovereign execution layer.
+
+Layer 3 — Cross‑Chain Bridge API (Phase 3)
+
+This is the BSV ↔ EVM HTLC layer:
+
+• Lock
+• Reveal
+• Redeem
+• Refund
+• Relayer service
+
+
+This is your inter‑realm transport layer.
+
+---
+
+🜁 II. The OrahDex API — Full Endpoint Blueprint
+
+Below is the complete REST API structure for your hybrid DEX.
+
+---
+
+1. Token Metadata
+
+GET /v1/tokens
+GET /v1/tokens/{chainId}
+GET /v1/token/{address}
+
+
+Returns:
+
+• symbol
+• decimals
+• address
+• chainId
+• price
+• liquidity
+• Keeper‑specific fee multipliers
+
+
+---
+
+2. Price Quotes
+
+GET /v1/quote
+
+
+Params:
+
+• chainId
+• tokenIn
+• tokenOut
+• amount
+• keeperAddress (optional)
+
+
+Returns:
+
+• expectedOut
+• minOut
+• priceImpact
+• route breakdown
+• Keeper fee discount
+
+
+---
+
+3. Allowance Target
+
+GET /v1/allowance/target
+
+
+Returns:
+
+• contract address that needs approval
+• recommended allowance amount
+
+
+---
+
+4. Swap Transaction Builder
+
+POST /v1/swap/build
+
+
+Body:
+
+• chainId
+• tokenIn
+• tokenOut
+• amount
+• slippage
+• keeperAddress
+
+
+Returns:
+
+• to
+• data
+• value
+• gas estimate
+• Keeper fee logic applied
+
+
+This is the core of your DEX.
+
+---
+
+5. Transaction Simulation
+
+POST /v1/swap/simulate
+
+
+Returns:
+
+• slippage
+• MEV risk
+• gas
+• revert reason (if any)
+
+
+---
+
+6. Broadcast
+
+POST /v1/tx/broadcast
+
+
+Returns:
+
+• txHash
+• status
+
+
+---
+
+🜄 III. OrahDex AMM Contract API (Phase 2)
+
+This is the on‑chain API — the sovereign layer.
+
+Router Contract
+
+Functions:
+
+• swapExactTokensForTokens
+• swapTokensForExactTokens
+• addLiquidity
+• removeLiquidity
+• getAmountsOut
+• getAmountsIn
+
+
+Factory Contract
+
+• getPair(tokenA, tokenB)
+• createPair(tokenA, tokenB)
+
+
+Pool Contract
+
+• getReserves()
+• swap()
+• mint()
+• burn()
+
+
+Keeper Fee Logic
+
+You add:
+
+• keeperFeeMultiplier(address keeper)
+• isKeeper(address)
+• keeperTier(address)
+
+
+This is where identity shapes execution.
+
+---
+
+🜃 IV. OrahDex Bridge API (Phase 3 — BSV ↔ EVM HTLC)
+
+1. Create HTLC
+
+POST /v1/bridge/lock
+
+
+2. Reveal Secret
+
+POST /v1/bridge/reveal
+
+
+3. Redeem
+
+POST /v1/bridge/redeem
+
+
+4. Refund
+
+POST /v1/bridge/refund
+
+
+5. Relayer Service
+
+POST /v1/bridge/relay
+
+
+This is the sovereign cross‑realm transport layer.
+
+---
+
+🜁 V. Keeper Identity‑Aware Routing
+
+This is where OrahDex becomes mythic and sovereign.
+
+Every API call can include:
+
+keeperAddress
+
+
+The routing engine then:
+
+• Applies fee multipliers
+• Unlocks Keeper‑only pools
+• Prioritizes identity‑aware routes
+• Reduces slippage for higher tiers
+• Grants access to ceremonial pools
+
+
+This is your competitive advantage.
+
+---
+
+🜂 VI. Full OrahDex API Flow (End‑to‑End)
+
+1. User selects tokens
+
+Frontend calls:
+
+GET /v1/tokens
+
+
+2. User enters amount
+
+Frontend calls:
+
+GET /v1/quote
+
+
+3. User approves
+
+Frontend calls:
+
+GET /v1/allowance/target
+
+
+4. User swaps
+
+Frontend calls:
+
+POST /v1/swap/build
+POST /v1/swap/simulate
+POST /v1/tx/broadcast
+
+
+5. Keeper logic applied automatically
+
+Backend adjusts:
+
+• fees
+• routes
+• slippage
+• pool access
+
