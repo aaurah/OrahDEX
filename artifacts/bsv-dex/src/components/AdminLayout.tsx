@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
-  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail,
+  Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -76,6 +76,12 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/fees",         label: "Fee Configuration",  icon: DollarSign },
       { href: "/admin/integrations", label: "Integrations",       icon: Link2 },
       { href: "/admin/contracts",    label: "Contracts & Coins",  icon: Cpu },
+    ],
+  },
+  {
+    title: "AI Intelligence",
+    items: [
+      { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain,   badge: "AI" },
     ],
   },
   {

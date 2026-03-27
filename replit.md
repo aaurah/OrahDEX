@@ -162,6 +162,26 @@ Express 5 API server. Routes in `src/routes/`. Uses `@workspace/db` for DB and `
 - `POST /api/webhook/email-inbound` — inbound webhook compatible with Mailgun, SendGrid, Postmark; normalises fields and inserts to `inbox` folder
 - Admin email inbox UI (`/admin/mail`) shows SMTP status banner, "Test" button, copyable webhook URL in sidebar
 
+**Admin AI Intelligence page (`/admin/ai`):**
+- `artifacts/bsv-dex/src/pages/admin/AiIntelligence.tsx` — full admin AI management panel
+- Stats: aiConversations, aiMessages, aiInsights, aiSignals (from `/api/admin/stats`)
+- Ora AI Settings: model selector (gpt-5-mini / gpt-5 / gpt-5.2), enable toggle, system prompt preview
+- Live AI Insights card: fetch + display + refresh insights from `/api/ai/insights`
+- AI Trade Signals card: per-pair signals for 5 major pairs, refresh button
+- Demo Trade Runner: runs AI-powered test buys/sells across 10 pairs, shows results + BSV txid + signals
+- Chat Tester: full streaming chat with Ora directly from admin panel (same SSE as user-facing)
+- Route: `/admin/ai` — added to App.tsx lazy imports + AdminLayout nav (Brain icon, "AI" badge)
+
+**Landing page — Explore Live BSV Block:**
+- BSV Block stat pill replaced with `BsvBlockPill` component — clickable link to `https://whatsonchain.com/block/<hash>`
+- Shows "EXPLORE" label, live block height `#942,xxx`, "BSV Block" sub-label
+- Hover effect: green glow, scale, ExternalLink icon appears
+
+**Trading + Notifications — verified:**
+- Demo trade BSV/USDT → fills at market price, matched by liquidity bot, BSV settlement txid generated
+- Notifications push `order_placed` + `order_filled` (with txid) correctly via notifQueue
+- Frontend polls `/api/notifications` every 20s for connected wallets
+
 ### `lib/db` (`@workspace/db`)
 Database layer using Drizzle ORM.
 - `pnpm --filter @workspace/db run push` — push schema changes

@@ -63,6 +63,7 @@ const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m 
 const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
 const AdminCexConnections = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
+const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -285,6 +286,7 @@ function Router() {
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
       <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/cex">       <AdminRoute><AdminCexConnections /></AdminRoute></Route>
+      <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
 
       {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
       <Route path="/">
