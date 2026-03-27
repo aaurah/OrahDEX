@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, Globe, ChevronDown, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare } from "lucide-react";
+import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -424,15 +424,6 @@ export function LandingPage() {
             <BsvBlockPill blockHeight={bsvBlock} blockHash={bsvBlockHash} />
           </div>
 
-          {/* Scroll indicator */}
-          <button
-            onClick={scrollDown}
-            className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-gray-600 hover:text-gray-400 transition-colors animate-bounce"
-            aria-label="Scroll down"
-          >
-            <span className="text-[10px] uppercase tracking-widest font-bold">Explore</span>
-            <ChevronDown className="w-4 h-4" />
-          </button>
         </div>
       </section>
 
