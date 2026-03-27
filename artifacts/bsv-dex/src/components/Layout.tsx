@@ -10,6 +10,7 @@ import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
 import { BrandLogo } from "./BrandLogo";
 import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { TxStatusBar } from "./TxStatusBar";
+import { AiAssistant } from "./AiAssistant";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -524,6 +525,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
+
+      {/* Ora — AI Trading Assistant (site-wide floating chat) */}
+      <AiAssistant />
     </div>
   );
 }

@@ -8,3 +8,5 @@ export * from "./coinVotes";
 export * from "./adminEmails";
 export * from "./wallets";
 export * from "./cexAccounts";
+export * from "./conversations";
+export * from "./messages";

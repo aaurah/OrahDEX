@@ -19,6 +19,7 @@ import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
+import { AiInsightsBar } from "@/components/AiInsightsBar";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -304,6 +305,9 @@ export function Markets() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* AI Insights banner */}
+      <AiInsightsBar />
+
       {/* Header */}
       <div className="px-6 lg:px-10 pt-0 pb-4 border-b border-border bg-card/40">
         <div className="max-w-7xl mx-auto">
