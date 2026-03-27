@@ -10,6 +10,7 @@ import {
   FUTURES_MARKETS,
   GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
   RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
+  UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -22,7 +23,7 @@ import { getWalletMarketTab } from "@/lib/walletMarket";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -69,6 +70,8 @@ const TAB_META: TabMeta[] = [
   { id: "depin",     label: "DePIN",        color: "text-teal-400",    desc: "Decentralized Physical Infrastructure · compute, storage, wireless" },
   { id: "meme",      label: "MEME",         color: "text-pink-400",    desc: "Meme tokens" },
   { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols · DEXs, lending, yield" },
+  { id: "uniswap",   label: "UNISWAP",      color: "text-pink-400",    desc: "Uniswap v2 & v3 pools · Ethereum + multi-chain" },
+  { id: "pancake",   label: "PANCAKE",      color: "text-yellow-400",  desc: "PancakeSwap v2 & v3 · BNB Smart Chain + multi-chain" },
   { id: "gaming",    label: "GAMING",       color: "text-violet-400",  desc: "Gaming & Metaverse · P2E, NFT games, virtual worlds" },
   { id: "cosmos",    label: "COSMOS",       color: "text-purple-400",  desc: "Cosmos IBC ecosystem · app-chains, DEXs, data availability" },
   { id: "l1",        label: "LAYER 1",      color: "text-amber-400",   desc: "Layer 1 blockchains · all major base chains" },
@@ -109,6 +112,8 @@ const ALL_MOCK = () => [
   ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
+  ...BASE_MARKETS, ...ZORA_MARKETS,
   ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
 ].map(normalise);
@@ -230,6 +235,8 @@ export function Markets() {
       case "depin":     return enrich(DEPIN_MARKETS.map(normalise));
       case "meme":      return enrich(MEME_MARKETS.map(normalise));
       case "defi":      return enrich(DEFI_MARKETS.map(normalise));
+      case "uniswap":   return enrich(UNISWAP_MARKETS.map(normalise));
+      case "pancake":   return enrich(PANCAKE_MARKETS.map(normalise));
       case "gaming":    return enrich(GAMING_MARKETS.map(normalise));
       case "cosmos":    return enrich(COSMOS_MARKETS.map(normalise));
       case "l1":        return enrich(L1_MARKETS.map(normalise));
@@ -270,6 +277,8 @@ export function Markets() {
       case "depin":     return DEPIN_MARKETS.length;
       case "meme":      return MEME_MARKETS.length;
       case "defi":      return DEFI_MARKETS.length;
+      case "uniswap":   return UNISWAP_MARKETS.length;
+      case "pancake":   return PANCAKE_MARKETS.length;
       case "gaming":    return GAMING_MARKETS.length;
       case "cosmos":    return COSMOS_MARKETS.length;
       case "l1":        return L1_MARKETS.length;
