@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
 
@@ -176,6 +176,12 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
 
     const lastPrice = parseFloat(market.lastPrice);
 
+    // A market with no price yet can't produce meaningful synthetic depth
+    if (!lastPrice || lastPrice <= 0) {
+      res.json({ bids: [], asks: [], lastPrice: 0 });
+      return;
+    }
+
     // Try to build from real open orders — with a hard 3 s wall-clock limit
     let bids: [number, number][] = [];
     let asks: [number, number][] = [];
@@ -217,12 +223,28 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       // DB slow or empty — fall through to synthetic
     }
 
-    // If real orders are sparse, pad / replace with synthetic levels
+    // If real orders are sparse, merge in synthetic levels to fill the depth.
+    // Real orders always take priority — synthetic only fills the remaining slots.
     if (bids.length < depth / 2 || asks.length < depth / 2) {
       const synth = syntheticOrderBook(lastPrice, depth);
-      // Merge: real orders take priority, synthetic fills the rest
-      if (bids.length === 0) bids = synth.bids;
-      if (asks.length === 0) asks = synth.asks;
+      if (bids.length < depth / 2) {
+        const realBidPrices = new Set(bids.map(([p]) => p));
+        const fillBids = synth.bids
+          .filter(([p]) => !realBidPrices.has(p))
+          .slice(0, depth - bids.length);
+        bids = [...bids, ...fillBids]
+          .sort((a, b) => b[0] - a[0])
+          .slice(0, depth);
+      }
+      if (asks.length < depth / 2) {
+        const realAskPrices = new Set(asks.map(([p]) => p));
+        const fillAsks = synth.asks
+          .filter(([p]) => !realAskPrices.has(p))
+          .slice(0, depth - asks.length);
+        asks = [...asks, ...fillAsks]
+          .sort((a, b) => a[0] - b[0])
+          .slice(0, depth);
+      }
     }
 
     const result = { bids, asks, lastPrice };
@@ -245,7 +267,52 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) { res.status(404).json({ error: "Market not found" }); return; }
 
-    const trades = generateRecentTrades(symbol, parseFloat(market.lastPrice), limit);
+    const lastPrice = parseFloat(market.lastPrice);
+
+    // Fetch real filled orders for this symbol — these are actual matched trades
+    let trades: any[];
+    try {
+      const filledOrders = await db
+        .select()
+        .from(ordersTable)
+        .where(and(eq(ordersTable.symbol, symbol), eq(ordersTable.status, "filled")))
+        .orderBy(desc(ordersTable.updatedAt))
+        .limit(limit);
+
+      if (filledOrders.length >= 5) {
+        // Use real trades, enriched with display fields
+        trades = filledOrders.map(o => ({
+          id:        o.id,
+          symbol:    o.symbol,
+          side:      o.side,
+          price:     parseFloat(o.price ?? market.lastPrice),
+          quantity:  parseFloat(o.quantity),
+          total:     parseFloat(o.total ?? "0"),
+          txid:      o.txid,
+          timestamp: o.updatedAt?.getTime() ?? Date.now(),
+          isBuyer:   o.side === "buy",
+        }));
+      } else {
+        // Not enough real trades yet — generate realistic synthetic trades
+        // seeded from the live price, then prepend any real ones we do have
+        const synth = generateRecentTrades(symbol, lastPrice, limit - filledOrders.length);
+        const realMapped = filledOrders.map(o => ({
+          id:        o.id,
+          symbol:    o.symbol,
+          side:      o.side,
+          price:     parseFloat(o.price ?? market.lastPrice),
+          quantity:  parseFloat(o.quantity),
+          total:     parseFloat(o.total ?? "0"),
+          txid:      o.txid,
+          timestamp: o.updatedAt?.getTime() ?? Date.now(),
+          isBuyer:   o.side === "buy",
+        }));
+        trades = [...realMapped, ...synth].slice(0, limit);
+      }
+    } catch {
+      trades = generateRecentTrades(symbol, lastPrice, limit);
+    }
+
     tradesCache.set(symbol, trades);
     res.json(trades);
   } catch (err) {
