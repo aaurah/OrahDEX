@@ -36,7 +36,7 @@ const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
 const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
-  { href: "/", label: "Markets", icon: Activity },
+  { href: "/markets", label: "Markets", icon: Activity },
   { href: "/trade/BSV-USDT", label: "Spot", icon: ArrowRightLeft },
   { href: "/futures/BSV-USDT-PERP", label: "Futures", icon: LineChart },
   { href: "/dex", label: "Market Hub", icon: Layers },
