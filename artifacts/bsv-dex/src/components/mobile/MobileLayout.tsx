@@ -8,7 +8,7 @@ import { WalletOptionsDropdown } from "@/components/WalletOptionsDropdown";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 
 const TABS = [
-  { path: "/", label: "Markets", Icon: BarChart2, exact: true },
+  { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
   { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
   { path: "/p2p", label: "P2P", Icon: Users2 },
@@ -32,7 +32,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useThemeStore();
 
   const isActive = (tab: typeof TABS[0]) => {
-    if (tab.exact) return location === "/";
+    if (tab.exact) return location === tab.path;
     return location.startsWith(tab.path);
   };
 
