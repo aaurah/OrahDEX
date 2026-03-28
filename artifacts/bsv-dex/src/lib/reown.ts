@@ -221,6 +221,25 @@ export function getWagmiAdapter() { return _adapter; }
 export function isReownReady() { return _initialized && !!_modal; }
 
 /**
+ * Switch chain for Reown/WalletConnect connections.
+ * Uses AppKit's switchNetwork which routes the request through the
+ * WalletConnect session rather than window.ethereum.
+ * Returns true on success, false if the chain isn't in the Reown config.
+ */
+export async function switchReownChain(chainId: number): Promise<boolean> {
+  if (!_modal) return false;
+  const network = REOWN_NETWORKS.find(n => n.id === chainId);
+  if (!network) return false;
+  try {
+    await (_modal as any).switchNetwork(network);
+    return true;
+  } catch (err) {
+    // Re-throw so caller can distinguish user rejection (code 4001) from other errors
+    throw err;
+  }
+}
+
+/**
  * Track whether the user intentionally disconnected to prevent auto-reconnect.
  * The flag clears itself after 3 seconds as a safety net.
  */
