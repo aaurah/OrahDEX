@@ -220,6 +220,39 @@ export function getReownModal() { return _modal; }
 export function getWagmiAdapter() { return _adapter; }
 export function isReownReady() { return _initialized && !!_modal; }
 
+/**
+ * Track whether the user intentionally disconnected to prevent auto-reconnect.
+ * The flag clears itself after 3 seconds as a safety net.
+ */
+let _userDisconnecting = false;
+let _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function setUserDisconnecting(val: boolean): void {
+  _userDisconnecting = val;
+  if (_disconnectTimer) clearTimeout(_disconnectTimer);
+  if (val) {
+    _disconnectTimer = setTimeout(() => { _userDisconnecting = false; }, 3000);
+  }
+}
+
+export function isUserDisconnecting(): boolean {
+  return _userDisconnecting;
+}
+
+/**
+ * Fully disconnect from the Reown session — kills the WalletConnect/AppKit
+ * session so re-opening the modal shows the wallet picker from scratch.
+ */
+export async function disconnectReown(): Promise<void> {
+  if (!_modal) return;
+  setUserDisconnecting(true);
+  try {
+    await (_modal as any).disconnect?.();
+  } catch (err) {
+    console.warn("[OrahDEX] Reown disconnect:", err);
+  }
+}
+
 /* ── ERC-20 ABI helpers (minimal selectors) ──────────────────────────────── */
 const ERC20_BALANCE_OF = "0x70a08231"; // balanceOf(address)
 const ERC20_ALLOWANCE  = "0xdd62ed3e"; // allowance(owner, spender)

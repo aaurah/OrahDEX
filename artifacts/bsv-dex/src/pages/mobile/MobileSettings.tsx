@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
+import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
@@ -132,8 +133,11 @@ export function MobileSettings() {
     }
   };
 
-  const handleDisconnect = () => {
-    if (window.confirm("Disconnect your wallet?")) disconnect();
+  const handleDisconnect = async () => {
+    if (window.confirm("Disconnect your wallet?")) {
+      if (provider === "reown") await disconnectReown();
+      disconnect();
+    }
   };
 
   return (

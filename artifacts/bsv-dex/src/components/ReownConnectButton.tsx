@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Wallet, ChevronDown, LogOut, Copy, Check, ExternalLink } from "lucide-react";
-import { openReownModal, subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
+import { openReownModal, subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip, disconnectReown } from "@/lib/reown";
 import { useWalletStore } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +40,7 @@ export function ReownConnectButton({
   const [copied, setCopied] = useState(false);
   const [dropOpen, setDropOpen] = useState(false);
   const { disconnect } = useWalletStore();
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   useEffect(() => {
     let tries = 0;
@@ -118,21 +119,47 @@ export function ReownConnectButton({
                 <ExternalLink className="w-3.5 h-3.5" />
                 View account
               </button>
-              <button onClick={() => { openReownModal("Networks"); setDropOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
-                <ExternalLink className="w-3.5 h-3.5" />
+              <button
+                onClick={() => {
+                  setDropOpen(false);
+                  openReownModal("Networks");
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+              >
+                <Wallet className="w-3.5 h-3.5" />
                 Switch network
+              </button>
+              <button
+                onClick={async () => {
+                  setDropOpen(false);
+                  await disconnectReown();
+                  disconnect();
+                  // Give Reown 500ms to fully close session, then open wallet picker
+                  setTimeout(() => openReownModal("Connect"), 500);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                Switch wallet
               </button>
               <div className="border-t border-border my-1" />
               <button
-                onClick={() => {
-                  disconnect();
+                onClick={async () => {
+                  if (isDisconnecting) return;
+                  setIsDisconnecting(true);
                   setDropOpen(false);
-                  openReownModal("Connect");
+                  try {
+                    await disconnectReown();
+                    disconnect();
+                  } finally {
+                    setIsDisconnecting(false);
+                  }
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-destructive/80 hover:text-destructive hover:bg-destructive/5 transition-all"
+                disabled={isDisconnecting}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-destructive/80 hover:text-destructive hover:bg-destructive/5 transition-all disabled:opacity-50"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                Disconnect
+                {isDisconnecting ? "Disconnecting…" : "Disconnect"}
               </button>
             </div>
           </div>

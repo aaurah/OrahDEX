@@ -12,7 +12,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
+import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting } from "@/lib/reown";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
@@ -229,6 +229,8 @@ function Router() {
         reownUnsub = subscribeReownAccount(async (state) => {
           const { provider: current } = useWalletStore.getState();
           if (state.isConnected && state.address) {
+            // Block auto-reconnect if the user is in the middle of disconnecting
+            if (isUserDisconnecting()) return;
             const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
             useWalletStore.getState().connect({
               address: state.address,
@@ -242,6 +244,8 @@ function Router() {
             }
           } else if (current === "reown") {
             useWalletStore.getState().disconnect();
+            // Clear the flag once Reown confirms disconnection
+            setUserDisconnecting(false);
           }
         });
       }

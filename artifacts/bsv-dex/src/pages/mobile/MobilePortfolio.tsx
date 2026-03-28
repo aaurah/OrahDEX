@@ -5,6 +5,7 @@ import {
   LogOut, Zap,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -281,7 +282,10 @@ export function MobilePortfolio() {
               <RefreshCw size={13} className={pricesLoading ? "animate-spin" : ""} />
             </button>
             <button
-              onClick={() => disconnect()}
+              onClick={async () => {
+                if (provider === "reown") await disconnectReown();
+                disconnect();
+              }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-all"
               title="Disconnect wallet"
             >
