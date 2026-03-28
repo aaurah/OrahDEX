@@ -3,6 +3,7 @@ import { ChevronDown, CheckCircle2, PlusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
+import { switchReownChain, fetchEvmBalance } from "@/lib/reown";
 
 interface ChainDef {
   id: number;
@@ -219,81 +220,85 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
   const currentOther    = OTHER_CHAINS.find(c => c.network === network);
 
   const switchEvmChain = async (chain: ChainDef) => {
+    if (chain.id === chainId) { setOpen(false); return; }
+
+    setSwitching(chain.id);
+
+    /* ── Reown / WalletConnect path ─────────────────────────────────────── */
+    if (provider === "reown") {
+      try {
+        await switchReownChain(chain.id);
+        connect({ address: address!, provider: "reown", network: "evm", chainId: chain.id });
+        const bal = await fetchEvmBalance(address!, chain.id);
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
+        setOpen(false);
+      } catch (err: any) {
+        if (err?.code === 4001 || err?.message?.toLowerCase().includes("reject")) {
+          toast({ title: "Cancelled", description: "You rejected the chain switch.", variant: "destructive" });
+        } else {
+          toast({
+            title: "Switch failed",
+            description: err?.message || "Could not switch chain via WalletConnect.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        setSwitching(null);
+      }
+      return;
+    }
+
+    /* ── Injected wallet path (MetaMask, Coinbase Wallet, etc.) ─────────── */
     const eth = (window as any).ethereum;
     if (!eth) {
+      setSwitching(null);
       toast({
         title: "No EVM wallet found",
-        description: "Install MetaMask or another EVM wallet to switch chains.",
+        description: "Install MetaMask or connect via WalletConnect to switch chains.",
         variant: "destructive",
       });
       return;
     }
 
-    setSwitching(chain.id);
     const hexId = `0x${chain.id.toString(16)}`;
 
     try {
-      await eth.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: hexId }],
-      });
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
       connect({ address: address!, provider: provider!, network: "evm", chainId: chain.id });
-      toast({
-        title: `Switched to ${chain.name}`,
-        description: `${chain.badge} · ${chain.symbol}`,
-      });
+      const bal = await fetchEvmBalance(address!, chain.id);
+      if (bal !== null) useWalletStore.getState().setBalance(bal);
+      toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
       setOpen(false);
     } catch (err: any) {
-      /* Chain not added to wallet — add it automatically */
       if (err?.code === 4902 || err?.code === -32603) {
+        /* Chain not in wallet — add it first */
         try {
           await eth.request({
             method: "wallet_addEthereumChain",
             params: [{
               chainId: hexId,
               chainName: chain.name,
-              nativeCurrency: {
-                name: chain.nativeName,
-                symbol: chain.symbol,
-                decimals: chain.nativeDecimals,
-              },
+              nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals },
               rpcUrls: [chain.rpcUrl],
               blockExplorerUrls: [chain.blockExplorerUrl],
             }],
           });
-          /* After adding, switch to it */
-          await eth.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: hexId }],
-          });
+          await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
           connect({ address: address!, provider: provider!, network: "evm", chainId: chain.id });
-          toast({
-            title: `${chain.name} added & connected`,
-            description: `${chain.badge} · ${chain.symbol} · Added to your wallet`,
-          });
+          const bal = await fetchEvmBalance(address!, chain.id);
+          if (bal !== null) useWalletStore.getState().setBalance(bal);
+          toast({ title: `${chain.name} added & connected`, description: `${chain.badge} · ${chain.symbol} · Added to your wallet` });
           setOpen(false);
         } catch (addErr: any) {
           if (addErr?.code !== 4001) {
-            toast({
-              title: `Failed to add ${chain.name}`,
-              description: addErr?.message || "Could not add network to wallet.",
-              variant: "destructive",
-            });
+            toast({ title: `Failed to add ${chain.name}`, description: addErr?.message || "Could not add network.", variant: "destructive" });
           }
         }
       } else if (err?.code === 4001) {
-        /* User rejected */
-        toast({
-          title: "Cancelled",
-          description: "You rejected the chain switch request.",
-          variant: "destructive",
-        });
+        toast({ title: "Cancelled", description: "You rejected the chain switch request.", variant: "destructive" });
       } else {
-        toast({
-          title: "Switch failed",
-          description: err?.message || "Could not switch chain.",
-          variant: "destructive",
-        });
+        toast({ title: "Switch failed", description: err?.message || "Could not switch chain.", variant: "destructive" });
       }
     } finally {
       setSwitching(null);
