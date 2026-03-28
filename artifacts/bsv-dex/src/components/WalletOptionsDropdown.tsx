@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown } from 'lucide-react';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
+import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
 import { cn } from '@/lib/utils';
 
@@ -47,14 +48,24 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
     setOpen(false);
+    if (provider === 'reown') {
+      await disconnectReown();
+    }
     disconnect();
   };
 
-  const handleSwitch = () => {
+  const handleSwitch = async () => {
     setOpen(false);
-    openWalletModal();
+    if (provider === 'reown') {
+      await disconnectReown();
+      disconnect();
+      setTimeout(() => openReownModal("Connect"), 500);
+    } else {
+      disconnect();
+      openWalletModal();
+    }
   };
 
   return (
