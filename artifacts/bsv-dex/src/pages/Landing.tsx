@@ -346,7 +346,7 @@ export function LandingPage() {
               <circle cx="50" cy="50" r="13" fill="#4ade80"
                 style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
             </svg>
-            <span className="text-white">Orah</span><span className="text-green-400">DEX</span>
+            <span><span className="text-white">Orah</span><span className="text-green-400">DEX</span></span>
           </div>
           <div className="flex items-center gap-3">
             {bsvBlock > 0 && (
@@ -395,10 +395,10 @@ export function LandingPage() {
           {/* Ritual taglines */}
           <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
             style={{ transitionDelay: "400ms" }}>
-            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8 text-sm font-semibold">
+            <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-0 text-sm font-semibold">
               {["Identity is the engine.", "Execution is a ritual.", "Every trade is a declaration."].map((s, i) => (
-                <span key={i} className="text-gray-400"
-                  style={{ borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.1)" : "none", paddingLeft: i > 0 ? "2rem" : undefined }}>
+                <span key={i} className="flex items-center text-gray-400">
+                  {i > 0 && <span className="hidden sm:block w-px h-4 bg-white/15 mx-6" />}
                   {s}
                 </span>
               ))}
@@ -410,13 +410,16 @@ export function LandingPage() {
             style={{ transitionDelay: "500ms" }}>
             <Link
               href="/trade/BSV-USDT"
-              className="group flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-base text-black transition-all hover:scale-[1.03] hover:shadow-2xl"
+              className="group flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-base text-black transition-all hover:scale-[1.03] hover:shadow-2xl w-full sm:w-auto justify-center"
               style={{ background: "linear-gradient(135deg, #4ade80, #22c55e)", boxShadow: "0 0 40px rgba(74,222,128,0.3)" }}
             >
               Enter the Exchange
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-gray-300 border border-white/12 hover:border-white/25 hover:text-white bg-white/5 hover:bg-white/8 transition-all">
+            <Link href="/dex" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-green-300 border border-green-500/30 hover:border-green-400/60 hover:text-green-200 bg-green-500/8 hover:bg-green-500/15 transition-all w-full sm:w-auto justify-center">
+              Buy Crypto
+            </Link>
+            <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-gray-300 border border-white/12 hover:border-white/25 hover:text-white bg-white/5 hover:bg-white/8 transition-all w-full sm:w-auto justify-center">
               View All Markets
               <span className="text-xs font-black text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full border border-green-500/25">
                 {marketCount.toLocaleString()}
