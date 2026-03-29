@@ -34,19 +34,27 @@ export function OrahInline({ className = "" }: { className?: string }) {
 
 /** Just the animated O glyph — reused by both exports */
 export function OrahO({ online }: { online: boolean }) {
+  const color = online ? '#4ade80' : '#ef4444';
+  const glowColor = online ? 'rgba(74,222,128,0.75)' : 'rgba(239,68,68,0.75)';
   return (
     <svg
       viewBox="0 0 100 100"
       className="inline-block h-[1em] w-[1em] overflow-visible shrink-0"
+      style={{ filter: `drop-shadow(0 0 5px ${glowColor}) drop-shadow(0 0 2px ${glowColor})` }}
       fill="none"
       aria-hidden
     >
-      <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="16" fill="none" />
-      <circle cx="50" cy="50" r="13" fill={online ? 'var(--color-primary)' : '#ef4444'} opacity="0.7">
+      {/* Soft outer glow ring */}
+      <circle cx="50" cy="50" r="40" stroke={color} strokeWidth="20" fill="none" opacity="0.15" />
+      {/* Main O ring */}
+      <circle cx="50" cy="50" r="40" stroke={color} strokeWidth="12" fill="none" />
+      {/* Pulsing ring */}
+      <circle cx="50" cy="50" r="13" fill={color} opacity="0.7">
         <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
         <animate attributeName="opacity" from="0.7" to="0"  dur="1.2s" repeatCount="indefinite" />
       </circle>
-      <circle cx="50" cy="50" r="13" fill={online ? 'var(--color-primary)' : '#ef4444'} />
+      {/* Center dot */}
+      <circle cx="50" cy="50" r="13" fill={color} />
     </svg>
   );
 }
