@@ -333,19 +333,18 @@ export function LandingPage() {
         {/* Top bar */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 lg:px-10 py-5 z-10">
           <div className="flex items-center gap-2 font-black text-xl tracking-tight">
-            <svg viewBox="0 0 100 100" className="w-7 h-7 overflow-visible" fill="none"
-              style={{ filter: "drop-shadow(0 0 6px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }}>
-              {/* Soft outer glow ring */}
-              <circle cx="50" cy="50" r="40" stroke="#4ade80" strokeWidth="20" fill="none" opacity="0.15" />
-              {/* Main O ring */}
-              <circle cx="50" cy="50" r="40" stroke="#4ade80" strokeWidth="12" fill="none" />
-              {/* Pulsing ring */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7">
+            <svg viewBox="0 0 100 100" className="w-7 h-7 overflow-visible" fill="none">
+              {/* Outer O ring — white, no glow */}
+              <circle cx="50" cy="50" r="40" stroke="white" strokeWidth="12" fill="none" />
+              {/* Pulsing glow around dot */}
+              <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7"
+                style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}>
                 <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
                 <animate attributeName="opacity" from="0.7" to="0"  dur="1.2s" repeatCount="indefinite" />
               </circle>
-              {/* Center dot */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80" />
+              {/* Center dot with glow */}
+              <circle cx="50" cy="50" r="13" fill="#4ade80"
+                style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
             </svg>
             <span className="text-white">Orah</span><span className="text-green-400">DEX</span>
           </div>
