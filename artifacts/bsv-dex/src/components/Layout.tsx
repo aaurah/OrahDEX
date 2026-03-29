@@ -272,8 +272,19 @@ export function Layout({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [notifOpen]);
 
+  const [bannerDismissed, setBannerDismissed] = useState(() => sessionStorage.getItem("maintenance_banner") === "1");
+  const dismissBanner = () => { sessionStorage.setItem("maintenance_banner", "1"); setBannerDismissed(true); };
+
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
+      {/* ── Maintenance / testing ribbon ── */}
+      {!bannerDismissed && (
+        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-xs font-medium z-50">
+          <span className="text-amber-400">⚠</span>
+          <span>OrahDEX is currently <strong>under active testing</strong> — some features may be incomplete or change without notice.</span>
+          <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400/60 hover:text-amber-300 transition-colors text-base leading-none">✕</button>
+        </div>
+      )}
       <header className="sticky top-0 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
         <div className="flex items-center gap-8">
           {/* Brand */}
@@ -283,9 +294,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
           <nav className="hidden md:flex items-center gap-1">
             {NAV_LINKS.map((link) => {
-              const isActive = link.href === "/"
-                ? location === "/"
-                : location.startsWith("/" + link.href.split("/")[1]);
+              const isActive = location.startsWith("/" + link.href.split("/")[1]);
               return (
                 <Link
                   key={link.href}
