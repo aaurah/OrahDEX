@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { OrderBook as OrderBookType } from '@workspace/api-client-react';
 import { formatPrice, formatVolume } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,15 @@ interface OrderBookProps {
 export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades = [] }: OrderBookProps) {
   const [mode, setMode] = useState<BookMode>("full");
   const [panel, setPanel] = useState<Panel>("book");
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleFill(fill: OrderBookFill, key: string) {
+    onFill?.(fill);
+    setFlashKey(key);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashKey(null), 600);
+  }
 
   const parts = symbol.split(/[/-]/);
   const base = parts[0] ?? "BTC";
@@ -134,12 +143,17 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
             {showAsks && (
               <div className={cn("overflow-hidden flex flex-col justify-end", showBids ? "flex-1" : "flex-1")}>
                 {data.asks.slice(-20).reverse().map((ask, i) => {
+                  const key = `ask-${i}`;
                   const pct = (ask.total / maxTotal) * 100;
+                  const isFlash = flashKey === key;
                   return (
                     <div
-                      key={`ask-${i}`}
-                      className="relative flex items-center px-2 py-px hover:bg-sell/10 cursor-pointer group transition-colors"
-                      onClick={() => onFill?.({ price: ask.price.toFixed(2), amount: ask.quantity.toFixed(4), side: "buy", ts: Date.now() })}
+                      key={key}
+                      className={cn(
+                        "relative flex items-center px-2 py-px cursor-pointer group transition-colors duration-100",
+                        isFlash ? "bg-sell/30" : "hover:bg-sell/10"
+                      )}
+                      onClick={() => handleFill({ price: ask.price.toFixed(2), amount: ask.quantity.toFixed(4), side: "buy", ts: Date.now() }, key)}
                     >
                       <div className="absolute right-0 top-0 h-full bg-sell/12 transition-all duration-300" style={{ width: `${pct}%` }} />
                       <span className="flex-1 text-sell text-[10px] relative z-10">{formatPrice(ask.price, 2)}</span>
@@ -165,12 +179,17 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
             {showBids && (
               <div className={cn("overflow-hidden", showAsks ? "flex-1" : "flex-1")}>
                 {data.bids.slice(0, 20).map((bid, i) => {
+                  const key = `bid-${i}`;
                   const pct = (bid.total / maxTotal) * 100;
+                  const isFlash = flashKey === key;
                   return (
                     <div
-                      key={`bid-${i}`}
-                      className="relative flex items-center px-2 py-px hover:bg-buy/10 cursor-pointer group transition-colors"
-                      onClick={() => onFill?.({ price: bid.price.toFixed(2), amount: bid.quantity.toFixed(4), side: "sell", ts: Date.now() })}
+                      key={key}
+                      className={cn(
+                        "relative flex items-center px-2 py-px cursor-pointer group transition-colors duration-100",
+                        isFlash ? "bg-buy/30" : "hover:bg-buy/10"
+                      )}
+                      onClick={() => handleFill({ price: bid.price.toFixed(2), amount: bid.quantity.toFixed(4), side: "sell", ts: Date.now() }, key)}
                     >
                       <div className="absolute right-0 top-0 h-full bg-buy/12 transition-all duration-300" style={{ width: `${pct}%` }} />
                       <span className="flex-1 text-buy text-[10px] relative z-10">{formatPrice(bid.price, 2)}</span>

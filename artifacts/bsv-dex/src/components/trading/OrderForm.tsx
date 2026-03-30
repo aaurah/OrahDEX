@@ -156,6 +156,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
 
+  const [filledFromBook, setFilledFromBook] = useState(false);
   // When the user clicks a row in the Order Book, fill price + amount here
   useEffect(() => {
     if (!externalFill) return;
@@ -163,6 +164,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     setAmount(externalFill.amount);
     setSide(externalFill.side);
     setType("limit");
+    setFilledFromBook(true);
+    const t = setTimeout(() => setFilledFromBook(false), 1800);
+    return () => clearTimeout(t);
   }, [externalFill?.ts]);
 
   const [signing, setSigning]       = useState(false);
@@ -559,6 +563,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           </button>
         </div>
       </div>
+
+      {/* Order Book fill notification */}
+      {filledFromBook && (
+        <div className="mx-3 mt-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+          <PenLine className="w-3 h-3 text-primary shrink-0" />
+          <span className="text-[11px] text-primary font-semibold">Price & amount filled from order book</span>
+        </div>
+      )}
 
       {/* Settlement banner */}
       {settlement && (

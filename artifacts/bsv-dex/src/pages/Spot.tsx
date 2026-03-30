@@ -10,12 +10,12 @@ import { OrderForm } from "@/components/trading/OrderForm";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
-import { ExternalLink, CheckCircle2, Search, ChevronDown, X } from "lucide-react";
+import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 
-type BottomTab = "open" | "history" | "trades";
+type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
@@ -36,6 +36,39 @@ const COIN_COLORS: Record<string, string> = {
   SHIB:"#F97316",MKR:"#22C55E", AAVE:"#7C3AED", CRV:"#F43F5E",
   FET:"#06B6D4",
 };
+
+const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmApr: number }> = {
+  "BTC/USDT":  { tvl: 423_600_000, vol24: 98_200_000,  fee: 0.3,  farmApr: 4.2  },
+  "ETH/USDT":  { tvl: 187_400_000, vol24: 44_100_000,  fee: 0.3,  farmApr: 6.1  },
+  "SOL/USDT":  { tvl: 95_700_000,  vol24: 21_300_000,  fee: 0.3,  farmApr: 8.4  },
+  "BSV/USDT":  { tvl: 8_240_000,   vol24: 1_920_000,   fee: 0.2,  farmApr: 18.2 },
+  "BNB/USDT":  { tvl: 67_300_000,  vol24: 14_800_000,  fee: 0.3,  farmApr: 5.9  },
+  "XRP/USDT":  { tvl: 52_100_000,  vol24: 12_700_000,  fee: 0.3,  farmApr: 7.3  },
+  "ADA/USDT":  { tvl: 29_800_000,  vol24: 6_400_000,   fee: 0.3,  farmApr: 9.1  },
+  "DOGE/USDT": { tvl: 41_200_000,  vol24: 9_300_000,   fee: 0.25, farmApr: 7.8  },
+  "DOT/USDT":  { tvl: 18_600_000,  vol24: 3_900_000,   fee: 0.3,  farmApr: 11.2 },
+  "LINK/USDT": { tvl: 22_900_000,  vol24: 5_100_000,   fee: 0.3,  farmApr: 10.1 },
+  "BSV/BTC":   { tvl: 4_100_000,   vol24: 980_000,     fee: 0.2,  farmApr: 22.8 },
+  "ETH/BTC":   { tvl: 76_500_000,  vol24: 17_200_000,  fee: 0.3,  farmApr: 5.3  },
+  "AVAX/USDT": { tvl: 31_400_000,  vol24: 8_200_000,   fee: 0.3,  farmApr: 9.8  },
+  "MATIC/USDT":{ tvl: 22_100_000,  vol24: 5_600_000,   fee: 0.3,  farmApr: 10.5 },
+};
+
+const CEX_SOURCES: { name: string; share: number; depth: number }[] = [
+  { name: "Binance",    share: 38.2, depth: 2.4 },
+  { name: "Coinbase",   share: 21.5, depth: 1.8 },
+  { name: "OKX",        share: 16.4, depth: 1.4 },
+  { name: "Bybit",      share: 12.3, depth: 1.1 },
+  { name: "Kraken",     share: 7.6,  depth: 0.9 },
+  { name: "OrahDEX",   share: 4.0,  depth: 0.6 },
+];
+
+function fmtLiq(n: number): string {
+  if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "K";
+  return "$" + n.toFixed(2);
+}
 
 function normalise(m: any) {
   const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
@@ -341,9 +374,10 @@ export function SpotTrading() {
             <div className="flex items-center justify-between px-2 border-b border-border shrink-0">
               <div className="flex gap-0">
                 {([
-                  { key: "open",    label: `Open Orders(${openOrders.length})` },
-                  { key: "history", label: `Order History(${filledOrders.length})` },
-                  { key: "trades",  label: "Trade History" },
+                  { key: "open",      label: `Open Orders(${openOrders.length})` },
+                  { key: "history",   label: `Order History(${filledOrders.length})` },
+                  { key: "trades",    label: "Trade History" },
+                  { key: "liquidity", label: "Liquidity & CEX" },
                 ] as { key: BottomTab; label: string }[]).map(t => (
                   <button
                     key={t.key}
@@ -535,6 +569,118 @@ export function SpotTrading() {
                   </table>
                 )
               )}
+
+              {/* ── Liquidity & CEX Panel ── */}
+              {bottomTab === "liquidity" && (() => {
+                const bids = (orderBook as any).bids ?? [];
+                const asks = (orderBook as any).asks ?? [];
+                const bidWall = bids.reduce((s: number, b: any) => s + (b.price * b.quantity), 0);
+                const askWall = asks.reduce((s: number, a: any) => s + (a.price * a.quantity), 0);
+                const bestBid = bids[0]?.price ?? 0;
+                const bestAsk = asks[asks.length - 1]?.price ?? asks[0]?.price ?? 0;
+                const spread = bestAsk > bestBid ? bestAsk - bestBid : 0;
+                const midPrice = (bestBid + bestAsk) / 2;
+                const spreadPct = midPrice > 0 ? (spread / midPrice) * 100 : 0;
+                const pool = POOL_MAP[symbol] ?? null;
+                const dexVol24 = pool?.vol24 ?? (ticker.quoteVolume ?? 0);
+                const dexTvl = pool?.tvl ?? (bidWall + askWall);
+                const poolApr = pool ? ((pool.vol24 * (pool.fee / 100)) / pool.tvl) * 365 * 100 : 0;
+                const totalCexVol = dexVol24 * 26; // DEX ~4% of total market
+                return (
+                  <div className="h-full overflow-y-auto">
+                    <div className="p-3 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
+                      {/* Order Book Depth */}
+                      <div className="col-span-2 md:col-span-4 xl:col-span-8">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                          <BarChart3 className="w-3 h-3" /> Live Order Book Depth
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div className="bg-buy/5 border border-buy/20 rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Buy Wall (Bids)</p>
+                            <p className="text-sm font-mono font-bold text-buy">{fmtLiq(bidWall)}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{bids.length} bid levels</p>
+                          </div>
+                          <div className="bg-sell/5 border border-sell/20 rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Sell Wall (Asks)</p>
+                            <p className="text-sm font-mono font-bold text-sell">{fmtLiq(askWall)}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{asks.length} ask levels</p>
+                          </div>
+                          <div className="bg-card border border-border rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Bid-Ask Spread</p>
+                            <p className="text-sm font-mono font-bold text-foreground">{spread > 0 ? `$${spread.toFixed(4)}` : "—"}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{spreadPct.toFixed(3)}% of mid</p>
+                          </div>
+                          <div className="bg-card border border-border rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">24h Volume</p>
+                            <p className="text-sm font-mono font-bold text-foreground">{fmtLiq(ticker.quoteVolume ?? dexVol24)}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">{formatVolume(ticker.volume ?? 0)} {base}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* DEX Pool Section */}
+                      <div className="col-span-2 md:col-span-2 xl:col-span-4">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 mt-2">
+                          <Droplets className="w-3 h-3 text-primary" /> DEX Liquidity Pool — {symbol}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="bg-primary/5 border border-primary/20 rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Pool TVL</p>
+                            <p className="text-sm font-mono font-bold text-primary">{fmtLiq(dexTvl)}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">Total Value Locked</p>
+                          </div>
+                          <div className="bg-green-400/5 border border-green-400/20 rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Pool APR</p>
+                            <p className="text-sm font-mono font-bold text-green-400">{pool ? `${poolApr.toFixed(1)}%` : "—"}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">LP fee income</p>
+                          </div>
+                          <div className="bg-card border border-border rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">Pool Fee</p>
+                            <p className="text-sm font-mono font-bold text-foreground">{pool ? `${pool.fee}%` : "—"}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">per trade</p>
+                          </div>
+                          <div className="bg-card border border-border rounded-xl p-2.5">
+                            <p className="text-[9px] text-muted-foreground mb-0.5">24h Pool Vol</p>
+                            <p className="text-sm font-mono font-bold text-foreground">{fmtLiq(dexVol24)}</p>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">LP earnings: {fmtLiq(dexVol24 * ((pool?.fee ?? 0.3) / 100) * (5 / 6))}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* CEX Market Share */}
+                      <div className="col-span-2 md:col-span-2 xl:col-span-4">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 mt-2">
+                          <Building2 className="w-3 h-3 text-blue-400" /> CEX Market Liquidity
+                        </p>
+                        <div className="space-y-1.5">
+                          {CEX_SOURCES.map(cex => {
+                            const vol = totalCexVol * (cex.share / 100);
+                            const isOrah = cex.name === "OrahDEX";
+                            return (
+                              <div key={cex.name} className="flex items-center gap-2">
+                                <span className={cn(
+                                  "text-[10px] font-semibold w-20 shrink-0",
+                                  isOrah ? "text-primary" : "text-foreground"
+                                )}>{cex.name}</span>
+                                <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                                  <div
+                                    className={cn("h-full rounded-full transition-all", isOrah ? "bg-primary" : "bg-blue-400/60")}
+                                    style={{ width: `${cex.share}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] font-mono text-muted-foreground w-10 text-right">{cex.share}%</span>
+                                <span className="text-[10px] font-mono text-foreground w-16 text-right">{fmtLiq(vol)}</span>
+                              </div>
+                            );
+                          })}
+                          <div className="flex items-center justify-between pt-1 border-t border-border mt-2">
+                            <span className="text-[10px] text-muted-foreground">Est. Total Market</span>
+                            <span className="text-[10px] font-mono font-bold text-foreground">{fmtLiq(totalCexVol)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
