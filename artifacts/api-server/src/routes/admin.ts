@@ -381,6 +381,64 @@ router.get("/stats", async (_req, res) => {
   });
 });
 
+/* ─── RECENT ACTIVITY (live feed for admin dashboard) ─── */
+router.get("/activity", async (_req, res) => {
+  try {
+    const limit = parseInt((_req.query.limit as string) ?? "20");
+
+    const recentOrders = await db.select().from(ordersTable)
+      .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(30);
+
+    const recentTrades = await db.select().from(tradesTable)
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(30);
+
+    const activities: Array<{
+      id: string; time: string; event: string; type: string; detail: string; ts: number;
+    }> = [];
+
+    for (const o of recentOrders) {
+      const side = (o.side ?? "buy").toUpperCase();
+      const sym  = o.symbol ?? "?";
+      const px   = parseFloat(o.price as string ?? "0");
+      const qty  = parseFloat(o.quantity as string ?? "0");
+      const ts   = new Date(o.createdAt!).getTime();
+      const isCancel = o.status === "cancelled";
+      activities.push({
+        id: `order-${o.id}`,
+        time: new Date(o.createdAt!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        event: isCancel ? `Order cancelled — ${sym}` : `${o.type ?? "limit"} ${side} order placed`,
+        type: isCancel ? "warn" : o.side === "buy" ? "buy" : "sell",
+        detail: `${sym} · ${qty.toFixed(4)} @ $${px.toFixed(2)}`,
+        ts,
+      });
+    }
+
+    for (const t of recentTrades) {
+      const sym = t.symbol ?? "?";
+      const px  = parseFloat(t.price as string ?? "0");
+      const qty = parseFloat(t.quantity as string ?? "0");
+      const ts  = new Date(t.timestamp!).getTime();
+      activities.push({
+        id: `trade-${t.id}`,
+        time: new Date(t.timestamp!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        event: `Trade executed — ${sym}`,
+        type: t.side === "buy" ? "buy" : "sell",
+        detail: `${(t.side ?? "").toUpperCase()} ${qty.toFixed(4)} ${sym.split("/")[0]} @ $${px.toFixed(2)}`,
+        ts,
+      });
+    }
+
+    activities.sort((a, b) => b.ts - a.ts);
+    const deduped = activities.slice(0, limit);
+    res.json(deduped);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ─── TRANSACTIONS (real DB: trades + BSV settlement orders) ─── */
 router.get("/transactions", async (_req, res) => {
   try {
