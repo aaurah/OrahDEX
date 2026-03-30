@@ -211,10 +211,20 @@ router.get("/ai/insights", async (_req, res) => {
   }
 });
 
-// ── GET /ai/trade-signal?symbol=BTC&action=buy — quick trade signal ──────────
+// ── GET /ai/trade-signal?symbol=BTC&action=buy — quick trade signal (cached 5 min) ──
+const signalCache = new Map<string, { signal: string; sentiment: string; ts: number }>();
+const SIGNAL_CACHE_TTL = 5 * 60 * 1000;
+
 router.get("/ai/trade-signal", async (req, res) => {
   const symbol = ((req.query.symbol as string) ?? "BTC").toUpperCase().trim();
   const action = ((req.query.action as string) ?? "").toLowerCase().trim();
+  const cacheKey = `${symbol}:${action}`;
+
+  const cached = signalCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < SIGNAL_CACHE_TTL) {
+    res.json({ symbol, signal: cached.signal, sentiment: cached.sentiment, cached: true });
+    return;
+  }
 
   try {
     const prompt = action
@@ -234,6 +244,7 @@ router.get("/ai/trade-signal", async (req, res) => {
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
       : signal.toLowerCase().includes("bearish") ? "bearish" : "neutral";
 
+    signalCache.set(cacheKey, { signal, sentiment, ts: Date.now() });
     res.json({ symbol, signal, sentiment });
   } catch (err: any) {
     logger.error({ err: err?.message }, "AI trade signal error");
