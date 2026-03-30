@@ -14,7 +14,7 @@ import {
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp, Wallet, X } from "lucide-react";
+import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -143,6 +143,33 @@ export function Markets() {
   const [buyCoin, setBuyCoin] = useState("BSV");
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const prevAddressRef = useRef<string | null>(null);
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
+  const [tabCanScrollRight, setTabCanScrollRight] = useState(true);
+
+  function updateTabScrollState() {
+    const el = tabScrollRef.current;
+    if (!el) return;
+    setTabCanScrollLeft(el.scrollLeft > 4);
+    setTabCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }
+
+  function scrollTabsBy(delta: number) {
+    const el = tabScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: "smooth" });
+    setTimeout(updateTabScrollState, 350);
+  }
+
+  /* Initialize tab scroll state after mount */
+  useEffect(() => {
+    updateTabScrollState();
+    const el = tabScrollRef.current;
+    if (!el) return;
+    const onResize = () => updateTabScrollState();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /* Auto-switch to the correct market tab when wallet connects or changes chain */
   useEffect(() => {
@@ -311,50 +338,81 @@ export function Markets() {
       {/* Header */}
       <div className="px-6 lg:px-10 pt-0 pb-4 border-b border-border bg-card/40">
         <div className="max-w-7xl mx-auto">
-          {/* Main tabs — slim Poloniex-style */}
-          <div className="mt-3 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
-            {TAB_META.map(t => {
-              const isBsv    = t.id === "bsv";
-              const isFav    = t.id === "favorites";
-              const isUsd    = t.id === "usd";
-              const isActive = tab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => { setTab(t.id); setSearch(""); }}
-                  style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
-                  className={cn(
-                    "shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all border",
-                    isActive && isFav
-                      ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
-                      : isActive && isBsv
-                      ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
-                      : isActive && isUsd
-                      ? "bg-primary text-primary-foreground border-primary shadow shadow-primary/20"
-                      : isActive
-                      ? "bg-primary/90 text-primary-foreground border-primary shadow shadow-primary/20"
-                      : isFav
-                      ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
-                      : isBsv
-                      ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
-                      : "text-muted-foreground border-border/50 hover:border-primary/30 hover:text-foreground hover:bg-white/5"
-                  )}
-                >
-                  {isBsv && <span className="text-[11px] leading-none">⚡</span>}
-                  {isFav && <Star className="w-2.5 h-2.5" />}
-                  <span>{isFav ? "Favorites" : t.label}</span>
-                  <span className={cn(
-                    "text-[9px] font-black px-1 py-px rounded min-w-[16px] text-center",
-                    (isActive && (isFav || isBsv)) ? "bg-black/20 text-black"
-                    : isActive ? "bg-white/20 text-white"
-                    : isFav || isBsv ? "bg-green-500/20 text-green-300"
-                    : "bg-white/8 text-muted-foreground"
-                  )}>
-                    {tabCount(t.id)}
-                  </span>
-                </button>
-              );
-            })}
+          {/* Main tabs — slim Poloniex-style with desktop scroll arrows */}
+          <div className="mt-3 relative flex items-center gap-0">
+            {/* Left arrow — desktop only */}
+            <button
+              onClick={() => scrollTabsBy(-240)}
+              className={cn(
+                "hidden md:flex shrink-0 items-center justify-center w-7 h-7 rounded-lg border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all mr-1",
+                !tabCanScrollLeft && "opacity-30 pointer-events-none"
+              )}
+              aria-label="Scroll tabs left"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* Scrollable tab row */}
+            <div
+              ref={tabScrollRef}
+              onScroll={updateTabScrollState}
+              className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide flex-1"
+            >
+              {TAB_META.map(t => {
+                const isBsv    = t.id === "bsv";
+                const isFav    = t.id === "favorites";
+                const isUsd    = t.id === "usd";
+                const isActive = tab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => { setTab(t.id); setSearch(""); }}
+                    style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
+                    className={cn(
+                      "shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all border",
+                      isActive && isFav
+                        ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
+                        : isActive && isBsv
+                        ? "bg-green-500 text-black border-green-400 shadow shadow-green-500/30"
+                        : isActive && isUsd
+                        ? "bg-primary text-primary-foreground border-primary shadow shadow-primary/20"
+                        : isActive
+                        ? "bg-primary/90 text-primary-foreground border-primary shadow shadow-primary/20"
+                        : isFav
+                        ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
+                        : isBsv
+                        ? "text-green-400 border-green-500/40 bg-green-500/8 hover:bg-green-500/15"
+                        : "text-muted-foreground border-border/50 hover:border-primary/30 hover:text-foreground hover:bg-white/5"
+                    )}
+                  >
+                    {isBsv && <span className="text-[11px] leading-none">⚡</span>}
+                    {isFav && <Star className="w-2.5 h-2.5" />}
+                    <span>{isFav ? "Favorites" : t.label}</span>
+                    <span className={cn(
+                      "text-[9px] font-black px-1 py-px rounded min-w-[16px] text-center",
+                      (isActive && (isFav || isBsv)) ? "bg-black/20 text-black"
+                      : isActive ? "bg-white/20 text-white"
+                      : isFav || isBsv ? "bg-green-500/20 text-green-300"
+                      : "bg-white/8 text-muted-foreground"
+                    )}>
+                      {tabCount(t.id)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right arrow — desktop only */}
+            <button
+              onClick={() => scrollTabsBy(240)}
+              className={cn(
+                "hidden md:flex shrink-0 items-center justify-center w-7 h-7 rounded-lg border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all ml-1",
+                !tabCanScrollRight && "opacity-30 pointer-events-none"
+              )}
+              aria-label="Scroll tabs right"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Wallet-aware market banner */}
