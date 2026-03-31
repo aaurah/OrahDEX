@@ -83,6 +83,25 @@ function ChainBadge({ chain }: { chain: string }) {
     </span>
   );
 }
+function ExLogo({ src, name, type }: { src: string; name: string; type: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored) {
+    return (
+      <div className={cn(
+        "w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0",
+        type === "dex" ? "bg-violet-500/20 text-violet-300" : "bg-blue-500/20 text-blue-300"
+      )}>
+        {name?.[0] ?? "?"}
+      </div>
+    );
+  }
+  return (
+    <img src={src} alt={name}
+      className="w-7 h-7 rounded-full object-cover bg-secondary shrink-0"
+      onError={() => setErrored(true)} />
+  );
+}
+
 function CexBadge() {
   return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold border bg-blue-600/10 text-blue-300 border-blue-600/20">
@@ -106,9 +125,9 @@ const SORT_LABELS: Record<SortKey, string> = {
 
 export function DexHub() {
   useSEO({
-    title: "Market Hub — Explore Cross-Chain DEX Data",
-    description: "Explore aggregated DEX data across all chains on OrahDEX Market Hub. Track volumes, liquidity, and top tokens from Uniswap, PancakeSwap, BSV DEX and more.",
-    keywords: "DEX hub, crypto market data, cross-chain DEX, Uniswap, PancakeSwap, liquidity data, on-chain trading, OrahDEX",
+    title: "Market Hub — All CEX & DEX Exchanges",
+    description: "Explore aggregated CEX and DEX data across all chains on OrahDEX Market Hub. Track volumes, liquidity, and top tokens with sovereign on-chain data.",
+    keywords: "DEX hub, crypto market data, cross-chain DEX, CEX exchanges, liquidity data, on-chain trading, OrahDEX, BSV settlement",
     url: "/dex",
     jsonLd: {
       "@context": "https://schema.org",
@@ -150,7 +169,7 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
-  /* ── World coins from CoinGecko ── */
+  /* ── World coins ── */
   const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
     queryKey: ["coins-markets-world"],
     queryFn: async () => {
@@ -286,7 +305,7 @@ export function DexHub() {
   const statDexCount    = typeFiltered.filter(e => e.type === "dex").length;
   const statCexCount    = typeFiltered.filter(e => e.type === "cex").length;
 
-  // Market cap: use global API totals (CoinGecko global feed) — more accurate than per-exchange sum
+  // Market cap: use global API totals — more accurate than per-exchange sum
   const apiDefiMc  = data?.defiMarketCap ?? 0;
   const apiCefiMc  = data?.cefiMarketCap ?? 0;
   const statMarketCap = exType === "dex" ? apiDefiMc : exType === "cex" ? apiCefiMc : (apiDefiMc + apiCefiMc);
@@ -321,7 +340,7 @@ export function DexHub() {
           All Exchanges — CEX &amp; DEX
         </h1>
         <p className="text-muted-foreground text-sm lg:text-base max-w-3xl">
-          Every centralised and decentralised exchange ranked by volume &amp; market cap — live data from CoinGecko. Trade any pair on OrahDEX with on-chain BSV settlement.
+          Every centralised and decentralised exchange ranked by volume &amp; market cap — sovereign data from the OrahDEX price engine. Trade any pair with on-chain BSV settlement.
         </p>
       </div>
 
@@ -491,7 +510,7 @@ export function DexHub() {
           {isLoading ? <div className="h-8 w-24 bg-muted animate-pulse rounded" /> : (
             <>
               <div className="text-xl lg:text-2xl font-mono font-bold">${btcPrice.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground mt-1">via CoinGecko</div>
+              <div className="text-xs text-muted-foreground mt-1">via sovereign engine</div>
             </>
           )}
         </div>
@@ -590,7 +609,7 @@ export function DexHub() {
               />
             </div>
             <span className="text-xs text-muted-foreground">
-              {coinsLoading ? "Loading from CoinGecko…" : `${filteredCoins.length} coins · tap a row to see all exchanges`}
+              {coinsLoading ? "Loading…" : `${filteredCoins.length} coins · tap a row to see all exchanges`}
             </span>
           </div>
 
@@ -700,7 +719,7 @@ export function DexHub() {
             {/* Footer: count + Load More */}
             {!coinsLoading && filteredCoins.length > 0 && (
               <div className="px-4 py-3 border-t border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>Showing {pagedCoins.length} of {filteredCoins.length} coins — data from CoinGecko</span>
+                <span>Showing {pagedCoins.length} of {filteredCoins.length} coins</span>
                 {pagedCoins.length < filteredCoins.length && (
                   <button
                     onClick={() => setCoinPage(p => p + 1)}
@@ -889,7 +908,7 @@ export function DexHub() {
         </button>
 
         <span className="text-xs text-muted-foreground hidden xl:block ml-auto">
-          Data from CoinGecko · refreshes every 5 min
+          Sovereign price engine · refreshes every 5 min
         </span>
       </div>
 
@@ -999,15 +1018,20 @@ export function DexHub() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       {ex.id === "orahdex" ? (
-                        /* OrahDEX brand O logo — same SVG as nav, scales to 28px */
+                        /* OrahDEX brand O logo */
                         <span className="inline-flex items-center justify-center shrink-0" style={{ width: 28, height: 28, fontSize: 28 }}>
                           <OrahO online={online} />
                         </span>
                       ) : ex.image ? (
-                        <img src={ex.image} alt={ex.name}
-                          className="w-7 h-7 rounded-full object-cover bg-secondary shrink-0"
-                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      ) : null}
+                        <ExLogo src={ex.image} name={ex.name} type={ex.type} />
+                      ) : (
+                        <div className={cn(
+                          "w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0",
+                          ex.type === "dex" ? "bg-violet-500/20 text-violet-300" : "bg-blue-500/20 text-blue-300"
+                        )}>
+                          {ex.name?.[0] ?? "?"}
+                        </div>
+                      )}
                       <div>
                         <p className="text-sm font-semibold text-foreground leading-tight">{ex.name}</p>
                         {ex.yearEstablished && (
