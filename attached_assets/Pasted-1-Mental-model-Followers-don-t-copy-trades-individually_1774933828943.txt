@@ -1,0 +1,319 @@
+1. Mental model
+
+Followers don’t copy trades individually.
+They deposit into a shared vault, and the vault mirrors the leader’s trades once, then accounts for PnL proportionally.
+
+• Followers hold shares of the vault.
+• Vault holds the actual tokens.
+• When the leader trades, the vault trades.
+• Profit/loss is reflected in the share price.
+
+
+This is basically a strategy vault whose strategy is: “do what this leader does.”
+
+---
+
+2. Core components
+
+1. CopyVault smart contract• Accepts deposits/withdrawals
+• Tracks shares per follower
+• Executes swaps via OrahDex router
+• Only a trusted role (bot/leader) can trigger trades
+
+2. OrahDex router + pools• Already exist—vault just uses them
+
+3. Off‑chain Copy Orchestrator• Watches leader wallet trades
+• Calls vault.copyTrade(...) with same direction
+• Optionally enforces extra risk rules
+
+4. Admin / config• Set leader address
+• Pause/unpause vault
+• Set allowed tokens/paths
+
+
+
+---
+
+3. Vault logic (high level)
+
+• Deposit:• User deposits base asset (e.g. USDT)
+• If vault is empty → 1:1 shares
+• Else: shares = depositAmount * totalShares / vaultValue
+
+• Withdraw:• User burns shares
+• Receives proportional share of vault assets
+
+• Copy trade:• Vault swaps a portion (or all) of its holdings from tokenIn to tokenOut via OrahDex router
+• No per‑user action; all followers are affected via share price
+
+
+
+---
+
+4. Example Solidity: minimal CopyVault
+
+This is simplified, but captures the core.
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IERC20 {
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address a) external view returns (uint256);
+    function transfer(address to, uint256 amt) external returns (bool);
+    function transferFrom(address from, address to, uint256 amt) external returns (bool);
+    function approve(address spender, uint256 amt) external returns (bool);
+}
+
+interface IOrahDexRouter {
+    function swapExactTokensForTokens(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        address to,
+        uint256 deadline
+    ) external returns (uint256[] memory amounts);
+}
+
+contract CopyVault {
+    string public name = "Orah Copy Vault";
+    string public symbol = "OCV";
+    uint8 public decimals = 18;
+
+    IERC20 public baseToken;          // e.g. USDT
+    IOrahDexRouter public router;
+    address public leader;            // leader wallet (for reference)
+    address public operator;          // bot / strategy executor
+    bool public paused;
+
+    uint256 public totalShares;
+    mapping(address => uint256) public shares;
+
+    modifier onlyOperator() {
+        require(msg.sender == operator, "not operator");
+        _;
+    }
+
+    modifier notPaused() {
+        require(!paused, "paused");
+        _;
+    }
+
+    constructor(address _baseToken, address _router, address _leader, address _operator) {
+        baseToken = IERC20(_baseToken);
+        router = IOrahDexRouter(_router);
+        leader = _leader;
+        operator = _operator;
+    }
+
+    // --- View helpers ---
+
+    function vaultValue() public view returns (uint256) {
+        // Simplified: assume vault only holds baseToken
+        // In reality, you’d value all held tokens via oracles/pools.
+        return baseToken.balanceOf(address(this));
+    }
+
+    function sharePrice() public view returns (uint256) {
+        if (totalShares == 0) return 1e18;
+        return (vaultValue() * 1e18) / totalShares;
+    }
+
+    // --- User actions ---
+
+    function deposit(uint256 amount) external notPaused {
+        require(amount > 0, "amount=0");
+        uint256 _vaultValue = vaultValue();
+
+        baseToken.transferFrom(msg.sender, address(this), amount);
+
+        uint256 mintShares;
+        if (totalShares == 0 || _vaultValue == 0) {
+            mintShares = amount; // 1:1 initial
+        } else {
+            mintShares = (amount * totalShares) / _vaultValue;
+        }
+
+        totalShares += mintShares;
+        shares[msg.sender] += mintShares;
+    }
+
+    function withdraw(uint256 shareAmount) external notPaused {
+        require(shareAmount > 0, "shares=0");
+        require(shares[msg.sender] >= shareAmount, "insufficient shares");
+
+        uint256 _vaultValue = vaultValue();
+        uint256 amountOut = (_vaultValue * shareAmount) / totalShares;
+
+        shares[msg.sender] -= shareAmount;
+        totalShares -= shareAmount;
+
+        baseToken.transfer(msg.sender, amountOut);
+    }
+
+    // --- Strategy: copy trades via router ---
+
+    function copyTrade(
+        uint256 amountIn,
+        uint256 amountOutMin,
+        address[] calldata path,
+        uint256 deadline
+    ) external onlyOperator notPaused {
+        // Vault must hold path[0] as tokenIn
+        IERC20 tokenIn = IERC20(path[0]);
+        require(tokenIn.balanceOf(address(this)) >= amountIn, "insufficient vault balance");
+
+        tokenIn.approve(address(router), amountIn);
+        router.swapExactTokensForTokens(
+            amountIn,
+            amountOutMin,
+            path,
+            address(this),
+            deadline
+        );
+    }
+
+    // --- Admin ---
+
+    function setOperator(address _op) external {
+        require(msg.sender == operator, "only operator can change");
+        operator = _op;
+    }
+
+    function setPaused(bool _p) external {
+        require(msg.sender == operator, "only operator");
+        paused = _p;
+    }
+}
+
+
+This is intentionally minimal. In a real version you’d:
+
+• Support multiple tokens and value them via oracles
+• Add access control (Ownable/roles)
+• Add per‑vault config (allowed paths, max slippage, etc.)
+
+
+---
+
+5. Off‑chain orchestrator (leader → vault)
+
+Now the off‑chain bot doesn’t trade for each follower.
+It just calls copyTrade on the vault when the leader trades.
+
+Flow:
+
+1. Listen to OrahDex router Swap events where sender == leader.
+2. Extract:• tokenIn, tokenOut, amountIn
+
+3. Decide how much of the vault to move (e.g. same % as leader).
+4. Call vault.copyTrade(...) with:• amountIn (scaled for vault)
+• minOut (slippage)
+• path
+• deadline
+
+
+
+Example (Node.js + ethers):
+
+import { ethers } from "ethers";
+import routerAbi from "./OrahDexRouter.json";
+import vaultAbi from "./CopyVault.json";
+
+const RPC_URL = "https://your-rpc";
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+
+const leader = "0xLeader...".toLowerCase();
+const routerAddress = "0xRouter...";
+const vaultAddress = "0xVault...";
+
+const operatorSigner = new ethers.Wallet(process.env.OPERATOR_PK!, provider);
+const router = new ethers.Contract(routerAddress, routerAbi, provider);
+const vault = new ethers.Contract(vaultAddress, vaultAbi, operatorSigner);
+
+router.on("Swap", async (sender, tokenIn, tokenOut, amountIn, amountOut, event) => {
+  if (sender.toLowerCase() !== leader) return;
+
+  console.log("Leader trade detected", { tokenIn, tokenOut, amountIn: amountIn.toString() });
+
+  try {
+    await mirrorToVault(tokenIn, tokenOut, amountIn);
+  } catch (e) {
+    console.error("Failed to mirror trade to vault", e);
+  }
+});
+
+async function mirrorToVault(tokenIn: string, tokenOut: string, leaderAmountIn: bigint) {
+  // Example: vault trades same % of its balance as leader did of theirs.
+  const leaderBalanceBefore = await getLeaderBalance(tokenIn);
+  const vaultBalance = await getVaultBalance(tokenIn);
+
+  if (leaderBalanceBefore === 0n || vaultBalance === 0n) return;
+
+  const leaderPct = (leaderAmountIn * 10_000n) / leaderBalanceBefore; // in bps
+  const vaultAmountIn = (vaultBalance * leaderPct) / 10_000n;
+
+  if (vaultAmountIn === 0n) return;
+
+  const path = [tokenIn, tokenOut];
+  const slippageBps = 100n;
+  const deadline = Math.floor(Date.now() / 1000) + 60 * 3;
+
+  // Estimate expected out via router
+  const amountsOut = await router.getAmountsOut(vaultAmountIn, path);
+  const expectedOut = amountsOut[amountsOut.length - 1];
+  const minOut = expectedOut - (expectedOut * slippageBps) / 10_000n;
+
+  const tx = await vault.copyTrade(
+    vaultAmountIn,
+    minOut,
+    path,
+    deadline
+  );
+
+  console.log("Vault copyTrade tx sent:", tx.hash);
+  await tx.wait();
+  console.log("Vault copyTrade confirmed");
+}
+
+async function getLeaderBalance(token: string): Promise<bigint> {
+  const erc20 = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)"], provider);
+  return await erc20.balanceOf(leader);
+}
+
+async function getVaultBalance(token: string): Promise<bigint> {
+  const erc20 = new ethers.Contract(token, ["function balanceOf(address) view returns (uint256)"], provider);
+  return await erc20.balanceOf(vaultAddress);
+}
+
+
+---
+
+6. Risk, safety, and UX
+
+You’ll want:
+
+• Per‑vault config:• Allowed tokens
+• Max % of vault per trade
+• Max daily turnover
+
+• Pause switch:• If something goes wrong, operator pauses vault
+
+• Frontend:• Show:• Vault share price
+• Historical PnL
+• Current composition (tokens)
+• Leader address + stats
+
+
+
+
+---
+
+7. What you actually have now
+
+You’ve got:
+
+• A clear model: followers → vault shares, vault → trades, leader → signals.
+• A minimal CopyVault contract you can extend.
+• An off‑chain orchestrator pattern that plugs into your existing OrahDex router.
+• A path to make this fully sovereign and transparent on‑chain.
