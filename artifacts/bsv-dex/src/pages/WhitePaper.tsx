@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "1.0.0";
-const PUBLISH_DATE = "25 March 2026";
+const VERSION = "2.0.0";
+const PUBLISH_DATE = "31 March 2026";
 
 const TOC = [
   { id: "abstract",       label: "Abstract" },
@@ -16,12 +16,30 @@ const TOC = [
   { id: "amm",            label: "5. AMM Liquidity Pools" },
   { id: "cross-chain",    label: "6. Cross-Chain Bridge" },
   { id: "trading",        label: "7. Trading Engine" },
-  { id: "tokenomics",     label: "8. Fee Model & Tokenomics" },
-  { id: "security",       label: "9. Security Model" },
-  { id: "roadmap",        label: "10. Roadmap" },
+  { id: "copy-vault",     label: "8. CopyVault System" },
+  { id: "ora-ai",         label: "9. Ora AI Integration" },
+  { id: "tokenomics",     label: "10. Fee Model & Revenue" },
+  { id: "security",       label: "11. Security Model" },
+  { id: "roadmap",        label: "12. Roadmap" },
   { id: "conclusion",     label: "Conclusion" },
   { id: "disclaimer",     label: "Legal Disclaimer" },
 ];
+
+function TocEntry({ id, label, active, onClick }: { id: string; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all",
+        active
+          ? "bg-primary/10 text-primary font-semibold"
+          : "text-muted-foreground hover:text-foreground hover:bg-white/5",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
 function Section({ id, title, children, accent = false }: { id: string; title: string; children: React.ReactNode; accent?: boolean }) {
   return (
@@ -67,33 +85,18 @@ function Sub({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-function InfoBox({ title, children, color = "blue" }: { title: string; children: React.ReactNode; color?: "blue" | "green" | "amber" }) {
+function InfoBox({ title, children, color = "blue" }: { title: string; children: React.ReactNode; color?: "blue" | "green" | "amber" | "violet" }) {
   const colors = {
-    blue: "bg-blue-400/5 border-blue-400/20 text-blue-300",
-    green: "bg-green-400/5 border-green-400/20 text-green-300",
-    amber: "bg-amber-400/5 border-amber-400/20 text-amber-300",
+    blue:   "bg-blue-400/5 border-blue-400/20 text-blue-300",
+    green:  "bg-green-400/5 border-green-400/20 text-green-300",
+    amber:  "bg-amber-400/5 border-amber-400/20 text-amber-300",
+    violet: "bg-violet-400/5 border-violet-400/20 text-violet-300",
   };
   return (
     <div className={cn("p-4 rounded-xl border space-y-1", colors[color])}>
       <p className="font-semibold text-xs uppercase tracking-wider">{title}</p>
       <div className="text-xs leading-relaxed opacity-90">{children}</div>
     </div>
-  );
-}
-
-function TocEntry({ id, label, active, onClick }: { id: string; label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all",
-        active
-          ? "bg-primary/10 text-primary font-semibold"
-          : "text-muted-foreground hover:text-foreground hover:bg-white/5",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 
@@ -139,7 +142,7 @@ export function WhitePaper() {
 
       <div className="max-w-5xl mx-auto px-4 py-8 pb-24">
         <div className="flex gap-8">
-          {/* Sidebar TOC — desktop */}
+          {/* Sidebar TOC */}
           <aside className="hidden lg:block w-52 shrink-0">
             <div className="sticky top-20 space-y-1">
               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-3 mb-2">Contents</p>
@@ -179,7 +182,7 @@ export function WhitePaper() {
                 <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
               </div>
               <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed px-4">
-                A multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, automated market making, and perpetual futures.
+                A sovereign, multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, automated market making, perpetual futures, on-chain copy trading (CopyVault), and AI-powered trading intelligence (Ora).
               </p>
               <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
                 <span>Version {VERSION}</span>
@@ -189,26 +192,29 @@ export function WhitePaper() {
                 <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="226+" label="Trading Pairs" sub="Spot + Futures" />
+                <Metric value="934+" label="Trading Pairs" sub="Spot + Futures + Cross-pair" />
                 <Metric value="200+" label="Networks" sub="via GeckoTerminal" />
                 <Metric value="0%" label="Custody Risk" sub="Non-custodial" />
-                <Metric value="BSV" label="Settlement Layer" sub="On-chain HTLC" />
+                <Metric value="BSV" label="Settlement Layer" sub="OP_RETURN on-chain proof" />
               </div>
             </div>
 
             {/* Abstract */}
             <Section id="abstract" title="Abstract" accent>
               <p>
-                OrahDEX is a next-generation, fully non-custodial decentralised exchange (DEX) protocol that unifies spot trading, perpetual futures, automated market making (AMM), peer-to-peer (P2P) trading, cross-chain bridging, and fiat on-ramp services within a single, seamless interface.
+                OrahDEX is a next-generation, fully non-custodial decentralised exchange (DEX) protocol that unifies spot trading, perpetual futures, automated market making (AMM), peer-to-peer (P2P) trading, cross-chain bridging, on-chain copy trading (CopyVault), and fiat on-ramp services within a single, seamless sovereign interface.
               </p>
               <p>
-                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its primary settlement layer, exploiting BSV's massively scalable, low-fee, and UTXO-based blockchain to execute Hash Time-Locked Contract (HTLC) atomic swaps that are provably fair and fully transparent. EVM-compatible chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, and more) are supported natively through Reown/WalletConnect integration.
+                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its primary settlement layer, exploiting BSV's massively scalable, low-fee, and UTXO-based blockchain to execute Hash Time-Locked Contract (HTLC) atomic swaps and OP_RETURN settlement proofs that are provably fair and fully transparent. EVM-compatible chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos, and more) are supported natively through Reown/WalletConnect integration.
               </p>
               <p>
-                OrahDEX aggregates live price feeds from CoinGecko, CoinMarketCap, GeckoTerminal (200+ networks), and DexScreener, giving traders access to the same market intelligence as institutional players. The platform introduces a novel <span className="text-foreground font-medium">cross-chain HTLC bridge</span> that allows trustless asset swaps between BSV and any EVM-compatible network without custodial intermediaries.
+                OrahDEX aggregates live price feeds from CoinGecko, CoinMarketCap, GeckoTerminal (200+ networks), and DexScreener, giving traders access to the same market intelligence as institutional players. The platform's novel <span className="text-foreground font-medium">CopyVault system</span> brings on-chain copy trading to DeFi for the first time — followers deposit USDT into leader-managed vaults and automatically mirror the leader's trades proportionally, with BSV OP_RETURN proofs for every mirrored trade.
               </p>
               <p>
-                This white paper describes the technical architecture, economic model, security design, and strategic roadmap of OrahDEX.
+                <span className="text-foreground font-medium">Ora</span> — OrahDEX's integrated AI — provides real-time trading assistance, market analysis, and portfolio coaching powered by large language models, embedded directly in the trading interface.
+              </p>
+              <p>
+                This white paper describes the technical architecture, economic model, security design, and strategic roadmap of OrahDEX as of version {VERSION}.
               </p>
             </Section>
 
@@ -217,16 +223,16 @@ export function WhitePaper() {
               <p>
                 The global cryptocurrency trading market processes trillions of dollars in volume annually, yet the majority of this activity flows through <span className="text-foreground font-medium">centralised exchanges (CEXs)</span> — platforms that require users to surrender custody of their assets, comply with extensive KYC, and trust a central authority that history has shown to be vulnerable to hacks, insolvency, and regulatory shutdown.
               </p>
-              <p>
-                Existing decentralised alternatives suffer from their own set of limitations:
-              </p>
+              <p>Existing decentralised alternatives suffer from their own set of limitations:</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { problem: "Fragmentation", detail: "Liquidity is split across hundreds of protocols and chains, forcing users to manage multiple wallets, bridges, and interfaces." },
                   { problem: "High Fees", detail: "Ethereum-based DEXs charge prohibitive gas fees that make small trades uneconomical, pricing out retail users." },
                   { problem: "Poor UX", detail: "Most DEXs require deep technical knowledge. Seed phrase management, gas estimation, and slippage settings are inaccessible to mainstream users." },
-                  { problem: "Limited Instruments", detail: "DEX offerings are almost exclusively limited to spot swaps. Perpetual futures, P2P markets, and fiat rails are virtually absent." },
+                  { problem: "Limited Instruments", detail: "DEX offerings are almost exclusively limited to spot swaps. Perpetual futures, P2P markets, copy trading, and fiat rails are virtually absent." },
                   { problem: "Custodial Bridges", detail: "Cross-chain bridges are the single largest source of crypto losses, having suffered over $2.5B in hacks due to their custodial intermediary models." },
+                  { problem: "No Copy Trading", detail: "On-chain copy trading has never been fully realised in DeFi. Existing solutions are off-chain, opaque, and custodial — losing the core DeFi value proposition." },
+                  { problem: "No AI Assistance", detail: "Professional trading tools with integrated AI guidance are exclusively available on CEXs, locked behind costly subscriptions or institutional access." },
                   { problem: "BSV Neglect", detail: "Bitcoin SV's massively scalable, low-cost, and UTXO-based blockchain is underutilised by DeFi, despite being technically superior for settlement-layer applications." },
                 ].map(({ problem, detail }) => (
                   <div key={problem} className="p-3 bg-red-400/5 border border-red-400/15 rounded-xl">
@@ -239,16 +245,15 @@ export function WhitePaper() {
 
             {/* 2. Solution */}
             <Section id="solution" title="2. The OrahDEX Solution">
-              <p>
-                OrahDEX addresses these problems through a unified, non-custodial trading platform built on three foundational principles:
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <p>OrahDEX addresses these problems through a unified, non-custodial trading platform built on four foundational principles:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { title: "Non-Custodial", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX never holds user funds." },
-                  { title: "Multi-Chain", icon: "🌐", desc: "Native support for BSV, Ethereum, and 10+ EVM chains. One interface — every chain." },
-                  { title: "Full-Spectrum", icon: "📊", desc: "Spot, futures, AMM, P2P, bridge, and fiat on-ramp — every trading instrument in one platform." },
+                  { title: "Multi-Chain", icon: "🌐", desc: "Native support for BSV, Ethereum, and 12+ EVM chains. One interface — every chain." },
+                  { title: "Full-Spectrum", icon: "📊", desc: "Spot, futures, AMM, P2P, bridge, copy trading, and fiat on-ramp — every trading instrument in one platform." },
+                  { title: "AI-Powered", icon: "🧠", desc: "Ora AI provides real-time market intelligence, trade coaching, and portfolio analysis — embedded in the interface." },
                 ].map(({ title, icon, desc }) => (
-                  <div key={title} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl text-center space-y-2">
+                  <div key={title} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
                     <div className="text-2xl">{icon}</div>
                     <p className="font-bold text-sm text-foreground">{title}</p>
                     <p className="text-xs text-muted-foreground">{desc}</p>
@@ -256,38 +261,44 @@ export function WhitePaper() {
                 ))}
               </div>
               <p>
-                OrahDEX combines the transparency and trustlessness of DeFi with the usability and feature-richness of CeFi — without the custody risk. By building BSV settlement into the core architecture, OrahDEX achieves per-transaction fees below $0.001, enabling micro-trades and high-frequency strategies that are impractical on Ethereum.
+                OrahDEX combines the transparency and trustlessness of DeFi with the usability and feature-richness of CeFi — without the custody risk. By building BSV settlement into the core architecture, OrahDEX achieves per-transaction fees below $0.001, enabling micro-trades and high-frequency strategies that are impractical on Ethereum. The CopyVault system extends this to copy trading — every mirrored trade produces a BSV OP_RETURN proof that is publicly verifiable on-chain.
               </p>
             </Section>
 
             {/* 3. Architecture */}
             <Section id="architecture" title="3. Technical Architecture">
-              <p>OrahDEX is composed of four primary layers:</p>
+              <p>OrahDEX is composed of five primary layers:</p>
               <div className="space-y-3">
                 {[
                   {
                     layer: "Layer 1 — Settlement",
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
-                    desc: "Bitcoin SV blockchain for on-chain UTXO-based HTLC settlement. Immutable, transparent, and final.",
+                    desc: "Bitcoin SV blockchain for on-chain UTXO-based HTLC settlement and OP_RETURN trade proofs. Immutable, transparent, and final. Every matched trade produces a publicly verifiable BSV transaction ID.",
                   },
                   {
                     layer: "Layer 2 — Protocol",
                     color: "text-blue-400",
                     bg: "bg-blue-400/5 border-blue-400/15",
-                    desc: "OrahDEX smart contracts on EVM chains (Uniswap V3 fork for AMM, custom order book contracts for limit orders). HTLC scripts on BSV.",
+                    desc: "OrahDEX smart contracts on EVM chains (Uniswap V3-style AMM for concentrated liquidity, custom order book contracts for limit orders, CopyVault ERC4626-style vault contracts). HTLC scripts on BSV.",
                   },
                   {
                     layer: "Layer 3 — Application",
                     color: "text-violet-400",
                     bg: "bg-violet-400/5 border-violet-400/15",
-                    desc: "Express.js API server providing order book management, price aggregation, user account management, and WebSocket real-time feeds.",
+                    desc: "Express.js API server providing order book management, price aggregation (CoinGecko + CMC + GeckoTerminal + DexScreener), CopyVault orchestration, Ora AI chat, user account management, and WebSocket real-time feeds.",
                   },
                   {
-                    layer: "Layer 4 — Interface",
+                    layer: "Layer 4 — Intelligence",
+                    color: "text-amber-400",
+                    bg: "bg-amber-400/5 border-amber-400/15",
+                    desc: "Ora AI integration powered by large language models. Provides real-time trading assistance, market commentary, copy trading recommendations, and portfolio analysis embedded in the trading interface.",
+                  },
+                  {
+                    layer: "Layer 5 — Interface",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED themes. WalletConnect/Reown for EVM. Native BSV wallet integration.",
+                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED/System themes. WalletConnect/Reown for EVM. Native BSV wallet integration. OrahChart for cross-pair visualisation.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -296,68 +307,78 @@ export function WhitePaper() {
                   </div>
                 ))}
               </div>
-              <InfoBox title="Key Technology Stack" color="blue">
-                <p>Frontend: React 18 + Vite 7 + TailwindCSS · Backend: Node.js + Express 5 + Drizzle ORM</p>
-                <p>Database: PostgreSQL · EVM Integration: Wagmi + Viem + Reown AppKit</p>
-                <p>BSV Integration: WhatsOnChain API + native UTXO construction · Charts: Lightweight-charts</p>
+              <InfoBox title="Technology Stack" color="blue">
+                <p>Frontend: React 19 + Vite 7 + TailwindCSS v4 · Backend: Node.js 24 + Express 5 + Drizzle ORM</p>
+                <p>Database: PostgreSQL 16 · EVM: Wagmi + Viem + Reown AppKit · AI: OpenAI-compatible LLM</p>
+                <p>BSV: WhatsOnChain API + native UTXO/OP_RETURN construction · Charts: Lightweight-charts v5</p>
+                <p>Markets: 934+ pairs · Data: CoinGecko + CMC + GeckoTerminal (200+ networks) + DexScreener</p>
               </InfoBox>
             </Section>
 
             {/* 4. BSV Settlement */}
-            <Section id="bsv-settlement" title="4. BSV On-Chain Settlement via HTLC">
+            <Section id="bsv-settlement" title="4. BSV On-Chain Settlement via HTLC & OP_RETURN">
               <p>
-                OrahDEX uses <span className="text-foreground font-medium">Hash Time-Locked Contracts (HTLCs)</span> on the Bitcoin SV blockchain for trustless cross-chain settlement. HTLCs are a proven cryptographic primitive that enable atomic swaps — where either both legs of a trade execute, or neither does.
+                OrahDEX uses two BSV mechanisms for on-chain trade proof: <span className="text-foreground font-medium">Hash Time-Locked Contracts (HTLCs)</span> for trustless cross-chain settlement, and <span className="text-foreground font-medium">OP_RETURN transactions</span> for immutable trade audit records.
               </p>
-              <Sub title="How an OrahDEX BSV Trade Works">
+              <Sub title="4.1 HTLC Atomic Swaps">
                 <ol className="list-decimal list-inside space-y-2 ml-1">
                   <li>Maker generates a secret preimage <span className="font-mono text-green-400">R</span> and its hash <span className="font-mono text-green-400">H = SHA256(R)</span>.</li>
                   <li>Maker locks funds in a BSV HTLC script: <em>"Pay to Taker if Taker reveals R within T blocks; else refund to Maker."</em></li>
                   <li>Taker verifies the HTLC on-chain and locks corresponding funds in the reciprocal leg (BSV or EVM).</li>
-                  <li>Maker reveals <span className="font-mono text-green-400">R</span>, claiming Taker's funds. Revelation of <span className="font-mono text-green-400">R</span> on-chain simultaneously allows Taker to claim Maker's funds.</li>
+                  <li>Maker reveals <span className="font-mono text-green-400">R</span>, claiming Taker's funds. Revelation on-chain simultaneously allows Taker to claim Maker's funds.</li>
                   <li>If either party fails to act within the time lock, all funds are automatically refunded. No custodian required.</li>
                 </ol>
-              </Sub>
-              <Code>{`OP_IF
+                <Code>{`OP_IF
   OP_SHA256 <H> OP_EQUALVERIFY
   OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
 OP_ELSE
   <LockTime> OP_CHECKLOCKTIMEVERIFY OP_DROP
   OP_DUP OP_HASH160 <MakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
 OP_ENDIF`}</Code>
-              <p>
-                BSV's sub-cent transaction fees and 10-minute block times (with instant zero-confirmation for low-value trades) make it the optimal settlement layer for cross-chain atomic swaps at scale.
-              </p>
+              </Sub>
+              <Sub title="4.2 OP_RETURN Settlement Proofs">
+                <p>Every matched trade on OrahDEX — including copy-traded vault orders — produces a BSV OP_RETURN transaction. The payload is pipe-delimited and permanently recorded on-chain:</p>
+                <Code>{`OP_RETURN payload format:
+ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>
+
+Example:
+ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000`}</Code>
+                <p>The BSV txid is computed as double-SHA256 of the serialised raw transaction, matching exactly what the BSV network computes. This creates a tamper-evident, publicly-auditable on-chain ledger of all OrahDEX settlement activity.</p>
+              </Sub>
               <div className="grid grid-cols-3 gap-3">
                 <Metric value="< $0.001" label="BSV Tx Fee" sub="Per settlement" />
                 <Metric value="0" label="Counterparty Risk" sub="Trustless HTLC" />
-                <Metric value="100%" label="On-Chain Proof" sub="Publicly verifiable" />
+                <Metric value="100%" label="On-Chain Proof" sub="OP_RETURN audit trail" />
               </div>
             </Section>
 
             {/* 5. AMM */}
             <Section id="amm" title="5. AMM Liquidity Pools">
               <p>
-                OrahDEX's on-chain liquidity is provided through <span className="text-foreground font-medium">Automated Market Maker (AMM) pools</span> deployed as smart contracts on EVM-compatible chains. The protocol uses a concentrated liquidity model inspired by Uniswap V3, allowing liquidity providers (LPs) to specify price ranges for their capital, maximising fee efficiency.
+                OrahDEX's on-chain liquidity is provided through <span className="text-foreground font-medium">Automated Market Maker (AMM) pools</span> using the constant product invariant. The fee structure is designed to align LP incentives with protocol sustainability.
               </p>
-              <Sub title="Constant Product Formula (x · y = k)">
-                <p>For standard pools, OrahDEX uses the constant product invariant:</p>
+              <Sub title="5.1 Constant Product Formula (x · y = k)">
                 <Code>{`x * y = k
 Where:
   x = reserve of Token A
   y = reserve of Token B
   k = constant (preserved by every swap)
 
-Price of A in terms of B = y / x
-Effective price with fee: (y - Δy) / (x + Δx * (1 - fee))`}</Code>
+Price Impact:   Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))
+Price of A:     P = y / x
+Effective price: (y − Δy) / (x + Δx × (1 − fee))`}</Code>
               </Sub>
-              <Sub title="Impermanent Loss Protection (Roadmap)">
-                <p>OrahDEX plans to introduce an impermanent loss insurance fund in Q3 2026, funded by a portion of protocol trading fees, to compensate LPs for sustained directional moves in pool-paired assets.</p>
+              <Sub title="5.2 Fee Distribution">
+                <p>OrahDEX AMM pools apply a 0.30% swap fee distributed across three destinations:</p>
+                <InfoBox title="AMM Fee Split" color="green">
+                  <p>5/6 (≈ 83.3%) → Liquidity Providers (proportional to pool share)</p>
+                  <p>1/6 (≈ 16.7%) → OrahDEX Protocol Treasury</p>
+                  <p>Additional protocol revenue: 0.05% per swap → Impermanent Loss Insurance Fund</p>
+                </InfoBox>
               </Sub>
-              <InfoBox title="AMM Fee Distribution" color="green">
-                <p>80% of AMM swap fees → Liquidity Providers (proportional to pool share)</p>
-                <p>15% of AMM swap fees → OrahDEX Protocol Treasury</p>
-                <p>5% of AMM swap fees → Impermanent Loss Insurance Fund</p>
-              </InfoBox>
+              <Sub title="5.3 AmmSwapSimulator">
+                <p>OrahDEX includes a built-in AMM simulator that shows real-time price impact, slippage, fee breakdown, k constant, and effective exchange rate before committing a swap. Available on both desktop and mobile.</p>
+              </Sub>
             </Section>
 
             {/* 6. Bridge */}
@@ -367,15 +388,16 @@ Effective price with fee: (y - Δy) / (x + Δx * (1 - fee))`}</Code>
               </p>
               <Sub title="Bridge Architecture">
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
-                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX bridges move native assets directly using atomic swaps rather than minting synthetic wrapped versions, eliminating the de-peg risk of wrapped tokens.</li>
+                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX bridges move native assets using atomic swaps, eliminating de-peg risk.</li>
                   <li><span className="font-medium text-foreground">Relayer Network:</span> A decentralised network of OrahDEX relayers facilitates HTLC coordination between chains. Relayers are economically incentivised and operate in a trust-minimised fashion.</li>
                   <li><span className="font-medium text-foreground">Time-Lock Safety:</span> All cross-chain HTLCs have configurable time locks (minimum 24 hours for large amounts). Expired HTLCs automatically refund to the sender on-chain.</li>
                   <li><span className="font-medium text-foreground">Watchtower Services:</span> OrahDEX operates watchtower nodes that monitor pending HTLCs and automatically execute refunds if the counterparty fails to act.</li>
+                  <li><span className="font-medium text-foreground">Multi-Network:</span> Supports Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, and Cronos.</li>
                 </ul>
               </Sub>
               <InfoBox title="Supported Bridge Pairs (Phase 1)" color="blue">
-                <p>BSV ↔ ETH · BSV ↔ BNB · BSV ↔ MATIC · BSV ↔ USDT (BSV) ↔ USDT (ERC-20)</p>
-                <p>Additional pairs added based on liquidity and community governance.</p>
+                <p>BSV ↔ ETH · BSV ↔ BNB · BSV ↔ MATIC · BSV ↔ USDT (BSV native) ↔ USDT (ERC-20)</p>
+                <p>Additional pairs added based on liquidity and community governance vote.</p>
               </InfoBox>
             </Section>
 
@@ -383,34 +405,173 @@ Effective price with fee: (y - Δy) / (x + Δx * (1 - fee))`}</Code>
             <Section id="trading" title="7. Trading Engine">
               <Sub title="7.1 Spot Trading">
                 <p>
-                  Spot trading is available for 226+ pairs. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path. Limit orders are signed by the user (ECDSA) and held in the OrahDEX order book until filled; the platform broadcasts the settlement transaction only when a counterparty is matched.
+                  Spot trading is available for <strong>934+ pairs</strong> aggregated from Binance, CMC, CoinGecko, and 200+ GeckoTerminal networks. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path.
+                </p>
+                <p>
+                  Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until filled. On match, the platform produces a BSV OP_RETURN settlement transaction providing an immutable on-chain audit trail. OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BTC, etc.) with adaptive decimal precision (up to 10 decimal places for micro-priced assets).
                 </p>
               </Sub>
               <Sub title="7.2 Perpetual Futures">
                 <p>
-                  OrahDEX offers perpetual futures contracts with up to 100x leverage. Positions are tracked by the OrahDEX protocol and settled against mark prices derived from an aggregated oracle (CoinGecko + CMC + on-chain TWAP). Funding rates are exchanged between long and short positions every 8 hours to keep perpetual prices anchored to spot.
+                  OrahDEX offers perpetual futures contracts with up to 100x leverage. Positions are tracked by the protocol and settled against mark prices derived from an aggregated oracle (CoinGecko + CMC + on-chain TWAP). Funding rates are exchanged every 8 hours to keep perpetual prices anchored to spot.
                 </p>
-                <Code>{`Funding Rate = (Perpetual Price - Index Price) / Index Price × (1/24)
-Position PnL = (Exit Price - Entry Price) × Position Size × Direction
-Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
+                <Code>{`Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/24)
+Position PnL  = (Exit Price − Entry Price) × Size × Direction
+Liq. Price    = Entry Price × (1 − Initial Margin / Leverage)
+Mark Price    = median(CoinGecko, CMC, OrahDEX TWAP)`}</Code>
               </Sub>
               <Sub title="7.3 P2P Trading">
                 <p>
                   OrahDEX's P2P marketplace enables direct peer-to-peer trades with custom payment methods including bank transfer, mobile money, and local fiat options. Trades are secured by a BSV HTLC escrow that releases automatically when both parties confirm completion. Dispute resolution is handled by OrahDEX's decentralised arbitration panel.
                 </p>
               </Sub>
-              <Sub title="7.4 Order Types">
+              <Sub title="7.4 Fiat On-Ramp">
+                <p>
+                  OrahDEX integrates five fiat on-ramp providers: <strong>MoonPay, Transak, Banxa, Simplex, and Ramp Network</strong>. Users can purchase crypto with credit/debit cards, bank transfers, and local payment methods in 100+ countries directly within the OrahDEX interface.
+                </p>
+              </Sub>
+              <Sub title="7.5 Order Types">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {["Market", "Limit", "Stop-Limit", "Stop-Market", "Trailing Stop", "Post-Only"].map(t => (
                     <div key={t} className="text-center py-2 px-3 bg-secondary/40 rounded-xl border border-border text-xs font-medium text-foreground">{t}</div>
                   ))}
                 </div>
               </Sub>
+              <Sub title="7.6 Keeper Tier Discounts">
+                <p>OrahDEX rewards active participants with progressive fee discounts through Keeper tiers:</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 pr-4 font-semibold text-foreground">Tier</th>
+                        <th className="text-left py-2 pr-4 font-semibold text-foreground">Maker Fee</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Requirements</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["Initiate",  "0.20%", "Default tier — all users"],
+                        ["Sentinel",  "0.12%", "30d volume ≥ $50,000"],
+                        ["Archon",    "0.06%", "30d volume ≥ $500,000"],
+                        ["Sovereign", "0.00%", "30d volume ≥ $5,000,000"],
+                      ].map(([t, f, r]) => (
+                        <tr key={t as string} className="border-b border-border/50">
+                          <td className="py-2 pr-4 font-semibold text-primary">{t}</td>
+                          <td className="py-2 pr-4 font-mono text-green-400">{f}</td>
+                          <td className="py-2 text-muted-foreground">{r}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Sub>
             </Section>
 
-            {/* 8. Tokenomics */}
-            <Section id="tokenomics" title="8. Fee Model & Revenue">
-              <p>OrahDEX operates on a transparent, performance-based fee model with no platform token required to access trading functionality.</p>
+            {/* 8. CopyVault */}
+            <Section id="copy-vault" title="8. CopyVault — On-Chain Copy Trading">
+              <p>
+                CopyVault is OrahDEX's proprietary on-chain copy trading system — the first of its kind to combine ERC4626-style vault accounting with BSV on-chain settlement proofs for every mirrored trade. Followers deposit USDT into a leader-managed vault and automatically participate in the leader's trading strategy, with full transparency and on-chain verification.
+              </p>
+
+              <Sub title="8.1 Vault Architecture">
+                <p>A CopyVault is modelled on the ERC4626 vault standard: a pool of follower capital, represented by fungible vault shares, operated by a single designated leader wallet.</p>
+                <Code>{`Share Price = Vault TVL / Total Shares
+             (starts at $1.00 USDT per share)
+
+Shares Issued on Deposit:
+  shares = depositAmountUsdt / currentSharePrice
+
+Redemption Value on Withdraw:
+  redeemValue = sharesOwned × currentSharePrice
+
+Performance Fee (on profit only):
+  fee = max(0, redeemValue − depositAmount) × feeRate
+  netPayout = redeemValue − fee`}</Code>
+              </Sub>
+
+              <Sub title="8.2 Trade Mirroring">
+                <p>
+                  The OrahDEX off-chain orchestrator monitors all trades on the platform. When a leader wallet executes a trade, the orchestrator computes the vault's proportional allocation and mirrors the trade:
+                </p>
+                <Code>{`Allocation Ratio = min(1, vaultTvl / leaderPortfolioValue)
+Copy Quantity   = leaderQuantity × allocationRatio
+Copy Total      = copyQuantity × price
+
+For every mirrored trade:
+  • An entry is recorded in copy_vault_trades
+  • A BSV OP_RETURN settlement transaction is produced
+  • The vault share price is recalculated: newSharePrice = newTvl / totalShares`}</Code>
+              </Sub>
+
+              <Sub title="8.3 Vault Lifecycle">
+                <ul className="list-disc list-inside space-y-1.5 ml-1">
+                  <li><span className="font-medium text-foreground">Deposit:</span> Follower deposits USDT → vault issues shares at current share price. TVL increases.</li>
+                  <li><span className="font-medium text-foreground">Trading:</span> Leader trades are mirrored automatically. Vault share price adjusts to reflect PnL.</li>
+                  <li><span className="font-medium text-foreground">Withdraw:</span> Follower redeems all shares at current share price. Performance fee deducted from profit only (never on losses). Net USDT returned immediately.</li>
+                  <li><span className="font-medium text-foreground">On-Chain Proof:</span> Every vault trade produces a BSV OP_RETURN transaction with full settlement data.</li>
+                </ul>
+              </Sub>
+
+              <Sub title="8.4 Security & Transparency">
+                <ul className="list-disc list-inside space-y-1.5 ml-1">
+                  <li>All vault accounting is stored in the OrahDEX PostgreSQL database and cross-referenced with BSV on-chain records.</li>
+                  <li>Share price, TVL, and follower count are publicly visible in the CopyVault leaderboard.</li>
+                  <li>Performance fee is charged only on realised profit at withdrawal — not on TVL or time.</li>
+                  <li>Vault capacity limits (max TVL per vault) prevent any single vault from concentrating systemic risk.</li>
+                  <li>Admin panel provides full vault management: create, pause, activate, and audit all vaults and their trade history.</li>
+                </ul>
+              </Sub>
+
+              <div className="grid grid-cols-3 gap-3">
+                <Metric value="ERC4626" label="Vault Model" sub="Share-based accounting" />
+                <Metric value="BSV" label="Trade Proofs" sub="OP_RETURN on-chain" />
+                <Metric value="0" label="Fee on Losses" sub="Profit-only performance fee" />
+              </div>
+
+              <InfoBox title="CopyVault Database Schema" color="violet">
+                <p><strong>copy_vaults</strong> — vault config, TVL, share price, PnL stats, leader info, status</p>
+                <p><strong>copy_vault_positions</strong> — per-follower share holdings, entry price, current value, realized PnL</p>
+                <p><strong>copy_vault_trades</strong> — every mirrored trade with symbol, side, price, quantity, BSV txid</p>
+              </InfoBox>
+            </Section>
+
+            {/* 9. Ora AI */}
+            <Section id="ora-ai" title="9. Ora — Integrated AI Trading Intelligence">
+              <p>
+                <span className="text-foreground font-medium">Ora</span> is OrahDEX's embedded AI assistant, designed to bring institutional-grade market intelligence to every trader on the platform. Ora is contextually aware of current market prices, the user's active positions, and the full OrahDEX product suite.
+              </p>
+              <Sub title="9.1 Capabilities">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { title: "Market Analysis", desc: "Real-time commentary on price action, volume, trend direction, and support/resistance levels for any of 934+ trading pairs." },
+                    { title: "Trade Assistance", desc: "Helps traders evaluate order sizing, leverage, stop-loss placement, and risk/reward ratios before entering a position." },
+                    { title: "CopyVault Guidance", desc: "Analyses vault leaderboards, compares leader performance metrics, and helps followers select vaults aligned with their risk profile." },
+                    { title: "Portfolio Coaching", desc: "Reviews open positions, calculates portfolio Greeks, identifies concentration risk, and suggests rebalancing strategies." },
+                    { title: "Educational Mode", desc: "Explains trading concepts, DeFi mechanisms, HTLC atomic swaps, AMM mathematics, and BSV settlement in plain language." },
+                    { title: "Contextual Awareness", desc: "Ora is aware of the pair currently being viewed, active orderbook state, and recent trades — providing hyper-relevant responses without manual context." },
+                  ].map(({ title, desc }) => (
+                    <div key={title} className="p-3 bg-amber-400/5 border border-amber-400/15 rounded-xl">
+                      <p className="text-xs font-bold text-amber-400 mb-1">{title}</p>
+                      <p className="text-xs text-muted-foreground">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </Sub>
+              <Sub title="9.2 Architecture">
+                <p>
+                  Ora is implemented as a streaming chat interface backed by an OpenAI-compatible LLM API. Conversations are stored per-user in the OrahDEX database (conversations + messages tables) providing persistent context across sessions. The system prompt includes OrahDEX platform context, the user's active wallet, and current market state.
+                </p>
+                <InfoBox title="Ora Technical Config" color="amber">
+                  <p>Model: OpenAI-compatible · max_completion_tokens: 8,192 · Streaming: Server-Sent Events</p>
+                  <p>Context: Platform description + current pair + user wallet + recent chat history</p>
+                  <p>Storage: Persistent per-user conversation history in PostgreSQL</p>
+                </InfoBox>
+              </Sub>
+            </Section>
+
+            {/* 10. Tokenomics */}
+            <Section id="tokenomics" title="10. Fee Model & Revenue">
+              <p>OrahDEX operates on a transparent, performance-based fee model. No platform token is required to access any trading functionality.</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
                   <thead>
@@ -420,16 +581,19 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                       <th className="text-left py-2 font-semibold text-foreground">Distribution</th>
                     </tr>
                   </thead>
-                  <tbody className="space-y-1">
+                  <tbody>
                     {[
-                      ["Spot — Maker", "0.10%", "Protocol treasury + LP rewards"],
-                      ["Spot — Taker", "0.10%", "Protocol treasury + LP rewards"],
-                      ["Futures — Maker", "0.02%", "Protocol treasury"],
-                      ["Futures — Taker", "0.06%", "Protocol treasury"],
-                      ["AMM Swap", "0.30%", "80% LPs · 15% treasury · 5% IL fund"],
-                      ["Bridge Transfer", "0.20%", "Relayer network + protocol"],
-                      ["P2P Trade", "0.50%", "Protocol treasury + arbitrators"],
-                      ["Withdrawal (BSV)", "< 0.001 BSV", "Miner fees (pass-through)"],
+                      ["Spot — Initiate Maker/Taker", "0.20%", "Protocol treasury + LP rewards"],
+                      ["Spot — Sentinel",             "0.12%", "Protocol treasury + LP rewards"],
+                      ["Spot — Archon",               "0.06%", "Protocol treasury + LP rewards"],
+                      ["Spot — Sovereign",            "0.00%", "Zero trading fee"],
+                      ["Futures — Maker",             "0.02%", "Protocol treasury"],
+                      ["Futures — Taker",             "0.06%", "Protocol treasury"],
+                      ["AMM Swap",                    "0.30%", "83.3% LPs · 16.7% treasury"],
+                      ["Bridge Transfer",             "0.20%", "Relayer network + protocol"],
+                      ["P2P Trade",                   "0.50%", "Protocol treasury + arbitrators"],
+                      ["CopyVault Perf. Fee",         "5–15%", "On profits only, at withdrawal. Configurable per vault by leader."],
+                      ["Withdrawal (BSV)",            "< $0.001", "Miner fees (pass-through)"],
                     ].map(([a, f, d]) => (
                       <tr key={a as string} className="border-b border-border/50">
                         <td className="py-2 pr-4 text-muted-foreground">{a}</td>
@@ -448,16 +612,18 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
               </InfoBox>
             </Section>
 
-            {/* 9. Security */}
-            <Section id="security" title="9. Security Model">
+            {/* 11. Security */}
+            <Section id="security" title="11. Security Model">
               <p>Security is the foundational requirement of any financial platform. OrahDEX employs defence-in-depth across all layers:</p>
               <div className="space-y-3">
                 {[
                   { title: "Non-Custodial Architecture", desc: "User funds never touch OrahDEX servers. All assets are held in user-controlled wallets or on-chain HTLC contracts. There is no honeypot for hackers to target." },
+                  { title: "ECDSA Order Signing", desc: "All spot limit orders are signed by the user's private key (ECDSA personal_sign) before submission. The signature proves the trader authorised the order, preventing spoofing." },
                   { title: "Smart Contract Audits", desc: "All OrahDEX smart contracts undergo mandatory third-party security audits before mainnet deployment. Audit reports are published publicly." },
                   { title: "Bug Bounty Program", desc: "OrahDEX maintains an active bug bounty program with rewards up to $250,000 for critical vulnerabilities submitted through responsible disclosure." },
                   { title: "HTLC Time-Lock Safety", desc: "All cross-chain HTLCs have enforced time locks. If any party fails to act, funds automatically refund on-chain. No human intervention required." },
-                  { title: "Admin Multi-Sig", desc: "Critical protocol parameter changes require multi-signature approval from a time-locked governance multi-sig wallet. No single point of administrative compromise." },
+                  { title: "CopyVault Capacity Limits", desc: "Each vault has a configurable maximum TVL cap. No single vault can accumulate unbounded systemic risk. Vault status can be paused by admin in real-time." },
+                  { title: "Admin Multi-Sig & 2FA", desc: "Admin panel requires TOTP two-factor authentication. Critical protocol parameter changes require multi-signature approval from a time-locked governance multi-sig wallet." },
                   { title: "Real-Time Monitoring", desc: "OrahDEX operates 24/7 on-chain monitoring for anomalous transaction patterns, unusual price movements, and smart contract events. Alerts trigger automated circuit breakers." },
                 ].map(({ title, desc }) => (
                   <div key={title} className="flex gap-3 p-3 bg-card border border-border rounded-xl">
@@ -471,8 +637,8 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
               </div>
             </Section>
 
-            {/* 10. Roadmap */}
-            <Section id="roadmap" title="10. Roadmap">
+            {/* 12. Roadmap */}
+            <Section id="roadmap" title="12. Roadmap">
               <div className="space-y-4">
                 {[
                   {
@@ -480,29 +646,37 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                     date: "Q1–Q2 2026",
                     status: "complete",
                     items: [
-                      "Launch spot trading with 226+ pairs",
-                      "BSV HTLC settlement integration",
-                      "EVM wallet support via Reown/WalletConnect",
+                      "Launch spot trading with 934+ pairs (Binance + CMC + GeckoTerminal)",
+                      "BSV HTLC settlement integration + OP_RETURN trade proofs",
+                      "EVM wallet support via Reown/WalletConnect (12+ networks)",
                       "Perpetual futures with up to 100x leverage",
                       "GeckoTerminal 200+ network market explorer",
                       "DexScreener Base chain integration",
-                      "P2P marketplace launch",
-                      "Admin panel with full platform configuration",
+                      "P2P marketplace with HTLC escrow",
+                      "AMM liquidity pools (x·y=k constant product)",
+                      "Cross-chain HTLC bridge (BSV ↔ EVM)",
+                      "CopyVault on-chain copy trading system (ERC4626 vaults + BSV proofs)",
+                      "Ora AI trading assistant (streaming LLM, persistent history)",
+                      "Admin panel with full platform configuration (25+ admin pages)",
+                      "Keeper tier fee structure (Initiate → Sovereign)",
                       "Fiat on-ramp (MoonPay, Transak, Banxa, Simplex, Ramp)",
+                      "OrahChart cross-pair chart engine (adaptive decimal precision)",
+                      "4 theme modes: Dark, Light, AMOLED, System",
                     ],
                   },
                   {
-                    phase: "Phase 2 — DeFi Expansion",
+                    phase: "Phase 2 — Mobile & Derivatives",
                     date: "Q3 2026",
                     status: "upcoming",
                     items: [
-                      "AMM liquidity pools on Ethereum + BSV",
-                      "Cross-chain HTLC bridge (BSV ↔ EVM)",
-                      "LP dashboard and impermanent loss analytics",
-                      "Mobile native app (iOS + Android)",
-                      "Advanced order types (TWAP, VWAP, iceberg)",
-                      "Copy trading and signal marketplace",
+                      "Native iOS + Android app (Expo React Native)",
+                      "Mobile CopyVault experience with biometric auth",
+                      "Advanced order types (TWAP, VWAP, iceberg, conditional)",
+                      "Options trading (European-style, BSV-settled)",
+                      "Structured products (delta-neutral yield vaults)",
+                      "Impermanent loss insurance fund",
                       "KYC/AML integration for institutional users",
+                      "WebSocket real-time order book feeds",
                     ],
                   },
                   {
@@ -510,12 +684,12 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                     date: "Q4 2026",
                     status: "planned",
                     items: [
-                      "Decentralised governance model",
-                      "Institutional API with co-location support",
-                      "Options trading (European-style)",
-                      "Structured products (yield vaults, delta-neutral strategies)",
+                      "Decentralised governance model (on-chain voting)",
+                      "Institutional API with co-location support and FIX protocol",
+                      "CopyVault social features (leader rankings, performance badges)",
                       "Cross-chain NFT marketplace integration",
                       "OrahDEX SDK for third-party integrations",
+                      "Ora AI v2 — proactive trade signals and portfolio alerts",
                     ],
                   },
                   {
@@ -523,11 +697,12 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                     date: "2027",
                     status: "planned",
                     items: [
-                      "Regulatory licensing in target jurisdictions",
+                      "Regulatory licensing in target jurisdictions (EU MiCA, Singapore MAS)",
                       "OTC desk for high-net-worth clients",
-                      "Decentralised identity (DID) integration",
                       "ZK-proof privacy layer for sensitive trades",
+                      "Decentralised identity (DID) integration",
                       "Integration with traditional finance rails (SWIFT, SEPA)",
+                      "OrahDEX Layer 2 on BSV for ultra-high-frequency settlement",
                     ],
                   },
                 ].map(({ phase, date, status, items }) => (
@@ -575,10 +750,13 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                 OrahDEX represents a fundamentally new approach to decentralised trading — one that does not compromise between security and usability, between DeFi and CeFi, or between Bitcoin and Ethereum. By building native BSV settlement into its core, OrahDEX accesses a blockchain that is technically superior for the settlement use case: unlimited scalability, sub-cent fees, and UTXO-based programmability through powerful Script capabilities.
               </p>
               <p>
-                The combination of HTLC atomic swaps, concentrated AMM liquidity, perpetual futures, P2P markets, and a cross-chain bridge — all in a single, non-custodial interface — positions OrahDEX as the most comprehensive decentralised trading platform available.
+                The combination of HTLC atomic swaps, concentrated AMM liquidity, perpetual futures, P2P markets, cross-chain bridging, and the world's first on-chain copy trading system (CopyVault) — all in a single, non-custodial interface guided by Ora AI — positions OrahDEX as the most comprehensive decentralised trading platform available.
               </p>
               <p>
-                We invite traders, liquidity providers, developers, and partners to join us in building the future of decentralised finance.
+                With <strong>934+ trading pairs</strong>, access to <strong>200+ blockchain networks</strong> via GeckoTerminal, four distinct trading instruments, and a sovereign identity designed for the new generation of self-sovereign traders — OrahDEX is not a product iteration. It is a paradigm shift.
+              </p>
+              <p>
+                We invite traders, liquidity providers, copy trading leaders, developers, and partners to join us in building the future of decentralised finance.
               </p>
               <div className="flex items-center justify-center pt-4">
                 <OrahInline className="text-xl justify-center" />
@@ -594,13 +772,13 @@ Liquidation Price = Entry Price × (1 - Initial Margin / Leverage)`}</Code>
                   This White Paper is published for informational purposes only and does not constitute financial, investment, legal, or tax advice. Nothing in this document constitutes an offer to sell, a solicitation of an offer to buy, or a recommendation of any security, cryptocurrency, or any other financial instrument.
                 </p>
                 <p>
-                  Cryptocurrency trading involves substantial risk. You may lose all of your invested capital. Past performance is not indicative of future results. The information in this document reflects the current state and plans of OrahDEX as of the publication date and is subject to change without notice.
+                  Cryptocurrency trading involves substantial risk. You may lose all of your invested capital. Past performance is not indicative of future results. CopyVault returns displayed in the leaderboard are historical and do not guarantee future results. Copy trading involves the risk of losing capital even when following successful leaders.
                 </p>
                 <p>
-                  OrahDEX does not guarantee the accuracy or completeness of the information in this document. The roadmap timelines and features described are aspirational and subject to change based on technical, regulatory, and market conditions.
+                  The information in this document reflects the current state and plans of OrahDEX as of the publication date and is subject to change without notice. OrahDEX does not guarantee the accuracy or completeness of the information in this document.
                 </p>
                 <p>
-                  This document may not be distributed in any jurisdiction where such distribution would be unlawful. Recipients in prohibited jurisdictions should not rely on any information contained herein.
+                  The roadmap timelines and features described are aspirational and subject to change based on technical, regulatory, and market conditions. This document may not be distributed in any jurisdiction where such distribution would be unlawful.
                 </p>
                 <p className="font-medium text-amber-300">
                   © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE}
