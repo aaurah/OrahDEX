@@ -77,6 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/fees",         label: "Fee Configuration",  icon: DollarSign },
       { href: "/admin/integrations", label: "Integrations",       icon: Link2 },
       { href: "/admin/contracts",    label: "Contracts & Coins",  icon: Cpu },
+      { href: "/admin/copy-vaults",  label: "CopyVault",          icon: Copy,    badge: "NEW" },
     ],
   },
   {
