@@ -64,6 +64,10 @@ const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").the
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
 const AdminCexConnections = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
 const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
+const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
+const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
+const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
+const AdminLogsPage       = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -291,6 +295,10 @@ function Router() {
       <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/cex">       <AdminRoute><AdminCexConnections /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
+      <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
+      <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
+      <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
+      <Route path="/admin/logs">      <AdminRoute><AdminLogsPage /></AdminRoute></Route>
 
       {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
       <Route path="/">

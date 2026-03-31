@@ -5,6 +5,7 @@ import {
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
+  HeartPulse, TrendingUp, Terminal,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -82,6 +83,15 @@ const NAV_GROUPS: NavGroup[] = [
     title: "AI Intelligence",
     items: [
       { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain,   badge: "AI" },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { href: "/admin/health",       label: "System Health",      icon: HeartPulse, badge: "LIVE" },
+      { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
+      { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },
+      { href: "/admin/logs",         label: "System Logs",        icon: Terminal },
     ],
   },
   {

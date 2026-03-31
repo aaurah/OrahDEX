@@ -1,0 +1,326 @@
+I’ll give you:
+
+• Clear architecture
+• Full API surface
+• TradingView datafeed design
+• Frontend integration
+• Admin panel structure
+
+
+You can hand this to engineers as the blueprint.
+
+---
+
+1. High‑level architecture
+
+Services:
+
+• API Gateway – api.orahdex.org
+• Core DEX Backend – markets, trades, orderbook, candles, wallets
+• Liquidity Bot Service – market making, throttled
+• TradingView Datafeed Service – symbols, history, streaming
+• Admin Panel Backend – config, monitoring, controls
+• Postgres/Timescale – markets, trades, candles, orders
+• Redis – caches, pub/sub for live updates
+
+
+---
+
+2. Core REST API (frontend ↔ backend)
+
+Base: https://api.orahdex.org/v1
+
+Auth:
+
+• Public endpoints: markets, orderbook, candles, trades
+• Signed endpoints: orders, portfolio, admin
+
+
+2.1 Markets & tokens
+
+• List marketsGET /marketsReturns:[
+  {
+    "symbol": "BSVUSDT",
+    "base": "BSV",
+    "quote": "USDT",
+    "status": "ACTIVE",
+    "minQty": "0.001",
+    "pricePrecision": 4,
+    "qtyPrecision": 3
+  }
+]
+
+• Single marketGET /markets/{symbol}
+• TokensGET /tokens
+
+
+2.2 Orderbook
+
+• OrderbookGET /orderbookQuery:• symbol=BSVUSDT
+• limit=50
+Response:{
+  "symbol": "BSVUSDT",
+  "bids": [[13.81, 0.52], [13.80, 1.10]],
+  "asks": [[13.82, 0.40], [13.83, 0.90]],
+  "timestamp": 1710000000
+}
+For unknown pairs: return synthetic book, not 404.
+
+
+2.3 Candles (charts)
+
+• CandlesGET /candlesQuery:• symbol=BSVUSDT
+• interval=1m|5m|1h|4h|1d
+• from=unix
+• to=unix
+Response:[
+  {
+    "t": 1710000000,
+    "o": 13.90,
+    "h": 14.10,
+    "l": 13.80,
+    "c": 13.82,
+    "v": 1023.5
+  }
+]
+Unknown pairs → synthetic candles.
+
+
+2.4 Trades
+
+• Recent tradesGET /tradesQuery:• symbol=BSVUSDT
+• limit=100
+Response:[
+  {
+    "id": "123",
+    "price": 13.82,
+    "qty": 0.52,
+    "side": "buy",
+    "timestamp": 1710000000
+  }
+]
+With 3s timeout enforced.
+
+
+2.5 Orders (user)
+
+• Place orderPOST /ordersBody:{
+  "symbol": "BSVUSDT",
+  "side": "BUY",
+  "type": "LIMIT",
+  "price": "13.80",
+  "quantity": "1.0",
+  "walletAddress": "0x67C7...",
+  "signature": "0x..."
+}
+
+• Cancel orderPOST /orders/cancel
+• Open ordersGET /orders/open?wallet=0x67C7...
+• Order historyGET /orders/history?wallet=0x67C7...
+
+
+---
+
+3. WebSocket API (live data)
+
+Base: wss://api.orahdex.org/ws
+
+Channels:
+
+• orderbook:BSVUSDT
+• trades:BSVUSDT
+• ticker:BSVUSDT
+• candles:BSVUSDT:1m
+
+
+Subscribe message:
+
+{
+  "type": "subscribe",
+  "channels": [
+    {"name": "orderbook", "symbol": "BSVUSDT"},
+    {"name": "trades", "symbol": "BSVUSDT"}
+  ]
+}
+
+
+Orderbook update:
+
+{
+  "type": "orderbook",
+  "symbol": "BSVUSDT",
+  "bids": [[13.81, 0.52]],
+  "asks": [[13.82, 0.40]],
+  "timestamp": 1710000001
+}
+
+
+---
+
+4. TradingView datafeed service
+
+Base: https://tv.orahdex.org
+
+Implements TradingView’s UDF‑style endpoints.
+
+4.1 /config
+
+GET /config
+
+{
+  "supports_search": true,
+  "supports_group_request": true,
+  "supports_marks": false,
+  "supports_timescale_marks": false,
+  "supports_time": true,
+  "exchanges": [
+    {"value": "OrahDEX", "name": "OrahDEX", "desc": "OrahDEX Sovereign DEX"}
+  ],
+  "supported_resolutions": ["1", "5", "15", "60", "240", "1D"]
+}
+
+
+4.2 /symbols
+
+GET /symbols?symbol=BSVUSDT
+
+{
+  "name": "BSVUSDT",
+  "ticker": "BSVUSDT",
+  "description": "BSV / USDT",
+  "type": "crypto",
+  "session": "24x7",
+  "exchange": "OrahDEX",
+  "minmov": 1,
+  "pricescale": 10000,
+  "has_intraday": true,
+  "supported_resolutions": ["1", "5", "15", "60", "240", "1D"],
+  "has_empty_bars": false
+}
+
+
+4.3 /search
+
+GET /search?query=BSV&type=crypto&exchange=OrahDEX
+
+Returns list of matching symbols.
+
+4.4 /history
+
+GET /history?symbol=BSVUSDT&resolution=60&from=1710000000&to=1710050000
+
+Response:
+
+{
+  "t": [1710000000, 1710003600],
+  "o": [13.90, 13.95],
+  "h": [14.10, 14.00],
+  "l": [13.80, 13.70],
+  "c": [13.82, 13.75],
+  "v": [1023.5, 850.2],
+  "s": "ok"
+}
+
+
+This maps directly to your /candles endpoint.
+
+4.5 /time
+
+GET /time → returns current server unix time.
+
+4.6 Live streaming
+
+TradingView’s widget can use your WebSocket:
+
+• On subscribeBars, you hook into wss://api.orahdex.org/ws
+• Push candle updates as they form.
+
+
+---
+
+5. Frontend integration (web + mobile)
+
+Web app:
+
+• Use your existing React/Vue/Next app.
+• For charts, embed TradingView widget with custom datafeed:
+
+
+const datafeed = new Datafeeds.UDFCompatibleDatafeed("https://tv.orahdex.org");
+
+new TradingView.widget({
+  symbol: "BSVUSDT",
+  interval: "60",
+  container_id: "tv_chart",
+  datafeed,
+  library_path: "/tradingview/",
+  locale: "en",
+  disabled_features: ["use_localstorage_for_settings"],
+  enabled_features: [],
+  theme: "dark"
+});
+
+
+Mobile app:
+
+• If it’s a webview: same widget.
+• If native: use a WebView or a native chart lib fed by /candles + WebSocket.
+
+
+---
+
+6. Admin panel (trading + system control)
+
+Base: https://admin.orahdex.org
+Backend: https://api.orahdex.org/admin
+
+6.1 Auth
+
+• Admin JWT or wallet‑based sign‑in.
+
+
+6.2 Admin endpoints
+
+• MarketsGET /admin/markets
+POST /admin/markets (add/enable/disable)
+• Liquidity botGET /admin/liquidity/config
+POST /admin/liquidity/configBody:{
+  "intervalSeconds": 120,
+  "batchSize": 40,
+  "levelsPerSide": 6,
+  "enabled": true
+}
+
+• System healthGET /admin/healthReturns:{
+  "nodeHeapMB": 320,
+  "dbConnections": 24,
+  "avgOrderbookLatencyMs": 45,
+  "avgTradesLatencyMs": 52,
+  "uptimeSeconds": 3600
+}
+
+• TradingView statusGET /admin/tradingviewShows:• Last /history call latency
+• Symbols count
+• Streaming status
+
+
+
+6.3 Admin UI sections
+
+• Dashboard• Live latency, memory, DB load
+• Error rate, timeouts
+
+• Markets• Enable/disable pairs
+• Edit precision, minQty
+
+• Liquidity• View bot config
+• Adjust interval, batch size, levels
+• View last cycle duration
+
+• TradingView• Check datafeed health
+• Test symbol
+• Test history
+
+• Logs• Recent errors
+• Timeouts
+• OOM events (if any)
