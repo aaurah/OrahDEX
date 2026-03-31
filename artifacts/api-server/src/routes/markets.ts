@@ -122,6 +122,24 @@ router.get("/markets/:symbol", async (req, res) => {
   }
 });
 
+/* ─── Cross-pair price helper ─────────────────────────────────────────────
+ * For pairs like ATOM/ETH, SOL/BTC etc. that have no direct USD price,
+ * compute the cross rate from our FALLBACK_PRICES (USD per asset).
+ */
+function usdStable(q: string) {
+  return ["USDT","USDC","USD","BUSD","TUSD","USDD","DAI","FDUSD"].includes(q.toUpperCase());
+}
+
+function resolveCrossPrice(symbol: string, dbPrice: number): number {
+  if (dbPrice > 0) return dbPrice;
+  const [base, quote] = symbol.split("/");
+  if (!base || !quote) return 0;
+  const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
+  const quoteUsd = usdStable(quote) ? 1 : (FALLBACK_PRICES[quote] ?? 0);
+  if (baseUsd > 0 && quoteUsd > 0) return baseUsd / quoteUsd;
+  return 0;
+}
+
 router.get("/markets/:symbol/ticker", async (req, res) => {
   try {
     const symbol = normSymbol(req.params.symbol);
@@ -129,14 +147,30 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     if (cached) { res.json(cached); return; }
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) { res.status(404).json({ error: "Market not found" }); return; }
+
+    let lastPrice = parseFloat(market.lastPrice);
+    // For cross-pairs with stale/zero DB price, recompute from FALLBACK_PRICES
+    if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
+
+    let pctChange = parseFloat(market.priceChangePercent24h);
+    // Cross-pairs often have 0 stored — compute from high/low if available
+    if (!pctChange) {
+      const hi = parseFloat(market.high24h);
+      const lo = parseFloat(market.low24h);
+      if (hi > 0 && lo > 0 && lastPrice > 0) {
+        const openEst = (hi + lo) / 2;
+        pctChange = openEst > 0 ? ((lastPrice - openEst) / openEst) * 100 : 0;
+      }
+    }
+
     const ticker = generateTicker({
-      symbol: market.symbol,
-      lastPrice:            parseFloat(market.lastPrice),
-      high24h:              parseFloat(market.high24h),
-      low24h:               parseFloat(market.low24h),
+      symbol:               market.symbol,
+      lastPrice,
+      high24h:              parseFloat(market.high24h) || lastPrice * 1.02,
+      low24h:               parseFloat(market.low24h)  || lastPrice * 0.98,
       volume24h:            parseFloat(market.volume24h),
       priceChange24h:       parseFloat(market.priceChange24h),
-      priceChangePercent24h:parseFloat(market.priceChangePercent24h),
+      priceChangePercent24h: pctChange,
     });
     tickerCache.set(symbol, ticker);
     res.json(ticker);
@@ -156,14 +190,12 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     let price: number;
     let sym: string;
     if (!market) {
-      // Unknown pair — derive price from fallback map
-      const [base, quote] = symbol.split("/");
-      const baseUsd  = base  ? (FALLBACK_PRICES[base]  ?? 0) : 0;
-      const quoteUsd = quote ? (FALLBACK_PRICES[quote] ?? (quote === "USDT" || quote === "USDC" ? 1 : 0)) : 0;
-      price = (baseUsd > 0 && quoteUsd > 0) ? baseUsd / quoteUsd : 0;
+      // Unknown pair — derive from fallback prices
+      price = resolveCrossPrice(symbol, 0);
       sym   = symbol;
     } else {
-      price = parseFloat(market.lastPrice);
+      // Prefer live DB price; fall back to cross-rate computation if DB is stale/zero
+      price = resolveCrossPrice(market.symbol, parseFloat(market.lastPrice));
       sym   = market.symbol;
     }
 

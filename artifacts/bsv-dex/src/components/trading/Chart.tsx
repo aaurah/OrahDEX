@@ -30,55 +30,42 @@ const TV_INTERVAL_MAP: Record<string, string> = {
   '1d': 'D', '1w': 'W', '1M': 'M',
 };
 
+/* ─── USD-stable quote currencies ────────────────────────────────────────── */
+const USD_QUOTES = new Set(['USDT', 'USDC', 'USD', 'BUSD', 'TUSD', 'USDD', 'DAI', 'FDUSD']);
+
 /* ─── Which pairs use our internal chart vs TradingView ─────────────────── */
 function useInternalChart(symbol: string): boolean {
-  // Use internal chart whenever BSV appears anywhere in the symbol
-  // covers: BSV/USDT, BSV/BTC, AVAX/BSV, BTC/BSV, ETH/BSV, BSV/USDT-PERP, etc.
-  return symbol.toUpperCase().includes('BSV');
+  const upper = symbol.toUpperCase();
+  // BSV always internal
+  if (upper.includes('BSV')) return true;
+  // Cross-pairs (non-USD-stable quote) always internal — TradingView delisted most ETH/BTC/BNB quoted altcoin pairs
+  const parts = upper.replace(/-PERP|PERP/gi, '').split(/[\/\-]/);
+  const quote = parts[1] ?? '';
+  if (!USD_QUOTES.has(quote)) return true;
+  // For USDT/USDC pairs: use TradingView (handles most coins on Binance/Coinbase)
+  return false;
 }
 
 /* ─── TradingView symbol mapping ────────────────────────────────────────── */
 function toTvSymbol(symbol: string): string {
   const isPerp = symbol.toUpperCase().includes('PERP');
-  const clean = symbol.toUpperCase().replace(/-PERP|PERP/g, '').trim();
-  const [base = '', quote = ''] = clean.split(/[\/\-]/);
-  const pair = `${base}${quote === 'USD' ? 'USDT' : quote}`;
+  const clean  = symbol.toUpperCase().replace(/-PERP|PERP/g, '').trim();
+  const [base = '', rawQuote = ''] = clean.split(/[\/\-]/);
+  const quote  = rawQuote === 'USD' ? 'USDT' : rawQuote;
+  const pair   = `${base}${quote}`;
 
+  // Explicit overrides for symbols that aren't on Binance
   const overrides: Record<string, string> = {
-    BCHUSDT:  'BINANCE:BCHUSDT',
-    XRPUSDT:  'BINANCE:XRPUSDT',
-    DOGEUSDT: 'BINANCE:DOGEUSDT',
-    SHIBUSDT: 'BINANCE:SHIBUSDT',
-    TRXUSDT:  'BINANCE:TRXUSDT',
-    LTCUSDT:  'BINANCE:LTCUSDT',
-    DOTUSDT:  'BINANCE:DOTUSDT',
-    LINKUSDT: 'BINANCE:LINKUSDT',
-    ADAUSDT:  'BINANCE:ADAUSDT',
-    ATOMUSDT: 'BINANCE:ATOMUSDT',
-    NEARUSDT: 'BINANCE:NEARUSDT',
-    APTUSDT:  'BINANCE:APTUSDT',
-    SUIUSDT:  'BINANCE:SUIUSDT',
-    INJUSDT:  'BINANCE:INJUSDT',
-    ARBUSDT:  'BINANCE:ARBUSDT',
-    OPUSDT:   'BINANCE:OPUSDT',
-    FTMUSDT:  'BINANCE:FTMUSDT',
-    CROUSDT:  'CRYPTO:CROUSD',
-    LDOUSDT:  'BINANCE:LDOUSDT',
-    UNIUSDT:  'BINANCE:UNIUSDT',
-    AAVEUSDT: 'BINANCE:AAVEUSDT',
-    MKRUSDT:  'BINANCE:MKRUSDT',
-    COMPUSDT: 'BINANCE:COMPUSDT',
-    CRVUSDT:  'BINANCE:CRVUSDT',
-    SNXUSDT:  'BINANCE:SNXUSDT',
-    GMXUSDT:  'BINANCE:GMXUSDT',
-    PEPEUSDT: 'BINANCE:PEPEUSDT',
-    WIFUSDT:  'BINANCE:WIFUSDT',
-    BONKUSDT: 'BINANCE:BONKUSDT',
-    FLOKIUSDT:'BINANCE:FLOKIUSDT',
+    CROUSDT:   'CRYPTO:CROUSD',
+    SHIBUSDT:  'BINANCE:SHIBUSDT',
+    FLOKIUSDT: 'BINANCE:1000FLOKIUSDT',
+    BONKUSDT:  'BINANCE:1000BONKUSDT',
+    WLDUSDT:   'BINANCE:WLDUSDT',
   };
 
   if (!isPerp && overrides[pair]) return overrides[pair];
   if (isPerp) return `BINANCE:${pair}.P`;
+  // Default: try Binance first, covers 99%+ of USDT pairs
   return `BINANCE:${pair}`;
 }
 
@@ -133,10 +120,9 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         .sort((a, b) => Number(a.time) - Number(b.time));
       if (sorted.length > 0) {
         setCandles(sorted);
+        // Set lastPrice from candles as a quick initial value; ticker will override with live price + proper 24h change
         const last = sorted[sorted.length - 1];
-        const first = sorted[0];
-        setLastPrice(last.close);
-        setPriceChange(first.open > 0 ? ((last.close - first.open) / first.open) * 100 : 0);
+        setLastPrice(prev => prev ?? last.close);
       }
     } catch (_) {}
     finally { setLoading(false); }
@@ -150,7 +136,10 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       const t = await res.json();
       if (t.lastPrice) {
         setLastPrice(t.lastPrice);
-        if (t.openPrice && t.lastPrice) {
+        // Prefer API's pre-computed 24h percent change; fall back to openPrice only when positive
+        if (typeof t.priceChangePercent === 'number' && isFinite(t.priceChangePercent)) {
+          setPriceChange(t.priceChangePercent);
+        } else if (t.openPrice > 0 && t.lastPrice > 0) {
           setPriceChange(((t.lastPrice - t.openPrice) / t.openPrice) * 100);
         }
       }
@@ -237,6 +226,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       ro.observe(el);
       return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
     }
+    return;
   }, [candles.length > 0]);
 
   /* Update series data when candles change */
@@ -253,6 +243,18 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       color: c.close >= c.open ? '#0ecb8130' : '#f6465d30',
     }));
 
+    // Adaptive price format: show enough decimals for the price magnitude
+    const lastClose = candles[candles.length - 1]?.close ?? 0;
+    const priceFormat = lastClose <= 0 ? { type: 'price' as const, minMove: 0.00000001, precision: 8 }
+      : lastClose < 0.000001  ? { type: 'price' as const, minMove: 0.000000000001, precision: 12 }
+      : lastClose < 0.00001   ? { type: 'price' as const, minMove: 0.0000000001,   precision: 10 }
+      : lastClose < 0.001     ? { type: 'price' as const, minMove: 0.00000001,     precision: 8  }
+      : lastClose < 0.1       ? { type: 'price' as const, minMove: 0.000001,       precision: 6  }
+      : lastClose < 1         ? { type: 'price' as const, minMove: 0.0001,         precision: 4  }
+      : lastClose < 100       ? { type: 'price' as const, minMove: 0.01,           precision: 2  }
+      :                         { type: 'price' as const, minMove: 0.1,            precision: 1  };
+    candleSeriesRef.current.applyOptions({ priceFormat });
+
     candleSeriesRef.current.setData(tvCandles);
     volumeSeriesRef.current.setData(volumeBars);
     chartRef.current?.timeScale().fitContent();
@@ -267,8 +269,14 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   const usdQuotes = new Set(['USDT', 'USDC', 'BUSD', 'TUSD', 'USD', 'DAI', 'FDUSD']);
   const pricePrefix  = usdQuotes.has(quote.toUpperCase()) ? '$' : '';
   const priceSuffix  = usdQuotes.has(quote.toUpperCase()) ? '' : ` ${quote}`;
-  // Decimal places: BSV-quoted prices can be small (e.g. 0.62 BSV) — show more decimals
-  const decimals = lastPrice !== null && lastPrice < 1 ? 6 : lastPrice !== null && lastPrice < 100 ? 4 : 2;
+  // Adaptive decimal places based on price magnitude
+  const decimals = lastPrice === null ? 4
+    : lastPrice < 0.000001 ? 12
+    : lastPrice < 0.0001   ? 10
+    : lastPrice < 0.01     ? 8
+    : lastPrice < 1        ? 6
+    : lastPrice < 100      ? 4
+    : 2;
 
   return (
     <div className="flex flex-col h-full bg-[#0d1117]">
