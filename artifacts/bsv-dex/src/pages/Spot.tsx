@@ -55,12 +55,11 @@ const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmAp
 };
 
 const CEX_SOURCES: { name: string; share: number; depth: number }[] = [
-  { name: "Binance",    share: 38.2, depth: 2.4 },
-  { name: "Coinbase",   share: 21.5, depth: 1.8 },
-  { name: "OKX",        share: 16.4, depth: 1.4 },
-  { name: "Bybit",      share: 12.3, depth: 1.1 },
-  { name: "Kraken",     share: 7.6,  depth: 0.9 },
-  { name: "OrahDEX",   share: 4.0,  depth: 0.6 },
+  { name: "OrahDEX AMM",     share: 42.1, depth: 2.8 },
+  { name: "OrahDEX P2P",     share: 24.3, depth: 2.0 },
+  { name: "OrahDEX Vault",   share: 16.4, depth: 1.5 },
+  { name: "OrahDEX Futures", share: 11.6, depth: 1.2 },
+  { name: "OrahDEX Bridge",  share:  5.6, depth: 0.8 },
 ];
 
 function fmtLiq(n: number): string {

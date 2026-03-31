@@ -2,18 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, ColorType, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import type { Candle } from '@workspace/api-client-react';
 
-/* ─── Globals ───────────────────────────────────────────────────────────── */
-declare global {
-  interface Window {
-    TradingView?: any;
-    _tvScriptLoaded?: boolean;
-    _tvScriptListeners?: (() => void)[];
-  }
-}
-
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
 
-/* ─── Types & constants ─────────────────────────────────────────────────── */
 interface ChartProps {
   symbol?: string;
   data?: Candle[];
@@ -24,88 +14,27 @@ interface ChartProps {
 
 const INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'];
 
-const TV_INTERVAL_MAP: Record<string, string> = {
-  '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
-  '1h': '60', '2h': '120', '4h': '240', '6h': '360', '12h': '720',
-  '1d': 'D', '1w': 'W', '1M': 'M',
-};
-
-/* ─── USD-stable quote currencies ────────────────────────────────────────── */
 const USD_QUOTES = new Set(['USDT', 'USDC', 'USD', 'BUSD', 'TUSD', 'USDD', 'DAI', 'FDUSD']);
 
-/* ─── Which pairs use our internal chart vs TradingView ─────────────────── */
-function useInternalChart(symbol: string): boolean {
-  const upper = symbol.toUpperCase();
-  // BSV always internal
-  if (upper.includes('BSV')) return true;
-  // Cross-pairs (non-USD-stable quote) always internal — TradingView delisted most ETH/BTC/BNB quoted altcoin pairs
-  const parts = upper.replace(/-PERP|PERP/gi, '').split(/[\/\-]/);
-  const quote = parts[1] ?? '';
-  if (!USD_QUOTES.has(quote)) return true;
-  // For USDT/USDC pairs: use TradingView (handles most coins on Binance/Coinbase)
-  return false;
-}
-
-/* ─── TradingView symbol mapping ────────────────────────────────────────── */
-function toTvSymbol(symbol: string): string {
-  const isPerp = symbol.toUpperCase().includes('PERP');
-  const clean  = symbol.toUpperCase().replace(/-PERP|PERP/g, '').trim();
-  const [base = '', rawQuote = ''] = clean.split(/[\/\-]/);
-  const quote  = rawQuote === 'USD' ? 'USDT' : rawQuote;
-  const pair   = `${base}${quote}`;
-
-  // Explicit overrides for symbols that aren't on Binance
-  const overrides: Record<string, string> = {
-    CROUSDT:   'CRYPTO:CROUSD',
-    SHIBUSDT:  'BINANCE:SHIBUSDT',
-    FLOKIUSDT: 'BINANCE:1000FLOKIUSDT',
-    BONKUSDT:  'BINANCE:1000BONKUSDT',
-    WLDUSDT:   'BINANCE:WLDUSDT',
-  };
-
-  if (!isPerp && overrides[pair]) return overrides[pair];
-  if (isPerp) return `BINANCE:${pair}.P`;
-  // Default: try Binance first, covers 99%+ of USDT pairs
-  return `BINANCE:${pair}`;
-}
-
-/* ─── TradingView script loader ─────────────────────────────────────────── */
-let _widgetCounter = 0;
-
-function loadTvScript(cb: () => void) {
-  if (window.TradingView) { cb(); return; }
-  if (!window._tvScriptListeners) window._tvScriptListeners = [];
-  window._tvScriptListeners.push(cb);
-  if (window._tvScriptLoaded) return;
-  window._tvScriptLoaded = true;
-  const s = document.createElement('script');
-  s.src = 'https://s3.tradingview.com/tv.js';
-  s.async = true;
-  s.onload = () => { window._tvScriptListeners?.forEach(fn => fn()); window._tvScriptListeners = []; };
-  document.head.appendChild(s);
-}
-
 /* ─────────────────────────────────────────────────────────────────────────
-   INTERNAL ORAHDEX CHART (for BSV and fallback)
-   Built with lightweight-charts + our live API candle data.
-   Full OHLCV candlestick + volume bars + crosshair + timeframe selector.
+   ORAHDEX CHART — powered by OrahDEX sovereign price engine
+   Lightweight-charts v5 · OHLCV candles + volume bars · live ticker
 ───────────────────────────────────────────────────────────────────────── */
 function OrahChart({ symbol, interval, onIntervalChange }: {
   symbol: string;
   interval: string;
   onIntervalChange?: (iv: string) => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
-  const candleSeriesRef = useRef<any>(null);
-  const volumeSeriesRef = useRef<any>(null);
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastPrice, setLastPrice] = useState<number | null>(null);
+  const containerRef     = useRef<HTMLDivElement>(null);
+  const chartRef         = useRef<ReturnType<typeof createChart> | null>(null);
+  const candleSeriesRef  = useRef<any>(null);
+  const volumeSeriesRef  = useRef<any>(null);
+  const [candles, setCandles]       = useState<Candle[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [lastPrice, setLastPrice]   = useState<number | null>(null);
   const [priceChange, setPriceChange] = useState<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* Fetch candle data from our API */
   const fetchCandles = useCallback(async () => {
     try {
       const encodedSymbol = encodeURIComponent(symbol);
@@ -120,7 +49,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         .sort((a, b) => Number(a.time) - Number(b.time));
       if (sorted.length > 0) {
         setCandles(sorted);
-        // Set lastPrice from candles as a quick initial value; ticker will override with live price + proper 24h change
         const last = sorted[sorted.length - 1];
         setLastPrice(prev => prev ?? last.close);
       }
@@ -128,7 +56,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     finally { setLoading(false); }
   }, [symbol, interval]);
 
-  /* Fetch ticker for live price */
   const fetchTicker = useCallback(async () => {
     try {
       const res = await fetch(`${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/ticker`);
@@ -136,7 +63,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       const t = await res.json();
       if (t.lastPrice) {
         setLastPrice(t.lastPrice);
-        // Prefer API's pre-computed 24h percent change; fall back to openPrice only when positive
         if (typeof t.priceChangePercent === 'number' && isFinite(t.priceChangePercent)) {
           setPriceChange(t.priceChangePercent);
         } else if (t.openPrice > 0 && t.lastPrice > 0) {
@@ -146,9 +72,11 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     } catch (_) {}
   }, [symbol]);
 
-  /* Initial load + periodic refresh */
   useEffect(() => {
     setLoading(true);
+    setCandles([]);
+    setLastPrice(null);
+    setPriceChange(0);
     fetchCandles();
     fetchTicker();
     if (timerRef.current) clearInterval(timerRef.current);
@@ -156,7 +84,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchCandles, fetchTicker]);
 
-  /* Build / update lightweight-charts */
   useEffect(() => {
     const el = containerRef.current;
     if (!el || candles.length === 0) return;
@@ -167,6 +94,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
           background: { type: ColorType.Solid, color: '#0d1117' },
           textColor: '#848e9c',
           fontFamily: "'Inter', sans-serif",
+          attributionLogo: false,
         },
         grid: {
           vertLines: { color: '#1a2030' },
@@ -229,7 +157,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     return;
   }, [candles.length > 0]);
 
-  /* Update series data when candles change */
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
 
@@ -243,7 +170,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       color: c.close >= c.open ? '#0ecb8130' : '#f6465d30',
     }));
 
-    // Adaptive price format: show enough decimals for the price magnitude
     const lastClose = candles[candles.length - 1]?.close ?? 0;
     const priceFormat = lastClose <= 0 ? { type: 'price' as const, minMove: 0.00000001, precision: 8 }
       : lastClose < 0.000001  ? { type: 'price' as const, minMove: 0.000000000001, precision: 12 }
@@ -261,15 +187,11 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   }, [candles]);
 
   const isUp = priceChange >= 0;
-  // Parse base and quote from symbol (e.g. "AVAX/BSV" → base=AVAX, quote=BSV)
   const parts = symbol.replace(/-PERP|PERP/gi, '').split(/[\/\-]/);
   const base  = parts[0] ?? 'BSV';
   const quote = parts[1] ?? 'USDT';
-  // Price prefix: $ for USD-stable quotes, otherwise use quote symbol
-  const usdQuotes = new Set(['USDT', 'USDC', 'BUSD', 'TUSD', 'USD', 'DAI', 'FDUSD']);
-  const pricePrefix  = usdQuotes.has(quote.toUpperCase()) ? '$' : '';
-  const priceSuffix  = usdQuotes.has(quote.toUpperCase()) ? '' : ` ${quote}`;
-  // Adaptive decimal places based on price magnitude
+  const pricePrefix = USD_QUOTES.has(quote.toUpperCase()) ? '$' : '';
+  const priceSuffix = USD_QUOTES.has(quote.toUpperCase()) ? '' : ` ${quote}`;
   const decimals = lastPrice === null ? 4
     : lastPrice < 0.000001 ? 12
     : lastPrice < 0.0001   ? 10
@@ -347,90 +269,14 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   TRADINGVIEW CHART (for BTC, ETH, SOL, and all major coins)
+   MAIN CHART EXPORT — always uses OrahChart (sovereign price engine)
 ───────────────────────────────────────────────────────────────────────── */
-function TradingViewChart({ symbol, interval }: { symbol: string; interval: string }) {
-  const containerId = useRef(`tv_chart_${++_widgetCounter}`);
-  const widgetRef = useRef<any>(null);
-  const [scriptReady, setScriptReady] = useState(!!window.TradingView);
-
-  useEffect(() => {
-    if (scriptReady) return;
-    loadTvScript(() => setScriptReady(true));
-  }, []);
-
-  useEffect(() => {
-    if (!scriptReady) return;
-    const el = document.getElementById(containerId.current);
-    if (!el) return;
-
-    if (widgetRef.current) {
-      try { widgetRef.current.remove?.(); } catch {}
-      widgetRef.current = null;
-      el.innerHTML = '';
-    }
-
-    widgetRef.current = new window.TradingView.widget({
-      container_id: containerId.current,
-      autosize: true,
-      symbol: toTvSymbol(symbol),
-      interval: TV_INTERVAL_MAP[interval] ?? '60',
-      timezone: 'Etc/UTC',
-      theme: 'dark',
-      style: '1',
-      locale: 'en',
-      toolbar_bg: '#0d1117',
-      backgroundColor: 'rgba(13, 17, 23, 1)',
-      gridColor: 'rgba(255, 255, 255, 0.04)',
-      enable_publishing: false,
-      withdateranges: true,
-      hide_side_toolbar: false,
-      allow_symbol_change: false,
-      save_image: true,
-      show_popup_button: true,
-      popup_width: '1200',
-      popup_height: '700',
-      studies: [],
-      no_referral_id: true,
-      loading_screen: { backgroundColor: '#0d1117', foregroundColor: '#4ade80' },
-    });
-
-    return () => {
-      try { widgetRef.current?.remove?.(); } catch {}
-      widgetRef.current = null;
-    };
-  }, [scriptReady, symbol, interval]);
-
+export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange }: ChartProps) {
   return (
-    <div className="flex flex-col h-full bg-[#0d1117]">
-      <div
-        id={containerId.current}
-        className="flex-1 min-h-0 [&_iframe]:w-full [&_iframe]:h-full"
-      />
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   MAIN CHART EXPORT — routes to TradingView or OrahChart automatically
-───────────────────────────────────────────────────────────────────────── */
-export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, hideIntervalBar = false }: ChartProps) {
-  const internal = useInternalChart(symbol);
-
-  if (internal) {
-    return (
-      <OrahChart
-        symbol={symbol}
-        interval={interval}
-        onIntervalChange={onIntervalChange}
-      />
-    );
-  }
-
-  return (
-    <TradingViewChart
+    <OrahChart
       symbol={symbol}
       interval={interval}
+      onIntervalChange={onIntervalChange}
     />
   );
 }

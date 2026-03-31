@@ -193,7 +193,7 @@ export function WhitePaper() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
                 <Metric value="934+" label="Trading Pairs" sub="Spot + Futures + Cross-pair" />
-                <Metric value="200+" label="Networks" sub="via GeckoTerminal" />
+                <Metric value="200+" label="Networks" sub="Multi-chain sovereign oracle" />
                 <Metric value="0%" label="Custody Risk" sub="Non-custodial" />
                 <Metric value="BSV" label="Settlement Layer" sub="OP_RETURN on-chain proof" />
               </div>
@@ -208,7 +208,7 @@ export function WhitePaper() {
                 At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its primary settlement layer, exploiting BSV's massively scalable, low-fee, and UTXO-based blockchain to execute Hash Time-Locked Contract (HTLC) atomic swaps and OP_RETURN settlement proofs that are provably fair and fully transparent. EVM-compatible chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos, and more) are supported natively through Reown/WalletConnect integration.
               </p>
               <p>
-                OrahDEX aggregates live price feeds from CoinGecko, CoinMarketCap, GeckoTerminal (200+ networks), and DexScreener, giving traders access to the same market intelligence as institutional players. The platform's novel <span className="text-foreground font-medium">CopyVault system</span> brings on-chain copy trading to DeFi for the first time — followers deposit USDT into leader-managed vaults and automatically mirror the leader's trades proportionally, with BSV OP_RETURN proofs for every mirrored trade.
+                OrahDEX runs a sovereign price engine — aggregating its own order-book trade data, on-chain TWAP feeds, and real-time market signals — giving traders access to the same market intelligence as institutional players. The platform's novel <span className="text-foreground font-medium">CopyVault system</span> brings on-chain copy trading to DeFi for the first time — followers deposit USDT into leader-managed vaults and automatically mirror the leader's trades proportionally, with BSV OP_RETURN proofs for every mirrored trade.
               </p>
               <p>
                 <span className="text-foreground font-medium">Ora</span> — OrahDEX's integrated AI — provides real-time trading assistance, market analysis, and portfolio coaching powered by large language models, embedded directly in the trading interface.
@@ -286,7 +286,7 @@ export function WhitePaper() {
                     layer: "Layer 3 — Application",
                     color: "text-violet-400",
                     bg: "bg-violet-400/5 border-violet-400/15",
-                    desc: "Express.js API server providing order book management, price aggregation (CoinGecko + CMC + GeckoTerminal + DexScreener), CopyVault orchestration, Ora AI chat, user account management, and WebSocket real-time feeds.",
+                    desc: "Express.js API server providing order book management, sovereign price engine (own trades + on-chain TWAP), CopyVault orchestration, Ora AI chat, user account management, and WebSocket real-time feeds.",
                   },
                   {
                     layer: "Layer 4 — Intelligence",
@@ -311,7 +311,7 @@ export function WhitePaper() {
                 <p>Frontend: React 19 + Vite 7 + TailwindCSS v4 · Backend: Node.js 24 + Express 5 + Drizzle ORM</p>
                 <p>Database: PostgreSQL 16 · EVM: Wagmi + Viem + Reown AppKit · AI: OpenAI-compatible LLM</p>
                 <p>BSV: WhatsOnChain API + native UTXO/OP_RETURN construction · Charts: Lightweight-charts v5</p>
-                <p>Markets: 934+ pairs · Data: CoinGecko + CMC + GeckoTerminal (200+ networks) + DexScreener</p>
+                <p>Markets: 934+ pairs · Data: OrahDEX Sovereign Price Engine + BSV On-Chain TWAP Oracle</p>
               </InfoBox>
             </Section>
 
@@ -405,7 +405,7 @@ Effective price: (y − Δy) / (x + Δx × (1 − fee))`}</Code>
             <Section id="trading" title="7. Trading Engine">
               <Sub title="7.1 Spot Trading">
                 <p>
-                  Spot trading is available for <strong>934+ pairs</strong> aggregated from Binance, CMC, CoinGecko, and 200+ GeckoTerminal networks. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path.
+                  Spot trading is available for <strong>934+ pairs</strong> across 200+ blockchain networks — all priced by OrahDEX's sovereign oracle. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path.
                 </p>
                 <p>
                   Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until filled. On match, the platform produces a BSV OP_RETURN settlement transaction providing an immutable on-chain audit trail. OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BTC, etc.) with adaptive decimal precision (up to 10 decimal places for micro-priced assets).
@@ -413,12 +413,12 @@ Effective price: (y − Δy) / (x + Δx × (1 − fee))`}</Code>
               </Sub>
               <Sub title="7.2 Perpetual Futures">
                 <p>
-                  OrahDEX offers perpetual futures contracts with up to 100x leverage. Positions are tracked by the protocol and settled against mark prices derived from an aggregated oracle (CoinGecko + CMC + on-chain TWAP). Funding rates are exchanged every 8 hours to keep perpetual prices anchored to spot.
+                  OrahDEX offers perpetual futures contracts with up to 100x leverage. Positions are tracked by the protocol and settled against mark prices derived from the OrahDEX sovereign oracle (own order-book + on-chain TWAP). Funding rates are exchanged every 8 hours to keep perpetual prices anchored to spot.
                 </p>
                 <Code>{`Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/24)
 Position PnL  = (Exit Price − Entry Price) × Size × Direction
 Liq. Price    = Entry Price × (1 − Initial Margin / Leverage)
-Mark Price    = median(CoinGecko, CMC, OrahDEX TWAP)`}</Code>
+Mark Price    = median(OrahDEX Order Book, OrahDEX TWAP, BSV On-Chain Feed)`}</Code>
               </Sub>
               <Sub title="7.3 P2P Trading">
                 <p>
@@ -646,12 +646,12 @@ For every mirrored trade:
                     date: "Q1–Q2 2026",
                     status: "complete",
                     items: [
-                      "Launch spot trading with 934+ pairs (Binance + CMC + GeckoTerminal)",
+                      "Launch spot trading with 934+ pairs across 200+ networks (sovereign oracle)",
                       "BSV HTLC settlement integration + OP_RETURN trade proofs",
                       "EVM wallet support via Reown/WalletConnect (12+ networks)",
                       "Perpetual futures with up to 100x leverage",
-                      "GeckoTerminal 200+ network market explorer",
-                      "DexScreener Base chain integration",
+                      "200+ network multi-chain market explorer (sovereign oracle)",
+                      "OrahDEX Base chain liquidity integration",
                       "P2P marketplace with HTLC escrow",
                       "AMM liquidity pools (x·y=k constant product)",
                       "Cross-chain HTLC bridge (BSV ↔ EVM)",
@@ -753,7 +753,7 @@ For every mirrored trade:
                 The combination of HTLC atomic swaps, concentrated AMM liquidity, perpetual futures, P2P markets, cross-chain bridging, and the world's first on-chain copy trading system (CopyVault) — all in a single, non-custodial interface guided by Ora AI — positions OrahDEX as the most comprehensive decentralised trading platform available.
               </p>
               <p>
-                With <strong>934+ trading pairs</strong>, access to <strong>200+ blockchain networks</strong> via GeckoTerminal, four distinct trading instruments, and a sovereign identity designed for the new generation of self-sovereign traders — OrahDEX is not a product iteration. It is a paradigm shift.
+                With <strong>934+ trading pairs</strong>, access to <strong>200+ blockchain networks</strong> via OrahDEX's own sovereign oracle, four distinct trading instruments, and a self-sovereign identity designed for the next generation of traders — OrahDEX is not a product iteration. It is a paradigm shift.
               </p>
               <p>
                 We invite traders, liquidity providers, copy trading leaders, developers, and partners to join us in building the future of decentralised finance.
