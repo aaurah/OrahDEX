@@ -1,41 +1,56 @@
+/**
+ * candleFetcher.ts — Sovereign candle engine
+ *
+ * Priority order:
+ *   1. Own trades table  →  aggregate into OHLCV candles (most authoritative)
+ *   2. Binance public klines API (no key required) — for pairs Binance supports
+ *   3. Synthetic fallback — generated from lastPrice when no trades exist yet
+ *
+ * CoinGecko and CoinMarketCap are NOT used.
+ */
+
+import { db } from "@workspace/db";
+import { tradesTable } from "@workspace/db/schema";
+import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 
-const BINANCE_SYMBOLS: Record<string, string> = {
-  "BTC/USDT": "BTCUSDT",
-  "ETH/USDT": "ETHUSDT",
-  "SOL/USDT": "SOLUSDT",
-  "XRP/USDT": "XRPUSDT",
-  "BNB/USDT": "BNBUSDT",
-  "ADA/USDT": "ADAUSDT",
-  "BTC/USDT-PERP": "BTCUSDT",
-  "ETH/USDT-PERP": "ETHUSDT",
+const BINANCE_USDT_PAIRS = new Set([
+  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
+  "LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP","VET",
+  "FIL","SAND","MANA","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX","YFI",
+  "RUNE","FTM","ALGO","XLM","HBAR","THETA","ZEC","DASH","CRO",
+  "BONK","WIF","JUP","PYTH","JTO","ORCA","RAY","W",
+  "FET","RNDR","TAO","WLD","GLM","STORJ","LPT",
+  "AXS","ENJ","GALA","RON","CAKE","GMX","DYDX","PENDLE",
+  "TON","KAS","SEI","TIA","KAVA","NEO","ZIL","WAVES","ICX",
+  "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","BGB","ORDI",
+  "KSM","TRUMP","STX","FLOKI","TURBO","EIGEN","ZRO","MNT",
+  "STRK","IMX","METIS","AERO","BEAM","PRIME","PIXEL",
+]);
+
+const INTERVAL_SECONDS: Record<string, number> = {
+  "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+  "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+  "1d": 86400, "3d": 259200, "1w": 604800,
 };
 
-const COINGECKO_SYMBOLS: Record<string, string> = {
-  "BSV/USDT": "bitcoin-sv",
-  "BSV/USDT-PERP": "bitcoin-sv",
-};
-
-const INTERVAL_MAP: Record<string, string> = {
-  "1m": "1m", "5m": "5m", "15m": "15m",
-  "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w",
-};
-
-const CG_DAYS_MAP: Record<string, string> = {
-  "1m": "1", "5m": "1", "15m": "7",
-  "1h": "30", "4h": "90", "1d": "365", "1w": "365",
+const BINANCE_INTERVAL_MAP: Record<string, string> = {
+  "1m":"1m","3m":"3m","5m":"5m","15m":"15m","30m":"30m",
+  "1h":"1h","2h":"2h","4h":"4h","6h":"6h","12h":"12h",
+  "1d":"1d","3d":"3d","1w":"1w",
 };
 
 interface Candle {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
+  time:   number;
+  open:   number;
+  high:   number;
+  low:    number;
+  close:  number;
   volume: number;
 }
 
-// ── In-memory candle cache — 5 minute TTL ────────────────────────────────────
+/* ── In-memory candle cache — 5 min TTL ─────────────────────────────────────── */
 interface CacheEntry { data: Candle[]; ts: number }
 const candleCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -47,7 +62,6 @@ function getCached(key: string): Candle[] | null {
   return e.data;
 }
 function setCached(key: string, data: Candle[]) {
-  // Cap cache size at 200 entries to avoid memory growth
   if (candleCache.size >= 200) {
     const oldest = [...candleCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
     if (oldest) candleCache.delete(oldest[0]);
@@ -55,15 +69,66 @@ function setCached(key: string, data: Candle[]) {
   candleCache.set(key, { data, ts: Date.now() });
 }
 
-// ── External fetch helpers — 3 s timeout each ────────────────────────────────
+/* ── 1. Own trades → OHLCV candles ──────────────────────────────────────────── */
+async function buildCandlesFromOwnTrades(
+  symbol: string,
+  intervalSec: number,
+  limit: number,
+): Promise<Candle[]> {
+  const lookback = intervalSec * limit;
+  const since    = new Date(Date.now() - lookback * 1000);
 
-async function fetchBinanceCandles(binanceSym: string, interval: string, limit: number): Promise<Candle[]> {
-  const binanceInterval = INTERVAL_MAP[interval] || "1h";
-  const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=${binanceInterval}&limit=${limit}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-  if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
-  const data = (await res.json()) as number[][];
-  return data.map((k) => ({
+  const rows = await db
+    .select()
+    .from(tradesTable)
+    .where(
+      and(
+        eq(tradesTable.symbol, symbol),
+        gte(tradesTable.timestamp, since),
+      ),
+    );
+
+  if (!rows.length) return [];
+
+  const buckets = new Map<number, { o: number; h: number; l: number; c: number; v: number }>();
+
+  for (const row of rows) {
+    const ts     = Math.floor(row.timestamp.getTime() / 1000);
+    const bucket = Math.floor(ts / intervalSec) * intervalSec;
+    const price  = parseFloat(row.price);
+    const qty    = parseFloat(row.quantity);
+
+    const existing = buckets.get(bucket);
+    if (!existing) {
+      buckets.set(bucket, { o: price, h: price, l: price, c: price, v: qty });
+    } else {
+      existing.h = Math.max(existing.h, price);
+      existing.l = Math.min(existing.l, price);
+      existing.c = price;
+      existing.v += qty;
+    }
+  }
+
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .slice(-limit)
+    .map(([t, b]) => ({
+      time: t, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v,
+    }));
+}
+
+/* ── 2. Binance public klines ─────────────────────────────────────────────────── */
+async function fetchBinanceCandles(
+  binanceSym: string,
+  interval: string,
+  limit: number,
+): Promise<Candle[]> {
+  const bInterval = BINANCE_INTERVAL_MAP[interval] || "1h";
+  const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSym}&interval=${bInterval}&limit=${limit}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+  if (!res.ok) throw new Error(`Binance klines HTTP ${res.status}`);
+  const data = await res.json() as number[][];
+  return data.map(k => ({
     time:   Math.floor(k[0] / 1000),
     open:   parseFloat(k[1] as unknown as string),
     high:   parseFloat(k[2] as unknown as string),
@@ -73,29 +138,9 @@ async function fetchBinanceCandles(binanceSym: string, interval: string, limit: 
   }));
 }
 
-async function fetchCoinGeckoCandles(cgId: string, interval: string, limit: number): Promise<Candle[]> {
-  const days = CG_DAYS_MAP[interval] || "30";
-  const url = `https://api.coingecko.com/api/v3/coins/${cgId}/ohlc?vs_currency=usd&days=${days}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!res.ok) throw new Error(`CoinGecko OHLC HTTP ${res.status}`);
-  const data = (await res.json()) as number[][];
-  return data
-    .slice(-limit)
-    .map((k) => ({
-      time: Math.floor(k[0] / 1000),
-      open: k[1], high: k[2], low: k[3], close: k[4], volume: 0,
-    }));
-}
-
+/* ── 3. Synthetic fallback ─────────────────────────────────────────────────────── */
 function generateFallbackCandles(lastPrice: number, interval: string, limit: number): Candle[] {
-  const intervalSec: Record<string, number> = {
-    "1m": 60, "5m": 300, "15m": 900, "1h": 3600,
-    "4h": 14400, "1d": 86400, "1w": 604800,
-  };
-  const sec = intervalSec[interval] || 3600;
+  const sec = INTERVAL_SECONDS[interval] || 3600;
   const now = Math.floor(Date.now() / 1000);
   let price = lastPrice * 0.95;
   const candles: Candle[] = [];
@@ -114,10 +159,11 @@ function generateFallbackCandles(lastPrice: number, interval: string, limit: num
     });
     price = close;
   }
-  candles[candles.length - 1].close = lastPrice;
+  if (candles.length) candles[candles.length - 1].close = lastPrice;
   return candles;
 }
 
+/* ── Main export ───────────────────────────────────────────────────────────────── */
 export async function fetchRealCandles(
   symbol: string,
   lastPrice: number,
@@ -125,34 +171,39 @@ export async function fetchRealCandles(
   limit: number,
 ): Promise<Candle[]> {
   const cacheKey = `${symbol}:${interval}:${limit}`;
-  const cached = getCached(cacheKey);
+  const cached   = getCached(cacheKey);
   if (cached) return cached;
 
-  // Try Binance (major pairs — 3 s timeout, fail fast)
-  const binanceSym = BINANCE_SYMBOLS[symbol];
-  if (binanceSym) {
+  // ── 1. Own trades (sovereign source of truth) ──────────────────────────────
+  try {
+    const intervalSec = INTERVAL_SECONDS[interval] || 3600;
+    const ownCandles  = await buildCandlesFromOwnTrades(symbol, intervalSec, limit);
+    if (ownCandles.length >= Math.min(3, limit)) {
+      setCached(cacheKey, ownCandles);
+      return ownCandles;
+    }
+  } catch (err) {
+    logger.warn({ err, symbol }, "Own-trades candle build failed");
+  }
+
+  // ── 2. Binance public klines (no key, reference feed for major pairs) ──────
+  const parts     = symbol.split("/");
+  const base      = parts[0]?.toUpperCase();
+  const quote     = parts[1]?.toUpperCase();
+  const isUsdtPair = quote === "USDT" && base && BINANCE_USDT_PAIRS.has(base);
+
+  if (isUsdtPair) {
+    const binanceSym = `${base}USDT`;
     try {
       const candles = await fetchBinanceCandles(binanceSym, interval, limit);
       setCached(cacheKey, candles);
       return candles;
     } catch (err) {
-      logger.warn({ err, symbol }, "Binance candle fetch failed, using fallback");
+      logger.warn({ err, symbol }, "Binance candle fetch failed — using synthetic");
     }
   }
 
-  // Try CoinGecko (BSV and a few others — 3 s timeout, fail fast)
-  const cgId = COINGECKO_SYMBOLS[symbol];
-  if (cgId) {
-    try {
-      const candles = await fetchCoinGeckoCandles(cgId, interval, limit);
-      setCached(cacheKey, candles);
-      return candles;
-    } catch (err) {
-      logger.warn({ err, symbol }, "CoinGecko candle fetch failed, using fallback");
-    }
-  }
-
-  // Synthetic fallback — always instant, cached for 5 min
+  // ── 3. Synthetic fallback ───────────────────────────────────────────────────
   const candles = generateFallbackCandles(lastPrice, interval, limit);
   setCached(cacheKey, candles);
   return candles;

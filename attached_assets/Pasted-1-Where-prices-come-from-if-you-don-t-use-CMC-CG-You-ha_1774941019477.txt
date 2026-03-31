@@ -1,0 +1,158 @@
+1. Where prices come from if you don’t use CMC/CG
+
+You have three native sources of truth:
+
+1. Your own orderbooks / AMM pools• Best bid/ask = spot price
+• Pool reserves = implied price
+
+2. Your own trades• Last traded price
+• VWAP over a window
+
+3. External reference feeds (optional, but not CMC/CG)• Direct CEX APIs (Binance, OKX, etc.)
+• Oracles (Chainlink, Pyth, etc.) if you want on‑chain reference
+
+
+
+You combine these into your own price oracle, exposed via your API.
+
+---
+
+2. Core logic: how your exchange “runs its own price”
+
+For each market (e.g. BSV/USDT):
+
+1. From orderbook (orderbook‑driven):• bestBid = highest bid
+• bestAsk = lowest ask
+• midPrice = (bestBid + bestAsk) / 2
+
+2. From AMM pool (pool‑driven):• For pool with reserves R_base, R_quote:price = \frac{R_{quote}}{R_{base}}
+
+
+3. From trades (trade‑driven):• lastPrice = price of most recent trade
+• vwap = Σ(price * volume) / Σ(volume) over last N minutes
+
+
+
+You can choose:
+
+• Display price = lastPrice
+• Fallback = midPrice or pool price if no recent trades
+
+
+All of this is your own data, no external API.
+
+---
+
+3. Your own price API (no CMC/CG)
+
+Expose a simple endpoint:
+
+GET /v1/ticker?symbol=BSVUSDT
+
+Return:
+
+{
+  "symbol": "BSVUSDT",
+  "lastPrice": 13.82,
+  "bid": 13.81,
+  "ask": 13.82,
+  "mid": 13.815,
+  "high24h": 14.91,
+  "low24h": 13.60,
+  "volumeBase24h": 10.88,
+  "volumeQuote24h": 150.34,
+  "vwap24h": 13.95,
+  "change24h": -3.06
+}
+
+
+This is now your sovereign price feed.
+
+---
+
+4. Candles without CoinGecko
+
+You already have everything needed to build candles yourself:
+
+1. Every trade has:• price
+• amount
+• timestamp
+• symbol
+
+2. For each interval (1m, 5m, 1h, etc.), you aggregate:• open = first trade price in interval
+• high = max price
+• low = min price
+• close = last trade price
+• volume = sum of traded base or quote
+
+
+
+Store in DB (e.g. Timescale/Postgres) and serve via:
+
+GET /v1/candles?symbol=BSVUSDT&interval=1h&from=...&to=...
+
+Return:
+
+[
+  { "t": 1710000000, "o": 13.9, "h": 14.1, "l": 13.8, "c": 13.82, "v": 1023.5 },
+  ...
+]
+
+
+Again: all from your own trades, no external API.
+
+---
+
+5. Feeding your own prices into TradingView
+
+TradingView doesn’t care where prices come from.
+It only cares that your datafeed API implements their contract.
+
+You already have:
+
+• /v1/candles → maps to TradingView /history
+• /v1/ticker → can support real‑time updates
+• /v1/markets → maps to /symbols and /search
+
+
+So your TradingView datafeed service does:
+
+• GET /symbols?symbol=BSVUSDT → uses your /markets
+• GET /history?symbol=BSVUSDT... → uses your /candles
+• Live updates → subscribe to your WebSocket (ticker, candles)
+
+
+No CoinGecko. No CMC.
+Just OrahDex → TradingView.
+
+---
+
+6. Making it robust without external price APIs
+
+To avoid weird prices on illiquid pairs:
+
+• Use liquidity‑weighted logic:• If orderbook is thin, lean more on:• VWAP over last N minutes
+• Or even a blended price with a CEX reference (if you choose)
+
+
+• Guardrails:• Reject trades that move price > X% in one tick (anti‑manipulation)
+• Cap displayed price movement per interval if volume is tiny
+
+
+
+You can still be independent while optionally using CEX feeds as sanity checks, not as your primary oracle.
+
+---
+
+7. In one sentence
+
+You run your own price engine by:
+
+• Using your own orderbooks, pools, and trades
+• Aggregating them into tickers and candles
+• Exposing them via your own API
+• Wiring that API into TradingView’s datafeed
+
+
+No CoinGecko. No CoinMarketCap.
+Just OrahDex as a sovereign source of truth.

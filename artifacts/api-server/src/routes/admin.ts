@@ -1100,7 +1100,7 @@ async function seedWelcomeEmail() {
         fromAddress: "setup@orahdex.org",
         toAddress: "admin@orahdex.org",
         subject: "⚙️ Setup Checklist — Action Required",
-        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] CoinGecko / CMC API keys\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
+        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
         isRead: false,
         isStarred: false,
         category: "system",

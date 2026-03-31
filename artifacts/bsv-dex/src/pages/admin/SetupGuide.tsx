@@ -64,10 +64,10 @@ const STEPS: Step[] = [
   },
   {
     id: "price-apis",   step: 3,  label: "C",
-    title: "Price Data — CoinGecko & CoinMarketCap",
-    description: "Live prices for all 226 trading pairs. CoinGecko free tier is enough to start; CMC gives a reliable fallback.",
+    title: "Price Data — Sovereign Engine",
+    description: "OrahDEX uses its own price engine (Binance public feed + WhatsOnChain + own order books). No API key required.",
     href: "/admin/integrations", icon: BarChart3, priority: "recommended",
-    checkIntegrations: ["coingecko_api_key", "cmc_api_key"],
+    checkIntegrations: ["dexscreener_api_key", "geckoterm_api_key"],
   },
   {
     id: "smtp",         step: 4,  label: "D",
@@ -382,12 +382,14 @@ function StepCard({
       case "price-apis":
         return (
           <InlineForm onSave={handleSave} loading={saving}>
-            <ApiKeyField label="CoinGecko API Key" fieldKey="coingecko_api_key" value={val("coingecko_api_key", "int")}
-              onChange={setDraftKey("coingecko_api_key")} placeholder="CG-..." description="Get free key at coingecko.com/api" />
-            <ApiKeyField label="CoinMarketCap API Key" fieldKey="cmc_api_key" value={val("cmc_api_key", "int")}
-              onChange={setDraftKey("cmc_api_key")} placeholder="Your CMC API key" description="Get free key at coinmarketcap.com/api" />
+            <div className="col-span-full rounded-xl bg-secondary/40 border border-border p-4 text-sm text-muted-foreground space-y-1">
+              <p className="font-semibold text-foreground">Sovereign Price Engine — Active</p>
+              <p>OrahDEX sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
+            </div>
             <ApiKeyField label="DexScreener API Key (optional)" fieldKey="dexscreener_api_key" value={val("dexscreener_api_key", "int")}
-              onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" />
+              onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" description="Enhances token discovery for Base chain and DEX pairs." />
+            <ApiKeyField label="GeckoTerminal API Key (optional)" fieldKey="geckoterm_api_key" value={val("geckoterm_api_key", "int")}
+              onChange={setDraftKey("geckoterm_api_key")} placeholder="Leave empty for public tier" description="Optional: 200+ network DEX pool discovery." />
           </InlineForm>
         );
       case "smtp":
