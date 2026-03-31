@@ -367,7 +367,7 @@ export function SpotTrading() {
         {/* CENTER: Chart & Bottom Tabs */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 border-b border-border relative min-h-0" style={{ minHeight: "320px" }}>
-            <Chart data={candles} />
+            <Chart symbol={symbol} />
           </div>
           <div className="h-[220px] shrink-0 bg-card flex flex-col border-t border-border">
             {/* Tab bar + controls row */}
