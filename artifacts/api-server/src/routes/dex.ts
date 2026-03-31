@@ -27,42 +27,47 @@ const PRICE_CACHE_MS    = 60 * 1000;
 const COINS_CACHE_MS    = 2 * 60 * 1000;
 
 /* ── Static curated exchange list ─────────────────────────────────────────── */
+/* Google favicon CDN — reliable 64px icons for well-known domains */
+function favicon(domain: string) {
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+}
+
 const STATIC_EXCHANGES = [
-  // ── DEXes ────────────────────────────────────────────────────────────────
-  { id:"uniswap",       name:"Uniswap",          url:"https://app.uniswap.org",         chain:"Ethereum",     type:"dex", rank:2,  trustScore:9, vol24hUsd:1_200_000_000 },
-  { id:"pancakeswap",   name:"PancakeSwap",       url:"https://pancakeswap.finance",     chain:"BSC",          type:"dex", rank:3,  trustScore:8, vol24hUsd:450_000_000 },
-  { id:"curve",         name:"Curve Finance",     url:"https://curve.fi",                chain:"Ethereum",     type:"dex", rank:4,  trustScore:9, vol24hUsd:320_000_000 },
-  { id:"raydium",       name:"Raydium",           url:"https://raydium.io",              chain:"Solana",       type:"dex", rank:5,  trustScore:8, vol24hUsd:280_000_000 },
-  { id:"aerodrome",     name:"Aerodrome",         url:"https://aerodrome.finance",       chain:"Base",         type:"dex", rank:6,  trustScore:8, vol24hUsd:210_000_000 },
-  { id:"balancer",      name:"Balancer",          url:"https://balancer.fi",             chain:"Ethereum",     type:"dex", rank:7,  trustScore:8, vol24hUsd:180_000_000 },
-  { id:"gmx",           name:"GMX",               url:"https://gmx.io",                  chain:"Arbitrum",     type:"dex", rank:8,  trustScore:8, vol24hUsd:160_000_000 },
-  { id:"dydx",          name:"dYdX",              url:"https://dydx.exchange",           chain:"Ethereum",     type:"dex", rank:9,  trustScore:8, vol24hUsd:140_000_000 },
-  { id:"sushiswap",     name:"SushiSwap",         url:"https://sushi.com",               chain:"Ethereum",     type:"dex", rank:10, trustScore:7, vol24hUsd:120_000_000 },
-  { id:"velodrome",     name:"Velodrome",         url:"https://velodrome.finance",       chain:"Optimism",     type:"dex", rank:11, trustScore:7, vol24hUsd:95_000_000 },
-  { id:"traderjoe",     name:"Trader Joe",        url:"https://traderjoexyz.com",        chain:"Avalanche",    type:"dex", rank:12, trustScore:7, vol24hUsd:85_000_000 },
-  { id:"osmosis",       name:"Osmosis",           url:"https://osmosis.zone",            chain:"Cosmos",       type:"dex", rank:13, trustScore:7, vol24hUsd:75_000_000 },
-  { id:"camelot",       name:"Camelot",           url:"https://camelot.exchange",        chain:"Arbitrum",     type:"dex", rank:14, trustScore:7, vol24hUsd:65_000_000 },
-  { id:"orca",          name:"Orca",              url:"https://orca.so",                 chain:"Solana",       type:"dex", rank:15, trustScore:7, vol24hUsd:60_000_000 },
-  { id:"quickswap",     name:"QuickSwap",         url:"https://quickswap.exchange",      chain:"Polygon",      type:"dex", rank:16, trustScore:6, vol24hUsd:50_000_000 },
-  { id:"thorswap",      name:"THORSwap",          url:"https://app.thorswap.finance",    chain:"THORChain",    type:"dex", rank:17, trustScore:7, vol24hUsd:48_000_000 },
-  { id:"hashflow",      name:"Hashflow",          url:"https://hashflow.com",            chain:"Ethereum",     type:"dex", rank:18, trustScore:6, vol24hUsd:40_000_000 },
-  { id:"maverick",      name:"Maverick Protocol", url:"https://mav.xyz",                 chain:"Ethereum",     type:"dex", rank:19, trustScore:6, vol24hUsd:35_000_000 },
-  { id:"pendle",        name:"Pendle Finance",    url:"https://app.pendle.finance",      chain:"Ethereum",     type:"dex", rank:20, trustScore:7, vol24hUsd:30_000_000 },
-  // ── CEXes ────────────────────────────────────────────────────────────────
-  { id:"binance",       name:"Binance",           url:"https://www.binance.com",         chain:null,           type:"cex", rank:2,  trustScore:10,vol24hUsd:12_000_000_000 },
-  { id:"coinbase",      name:"Coinbase Exchange", url:"https://pro.coinbase.com",        chain:null,           type:"cex", rank:3,  trustScore:10,vol24hUsd:4_500_000_000 },
-  { id:"okx",           name:"OKX",               url:"https://www.okx.com",             chain:null,           type:"cex", rank:4,  trustScore:9, vol24hUsd:3_800_000_000 },
-  { id:"bybit",         name:"Bybit",             url:"https://www.bybit.com",           chain:null,           type:"cex", rank:5,  trustScore:9, vol24hUsd:3_200_000_000 },
-  { id:"kraken",        name:"Kraken",            url:"https://www.kraken.com",          chain:null,           type:"cex", rank:6,  trustScore:9, vol24hUsd:1_800_000_000 },
-  { id:"kucoin",        name:"KuCoin",            url:"https://www.kucoin.com",          chain:null,           type:"cex", rank:7,  trustScore:8, vol24hUsd:1_200_000_000 },
-  { id:"bitget",        name:"Bitget",            url:"https://www.bitget.com",          chain:null,           type:"cex", rank:8,  trustScore:8, vol24hUsd:900_000_000 },
-  { id:"gateio",        name:"Gate.io",           url:"https://www.gate.io",             chain:null,           type:"cex", rank:9,  trustScore:8, vol24hUsd:850_000_000 },
-  { id:"mexc",          name:"MEXC",              url:"https://www.mexc.com",            chain:null,           type:"cex", rank:10, trustScore:7, vol24hUsd:750_000_000 },
-  { id:"huobi",         name:"HTX (Huobi)",       url:"https://www.htx.com",             chain:null,           type:"cex", rank:11, trustScore:7, vol24hUsd:650_000_000 },
-  { id:"crypto-com",    name:"Crypto.com",        url:"https://crypto.com/exchange",     chain:null,           type:"cex", rank:12, trustScore:8, vol24hUsd:600_000_000 },
-  { id:"bitfinex",      name:"Bitfinex",          url:"https://www.bitfinex.com",        chain:null,           type:"cex", rank:13, trustScore:8, vol24hUsd:500_000_000 },
-  { id:"upbit",         name:"Upbit",             url:"https://upbit.com",               chain:null,           type:"cex", rank:14, trustScore:8, vol24hUsd:480_000_000 },
-  { id:"bithumb",       name:"Bithumb",           url:"https://www.bithumb.com",         chain:null,           type:"cex", rank:15, trustScore:7, vol24hUsd:350_000_000 },
+  // ── DEXes (ranks 21–40 in global table; sort by vol puts them in correct relative position) ──
+  { id:"uniswap",       name:"Uniswap",          url:"https://app.uniswap.org",         image: favicon("uniswap.org"),              chain:"Ethereum",  type:"dex", rank:21, trustScore:9, vol24hUsd:1_200_000_000 },
+  { id:"pancakeswap",   name:"PancakeSwap",       url:"https://pancakeswap.finance",     image: favicon("pancakeswap.finance"),      chain:"BSC",       type:"dex", rank:22, trustScore:8, vol24hUsd:450_000_000 },
+  { id:"curve",         name:"Curve Finance",     url:"https://curve.fi",                image: favicon("curve.fi"),                 chain:"Ethereum",  type:"dex", rank:23, trustScore:9, vol24hUsd:320_000_000 },
+  { id:"raydium",       name:"Raydium",           url:"https://raydium.io",              image: favicon("raydium.io"),               chain:"Solana",    type:"dex", rank:24, trustScore:8, vol24hUsd:280_000_000 },
+  { id:"aerodrome",     name:"Aerodrome",         url:"https://aerodrome.finance",       image: favicon("aerodrome.finance"),        chain:"Base",      type:"dex", rank:25, trustScore:8, vol24hUsd:210_000_000 },
+  { id:"balancer",      name:"Balancer",          url:"https://balancer.fi",             image: favicon("balancer.fi"),              chain:"Ethereum",  type:"dex", rank:26, trustScore:8, vol24hUsd:180_000_000 },
+  { id:"gmx",           name:"GMX",               url:"https://gmx.io",                  image: favicon("gmx.io"),                   chain:"Arbitrum",  type:"dex", rank:27, trustScore:8, vol24hUsd:160_000_000 },
+  { id:"dydx",          name:"dYdX",              url:"https://dydx.exchange",           image: favicon("dydx.exchange"),            chain:"Ethereum",  type:"dex", rank:28, trustScore:8, vol24hUsd:140_000_000 },
+  { id:"sushiswap",     name:"SushiSwap",         url:"https://sushi.com",               image: favicon("sushi.com"),                chain:"Ethereum",  type:"dex", rank:29, trustScore:7, vol24hUsd:120_000_000 },
+  { id:"velodrome",     name:"Velodrome",         url:"https://velodrome.finance",       image: favicon("velodrome.finance"),        chain:"Optimism",  type:"dex", rank:30, trustScore:7, vol24hUsd:95_000_000 },
+  { id:"traderjoe",     name:"Trader Joe",        url:"https://traderjoexyz.com",        image: favicon("traderjoexyz.com"),         chain:"Avalanche", type:"dex", rank:31, trustScore:7, vol24hUsd:85_000_000 },
+  { id:"osmosis",       name:"Osmosis",           url:"https://osmosis.zone",            image: favicon("osmosis.zone"),             chain:"Cosmos",    type:"dex", rank:32, trustScore:7, vol24hUsd:75_000_000 },
+  { id:"camelot",       name:"Camelot",           url:"https://camelot.exchange",        image: favicon("camelot.exchange"),         chain:"Arbitrum",  type:"dex", rank:33, trustScore:7, vol24hUsd:65_000_000 },
+  { id:"orca",          name:"Orca",              url:"https://orca.so",                 image: favicon("orca.so"),                  chain:"Solana",    type:"dex", rank:34, trustScore:7, vol24hUsd:60_000_000 },
+  { id:"quickswap",     name:"QuickSwap",         url:"https://quickswap.exchange",      image: favicon("quickswap.exchange"),       chain:"Polygon",   type:"dex", rank:35, trustScore:6, vol24hUsd:50_000_000 },
+  { id:"thorswap",      name:"THORSwap",          url:"https://app.thorswap.finance",    image: favicon("thorswap.finance"),         chain:"THORChain", type:"dex", rank:36, trustScore:7, vol24hUsd:48_000_000 },
+  { id:"hashflow",      name:"Hashflow",          url:"https://hashflow.com",            image: favicon("hashflow.com"),             chain:"Ethereum",  type:"dex", rank:37, trustScore:6, vol24hUsd:40_000_000 },
+  { id:"maverick",      name:"Maverick Protocol", url:"https://mav.xyz",                 image: favicon("mav.xyz"),                  chain:"Ethereum",  type:"dex", rank:38, trustScore:6, vol24hUsd:35_000_000 },
+  { id:"pendle",        name:"Pendle Finance",    url:"https://app.pendle.finance",      image: favicon("pendle.finance"),           chain:"Ethereum",  type:"dex", rank:39, trustScore:7, vol24hUsd:30_000_000 },
+  // ── CEXes (ranks 2–15 globally by volume) ────────────────────────────────
+  { id:"binance",       name:"Binance",           url:"https://www.binance.com",         image: favicon("binance.com"),              chain:null,        type:"cex", rank:2,  trustScore:10,vol24hUsd:12_000_000_000 },
+  { id:"coinbase",      name:"Coinbase Exchange", url:"https://pro.coinbase.com",        image: favicon("coinbase.com"),             chain:null,        type:"cex", rank:3,  trustScore:10,vol24hUsd:4_500_000_000 },
+  { id:"okx",           name:"OKX",               url:"https://www.okx.com",             image: favicon("okx.com"),                  chain:null,        type:"cex", rank:4,  trustScore:9, vol24hUsd:3_800_000_000 },
+  { id:"bybit",         name:"Bybit",             url:"https://www.bybit.com",           image: favicon("bybit.com"),                chain:null,        type:"cex", rank:5,  trustScore:9, vol24hUsd:3_200_000_000 },
+  { id:"kraken",        name:"Kraken",            url:"https://www.kraken.com",          image: favicon("kraken.com"),               chain:null,        type:"cex", rank:6,  trustScore:9, vol24hUsd:1_800_000_000 },
+  { id:"kucoin",        name:"KuCoin",            url:"https://www.kucoin.com",          image: favicon("kucoin.com"),               chain:null,        type:"cex", rank:7,  trustScore:8, vol24hUsd:1_200_000_000 },
+  { id:"bitget",        name:"Bitget",            url:"https://www.bitget.com",          image: favicon("bitget.com"),               chain:null,        type:"cex", rank:8,  trustScore:8, vol24hUsd:900_000_000 },
+  { id:"gateio",        name:"Gate.io",           url:"https://www.gate.io",             image: favicon("gate.io"),                  chain:null,        type:"cex", rank:9,  trustScore:8, vol24hUsd:850_000_000 },
+  { id:"mexc",          name:"MEXC",              url:"https://www.mexc.com",            image: favicon("mexc.com"),                 chain:null,        type:"cex", rank:10, trustScore:7, vol24hUsd:750_000_000 },
+  { id:"huobi",         name:"HTX (Huobi)",       url:"https://www.htx.com",             image: favicon("htx.com"),                  chain:null,        type:"cex", rank:11, trustScore:7, vol24hUsd:650_000_000 },
+  { id:"crypto-com",    name:"Crypto.com",        url:"https://crypto.com/exchange",     image: favicon("crypto.com"),               chain:null,        type:"cex", rank:12, trustScore:8, vol24hUsd:600_000_000 },
+  { id:"bitfinex",      name:"Bitfinex",          url:"https://www.bitfinex.com",        image: favicon("bitfinex.com"),             chain:null,        type:"cex", rank:13, trustScore:8, vol24hUsd:500_000_000 },
+  { id:"upbit",         name:"Upbit",             url:"https://upbit.com",               image: favicon("upbit.com"),                chain:null,        type:"cex", rank:14, trustScore:8, vol24hUsd:480_000_000 },
+  { id:"bithumb",       name:"Bithumb",           url:"https://www.bithumb.com",         image: favicon("bithumb.com"),              chain:null,        type:"cex", rank:15, trustScore:7, vol24hUsd:350_000_000 },
 ];
 
 /* ── Fetch BTC price from Binance (public) ─────────────────────────────────── */
@@ -145,7 +150,6 @@ router.get("/dex/exchanges", async (_req, res) => {
     },
     ...STATIC_EXCHANGES.map(e => ({
       ...e,
-      image: null,
       country: null,
       yearEstablished: null,
       tradeVolume24hBtc: e.vol24hUsd / btcPrice,
