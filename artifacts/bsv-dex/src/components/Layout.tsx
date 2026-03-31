@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2 } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -42,6 +42,7 @@ const NAV_LINKS = [
   { href: "/dex", label: "Market Hub", icon: Layers },
   { href: "/p2p", label: "P2P", icon: Users },
   { href: "/bridge", label: "Bridge", icon: Link2 },
+  { href: "/copy", label: "CopyVault", icon: Copy },
   { href: "/portfolio", label: "Portfolio", icon: LayoutDashboard },
 ];
 

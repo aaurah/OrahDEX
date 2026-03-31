@@ -27,6 +27,7 @@ const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
 const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
 const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
+const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
@@ -338,6 +339,7 @@ function Router() {
                 <Route path="/liquidity"  component={MobileLiquidity} />
                 <Route path="/p2p"        component={P2P} />
                 <Route path="/bridge"     component={BridgePage} />
+                <Route path="/copy"       component={CopyTrading} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
                 <Route path="/settings"   component={MobileSettings} />
                 <Route component={MobileMarkets} />
@@ -361,6 +363,7 @@ function Router() {
                 <Route path="/liquidity"      component={Liquidity} />
                 <Route path="/p2p"            component={P2P} />
                 <Route path="/bridge"         component={BridgePage} />
+                <Route path="/copy"           component={CopyTrading} />
                 <Route path="/portfolio"      component={Portfolio} />
                 <Route component={NotFound} />
               </Switch>

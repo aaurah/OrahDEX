@@ -4,6 +4,16 @@
 
 pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform comparable to Binance, Poloniex, and Bitfinex with on-chain BSV settlement.
 
+## CopyVault — On-Chain Copy Trading
+
+- **Architecture**: ERC4626-style vault accounting. Followers deposit USDT → get shares at current share price. Share price = TVL / totalShares.
+- **DB Tables**: `copy_vaults`, `copy_vault_positions`, `copy_vault_trades` — all in `lib/db/src/schema/copyTrading.ts`
+- **API Routes**: `/api/copy/vaults` (list/create), `/api/copy/vaults/:id` (detail + trades), `/api/copy/vaults/:id/deposit`, `/api/copy/vaults/:id/withdraw`, `/api/copy/my-positions`, `/api/copy/stats`
+- **Orchestrator**: `artifacts/api-server/src/lib/copyOrchestrator.ts` — mirrors leader trades proportionally based on vault TVL vs leader portfolio size
+- **Demo vaults**: 4 seeded on API startup (BTC Macro Vault, BSV Momentum Vault, Multi-Asset Arbitrage, DeFi Yield Rotator)
+- **Frontend**: `artifacts/bsv-dex/src/pages/CopyTrading.tsx` — leaderboard + my positions + deposit/withdraw modals + vault detail side panel
+- **Nav route**: `/copy` (CopyVault link added to Layout.tsx NAV_LINKS)
+
 ## AMM Liquidity System
 
 - **Fee split**: `LP_FEE_RATIO = 5/6`, `PROTOCOL_FEE_RATIO = 1/6` — e.g. 0.3% pool → 0.25% LP + 0.05% protocol treasury

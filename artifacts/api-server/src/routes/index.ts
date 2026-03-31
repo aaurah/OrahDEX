@@ -14,6 +14,7 @@ import dexscreenerRouter from "./dexscreener.js";
 import geckoTerminalRouter from "./geckoTerminal.js";
 import coinVotesRouter from "./coinVotes.js";
 import cexRouter from "./cex.js";
+import copyTradingRouter from "./copyTrading.js";
 import tvRouter from "./tradingview.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -56,6 +57,7 @@ router.use("/bridge", bridgeRouter);
 router.use(dexscreenerRouter);
 router.use(geckoTerminalRouter);
 router.use(coinVotesRouter);
+router.use(copyTradingRouter);
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {
