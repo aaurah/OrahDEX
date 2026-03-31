@@ -476,8 +476,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         </div>
 
         {/* ── CHART ── */}
-        <div className="h-[230px]">
-          <Chart data={candles} interval={interval} onIntervalChange={handleIntervalChange} hideIntervalBar />
+        <div className="h-[320px]">
+          <Chart symbol={symbol} interval={interval} hideIntervalBar />
         </div>
 
         {/* ── INDICATOR TABS ── */}

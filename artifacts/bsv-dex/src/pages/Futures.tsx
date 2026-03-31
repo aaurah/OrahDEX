@@ -411,9 +411,8 @@ export function FuturesTrading() {
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex-1 border-b border-border relative">
               <Chart
-                data={candles}
+                symbol={symbol}
                 interval={chartInterval}
-                onIntervalChange={setChartInterval}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
