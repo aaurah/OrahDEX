@@ -32,9 +32,9 @@ const TV_INTERVAL_MAP: Record<string, string> = {
 
 /* ─── Which pairs use our internal chart vs TradingView ─────────────────── */
 function useInternalChart(symbol: string): boolean {
-  const base = symbol.toUpperCase().split(/[\/\-]/)[0] ?? '';
-  // Always use internal chart for BSV and for BSV-settled pairs
-  return base === 'BSV';
+  // Use internal chart whenever BSV appears anywhere in the symbol
+  // covers: BSV/USDT, BSV/BTC, AVAX/BSV, BTC/BSV, ETH/BSV, BSV/USDT-PERP, etc.
+  return symbol.toUpperCase().includes('BSV');
 }
 
 /* ─── TradingView symbol mapping ────────────────────────────────────────── */
@@ -259,7 +259,16 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   }, [candles]);
 
   const isUp = priceChange >= 0;
-  const base = symbol.split(/[\/\-]/)[0] ?? 'BSV';
+  // Parse base and quote from symbol (e.g. "AVAX/BSV" → base=AVAX, quote=BSV)
+  const parts = symbol.replace(/-PERP|PERP/gi, '').split(/[\/\-]/);
+  const base  = parts[0] ?? 'BSV';
+  const quote = parts[1] ?? 'USDT';
+  // Price prefix: $ for USD-stable quotes, otherwise use quote symbol
+  const usdQuotes = new Set(['USDT', 'USDC', 'BUSD', 'TUSD', 'USD', 'DAI', 'FDUSD']);
+  const pricePrefix  = usdQuotes.has(quote.toUpperCase()) ? '$' : '';
+  const priceSuffix  = usdQuotes.has(quote.toUpperCase()) ? '' : ` ${quote}`;
+  // Decimal places: BSV-quoted prices can be small (e.g. 0.62 BSV) — show more decimals
+  const decimals = lastPrice !== null && lastPrice < 1 ? 6 : lastPrice !== null && lastPrice < 100 ? 4 : 2;
 
   return (
     <div className="flex flex-col h-full bg-[#0d1117]">
@@ -267,13 +276,13 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 shrink-0 flex-wrap">
         <div className="flex items-center gap-1.5">
           <span className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-[10px]">⚡</span>
-          <span className="text-sm font-bold text-white">{symbol}</span>
+          <span className="text-sm font-bold text-white">{symbol.replace(/-PERP/i, '')}</span>
           <span className="text-[10px] text-green-400/60 bg-green-400/10 px-1.5 py-0.5 rounded font-mono">OrahDEX Live</span>
         </div>
         {lastPrice !== null && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-base font-bold text-white font-mono">
-              ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+              {pricePrefix}{lastPrice.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{priceSuffix}
             </span>
             <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isUp ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10'}`}>
               {isUp ? '+' : ''}{priceChange.toFixed(2)}%
@@ -312,7 +321,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
                 <span key={i} className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: `${i*150}ms` }} />
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">Loading {base} chart…</p>
+            <p className="text-xs text-muted-foreground">Loading {base}/{quote} chart…</p>
           </div>
         )}
         <div ref={containerRef} className="w-full h-full" />
@@ -321,7 +330,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       {/* Bottom label */}
       <div className="px-3 py-1.5 border-t border-white/5 shrink-0 flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">
-          Live data · {base}/USDT · OrahDEX
+          Live data · {base}/{quote} · OrahDEX
         </span>
         <span className="text-[10px] text-green-400/60 font-mono">BSV Settlement ⚡</span>
       </div>
