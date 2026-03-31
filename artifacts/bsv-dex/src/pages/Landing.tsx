@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare } from "lucide-react";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -287,6 +288,7 @@ function OraAiSection() {
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [buyOpen, setBuyOpen] = useState(false);
   const [entered, setEntered] = useState(false);
 
   useEffect(() => {
@@ -416,9 +418,12 @@ export function LandingPage() {
               Enter the Exchange
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <Link href="/dex" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-green-300 border border-green-500/30 hover:border-green-400/60 hover:text-green-200 bg-green-500/8 hover:bg-green-500/15 transition-all w-full sm:w-auto justify-center">
+            <button
+              onClick={() => setBuyOpen(true)}
+              className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-green-300 border border-green-500/30 hover:border-green-400/60 hover:text-green-200 bg-green-500/8 hover:bg-green-500/15 transition-all w-full sm:w-auto justify-center"
+            >
               Buy Crypto
-            </Link>
+            </button>
             <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-gray-300 border border-white/12 hover:border-white/25 hover:text-white bg-white/5 hover:bg-white/8 transition-all w-full sm:w-auto justify-center">
               View All Markets
               <span className="text-xs font-black text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full border border-green-500/25">
@@ -619,6 +624,7 @@ export function LandingPage() {
           </p>
         </div>
       </section>
+      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
     </div>
   );
 }

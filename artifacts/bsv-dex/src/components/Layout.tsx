@@ -1,6 +1,7 @@
 import { ReactNode, useState, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy } from "lucide-react";
+import { BuyCryptoModal } from "./BuyCryptoModal";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -132,6 +133,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [buyOpen, setBuyOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const { data: bsvStatus } = useBsvStatus();
   const bsvOnline = bsvStatus?.online ?? false;
@@ -466,6 +468,16 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
           )}
 
+          {/* Buy Crypto — global header CTA */}
+          <button
+            onClick={() => setBuyOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 hover:border-primary/60 rounded-lg text-xs font-bold transition-all hidden sm:flex"
+            title="Buy crypto instantly"
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            Buy
+          </button>
+
           {address ? (
             <WalletOptionsDropdown />
           ) : (
@@ -538,6 +550,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* Ora — AI Trading Assistant (site-wide floating chat) */}
       <AiAssistant />
+
+      {/* Global Buy Crypto modal */}
+      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
     </div>
   );
 }
