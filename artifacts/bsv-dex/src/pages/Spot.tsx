@@ -110,8 +110,10 @@ export function SpotTrading() {
     setOrderBookFill(fill as OrderFormFill);
   };
 
-  const symbol = rawSymbol.replace(/-/g, '/');
-  const [base, quote] = rawSymbol.split("-");
+  // Handle both dash-separated (/trade/BTC-USDT) and URL-encoded slash (/trade/BTC%2FUSDT)
+  const decodedRaw = decodeURIComponent(rawSymbol);
+  const symbol = decodedRaw.includes('/') ? decodedRaw : decodedRaw.replace(/-/g, '/');
+  const [base = '', quote = ''] = symbol.split('/');
 
   useSEO({
     title: `${base}/${quote} Spot Trading — Live Price & Chart`,
@@ -280,7 +282,7 @@ export function SpotTrading() {
                 ) : (
                   dropFiltered.map(m => {
                     const urlSymbol = m.symbol.replace('/', '-');
-                    const isActive = urlSymbol === rawSymbol;
+                    const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
                     const bgColor = COIN_COLORS[m.baseAsset] ?? "#6B7280";
                     return (
