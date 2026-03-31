@@ -1,8 +1,7 @@
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { marketsTable, tradesTable } from "@workspace/db/schema";
+import { eq, desc, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { cmcFetchPrices } from "./cmcFallback.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -417,34 +416,107 @@ interface CoinGeckoPrice {
   usd_market_cap: number;
 }
 
-async function fetchLivePrices(): Promise<Record<string, CoinGeckoPrice>> {
-  const ids = Object.values(COINGECKO_IDS).join(",");
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(6000),
-  });
-  if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
-  return res.json() as Promise<Record<string, CoinGeckoPrice>>;
-}
-
 /**
- * Fetch prices from CoinMarketCap and remap to the same shape as CoinGecko.
- * COINGECKO_IDS keys are ticker symbols (BTC, ETH, …) so we pass symbols directly.
+ * ── Sovereign Price Engine ──────────────────────────────────────────────────
+ * Fetches USD prices from:
+ *   1. Binance public 24h-ticker REST API (no key required)
+ *   2. WhatsOnChain exchange-rate API for BSV
+ *   3. Own trades table (last traded price per symbol — overrides ref feeds)
+ *
+ * Returns a map of SYMBOL → { usd, usd_24h_change, usd_24h_vol, usd_market_cap }
+ * keyed by the base-asset ticker symbol (BTC, ETH, SOL, BSV, …).
  */
-async function fetchLivePricesCMC(): Promise<Record<string, CoinGeckoPrice> | null> {
-  const symbols = Object.keys(COINGECKO_IDS); // BTC, ETH, SOL, …
-  const cmcMap = await cmcFetchPrices(symbols);
-  if (!cmcMap) return null;
-
-  // Remap: COINGECKO_IDS maps SYMBOL → cgId; we need cgId → CoinGeckoPrice
-  // for the updateMarketPrices fn which looks up by cgId.
-  // Build a reverse symbol→cgId map.
+async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   const out: Record<string, CoinGeckoPrice> = {};
-  for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
-    const d = cmcMap[sym.toUpperCase()];
-    if (d) out[cgId] = d;
+
+  // ── 1. Binance public 24h ticker (all USDT pairs) ──────────────────────────
+  try {
+    const res = await fetch("https://api.binance.com/api/v3/ticker/24hr", {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
+      const tickers = await res.json() as Array<{
+        symbol: string;
+        lastPrice: string;
+        priceChangePercent: string;
+        quoteVolume: string;
+      }>;
+      for (const t of tickers) {
+        if (!t.symbol.endsWith("USDT")) continue;
+        const base = t.symbol.slice(0, -4);
+        const usd = parseFloat(t.lastPrice);
+        if (!usd || usd <= 0) continue;
+        out[base] = {
+          usd,
+          usd_24h_change: parseFloat(t.priceChangePercent),
+          usd_24h_vol:    parseFloat(t.quoteVolume),
+          usd_market_cap: 0,
+        };
+      }
+      logger.debug({ count: Object.keys(out).length }, "Binance prices loaded");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Binance 24h-ticker fetch failed");
   }
+
+  // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
+  try {
+    const bsvRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/exchangerate", {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (bsvRes.ok) {
+      const bsvData = await bsvRes.json() as { rate?: number; currency?: string };
+      const rate = bsvData?.rate;
+      if (rate && rate > 0) {
+        out["BSV"] = {
+          usd:            rate,
+          usd_24h_change: out["BSV"]?.usd_24h_change ?? 0,
+          usd_24h_vol:    out["BSV"]?.usd_24h_vol ?? rate * 100_000,
+          usd_market_cap: 0,
+        };
+        logger.debug({ bsvUsd: rate }, "BSV price from WhatsOnChain");
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "WhatsOnChain BSV rate fetch failed");
+  }
+
+  // ── 3. Own last-trade prices (sovereign, overrides ref feeds) ─────────────
+  try {
+    const since = new Date(Date.now() - 60 * 60 * 1000); // last 1 hour
+    const recentTrades = await db
+      .select()
+      .from(tradesTable)
+      .where(gte(tradesTable.timestamp, since))
+      .orderBy(desc(tradesTable.timestamp));
+
+    // For each USDT pair, the trade price IS the USD price
+    for (const trade of recentTrades) {
+      const parts = trade.symbol.split("/");
+      const base  = parts[0];
+      const quote = parts[1];
+      if (!base || quote !== "USDT") continue;
+      const tradePrice = parseFloat(trade.price);
+      if (!tradePrice || tradePrice <= 0) continue;
+      // Own trade price is our most authoritative source
+      out[base] = {
+        usd:            tradePrice,
+        usd_24h_change: out[base]?.usd_24h_change ?? 0,
+        usd_24h_vol:    (out[base]?.usd_24h_vol ?? 0) + parseFloat(trade.total),
+        usd_market_cap: out[base]?.usd_market_cap ?? 0,
+      };
+    }
+  } catch (err) {
+    logger.warn({ err }, "Own-trades price overlay failed");
+  }
+
+  // ── Merge any missing symbols from FALLBACK_PRICES ─────────────────────────
+  for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
+    if (!out[sym]) {
+      out[sym] = { usd, usd_24h_change: 0, usd_24h_vol: usd * 500_000, usd_market_cap: 0 };
+    }
+  }
+
   return out;
 }
 
@@ -710,58 +782,15 @@ export async function seedMarketsIfNeeded() {
 
 export async function updateMarketPrices() {
   try {
-    let prices: Record<string, CoinGeckoPrice>;
-    let priceSource = "hardcoded-fallback";
+    // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
+    const prices = await fetchSovereignPrices();
+    logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
 
-    // Prefer CMC when key is set (production) — CoinGecko is unreliable in
-    // sandboxed/deployed environments; only fall back to it when CMC is absent.
-    const hasCmcKey = !!process.env.CMC_API_KEY;
-    if (hasCmcKey) {
-      try {
-        const cmcPrices = await fetchLivePricesCMC();
-        if (cmcPrices) { prices = cmcPrices; priceSource = "CoinMarketCap"; }
-        else throw new Error("CMC returned null");
-      } catch (cmcErr: any) {
-        logger.warn({ err: cmcErr }, "CoinMarketCap price fetch failed — trying CoinGecko");
-        try {
-          prices = await fetchLivePrices();
-          priceSource = "CoinGecko";
-        } catch {
-          logger.warn("Both APIs failed — using hardcoded fallback prices");
-          const fallback: Record<string, CoinGeckoPrice> = {};
-          for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
-            const usd = FALLBACK_PRICES[sym];
-            if (usd) fallback[cgId] = { usd, usd_24h_change: 0, usd_24h_vol: usd * 1_000_000, usd_market_cap: usd * 10_000_000 };
-          }
-          prices = fallback;
-        }
-      }
-    } else {
-      // No CMC key — try CoinGecko first (free, no key needed)
-      try {
-        prices = await fetchLivePrices();
-        priceSource = "CoinGecko";
-      } catch (cgErr: any) {
-        logger.warn({ err: cgErr }, "CoinGecko price fetch failed — using hardcoded fallback");
-        const fallback: Record<string, CoinGeckoPrice> = {};
-        for (const [sym, cgId] of Object.entries(COINGECKO_IDS)) {
-          const usd = FALLBACK_PRICES[sym];
-          if (usd) fallback[cgId] = { usd, usd_24h_change: 0, usd_24h_vol: usd * 1_000_000, usd_market_cap: usd * 10_000_000 };
-        }
-        prices = fallback;
-      }
-    }
-    logger.info({ source: priceSource }, "Market prices updated");
     const markets = await db.select().from(marketsTable);
 
     for (const market of markets) {
-      const cgId = COINGECKO_IDS[market.baseAsset];
-      if (!cgId) continue;
-
-      const data = prices[cgId];
-      // Use live price if available; fall back to hardcoded price so tokens
-      // not returned by CoinGecko (e.g. BSV) still get a consistent update
-      // across ALL their quote pairs (USDT, USDC, TUSD, USDD, PERP…).
+      // Look up by base-asset symbol directly — no CoinGecko ID needed
+      const data = prices[market.baseAsset];
       const baseUSD = data?.usd ?? FALLBACK_PRICES[market.baseAsset] ?? 0;
       if (!baseUSD || baseUSD <= 0) continue;
 
@@ -775,12 +804,10 @@ export async function updateMarketPrices() {
       let lastPrice = baseUSD;
       let vol = data?.usd_24h_vol ?? baseUSD * 1_000_000;
 
-      // Helper: safely get USD price for a quote asset — prefers live data,
-      // falls back to FALLBACK_PRICES, never returns 0 (would cause division by zero).
+      // Helper: safely get USD price for a quote asset — prefers live sovereign
+      // data, falls back to FALLBACK_PRICES, never returns 0.
       const getQuoteUSD = (sym: string, defaultVal: number): number => {
-        const id = COINGECKO_IDS[sym];
-        const live = id ? prices[id]?.usd : undefined;
-        // Use || (not ??) so that live prices of 0 also trigger the fallback
+        const live = prices[sym]?.usd;
         return live || FALLBACK_PRICES[sym] || defaultVal;
       };
 
@@ -859,7 +886,7 @@ export async function updateMarketPrices() {
     }
 
   } catch (err) {
-    logger.warn({ err }, "Failed to update prices from CoinGecko and CoinMarketCap");
+    logger.warn({ err }, "Failed to update prices from sovereign price engine");
   }
 }
 

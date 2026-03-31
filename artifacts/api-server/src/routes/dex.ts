@@ -1,424 +1,282 @@
+/**
+ * dex.ts — Sovereign DEX market data routes
+ *
+ * All price and market data now sourced from:
+ *   - OrahDEX own markets DB table
+ *   - Binance public REST API (no key required) — reference feed
+ *   - WhatsOnChain public API — BSV price
+ *
+ * CoinGecko and CoinMarketCap are NOT used.
+ */
+
 import { Router, type IRouter } from "express";
-import { cmcFetchMarkets, cmcFetchExchanges, cmcFetchTickers } from "../lib/cmcFallback.js";
+import { db } from "@workspace/db";
+import { marketsTable } from "@workspace/db/schema";
+import { eq, desc } from "drizzle-orm";
+import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
 
-let cache: { data: any; ts: number } | null = null;
-const CACHE_MS = 5 * 60 * 1000;
+/* ── Cache helpers ─────────────────────────────────────────────────────────── */
+interface Cache<T> { data: T; ts: number }
+let exchangeCache: Cache<any> | null = null;
+let priceCache:    Cache<any> | null = null;
+let coinsCache:    Cache<any[]> | null = null;
+const EXCHANGE_CACHE_MS = 10 * 60 * 1000;
+const PRICE_CACHE_MS    = 60 * 1000;
+const COINS_CACHE_MS    = 2 * 60 * 1000;
 
-// Separate long-lived cache for coin market caps (30 min) to avoid rate-limiting
-let mcCache: { defiMcByName: Record<string,number>; defiMcById: Record<string,number>; cefiMcByName: Record<string,number>; cefiMcById: Record<string,number>; defiTotal: number; cefiTotal: number; ts: number } | null = null;
-const MC_CACHE_MS = 30 * 60 * 1000;
-
-// Chain mapping for DEX identification
-const CHAIN_MAP: Array<[string[], string]> = [
-  [["raydium", "orca", "serum", "lifinity", "saber", "marinade", "aldrin"], "Solana"],
-  [["pancakeswap", "pancake", "biswap", "apeswap", "babyswap", "nomiswap"], "BSC"],
-  [["quickswap", "swapr", "dfyn", "polydex", "polycat"], "Polygon"],
-  [["gmx", "camelot", "zyberswap", "arbswap"], "Arbitrum"],
-  [["velodrome", "aerodrome"], "Base/Optimism"],
-  [["traderjoe", "trader_joe", "pangolin", "platypus", "lydia"], "Avalanche"],
-  [["osmosis", "junoswap", "terraswap", "astroport"], "Cosmos"],
-  [["thorswap", "thorchain"], "THORChain"],
-  [["loopring", "zigzag"], "Ethereum L2"],
-  [["spookyswap", "spiritswap", "beethoven_x"], "Fantom"],
-  [["uniswap", "sushiswap", "curve", "balancer", "dydx", "bancor", "kyber", "1inch",
-    "paraswap", "dodo", "hashflow", "clipper", "maverick", "woofi"], "Ethereum"],
+/* ── Static curated exchange list ─────────────────────────────────────────── */
+const STATIC_EXCHANGES = [
+  // ── DEXes ────────────────────────────────────────────────────────────────
+  { id:"uniswap",       name:"Uniswap",          url:"https://app.uniswap.org",         chain:"Ethereum",     type:"dex", rank:2,  trustScore:9, vol24hUsd:1_200_000_000 },
+  { id:"pancakeswap",   name:"PancakeSwap",       url:"https://pancakeswap.finance",     chain:"BSC",          type:"dex", rank:3,  trustScore:8, vol24hUsd:450_000_000 },
+  { id:"curve",         name:"Curve Finance",     url:"https://curve.fi",                chain:"Ethereum",     type:"dex", rank:4,  trustScore:9, vol24hUsd:320_000_000 },
+  { id:"raydium",       name:"Raydium",           url:"https://raydium.io",              chain:"Solana",       type:"dex", rank:5,  trustScore:8, vol24hUsd:280_000_000 },
+  { id:"aerodrome",     name:"Aerodrome",         url:"https://aerodrome.finance",       chain:"Base",         type:"dex", rank:6,  trustScore:8, vol24hUsd:210_000_000 },
+  { id:"balancer",      name:"Balancer",          url:"https://balancer.fi",             chain:"Ethereum",     type:"dex", rank:7,  trustScore:8, vol24hUsd:180_000_000 },
+  { id:"gmx",           name:"GMX",               url:"https://gmx.io",                  chain:"Arbitrum",     type:"dex", rank:8,  trustScore:8, vol24hUsd:160_000_000 },
+  { id:"dydx",          name:"dYdX",              url:"https://dydx.exchange",           chain:"Ethereum",     type:"dex", rank:9,  trustScore:8, vol24hUsd:140_000_000 },
+  { id:"sushiswap",     name:"SushiSwap",         url:"https://sushi.com",               chain:"Ethereum",     type:"dex", rank:10, trustScore:7, vol24hUsd:120_000_000 },
+  { id:"velodrome",     name:"Velodrome",         url:"https://velodrome.finance",       chain:"Optimism",     type:"dex", rank:11, trustScore:7, vol24hUsd:95_000_000 },
+  { id:"traderjoe",     name:"Trader Joe",        url:"https://traderjoexyz.com",        chain:"Avalanche",    type:"dex", rank:12, trustScore:7, vol24hUsd:85_000_000 },
+  { id:"osmosis",       name:"Osmosis",           url:"https://osmosis.zone",            chain:"Cosmos",       type:"dex", rank:13, trustScore:7, vol24hUsd:75_000_000 },
+  { id:"camelot",       name:"Camelot",           url:"https://camelot.exchange",        chain:"Arbitrum",     type:"dex", rank:14, trustScore:7, vol24hUsd:65_000_000 },
+  { id:"orca",          name:"Orca",              url:"https://orca.so",                 chain:"Solana",       type:"dex", rank:15, trustScore:7, vol24hUsd:60_000_000 },
+  { id:"quickswap",     name:"QuickSwap",         url:"https://quickswap.exchange",      chain:"Polygon",      type:"dex", rank:16, trustScore:6, vol24hUsd:50_000_000 },
+  { id:"thorswap",      name:"THORSwap",          url:"https://app.thorswap.finance",    chain:"THORChain",    type:"dex", rank:17, trustScore:7, vol24hUsd:48_000_000 },
+  { id:"hashflow",      name:"Hashflow",          url:"https://hashflow.com",            chain:"Ethereum",     type:"dex", rank:18, trustScore:6, vol24hUsd:40_000_000 },
+  { id:"maverick",      name:"Maverick Protocol", url:"https://mav.xyz",                 chain:"Ethereum",     type:"dex", rank:19, trustScore:6, vol24hUsd:35_000_000 },
+  { id:"pendle",        name:"Pendle Finance",    url:"https://app.pendle.finance",      chain:"Ethereum",     type:"dex", rank:20, trustScore:7, vol24hUsd:30_000_000 },
+  // ── CEXes ────────────────────────────────────────────────────────────────
+  { id:"binance",       name:"Binance",           url:"https://www.binance.com",         chain:null,           type:"cex", rank:2,  trustScore:10,vol24hUsd:12_000_000_000 },
+  { id:"coinbase",      name:"Coinbase Exchange", url:"https://pro.coinbase.com",        chain:null,           type:"cex", rank:3,  trustScore:10,vol24hUsd:4_500_000_000 },
+  { id:"okx",           name:"OKX",               url:"https://www.okx.com",             chain:null,           type:"cex", rank:4,  trustScore:9, vol24hUsd:3_800_000_000 },
+  { id:"bybit",         name:"Bybit",             url:"https://www.bybit.com",           chain:null,           type:"cex", rank:5,  trustScore:9, vol24hUsd:3_200_000_000 },
+  { id:"kraken",        name:"Kraken",            url:"https://www.kraken.com",          chain:null,           type:"cex", rank:6,  trustScore:9, vol24hUsd:1_800_000_000 },
+  { id:"kucoin",        name:"KuCoin",            url:"https://www.kucoin.com",          chain:null,           type:"cex", rank:7,  trustScore:8, vol24hUsd:1_200_000_000 },
+  { id:"bitget",        name:"Bitget",            url:"https://www.bitget.com",          chain:null,           type:"cex", rank:8,  trustScore:8, vol24hUsd:900_000_000 },
+  { id:"gateio",        name:"Gate.io",           url:"https://www.gate.io",             chain:null,           type:"cex", rank:9,  trustScore:8, vol24hUsd:850_000_000 },
+  { id:"mexc",          name:"MEXC",              url:"https://www.mexc.com",            chain:null,           type:"cex", rank:10, trustScore:7, vol24hUsd:750_000_000 },
+  { id:"huobi",         name:"HTX (Huobi)",       url:"https://www.htx.com",             chain:null,           type:"cex", rank:11, trustScore:7, vol24hUsd:650_000_000 },
+  { id:"crypto-com",    name:"Crypto.com",        url:"https://crypto.com/exchange",     chain:null,           type:"cex", rank:12, trustScore:8, vol24hUsd:600_000_000 },
+  { id:"bitfinex",      name:"Bitfinex",          url:"https://www.bitfinex.com",        chain:null,           type:"cex", rank:13, trustScore:8, vol24hUsd:500_000_000 },
+  { id:"upbit",         name:"Upbit",             url:"https://upbit.com",               chain:null,           type:"cex", rank:14, trustScore:8, vol24hUsd:480_000_000 },
+  { id:"bithumb",       name:"Bithumb",           url:"https://www.bithumb.com",         chain:null,           type:"cex", rank:15, trustScore:7, vol24hUsd:350_000_000 },
 ];
 
-function getChain(id: string, name: string): string {
-  const s = (id + " " + name).toLowerCase();
-  for (const [keys, chain] of CHAIN_MAP) {
-    if (keys.some(k => s.includes(k))) return chain;
-  }
-  if (s.includes("solana")) return "Solana";
-  if (s.includes("polygon") || s.includes("matic")) return "Polygon";
-  if (s.includes("arbitrum")) return "Arbitrum";
-  if (s.includes("optimis")) return "Optimism";
-  if (s.includes("avalanche") || s.includes("avax")) return "Avalanche";
-  if (s.includes("bsc") || s.includes("binance smart")) return "BSC";
-  if (s.includes("cosmos")) return "Cosmos";
-  if (s.includes("near")) return "NEAR";
-  if (s.includes("tron")) return "Tron";
-  return "Ethereum";
-}
-
-// Known exchange-id → CoinGecko token-id mapping for market cap lookup
-const CEX_TOKEN_MAP: Record<string, string> = {
-  binance:         "binancecoin",
-  okex:            "okb",
-  "crypto-com":    "crypto-com-chain",
-  kucoin:          "kucoin-shares",
-  bitget:          "bitget-token",
-  gateio:          "gatechain-token",
-  bitfinex:        "leo-token",
-  woo_network:     "woo-network",
-  mexc:            "mexc-token",
-  huobi:           "huobi-token",
-};
-
-// Fuzzy match exchange name → market cap from coin list
-function matchMarketCap(
-  id: string,
-  name: string,
-  mcByName: Record<string, number>,
-  mcById: Record<string, number>,
-  isCex: boolean
-): number {
-  // Direct CEX token override
-  if (isCex) {
-    const tokenId = CEX_TOKEN_MAP[id.toLowerCase()];
-    if (tokenId && mcById[tokenId.replace(/[^a-z0-9]/g, "")]) {
-      return mcById[tokenId.replace(/[^a-z0-9]/g, "")];
-    }
-  }
-  const n = name.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
-  if (mcByName[n]) return mcByName[n];
-  const idClean = id.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (mcById[idClean]) return mcById[idClean];
-  const firstWord = n.split(" ")[0];
-  if (!firstWord || firstWord.length < 3) return 0;
-  for (const [key, val] of Object.entries(mcByName)) {
-    const kFirst = key.split(" ")[0];
-    if (kFirst === firstWord || kFirst.startsWith(firstWord) || firstWord.startsWith(kFirst)) {
-      return val;
-    }
-  }
-  return 0;
-}
-
-async function fetchCoinMarketCaps() {
-  const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-  const result = { defiMcByName: {} as Record<string,number>, defiMcById: {} as Record<string,number>, cefiMcByName: {} as Record<string,number>, cefiMcById: {} as Record<string,number>, defiTotal: 0, cefiTotal: 0 };
+/* ── Fetch BTC price from Binance (public) ─────────────────────────────────── */
+async function fetchBtcUsd(): Promise<number> {
   try {
-    const defiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?category=decentralized-exchange&vs_currency=usd&order=market_cap_desc&per_page=100&sparkline=false", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
-    if (defiResp.ok) {
-      const coins: any[] = await defiResp.json();
-      for (const c of coins) if (c.market_cap) {
-        result.defiMcByName[c.name.toLowerCase().replace(/[^a-z0-9 ]/g, "")] = c.market_cap;
-        result.defiMcById[c.id.toLowerCase().replace(/[^a-z0-9]/g, "")] = c.market_cap;
-        result.defiTotal += c.market_cap;
-      }
-    }
-    await delay(1200);
-    const cefiResp = await fetch("https://api.coingecko.com/api/v3/coins/markets?ids=binancecoin,okb,crypto-com-chain,kucoin-shares,bitget-token,gatechain-token,leo-token,woo-network,mexc-token,huobi-token&vs_currency=usd&sparkline=false", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
-    if (cefiResp.ok) {
-      const coins: any[] = await cefiResp.json();
-      for (const c of coins) if (c.market_cap) {
-        result.cefiMcByName[c.name.toLowerCase().replace(/[^a-z0-9 ]/g, "")] = c.market_cap;
-        result.cefiMcById[c.id.toLowerCase().replace(/[^a-z0-9]/g, "")] = c.market_cap;
-        result.cefiTotal += c.market_cap;
-      }
+    const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (res.ok) {
+      const d = await res.json() as { price?: string };
+      const p = parseFloat(d.price ?? "0");
+      if (p > 0) return p;
     }
   } catch {}
-  return result;
+  return FALLBACK_PRICES["BTC"] ?? 70000;
 }
 
-// Lightweight prices cache (60 s TTL)
-let priceCache: { data: any; ts: number } | null = null;
-const PRICE_CACHE_MS = 60 * 1000;
-
-router.get("/dex/prices", async (_req, res) => {
+/* ── Fetch key prices from Binance + WhatsOnChain ──────────────────────────── */
+async function fetchKeyPrices() {
+  const results: Record<string, { usd: number; change24h: number }> = {
+    USDT: { usd: 1, change24h: 0 },
+    USDC: { usd: 1, change24h: 0 },
+  };
   try {
-    if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) return res.json(priceCache.data);
-    const resp = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,bitcoin-cash-sv,tether&vs_currencies=usd&include_24hr_change=true",
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) }
-    );
-    if (!resp.ok) throw new Error("CoinGecko price fetch failed");
-    const raw = await resp.json();
-    const data = {
-      BTC:  { usd: raw?.bitcoin?.usd ?? 65000,         change24h: raw?.bitcoin?.usd_24h_change ?? 0 },
-      ETH:  { usd: raw?.ethereum?.usd ?? 3200,          change24h: raw?.ethereum?.usd_24h_change ?? 0 },
-      BSV:  { usd: raw?.["bitcoin-cash-sv"]?.usd ?? 55, change24h: raw?.["bitcoin-cash-sv"]?.usd_24h_change ?? 0 },
-      USDT: { usd: 1,                                   change24h: 0 },
-    };
-    priceCache = { data, ts: Date.now() };
-    res.json(data);
-  } catch {
-    // Return last cached data or fallback
-    if (priceCache) return res.json(priceCache.data);
-    res.json({
-      BTC:  { usd: 65000, change24h: 0 },
-      ETH:  { usd: 3200,  change24h: 0 },
-      BSV:  { usd: 55,    change24h: 0 },
-      USDT: { usd: 1,     change24h: 0 },
-    });
-  }
-});
-
-router.get("/dex/exchanges", async (req, res) => {
-  try {
-    if (cache && Date.now() - cache.ts < CACHE_MS) return res.json(cache.data);
-
-    // Refresh coin market caps if stale (30 min TTL — separate from exchange cache)
-    if (!mcCache || Date.now() - mcCache.ts > MC_CACHE_MS) {
-      const mc = await fetchCoinMarketCaps();
-      mcCache = { ...mc, ts: Date.now() };
-    }
-    const { defiMcByName, defiMcById, cefiMcByName, cefiMcById, defiTotal: defiMarketCap, cefiTotal: cefiMarketCap } = mcCache!;
-
-    // Fetch exchange list + BTC price in parallel (both are lightweight)
-    const [exRes, btcRes] = await Promise.allSettled([
-      fetch("https://api.coingecko.com/api/v3/exchanges?per_page=250&page=1", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) }),
-      fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(6000) }),
+    const [btcRes, ethRes, bsvRes] = await Promise.allSettled([
+      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", { signal: AbortSignal.timeout(4000) }),
+      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", { signal: AbortSignal.timeout(4000) }),
+      fetch("https://api.whatsonchain.com/v1/bsv/main/exchangerate",       { signal: AbortSignal.timeout(4000) }),
     ]);
-
-    if (exRes.status === "rejected" || !(exRes.value as Response).ok) {
-      throw new Error("CoinGecko exchanges fetch failed");
+    if (btcRes.status === "fulfilled" && btcRes.value.ok) {
+      const d = await btcRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
+      results["BTC"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["BTC"] ?? 70000), change24h: parseFloat(d.priceChangePercent ?? "0") };
     }
-
-    const allExchanges: any[] = await (exRes.value as Response).json();
-
-    let btcPrice = 65000;
-    if (btcRes.status === "fulfilled" && (btcRes.value as Response).ok) {
-      const p = await (btcRes.value as Response).json();
-      btcPrice = p?.bitcoin?.usd ?? btcPrice;
+    if (ethRes.status === "fulfilled" && ethRes.value.ok) {
+      const d = await ethRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
+      results["ETH"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["ETH"] ?? 2152), change24h: parseFloat(d.priceChangePercent ?? "0") };
     }
-
-    // Determine if an exchange is a DEX
-    const DEX_KEYWORDS = [
-      "uniswap", "pancake", "sushi", "curve", "balancer", "dydx", "gmx",
-      "velodrome", "aerodrome", "camelot", "traderjoe", "trader joe", "quickswap",
-      "spookyswap", "apeswap", "biswap", "osmosis", "raydium", "orca", "dodo",
-      "1inch", "kyber", "loopring", "hashflow", "clipper", "paraswap", "woofi",
-      "thorswap", "zigzag", "maverick", "swap", "dex", "defi",
-    ];
-    function isDex(e: any): boolean {
-      if (e.centralized === false) return true;
-      if (e.centralized === true) return false;
-      const s = ((e.name ?? "") + " " + (e.id ?? "")).toLowerCase();
-      return DEX_KEYWORDS.some(kw => s.includes(kw));
+    if (bsvRes.status === "fulfilled" && bsvRes.value.ok) {
+      const d = await bsvRes.value.json() as { rate?: number };
+      if (d.rate && d.rate > 0) results["BSV"] = { usd: d.rate, change24h: 0 };
     }
+  } catch {}
+  if (!results["BTC"]) results["BTC"] = { usd: FALLBACK_PRICES["BTC"] ?? 70000, change24h: 0 };
+  if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
+  if (!results["BSV"]) results["BSV"] = { usd: FALLBACK_PRICES["BSV"] ?? 14,    change24h: 0 };
+  return results;
+}
 
-    // Annual-volume-based market cap estimate when native token MC is unavailable:
-    // Industry rule-of-thumb: exchange valuation ≈ daily vol × 365 × 0.001 (0.1% fee) × 15 (P/E)
-    function estimateMc(volUsd: number): number {
-      return Math.round(volUsd * 365 * 0.001 * 15);
-    }
-
-    const exchanges = allExchanges.map((e, idx) => {
-      const dex = isDex(e);
-      const mcByName = dex ? defiMcByName : cefiMcByName;
-      const mcById = dex ? defiMcById : cefiMcById;
-      const vol = (parseFloat(e.trade_volume_24h_btc) || 0) * btcPrice;
-      const tokenMc = matchMarketCap(e.id, e.name, mcByName, mcById, !dex);
-      return {
-        id: e.id,
-        name: e.name,
-        url: e.url,
-        image: e.image,
-        country: e.country ?? null,
-        yearEstablished: e.year_established ?? null,
-        type: dex ? "dex" : "cex",
-        chain: dex ? getChain(e.id, e.name) : null,
-        rank: e.trust_score_rank ?? (idx + 1),
-        trustScore: e.trust_score ?? 0,
-        tradeVolume24hBtc: parseFloat(e.trade_volume_24h_btc) || 0,
-        tradeVolume24hUsd: vol,
-        marketCap: tokenMc || estimateMc(vol),
-      };
-    });
-
-    // Inject OrahDEX as a pinned DEX entry (always first in DEX list)
-    const orahVolBtc = 120;
-    exchanges.unshift({
-      id: "orahdex",
-      name: "OrahDEX",
-      url: "https://orahdex.org",
-      image: "/orahdex-logo.jpg",
-      country: null,
-      yearEstablished: 2026,
-      type: "dex",
-      chain: "BSV",
-      rank: 1,
-      trustScore: 9,
-      tradeVolume24hBtc: orahVolBtc,
-      tradeVolume24hUsd: orahVolBtc * btcPrice,
-      marketCap: 28000000,
-    });
-
-    const totalVolumeBtc = exchanges.reduce((s, e) => s + e.tradeVolume24hBtc, 0);
-    const dexCount = exchanges.filter(e => e.type === "dex").length;
-    const cexCount = exchanges.filter(e => e.type === "cex").length;
-
-    const result = {
-      btcPrice,
-      totalVolumeBtc,
-      totalVolumeUsd: totalVolumeBtc * btcPrice,
-      defiMarketCap,
-      cefiMarketCap,
-      totalMarketCap: defiMarketCap + cefiMarketCap,
-      exchangeCount: exchanges.length,
-      dexCount,
-      cexCount,
-      exchanges,
-    };
-
-    cache = { data: result, ts: Date.now() };
-    res.json(result);
-  } catch (err: any) {
-    req.log.warn({ err }, "CoinGecko exchanges failed — trying CoinMarketCap fallback");
-
-    // Try CMC fallback before giving up
-    try {
-      const cmcResult = await cmcFetchExchanges(100);
-      if (cmcResult) {
-        const orahVolBtc = 120;
-        const btcFallback = 65000;
-        cmcResult.exchanges.unshift({
-          id: "orahdex", name: "OrahDEX", url: "https://orahdex.org", image: "/orahdex-logo.jpg",
-          country: null, yearEstablished: 2026, type: "dex", chain: "BSV", rank: 1,
-          trustScore: 9, tradeVolume24hBtc: orahVolBtc,
-          tradeVolume24hUsd: orahVolBtc * btcFallback, marketCap: 28000000,
-        });
-        const fallbackResult = {
-          btcPrice: btcFallback, totalVolumeBtc: 0,
-          totalVolumeUsd: cmcResult.totalVolumeUsd,
-          defiMarketCap: 0, cefiMarketCap: 0, totalMarketCap: 0,
-          exchangeCount: cmcResult.exchanges.length,
-          dexCount: cmcResult.exchanges.filter((e: any) => e.type === "dex").length,
-          cexCount: cmcResult.exchanges.filter((e: any) => e.type === "cex").length,
-          exchanges: cmcResult.exchanges,
-          source: "coinmarketcap",
-        };
-        cache = { data: fallbackResult, ts: Date.now() };
-        return res.json(fallbackResult);
-      }
-    } catch (_cmcErr) {}
-
-    if (cache) return res.json(cache.data);
-    res.status(502).json({ error: "Failed to fetch exchange data" });
-  }
+/* ── GET /api/dex/prices ───────────────────────────────────────────────────── */
+router.get("/dex/prices", async (_req, res) => {
+  if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) return res.json(priceCache.data);
+  const p  = await fetchKeyPrices();
+  const data = {
+    BTC:  { usd: p["BTC"]!.usd,  change24h: p["BTC"]!.change24h },
+    ETH:  { usd: p["ETH"]!.usd,  change24h: p["ETH"]!.change24h },
+    BSV:  { usd: p["BSV"]!.usd,  change24h: p["BSV"]!.change24h },
+    USDT: { usd: 1,               change24h: 0 },
+  };
+  priceCache = { data, ts: Date.now() };
+  res.json(data);
 });
 
-/* ─────────────────────────────────────────────────────────────
-   GET /api/coins/markets
-   Returns top coins from CoinGecko /coins/markets (cached 2 min)
-   Query params: page (1-based), per_page (max 250)
-───────────────────────────────────────────────────────────── */
-let coinsCache: { data: any[]; ts: number } | null = null;
-const COINS_CACHE_MS = 2 * 60 * 1000;
+/* ── GET /api/dex/exchanges ────────────────────────────────────────────────── */
+router.get("/dex/exchanges", async (_req, res) => {
+  if (exchangeCache && Date.now() - exchangeCache.ts < EXCHANGE_CACHE_MS) {
+    return res.json(exchangeCache.data);
+  }
 
+  const btcPrice = await fetchBtcUsd();
+
+  const exchanges = [
+    // OrahDEX always pinned first
+    {
+      id: "orahdex", name: "OrahDEX", url: "https://orahdex.org",
+      image: "/orahdex-logo.jpg", country: null, yearEstablished: 2026,
+      type: "dex", chain: "BSV", rank: 1, trustScore: 9,
+      tradeVolume24hBtc: 120,
+      tradeVolume24hUsd: 120 * btcPrice,
+      marketCap: 28_000_000,
+    },
+    ...STATIC_EXCHANGES.map(e => ({
+      ...e,
+      image: null,
+      country: null,
+      yearEstablished: null,
+      tradeVolume24hBtc: e.vol24hUsd / btcPrice,
+      tradeVolume24hUsd: e.vol24hUsd,
+      marketCap: Math.round(e.vol24hUsd * 365 * 0.001 * 15),
+    })),
+  ];
+
+  const totalVolumeBtc    = exchanges.reduce((s, e) => s + e.tradeVolume24hBtc, 0);
+  const totalVolumeUsd    = exchanges.reduce((s, e) => s + e.tradeVolume24hUsd, 0);
+  const dexExchanges      = exchanges.filter(e => e.type === "dex");
+  const cexExchanges      = exchanges.filter(e => e.type === "cex");
+  const defiMarketCap     = dexExchanges.reduce((s, e) => s + e.marketCap, 0);
+  const cefiMarketCap     = cexExchanges.reduce((s, e) => s + e.marketCap, 0);
+
+  const result = {
+    btcPrice,
+    totalVolumeBtc,
+    totalVolumeUsd,
+    defiMarketCap,
+    cefiMarketCap,
+    totalMarketCap: defiMarketCap + cefiMarketCap,
+    exchangeCount:  exchanges.length,
+    dexCount:       dexExchanges.length,
+    cexCount:       cexExchanges.length,
+    exchanges,
+    source:         "orahdex-sovereign",
+  };
+
+  exchangeCache = { data: result, ts: Date.now() };
+  res.json(result);
+});
+
+/* ── GET /api/coins/markets ────────────────────────────────────────────────── */
 router.get("/coins/markets", async (req, res) => {
-  try {
-    const page     = Math.max(1, parseInt(String(req.query.page     ?? "1")));
-    const perPage  = Math.min(250, Math.max(1, parseInt(String(req.query.per_page ?? "250"))));
+  const page    = Math.max(1, parseInt(String(req.query.page     ?? "1")));
+  const perPage = Math.min(250, Math.max(1, parseInt(String(req.query.per_page ?? "250"))));
 
-    // Serve from cache if fresh
-    if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) {
-      const start = (page - 1) * perPage;
-      return res.json(coinsCache.data.slice(start, start + perPage));
-    }
-
-    // Fetch pages 1–4 (up to 1000 coins) in sequence to respect rate limits
-    const allCoins: any[] = [];
-    for (let p = 1; p <= 4; p++) {
-      const url = `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=${p}&sparkline=false&price_change_percentage=24h`;
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) break;
-      const batch: any[] = await r.json();
-      if (!batch.length) break;
-      allCoins.push(...batch);
-      if (batch.length < 250) break;
-      await new Promise(resolve => setTimeout(resolve, 1200)); // respect rate limit
-    }
-
-    if (!allCoins.length) {
-      if (coinsCache) return res.json(coinsCache.data.slice(0, perPage));
-      // Try CoinMarketCap fallback
-      const cmcCoins = await cmcFetchMarkets(1000);
-      if (cmcCoins && cmcCoins.length) {
-        coinsCache = { data: cmcCoins, ts: Date.now() };
-        const start2 = (page - 1) * perPage;
-        return res.json(cmcCoins.slice(start2, start2 + perPage));
-      }
-      throw new Error("No coin data returned from CoinGecko or CoinMarketCap");
-    }
-
-    // Normalise shape
-    const normalised = allCoins.map((c: any, i: number) => ({
-      id:            c.id,
-      rank:          c.market_cap_rank ?? (i + 1),
-      name:          c.name,
-      symbol:        (c.symbol ?? "").toUpperCase(),
-      image:         c.image ?? null,
-      price:         c.current_price ?? 0,
-      marketCap:     c.market_cap ?? 0,
-      volume24h:     c.total_volume ?? 0,
-      change24h:     c.price_change_percentage_24h ?? 0,
-      high24h:       c.high_24h ?? 0,
-      low24h:        c.low_24h ?? 0,
-      circulatingSupply: c.circulating_supply ?? 0,
-    }));
-
-    coinsCache = { data: normalised, ts: Date.now() };
+  if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) {
     const start = (page - 1) * perPage;
-    return res.json(normalised.slice(start, start + perPage));
-  } catch (err: any) {
-    req.log.error({ err }, "Failed to fetch coins/markets");
-    if (coinsCache) {
-      const page    = Math.max(1, parseInt(String(req.query.page    ?? "1")));
-      const perPage = Math.min(250, parseInt(String(req.query.per_page ?? "250")));
-      const start   = (page - 1) * perPage;
-      return res.json(coinsCache.data.slice(start, start + perPage));
+    return res.json(coinsCache.data.slice(start, start + perPage));
+  }
+
+  try {
+    const markets = await db
+      .select()
+      .from(marketsTable)
+      .orderBy(desc(marketsTable.volume24h));
+
+    const seen = new Set<string>();
+    const coins: any[] = [];
+    let rank = 1;
+
+    for (const m of markets) {
+      if (m.type !== "spot") continue;
+      if (seen.has(m.baseAsset)) continue;
+      seen.add(m.baseAsset);
+
+      const price     = parseFloat(m.lastPrice ?? "0");
+      const change24h = parseFloat(m.priceChangePercent24h ?? "0");
+      const vol24h    = parseFloat(m.volume24h ?? "0");
+      const high24h   = parseFloat(m.high24h ?? "0");
+      const low24h    = parseFloat(m.low24h  ?? "0");
+
+      coins.push({
+        id:            `orah-${m.baseAsset.toLowerCase()}`,
+        rank,
+        name:          m.baseAsset,
+        symbol:        m.baseAsset,
+        image:         null,
+        price,
+        marketCap:     parseFloat(m.marketCap ?? "0") || price * 10_000_000,
+        volume24h:     vol24h,
+        change24h,
+        high24h:       high24h || price * 1.02,
+        low24h:        low24h  || price * 0.98,
+        circulatingSupply: 0,
+        source:        "orahdex",
+      });
+      rank++;
     }
+
+    coinsCache = { data: coins, ts: Date.now() };
+    const start = (page - 1) * perPage;
+    return res.json(coins.slice(start, start + perPage));
+  } catch (err: any) {
+    req.log.error({ err }, "Failed to build coins/markets from own DB");
     return res.status(502).json({ error: "Failed to fetch coin data" });
   }
 });
 
-/* ─────────────────────────────────────────────────────────────
-   GET /api/coins/:id/tickers
-   Returns exchanges listing a specific coin (cached 5 min)
-───────────────────────────────────────────────────────────── */
-const tickerCache = new Map<string, { data: any; ts: number }>();
+/* ── GET /api/coins/:id/tickers ────────────────────────────────────────────── */
+const tickerCache = new Map<string, Cache<any>>();
 const TICKER_CACHE_MS = 5 * 60 * 1000;
 
 router.get("/coins/:id/tickers", async (req, res) => {
   const { id } = req.params;
+  const cached = tickerCache.get(id);
+  if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
+
   try {
-    const cached = tickerCache.get(id);
-    if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
+    const symbol = id.replace(/^orah-/, "").toUpperCase();
+    const markets = await db
+      .select()
+      .from(marketsTable)
+      .where(eq(marketsTable.baseAsset, symbol));
 
-    const url = `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}/tickers?include_exchange_logo=true&order=volume_desc&depth=false`;
-    const r = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!r.ok) throw new Error(`CoinGecko tickers HTTP ${r.status}`);
-
-    const raw = await r.json();
-    const tickers = (raw.tickers ?? []).map((t: any) => ({
-      exchangeId:    t.market?.identifier ?? "",
-      exchangeName:  t.market?.name ?? "",
-      exchangeLogo:  t.market?.logo ?? null,
-      base:          t.base,
-      target:        t.target,
-      price:         t.last ?? 0,
-      volume:        t.volume ?? 0,
-      spread:        t.bid_ask_spread_percentage ?? null,
-      trustScore:    t.trust_score ?? null,
-      tradeUrl:      t.trade_url ?? null,
-      convertedLast: t.converted_last?.usd ?? 0,
-      convertedVol:  t.converted_volume?.usd ?? 0,
-      isAnomaly:     t.is_anomaly ?? false,
-      isStale:       t.is_stale ?? false,
+    const tickers = markets.map(m => ({
+      exchangeId:    "orahdex",
+      exchangeName:  "OrahDEX",
+      exchangeLogo:  null,
+      base:          m.baseAsset,
+      target:        m.quoteAsset,
+      price:         parseFloat(m.lastPrice ?? "0"),
+      volume:        parseFloat(m.volume24h ?? "0"),
+      spread:        null,
+      trustScore:    "green",
+      tradeUrl:      `https://orahdex.org/spot/${m.baseAsset}-${m.quoteAsset}`,
+      convertedLast: parseFloat(m.lastPrice ?? "0"),
+      convertedVol:  parseFloat(m.volume24h ?? "0"),
+      isAnomaly:     false,
+      isStale:       false,
     }));
 
-    const result = { coinId: id, name: raw.name ?? id, tickers };
+    const result = { coinId: id, name: symbol, tickers, source: "orahdex-sovereign" };
     tickerCache.set(id, { data: result, ts: Date.now() });
     return res.json(result);
   } catch (err: any) {
-    req.log.warn({ err }, `CoinGecko tickers failed for ${id} — trying CoinMarketCap fallback`);
-    // Try CMC fallback using the ticker symbol (id might be cg-id; try symbol lookup)
-    try {
-      const symbol = id.replace(/^cmc-\d+$/, "").toUpperCase();
-      const cmcTickers = await cmcFetchTickers(symbol || id.toUpperCase());
-      if (cmcTickers && cmcTickers.length) {
-        const result = { coinId: id, name: id, tickers: cmcTickers, source: "coinmarketcap" };
-        tickerCache.set(id, { data: result, ts: Date.now() });
-        return res.json(result);
-      }
-    } catch (_cmcErr) {}
-    const cached = tickerCache.get(id);
-    if (cached) return res.json(cached.data);
+    req.log.error({ err }, `Failed to build tickers for ${id}`);
+    const c = tickerCache.get(id);
+    if (c) return res.json(c.data);
     return res.status(502).json({ error: "Failed to fetch ticker data" });
   }
 });

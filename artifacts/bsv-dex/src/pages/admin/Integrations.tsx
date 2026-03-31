@@ -13,8 +13,6 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface IntegrationSettings {
   reown_project_id: string;
-  coingecko_api_key: string;
-  cmc_api_key: string;
   dexscreener_api_key: string;
   geckoterm_api_key: string;
   moonpay_api_key: string;
@@ -40,8 +38,6 @@ interface IntegrationSettings {
 
 const DEFAULTS: IntegrationSettings = {
   reown_project_id: "",
-  coingecko_api_key: "",
-  cmc_api_key: "",
   dexscreener_api_key: "",
   geckoterm_api_key: "",
   moonpay_api_key: "",
@@ -330,34 +326,20 @@ export function AdminIntegrations() {
       {/* ── 2. Price Data APIs ── */}
       <Section
         icon={<BarChart3 className="w-4 h-4" />}
-        title="Price Data APIs"
-        description="Live price feeds for all trading pairs. CoinGecko and GeckoTerminal power the Markets, Chains, and token discovery screens."
+        title="Price Data — Sovereign Engine"
+        description="OrahDEX runs its own price engine (Binance public feed + WhatsOnChain + own order books). No external API key needed for core price data. Optional keys below enhance token discovery."
         badge="Optional"
         badgeColor="bg-secondary text-muted-foreground border-border"
-        configuredCount={countSet("coingecko_api_key", "cmc_api_key", "dexscreener_api_key", "geckoterm_api_key")}
-        totalCount={4}
+        configuredCount={countSet("dexscreener_api_key", "geckoterm_api_key")}
+        totalCount={2}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <MaskedField
-            label="CoinGecko API Key"
-            value={form.coingecko_api_key}
-            onChange={set("coingecko_api_key")}
-            placeholder="CG-xxxxxxxxxxxxxxxxxxxx"
-            hint="Free tier: no key needed (30 req/min). Demo key: 10k req/min free. Pro key: unlimited. Get at coingecko.com/en/api"
-          />
-          <MaskedField
-            label="CoinMarketCap API Key"
-            value={form.cmc_api_key}
-            onChange={set("cmc_api_key")}
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-            hint="Free Basic tier: 10k credits/mo. Used for supplemental price + market cap data. Get at pro.coinmarketcap.com"
-          />
           <MaskedField
             label="DexScreener API Key"
             value={form.dexscreener_api_key}
             onChange={set("dexscreener_api_key")}
             placeholder="xxxxxxxxxxxxxxxxxxxx"
-            hint="DexScreener API for DEX pair data, new pairs, and Base chain tokens. Free tier available at dexscreener.com/api"
+            hint="DexScreener API for DEX pair discovery and Base chain tokens. Free tier available at dexscreener.com/api"
           />
           <MaskedField
             label="GeckoTerminal API Key"
@@ -367,6 +349,9 @@ export function AdminIntegrations() {
             hint="GeckoTerminal for 200+ network DEX pools and trending tokens. Free public API; API key for higher limits. Get at geckoterminal.com"
           />
         </div>
+        <p className="text-xs text-muted-foreground/70 pt-1">
+          Core price data is served from OrahDEX sovereign engine — Binance public ticker + WhatsOnChain BSV rate + own trades. Zero dependency on CoinGecko or CoinMarketCap.
+        </p>
       </Section>
 
       {/* ── 3. BSV Node / RPC ── */}
