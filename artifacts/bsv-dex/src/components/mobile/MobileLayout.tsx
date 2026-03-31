@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { WalletOptionsDropdown } from "@/components/WalletOptionsDropdown";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 const TABS = [
   { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
@@ -31,6 +32,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
   const { address } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
+  const [buyOpen, setBuyOpen] = useState(false);
 
   const isActive = (tab: typeof TABS[0]) => {
     if (tab.exact) return location === tab.path;
@@ -83,6 +85,15 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <ThemeIcon size={18} className="text-foreground/80" />
           </button>
 
+          {/* Buy button */}
+          <button
+            onClick={() => setBuyOpen(true)}
+            className="flex items-center gap-1 px-3 py-[6px] rounded-lg bg-green-500 text-white text-[12px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform shrink-0 mr-2"
+          >
+            <CreditCard size={12} />
+            Buy
+          </button>
+
           {/* Wallet button */}
           <div className="shrink-0 pr-3">
             {address ? (
@@ -130,6 +141,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
+      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
     </div>
   );
 }

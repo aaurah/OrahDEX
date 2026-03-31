@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, X, Star, ChevronUp, ChevronDown, CreditCard, Wallet } from "lucide-react";
+import { Search, X, Star, ChevronUp, ChevronDown, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
@@ -239,7 +239,7 @@ export function MobileMarkets() {
     <div className={cn("flex flex-col bg-background", (cat === "base" || cat === "chains" || cat === "vote") ? "h-full" : "h-full overflow-y-auto pb-24")}>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
-        {/* Spot label + Search bar + Buy on one line */}
+        {/* Spot label + Search bar */}
         <div className="flex items-center gap-2 px-4 pt-1 pb-1">
           <span className="text-base font-bold shrink-0">Spot</span>
           <div className="flex-1 flex items-center gap-2 bg-secondary/60 border border-border/60 rounded-xl px-3 h-9">
@@ -252,13 +252,6 @@ export function MobileMarkets() {
             />
             {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
           </div>
-          <button
-            onClick={() => handleBuy("BSV")}
-            className="flex items-center gap-1 px-3 py-[6px] rounded-lg bg-green-500 text-white text-[12px] font-bold shadow-sm shadow-green-500/30 active:scale-95 transition-transform shrink-0"
-          >
-            <CreditCard size={12} />
-            Buy
-          </button>
         </div>
 
         {/* Main category tabs */}
