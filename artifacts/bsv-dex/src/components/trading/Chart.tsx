@@ -1,8 +1,38 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, ColorType, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
 import type { Candle } from '@workspace/api-client-react';
+import { useThemeStore } from '@/store/useThemeStore';
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
+
+/* ── Theme → chart colour map ───────────────────────────────────────────── */
+function getChartColors(theme: string) {
+  const dark   = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const eff    = theme === 'system' ? (dark ? 'dark' : 'light') : theme;
+  switch (eff) {
+    case 'amoled': return {
+      bg:    '#000000',
+      text:  '#9ca3af',
+      grid:  '#111111',
+      border:'#1c1c1c',
+      cross: '#000000',
+    };
+    case 'light': return {
+      bg:    '#ffffff',
+      text:  '#374151',
+      grid:  '#e5e7eb',
+      border:'#d1d5db',
+      cross: '#ffffff',
+    };
+    default: return {           // dark
+      bg:    '#0d1117',
+      text:  '#848e9c',
+      grid:  '#1a2030',
+      border:'#2b3139',
+      cross: '#0d1117',
+    };
+  }
+}
 
 interface ChartProps {
   symbol?: string;
@@ -34,6 +64,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   const [lastPrice, setLastPrice]   = useState<number | null>(null);
   const [priceChange, setPriceChange] = useState<number>(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { theme } = useThemeStore();
 
   const fetchCandles = useCallback(async () => {
     try {
@@ -89,32 +120,33 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     if (!el || candles.length === 0) return;
 
     if (!chartRef.current) {
+      const c = getChartColors(theme);
       const chart = createChart(el, {
         layout: {
-          background: { type: ColorType.Solid, color: '#0d1117' },
-          textColor: '#848e9c',
+          background: { type: ColorType.Solid, color: c.bg },
+          textColor: c.text,
           fontFamily: "'Inter', sans-serif",
           attributionLogo: false,
         },
         grid: {
-          vertLines: { color: '#1a2030' },
-          horzLines: { color: '#1a2030' },
+          vertLines: { color: c.grid },
+          horzLines: { color: c.grid },
         },
         timeScale: {
-          borderColor: '#2b3139',
+          borderColor: c.border,
           timeVisible: true,
           secondsVisible: false,
           fixLeftEdge: false,
           fixRightEdge: false,
         },
         rightPriceScale: {
-          borderColor: '#2b3139',
+          borderColor: c.border,
           scaleMargins: { top: 0.1, bottom: 0.25 },
         },
         crosshair: {
           mode: 1,
-          vertLine: { color: '#4ade80', labelBackgroundColor: '#0d1117', style: 2, width: 1 },
-          horzLine: { color: '#4ade80', labelBackgroundColor: '#0d1117', style: 2, width: 1 },
+          vertLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
+          horzLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
         },
         handleScroll: true,
         handleScale: true,
@@ -156,6 +188,28 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     }
     return;
   }, [candles.length > 0]);
+
+  /* ── Re-apply colours when theme changes ─────────────────────────────── */
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const c = getChartColors(theme);
+    chartRef.current.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: c.bg },
+        textColor: c.text,
+      },
+      grid: {
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
+      },
+      timeScale:      { borderColor: c.border },
+      rightPriceScale:{ borderColor: c.border },
+      crosshair: {
+        vertLine: { color: '#4ade80', labelBackgroundColor: c.cross },
+        horzLine: { color: '#4ade80', labelBackgroundColor: c.cross },
+      },
+    });
+  }, [theme]);
 
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
@@ -200,18 +254,21 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     : lastPrice < 100      ? 4
     : 2;
 
+  const col = getChartColors(theme);
+  const isLight = col.bg === '#ffffff';
+
   return (
-    <div className="flex flex-col h-full bg-[#0d1117]">
+    <div className="flex flex-col h-full" style={{ backgroundColor: col.bg, color: col.text }}>
       {/* Top stats bar */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-white/5 shrink-0 flex-wrap">
+      <div className="flex items-center gap-3 px-3 py-2 border-b shrink-0 flex-wrap" style={{ borderColor: col.grid }}>
         <div className="flex items-center gap-1.5">
           <span className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-[10px]">⚡</span>
-          <span className="text-sm font-bold text-white">{symbol.replace(/-PERP/i, '')}</span>
+          <span className="text-sm font-bold" style={{ color: col.text }}>{symbol.replace(/-PERP/i, '')}</span>
           <span className="text-[10px] text-green-400/60 bg-green-400/10 px-1.5 py-0.5 rounded font-mono">OrahDEX Live</span>
         </div>
         {lastPrice !== null && (
           <div className="flex items-center gap-2 ml-auto">
-            <span className="text-base font-bold text-white font-mono">
+            <span className="text-base font-bold font-mono" style={{ color: col.text }}>
               {pricePrefix}{lastPrice.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{priceSuffix}
             </span>
             <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isUp ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10'}`}>
@@ -222,7 +279,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       </div>
 
       {/* Interval selector */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-white/5 shrink-0 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
         {INTERVALS.map(iv => (
           <button
             key={iv}
@@ -230,7 +287,9 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
             className={`shrink-0 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
               interval === iv
                 ? 'bg-green-500/20 text-green-400 border border-green-500/40'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                : isLight
+                  ? 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
             }`}
           >
             {iv}
@@ -245,7 +304,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       {/* Chart canvas */}
       <div className="flex-1 min-h-0 relative">
         {loading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0d1117] z-10 gap-3">
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-3" style={{ backgroundColor: col.bg }}>
             <div className="flex gap-1">
               {[0,1,2].map(i => (
                 <span key={i} className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: `${i*150}ms` }} />
@@ -258,7 +317,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       </div>
 
       {/* Bottom label */}
-      <div className="px-3 py-1.5 border-t border-white/5 shrink-0 flex items-center justify-between">
+      <div className="px-3 py-1.5 border-t shrink-0 flex items-center justify-between" style={{ borderColor: col.grid }}>
         <span className="text-[10px] text-muted-foreground">
           Live data · {base}/{quote} · OrahDEX
         </span>
