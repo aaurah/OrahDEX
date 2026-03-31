@@ -507,7 +507,7 @@ export function Markets() {
             </div>
           )}
 
-          {/* Search + descriptor + Buy row */}
+          {/* Search + descriptor row */}
           <div className="flex items-center gap-3 mt-3 flex-wrap">
             <div className="relative max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -525,15 +525,6 @@ export function Markets() {
                 {tab === "usd" ? `All pairs quoted in ${usdSub}` : meta.desc}
                 {" · "}<span className={meta.color}>{filtered.length} markets</span>
               </span>
-            </div>
-            <div className="ml-auto">
-              <button
-                onClick={() => handleBuy("BSV")}
-                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity shadow-lg"
-              >
-                <CreditCard className="w-4 h-4" />
-                Buy Crypto
-              </button>
             </div>
           </div>
         </div>
