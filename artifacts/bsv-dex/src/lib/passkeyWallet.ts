@@ -74,18 +74,32 @@ export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
 
 // ─── Crypto helpers ───────────────────────────────────────────────────────────
 
+/** ArrayBuffer → standard base64 (safe for any length — avoids spread stack overflow) */
 function buf2b64(buf: ArrayBuffer): string {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
 }
+
+/** Standard base64 → Uint8Array */
 function b642buf(b64: string): Uint8Array {
-  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
+
+/** Standard base64 → URL-safe base64 (strips padding) */
 function b642url(b64: string): string {
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
+
+/** URL-safe base64 → standard base64 (re-adds correct padding) */
 function url2b64(url: string): string {
-  return (url + "===".slice(url.length % 4 === 0 ? 3 : url.length % 4))
-    .replace(/-/g, "+").replace(/_/g, "/");
+  const s = url.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4;
+  return pad === 0 ? s : s + "=".repeat(4 - pad);
 }
 
 async function deriveAesKey(
