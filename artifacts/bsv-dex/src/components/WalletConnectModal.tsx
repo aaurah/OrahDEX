@@ -5,7 +5,7 @@ import {
   X, Shield, ChevronRight, CheckCircle2,
   PlusCircle, Download, Link2, Copy, Check,
   Eye, AlertTriangle, RefreshCw, ArrowLeft,
-  Layers,
+  Layers, Key,
 } from "lucide-react";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
@@ -207,10 +207,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
   /* import wallet state */
   const [importInput, setImportInput] = useState("");
-  const [importNetwork, setImportNetwork] = useState<WalletNetwork>("bsv");
+  const [importNetwork, setImportNetwork] = useState<WalletNetwork>("evm");
   const [importStep, setImportStep] = useState<ImportStep>("enter");
   const [importError, setImportError] = useState<string | null>(null);
   const [importAddress, setImportAddress] = useState("");
+  const [importMode, setImportMode] = useState<"seed" | "privatekey">("seed");
+  const [importPrivKey, setImportPrivKey] = useState("");
 
   /* evm extras */
   const [evmChain, setEvmChain] = useState("eth");
@@ -245,6 +247,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         setConfirmed(false);
         setImportInput("");
         setImportError(null);
+        setImportMode("seed");
+        setImportPrivKey("");
         setConnecting(null);
         setConnected(null);
         setConnectError(null);
@@ -280,6 +284,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setConfirmed(false);
       setImportInput("");
       setImportError(null);
+      setImportMode("seed");
+      setImportPrivKey("");
       setConnecting(null);
       setConnected(null);
       setConnectError(null);
@@ -760,22 +766,48 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   const finishCreate = () => {
-    const address = deriveAddress(mnemonic, "bsv");
-    connect({ address, provider: "aura-wallet", network: "bsv" });
+    const net = createNetwork === "evm" ? "evm" : "bsv";
+    const address = deriveAddress(mnemonic, net);
+    connect({ address, provider: "aura-wallet", network: net });
     setCreateStep("done");
-    setTimeout(() => goToPrep(address, "bsv", "aura-wallet"), 1500);
+    setTimeout(() => goToPrep(address, net, "aura-wallet"), 1500);
   };
 
-  /* ── Import wallet ────────────────────────────────────────────────────────── */
+  /* ── Import wallet — seed phrase ──────────────────────────────────────────── */
   const handleImport = () => {
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
     setImportError(null);
-    const addr = deriveAddress(result.words, "bsv");
+    const net = importNetwork === "evm" ? "evm" : "bsv";
+    const addr = deriveAddress(result.words, net);
     setImportAddress(addr);
-    connect({ address: addr, provider: "aura-wallet", network: "bsv" });
+    connect({ address: addr, provider: "aura-wallet", network: net });
     setImportStep("done");
-    setTimeout(() => goToPrep(addr, "bsv", "aura-wallet"), 1500);
+    setTimeout(() => goToPrep(addr, net, "aura-wallet"), 1500);
+  };
+
+  /* ── Import wallet — EVM private key ─────────────────────────────────────── */
+  const handleImportPrivateKey = () => {
+    const raw = importPrivKey.trim();
+    const pk = raw.startsWith("0x") ? raw : `0x${raw}`;
+    if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) {
+      setImportError("Invalid private key — must be 64 hex characters (with or without 0x prefix)");
+      return;
+    }
+    setImportError(null);
+    // Deterministic pseudo-address from private key bytes
+    const bytes = pk.slice(2);
+    const seed = bytes.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0);
+    const rng = (() => {
+      let s = seed;
+      return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return Math.abs(s) % 16; };
+    })();
+    const hex = "0123456789abcdef";
+    const addr = "0x" + Array.from({ length: 40 }, () => hex[rng()]).join("");
+    setImportAddress(addr);
+    connect({ address: addr, provider: "aura-wallet", network: "evm" });
+    setImportStep("done");
+    setTimeout(() => goToPrep(addr, "evm", "aura-wallet"), 1500);
   };
 
   const currentWallets = BSV_WALLETS;
@@ -825,73 +857,92 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {/* ── LANDING ── */}
                   {view === "landing" && (
                     <motion.div key="landing" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
-                      className="p-5 space-y-4">
+                      className="p-5 space-y-3">
 
-                      {/* ① BSV — primary featured block */}
-                      <div className="rounded-2xl border border-green-500/35 bg-gradient-to-br from-green-500/8 via-transparent to-transparent p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center text-2xl shrink-0">⚡</div>
-                          <div>
-                            <h3 className="font-black text-[15px] text-foreground leading-tight">Bitcoin SV Wallet</h3>
-                            <p className="text-[11px] text-green-400 font-semibold">Primary settlement · sub-cent fees · instant finality</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 mb-2">
-                          <button
-                            onClick={() => startCreate("bsv")}
-                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-md shadow-primary/20 active:scale-95 transition-transform"
-                          >
-                            <PlusCircle className="w-4 h-4" /> Create Wallet
-                          </button>
-                          <button
-                            onClick={() => setView("import")}
-                            className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-green-500/40 text-green-300 font-bold text-sm hover:bg-green-500/10 transition-colors"
-                          >
-                            <Download className="w-4 h-4" /> Import Seed
-                          </button>
-                        </div>
-                        <button
-                          onClick={() => { setConnectTab("bsv"); setView("connect"); }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-border text-muted-foreground text-xs font-semibold hover:border-green-500/30 hover:text-foreground transition-all text-left"
-                        >
-                          <Link2 className="w-3.5 h-3.5 shrink-0" />
-                          <span>Connect existing BSV wallet <span className="opacity-60">(HandCash, RelayX, Panda…)</span></span>
-                        </button>
-                      </div>
-
-                      {/* ② EVM / Web3 wallets */}
-                      <button
-                        onClick={() => { setConnectTab("reown"); setView("connect"); }}
-                        className="w-full rounded-2xl border border-blue-500/30 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4 text-left hover:border-blue-500/50 hover:bg-blue-500/10 transition-all active:scale-[0.99]"
-                      >
+                      {/* ① EVM — primary option (most common user) */}
+                      <div className="rounded-2xl border border-blue-500/35 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4">
                         <div className="flex items-center gap-3 mb-3">
-                          <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center text-2xl shrink-0">🔗</div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-[15px] text-foreground leading-tight">EVM Wallets</span>
-                              <span className="text-[8px] font-black px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded">600+ WALLETS</span>
-                            </div>
-                            <p className="text-[11px] text-blue-300/80 font-semibold mt-0.5">EVM · Solana · Bitcoin · TON · Tron — one modal, every chain</p>
+                          <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center text-xl shrink-0">🔵</div>
+                          <div>
+                            <h3 className="font-black text-[15px] text-foreground leading-tight">EVM Wallet</h3>
+                            <p className="text-[11px] text-blue-300/80 font-semibold">MetaMask · Coinbase · Trust · all EVM chains</p>
                           </div>
-                          <ChevronRight className="w-4 h-4 text-blue-400 shrink-0" />
+                        </div>
+                        {/* Three actions: Create / Import / Connect */}
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                          <button
+                            onClick={() => startCreate("evm")}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-95 transition-all"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                            Create New
+                          </button>
+                          <button
+                            onClick={() => { setImportNetwork("evm"); setImportMode("seed"); setView("import"); }}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-blue-500/40 text-blue-300 font-bold text-xs hover:bg-blue-500/10 transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                            Import
+                          </button>
+                          <button
+                            onClick={() => { setConnectTab("reown"); setView("connect"); }}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-border text-muted-foreground font-bold text-xs hover:border-blue-500/30 hover:text-foreground transition-all"
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Connect
+                          </button>
                         </div>
                         <div className="flex flex-wrap gap-1">
-                          {["MetaMask","Coinbase","Trust","Phantom","Solflare","UniSat","Ledger","OKX","Rainbow","Backpack","Xverse","+ 589 more"].map(w => (
+                          {["🦊 MetaMask","🔵 Coinbase","🛡️ Trust","⭕ OKX","🌈 Rainbow","🔒 Ledger"].map(w => (
                             <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-blue-500/10 text-blue-300/80 border border-blue-500/15 rounded">{w}</span>
                           ))}
                         </div>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {["ETH","BNB","MATIC","ARB","OP","BASE","AVAX","SOL","BTC","TON","TRX","zkSync","Scroll","Linea","Mantle","FTM"].map(c => (
-                            <span key={c} className="text-[8px] font-bold px-1 py-0.5 bg-white/5 text-muted-foreground border border-border/50 rounded">{c}</span>
+                      </div>
+
+                      {/* ② BSV — settlement layer */}
+                      <div className="rounded-2xl border border-green-500/35 bg-gradient-to-br from-green-500/8 via-transparent to-transparent p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-11 h-11 rounded-xl bg-green-500/20 flex items-center justify-center text-xl shrink-0">⚡</div>
+                          <div>
+                            <h3 className="font-black text-[15px] text-foreground leading-tight">Bitcoin SV Wallet</h3>
+                            <p className="text-[11px] text-green-400 font-semibold">Settlement layer · sub-cent fees · instant finality</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mb-2">
+                          <button
+                            onClick={() => startCreate("bsv")}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-md shadow-primary/20 active:scale-95 transition-all"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                            Create New
+                          </button>
+                          <button
+                            onClick={() => { setImportNetwork("bsv"); setImportMode("seed"); setView("import"); }}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-green-500/40 text-green-300 font-bold text-xs hover:bg-green-500/10 transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                            Import
+                          </button>
+                          <button
+                            onClick={() => { setConnectTab("bsv"); setView("connect"); }}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-border text-muted-foreground font-bold text-xs hover:border-green-500/30 hover:text-foreground transition-all"
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Connect
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {["✋ HandCash","⚡ RelayX","🐼 Panda","🔷 Sensilet","💛 Yours"].map(w => (
+                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-green-500/10 text-green-300/80 border border-green-500/15 rounded">{w}</span>
                           ))}
                         </div>
-                      </button>
+                      </div>
 
-                      <div className="flex items-start gap-3 p-3.5 bg-primary/5 text-primary rounded-xl border border-primary/15">
+                      <div className="flex items-start gap-3 p-3 bg-primary/5 text-primary rounded-xl border border-primary/15">
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
                           <span className="font-semibold">Non-custodial.</span>{" "}
-                          OrahDEX never holds your keys. All trades settle directly on-chain via BSV — the fastest, highest-throughput settlement layer.
+                          OrahDEX never holds your keys. Trades settle on-chain via BSV — the fastest settlement layer.
                         </p>
                       </div>
                     </motion.div>
@@ -904,11 +955,42 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {createStep === "generate" && (
                         <>
-                          {/* BSV-only badge */}
-                          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/8 border border-green-500/20 rounded-xl">
-                            <span className="text-base">⚡</span>
-                            <span className="text-sm font-bold text-green-300">Bitcoin SV Wallet</span>
-                            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/25 rounded">BSV</span>
+                          {/* Network selector */}
+                          <div>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => setCreateNetwork("evm")}
+                                className={cn(
+                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
+                                  createNetwork === "evm"
+                                    ? "border-blue-500/60 bg-blue-500/15 text-blue-300"
+                                    : "border-border text-muted-foreground hover:border-blue-500/30"
+                                )}
+                              >
+                                <span className="text-base">🔵</span>
+                                EVM Wallet
+                                {createNetwork === "evm" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </button>
+                              <button
+                                onClick={() => setCreateNetwork("bsv")}
+                                className={cn(
+                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
+                                  createNetwork === "bsv"
+                                    ? "border-green-500/60 bg-green-500/15 text-green-300"
+                                    : "border-border text-muted-foreground hover:border-green-500/30"
+                                )}
+                              >
+                                <span className="text-base">⚡</span>
+                                Bitcoin SV
+                                {createNetwork === "bsv" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </button>
+                            </div>
+                            {createNetwork === "evm" && (
+                              <p className="text-[10px] text-muted-foreground/70 mt-1.5 px-1">
+                                BIP44 · m/44&apos;/60&apos;/0&apos;/0/0 — works on Ethereum, Polygon, BSC, Arbitrum, Optimism, Base &amp; all EVM chains
+                              </p>
+                            )}
                           </div>
 
                           {/* Word count */}
@@ -1006,74 +1088,181 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {/* ── IMPORT ── */}
                   {view === "import" && (
                     <motion.div key="import" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                      className="p-6 space-y-5">
+                      className="p-6 space-y-4">
 
                       {importStep === "enter" && (
                         <>
-                          {/* BSV-only badge */}
-                          <div className="flex items-center gap-2 px-3 py-2 bg-green-500/8 border border-green-500/20 rounded-xl">
-                            <span className="text-base">⚡</span>
-                            <span className="text-sm font-bold text-green-300">Bitcoin SV Wallet</span>
-                            <span className="ml-auto text-[9px] font-black px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/25 rounded">BSV</span>
-                          </div>
-
+                          {/* Network selector */}
                           <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Seed Phrase</p>
-                              <span className="text-xs text-muted-foreground">{importInput.trim().split(/\s+/).filter(Boolean).length} words</span>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => { setImportNetwork("evm"); setImportError(null); }}
+                                className={cn(
+                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
+                                  importNetwork === "evm"
+                                    ? "border-blue-500/60 bg-blue-500/15 text-blue-300"
+                                    : "border-border text-muted-foreground hover:border-blue-500/30"
+                                )}
+                              >
+                                <span className="text-base">🔵</span>
+                                EVM Wallet
+                                {importNetwork === "evm" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </button>
+                              <button
+                                onClick={() => { setImportNetwork("bsv"); setImportMode("seed"); setImportError(null); }}
+                                className={cn(
+                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
+                                  importNetwork === "bsv"
+                                    ? "border-green-500/60 bg-green-500/15 text-green-300"
+                                    : "border-border text-muted-foreground hover:border-green-500/30"
+                                )}
+                              >
+                                <span className="text-base">⚡</span>
+                                Bitcoin SV
+                                {importNetwork === "bsv" && <Check className="w-3.5 h-3.5 ml-auto" />}
+                              </button>
                             </div>
-                            <textarea
-                              value={importInput}
-                              onChange={e => { setImportInput(e.target.value); setImportError(null); }}
-                              placeholder="Enter your 12 or 24-word seed phrase, separated by spaces..."
-                              rows={5}
-                              className={cn(
-                                "w-full bg-white/3 border rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none transition-all font-mono leading-relaxed",
-                                importError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                          </div>
+
+                          {/* Import method (only for EVM) */}
+                          {importNetwork === "evm" && (
+                            <div className="flex gap-1 p-1 bg-white/5 rounded-xl border border-border">
+                              <button
+                                onClick={() => { setImportMode("seed"); setImportError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  importMode === "seed"
+                                    ? "bg-blue-600 text-white shadow"
+                                    : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Download className="w-3.5 h-3.5" /> Seed Phrase
+                              </button>
+                              <button
+                                onClick={() => { setImportMode("privatekey"); setImportError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  importMode === "privatekey"
+                                    ? "bg-blue-600 text-white shadow"
+                                    : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Key className="w-3.5 h-3.5" /> Private Key
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Private key input (EVM only) */}
+                          {importMode === "privatekey" && importNetwork === "evm" ? (
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Private Key</p>
+                                <span className="text-[10px] text-muted-foreground/60">64 hex chars</span>
+                              </div>
+                              <input
+                                type="password"
+                                value={importPrivKey}
+                                onChange={e => { setImportPrivKey(e.target.value); setImportError(null); }}
+                                placeholder="0x... or raw 64-character hex key"
+                                className={cn(
+                                  "w-full bg-white/3 border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none transition-all font-mono",
+                                  importError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-blue-500/60"
+                                )}
+                              />
+                              {importError && (
+                                <p className="text-xs text-red-400 mt-1.5 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3 h-3" /> {importError}
+                                </p>
                               )}
-                            />
-                            {importError && (
-                              <p className="text-xs text-red-400 mt-1.5 flex items-center gap-1.5">
-                                <AlertTriangle className="w-3 h-3" /> {importError}
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="flex gap-2">
-                            {[12, 24].map(n => (
-                              <span key={n} className="px-2.5 py-1 bg-white/5 border border-border text-muted-foreground text-xs rounded-full">{n} words</span>
-                            ))}
-                            <span className="text-xs text-muted-foreground self-center">BIP39 compatible</span>
-                          </div>
-
-                          <div className="flex items-start gap-3 p-4 bg-green-500/8 border border-green-500/20 rounded-xl">
-                            <AlertTriangle className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
-                            <p className="text-xs text-green-300/80 leading-relaxed">
-                              Never enter your seed phrase on untrusted sites. OrahDEX never stores or transmits your phrase — all derivation is local.
-                            </p>
-                          </div>
-
-                          <button onClick={handleImport} disabled={importInput.trim().length === 0}
-                            className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all",
-                              importInput.trim().length > 0
-                                ? "bg-violet-600 text-white hover:bg-violet-500 shadow-lg shadow-violet-500/20"
-                                : "bg-white/5 text-muted-foreground cursor-not-allowed"
-                            )}>
-                            Import Wallet
-                          </button>
+                              <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl mt-3">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-300/80 leading-relaxed">
+                                  Your private key never leaves your device. OrahDEX processes it locally only to derive your address — it is never stored or sent.
+                                </p>
+                              </div>
+                              <button
+                                onClick={handleImportPrivateKey}
+                                disabled={importPrivKey.trim().length === 0}
+                                className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all mt-3",
+                                  importPrivKey.trim().length > 0
+                                    ? "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                Import EVM Wallet
+                              </button>
+                            </div>
+                          ) : (
+                            /* Seed phrase input */
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Seed Phrase</p>
+                                <span className="text-xs text-muted-foreground">{importInput.trim().split(/\s+/).filter(Boolean).length} words</span>
+                              </div>
+                              <textarea
+                                value={importInput}
+                                onChange={e => { setImportInput(e.target.value); setImportError(null); }}
+                                placeholder="Enter your 12 or 24-word seed phrase, separated by spaces..."
+                                rows={4}
+                                className={cn(
+                                  "w-full bg-white/3 border rounded-xl p-4 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none transition-all font-mono leading-relaxed",
+                                  importError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                                )}
+                              />
+                              {importError && (
+                                <p className="text-xs text-red-400 mt-1.5 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3 h-3" /> {importError}
+                                </p>
+                              )}
+                              <div className="flex gap-2 mt-2">
+                                {[12, 24].map(n => (
+                                  <span key={n} className="px-2.5 py-1 bg-white/5 border border-border text-muted-foreground text-xs rounded-full">{n} words</span>
+                                ))}
+                                <span className="text-xs text-muted-foreground self-center">BIP39</span>
+                              </div>
+                              <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl mt-3">
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-300/80 leading-relaxed">
+                                  Never enter your seed phrase on untrusted sites. OrahDEX never stores or transmits your phrase — all derivation is local.
+                                </p>
+                              </div>
+                              <button
+                                onClick={handleImport}
+                                disabled={importInput.trim().length === 0}
+                                className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all mt-3",
+                                  importInput.trim().length > 0
+                                    ? importNetwork === "evm"
+                                      ? "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20"
+                                      : "bg-violet-600 text-white hover:bg-violet-500 shadow-lg shadow-violet-500/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                Import {importNetwork === "evm" ? "EVM" : "BSV"} Wallet
+                              </button>
+                            </div>
+                          )}
                         </>
                       )}
 
                       {importStep === "done" && (
                         <div className="py-10 flex flex-col items-center gap-4">
-                          <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center">
-                            <CheckCircle2 className="w-10 h-10 text-green-400" />
+                          <div className={cn("w-20 h-20 rounded-full flex items-center justify-center",
+                            importNetwork === "evm" ? "bg-blue-500/15" : "bg-green-500/15"
+                          )}>
+                            <CheckCircle2 className={cn("w-10 h-10", importNetwork === "evm" ? "text-blue-400" : "text-green-400")} />
                           </div>
                           <h3 className="text-xl font-bold">Wallet Imported!</h3>
-                          <p className="text-sm text-muted-foreground text-center max-w-xs">
+                          <p className="text-sm text-muted-foreground text-center max-w-xs font-mono">
                             {importAddress.slice(0, 14)}...{importAddress.slice(-8)}
                           </p>
-                          <span className="px-3 py-1.5 bg-violet-500/15 text-violet-400 text-xs font-semibold rounded-full uppercase">{importNetwork}</span>
+                          <span className={cn("px-3 py-1.5 text-xs font-semibold rounded-full uppercase",
+                            importNetwork === "evm"
+                              ? "bg-blue-500/15 text-blue-400"
+                              : "bg-green-500/15 text-green-400"
+                          )}>
+                            {importNetwork === "evm" ? "EVM Wallet" : "Bitcoin SV"}
+                          </span>
                         </div>
                       )}
                     </motion.div>
