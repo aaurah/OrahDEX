@@ -146,30 +146,55 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     const cached = tickerCache.get(symbol);
     if (cached) { res.json(cached); return; }
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    if (!market) { res.status(404).json({ error: "Market not found" }); return; }
 
-    let lastPrice = parseFloat(market.lastPrice);
-    // For cross-pairs with stale/zero DB price, recompute from FALLBACK_PRICES
-    if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
+    let lastPrice: number;
+    let high24h: number;
+    let low24h: number;
+    let volume24h: number;
+    let priceChange24h: number;
+    let pctChange: number;
+    let sym: string;
 
-    let pctChange = parseFloat(market.priceChangePercent24h);
-    // Cross-pairs often have 0 stored — compute from high/low if available
-    if (!pctChange) {
-      const hi = parseFloat(market.high24h);
-      const lo = parseFloat(market.low24h);
-      if (hi > 0 && lo > 0 && lastPrice > 0) {
-        const openEst = (hi + lo) / 2;
-        pctChange = openEst > 0 ? ((lastPrice - openEst) / openEst) * 100 : 0;
+    if (!market) {
+      // Unknown pair — derive price from cross-rate fallback prices (same as candles)
+      lastPrice = resolveCrossPrice(symbol, 0);
+      if (!(lastPrice > 0)) { res.status(404).json({ error: "Market not found" }); return; }
+      high24h       = lastPrice * 1.02;
+      low24h        = lastPrice * 0.98;
+      volume24h     = 0;
+      priceChange24h = 0;
+      pctChange     = 0;
+      sym           = symbol;
+    } else {
+      lastPrice = parseFloat(market.lastPrice);
+      // For cross-pairs with stale/zero DB price, recompute from FALLBACK_PRICES
+      if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
+
+      pctChange = parseFloat(market.priceChangePercent24h);
+      // Cross-pairs often have 0 stored — compute from high/low if available
+      if (!pctChange) {
+        const hi = parseFloat(market.high24h);
+        const lo = parseFloat(market.low24h);
+        if (hi > 0 && lo > 0 && lastPrice > 0) {
+          const openEst = (hi + lo) / 2;
+          pctChange = openEst > 0 ? ((lastPrice - openEst) / openEst) * 100 : 0;
+        }
       }
+
+      high24h       = parseFloat(market.high24h) || lastPrice * 1.02;
+      low24h        = parseFloat(market.low24h)  || lastPrice * 0.98;
+      volume24h     = parseFloat(market.volume24h);
+      priceChange24h = parseFloat(market.priceChange24h);
+      sym           = market.symbol;
     }
 
     const ticker = generateTicker({
-      symbol:               market.symbol,
+      symbol:               sym,
       lastPrice,
-      high24h:              parseFloat(market.high24h) || lastPrice * 1.02,
-      low24h:               parseFloat(market.low24h)  || lastPrice * 0.98,
-      volume24h:            parseFloat(market.volume24h),
-      priceChange24h:       parseFloat(market.priceChange24h),
+      high24h,
+      low24h,
+      volume24h,
+      priceChange24h,
       priceChangePercent24h: pctChange,
     });
     tickerCache.set(symbol, ticker);
