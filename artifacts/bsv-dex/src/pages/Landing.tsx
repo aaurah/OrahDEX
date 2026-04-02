@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare } from "lucide-react";
+import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity } from "lucide-react";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -504,6 +504,91 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── GENESIS LIQUIDITY ENGINE ──────────────────────────────────────── */}
+      <section className="relative px-6 lg:px-10 py-24" style={{ background: "linear-gradient(180deg, rgba(245,166,35,0.03) 0%, rgba(74,222,128,0.03) 100%)" }}>
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.3em] mb-4" style={{ color: "#F5A623" }}>
+              <Zap className="w-3.5 h-3.5" /> Genesis Liquidity Engine
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+              Every Coin. Always Tradeable.
+            </h2>
+            <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+              OrahDEX's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
+              A linear bonding curve provides instant price discovery and trade execution
+              for 56+ major assets — embedded directly in the Market Hub.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+            {[
+              {
+                icon: Activity,
+                title: "Instant Price Discovery",
+                desc: "A linear bonding curve prices every asset the moment it's listed. No pools to seed. No makers to recruit.",
+                color: "#4ade80",
+              },
+              {
+                icon: FlaskConical,
+                title: "Simulated Execution",
+                desc: "Trade against the virtual treasury at the bonding curve price. Receipts include Trade ID, timestamp, fee, and curve price.",
+                color: "#F5A623",
+              },
+              {
+                icon: Layers,
+                title: "Built into the Exchange",
+                desc: "The VAMM ⚡ button appears on every coin row in the Market Hub. No separate page, no navigation — trade from where you discover.",
+                color: "#60a5fa",
+              },
+              {
+                icon: Wallet,
+                title: "EVM + TRON + BSV",
+                desc: "Connect any wallet — 20+ EVM networks, TRON (TRX/TRC-20 USDT), or native Bitcoin SV — and access every feature instantly.",
+                color: "#c084fc",
+              },
+            ].map(({ icon: Icon, title, desc, color }) => (
+              <div key={title}
+                className="relative rounded-2xl border p-6 flex flex-col gap-4 overflow-hidden transition-all hover:scale-[1.02] hover:-translate-y-1 group"
+                style={{ borderColor: `${color}30`, background: `linear-gradient(135deg, ${color}08 0%, transparent 60%)` }}
+              >
+                <div className="absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl opacity-10 group-hover:opacity-20 transition-opacity"
+                  style={{ background: color, transform: "translate(30%,-30%)" }} />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
+                  <Icon className="w-5 h-5" style={{ color }} />
+                </div>
+                <div>
+                  <p className="font-black text-white text-sm mb-1">{title}</p>
+                  <p className="text-xs text-gray-400 leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bonding curve callout */}
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 flex flex-col sm:flex-row items-center gap-6">
+            <div className="shrink-0 w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(245,166,35,0.15)", border: "1px solid rgba(245,166,35,0.3)" }}>
+              <Zap className="w-6 h-6 text-amber-400" />
+            </div>
+            <div className="flex-1 text-center sm:text-left">
+              <p className="font-black text-white text-sm mb-1">Linear Bonding Curve — Virtual AMM Mathematics</p>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Price(supply) = spotPrice + slope × supply, where slope = 0.01 × spotPrice² ÷ 8,500.
+                Every $8,500 of simulated buy pressure moves the curve price by ~1%. The virtual treasury
+                is pre-funded at 3× depth so sell orders always find a bid. Buying $100 of BTC at curve price
+                generates a receipt with Trade ID, fee breakdown, and a "where did tokens go?" explanation.
+              </p>
+            </div>
+            <Link
+              href="/markets"
+              className="shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs text-amber-300 border border-amber-500/30 hover:border-amber-400/60 bg-amber-500/10 hover:bg-amber-500/20 transition-all whitespace-nowrap"
+            >
+              Try VAMM <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── ORA AI ───────────────────────────────────────────────────────── */}
       <OraAiSection />
 
@@ -519,8 +604,8 @@ export function LandingPage() {
             </h2>
             <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
               OrahDEX is not a simple DEX. It is a progressive architecture — 
-              starting with deep CEX-backed liquidity, evolving to full on-chain AMM,
-              and culminating in a sovereign BSV↔EVM bridge.
+              starting with deep CEX-backed liquidity and Virtual AMM price discovery,
+              evolving to full on-chain AMM pools, and culminating in a sovereign BSV↔EVM bridge.
             </p>
           </div>
 
@@ -528,16 +613,17 @@ export function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
             <PhaseCard
               phase={1}
-              title="CEX-Backed Liquidity"
-              desc="Deep order books powered by connected CEX venues. Real prices, real depth, real fills. Every coin, every pair."
+              title="CEX-Backed + VAMM Liquidity"
+              desc="Deep order books powered by connected CEX venues plus Genesis VAMM bonding curves for instant guaranteed liquidity on 56+ assets."
               icon={Globe}
               active
             />
             <PhaseCard
               phase={2}
-              title="On-Chain AMM"
+              title="On-Chain AMM Pools"
               desc="Keeper-governed automated market makers. Permissionless pool creation. Identity-aware routing for optimal fills."
               icon={Zap}
+              active
             />
             <PhaseCard
               phase={3}
@@ -551,9 +637,9 @@ export function LandingPage() {
           <div className="rounded-2xl border border-white/8 bg-white/3 p-6 overflow-x-auto">
             <div className="flex items-center justify-center gap-2 min-w-[480px] text-xs font-bold">
               {[
-                { label: "Your Wallet", sub: "EVM / BSV / SOL", color: "#4ade80" },
+                { label: "Your Wallet", sub: "EVM · TRON · BSV", color: "#4ade80" },
                 null,
-                { label: "OrahDEX Engine", sub: "Keeper routing", color: "#F5A623" },
+                { label: "OrahDEX Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
                 null,
                 { label: "CEX Venues", sub: "Binance / OKX / Bybit", color: "#60a5fa" },
                 null,
