@@ -39,7 +39,7 @@ function decrypt(b64: string): string {
   const iv  = buf.subarray(0, 12);
   const tag = buf.subarray(12, 28);
   const enc = buf.subarray(28);
-  const dec = crypto.createDecipheriv("aes-256-gcm", ENCRYPT_KEY, iv);
+  const dec = crypto.createDecipheriv("aes-256-gcm", ENCRYPT_KEY, iv, { authTagLength: 16 });
   dec.setAuthTag(tag);
   return Buffer.concat([dec.update(enc), dec.final()]).toString("utf8");
 }
