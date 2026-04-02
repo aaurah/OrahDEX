@@ -17,6 +17,7 @@ import cexRouter from "./cex.js";
 import copyTradingRouter from "./copyTrading.js";
 import tvRouter from "./tradingview.js";
 import supportRouter from "./support.js";
+import virtualAmmRouter from "./virtualAmm.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
@@ -60,6 +61,7 @@ router.use(geckoTerminalRouter);
 router.use(coinVotesRouter);
 router.use(copyTradingRouter);
 router.use(supportRouter);
+router.use(virtualAmmRouter);
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown, Zap } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -140,6 +140,7 @@ const TABS = [
   { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
   { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
+  { path: "/genesis", label: "Genesis", Icon: Zap },
   { path: "/p2p", label: "P2P", Icon: Users2 },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
   { path: "/settings", label: "Settings", Icon: Settings },
