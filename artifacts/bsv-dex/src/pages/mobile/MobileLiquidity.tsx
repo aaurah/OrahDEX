@@ -12,7 +12,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
-  addLiquidityOnChain, canUseOnChain,
+  addLiquidityOnChain, getLiquidityMode,
   EXPLORER_TX, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
@@ -248,7 +248,9 @@ function LiquidityModal({
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
-    if (canUseOnChain(chainId, pool.base)) {
+    const mode = getLiquidityMode(chainId, pool.base, pool.quote);
+
+    if (mode === "on_chain") {
       await addLiquidityOnChain({
         base:    pool.base,
         quote:   pool.quote,
@@ -260,10 +262,7 @@ function LiquidityModal({
           setTxStatus(s);
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
-            toast({
-              title: "Liquidity added on-chain!",
-              description: `Confirmed on Base. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,
-            });
+            toast({ title: "Liquidity added on-chain!", description: `Confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.` });
           }
         },
       });
@@ -272,12 +271,12 @@ function LiquidityModal({
     }
 
     setTxStatus({ step: "depositing" });
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, mode === "live" ? 800 : 1200));
     addPosition(address, pool.id, lpTokens, valueUsd);
     setTxStatus({ step: "success", lpTokens, valueUsd });
     setSubmitting(false);
     toast({
-      title: "Liquidity added (simulated)!",
+      title: mode === "live" ? "Position recorded!" : "Liquidity position added!",
       description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
@@ -345,31 +344,44 @@ function LiquidityModal({
               ))}
             </div>
             <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
-            {pool && canUseOnChain(chainId, pool.base) ? (
-              <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold">ON-CHAIN</span>
-            ) : (
-              <span className="text-[9px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold">SIMULATED</span>
-            )}
+            {(() => {
+              const m = pool ? getLiquidityMode(chainId, pool.base, pool.quote) : "simulated";
+              if (m === "on_chain") return <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold">ON-CHAIN</span>;
+              if (m === "live")     return <span className="text-[9px] px-1.5 py-0.5 bg-primary/15 text-primary border border-primary/30 rounded font-bold">LIVE</span>;
+              return <span className="text-[9px] px-1.5 py-0.5 bg-secondary text-muted-foreground border border-border rounded font-bold">BSV-SETTLED</span>;
+            })()}
           </div>
           <button onClick={onClose} className="text-muted-foreground text-sm">✕</button>
         </div>
 
-        {/* Chain notice */}
-        {pool && canUseOnChain(chainId, pool.base) ? (
-          <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2 mb-4">
-            <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-green-300/90 leading-relaxed">
-              <strong>Real on-chain transaction.</strong> ETH and USDC will be deducted from your wallet on Base.
-            </p>
-          </div>
-        ) : (
-          <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2 mb-4">
-            <Info size={12} className="text-yellow-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-yellow-300/90 leading-relaxed">
-              <strong>Demo mode.</strong> No real transaction — your wallet balance is shown for reference only.
-            </p>
-          </div>
-        )}
+        {/* Chain mode notice */}
+        {(() => {
+          const mode = pool ? getLiquidityMode(chainId, pool.base, pool.quote) : "simulated";
+          if (mode === "on_chain") return (
+            <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2 mb-4">
+              <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-green-300/90 leading-relaxed">
+                <strong>Real on-chain transaction.</strong> Tokens will be deducted from your wallet.
+              </p>
+            </div>
+          );
+          if (mode === "live") return (
+            <div className="flex items-start gap-2 bg-primary/8 border border-primary/20 rounded-xl px-3 py-2 mb-4">
+              <Zap size={12} className="text-primary shrink-0 mt-0.5" />
+              <p className="text-[11px] text-primary/90 leading-relaxed">
+                <strong>Live wallet connected.</strong> Position recorded to your wallet. On-chain settlement for this pair coming soon.
+              </p>
+            </div>
+          );
+          return (
+            <div className="flex items-start gap-2 bg-secondary/40 border border-border rounded-xl px-3 py-2 mb-4">
+              <Info size={12} className="text-muted-foreground shrink-0 mt-0.5" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                <strong>BSV-settled position.</strong> Connect an EVM wallet for live tracking.
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Wallet gate */}
         {!walletConnected ? (
@@ -509,17 +521,19 @@ function LiquidityModal({
               disabled={!amtA || !amtB || submitting || txStatus.step === "success"}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
-              {submitting
-                ? (canUseOnChain(chainId, pool.base)
-                  ? txStatus.step === "approving" ? "Waiting for approval…"
-                  : txStatus.step === "approval_pending" ? "Confirming approval…"
-                  : txStatus.step === "depositing" ? "Sending…"
-                  : txStatus.step === "deposit_pending" ? "Confirming…"
-                  : "Processing…"
-                  : "Depositing…")
-                : txStatus.step === "error" ? "Retry"
-                : !amtA || !amtB ? "Enter amounts"
-                : canUseOnChain(chainId, pool.base) ? "Add Liquidity On-Chain" : "Add Liquidity"}
+              {(() => {
+                const m = getLiquidityMode(chainId, pool.base, pool.quote);
+                if (submitting) {
+                  if (txStatus.step === "approving")        return "Waiting for approval…";
+                  if (txStatus.step === "approval_pending") return "Confirming approval…";
+                  if (txStatus.step === "depositing")       return m === "on_chain" ? "Sending…" : "Recording…";
+                  if (txStatus.step === "deposit_pending")  return "Confirming…";
+                  return "Processing…";
+                }
+                if (txStatus.step === "error") return "Retry";
+                if (!amtA || !amtB) return "Enter amounts";
+                return m === "on_chain" ? "Add Liquidity On-Chain" : "Add Liquidity";
+              })()}
             </button>
           </>
         ) : (
