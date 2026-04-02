@@ -10,6 +10,7 @@ import {
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
+import { privateKeyToAccount } from "viem/accounts";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -842,15 +843,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
     setImportError(null);
-    // Deterministic pseudo-address from private key bytes
-    const bytes = pk.slice(2);
-    const seed = bytes.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 0);
-    const rng = (() => {
-      let s = seed;
-      return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return Math.abs(s) % 16; };
-    })();
-    const hex = "0123456789abcdef";
-    const addr = "0x" + Array.from({ length: 40 }, () => hex[rng()]).join("");
+    let addr: string;
+    try {
+      addr = privateKeyToAccount(pk as `0x${string}`).address;
+    } catch {
+      setImportError("Invalid private key — could not derive address");
+      return;
+    }
     setImportAddress(addr);
     connect({ address: addr, provider: "aura-wallet", network: "evm" });
     setImportStep("done");
@@ -1766,7 +1765,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </span>
                         {prepProvider && (
                           <span className="text-[10px] font-semibold text-muted-foreground capitalize bg-white/5 border border-border px-2 py-0.5 rounded-full">
-                            {prepProvider}
+                            {prepProvider === "aura-wallet" ? "OrahDEX Wallet" : prepProvider}
                           </span>
                         )}
                       </div>
