@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "2.0.0";
-const PUBLISH_DATE = "31 March 2026";
+const VERSION = "3.0.0";
+const PUBLISH_DATE = "2 April 2026";
 
 const TOC = [
   { id: "abstract",       label: "Abstract" },
@@ -13,7 +13,8 @@ const TOC = [
   { id: "solution",       label: "2. The OrahDEX Solution" },
   { id: "architecture",   label: "3. Technical Architecture" },
   { id: "bsv-settlement", label: "4. BSV On-Chain Settlement" },
-  { id: "amm",            label: "5. AMM Liquidity Pools" },
+  { id: "amm",            label: "5. AMM & Liquidity Pools" },
+  { id: "genesis-vamm",   label: "5.4 Genesis Liquidity Engine (VAMM)" },
   { id: "cross-chain",    label: "6. Cross-Chain Bridge" },
   { id: "trading",        label: "7. Trading Engine" },
   { id: "copy-vault",     label: "8. CopyVault System" },
@@ -182,7 +183,7 @@ export function WhitePaper() {
                 <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
               </div>
               <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed px-4">
-                A sovereign, multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, automated market making, perpetual futures, on-chain copy trading (CopyVault), and AI-powered trading intelligence (Ora).
+                A sovereign, multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, Genesis Liquidity Engine (Virtual AMM with bonding curves), perpetual futures, on-chain copy trading (CopyVault), TRON/TRC-20 wallet support, and AI-powered trading intelligence (Ora).
               </p>
               <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
                 <span>Version {VERSION}</span>
@@ -192,9 +193,9 @@ export function WhitePaper() {
                 <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="934+" label="Trading Pairs" sub="Spot + Futures + Cross-pair" />
-                <Metric value="200+" label="Networks" sub="Multi-chain sovereign oracle" />
-                <Metric value="0%" label="Custody Risk" sub="Non-custodial" />
+                <Metric value="934+" label="Trading Pairs" sub="Spot + Futures + VAMM" />
+                <Metric value="200+" label="Networks" sub="EVM · TRON · BSV sovereign oracle" />
+                <Metric value="56+" label="VAMM Markets" sub="Genesis Liquidity Engine" />
                 <Metric value="BSV" label="Settlement Layer" sub="OP_RETURN on-chain proof" />
               </div>
             </div>
@@ -202,10 +203,13 @@ export function WhitePaper() {
             {/* Abstract */}
             <Section id="abstract" title="Abstract" accent>
               <p>
-                OrahDEX is a next-generation, fully non-custodial decentralised exchange (DEX) protocol that unifies spot trading, perpetual futures, automated market making (AMM), peer-to-peer (P2P) trading, cross-chain bridging, on-chain copy trading (CopyVault), and fiat on-ramp services within a single, seamless sovereign interface.
+                OrahDEX is a next-generation, fully non-custodial decentralised exchange (DEX) protocol that unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) trading, cross-chain bridging, on-chain copy trading (CopyVault), and fiat on-ramp services within a single, seamless sovereign interface.
               </p>
               <p>
-                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its primary settlement layer, exploiting BSV's massively scalable, low-fee, and UTXO-based blockchain to execute Hash Time-Locked Contract (HTLC) atomic swaps and OP_RETURN settlement proofs that are provably fair and fully transparent. EVM-compatible chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos, and more) are supported natively through Reown/WalletConnect integration.
+                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its primary settlement layer, exploiting BSV's massively scalable, low-fee, and UTXO-based blockchain to execute Hash Time-Locked Contract (HTLC) atomic swaps and OP_RETURN settlement proofs that are provably fair and fully transparent. EVM-compatible chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos, and more) are supported natively through Reown/WalletConnect integration. <span className="text-foreground font-medium">TRON network</span> is natively supported — including TRX and TRC-20 USDT (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t) — giving traders in TRON-dominant markets full access to OrahDEX without wrapping or bridging.
+              </p>
+              <p>
+                The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable, even before real liquidity exists. Integrated directly into the Market Hub, the VAMM provides on-demand price discovery and simulated trade execution for 56+ major assets, backed by a virtual treasury pre-funded at 3× depth.
               </p>
               <p>
                 OrahDEX runs a sovereign price engine — aggregating its own order-book trade data, on-chain TWAP feeds, and real-time market signals — giving traders access to the same market intelligence as institutional players. The platform's novel <span className="text-foreground font-medium">CopyVault system</span> brings on-chain copy trading to DeFi for the first time — followers deposit USDT into leader-managed vaults and automatically mirror the leader's trades proportionally, with BSV OP_RETURN proofs for every mirrored trade.
@@ -245,12 +249,13 @@ export function WhitePaper() {
 
             {/* 2. Solution */}
             <Section id="solution" title="2. The OrahDEX Solution">
-              <p>OrahDEX addresses these problems through a unified, non-custodial trading platform built on four foundational principles:</p>
+              <p>OrahDEX addresses these problems through a unified, non-custodial trading platform built on five foundational principles:</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { title: "Non-Custodial", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX never holds user funds." },
-                  { title: "Multi-Chain", icon: "🌐", desc: "Native support for BSV, Ethereum, and 12+ EVM chains. One interface — every chain." },
-                  { title: "Full-Spectrum", icon: "📊", desc: "Spot, futures, AMM, P2P, bridge, copy trading, and fiat on-ramp — every trading instrument in one platform." },
+                  { title: "Multi-Chain", icon: "🌐", desc: "Native support for BSV, Ethereum, 12+ EVM chains, and TRON (TRX/TRC-20 USDT). One interface — every chain." },
+                  { title: "Always-On Liquidity", icon: "⚡", desc: "Genesis Liquidity Engine (VAMM) guarantees every listed asset is tradeable via a linear bonding curve — zero dry runs, zero empty order books." },
+                  { title: "Full-Spectrum", icon: "📊", desc: "Spot, futures, VAMM, AMM, P2P, bridge, copy trading, and fiat on-ramp — every trading instrument in one platform." },
                   { title: "AI-Powered", icon: "🧠", desc: "Ora AI provides real-time market intelligence, trade coaching, and portfolio analysis — embedded in the interface." },
                 ].map(({ title, icon, desc }) => (
                   <div key={title} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
@@ -298,7 +303,7 @@ export function WhitePaper() {
                     layer: "Layer 5 — Interface",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED/System themes. WalletConnect/Reown for EVM. Native BSV wallet integration. OrahChart for cross-pair visualisation.",
+                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED/System themes. WalletConnect/Reown for EVM (20+ chains). Native TRON wallet support (TronLink, TokenPocket, OKX, Bitget, Trust, imToken). Native BSV wallet integration. OrahChart for cross-pair visualisation.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -311,7 +316,8 @@ export function WhitePaper() {
                 <p>Frontend: React 19 + Vite 7 + TailwindCSS v4 · Backend: Node.js 24 + Express 5 + Drizzle ORM</p>
                 <p>Database: PostgreSQL 16 · EVM: Wagmi + Viem + Reown AppKit · AI: OpenAI-compatible LLM</p>
                 <p>BSV: WhatsOnChain API + native UTXO/OP_RETURN construction · Charts: Lightweight-charts v5</p>
-                <p>Markets: 934+ pairs · Data: OrahDEX Sovereign Price Engine + BSV On-Chain TWAP Oracle</p>
+                <p>TRON: TronWeb + TronLink / TokenPocket / OKX / Bitget / Trust / imToken wallet adapters</p>
+                <p>VAMM: Genesis Liquidity Engine (linear bonding curve, 56+ assets, virtual treasury) · Markets: 934+ pairs</p>
               </InfoBox>
             </Section>
 
@@ -353,9 +359,9 @@ ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000`
             </Section>
 
             {/* 5. AMM */}
-            <Section id="amm" title="5. AMM Liquidity Pools">
+            <Section id="amm" title="5. AMM & Liquidity Pools">
               <p>
-                OrahDEX's on-chain liquidity is provided through <span className="text-foreground font-medium">Automated Market Maker (AMM) pools</span> using the constant product invariant. The fee structure is designed to align LP incentives with protocol sustainability.
+                OrahDEX's on-chain liquidity is provided through <span className="text-foreground font-medium">Automated Market Maker (AMM) pools</span> using the constant product invariant, alongside the proprietary <span className="text-foreground font-medium">Genesis Liquidity Engine</span> — a virtual bonding-curve AMM that guarantees liquidity for every listed asset before real pools exist.
               </p>
               <Sub title="5.1 Constant Product Formula (x · y = k)">
                 <Code>{`x * y = k
@@ -379,6 +385,95 @@ Effective price: (y − Δy) / (x + Δx × (1 − fee))`}</Code>
               <Sub title="5.3 AmmSwapSimulator">
                 <p>OrahDEX includes a built-in AMM simulator that shows real-time price impact, slippage, fee breakdown, k constant, and effective exchange rate before committing a swap. Available on both desktop and mobile.</p>
               </Sub>
+            </Section>
+
+            {/* 5.4 Genesis Liquidity Engine */}
+            <Section id="genesis-vamm" title="5.4 Genesis Liquidity Engine — Virtual AMM">
+              <p>
+                The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> (VAMM) is OrahDEX's answer to the cold-start liquidity problem: every newly listed asset is immediately tradeable via a linear bonding curve, even before any real liquidity provider participates. The VAMM is embedded directly into the Market Hub — every coin row in the exchange listing carries a ⚡ VAMM button that opens an instant swap panel without navigating away.
+              </p>
+              <InfoBox title="Design Goal" color="amber">
+                <p>No asset on OrahDEX should ever show "No liquidity". The VAMM acts as a sovereign liquidity backstop — always present, always priceable, instantly accessible from the market listing view.</p>
+              </InfoBox>
+
+              <Sub title="5.4.1 Linear Bonding Curve">
+                <p>
+                  Each asset's VAMM price is determined by a linear bonding curve anchored to the current spot price and calibrated so that spending $8,500 of simulated capital moves the curve price by approximately 1%:
+                </p>
+                <Code>{`Price(supply) = basePrice + slope × supply
+
+Where:
+  basePrice = current spot price of the asset (USDT)
+  slope     = 0.01 × basePrice² / 8500
+            = 1% price impact per $8,500 of buy volume
+
+Buy cost for n tokens starting from supply S₀:
+  cost = n × basePrice + slope × (S₀ × n + n²/2)
+       ≡ trapezoidal integral of price from S₀ to S₀+n
+
+Sell payout for n tokens ending at supply S₀:
+  payout = n × basePrice + slope × ((S₀−n) × n + n²/2)
+
+Both are floored at 0 to prevent negative payouts.`}</Code>
+              </Sub>
+
+              <Sub title="5.4.2 Virtual Treasury">
+                <p>
+                  Each VAMM market is pre-funded with a virtual treasury equal to 3× the base depth ($8,500 × 3 = $25,500 in simulated token holdings). This ensures that sell orders of any reasonable size always have a bid — even when the virtual supply is at zero, the treasury provides counterparty liquidity for sellers.
+                </p>
+                <Code>{`Treasury initialisation per asset:
+  virtualSupply = treasuryDepth / basePrice
+  treasuryDepth = 3 × $8,500 = $25,500
+
+  Example (BTC at $65,000):
+    slope         = 0.01 × 65000² / 8500 ≈ 4.97 USDT/token
+    virtualSupply = 25500 / 65000 ≈ 0.392 BTC
+    Price at s=0  = $65,000 (anchored to spot)`}</Code>
+              </Sub>
+
+              <Sub title="5.4.3 Trade Execution & Receipts">
+                <p>
+                  Every VAMM swap is <strong>simulated</strong> — no real tokens transfer, no wallet signature is required, and no gas is consumed. The system records each simulation with a tamper-evident receipt:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { label: "Trade ID", detail: "UUID for each simulated swap — permanently loggable in Simulation History" },
+                    { label: "Curve Price", detail: "Effective price at the moment of execution — includes bonding curve movement" },
+                    { label: "Fee (0.30%)", detail: "Platform fee deducted from USDT input — identical rate to AMM pool swaps" },
+                    { label: "Supply Delta", detail: "Δ tokens added/removed from virtual supply — used for next trade pricing" },
+                    { label: "Timestamp", detail: "Block-precise UTC timestamp for audit trail and simulation history" },
+                    { label: "\"Where did tokens go?\"", detail: "Every receipt explains the virtual nature — tokens exist in the simulation ledger, not a wallet" },
+                  ].map(({ label, detail }) => (
+                    <div key={label} className="p-3 bg-amber-400/5 border border-amber-400/15 rounded-xl">
+                      <p className="text-xs font-bold text-amber-400 mb-1">{label}</p>
+                      <p className="text-xs text-muted-foreground">{detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </Sub>
+
+              <Sub title="5.4.4 Market Hub Integration">
+                <p>
+                  The VAMM is not a separate product — it is a layer embedded within the Market Hub (All Coins table). Every row in the exchange's coin listing carries a ⚡ VAMM action. Clicking it opens either:
+                </p>
+                <ul className="list-disc list-inside space-y-1.5 ml-1">
+                  <li><span className="font-medium text-foreground">Inline overlay</span> — a focused VAMM swap card anchored to the coin row, for quick single-asset trades without opening the full detail view.</li>
+                  <li><span className="font-medium text-foreground">Coin detail modal</span> — full VAMM swap panel with live bonding curve quote, simulation history, and receipt modal embedded inside the coin's exchange listing page.</li>
+                  <li><span className="font-medium text-foreground">Genesis Liquidity page</span> — accessible at <code className="text-green-400 text-[10px]">/genesis</code> for a dedicated full-screen VAMM experience with all 56+ assets, asset selector, and full simulation history.</li>
+                </ul>
+              </Sub>
+
+              <div className="grid grid-cols-3 gap-3">
+                <Metric value="56+" label="VAMM Assets" sub="Major pairs instantly tradeable" />
+                <Metric value="0.30%" label="Simulated Fee" sub="Same rate as AMM pools" />
+                <Metric value="3×" label="Treasury Depth" sub="$25,500 virtual backing per asset" />
+              </div>
+
+              <InfoBox title="VAMM API Endpoints" color="green">
+                <p>GET <code className="text-green-300">/api/genesis/markets</code> — list all 56 VAMM-enabled assets with basePrice, slope, supply, and depth</p>
+                <p>GET <code className="text-green-300">/api/genesis/quote</code> — real-time quote for any side/amount pair using live spot price</p>
+                <p>POST <code className="text-green-300">/api/genesis/swap</code> — execute a simulated swap, update virtual supply, return signed receipt with Trade ID</p>
+              </InfoBox>
             </Section>
 
             {/* 6. Bridge */}
@@ -590,6 +685,7 @@ For every mirrored trade:
                       ["Futures — Maker",             "0.02%", "Protocol treasury"],
                       ["Futures — Taker",             "0.06%", "Protocol treasury"],
                       ["AMM Swap",                    "0.30%", "83.3% LPs · 16.7% treasury"],
+                      ["VAMM Swap (Genesis)",         "0.30%", "100% protocol treasury (simulated — no real settlement)"],
                       ["Bridge Transfer",             "0.20%", "Relayer network + protocol"],
                       ["P2P Trade",                   "0.50%", "Protocol treasury + arbitrators"],
                       ["CopyVault Perf. Fee",         "5–15%", "On profits only, at withdrawal. Configurable per vault by leader."],
@@ -648,12 +744,16 @@ For every mirrored trade:
                     items: [
                       "Launch spot trading with 934+ pairs across 200+ networks (sovereign oracle)",
                       "BSV HTLC settlement integration + OP_RETURN trade proofs",
-                      "EVM wallet support via Reown/WalletConnect (12+ networks)",
+                      "EVM wallet support via Reown/WalletConnect (20+ networks)",
+                      "TRON network support — TRX + TRC-20 USDT (6 TRON wallets: TronLink, TokenPocket, OKX, Bitget, Trust, imToken)",
                       "Perpetual futures with up to 100x leverage",
                       "200+ network multi-chain market explorer (sovereign oracle)",
                       "OrahDEX Base chain liquidity integration",
                       "P2P marketplace with HTLC escrow",
-                      "AMM liquidity pools (x·y=k constant product)",
+                      "AMM liquidity pools (x·y=k constant product) with AmmSwapSimulator",
+                      "Genesis Liquidity Engine — Virtual AMM (VAMM) with linear bonding curves for 56+ assets",
+                      "VAMM embedded in Market Hub — ⚡ button on every coin row, VAMM panel in coin detail modal",
+                      "Trade receipt system with Trade ID, curve price, fee breakdown, simulation history",
                       "Cross-chain HTLC bridge (BSV ↔ EVM)",
                       "CopyVault on-chain copy trading system (ERC4626 vaults + BSV proofs)",
                       "Ora AI trading assistant (streaming LLM, persistent history)",
@@ -747,13 +847,13 @@ For every mirrored trade:
             {/* Conclusion */}
             <Section id="conclusion" title="Conclusion" accent>
               <p>
-                OrahDEX represents a fundamentally new approach to decentralised trading — one that does not compromise between security and usability, between DeFi and CeFi, or between Bitcoin and Ethereum. By building native BSV settlement into its core, OrahDEX accesses a blockchain that is technically superior for the settlement use case: unlimited scalability, sub-cent fees, and UTXO-based programmability through powerful Script capabilities.
+                OrahDEX represents a fundamentally new approach to decentralised trading — one that does not compromise between security and usability, between DeFi and CeFi, or between Bitcoin, Ethereum, and TRON. By building native BSV settlement into its core, OrahDEX accesses a blockchain that is technically superior for the settlement use case: unlimited scalability, sub-cent fees, and UTXO-based programmability through powerful Script capabilities.
               </p>
               <p>
-                The combination of HTLC atomic swaps, concentrated AMM liquidity, perpetual futures, P2P markets, cross-chain bridging, and the world's first on-chain copy trading system (CopyVault) — all in a single, non-custodial interface guided by Ora AI — positions OrahDEX as the most comprehensive decentralised trading platform available.
+                The combination of HTLC atomic swaps, the Genesis Liquidity Engine (Virtual AMM with linear bonding curves), concentrated AMM liquidity, perpetual futures, P2P markets, cross-chain bridging, TRON/TRC-20 native support, and the world's first on-chain copy trading system (CopyVault) — all in a single, non-custodial interface guided by Ora AI — positions OrahDEX as the most comprehensive decentralised trading platform available.
               </p>
               <p>
-                With <strong>934+ trading pairs</strong>, access to <strong>200+ blockchain networks</strong> via OrahDEX's own sovereign oracle, four distinct trading instruments, and a self-sovereign identity designed for the next generation of traders — OrahDEX is not a product iteration. It is a paradigm shift.
+                With <strong>934+ trading pairs</strong>, <strong>56+ VAMM-guaranteed markets</strong>, access to <strong>200+ blockchain networks</strong> via OrahDEX's own sovereign oracle, five distinct trading instruments, native TRON wallet support, and a self-sovereign identity designed for the next generation of traders — OrahDEX is not a product iteration. It is a paradigm shift.
               </p>
               <p>
                 We invite traders, liquidity providers, copy trading leaders, developers, and partners to join us in building the future of decentralised finance.
