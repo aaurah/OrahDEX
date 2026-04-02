@@ -355,7 +355,18 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     if (cached) { res.json(cached); return; }
 
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    if (!market) { res.status(404).json({ error: "Market not found" }); return; }
+
+    // If market not in DB, derive price from FALLBACK_PRICES and return synthetic trades
+    if (!market) {
+      const [base, quote] = symbol.split("/");
+      const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
+      const quoteUsd = (quote === "USDT" || quote === "USDC" || quote === "DAI") ? 1 : (FALLBACK_PRICES[quote] ?? 1);
+      const derivedPrice = quoteUsd > 0 ? baseUsd / quoteUsd : baseUsd;
+      const fallbackTrades = generateRecentTrades(symbol, derivedPrice || 1, limit);
+      tradesCache.set(symbol, fallbackTrades);
+      res.json(fallbackTrades);
+      return;
+    }
 
     const lastPrice = parseFloat(market.lastPrice);
 
