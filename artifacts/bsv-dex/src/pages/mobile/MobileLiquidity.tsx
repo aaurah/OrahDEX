@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import {
   Droplets, Plus, Minus, TrendingUp, ArrowLeft, Info,
@@ -221,6 +222,32 @@ function LiquidityModal({
   const [amtA, setAmtA] = useState("");
   const [amtB, setAmtB] = useState("");
   const [pct, setPct] = useState(50);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  const handleAdd = useCallback(async () => {
+    if (!pool || !amtA || !amtB || submitting) return;
+    setSubmitting(true);
+    await new Promise(r => setTimeout(r, 1500));
+    setSubmitting(false);
+    toast({
+      title: "Liquidity added!",
+      description: `Deposited ${parseFloat(amtA).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${parseFloat(amtB).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} to the ${pool.base}/${pool.quote} pool.`,
+    });
+    onClose();
+  }, [pool, amtA, amtB, submitting, toast, onClose]);
+
+  const handleRemove = useCallback(async () => {
+    if (!pool || submitting) return;
+    setSubmitting(true);
+    await new Promise(r => setTimeout(r, 1500));
+    setSubmitting(false);
+    toast({
+      title: "Liquidity removed!",
+      description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
+    });
+    onClose();
+  }, [pool, pct, submitting, toast, onClose]);
 
   if (!pool) return null;
 
@@ -342,10 +369,11 @@ function LiquidityModal({
               </p>
             </div>
             <button
-              disabled={!amtA || !amtB}
+              onClick={handleAdd}
+              disabled={!amtA || !amtB || submitting}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
-              {amtA && amtB ? "Add Liquidity" : "Enter amounts"}
+              {submitting ? "Processing…" : amtA && amtB ? "Add Liquidity" : "Enter amounts"}
             </button>
           </>
         ) : (
@@ -383,8 +411,12 @@ function LiquidityModal({
                 </div>
               ))}
             </div>
-            <button className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-red-600 active:opacity-80">
-              Remove Liquidity
+            <button
+              onClick={handleRemove}
+              disabled={submitting}
+              className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-red-600 active:opacity-80 disabled:opacity-40"
+            >
+              {submitting ? "Processing…" : "Remove Liquidity"}
             </button>
           </>
         )}
