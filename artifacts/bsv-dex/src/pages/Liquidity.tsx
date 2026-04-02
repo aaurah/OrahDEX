@@ -306,7 +306,7 @@ function LiquidityModal({
   }, []);
 
   const handleAdd = useCallback(async () => {
-    if (!pool || !amtA || !amtB || submitting) return;
+    if (!pool || !amtA || !amtB || submitting || !walletConnected) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
     setSubmitting(false);
@@ -315,10 +315,10 @@ function LiquidityModal({
       description: `Successfully deposited ${parseFloat(amtA).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${parseFloat(amtB).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} to the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
-    if (!pool || submitting) return;
+    if (!pool || submitting || !walletConnected) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
     setSubmitting(false);
@@ -327,7 +327,7 @@ function LiquidityModal({
       description: `Successfully withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, pct, submitting, toast, onClose]);
+  }, [pool, pct, submitting, walletConnected, toast, onClose]);
 
   if (!pool) return null;
 
@@ -373,25 +373,34 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
-        {/* Wallet connect banner — shown when no wallet is connected */}
-        {!walletConnected && (
-          <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 mb-4">
-            <div className="flex items-center gap-2.5">
-              <Wallet size={15} className="text-amber-400 shrink-0" />
-              <span className="text-xs text-amber-300 font-medium leading-snug">
-                Connect your wallet to see your balances
-              </span>
+        {/* Wallet gate — blocks the form until wallet is connected */}
+        {!walletConnected ? (
+          <div className="flex flex-col items-center justify-center py-10 gap-5 text-center">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+              <Wallet size={30} className="text-primary" />
             </div>
-            <button
-              onClick={() => { onClose(); openWalletModal(); }}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 text-xs font-bold border border-amber-500/30 transition-colors"
-            >
-              Connect
-            </button>
+            <div>
+              <p className="font-bold text-base mb-1.5">Wallet required</p>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
+                You must connect an EVM or BSV wallet before you can add or remove liquidity. Your balance will appear once connected.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 w-full max-w-xs">
+              <button
+                onClick={openWalletModal}
+                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"
+              >
+                Connect Wallet
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 rounded-xl border border-border text-sm text-muted-foreground hover:bg-secondary transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        )}
-
-        {mode === "add" ? (
+        ) : mode === "add" ? (
           <>
             {/* ── ADD ── */}
 
