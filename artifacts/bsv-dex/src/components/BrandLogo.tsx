@@ -20,7 +20,7 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
   );
 }
 
-/** Inline branded "OrahDEX" — scales with surrounding text size */
+/** Inline branded "OrahDEX" — shares the same online state to avoid duplicate timers */
 export function OrahInline({ className = "" }: { className?: string }) {
   const online = useOnlineStatus();
   return (
@@ -43,15 +43,12 @@ export function OrahO({ online }: { online: boolean }) {
       fill="none"
       aria-hidden
     >
-      {/* Outer O ring — normal foreground colour */}
       <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="12" fill="none" />
-      {/* Pulsing glow ring around the dot */}
       <circle cx="50" cy="50" r="13" fill={color} opacity="0.7"
         style={{ filter: `blur(2px) drop-shadow(0 0 6px ${glowColor})` }}>
         <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
         <animate attributeName="opacity" from="0.7" to="0"  dur="1.2s" repeatCount="indefinite" />
       </circle>
-      {/* Center dot with glow */}
       <circle cx="50" cy="50" r="13" fill={color}
         style={{ filter: `drop-shadow(0 0 5px ${glowColor}) drop-shadow(0 0 2px ${glowColor})` }} />
     </svg>

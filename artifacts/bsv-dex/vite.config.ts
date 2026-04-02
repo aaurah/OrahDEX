@@ -59,20 +59,43 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          /* ── Safe vendor splits — only stateless utility libs ── */
+          /* ── Reown / WalletConnect / Wagmi — heaviest SDK, own chunk ── */
+          if (
+            id.includes("node_modules/@reown/") ||
+            id.includes("node_modules/@walletconnect/") ||
+            id.includes("node_modules/wagmi") ||
+            id.includes("node_modules/viem") ||
+            id.includes("node_modules/@wagmi/")
+          ) {
+            return "vendor-wallet";
+          }
+          /* ── TradingView / chart libraries ── */
           if (id.includes("node_modules/lightweight-charts")) {
             return "vendor-charts";
           }
+          /* ── Icons — tree-shaken but still large ── */
           if (id.includes("node_modules/lucide-react")) {
             return "vendor-icons";
+          }
+          /* ── UI component library ── */
+          if (id.includes("node_modules/@radix-ui/")) {
+            return "vendor-radix";
+          }
+          /* ── Ethers / blockchain utils ── */
+          if (id.includes("node_modules/ethers") || id.includes("node_modules/web3")) {
+            return "vendor-ethers";
           }
           /* Admin pages grouped into one chunk */
           if (id.includes("/pages/admin/")) {
             return "pages-admin";
           }
-          /* Mobile pages grouped into one chunk */
+          /* Mobile pages + components grouped into one chunk */
           if (id.includes("/pages/mobile/") || id.includes("/components/mobile/")) {
             return "pages-mobile";
+          }
+          /* Wallet connect modal — loaded lazily, own chunk */
+          if (id.includes("/WalletConnectModal") || id.includes("/BuyCryptoModal") || id.includes("/AiAssistant")) {
+            return "modals";
           }
         },
       },

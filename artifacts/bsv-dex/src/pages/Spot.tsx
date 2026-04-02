@@ -131,7 +131,7 @@ export function SpotTrading() {
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
-    query: { refetchInterval: 2000, staleTime: 0 },
+    query: { refetchInterval: 4000, staleTime: 2000 },
   });
   const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(

@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
-import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { WalletOptionsDropdown } from "@/components/WalletOptionsDropdown";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { cn } from "@/lib/utils";
+
+const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
+const BuyCryptoModal     = lazy(() => import("@/components/BuyCryptoModal").then(m => ({ default: m.BuyCryptoModal })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -282,8 +283,12 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         })}
       </div>
 
-      <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
+      <Suspense fallback={null}>
+        <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
+      </Suspense>
       <MobileChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );

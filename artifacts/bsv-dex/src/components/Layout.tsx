@@ -1,20 +1,21 @@
-import { ReactNode, useState, useRef, useEffect, useCallback } from "react";
+import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
 import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy } from "lucide-react";
-import { BuyCryptoModal } from "./BuyCryptoModal";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { WalletConnectModal } from "./WalletConnectModal";
 import { WalletOptionsDropdown } from "./WalletOptionsDropdown";
 import { BrandLogo } from "./BrandLogo";
-import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip } from "@/lib/reown";
 import { TxStatusBar } from "./TxStatusBar";
-import { AiAssistant } from "./AiAssistant";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+
+/* ── Heavy modals — loaded only when first opened ── */
+const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
+const AiAssistant        = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
+const BuyCryptoModal     = lazy(() => import("./BuyCryptoModal").then(m => ({ default: m.BuyCryptoModal })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -177,31 +178,31 @@ export function Layout({ children }: { children: ReactNode }) {
 
   // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
   useEffect(() => {
-    let ready = false;
     let tries = 0;
-    const check = setInterval(() => {
-      if (isReownReady()) { ready = true; clearInterval(check); startSync(); }
-      if (++tries > 40) clearInterval(check);
-    }, 200);
-    function startSync() {
-      subscribeReownAccount(async (state) => {
-        if (state.isConnected && state.address) {
-          const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
-          const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-          if (!current) {
-            /* First connect */
-            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-            if (bal !== null) setBalance(bal);
-          } else if (newChainId && newChainId !== currentChainId) {
-            /* User switched chains in their wallet — update chainId so markets auto-switch */
-            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-            if (bal !== null) setBalance(bal);
+    const check = setInterval(async () => {
+      const reown = await import("@/lib/reown").catch(() => null);
+      if (!reown) { clearInterval(check); return; }
+      const { isReownReady, subscribeReownAccount, fetchEvmBalance, parseChainFromCaip } = reown;
+      if (isReownReady()) {
+        clearInterval(check);
+        subscribeReownAccount(async (state) => {
+          if (state.isConnected && state.address) {
+            const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
+            const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
+            if (!current) {
+              connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+              const bal = await fetchEvmBalance(state.address, newChainId ?? null);
+              if (bal !== null) setBalance(bal);
+            } else if (newChainId && newChainId !== currentChainId) {
+              connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+              const bal = await fetchEvmBalance(state.address, newChainId ?? null);
+              if (bal !== null) setBalance(bal);
+            }
           }
-        }
-      });
-    }
+        });
+      }
+      if (++tries > 100) clearInterval(check);
+    }, 300);
     return () => clearInterval(check);
   }, []);
   useEffect(() => {
@@ -540,19 +541,23 @@ export function Layout({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <WalletConnectModal
-        isOpen={isWalletModalOpen}
-        onClose={closeWalletModal}
-      />
+      <Suspense fallback={null}>
+        <WalletConnectModal
+          isOpen={isWalletModalOpen}
+          onClose={closeWalletModal}
+        />
+      </Suspense>
 
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
 
       {/* Ora — AI Trading Assistant (site-wide floating chat) */}
-      <AiAssistant />
+      <Suspense fallback={null}><AiAssistant /></Suspense>
 
       {/* Global Buy Crypto modal */}
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
+      <Suspense fallback={null}>
+        <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
+      </Suspense>
     </div>
   );
 }
