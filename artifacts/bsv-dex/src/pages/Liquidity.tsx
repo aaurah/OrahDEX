@@ -285,7 +285,7 @@ function LiquidityModal({
   const walletConnected = !!address;
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const chainId = walletChainId ?? 1;
-  const { balances } = useEvmBalances(isEvm ? address : null, chainId);
+  const { balances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
 
   const userPositions = address ? getUserPositions(address) : {};
   const myLpTokens   = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
@@ -341,7 +341,8 @@ function LiquidityModal({
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
-            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId });
+            refreshEvmBalances();
             toast({
               title: "Liquidity added on-chain!",
               description: `Transaction confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,

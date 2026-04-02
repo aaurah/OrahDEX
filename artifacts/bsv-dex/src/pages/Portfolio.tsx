@@ -1,15 +1,38 @@
 import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useLiquidityStore } from "@/store/useLiquidityStore";
+import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const POOL_LABELS: Record<string, { display: string; base: string; quote: string }> = {
+  "btc-usdt":  { display: "BTC / USDT",  base: "BTC",  quote: "USDT" },
+  "eth-usdt":  { display: "ETH / USDT",  base: "ETH",  quote: "USDT" },
+  "sol-usdt":  { display: "SOL / USDT",  base: "SOL",  quote: "USDT" },
+  "bsv-usdt":  { display: "BSV / USDT",  base: "BSV",  quote: "USDT" },
+  "bnb-usdt":  { display: "BNB / USDT",  base: "BNB",  quote: "USDT" },
+  "xrp-usdt":  { display: "XRP / USDT",  base: "XRP",  quote: "USDT" },
+  "ada-usdt":  { display: "ADA / USDT",  base: "ADA",  quote: "USDT" },
+  "doge-usdt": { display: "DOGE / USDT", base: "DOGE", quote: "USDT" },
+  "dot-usdt":  { display: "DOT / USDT",  base: "DOT",  quote: "USDT" },
+  "link-usdt": { display: "LINK / USDT", base: "LINK", quote: "USDT" },
+  "bsv-btc":   { display: "BSV / BTC",   base: "BSV",  quote: "BTC"  },
+  "eth-btc":   { display: "ETH / BTC",   base: "ETH",  quote: "BTC"  },
+};
+
+const COIN_COLORS_LP: Record<string, string> = {
+  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
+  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
+  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a", USDC: "#2775CA",
+};
 
 interface ChainInfo {
   name: string;
@@ -135,6 +158,8 @@ export function Portfolio() {
   });
 
   const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
+  const { getUserPositions } = useLiquidityStore();
+  const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
   const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
@@ -511,6 +536,117 @@ export function Portfolio() {
             </table>
           </div>
         </div>
+
+        {/* ── LP Positions ───────────────────────────────────────────────── */}
+        {lpPositions.length > 0 && (
+          <div className="mt-8 bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
+            <div className="p-6 border-b border-border bg-secondary/20 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Droplets className="w-5 h-5 text-primary" />
+                  <h3 className="text-lg font-bold">Liquidity Positions</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Active LP positions across all pools · earnings accrue continuously
+                </p>
+              </div>
+              <span className="text-xs text-muted-foreground">{lpPositions.length} position{lpPositions.length !== 1 ? "s" : ""}</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground text-sm">
+                    <th className="p-4 font-medium">Pool</th>
+                    <th className="p-4 font-medium text-right">LP Tokens</th>
+                    <th className="p-4 font-medium text-right">Deposited Value</th>
+                    <th className="p-4 font-medium text-right">Date</th>
+                    <th className="p-4 font-medium text-right">Transaction</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {lpPositions.map(([poolId, pos]) => {
+                    const label  = POOL_LABELS[poolId];
+                    const cA     = label ? (COIN_COLORS_LP[label.base]  ?? "#EAB308") : "#EAB308";
+                    const cB     = label ? (COIN_COLORS_LP[label.quote] ?? "#16a34a") : "#16a34a";
+                    const display = label?.display ?? poolId.toUpperCase().replace("-", " / ");
+                    const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
+                    const txUrl  = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
+                    const dateStr = new Date(pos.depositedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                    const timeStr = new Date(pos.depositedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+                    return (
+                      <tr key={poolId} className="hover:bg-white/5 transition-colors">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex -space-x-2">
+                              <div className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
+                                style={{ backgroundColor: cA + "33", color: cA }}>
+                                {label?.base?.[0] ?? "?"}
+                              </div>
+                              <div className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
+                                style={{ backgroundColor: cB + "33", color: cB }}>
+                                {label?.quote?.[0] ?? "?"}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-foreground">{display}</div>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                                <span className="text-[10px] text-green-400 font-semibold">ACTIVE</span>
+                                {pos.chainId === 8453 && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25 font-bold ml-1">Base</span>
+                                )}
+                                {pos.chainId === 1 && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/25 font-bold ml-1">Ethereum</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right font-mono text-sm">
+                          {hideBalances ? "•••" : pos.lpTokens.toFixed(4)}
+                        </td>
+                        <td className="p-4 text-right font-mono font-medium text-sm">
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span>{hideBalances ? "•••" : `$${formatPrice(pos.depositedValueUsd)}`}</span>
+                            <span className="flex items-center gap-1 text-xs text-green-400 font-semibold">
+                              <TrendingUp className="w-3 h-3" /> Earning fees
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right text-sm text-muted-foreground">
+                          <div>{dateStr}</div>
+                          <div className="text-xs">{timeStr}</div>
+                        </td>
+                        <td className="p-4 text-right">
+                          {txUrl ? (
+                            <a
+                              href={txUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                            >
+                              View Tx <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            pos.txHash ? (
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {pos.txHash.slice(0, 8)}…{pos.txHash.slice(-6)}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/50 italic">—</span>
+                            )
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

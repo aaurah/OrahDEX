@@ -2,7 +2,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine, ArrowUpFromLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap,
+  LogOut, Zap, Droplets, ExternalLink,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
@@ -13,6 +13,8 @@ import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useLiquidityStore } from "@/store/useLiquidityStore";
+import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -60,6 +62,8 @@ type Tab = "assets" | "orders";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
+  const { getUserPositions } = useLiquidityStore();
+  const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
@@ -526,6 +530,72 @@ export function MobilePortfolio() {
             )
           )}
         </div>
+
+        {/* ── LP Positions ───────────────────────────────────────────── */}
+        {lpPositions.length > 0 && (
+          <div className="mx-4 mb-6 mt-2">
+            <div className="flex items-center gap-2 mb-3">
+              <Droplets className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-bold">Liquidity Positions</h3>
+              <span className="text-[10px] text-muted-foreground ml-auto">{lpPositions.length} active</span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {lpPositions.map(([poolId, pos]) => {
+                const parts   = poolId.split("-");
+                const base    = parts[0]?.toUpperCase() ?? "?";
+                const quote   = parts[1]?.toUpperCase() ?? "?";
+                const display = `${base} / ${quote}`;
+                const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
+                const txUrl   = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
+                const dateStr = new Date(pos.depositedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                return (
+                  <div key={poolId} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-sm">{display}</div>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                          <span className="text-[10px] text-green-400 font-semibold">ACTIVE · EARNING FEES</span>
+                        </div>
+                      </div>
+                      {pos.chainId === 8453 && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/25 font-bold">Base</span>
+                      )}
+                      {pos.chainId === 1 && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/25 font-bold">Ethereum</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="bg-secondary/30 rounded-xl p-3">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">LP Tokens</div>
+                        <div className="font-mono font-bold text-sm">{pos.lpTokens.toFixed(4)}</div>
+                      </div>
+                      <div className="bg-secondary/30 rounded-xl p-3">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Deposited</div>
+                        <div className="font-mono font-bold text-sm">${pos.depositedValueUsd.toFixed(2)}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{dateStr}</span>
+                      {txUrl ? (
+                        <a
+                          href={txUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold"
+                        >
+                          View Tx <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : pos.txHash ? (
+                        <span className="font-mono text-[10px]">{pos.txHash.slice(0, 8)}…</span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
