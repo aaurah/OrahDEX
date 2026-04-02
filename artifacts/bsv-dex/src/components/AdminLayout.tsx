@@ -5,7 +5,7 @@ import {
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
-  HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle,
+  HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -280,16 +280,34 @@ function AdminWalletWidget() {
 }
 
 export function AdminLayout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { email, logout } = useAdminAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isActive = (item: NavItem) =>
     item.exact ? location === item.href : location.startsWith(item.href);
 
   const toggleGroup = (title: string) =>
     setCollapsed(c => ({ ...c, [title]: !c[title] }));
+
+  const allItems = NAV_GROUPS.flatMap(g => g.items.map(item => ({ ...item, group: g.title })));
+  const searchResults = searchQuery.trim()
+    ? allItems.filter(item =>
+        item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.group.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
+  const handleSearchKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && searchResults.length > 0) {
+      navigate(searchResults[0].href);
+      setSearchQuery("");
+      setSidebarOpen(false);
+    }
+    if (e.key === "Escape") setSearchQuery("");
+  };
 
   return (
     <div className="min-h-screen bg-background flex text-foreground">
@@ -314,6 +332,50 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <button className="md:hidden text-muted-foreground p-1" onClick={() => setSidebarOpen(false)}>
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pt-3 pb-1 shrink-0 relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKey}
+              placeholder="Search admin…"
+              className="w-full bg-background border border-border rounded-xl pl-8 pr-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="absolute left-3 right-3 top-full mt-1 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-2.5 text-xs text-muted-foreground">No results for "{searchQuery}"</div>
+              ) : (
+                searchResults.map(item => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => { setSearchQuery(""); setSidebarOpen(false); }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-white/5 transition-colors group"
+                  >
+                    <item.icon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{item.label}</p>
+                      <p className="text-[10px] text-muted-foreground capitalize">{item.group}</p>
+                    </div>
+                    {item.badge && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/25">{item.badge}</span>
+                    )}
+                  </Link>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Nav */}
