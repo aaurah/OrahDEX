@@ -8,6 +8,7 @@ import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 
@@ -26,11 +27,18 @@ const POOL_LABELS: Record<string, { display: string; base: string; quote: string
   "link-usdt": { display: "LINK / USDT", base: "LINK", quote: "USDT" },
   "bsv-btc":   { display: "BSV / BTC",   base: "BSV",  quote: "BTC"  },
   "eth-btc":   { display: "ETH / BTC",   base: "ETH",  quote: "BTC"  },
+  "trx-usdt":  { display: "TRX / USDT",  base: "TRX",  quote: "USDT" },
+  "btt-usdt":  { display: "BTT / USDT",  base: "BTT",  quote: "USDT" },
+  "btt-trx":   { display: "BTT / TRX",   base: "BTT",  quote: "TRX"  },
+  "win-trx":   { display: "WIN / TRX",   base: "WIN",  quote: "TRX"  },
+  "jst-usdt":  { display: "JST / USDT",  base: "JST",  quote: "USDT" },
+  "trx-btc":   { display: "TRX / BTC",   base: "TRX",  quote: "BTC"  },
 };
 
 const COIN_COLORS_LP: Record<string, string> = {
   BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
   BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
+  TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
   DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a", USDC: "#2775CA",
 };
 
@@ -72,17 +80,19 @@ function getChainInfo(chainId: number | null): ChainInfo | null {
 }
 
 function getNativeAsset(network: string | null, chainId: number | null): string {
-  if (network === "bsv") return "BSV";
-  if (network === "sol") return "SOL";
-  if (network === "btc") return "BTC";
+  if (network === "bsv")  return "BSV";
+  if (network === "sol")  return "SOL";
+  if (network === "btc")  return "BTC";
+  if (network === "tron") return "TRX";
   if (network === "evm" && chainId) return CHAIN_INFO[chainId]?.native ?? "ETH";
   return "ETH";
 }
 
 function getNetworkLabel(network: string | null, chainId: number | null, provider: string | null): string {
-  if (network === "bsv") return "Bitcoin SV (BSV)";
-  if (network === "sol") return "Solana";
-  if (network === "btc") return "Bitcoin";
+  if (network === "bsv")  return "Bitcoin SV (BSV)";
+  if (network === "sol")  return "Solana";
+  if (network === "btc")  return "Bitcoin";
+  if (network === "tron") return "TRON Network";
   if (network === "evm" && chainId) {
     const info = CHAIN_INFO[chainId];
     return info ? info.name : `Chain ID ${chainId}`;
@@ -106,6 +116,10 @@ const ASSET_COLORS: Record<string, string> = {
   xDAI: "#04795B",
   RON:  "#1273EA",
   METIS:"#00DACC",
+  TRX:  "#EF4444",
+  BTT:  "#9333EA",
+  WIN:  "#F59E0B",
+  JST:  "#06B6D4",
 };
 
 const BASE_ASSETS = [
@@ -118,6 +132,7 @@ const BASE_ASSETS = [
   { asset: "MATIC",marketKey: "MATIC"},
   { asset: "AVAX", marketKey: "AVAX" },
   { asset: "SOL",  marketKey: "SOL"  },
+  { asset: "TRX",  marketKey: "TRX"  },
 ];
 
 function getPortfolioAssets(nativeAsset: string) {
@@ -164,6 +179,9 @@ export function Portfolio() {
   const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
     chainId,
+  );
+  const { balances: tronBalances, loading: tronLoading, refresh: tronRefresh } = useTronBalances(
+    network === "tron" ? address : null,
   );
 
   const [hideBalances, setHideBalances] = useState(false);
@@ -237,7 +255,21 @@ export function Portfolio() {
                  price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
       });
     }
-    // Non-EVM: fallback list of known assets, only native has a balance
+    if (network === "tron" && tronBalances.length > 0) {
+      return tronBalances.map(b => {
+        const isStable = stableSet.has(b.symbol);
+        const mkt    = prices?.[b.symbol];
+        const price  = b.price ?? (isStable ? 1 : (mkt?.lastPrice ?? 0));
+        const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+        const valueUSD = b.usdValue ?? (b.amount * price);
+        const pnl24h   = valueUSD * change / 100;
+        const color    = ASSET_COLORS[b.symbol] ?? "#EF4444";
+        return { asset: b.symbol, color, marketKey: b.symbol,
+                 total: b.amount, free: b.amount, locked: 0,
+                 price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
+      });
+    }
+    // Non-EVM fallback: list of known assets, only native has a real balance
     const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
     return PORTFOLIO_ASSETS.map(a => {
       const isStable = stableSet.has(a.asset);
@@ -302,7 +334,7 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); }}
+              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               title="Refresh prices & balance"
             >
@@ -599,6 +631,9 @@ export function Portfolio() {
                                 )}
                                 {pos.chainId === 1 && (
                                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/25 font-bold ml-1">Ethereum</span>
+                                )}
+                                {!pos.chainId && ["trx-usdt","btt-usdt","btt-trx","win-trx","jst-usdt","trx-btc"].includes(poolId) && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/25 font-bold ml-1">TRON</span>
                                 )}
                               </div>
                             </div>
