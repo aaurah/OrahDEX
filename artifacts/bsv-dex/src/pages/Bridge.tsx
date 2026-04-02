@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 
 // ─── Chain / Token definitions ────────────────────────────────────────────────
 
-type Layer = "L1" | "L2";
+type Layer = "L1" | "L2" | "L3";
 type SwapMode = "htlc" | "wrapped";
 
 type HtlcStatus = "pending" | "funded" | "minting" | "complete" | "refunded" | "expired";
@@ -45,14 +45,43 @@ interface Chain {
 }
 
 const CHAINS: Chain[] = [
-  { id: "bsv",  name: "BSV",       layer: "L1", color: "text-green-400",  bgColor: "bg-green-500/15 border-green-500/30",  icon: "₿", tokens: ["BSV","USDT"],                desc: "Bitcoin SV — fastest settlement" },
-  { id: "btc",  name: "Bitcoin",   layer: "L1", color: "text-orange-400", bgColor: "bg-orange-500/15 border-orange-500/30", icon: "₿", tokens: ["BTC"],                         desc: "Bitcoin — base layer security" },
-  { id: "eth",  name: "Ethereum",  layer: "L1", color: "text-violet-400", bgColor: "bg-violet-500/15 border-violet-500/30", icon: "⬡", tokens: ["ETH","USDC","USDT","WBTC"],    desc: "Ethereum — smart contract L1" },
-  { id: "sol",  name: "Solana",    layer: "L1", color: "text-cyan-400",   bgColor: "bg-cyan-500/15 border-cyan-500/30",    icon: "◎", tokens: ["SOL","USDC","BONK"],            desc: "Solana — high-throughput L1" },
-  { id: "arb",  name: "Arbitrum",  layer: "L2", color: "text-sky-400",    bgColor: "bg-sky-500/15 border-sky-500/30",      icon: "⬡", tokens: ["ETH","ARB","USDC","USDT"],     desc: "Arbitrum — Ethereum L2 rollup" },
-  { id: "op",   name: "Optimism",  layer: "L2", color: "text-red-400",    bgColor: "bg-red-500/15 border-red-500/30",      icon: "⬡", tokens: ["ETH","OP","USDC","USDT"],      desc: "Optimism — OP Stack L2" },
-  { id: "base", name: "Base",      layer: "L2", color: "text-blue-400",   bgColor: "bg-blue-500/15 border-blue-500/30",    icon: "⬡", tokens: ["ETH","USDC","CBBTC"],          desc: "Base — Coinbase L2" },
-  { id: "poly", name: "Polygon",   layer: "L2", color: "text-purple-400", bgColor: "bg-purple-500/15 border-purple-500/30",icon: "⬡", tokens: ["MATIC","ETH","USDC","USDT"],  desc: "Polygon — EVM L2 sidechain" },
+  // ── Layer 1 — Sovereign base chains ──────────────────────────────────────
+  { id: "bsv",      name: "BSV",        layer: "L1", color: "text-green-400",    bgColor: "bg-green-500/15 border-green-500/30",    icon: "₿", tokens: ["BSV","USDT"],                   desc: "Bitcoin SV — fastest settlement" },
+  { id: "btc",      name: "Bitcoin",    layer: "L1", color: "text-orange-400",   bgColor: "bg-orange-500/15 border-orange-500/30",   icon: "₿", tokens: ["BTC"],                           desc: "Bitcoin — base layer security" },
+  { id: "eth",      name: "Ethereum",   layer: "L1", color: "text-violet-400",   bgColor: "bg-violet-500/15 border-violet-500/30",   icon: "⬡", tokens: ["ETH","USDC","USDT","WBTC"],     desc: "Ethereum — smart contract L1" },
+  { id: "sol",      name: "Solana",     layer: "L1", color: "text-cyan-400",     bgColor: "bg-cyan-500/15 border-cyan-500/30",       icon: "◎", tokens: ["SOL","USDC","BONK"],             desc: "Solana — high-throughput L1" },
+  { id: "bnb",      name: "BNB Chain",  layer: "L1", color: "text-yellow-400",   bgColor: "bg-yellow-500/15 border-yellow-500/30",   icon: "◈", tokens: ["BNB","BUSD","USDT","CAKE"],     desc: "BNB Chain — Binance EVM L1" },
+  { id: "avax",     name: "Avalanche",  layer: "L1", color: "text-red-400",      bgColor: "bg-red-500/15 border-red-500/30",         icon: "▲", tokens: ["AVAX","USDC","USDT"],           desc: "Avalanche — subnet L1" },
+  { id: "tron",     name: "TRON",       layer: "L1", color: "text-rose-400",     bgColor: "bg-rose-500/15 border-rose-500/30",       icon: "◇", tokens: ["TRX","USDT","USDC"],            desc: "TRON — high-volume payments L1" },
+  { id: "dot",      name: "Polkadot",   layer: "L1", color: "text-pink-400",     bgColor: "bg-pink-500/15 border-pink-500/30",       icon: "⬤", tokens: ["DOT","USDT"],                   desc: "Polkadot — parachain relay L1" },
+
+  // ── Layer 2 — Ethereum scaling + EVM alt-L1s ──────────────────────────────
+  { id: "arb",      name: "Arbitrum",   layer: "L2", color: "text-sky-400",      bgColor: "bg-sky-500/15 border-sky-500/30",         icon: "⬡", tokens: ["ETH","ARB","USDC","USDT"],      desc: "Arbitrum — Optimistic rollup" },
+  { id: "op",       name: "Optimism",   layer: "L2", color: "text-red-400",      bgColor: "bg-red-500/15 border-red-500/30",         icon: "⬡", tokens: ["ETH","OP","USDC","USDT"],       desc: "Optimism — OP Stack rollup" },
+  { id: "base",     name: "Base",       layer: "L2", color: "text-blue-400",     bgColor: "bg-blue-500/15 border-blue-500/30",       icon: "⬡", tokens: ["ETH","USDC","cbBTC"],           desc: "Base — Coinbase OP Stack L2" },
+  { id: "poly",     name: "Polygon",    layer: "L2", color: "text-purple-400",   bgColor: "bg-purple-500/15 border-purple-500/30",   icon: "⬡", tokens: ["POL","ETH","USDC","USDT"],      desc: "Polygon PoS — EVM sidechain" },
+  { id: "zksync",   name: "zkSync Era", layer: "L2", color: "text-indigo-400",   bgColor: "bg-indigo-500/15 border-indigo-500/30",   icon: "⬡", tokens: ["ETH","ZK","USDC","USDT"],       desc: "zkSync Era — ZK rollup" },
+  { id: "linea",    name: "Linea",      layer: "L2", color: "text-lime-400",     bgColor: "bg-lime-500/15 border-lime-500/30",       icon: "⬡", tokens: ["ETH","USDC","USDT"],            desc: "Linea — ConsenSys ZK rollup" },
+  { id: "scroll",   name: "Scroll",     layer: "L2", color: "text-amber-400",    bgColor: "bg-amber-500/15 border-amber-500/30",     icon: "⬡", tokens: ["ETH","USDC","USDT"],            desc: "Scroll — zkEVM rollup" },
+  { id: "mantle",   name: "Mantle",     layer: "L2", color: "text-teal-400",     bgColor: "bg-teal-500/15 border-teal-500/30",       icon: "⬡", tokens: ["MNT","ETH","USDC","USDT"],      desc: "Mantle — Modular L2" },
+  { id: "blast",    name: "Blast",      layer: "L2", color: "text-yellow-300",   bgColor: "bg-yellow-500/15 border-yellow-500/30",   icon: "⬡", tokens: ["ETH","BLAST","USDB"],           desc: "Blast — native yield L2" },
+  { id: "mode",     name: "Mode",       layer: "L2", color: "text-green-300",    bgColor: "bg-green-500/15 border-green-500/30",     icon: "⬡", tokens: ["ETH","MODE","USDC"],            desc: "Mode — DeFi OP Stack L2" },
+  { id: "boba",     name: "Boba",       layer: "L2", color: "text-emerald-400",  bgColor: "bg-emerald-500/15 border-emerald-500/30", icon: "⬡", tokens: ["ETH","BOBA","USDC"],            desc: "Boba — Hybrid compute L2" },
+  { id: "metis",    name: "Metis",      layer: "L2", color: "text-cyan-300",     bgColor: "bg-cyan-500/15 border-cyan-500/30",       icon: "⬡", tokens: ["METIS","ETH","USDC"],           desc: "Metis — Andromeda L2" },
+  { id: "taiko",    name: "Taiko",      layer: "L2", color: "text-pink-300",     bgColor: "bg-pink-500/15 border-pink-500/30",       icon: "⬡", tokens: ["ETH","TAIKO","USDC"],           desc: "Taiko — based ZK rollup" },
+  { id: "gnosis",   name: "Gnosis",     layer: "L2", color: "text-teal-300",     bgColor: "bg-teal-500/15 border-teal-500/30",       icon: "⬡", tokens: ["xDAI","GNO","USDC"],            desc: "Gnosis Chain — stable payment L2" },
+  { id: "celo",     name: "Celo",       layer: "L2", color: "text-lime-300",     bgColor: "bg-lime-500/15 border-lime-500/30",       icon: "⬡", tokens: ["CELO","cUSD","USDC"],           desc: "Celo — mobile-first EVM L2" },
+  { id: "moonbeam", name: "Moonbeam",   layer: "L2", color: "text-violet-300",   bgColor: "bg-violet-500/15 border-violet-500/30",   icon: "⬡", tokens: ["GLMR","DOT","USDC"],            desc: "Moonbeam — Polkadot EVM parachain" },
+  { id: "sonic",    name: "Sonic",      layer: "L2", color: "text-orange-300",   bgColor: "bg-orange-500/15 border-orange-500/30",   icon: "⬡", tokens: ["S","USDC","USDT"],              desc: "Sonic — Fantom-successor EVM" },
+
+  // ── Layer 3 — App-chains & sovereign rollups ──────────────────────────────
+  { id: "degen",    name: "Degen Chain",layer: "L3", color: "text-fuchsia-400",  bgColor: "bg-fuchsia-500/15 border-fuchsia-500/30", icon: "◈", tokens: ["DEGEN","ETH"],                  desc: "Degen Chain — Base L3 memecoin" },
+  { id: "xai",      name: "Xai",        layer: "L3", color: "text-red-300",      bgColor: "bg-red-500/15 border-red-500/30",         icon: "◈", tokens: ["XAI","ETH"],                    desc: "Xai — Arbitrum L3 gaming" },
+  { id: "apechain", name: "ApeChain",   layer: "L3", color: "text-blue-300",     bgColor: "bg-blue-500/15 border-blue-500/30",       icon: "◈", tokens: ["APE","ETH","USDC"],             desc: "ApeChain — Arbitrum L3 by Yuga" },
+  { id: "zora",     name: "Zora",       layer: "L3", color: "text-purple-300",   bgColor: "bg-purple-500/15 border-purple-500/30",   icon: "◈", tokens: ["ETH","USDC"],                   desc: "Zora — OP Stack L3 creator NFT" },
+  { id: "redstone", name: "Redstone",   layer: "L3", color: "text-rose-300",     bgColor: "bg-rose-500/15 border-rose-500/30",       icon: "◈", tokens: ["ETH","RED"],                    desc: "Redstone — OP Stack L3 gaming" },
+  { id: "treasure", name: "Treasure",   layer: "L3", color: "text-amber-300",    bgColor: "bg-amber-500/15 border-amber-500/30",     icon: "◈", tokens: ["MAGIC","ETH","USDC"],           desc: "Treasure — Arbitrum L3 gaming" },
+  { id: "hypr",     name: "HYPR",       layer: "L3", color: "text-sky-300",      bgColor: "bg-sky-500/15 border-sky-500/30",         icon: "◈", tokens: ["ETH","USDC"],                   desc: "HYPR — ZK L3 social layer" },
 ];
 
 const SPOT_PRICES: Record<string, number> = {
