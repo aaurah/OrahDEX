@@ -184,6 +184,14 @@ const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   "trailing-stop": "Trailing Stop",
   "post-only":     "Post Only",
 };
+const ORDER_TYPE_DESCS: Record<OrderType, string> = {
+  "limit":         "Set a specific price. Order fills only at that price or better.",
+  "market":        "Fills immediately at the best available price.",
+  "stop-limit":    "Triggers a limit order when the stop price is reached.",
+  "stop-market":   "Triggers a market order when the stop price is reached.",
+  "trailing-stop": "Stop price trails the market by a callback rate %.",
+  "post-only":     "Always placed as maker. Rejected if it would immediately fill.",
+};
 
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
@@ -461,7 +469,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ? "stop"
       : orderType; // "limit" | "market"
     const usePrice = needsLimitPrice ? (parseFloat(price || "0") || lastPrice || undefined) : undefined;
-    const useStop  = (orderType === "stop-limit" || orderType === "stop-market" || orderType === "trailing-stop")
+
+    // Trailing stop: derive initial stop price from callback rate % off the current market price
+    const trailingStopPrice = orderType === "trailing-stop" && lastPrice > 0
+      ? side === "sell"
+        ? lastPrice * (1 - (parseFloat(trailingRate || "1") / 100))
+        : lastPrice * (1 + (parseFloat(trailingRate || "1") / 100))
+      : undefined;
+
+    const useStop  = orderType === "trailing-stop"
+      ? trailingStopPrice
+      : (orderType === "stop-limit" || orderType === "stop-market")
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
     orderMutation.mutate({
@@ -1287,18 +1305,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-2xl shadow-2xl overflow-hidden"
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)" }}
           >
-            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-2" />
+            <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-1" />
+            <p className="text-center text-xs text-muted-foreground pb-2 px-6">Order Type</p>
             {ORDER_TYPES.map((t, i) => (
               <button
                 key={t}
                 onClick={() => { setOrderType(t); setOrderTypeOpen(false); }}
                 className={cn(
-                  "w-full px-6 py-4 text-left text-[15px] font-medium transition-colors",
+                  "w-full px-6 py-3.5 text-left transition-colors flex items-center justify-between gap-3",
                   i < ORDER_TYPES.length - 1 && "border-b border-border/50",
-                  orderType === t ? "text-primary font-semibold" : "text-foreground hover:bg-white/5"
+                  orderType === t ? "bg-primary/5" : "hover:bg-white/5"
                 )}
               >
-                {ORDER_TYPE_LABELS[t]}
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-[15px] font-semibold leading-snug", orderType === t ? "text-primary" : "text-foreground")}>
+                    {ORDER_TYPE_LABELS[t]}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                    {ORDER_TYPE_DESCS[t]}
+                  </p>
+                </div>
+                {orderType === t && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
               </button>
             ))}
           </div>
