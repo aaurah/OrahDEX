@@ -3,7 +3,7 @@ import { ChevronDown, CheckCircle2, PlusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
-import { switchReownChain, fetchEvmBalance } from "@/lib/reown";
+import { switchReownChain, fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
 
 interface ChainDef {
   id: number;
@@ -243,6 +243,36 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
             variant: "destructive",
           });
         }
+      } finally {
+        setSwitching(null);
+      }
+      return;
+    }
+
+    /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
+       No browser extension needed — we own the key, so just update the
+       store with the new chainId and fetch the balance via the target
+       chain's public RPC (bypasses window.ethereum entirely). */
+    if (provider === "aura-wallet") {
+      try {
+        connect({ address: address!, provider: "aura-wallet", network: "evm", chainId: chain.id });
+        // Fetch balance directly from the target chain's public RPC
+        const rpcUrl = CHAIN_RPC_URLS[chain.id] ?? chain.rpcUrl;
+        let bal: string | null = null;
+        try {
+          const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [address!, "latest"] }),
+          });
+          const json = await res.json();
+          if (json?.result) bal = (Number(BigInt(json.result)) / 1e18).toFixed(6);
+        } catch { /* balance unavailable — non-fatal */ }
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
+        setOpen(false);
+      } catch (err: any) {
+        toast({ title: "Switch failed", description: err?.message || "Could not switch chain.", variant: "destructive" });
       } finally {
         setSwitching(null);
       }
