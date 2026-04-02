@@ -85,8 +85,12 @@ const CHAINS: Chain[] = [
 ];
 
 const SPOT_PRICES: Record<string, number> = {
-  BSV: 68, BTC: 67420, ETH: 3510, SOL: 172, USDT: 1, USDC: 1,
-  ARB: 1.2, OP: 2.1, MATIC: 0.7, CBBTC: 67420, WBTC: 67420, BONK: 0.000022,
+  BSV: 68, BTC: 67420, ETH: 3510, SOL: 172, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
+  ARB: 1.2, OP: 2.1, POL: 0.7, MATIC: 0.7, cbBTC: 67420, WBTC: 67420, BONK: 0.000022,
+  BNB: 590, AVAX: 38, TRX: 0.12, DOT: 7.5,
+  ZK: 0.18, MNT: 0.85, BLAST: 0.011, MODE: 0.035, BOBA: 0.19, METIS: 38, TAIKO: 1.8,
+  GNO: 280, CELO: 0.65, GLMR: 0.28, S: 0.52,
+  DEGEN: 0.0042, XAI: 0.21, APE: 1.3, MAGIC: 0.62, RED: 0.08,
 };
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
@@ -104,32 +108,68 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
     l2: [
-      { chainId: "eth",  chain: "Ethereum", symbol: "wBSV", label: "wBSV (ERC-20)",  type: "wrapped",   bridge: "OrahDEX HTLC", time: "~5 min",   color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
-      { chainId: "base", chain: "Base",     symbol: "wBSV", label: "wBSV on Base",   type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
-      { chainId: "arb",  chain: "Arbitrum", symbol: "wBSV", label: "wBSV on Arb",   type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
-      { chainId: "op",   chain: "Optimism", symbol: "wBSV", label: "wBSV on OP",    type: "wrapped",   bridge: "OrahDEX HTLC + Relay", time: "~5 min", color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "eth",      chain: "Ethereum",   symbol: "wBSV", label: "wBSV (ERC-20)",        type: "wrapped",   bridge: "OrahDEX HTLC",          time: "~5 min",  color: "text-violet-400",  bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "base",     chain: "Base",        symbol: "wBSV", label: "wBSV on Base",         type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb",      chain: "Arbitrum",    symbol: "wBSV", label: "wBSV on Arbitrum",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op",       chain: "Optimism",    symbol: "wBSV", label: "wBSV on Optimism",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "bnb",      chain: "BNB Chain",   symbol: "wBSV", label: "wBSV (BEP-20)",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "poly",     chain: "Polygon",     symbol: "wBSV", label: "wBSV on Polygon",      type: "wrapped",   bridge: "OrahDEX Relay",         time: "~7 min",  color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
+      { chainId: "avax",     chain: "Avalanche",   symbol: "wBSV", label: "wBSV on Avalanche",    type: "wrapped",   bridge: "OrahDEX Relay",         time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "zksync",   chain: "zkSync Era",  symbol: "wBSV", label: "wBSV on zkSync",       type: "wrapped",   bridge: "OrahDEX Relay + ZK",    time: "~8 min",  color: "text-indigo-400",  bg: "bg-indigo-500/10 border-indigo-500/30" },
+      { chainId: "linea",    chain: "Linea",       symbol: "wBSV", label: "wBSV on Linea",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~6 min",  color: "text-lime-400",    bg: "bg-lime-500/10 border-lime-500/30" },
+      { chainId: "scroll",   chain: "Scroll",      symbol: "wBSV", label: "wBSV on Scroll",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~6 min",  color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/30" },
+      { chainId: "mantle",   chain: "Mantle",      symbol: "wBSV", label: "wBSV on Mantle",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-teal-400",    bg: "bg-teal-500/10 border-teal-500/30" },
+      { chainId: "blast",    chain: "Blast",       symbol: "wBSV", label: "wBSV on Blast",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-yellow-300",  bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "mode",     chain: "Mode",        symbol: "wBSV", label: "wBSV on Mode",         type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-green-300",   bg: "bg-green-500/10 border-green-500/30" },
+      { chainId: "gnosis",   chain: "Gnosis",      symbol: "wBSV", label: "wBSV on Gnosis",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-teal-300",    bg: "bg-teal-500/10 border-teal-500/30" },
+      { chainId: "celo",     chain: "Celo",        symbol: "wBSV", label: "wBSV on Celo",         type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-lime-300",    bg: "bg-lime-500/10 border-lime-500/30" },
+      { chainId: "sonic",    chain: "Sonic",       symbol: "wBSV", label: "wBSV on Sonic",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-orange-300",  bg: "bg-orange-500/10 border-orange-500/30" },
+      // L3 destinations
+      { chainId: "degen",    chain: "Degen Chain", symbol: "wBSV", label: "wBSV on Degen (L3)",   type: "wrapped",   bridge: "OrahDEX Base→Degen",    time: "~8 min",  color: "text-fuchsia-400", bg: "bg-fuchsia-500/10 border-fuchsia-500/30" },
+      { chainId: "xai",      chain: "Xai",         symbol: "wBSV", label: "wBSV on Xai (L3)",     type: "wrapped",   bridge: "OrahDEX Arb→Xai",       time: "~8 min",  color: "text-red-300",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "apechain", chain: "ApeChain",    symbol: "wBSV", label: "wBSV on ApeChain (L3)",type: "wrapped",   bridge: "OrahDEX Arb→Ape",       time: "~9 min",  color: "text-blue-300",    bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "zora",     chain: "Zora",        symbol: "wBSV", label: "wBSV on Zora (L3)",    type: "wrapped",   bridge: "OrahDEX Base→Zora",     time: "~8 min",  color: "text-purple-300",  bg: "bg-purple-500/10 border-purple-500/30" },
     ],
   },
   BTC: {
     l1: { chainId: "btc", chain: "Bitcoin", symbol: "BTC", color: "text-orange-400", icon: "₿" },
     l2: [
-      { chainId: "eth",  chain: "Ethereum", symbol: "WBTC",  label: "WBTC (ERC-20)", type: "wrapped",   bridge: "BitGo WBTC DAO",    time: "~6 hrs",  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
-      { chainId: "base", chain: "Base",     symbol: "cbBTC", label: "cbBTC on Base", type: "wrapped",   bridge: "Coinbase cbBTC",    time: "~1 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "eth",  chain: "Ethereum", symbol: "WBTC",  label: "WBTC (ERC-20)",  type: "wrapped",   bridge: "BitGo WBTC DAO",   time: "~6 hrs",  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+      { chainId: "base", chain: "Base",     symbol: "cbBTC", label: "cbBTC on Base",  type: "wrapped",   bridge: "Coinbase cbBTC",   time: "~1 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "bnb",  chain: "BNB Chain",symbol: "BTCB",  label: "BTCB (BEP-20)",  type: "wrapped",   bridge: "Binance Bridge",   time: "~10 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "arb",  chain: "Arbitrum", symbol: "WBTC",  label: "WBTC on Arbitrum",type: "wrapped",  bridge: "Arbitrum Bridge",  time: "~15 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
     ],
   },
   ETH: {
     l1: { chainId: "eth", chain: "Ethereum", symbol: "ETH", color: "text-violet-400", icon: "⬡" },
     l2: [
-      { chainId: "base", chain: "Base",     symbol: "ETH",  label: "ETH on Base (canonical)",   type: "canonical", bridge: "Base Canonical Bridge",     time: "~7 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
-      { chainId: "arb",  chain: "Arbitrum", symbol: "ETH",  label: "ETH on Arbitrum (canonical)",type: "canonical", bridge: "Arbitrum Canonical Bridge",  time: "~10 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
-      { chainId: "op",   chain: "Optimism", symbol: "ETH",  label: "ETH on Optimism (canonical)",type: "canonical", bridge: "OP Canonical Bridge",        time: "~1 min",  color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
-      { chainId: "poly", chain: "Polygon",  symbol: "ETH",  label: "ETH on Polygon (bridged)",   type: "wrapped",   bridge: "Polygon PoS Bridge",         time: "~7 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+      { chainId: "base",   chain: "Base",       symbol: "ETH", label: "ETH on Base (canonical)",    type: "canonical", bridge: "Base Canonical Bridge",    time: "~7 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb",    chain: "Arbitrum",   symbol: "ETH", label: "ETH on Arbitrum (canonical)", type: "canonical", bridge: "Arbitrum Canonical Bridge", time: "~10 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op",     chain: "Optimism",   symbol: "ETH", label: "ETH on Optimism (canonical)", type: "canonical", bridge: "OP Canonical Bridge",       time: "~1 min",  color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "poly",   chain: "Polygon",    symbol: "ETH", label: "ETH on Polygon (bridged)",    type: "wrapped",   bridge: "Polygon PoS Bridge",        time: "~7 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+      { chainId: "zksync", chain: "zkSync Era", symbol: "ETH", label: "ETH on zkSync (canonical)",   type: "canonical", bridge: "zkSync Canonical Bridge",   time: "~5 min",  color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/30" },
+      { chainId: "linea",  chain: "Linea",      symbol: "ETH", label: "ETH on Linea (canonical)",    type: "canonical", bridge: "Linea Canonical Bridge",    time: "~6 min",  color: "text-lime-400",   bg: "bg-lime-500/10 border-lime-500/30" },
+      { chainId: "scroll", chain: "Scroll",     symbol: "ETH", label: "ETH on Scroll (canonical)",   type: "canonical", bridge: "Scroll Canonical Bridge",   time: "~6 min",  color: "text-amber-400",  bg: "bg-amber-500/10 border-amber-500/30" },
+      { chainId: "blast",  chain: "Blast",      symbol: "ETH", label: "ETH on Blast (canonical)",    type: "canonical", bridge: "Blast Canonical Bridge",    time: "~4 min",  color: "text-yellow-300", bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "mode",   chain: "Mode",       symbol: "ETH", label: "ETH on Mode (canonical)",     type: "canonical", bridge: "Mode Canonical Bridge",     time: "~4 min",  color: "text-green-300",  bg: "bg-green-500/10 border-green-500/30" },
+      { chainId: "taiko",  chain: "Taiko",      symbol: "ETH", label: "ETH on Taiko (canonical)",    type: "canonical", bridge: "Taiko Canonical Bridge",    time: "~5 min",  color: "text-pink-300",   bg: "bg-pink-500/10 border-pink-500/30" },
+      { chainId: "degen",  chain: "Degen (L3)", symbol: "ETH", label: "ETH on Degen (L3)",           type: "canonical", bridge: "Base→Degen Superbridge",    time: "~9 min",  color: "text-fuchsia-400",bg: "bg-fuchsia-500/10 border-fuchsia-500/30" },
+      { chainId: "zora",   chain: "Zora (L3)",  symbol: "ETH", label: "ETH on Zora (L3)",            type: "canonical", bridge: "Base→Zora Superbridge",     time: "~8 min",  color: "text-purple-300", bg: "bg-purple-500/10 border-purple-500/30" },
     ],
   },
   SOL: {
     l1: { chainId: "sol", chain: "Solana", symbol: "SOL", color: "text-cyan-400", icon: "◎" },
     l2: [
-      { chainId: "eth",  chain: "Ethereum", symbol: "wSOL", label: "wSOL (ERC-20)", type: "wrapped", bridge: "Wormhole Bridge", time: "~15 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "eth",  chain: "Ethereum", symbol: "wSOL",  label: "wSOL (ERC-20)",   type: "wrapped", bridge: "Wormhole Bridge",   time: "~15 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "base", chain: "Base",     symbol: "wSOL",  label: "wSOL on Base",    type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "bnb",  chain: "BNB Chain",symbol: "wSOL",  label: "wSOL (BEP-20)",   type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+    ],
+  },
+  BNB: {
+    l1: { chainId: "bnb", chain: "BNB Chain", symbol: "BNB", color: "text-yellow-400", icon: "◈" },
+    l2: [
+      { chainId: "eth",  chain: "Ethereum", symbol: "wBNB",  label: "wBNB (ERC-20)",   type: "wrapped", bridge: "Binance Bridge",    time: "~10 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "poly", chain: "Polygon",  symbol: "wBNB",  label: "wBNB on Polygon", type: "wrapped", bridge: "Polygon Bridge",    time: "~8 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
     ],
   },
 };
@@ -237,12 +277,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           )}
         </div>
 
-        {/* L2 destination selector */}
+        {/* L2/L3 destination selector */}
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            {isDeposit ? "L2 Destination Chain" : "L2 Source Chain"}
+            {isDeposit ? "Destination Chain (L2 / L3)" : "Source Chain (L2 / L3)"}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
             {l2Options.map((l2opt, idx) => (
               <button key={l2opt.chainId} onClick={() => { setL2ChainIdx(idx); setStep(0); }}
                 className={cn("w-full flex items-center justify-between p-3 rounded-xl border transition-all",
@@ -490,7 +530,7 @@ function ChainSelect({ value, onChange, exclude }: {
   value: Chain; onChange: (c: Chain) => void; exclude?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const layers: Layer[] = ["L1", "L2"];
+  const layers: Layer[] = ["L1", "L2", "L3"];
 
   return (
     <div className="relative">
@@ -510,7 +550,8 @@ function ChainSelect({ value, onChange, exclude }: {
           <span className={cn(
             "text-[10px] font-bold px-1.5 py-0.5 rounded border",
             value.layer === "L1" ? "text-green-400 border-green-500/30 bg-green-500/10" :
-            "text-sky-400 border-sky-500/30 bg-sky-500/10"
+            value.layer === "L2" ? "text-sky-400 border-sky-500/30 bg-sky-500/10" :
+            "text-fuchsia-400 border-fuchsia-500/30 bg-fuchsia-500/10"
           )}>{value.layer}</span>
           <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
         </div>
@@ -519,11 +560,11 @@ function ChainSelect({ value, onChange, exclude }: {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-full mt-2 left-0 right-0 z-40 bg-card border border-border rounded-xl shadow-2xl overflow-hidden">
+          <div className="absolute top-full mt-2 left-0 right-0 z-40 bg-card border border-border rounded-xl shadow-2xl overflow-hidden max-h-[420px] overflow-y-auto">
             {layers.map(layer => (
               <div key={layer}>
                 <div className="px-3 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/50 bg-secondary/30">
-                  {layer === "L1" ? "Layer 1 — Base Security" : "Layer 2 — Scaling"}
+                  {layer === "L1" ? "Layer 1 — Sovereign Base Chains" : layer === "L2" ? "Layer 2 — Scaling & EVM Rollups" : "Layer 3 — App-Chains & Sovereign Rollups"}
                 </div>
                 {CHAINS.filter(c => c.layer === layer && c.id !== exclude).map(c => (
                   <button
@@ -1430,7 +1471,7 @@ export function BridgePage() {
           Swap Across Any Chain
         </h1>
         <p className="text-muted-foreground max-w-2xl">
-          Move assets between L1 chains (BSV, BTC, ETH, SOL) and L2 rollups (Arbitrum, Optimism, Base). Direct L1/L2 trading with original coins — deposits and withdrawals go through canonical bridge layers.
+          Move assets across all layers — L1 (BSV, BTC, ETH, SOL, BNB, AVAX, TRON), L2 rollups (Arbitrum, Base, Optimism, Polygon, zkSync, Linea, Scroll, Blast, Mode + 8 more), and L3 app-chains (Degen, Xai, ApeChain, Zora, Treasure). All settled on BSV.
         </p>
       </div>
 
