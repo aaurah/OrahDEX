@@ -217,6 +217,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
+  const [orderResult, setOrderResult] = useState<{ matched: boolean; txid?: string } | null>(null);
+
+  const orderMutation = useMutation({
+    mutationFn: async (body: object) => {
+      const res = await fetch(`${BASE}/api/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Order failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setOrderResult({ matched: data?.matched ?? false, txid: data?.settlementTxid ?? data?.txid });
+      setAmount("");
+      queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      setTimeout(() => setOrderResult(null), 4000);
+    },
+  });
+
   const [interval, setInterval] = useState<string>("1h");
   const [activeIndicator, setActiveIndicator] = useState("MACD");
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
@@ -364,6 +384,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     const cur = parseFloat(amount || "0");
     const step = 0.001;
     setAmount(Math.max(0, cur + delta * step).toFixed(3));
+  }
+
+  function handlePlaceOrder() {
+    if (!address || !amount || amtNum <= 0) return;
+    const apiType = (orderType === "stop-limit" || orderType === "stop-market")
+      ? "stop"
+      : orderType === "post-only"
+      ? "limit"
+      : orderType === "trailing-stop"
+      ? "stop"
+      : orderType; // "limit" | "market"
+    const usePrice = needsLimitPrice ? (parseFloat(price || "0") || lastPrice || undefined) : undefined;
+    const useStop  = (orderType === "stop-limit" || orderType === "stop-market" || orderType === "trailing-stop")
+      ? (parseFloat(stopPrice || "0") || undefined)
+      : undefined;
+    orderMutation.mutate({
+      symbol,
+      walletAddress: address,
+      side,
+      type:      apiType,
+      price:     usePrice,
+      stopPrice: useStop,
+      quantity:  amtNum,
+      networkType: address.startsWith("0x") ? "evm" : "bsv",
+    });
   }
 
   return (
@@ -943,6 +988,49 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
             </div>
 
+            {/* Order result banner */}
+            {orderResult && (
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-semibold",
+                orderResult.matched
+                  ? "bg-green-500/10 border-green-500/25 text-green-400"
+                  : "bg-blue-500/10 border-blue-500/25 text-blue-300"
+              )}>
+                <CheckCircle2 size={16} className="shrink-0" />
+                {orderResult.matched
+                  ? `Filled! ${orderResult.txid ? `BSV: ${orderResult.txid.slice(0, 12)}…` : ""}`
+                  : "Order placed — waiting for match"}
+              </div>
+            )}
+
+            {/* Error banner */}
+            {orderMutation.isError && (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border bg-red-500/10 border-red-500/25 text-red-400 text-sm font-semibold">
+                <AlertCircle size={16} className="shrink-0" />
+                Order failed — please try again
+              </div>
+            )}
+
+            {/* Confirm / Place Order button */}
+            <button
+              onClick={handlePlaceOrder}
+              disabled={!address || !amount || amtNum <= 0 || orderMutation.isPending}
+              className={cn(
+                "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
+                side === "sell"
+                  ? "bg-red-600 shadow-lg shadow-red-500/20"
+                  : "bg-green-600 shadow-lg shadow-green-500/20",
+                (!address || !amount || amtNum <= 0 || orderMutation.isPending)
+                  && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {orderMutation.isPending ? (
+                <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
+              ) : (
+                `${side === "sell" ? "Sell" : "Buy"} ${base}`
+              )}
+            </button>
+
           </div>
         )}
 
@@ -975,26 +1063,54 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           <>
             {/* Buy button */}
             <button
-              onClick={() => { setSide("buy"); setShowOrderForm(true); }}
+              onClick={() => {
+                if (side === "buy" && showOrderForm && amtNum > 0) {
+                  handlePlaceOrder();
+                } else {
+                  setSide("buy");
+                  setShowOrderForm(true);
+                }
+              }}
+              disabled={orderMutation.isPending}
               className={cn(
-                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
-                side === "buy" && showOrderForm ? "opacity-100" : "opacity-85"
+                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
+                side === "buy" && showOrderForm && amtNum > 0
+                  ? "opacity-100 scale-[1.01]"
+                  : "opacity-85"
               )}
               style={{ backgroundColor: "#16a34a" }}
             >
-              Buy {base}
+              {orderMutation.isPending && side === "buy"
+                ? "Placing…"
+                : side === "buy" && showOrderForm && amtNum > 0
+                ? `Buy ${amtNum.toFixed(4)} ${base}`
+                : `Buy ${base}`}
             </button>
 
             {/* Sell button */}
             <button
-              onClick={() => { setSide("sell"); setShowOrderForm(true); }}
+              onClick={() => {
+                if (side === "sell" && showOrderForm && amtNum > 0) {
+                  handlePlaceOrder();
+                } else {
+                  setSide("sell");
+                  setShowOrderForm(true);
+                }
+              }}
+              disabled={orderMutation.isPending}
               className={cn(
-                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-opacity active:opacity-80",
-                side === "sell" && showOrderForm ? "opacity-100" : "opacity-85"
+                "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
+                side === "sell" && showOrderForm && amtNum > 0
+                  ? "opacity-100 scale-[1.01]"
+                  : "opacity-85"
               )}
               style={{ backgroundColor: "#dc2626" }}
             >
-              Sell {base}
+              {orderMutation.isPending && side === "sell"
+                ? "Placing…"
+                : side === "sell" && showOrderForm && amtNum > 0
+                ? `Sell ${amtNum.toFixed(4)} ${base}`
+                : `Sell ${base}`}
             </button>
           </>
         )}
