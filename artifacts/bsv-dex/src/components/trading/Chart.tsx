@@ -8,7 +8,7 @@ import type { Candle } from '@workspace/api-client-react';
 import { useThemeStore } from '@/store/useThemeStore';
 import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, AlignCenter,
-  Camera, Settings2, ChevronDown, ChevronUp,
+  Camera, ChevronDown, ChevronUp,
   TrendingUp, BarChart2,
 } from 'lucide-react';
 
@@ -207,11 +207,6 @@ function computeHeikinAshi(candles: Candle[]): Candle[] {
   return result;
 }
 
-function alignToChart<T>(nullMask: (T | null)[], values: (T | null)[]): (T | null)[] {
-  let vi = 0;
-  return nullMask.map(m => m != null ? (values[vi++] ?? null) : null);
-}
-
 /* ── Adaptive precision ─────────────────────────────────────────────────── */
 function priceFormat(price: number) {
   const p = price < 0.001 ? 8 : price < 0.1 ? 6 : price < 1 ? 4 : price < 100 ? 2 : 1;
@@ -402,13 +397,16 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     });
     subChartRef.current = chart;
 
-    /* Sync time ranges */
+    /* Sync time ranges — wrapped in try/catch because the sub chart may not
+       have any series data yet when the callback fires during initialization */
     if (chartRef.current) {
       chartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (range) subChartRef.current?.timeScale().setVisibleRange(range as any);
+        if (!range || !subChartRef.current) return;
+        try { subChartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
       });
       subChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (range) chartRef.current?.timeScale().setVisibleRange(range as any);
+        if (!range || !chartRef.current) return;
+        try { chartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
       });
     }
 
