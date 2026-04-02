@@ -45,7 +45,6 @@ const NAV_LINKS = [
   { href: "/p2p", label: "P2P", icon: Users },
   { href: "/bridge", label: "Bridge", icon: Link2 },
   { href: "/copy", label: "CopyVault", icon: Copy },
-  { href: "/genesis", label: "Genesis DEX", icon: Zap },
   { href: "/portfolio", label: "Portfolio", icon: LayoutDashboard },
 ];
 

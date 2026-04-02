@@ -1,11 +1,11 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, Fragment, useEffect, useRef } from "react";
 import { useSEO } from "@/hooks/useSEO";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
   ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
-  Shield, Link2, Copy, Check,
+  Shield, Link2, Copy, Check, FlaskConical, Receipt, AlertTriangle, CheckCircle2, Info,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -123,6 +123,287 @@ const SORT_LABELS: Record<SortKey, string> = {
   name:      "Name (A–Z)",
 };
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * VAMM Instant-Swap Panel — powered by Genesis Liquidity Engine
+ * Embeds directly inside Market Hub whenever a user wants to trade a coin
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+interface VammQuote {
+  price: number; priceAfter: number; priceImpactPct: number; fee: number;
+  tokensOut?: number; usdtOut?: number;
+}
+interface VammResult {
+  success: boolean; tradeId: string; side: "buy"|"sell";
+  tokensReceived?: number; usdtSpent?: number; usdtReceived?: number; tokensSold?: number;
+  fee: number; avgPrice: number; newPrice: number;
+  trade: { id: string; time: number };
+}
+
+function fmtV(n: number): string {
+  if (!isFinite(n)||isNaN(n)) return "—";
+  if (n>=1_000_000) return `${(n/1_000_000).toFixed(2)}M`;
+  if (n>=1_000) return `${(n/1_000).toFixed(2)}K`;
+  if (n>=1) return n.toFixed(4);
+  if (n>=0.001) return n.toFixed(6);
+  return n.toPrecision(4);
+}
+function fmtUsdV(n: number): string {
+  if (!isFinite(n)||isNaN(n)) return "$—";
+  if (n>=1_000_000) return `$${(n/1_000_000).toFixed(2)}M`;
+  if (n>=1_000) return `$${(n/1_000).toFixed(2)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
+function VammSwapPanel({ symbol, onClose }: { symbol: string; onClose?: () => void }) {
+  const qc = useQueryClient();
+  const [side, setSide] = useState<"buy"|"sell">("buy");
+  const [amount, setAmount] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [receipt, setReceipt] = useState<VammResult|null>(null);
+  const [copiedId, setCopiedId] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>|null>(null);
+
+  useEffect(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setDebounced(amount), 400);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [amount]);
+
+  /* Check if symbol is supported by VAMM */
+  const { data: markets } = useQuery<{ symbol: string }[]>({
+    queryKey: ["genesis-markets"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/genesis/markets`);
+      if (!r.ok) throw new Error("failed");
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+  const isSupported = !markets || markets.some(m => m.symbol === symbol);
+
+  /* Quote */
+  const { data: quote, isLoading: quoteLoading } = useQuery<VammQuote>({
+    queryKey: ["vamm-quote", symbol, side, debounced],
+    queryFn: async () => {
+      if (!debounced || parseFloat(debounced) <= 0) throw new Error("no amount");
+      const p = new URLSearchParams({ symbol, side });
+      if (side === "buy") p.set("usdtAmount", debounced);
+      else p.set("tokenAmount", debounced);
+      const r = await fetch(`${BASE}/api/genesis/quote?${p}`);
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
+      return r.json();
+    },
+    enabled: !!debounced && parseFloat(debounced) > 0 && isSupported,
+    retry: false,
+  });
+
+  /* Swap */
+  const swap = useMutation<VammResult, Error>({
+    mutationFn: async () => {
+      const body: Record<string, unknown> = { symbol, side };
+      if (side === "buy") body.usdtAmount = parseFloat(amount);
+      else body.tokenAmount = parseFloat(amount);
+      const r = await fetch(`${BASE}/api/genesis/swap`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error); }
+      return r.json();
+    },
+    onSuccess: (data) => {
+      setReceipt(data); setAmount(""); setDebounced("");
+      qc.invalidateQueries({ queryKey: ["genesis-markets"] });
+    },
+  });
+
+  /* ── Receipt view ── */
+  if (receipt) {
+    const isBuy = receipt.side === "buy";
+    return (
+      <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/5 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-yellow-400" />
+            <span className="text-sm font-bold text-white">Trade Receipt</span>
+          </div>
+          {onClose && (
+            <button onClick={() => { setReceipt(null); onClose(); }} className="text-gray-500 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-xl px-3 py-2">
+          <FlaskConical className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
+          <span className="text-[11px] text-orange-400">
+            <strong>Simulated trade.</strong> No real {symbol} transferred. Virtual bonding curve only.
+          </span>
+        </div>
+        <div className="text-center py-2">
+          <div className={`text-2xl font-black mb-0.5 ${isBuy ? "text-green-400" : "text-blue-400"}`}>
+            {isBuy ? `${fmtV(receipt.tokensReceived ?? 0)} ${symbol}` : fmtUsdV(receipt.usdtReceived ?? 0)}
+          </div>
+          <div className="text-xs text-gray-500">
+            {isBuy ? `Spent ${fmtUsdV(receipt.usdtSpent ?? 0)} USDT (virtual)` : `Sold ${fmtV(receipt.tokensSold ?? 0)} ${symbol} (virtual)`}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {[
+            { l: "Avg Price", v: fmtUsdV(receipt.avgPrice) },
+            { l: "New Price", v: fmtUsdV(receipt.newPrice) },
+            { l: "Fee (0.30%)", v: fmtUsdV(receipt.fee) },
+            { l: "Type", v: "Virtual AMM" },
+          ].map(r => (
+            <div key={r.l} className="bg-white/[0.03] rounded-lg px-3 py-2">
+              <div className="text-gray-500 text-[10px]">{r.l}</div>
+              <div className="text-white font-medium">{r.v}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-white/[0.02] border border-white/5 rounded-xl">
+          <span className="text-[10px] text-gray-500 flex-1 font-mono truncate">ID: {receipt.tradeId}</span>
+          <button onClick={() => { navigator.clipboard?.writeText(receipt.tradeId).catch(() => {}); setCopiedId(true); setTimeout(() => setCopiedId(false), 1500); }}
+            className="text-gray-500 hover:text-yellow-400 transition-colors flex-shrink-0">
+            {copiedId ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        <button onClick={() => setReceipt(null)}
+          className="w-full py-2.5 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10 transition-colors">
+          New Trade
+        </button>
+      </div>
+    );
+  }
+
+  /* ── Swap form ── */
+  return (
+    <div className="rounded-2xl border border-yellow-500/20 bg-[#0e0e14] p-4 space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="w-4 h-4 text-yellow-400" />
+          <span className="text-sm font-bold text-white">VAMM Instant Swap</span>
+          <span className="text-[9px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.5 rounded-full font-semibold">VIRTUAL</span>
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
+        )}
+      </div>
+
+      {/* Not supported notice */}
+      {markets && !isSupported && (
+        <div className="flex items-center gap-2 bg-white/[0.03] border border-white/8 rounded-xl px-3 py-3 text-sm text-gray-400">
+          <Info className="w-4 h-4 text-gray-500 flex-shrink-0" />
+          {symbol} is not yet in the VAMM engine. Supported: BTC, ETH, SOL, BSV and 52 other major assets.
+        </div>
+      )}
+
+      {isSupported && (
+        <>
+          {/* Notice */}
+          <div className="flex items-center gap-1.5 text-[11px] text-orange-400">
+            <FlaskConical className="w-3 h-3 flex-shrink-0" />
+            <span>Simulated only — no real {symbol} changes hands. No wallet required.</span>
+          </div>
+
+          {/* Buy/Sell tabs */}
+          <div className="flex rounded-xl bg-white/[0.03] border border-white/8 p-0.5">
+            {(["buy", "sell"] as const).map(s => (
+              <button key={s} onClick={() => { setSide(s); setAmount(""); }}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+                  side === s ? s === "buy" ? "bg-green-500 text-white" : "bg-red-500 text-white" : "text-gray-400"
+                }`}>
+                {s === "buy" ? "Simulate Buy" : "Simulate Sell"}
+              </button>
+            ))}
+          </div>
+
+          {/* Amount input */}
+          <div className="flex items-center bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5 focus-within:border-yellow-500/40">
+            <input value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0.00" type="number" min="0"
+              className="flex-1 bg-transparent text-lg font-bold text-white outline-none placeholder-gray-700" />
+            <span className="text-xs text-gray-500">{side === "buy" ? "USDT" : symbol}</span>
+          </div>
+
+          {/* Quick amounts for buy */}
+          {side === "buy" && (
+            <div className="flex gap-1.5">
+              {[100, 500, 1000].map(v => (
+                <button key={v} onClick={() => setAmount(String(v))}
+                  className="flex-1 text-xs py-1.5 rounded-lg bg-white/[0.04] text-gray-400 hover:text-yellow-400 hover:bg-yellow-500/10 border border-white/5 transition-colors">
+                  ${v}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Quote */}
+          {quoteLoading && debounced && (
+            <div className="flex items-center gap-2 text-xs text-gray-500 animate-pulse">
+              <RefreshCw className="w-3 h-3 animate-spin" /> Calculating…
+            </div>
+          )}
+          {quote && !quoteLoading && (
+            <div className="bg-white/[0.02] border border-white/5 rounded-xl px-3 py-2.5 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Receive (virtual)</span>
+                <span className="font-bold text-white">
+                  {side === "buy" ? `${fmtV(quote.tokensOut ?? 0)} ${symbol}` : fmtUsdV(quote.usdtOut ?? 0)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Price</span>
+                <span className="text-white">{fmtUsdV(quote.price)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Impact</span>
+                <span className={quote.priceImpactPct < 1 ? "text-green-400" : quote.priceImpactPct < 2 ? "text-yellow-400" : "text-red-400"}>
+                  {quote.priceImpactPct.toFixed(3)}%
+                </span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Fee (0.30%)</span><span>{fmtUsdV(quote.fee)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {swap.isError && (
+            <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />{(swap.error as Error).message}
+            </div>
+          )}
+
+          {/* Swap button */}
+          <button onClick={() => swap.mutate()}
+            disabled={!amount || parseFloat(amount) <= 0 || swap.isPending}
+            className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
+              !amount || parseFloat(amount) <= 0
+                ? "bg-white/5 text-gray-600 cursor-not-allowed"
+                : side === "buy" ? "bg-green-500 hover:bg-green-400 text-white" : "bg-red-500 hover:bg-red-400 text-white"
+            }`}>
+            {swap.isPending
+              ? <span className="flex items-center justify-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />Simulating…</span>
+              : `${side === "buy" ? "Simulate Buy" : "Simulate Sell"} ${symbol}`
+            }
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── VAMM Swap Overlay Modal (full-screen on mobile, centered on desktop) ── */
+function VammSwapModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-x-0 bottom-0 z-50 lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[420px] max-h-[90vh] overflow-y-auto rounded-t-2xl lg:rounded-2xl bg-[#0e0e14] border border-white/10 shadow-2xl p-4">
+        <VammSwapPanel symbol={symbol} onClose={onClose} />
+      </div>
+    </>
+  );
+}
+
 export function DexHub() {
   useSEO({
     title: "Market Hub — All CEX & DEX Exchanges",
@@ -153,6 +434,7 @@ export function DexHub() {
   const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]           = useState(0);
   const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
+  const [vammCoin, setVammCoin]           = useState<any | null>(null);
   const [showZora, setShowZora]           = useState(false);
   const COIN_PAGE_SIZE = 50;
 
@@ -635,7 +917,7 @@ export function DexHub() {
                       Volume 24h {coinSort === "vol" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
                     <th className="px-3 py-3 font-medium text-right hidden lg:table-cell">Mkt Cap</th>
-                    <th className="px-3 py-3 font-medium text-center">Exchanges</th>
+                    <th className="px-3 py-3 font-medium text-center">Trade / View</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -694,12 +976,21 @@ export function DexHub() {
                         </td>
 
                         <td className="px-3 py-2.5 text-center">
-                          <button
-                            onClick={e => { e.stopPropagation(); setSelectedCoin(coin); }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 hover:bg-primary/25 text-primary border border-primary/20 transition-colors group-hover:border-primary/40"
-                          >
-                            View <ArrowUpRight className="w-3 h-3" />
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={e => { e.stopPropagation(); setVammCoin(coin); }}
+                              title="VAMM Instant Swap — trade instantly via virtual bonding curve"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 transition-colors"
+                            >
+                              <Zap className="w-3 h-3" /> VAMM
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); setSelectedCoin(coin); }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-primary/10 hover:bg-primary/25 text-primary border border-primary/20 transition-colors group-hover:border-primary/40"
+                            >
+                              View <ArrowUpRight className="w-3 h-3" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -852,6 +1143,11 @@ export function DexHub() {
                       No exchange listings found
                     </div>
                   )}
+                </div>
+
+                {/* VAMM Quick Swap inside modal */}
+                <div className="shrink-0 border-t border-border px-4 pt-4 pb-2">
+                  <VammSwapPanel symbol={selectedCoin.symbol} />
                 </div>
 
                 {/* Footer CTA */}
@@ -1109,6 +1405,11 @@ export function DexHub() {
 
       {/* close exchanges fragment */}
       </>}
+
+      {/* VAMM Overlay Modal — triggered by ⚡ VAMM button on coin rows */}
+      {vammCoin && (
+        <VammSwapModal symbol={vammCoin.symbol} onClose={() => setVammCoin(null)} />
+      )}
 
     </div>
   );
