@@ -5,7 +5,7 @@ import {
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
   Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
-  HeartPulse, TrendingUp, Terminal,
+  HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -84,6 +84,12 @@ const NAV_GROUPS: NavGroup[] = [
     title: "AI Intelligence",
     items: [
       { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain,   badge: "AI" },
+    ],
+  },
+  {
+    title: "Support",
+    items: [
+      { href: "/admin/support",      label: "Support & Contact",  icon: Headphones },
     ],
   },
   {
