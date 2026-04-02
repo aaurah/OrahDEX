@@ -3,11 +3,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
-  X, Info, AlertTriangle, ChevronRight, BookOpen,
+  X, Info, AlertTriangle, ChevronRight, BookOpen, Wallet,
   Calculator, ArrowRight, Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 // ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
@@ -273,6 +274,8 @@ function LiquidityModal({
   const { toast } = useToast();
 
   const { address, network, chainId: walletChainId } = useWalletStore();
+  const openWalletModal = useWalletModalStore((s) => s.open);
+  const walletConnected = !!address;
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const chainId = walletChainId ?? 1;
   const { balances } = useEvmBalances(isEvm ? address : null, chainId);
@@ -370,6 +373,24 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
+        {/* Wallet connect banner — shown when no wallet is connected */}
+        {!walletConnected && (
+          <div className="flex items-center justify-between gap-3 bg-amber-500/10 border border-amber-500/25 rounded-xl px-4 py-3 mb-4">
+            <div className="flex items-center gap-2.5">
+              <Wallet size={15} className="text-amber-400 shrink-0" />
+              <span className="text-xs text-amber-300 font-medium leading-snug">
+                Connect your wallet to see your balances
+              </span>
+            </div>
+            <button
+              onClick={() => { onClose(); openWalletModal(); }}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 text-xs font-bold border border-amber-500/30 transition-colors"
+            >
+              Connect
+            </button>
+          </div>
+        )}
+
         {mode === "add" ? (
           <>
             {/* ── ADD ── */}
@@ -387,7 +408,7 @@ function LiquidityModal({
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.base} amount</span>
                 <span className="text-xs text-muted-foreground">
-                  Balance: {tokenBalA > 0 ? tokenBalA.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "0"} {pool.base}
+                  Balance: {!walletConnected ? "—" : tokenBalA.toLocaleString("en-US", { maximumFractionDigits: 6 })} {pool.base}
                   {" · "}≈ ${((parseFloat(amtA) || 0) * priceA).toFixed(2)}
                 </span>
               </div>
@@ -419,7 +440,7 @@ function LiquidityModal({
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
                 <span className="text-xs text-muted-foreground">
-                  Balance: {tokenBalB > 0 ? tokenBalB.toLocaleString("en-US", { maximumFractionDigits: 6 }) : "0"} {pool.quote}
+                  Balance: {!walletConnected ? "—" : tokenBalB.toLocaleString("en-US", { maximumFractionDigits: 6 })} {pool.quote}
                   {" · "}≈ ${((parseFloat(amtB) || 0) * priceB).toFixed(2)}
                 </span>
               </div>
