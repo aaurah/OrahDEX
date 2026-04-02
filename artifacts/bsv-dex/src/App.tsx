@@ -310,6 +310,7 @@ function Router() {
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
+      <Route path="/trade"><RedirectTo href="/trade/BSV-USDT" /></Route>
       <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
 
       {/* ── Standalone legal / info pages (no nav wrapper) ── */}
