@@ -5,12 +5,18 @@ import {
   X, Shield, ChevronRight, CheckCircle2,
   PlusCircle, Download, Link2, Copy, Check,
   Eye, AlertTriangle, RefreshCw, ArrowLeft,
-  Layers, Key,
+  Layers, Key, Fingerprint, Loader2, Trash2,
 } from "lucide-react";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  isPasskeySupported,
+  registerPasskeyWallet,
+  loginWithPasskey,
+  listPasskeyWallets,
+} from "@/lib/passkeyWallet";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -173,7 +179,7 @@ function getEvmProvider(walletId: string): any {
   return eth;
 }
 
-type View = "landing" | "create" | "import" | "connect" | "prep";
+type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey";
 type ConnectTab = "reown" | "bsv" | "tron";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
@@ -241,6 +247,45 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [bsvAvatarUrl, setBsvAvatarUrl] = useState<string | null>(null);
   const [bsvManualAddr, setBsvManualAddr] = useState("");
   const [bsvManualWallet, setBsvManualWallet] = useState("");
+
+  /* passkey state */
+  const [passkeyStep, setPasskeyStep] = useState<"idle"|"registering"|"logging_in"|"done"|"error">("idle");
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeyResult, setPasskeyResult] = useState<{ address: string; label: string } | null>(null);
+  const [passkeyLabel, setPasskeyLabel] = useState("My OrahDEX Wallet");
+  const [passkeySupported] = useState(() => isPasskeySupported());
+  const [storedPasskeys, setStoredPasskeys] = useState(() => listPasskeyWallets());
+
+  const handlePasskeyRegister = async () => {
+    setPasskeyStep("registering");
+    setPasskeyError(null);
+    try {
+      const result = await registerPasskeyWallet(passkeyLabel || "My OrahDEX Wallet");
+      setPasskeyResult({ address: result.address, label: result.label });
+      setStoredPasskeys(listPasskeyWallets());
+      setPasskeyStep("done");
+      connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
+    } catch (e: any) {
+      setPasskeyError(e?.message ?? "Passkey creation failed");
+      setPasskeyStep("error");
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setPasskeyStep("logging_in");
+    setPasskeyError(null);
+    try {
+      const result = await loginWithPasskey();
+      setPasskeyResult({ address: result.address, label: result.label });
+      setPasskeyStep("done");
+      connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
+    } catch (e: any) {
+      setPasskeyError(e?.message ?? "Passkey authentication failed");
+      setPasskeyStep("error");
+    }
+  };
 
   // When isOpen goes from true → false externally (e.g. Markets closes it on navigation),
   // reset all internal state so the next open starts fresh.
@@ -887,6 +932,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
                       {view === "prep" && "Wallet Setup"}
+                      {view === "passkey" && <span className="flex items-center gap-2"><Fingerprint className="w-5 h-5 text-primary" /> Passkey Wallet</span>}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5 italic">Trade means DEX ✦</p>
                   </div>
@@ -904,6 +950,57 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {view === "landing" && (
                     <motion.div key="landing" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
                       className="p-5 space-y-3">
+
+                      {/* ⓪ Passkey — frictionless, no seed phrase */}
+                      <div className={cn(
+                        "rounded-2xl border p-4 bg-gradient-to-br",
+                        passkeySupported
+                          ? "border-primary/40 from-primary/10 via-primary/5 to-transparent"
+                          : "border-border/40 from-white/3 to-transparent opacity-60"
+                      )}>
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+                            <Fingerprint className="w-6 h-6 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-black text-[15px] text-foreground leading-tight">Passkey Login</h3>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">New</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground font-medium">
+                              {passkeySupported
+                                ? "Face ID · Touch ID · Windows Hello — no seed phrase"
+                                : "Not supported in this browser"}
+                            </p>
+                          </div>
+                        </div>
+                        {passkeySupported && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); }}
+                              className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
+                            >
+                              <Fingerprint className="w-4 h-4" />
+                              {storedPasskeys.length > 0 ? "Sign In" : "Create Wallet"}
+                            </button>
+                            {storedPasskeys.length > 0 && (
+                              <button
+                                onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); }}
+                                className="flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/40 text-primary font-bold text-sm hover:bg-primary/10 transition-colors"
+                              >
+                                <PlusCircle className="w-4 h-4" />
+                                Add New
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {passkeySupported && storedPasskeys.length > 0 && (
+                          <div className="mt-2 text-[10px] text-muted-foreground flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-green-400" />
+                            {storedPasskeys.length} passkey wallet{storedPasskeys.length > 1 ? "s" : ""} on this device
+                          </div>
+                        )}
+                      </div>
 
                       {/* ① EVM — primary option (most common user) */}
                       <div className="rounded-2xl border border-blue-500/35 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4">
@@ -1765,7 +1862,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </span>
                         {prepProvider && (
                           <span className="text-[10px] font-semibold text-muted-foreground capitalize bg-white/5 border border-border px-2 py-0.5 rounded-full">
-                            {prepProvider === "aura-wallet" ? "OrahDEX Wallet" : prepProvider}
+                            {prepProvider === "aura-wallet" || prepProvider === "passkey" ? "OrahDEX Wallet" : prepProvider}
                           </span>
                         )}
                       </div>
@@ -1840,6 +1937,150 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </span>{" "}
                         to your address above to fund trades. All trades settle permanently on the BSV blockchain.
                       </p>
+
+                    </motion.div>
+                  )}
+
+                  {/* ── PASSKEY VIEW ── */}
+                  {view === "passkey" && (
+                    <motion.div key="passkey" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                      className="p-5 space-y-4">
+
+                      {/* Passkey hero */}
+                      <div className="flex flex-col items-center py-4 text-center">
+                        <div className={cn(
+                          "w-20 h-20 rounded-3xl flex items-center justify-center mb-4 transition-all",
+                          passkeyStep === "registering" || passkeyStep === "logging_in"
+                            ? "bg-primary/30 border-2 border-primary/50 animate-pulse"
+                            : passkeyStep === "done"
+                              ? "bg-green-500/20 border-2 border-green-500/40"
+                              : passkeyStep === "error"
+                                ? "bg-red-500/15 border-2 border-red-500/30"
+                                : "bg-primary/15 border-2 border-primary/30"
+                        )}>
+                          {passkeyStep === "registering" || passkeyStep === "logging_in"
+                            ? <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                            : passkeyStep === "done"
+                              ? <CheckCircle2 className="w-10 h-10 text-green-400" />
+                              : passkeyStep === "error"
+                                ? <AlertTriangle className="w-10 h-10 text-red-400" />
+                                : <Fingerprint className="w-10 h-10 text-primary" />
+                          }
+                        </div>
+
+                        {passkeyStep === "idle" && (
+                          <>
+                            <h3 className="text-lg font-bold mb-1">No seed phrase needed</h3>
+                            <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+                              Your wallet is protected by your device biometrics — Face ID, Touch ID, fingerprint, or PIN.
+                              No one can access it without your passkey.
+                            </p>
+                          </>
+                        )}
+                        {(passkeyStep === "registering") && (
+                          <>
+                            <h3 className="text-lg font-bold mb-1">Creating your wallet…</h3>
+                            <p className="text-sm text-muted-foreground">Approve the passkey prompt on your device</p>
+                          </>
+                        )}
+                        {passkeyStep === "logging_in" && (
+                          <>
+                            <h3 className="text-lg font-bold mb-1">Authenticating…</h3>
+                            <p className="text-sm text-muted-foreground">Use biometrics or your passkey to sign in</p>
+                          </>
+                        )}
+                        {passkeyStep === "done" && passkeyResult && (
+                          <>
+                            <h3 className="text-lg font-bold text-green-400 mb-1">Wallet Ready!</h3>
+                            <p className="text-sm text-muted-foreground">Connecting to OrahDEX…</p>
+                          </>
+                        )}
+                        {passkeyStep === "error" && (
+                          <>
+                            <h3 className="text-lg font-bold text-red-400 mb-1">Something went wrong</h3>
+                            <p className="text-sm text-red-400/80 max-w-xs">{passkeyError}</p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Existing passkey wallets */}
+                      {storedPasskeys.length > 0 && passkeyStep === "idle" && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Passkey wallets on this device</p>
+                          {storedPasskeys.map(w => (
+                            <div key={w.credentialId}
+                              className="flex items-center gap-3 p-3 rounded-xl bg-secondary border border-border">
+                              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                <Fingerprint className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-semibold truncate">{w.label ?? "Passkey Wallet"}</div>
+                                <div className="text-[10px] text-muted-foreground font-mono truncate">{w.address}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      {passkeyStep === "idle" && (
+                        <div className="space-y-2">
+                          {storedPasskeys.length > 0 && (
+                            <button
+                              onClick={handlePasskeyLogin}
+                              className="w-full flex items-center justify-center gap-2.5 py-4 rounded-xl bg-primary text-primary-foreground font-black text-base hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary/25"
+                            >
+                              <Fingerprint className="w-5 h-5" />
+                              Sign In with Passkey
+                            </button>
+                          )}
+
+                          {/* Create new wallet */}
+                          <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
+                            <p className="text-xs font-semibold text-muted-foreground">Create a new passkey wallet</p>
+                            <input
+                              type="text"
+                              value={passkeyLabel}
+                              onChange={e => setPasskeyLabel(e.target.value)}
+                              placeholder="Wallet name (optional)"
+                              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
+                            />
+                            <button
+                              onClick={handlePasskeyRegister}
+                              className={cn(
+                                "w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all",
+                                storedPasskeys.length > 0
+                                  ? "border border-primary/40 text-primary hover:bg-primary/10"
+                                  : "bg-primary text-primary-foreground hover:brightness-110 active:scale-[0.98] shadow-lg shadow-primary/20"
+                              )}
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                              {storedPasskeys.length > 0 ? "Create Another Wallet" : "Create Passkey Wallet"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {passkeyStep === "error" && (
+                        <button
+                          onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); }}
+                          className="w-full py-3 rounded-xl bg-secondary text-foreground font-semibold hover:bg-secondary/80 transition-colors"
+                        >
+                          Try Again
+                        </button>
+                      )}
+
+                      {/* Security note */}
+                      {passkeyStep === "idle" && (
+                        <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/5 border border-green-500/15">
+                          <Shield className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                          <div className="text-[11px] text-muted-foreground leading-relaxed">
+                            <span className="text-green-400 font-semibold">Non-custodial & device-bound.</span>{" "}
+                            Your private key is encrypted on this device and can only be unlocked with your biometrics.
+                            OrahDEX never sees your key.
+                          </div>
+                        </div>
+                      )}
 
                     </motion.div>
                   )}
