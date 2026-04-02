@@ -4,6 +4,7 @@ import { supportTicketsTable, supportFaqsTable, platformSettingsTable } from "@w
 import { eq, desc, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { sendMail } from "../lib/mailer.js";
+import { notifyNewTicket, sendTestNotification } from "../lib/notifier.js";
 
 const router = Router();
 
@@ -45,6 +46,17 @@ router.post("/support/contact", async (req, res) => {
     }
 
     logger.info({ id: ticket.id, email: ticket.email }, "Support ticket created");
+
+    notifyNewTicket({
+      id: ticket.id,
+      name: ticket.name,
+      email: ticket.email,
+      subject: ticket.subject,
+      category: ticket.category,
+      message: ticket.message,
+      priority: ticket.priority,
+    }).catch(e => logger.warn({ err: e?.message }, "notifyNewTicket failed"));
+
     res.json({ success: true, ticketId: ticket.id, message: "Your message has been received. We'll get back to you shortly." });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Support contact error");
@@ -196,6 +208,11 @@ router.get("/admin/support/settings", async (_req, res) => {
       "support_email_press", "support_email_privacy", "support_chat_enabled",
       "support_chat_welcome", "support_chat_offline_msg", "support_hours",
       "support_response_time", "support_telegram_url", "support_discord_url",
+      "notif_telegram_token", "notif_telegram_chat_id",
+      "notif_ntfy_topic", "notif_ntfy_server",
+      "notif_discord_webhook",
+      "notif_pushover_token", "notif_pushover_user",
+      "notif_enabled",
     ];
     const settings: Record<string, string> = {};
     for (const key of keys) {
@@ -216,6 +233,11 @@ router.post("/admin/support/settings", async (req, res) => {
       "support_email_press", "support_email_privacy", "support_chat_enabled",
       "support_chat_welcome", "support_chat_offline_msg", "support_hours",
       "support_response_time", "support_telegram_url", "support_discord_url",
+      "notif_telegram_token", "notif_telegram_chat_id",
+      "notif_ntfy_topic", "notif_ntfy_server",
+      "notif_discord_webhook",
+      "notif_pushover_token", "notif_pushover_user",
+      "notif_enabled",
     ];
     for (const key of allowed) {
       if (body[key] !== undefined) {
@@ -227,6 +249,18 @@ router.post("/admin/support/settings", async (req, res) => {
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── ADMIN: Test notification ───────────────────────────────────────────────── */
+router.post("/admin/support/notifications/test", async (req, res) => {
+  try {
+    const { channel, ...settings } = req.body ?? {};
+    if (!channel) return res.status(400).json({ error: "channel is required" });
+    const result = await sendTestNotification(channel, settings);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message });
   }
 });
 

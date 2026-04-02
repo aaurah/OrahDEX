@@ -3,20 +3,22 @@ import {
   Mail, MessageCircle, Inbox, HelpCircle, Save, Plus,
   Trash2, Edit3, Check, X, ChevronDown, ChevronUp,
   Eye, EyeOff, RefreshCw, Send, Clock, AlertCircle,
-  CheckCircle2, Circle, Reply, Filter,
+  CheckCircle2, Circle, Reply, Filter, Bell, Zap,
+  Smartphone, Monitor, Globe, ExternalLink, Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Tab = "emails" | "chat" | "tickets" | "faqs";
+type Tab = "emails" | "chat" | "tickets" | "faqs" | "notifications";
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
-  { id: "emails",  label: "Email Setup",  icon: Mail },
-  { id: "chat",    label: "Live Chat",    icon: MessageCircle },
-  { id: "tickets", label: "Tickets",      icon: Inbox },
-  { id: "faqs",    label: "FAQ Manager",  icon: HelpCircle },
+  { id: "emails",        label: "Email Setup",    icon: Mail },
+  { id: "chat",          label: "Live Chat",      icon: MessageCircle },
+  { id: "tickets",       label: "Tickets",        icon: Inbox },
+  { id: "faqs",          label: "FAQ Manager",    icon: HelpCircle },
+  { id: "notifications", label: "Notifications",  icon: Reply },
 ];
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -754,6 +756,302 @@ function FaqsTab() {
   );
 }
 
+/* ── NOTIFICATIONS TAB ──────────────────────────────────────────────────────── */
+function NotificationsTab() {
+  const { toast } = useToast();
+  const [settings, setSettings] = useState({
+    notif_enabled: "true",
+    notif_telegram_token: "",
+    notif_telegram_chat_id: "",
+    notif_ntfy_topic: "",
+    notif_ntfy_server: "",
+    notif_discord_webhook: "",
+    notif_pushover_token: "",
+    notif_pushover_user: "",
+  });
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE}/api/admin/support/settings`)
+      .then(r => r.json())
+      .then(data => { setSettings(s => ({ ...s, ...data })); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await fetch(`${BASE}/api/admin/support/settings`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings),
+      });
+      toast({ title: "Notification settings saved" });
+    } catch {
+      toast({ title: "Failed to save", variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const test = async (channel: string, payload: Record<string, string>) => {
+    setTesting(channel);
+    try {
+      const r = await fetch(`${BASE}/api/admin/support/notifications/test`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, ...payload }),
+      });
+      const data = await r.json();
+      if (data.success) toast({ title: `Test sent to ${channel}!`, description: "Check your device for the notification." });
+      else toast({ title: `${channel} test failed`, description: data.error, variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Test failed", description: e.message, variant: "destructive" });
+    } finally { setTesting(null); }
+  };
+
+  const copyTopic = () => {
+    navigator.clipboard.writeText(settings.notif_ntfy_topic || "orahdex-support");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const notifEnabled = settings.notif_enabled !== "false";
+
+  return (
+    <div className="space-y-6">
+      {/* Master toggle */}
+      <div className="bg-card border border-border rounded-2xl p-5 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-sm">Support Ticket Alerts</h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Get instant push notifications on your phone and desktop when a new support ticket is submitted.
+            Configure one or more channels below.
+          </p>
+        </div>
+        <button
+          onClick={() => setSettings(s => ({ ...s, notif_enabled: notifEnabled ? "false" : "true" }))}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all shrink-0",
+            notifEnabled ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-muted/20 border-border text-muted-foreground"
+          )}
+        >
+          <Bell className={cn("w-3.5 h-3.5", notifEnabled && "animate-pulse")} />
+          {notifEnabled ? "Alerts On" : "Alerts Off"}
+        </button>
+      </div>
+
+      {/* ntfy.sh — best free option */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/15 flex items-center justify-center">
+            <Smartphone className="w-4 h-4 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">ntfy.sh — Mobile & Desktop Push</h3>
+            <p className="text-xs text-muted-foreground">Free • No account needed • iOS, Android, Windows, macOS, Linux</p>
+          </div>
+          <a href="https://ntfy.sh" target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-primary transition-colors">
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+
+        <div className="bg-purple-500/5 border border-purple-500/15 rounded-xl p-3 mb-4 text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Setup in 2 minutes:</strong><br />
+          1. Download the <strong>ntfy</strong> app: <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">Android</a> · <a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">iOS</a> · <a href="https://ntfy.sh/app" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">Web app</a><br />
+          2. In the app, tap <strong>+</strong> and subscribe to your topic name below<br />
+          3. Send a test notification to confirm it's working
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Topic Name <span className="text-red-400">*</span></label>
+            <div className="flex gap-2">
+              <input
+                value={settings.notif_ntfy_topic}
+                onChange={e => setSettings(s => ({ ...s, notif_ntfy_topic: e.target.value }))}
+                placeholder="e.g. orahdex-support-abc123"
+                className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+              />
+              <button onClick={copyTopic} title="Copy topic" className="px-3 rounded-xl border border-border hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground">
+                {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">Use a unique name — anyone who knows the topic can subscribe</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Custom Server (optional)</label>
+            <input
+              value={settings.notif_ntfy_server}
+              onChange={e => setSettings(s => ({ ...s, notif_ntfy_server: e.target.value }))}
+              placeholder="https://ntfy.sh (default)"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">Self-host ntfy for private notifications</p>
+          </div>
+        </div>
+        <button
+          onClick={() => test("ntfy", { topic: settings.notif_ntfy_topic })}
+          disabled={!settings.notif_ntfy_topic || testing === "ntfy"}
+          className="flex items-center gap-2 px-4 py-2 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl text-xs font-semibold hover:bg-purple-500/20 transition-all disabled:opacity-40"
+        >
+          {testing === "ntfy" ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          Send Test to ntfy
+        </button>
+      </div>
+
+      {/* Telegram Bot */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center">
+            <MessageCircle className="w-4 h-4 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Telegram Bot</h3>
+            <p className="text-xs text-muted-foreground">Free • iOS, Android, Windows, macOS, Linux, Web</p>
+          </div>
+          <a href="https://core.telegram.org/bots#how-do-i-create-a-bot" target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-primary transition-colors">
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+
+        <div className="bg-blue-500/5 border border-blue-500/15 rounded-xl p-3 mb-4 text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Setup:</strong><br />
+          1. Open Telegram and message <strong className="text-blue-400">@BotFather</strong><br />
+          2. Send <code className="bg-white/10 px-1 rounded">/newbot</code> and follow instructions — copy the <strong>Bot Token</strong><br />
+          3. Message your new bot, then get your <strong>Chat ID</strong> from <a href="https://api.telegram.org/bot{YOUR_TOKEN}/getUpdates" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">getUpdates</a>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Bot Token</label>
+            <input
+              value={settings.notif_telegram_token}
+              onChange={e => setSettings(s => ({ ...s, notif_telegram_token: e.target.value }))}
+              placeholder="1234567890:ABC-DEF..."
+              type="password"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Chat ID</label>
+            <input
+              value={settings.notif_telegram_chat_id}
+              onChange={e => setSettings(s => ({ ...s, notif_telegram_chat_id: e.target.value }))}
+              placeholder="e.g. -1001234567890"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+        </div>
+        <button
+          onClick={() => test("telegram", { token: settings.notif_telegram_token, chatId: settings.notif_telegram_chat_id })}
+          disabled={!settings.notif_telegram_token || !settings.notif_telegram_chat_id || testing === "telegram"}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-xl text-xs font-semibold hover:bg-blue-500/20 transition-all disabled:opacity-40"
+        >
+          {testing === "telegram" ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          Send Test to Telegram
+        </button>
+      </div>
+
+      {/* Discord Webhook */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-xl bg-indigo-500/15 flex items-center justify-center">
+            <Globe className="w-4 h-4 text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Discord Webhook</h3>
+            <p className="text-xs text-muted-foreground">Free • Sends tickets to a Discord channel</p>
+          </div>
+        </div>
+
+        <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-xl p-3 mb-4 text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Setup:</strong> In Discord, open a channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy URL
+        </div>
+
+        <div className="mb-4">
+          <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Webhook URL</label>
+          <input
+            value={settings.notif_discord_webhook}
+            onChange={e => setSettings(s => ({ ...s, notif_discord_webhook: e.target.value }))}
+            placeholder="https://discord.com/api/webhooks/..."
+            type="password"
+            className="w-full max-w-lg bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+          />
+        </div>
+        <button
+          onClick={() => test("discord", { webhookUrl: settings.notif_discord_webhook })}
+          disabled={!settings.notif_discord_webhook || testing === "discord"}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl text-xs font-semibold hover:bg-indigo-500/20 transition-all disabled:opacity-40"
+        >
+          {testing === "discord" ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          Send Test to Discord
+        </button>
+      </div>
+
+      {/* Pushover */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-xl bg-orange-500/15 flex items-center justify-center">
+            <Monitor className="w-4 h-4 text-orange-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">Pushover</h3>
+            <p className="text-xs text-muted-foreground">$5 one-time · Native push for iOS, Android, desktop</p>
+          </div>
+          <a href="https://pushover.net" target="_blank" rel="noreferrer" className="ml-auto text-muted-foreground hover:text-primary transition-colors">
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+
+        <div className="bg-orange-500/5 border border-orange-500/15 rounded-xl p-3 mb-4 text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Setup:</strong> Create account at <a href="https://pushover.net" className="text-orange-400 hover:underline" target="_blank" rel="noreferrer">pushover.net</a>, create an Application to get the App Token, and use your User Key from the dashboard.
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">App Token</label>
+            <input
+              value={settings.notif_pushover_token}
+              onChange={e => setSettings(s => ({ ...s, notif_pushover_token: e.target.value }))}
+              placeholder="azGDORePK8gMaC0QOYAMyEEuzJnyUi"
+              type="password"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">User Key</label>
+            <input
+              value={settings.notif_pushover_user}
+              onChange={e => setSettings(s => ({ ...s, notif_pushover_user: e.target.value }))}
+              placeholder="uQiRzpo4DXghDmr9QzzfQu..."
+              type="password"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+        </div>
+        <button
+          onClick={() => test("pushover", { token: settings.notif_pushover_token, userKey: settings.notif_pushover_user })}
+          disabled={!settings.notif_pushover_token || !settings.notif_pushover_user || testing === "pushover"}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-xl text-xs font-semibold hover:bg-orange-500/20 transition-all disabled:opacity-40"
+        >
+          {testing === "pushover" ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          Send Test to Pushover
+        </button>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={save}
+          disabled={saving || !loaded}
+          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-50"
+        >
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save Notification Settings
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN COMPONENT ─────────────────────────────────────────────────────────── */
 export function AdminSupportSettings() {
   const [tab, setTab] = useState<Tab>("emails");
@@ -784,10 +1082,11 @@ export function AdminSupportSettings() {
         ))}
       </div>
 
-      {tab === "emails"  && <EmailSetupTab />}
-      {tab === "chat"    && <LiveChatTab />}
-      {tab === "tickets" && <TicketsTab />}
-      {tab === "faqs"    && <FaqsTab />}
+      {tab === "emails"        && <EmailSetupTab />}
+      {tab === "chat"          && <LiveChatTab />}
+      {tab === "tickets"       && <TicketsTab />}
+      {tab === "faqs"          && <FaqsTab />}
+      {tab === "notifications" && <NotificationsTab />}
     </div>
   );
 }
