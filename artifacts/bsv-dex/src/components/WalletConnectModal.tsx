@@ -977,21 +977,19 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         {passkeySupported && (
                           <div className="grid grid-cols-2 gap-2">
                             <button
-                              onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); }}
+                              onClick={() => { setStoredPasskeys(listPasskeyWallets()); setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); handlePasskeyLogin(); }}
                               className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
                             >
                               <Fingerprint className="w-4 h-4" />
-                              {storedPasskeys.length > 0 ? "Sign In" : "Create Wallet"}
+                              Sign In
                             </button>
-                            {storedPasskeys.length > 0 && (
-                              <button
-                                onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); }}
-                                className="flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/40 text-primary font-bold text-sm hover:bg-primary/10 transition-colors"
-                              >
-                                <PlusCircle className="w-4 h-4" />
-                                Add New
-                              </button>
-                            )}
+                            <button
+                              onClick={() => { setStoredPasskeys(listPasskeyWallets()); setPasskeyStep("idle"); setPasskeyError(null); setView("passkey"); }}
+                              className="flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/40 text-primary font-bold text-sm hover:bg-primary/10 transition-colors"
+                            >
+                              <PlusCircle className="w-4 h-4" />
+                              Create New
+                            </button>
                           </div>
                         )}
                         {passkeySupported && storedPasskeys.length > 0 && (
@@ -2025,16 +2023,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {/* Actions */}
                       {passkeyStep === "idle" && (
                         <div className="space-y-2">
-                          {storedPasskeys.length > 0 && (
-                            <button
-                              onClick={handlePasskeyLogin}
-                              className="w-full flex items-center justify-center gap-2.5 py-4 rounded-xl bg-primary text-primary-foreground font-black text-base hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary/25"
-                            >
-                              <Fingerprint className="w-5 h-5" />
-                              Sign In with Passkey
-                            </button>
-                          )}
-
+                          <button
+                            onClick={handlePasskeyLogin}
+                            className="w-full flex items-center justify-center gap-2.5 py-4 rounded-xl bg-primary text-primary-foreground font-black text-base hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary/25"
+                          >
+                            <Fingerprint className="w-5 h-5" />
+                            Sign In with Passkey
+                          </button>
                           {/* Create new wallet */}
                           <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
                             <p className="text-xs font-semibold text-muted-foreground">Create a new passkey wallet</p>
@@ -2047,15 +2042,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             />
                             <button
                               onClick={handlePasskeyRegister}
-                              className={cn(
-                                "w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all",
-                                storedPasskeys.length > 0
-                                  ? "border border-primary/40 text-primary hover:bg-primary/10"
-                                  : "bg-primary text-primary-foreground hover:brightness-110 active:scale-[0.98] shadow-lg shadow-primary/20"
-                              )}
+                              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm border border-primary/40 text-primary hover:bg-primary/10 transition-all"
                             >
                               <PlusCircle className="w-4 h-4" />
-                              {storedPasskeys.length > 0 ? "Create Another Wallet" : "Create Passkey Wallet"}
+                              Create Passkey Wallet
                             </button>
                           </div>
                         </div>

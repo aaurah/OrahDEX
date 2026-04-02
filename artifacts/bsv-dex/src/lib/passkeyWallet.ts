@@ -230,13 +230,14 @@ export async function loginWithPasskey(): Promise<LoginResult> {
   if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
 
   const wallets = listPasskeyWallets();
-  if (wallets.length === 0) throw new Error("No passkey wallets found on this device");
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
 
-  const challenge         = crypto.getRandomValues(new Uint8Array(32));
-  const allowCredentials = wallets.map(w => ({
-    id:   b642buf(url2b64(w.credentialId)),
-    type: "public-key" as const,
-  }));
+  // Use discoverable-credential flow (empty allowCredentials) so the device
+  // presents ALL available passkeys for this origin — works even when
+  // localStorage is empty (different session, reinstall, etc.)
+  const allowCredentials = wallets.length > 0
+    ? wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : [];
 
   const assertion = await navigator.credentials.get({
     publicKey: {
@@ -253,7 +254,13 @@ export async function loginWithPasskey(): Promise<LoginResult> {
   const credentialId = b642url(buf2b64(rawId));
 
   const wallet = wallets.find(w => w.credentialId === credentialId);
-  if (!wallet) throw new Error("Passkey not recognised — was this wallet created on another device?");
+  if (!wallet) {
+    throw new Error(
+      "Wallet data not found on this device. Your passkey authenticated successfully but the " +
+      "encrypted wallet was not found in this browser's storage. " +
+      "Please import your wallet using a private key, or create a new passkey wallet."
+    );
+  }
 
   // Decrypt the private key
   const privateKey = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
