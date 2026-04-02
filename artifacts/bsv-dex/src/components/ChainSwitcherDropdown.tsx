@@ -530,6 +530,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
 
         {open && (
           <div className="mt-2 rounded-xl border border-border bg-background/60 overflow-hidden">
+            <div className="max-h-[360px] overflow-y-auto">
             {Object.entries(chainsByLayer).map(([groupLabel, chains]) => (
               <div key={groupLabel}>
                 <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2.5 pb-1">
@@ -568,6 +569,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
                 })}
               </div>
             </div>
+            </div>{/* end scrollable */}
           </div>
         )}
       </div>
@@ -594,7 +596,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
               <span className="text-[10px] text-muted-foreground">{EVM_CHAINS.length} EVM chains</span>
             </div>
 
-            <div className="p-2 max-h-[440px] overflow-y-auto">
+            <div className="p-2 max-h-[520px] overflow-y-auto">
               {Object.entries(chainsByLayer).map(([groupLabel, chains]) => (
                 <div key={groupLabel} className="mb-3">
                   <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
