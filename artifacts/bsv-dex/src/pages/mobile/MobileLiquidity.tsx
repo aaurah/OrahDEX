@@ -300,7 +300,7 @@ function LiquidityModal({
         {/* Handle */}
         <div className="w-10 h-1 bg-muted rounded-full mx-auto mb-4" />
 
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             {/* Token badges */}
             <div className="flex -space-x-2">
@@ -312,8 +312,17 @@ function LiquidityModal({
               ))}
             </div>
             <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
+            <span className="text-[9px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold">SIMULATED</span>
           </div>
           <button onClick={onClose} className="text-muted-foreground text-sm">✕</button>
+        </div>
+
+        {/* Simulation notice */}
+        <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2 mb-4">
+          <Info size={12} className="text-yellow-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-yellow-300/90 leading-relaxed">
+            <strong>Demo mode.</strong> No real transaction — your wallet balance is shown for reference only. No tokens will be deducted.
+          </p>
         </div>
 
         {/* Wallet gate */}

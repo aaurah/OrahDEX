@@ -371,7 +371,7 @@ function LiquidityModal({
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
               {[pool.base, pool.quote].map((t, i) => (
@@ -380,11 +380,22 @@ function LiquidityModal({
               ))}
             </div>
             <div>
-              <div className="font-bold text-base">{pool.base}/{pool.quote}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
+                <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold tracking-wide">SIMULATED</span>
+              </div>
               <div className="text-xs text-muted-foreground">{pool.fee}% AMM fee · BSV settled</div>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
+        </div>
+
+        {/* Simulation notice */}
+        <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2.5 mb-4">
+          <Info size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-yellow-300/90 leading-relaxed">
+            <strong>Demo mode — no real transaction.</strong> This platform is under active testing. Your wallet balance is displayed for reference only. No tokens will be deducted from your wallet and no on-chain transaction will be submitted.
+          </p>
         </div>
 
         {/* Wallet gate — blocks the form until wallet is connected */}
