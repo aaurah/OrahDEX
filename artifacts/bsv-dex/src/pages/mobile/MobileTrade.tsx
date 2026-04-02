@@ -548,7 +548,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         </div>
 
         {/* ── CHART ── */}
-        <div className="h-[320px]">
+        <div className="h-[360px] overflow-hidden">
           <Chart symbol={symbol} interval={interval} onIntervalChange={handleIntervalChange} />
         </div>
 

@@ -122,6 +122,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     if (!chartRef.current) {
       const c = getChartColors(theme);
       const chart = createChart(el, {
+        autoSize: true,
         layout: {
           background: { type: ColorType.Solid, color: c.bg },
           textColor: c.text,
@@ -141,7 +142,8 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         },
         rightPriceScale: {
           borderColor: c.border,
-          scaleMargins: { top: 0.1, bottom: 0.25 },
+          scaleMargins: { top: 0.08, bottom: 0.22 },
+          minimumWidth: 58,
         },
         crosshair: {
           mode: 1,
@@ -150,8 +152,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         },
         handleScroll: true,
         handleScale: true,
-        width: el.clientWidth,
-        height: el.clientHeight,
       });
 
       const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -175,16 +175,7 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       candleSeriesRef.current = candleSeries;
       volumeSeriesRef.current = volumeSeries;
 
-      const ro = new ResizeObserver(entries => {
-        try {
-          const e = entries[0];
-          if (!e || !chartRef.current) return;
-          const { width, height } = e.contentRect;
-          if (width > 0 && height > 0) chartRef.current.applyOptions({ width, height });
-        } catch (_) {}
-      });
-      ro.observe(el);
-      return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
+      return () => { chart.remove(); chartRef.current = null; };
     }
     return;
   }, [candles.length > 0]);
@@ -260,18 +251,18 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: col.bg, color: col.text }}>
       {/* Top stats bar */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b shrink-0 flex-wrap" style={{ borderColor: col.grid }}>
-        <div className="flex items-center gap-1.5">
-          <span className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-[10px]">⚡</span>
-          <span className="text-sm font-bold" style={{ color: col.text }}>{symbol.replace(/-PERP/i, '')}</span>
-          <span className="text-[10px] text-green-400/60 bg-green-400/10 px-1.5 py-0.5 rounded font-mono">OrahDEX Live</span>
+      <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0 overflow-hidden" style={{ borderColor: col.grid }}>
+        <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+          <span className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center text-[10px] shrink-0">⚡</span>
+          <span className="text-sm font-bold truncate" style={{ color: col.text }}>{symbol.replace(/-PERP/i, '')}</span>
+          <span className="text-[10px] text-green-400/60 bg-green-400/10 px-1.5 py-0.5 rounded font-mono shrink-0">OrahDEX Live</span>
         </div>
         {lastPrice !== null && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-base font-bold font-mono" style={{ color: col.text }}>
+          <div className="flex items-center gap-1.5 ml-auto shrink-0">
+            <span className="text-sm font-bold font-mono" style={{ color: col.text }}>
               {pricePrefix}{lastPrice.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}{priceSuffix}
             </span>
-            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${isUp ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10'}`}>
+            <span className={`text-xs font-bold px-1.5 py-0.5 rounded shrink-0 ${isUp ? 'text-green-400 bg-green-400/10' : 'text-red-400 bg-red-400/10'}`}>
               {isUp ? '+' : ''}{priceChange.toFixed(2)}%
             </span>
           </div>
