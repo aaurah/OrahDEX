@@ -337,7 +337,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { data: orderBook } = useQuery({
     queryKey: ["orderbook", symbol],
     queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/orderbook`).then(r => r.json()),
-    refetchInterval: 3000,
+    refetchInterval: 5000,
   });
 
   const { data: recentTrades = [] } = useQuery({

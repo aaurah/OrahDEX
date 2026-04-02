@@ -1,19 +1,15 @@
 import { createRoot } from "react-dom/client";
-import { WagmiProvider } from "wagmi";
+import { createElement } from "react";
 import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
-import { setupReown, getWagmiConfig } from "./lib/reown";
 
 applyStoredTheme();
 
-/* Initialize Reown AppKit synchronously before render so WagmiProvider has a config */
-const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID ?? "";
-if (reownProjectId) {
-  setupReown(reownProjectId);
-} else {
-  console.warn("[OrahDEX] VITE_REOWN_PROJECT_ID is not set — Reown/WalletConnect will be disabled.");
-}
+const root = createRoot(document.getElementById("root")!);
+
+/* ── Step 1: Render immediately — fast first paint ── */
+root.render(createElement(App));
 
 window.addEventListener("error", (e) => {
   if (e.message === "ResizeObserver loop limit exceeded" || e.message === "") {
@@ -22,15 +18,36 @@ window.addEventListener("error", (e) => {
   }
 });
 
-const wagmiConfig = getWagmiConfig();
-const root = createRoot(document.getElementById("root")!);
+/* ── Step 2: Load Reown/Wagmi asynchronously, then re-render with WagmiProvider ──
+   Admin pages use Wagmi hooks so WagmiProvider must be available, but it's only
+   needed after the user navigates to /admin. We get it ready within ~100ms. */
+const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID ?? "";
+if (reownProjectId) {
+  const initReown = async () => {
+    try {
+      const [{ WagmiProvider }, { setupReown, getWagmiConfig }] = await Promise.all([
+        import("wagmi"),
+        import("./lib/reown"),
+      ]);
+      setupReown(reownProjectId);
+      const cfg = getWagmiConfig();
+      if (cfg) {
+        /* Re-render the whole tree with WagmiProvider — React reconciles, not a full remount */
+        root.render(
+          createElement(WagmiProvider, { config: cfg }, createElement(App))
+        );
+      }
+    } catch (e) {
+      console.warn("[OrahDEX] Reown init failed:", e);
+    }
+  };
 
-root.render(
-  wagmiConfig ? (
-    <WagmiProvider config={wagmiConfig}>
-      <App />
-    </WagmiProvider>
-  ) : (
-    <App />
-  )
-);
+  /* Defer until after first paint — but not too long */
+  if ("requestIdleCallback" in window) {
+    (window as any).requestIdleCallback(initReown, { timeout: 2000 });
+  } else {
+    setTimeout(initReown, 50);
+  }
+} else {
+  console.warn("[OrahDEX] VITE_REOWN_PROJECT_ID not set — WalletConnect disabled.");
+}

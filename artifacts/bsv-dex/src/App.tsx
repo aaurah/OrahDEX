@@ -12,7 +12,6 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { subscribeReownAccount, isReownReady, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting } from "@/lib/reown";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
@@ -209,6 +208,7 @@ function Router() {
         const chainHex: string = await eth.request({ method: "eth_chainId" }).catch(() => "0x1");
         const chainId = parseInt(chainHex, 16);
         useWalletStore.getState().connect({ address: accounts[0], provider: p ?? "metamask", network: "evm", chainId });
+        const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
         const bal = await fetchEvmBalance(accounts[0], chainId);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
       }
@@ -220,6 +220,7 @@ function Router() {
       const chainId = parseInt(chainHex, 16);
       useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
+      const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
       const bal = await fetchEvmBalance(addr, chainId);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
     };
@@ -231,13 +232,16 @@ function Router() {
 
     let reownUnsub: (() => void) | null = null;
     let pollTries = 0;
-    const pollReown = setInterval(() => {
+    const pollReown = setInterval(async () => {
+      /* Lazily import reown — it's a heavy SDK, load it only after first render */
+      const reown = await import("@/lib/reown").catch(() => null);
+      if (!reown) { clearInterval(pollReown); return; }
+      const { isReownReady, subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting } = reown;
       if (isReownReady()) {
         clearInterval(pollReown);
         reownUnsub = subscribeReownAccount(async (state) => {
           const { provider: current } = useWalletStore.getState();
           if (state.isConnected && state.address) {
-            // Block auto-reconnect if the user is in the middle of disconnecting
             if (isUserDisconnecting()) return;
             const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
             useWalletStore.getState().connect({
@@ -252,13 +256,12 @@ function Router() {
             }
           } else if (current === "reown") {
             useWalletStore.getState().disconnect();
-            // Clear the flag once Reown confirms disconnection
             setUserDisconnecting(false);
           }
         });
       }
-      if (++pollTries > 50) clearInterval(pollReown);
-    }, 200);
+      if (++pollTries > 100) clearInterval(pollReown);
+    }, 300);
 
     return () => {
       clearInterval(pollReown);

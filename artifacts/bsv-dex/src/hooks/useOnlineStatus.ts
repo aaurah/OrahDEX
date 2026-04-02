@@ -1,104 +1,50 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
 
-/**
- * Reliable internet-connectivity monitor.
- *
- * Three-layer detection:
- *  1. navigator.onLine — fires instantly when the radio drops
- *  2. Fetch ${BASE_URL}/api/ping with a 5 s timeout — confirms packets flow
- *  3. Poll every 5 s — keeps state fresh; shrinks recovery detection lag
- *
- * On reconnection: retries every 2 s up to 8 times before falling back to
- * the normal 5-second poll — ensures near-instant UI recovery after a dropout.
- */
+/* ── Module-level singleton — one timer no matter how many components subscribe ── */
+let _online   = navigator.onLine;
+let _timer: ReturnType<typeof setInterval> | null = null;
+let _listeners = new Set<(v: boolean) => void>();
+
+function notifyAll(v: boolean) {
+  if (v === _online) return;
+  _online = v;
+  _listeners.forEach(fn => fn(v));
+}
+
+async function ping() {
+  if (!navigator.onLine) { notifyAll(false); return; }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 5_000);
+    const res = await fetch(`${BASE_URL}/api/ping`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+    clearTimeout(t);
+    notifyAll(res.ok || res.status === 204);
+  } catch {
+    notifyAll(false);
+  }
+}
+
+function startSingleton() {
+  if (_timer !== null) return;
+  ping();
+  _timer = setInterval(ping, 15_000);
+
+  window.addEventListener('online',  () => { notifyAll(true);  ping(); });
+  window.addEventListener('offline', () => { notifyAll(false); });
+}
+
+/* ── Hook — subscribes to shared status, no duplicate timers ── */
 export function useOnlineStatus(): boolean {
-  const [online, setOnline] = useState<boolean>(navigator.onLine);
-  const timerRef   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const retryRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeRef  = useRef<{ controller: AbortController; timeout: ReturnType<typeof setTimeout> } | null>(null);
-  const retryCount = useRef(0);
-
-  const cancelActive = useCallback(() => {
-    if (activeRef.current) {
-      activeRef.current.controller.abort('superseded');
-      clearTimeout(activeRef.current.timeout);
-      activeRef.current = null;
-    }
-  }, []);
-
-  const ping = useCallback(async (): Promise<boolean> => {
-    cancelActive();
-
-    if (!navigator.onLine) {
-      setOnline(false);
-      return false;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort('timeout'), 5_000);
-    activeRef.current = { controller, timeout };
-
-    try {
-      const res = await fetch(`${BASE_URL}/api/ping`, {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (res.ok || res.status === 204) {
-        setOnline(true);
-        return true;
-      }
-      setOnline(false);
-      return false;
-    } catch (err: unknown) {
-      const reason = (err as { cause?: unknown })?.cause ?? err;
-      const isSuperseded =
-        controller.signal.reason === 'superseded' ||
-        (reason as { message?: string })?.message === 'superseded';
-      if (!isSuperseded) setOnline(false);
-      return false;
-    } finally {
-      clearTimeout(timeout);
-      if (activeRef.current?.controller === controller) activeRef.current = null;
-    }
-  }, [cancelActive]);
-
-  /** After network reconnects: retry every 2 s up to 8 times. */
-  const startReconnectRetry = useCallback(() => {
-    retryCount.current = 0;
-
-    const attempt = async () => {
-      if (retryRef.current) clearTimeout(retryRef.current);
-      const success = await ping();
-      if (!success && retryCount.current < 8) {
-        retryCount.current++;
-        retryRef.current = setTimeout(attempt, 2_000);
-      }
-    };
-
-    attempt();
-  }, [ping]);
+  const [online, setOnline] = useState(_online);
 
   useEffect(() => {
-    const goOnline  = () => { setOnline(true); startReconnectRetry(); };
-    const goOffline = () => { setOnline(false); cancelActive(); };
-
-    window.addEventListener('online',  goOnline);
-    window.addEventListener('offline', goOffline);
-
-    ping();
-    timerRef.current = setInterval(ping, 5_000);
-
-    return () => {
-      window.removeEventListener('online',  goOnline);
-      window.removeEventListener('offline', goOffline);
-      if (timerRef.current)  clearInterval(timerRef.current);
-      if (retryRef.current)  clearTimeout(retryRef.current);
-      cancelActive();
-    };
-  }, [ping, startReconnectRetry, cancelActive]);
+    startSingleton();
+    setOnline(_online);
+    _listeners.add(setOnline);
+    return () => { _listeners.delete(setOnline); };
+  }, []);
 
   return online;
 }
