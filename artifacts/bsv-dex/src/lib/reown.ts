@@ -135,19 +135,29 @@ export function getReownAccount(): { address?: string; isConnected: boolean } {
 
 /* ── Public RPC endpoints for every supported chain ──────────────────────── */
 export const CHAIN_RPC_URLS: Record<number, string> = {
-  1:      "https://ethereum.publicnode.com",
-  56:     "https://bsc-dataseed.binance.org",
-  137:    "https://polygon-rpc.com",
-  42161:  "https://arb1.arbitrum.io/rpc",
-  10:     "https://mainnet.optimism.io",
-  8453:   "https://mainnet.base.org",       // Base
-  59144:  "https://rpc.linea.build",
-  324:    "https://mainnet.era.zksync.io",
-  534352: "https://rpc.scroll.io",
-  5000:   "https://rpc.mantle.xyz",
-  43114:  "https://api.avax.network/ext/bc/C/rpc",
-  250:    "https://rpc.ftm.tools",
-  25:     "https://evm.cronos.org",
+  1:          "https://ethereum.publicnode.com",
+  56:         "https://bsc-dataseed.binance.org",
+  137:        "https://polygon-rpc.com",
+  42161:      "https://arb1.arbitrum.io/rpc",
+  10:         "https://mainnet.optimism.io",
+  8453:       "https://mainnet.base.org",
+  59144:      "https://rpc.linea.build",
+  324:        "https://mainnet.era.zksync.io",
+  534352:     "https://rpc.scroll.io",
+  5000:       "https://rpc.mantle.xyz",
+  43114:      "https://api.avax.network/ext/bc/C/rpc",
+  250:        "https://rpc.ftm.tools",
+  25:         "https://evm.cronos.org",
+  // ── Additional chains ─────────────────────────────────────────────
+  100:        "https://rpc.gnosischain.com",
+  42220:      "https://forno.celo.org",
+  1284:       "https://rpc.api.moonbeam.network",
+  146:        "https://rpc.soniclabs.com",
+  81457:      "https://rpc.blast.io",
+  34443:      "https://mainnet.mode.network",
+  288:        "https://mainnet.boba.network",
+  1088:       "https://andromeda.metis.io/?owner=1088",
+  167000:     "https://rpc.mainnet.taiko.xyz",
 };
 
 /**

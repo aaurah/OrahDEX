@@ -238,6 +238,139 @@ export const CHAINS: Record<number, ChainConfig> = {
       USDT: { symbol: "USDT", address: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", decimals: 6 },
     },
   },
+
+  // ── Additional chains ────────────────────────────────────────────────────────
+  100: {
+    chainId: 100,
+    name: "Gnosis",
+    shortName: "GNO",
+    rpcUrl: "https://rpc.gnosischain.com",
+    explorerUrl: "https://gnosisscan.io",
+    nativeSymbol: "xDAI",
+    nativeName: "xDAI",
+    nativeColor: "#22C55E",
+    router: "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77", // HoneySwap
+    tokens: {
+      USDC: { symbol: "USDC", address: "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0x4ECaBa5870353805a9F068101A40E0f32ed605C6", decimals: 6 },
+    },
+  },
+  42220: {
+    chainId: 42220,
+    name: "Celo",
+    shortName: "CELO",
+    rpcUrl: "https://forno.celo.org",
+    explorerUrl: "https://explorer.celo.org/mainnet",
+    nativeSymbol: "CELO",
+    nativeName: "Celo",
+    nativeColor: "#EAB308",
+    router: "0xE3D8bd6Aed4F159bc8000a9cD47CffDb95F96121", // Ubeswap
+    tokens: {
+      USDC: { symbol: "USDC", address: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0x88eeC49252c8cbc039DCdB394c0c2BA2f1637EA0", decimals: 6 },
+    },
+  },
+  1284: {
+    chainId: 1284,
+    name: "Moonbeam",
+    shortName: "GLMR",
+    rpcUrl: "https://rpc.api.moonbeam.network",
+    explorerUrl: "https://moonscan.io",
+    nativeSymbol: "GLMR",
+    nativeName: "Glimmer",
+    nativeColor: "#818CF8",
+    router: "0x70085a09D30D6f8C4ecF6eE10120d1847383BB57", // StellaSwap
+    tokens: {
+      USDC: { symbol: "USDC", address: "0x818ec0A7Fe18Ff94269904fCED6AE3DaE6d6dC0e", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0xeFAeeE334F0Fd1712f9a8cc375f427D9Cdd40d73", decimals: 6 },
+    },
+  },
+  146: {
+    chainId: 146,
+    name: "Sonic",
+    shortName: "S",
+    rpcUrl: "https://rpc.soniclabs.com",
+    explorerUrl: "https://sonicscan.org",
+    nativeSymbol: "S",
+    nativeName: "Sonic",
+    nativeColor: "#3B82F6",
+    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
+    tokens: {
+      USDC: { symbol: "USDC", address: "0x29219dd400f2Bf60E5a23d13Be72B486D4038894", decimals: 6 },
+    },
+  },
+  81457: {
+    chainId: 81457,
+    name: "Blast",
+    shortName: "BLAST",
+    rpcUrl: "https://rpc.blast.io",
+    explorerUrl: "https://blastscan.io",
+    nativeSymbol: "ETH",
+    nativeName: "Ethereum",
+    nativeColor: "#EAB308",
+    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
+    tokens: {
+      USDB: { symbol: "USDB", address: "0x4300000000000000000000000000000000000003", decimals: 18 },
+    },
+  },
+  34443: {
+    chainId: 34443,
+    name: "Mode",
+    shortName: "MODE",
+    rpcUrl: "https://mainnet.mode.network",
+    explorerUrl: "https://explorer.mode.network",
+    nativeSymbol: "ETH",
+    nativeName: "Ethereum",
+    nativeColor: "#8B5CF6",
+    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
+    tokens: {
+      USDC: { symbol: "USDC", address: "0xd988097fb8612cc24eeC14542bC03424c656005f", decimals: 6 },
+    },
+  },
+  288: {
+    chainId: 288,
+    name: "Boba Network",
+    shortName: "BOBA",
+    rpcUrl: "https://mainnet.boba.network",
+    explorerUrl: "https://bobascan.com",
+    nativeSymbol: "ETH",
+    nativeName: "Ethereum",
+    nativeColor: "#22D3EE",
+    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
+    tokens: {
+      USDC: { symbol: "USDC", address: "0x66a2A913e447d6b4BF33EFbec43aAeF87890FBbc", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0x5DE1677344D3Cb0D7D465c10b72A8f60699C062d", decimals: 6 },
+    },
+  },
+  1088: {
+    chainId: 1088,
+    name: "Metis",
+    shortName: "METIS",
+    rpcUrl: "https://andromeda.metis.io/?owner=1088",
+    explorerUrl: "https://andromeda-explorer.metis.io",
+    nativeSymbol: "METIS",
+    nativeName: "Metis",
+    nativeColor: "#00D2FF",
+    router: "0x1E876cCe41B7b844FDe09E38Fa1cf00f213bFf56", // NetSwap
+    tokens: {
+      USDC: { symbol: "USDC", address: "0xEA32A96608495e54156Ae48931A7c20f0dcc1a21", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0xbB06DCA3AE6887fAbF931640f67cab3e3a16F4dC", decimals: 6 },
+    },
+  },
+  167000: {
+    chainId: 167000,
+    name: "Taiko",
+    shortName: "TAIKO",
+    rpcUrl: "https://rpc.mainnet.taiko.xyz",
+    explorerUrl: "https://taikoscan.io",
+    nativeSymbol: "ETH",
+    nativeName: "Ethereum",
+    nativeColor: "#EF4444",
+    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
+    tokens: {
+      USDC: { symbol: "USDC", address: "0x07d83526730c7438048D55A4fc0b850e2aaB6f0b", decimals: 6 },
+    },
+  },
 };
 
 /**
