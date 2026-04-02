@@ -5,11 +5,16 @@ import {
   Droplets, Plus, Minus, TrendingUp, ArrowLeft, Info,
   ChevronDown, ChevronUp, Zap, Award, BarChart3, AlertTriangle,
   Calculator, ArrowRight, Code2, ChevronRight, Wallet,
+  ExternalLink, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
+import {
+  addLiquidityOnChain, canUseOnChain,
+  EXPLORER_TX, type LiquidityTxStatus,
+} from "@/lib/onChainLiquidity";
 
 /* ─── pool data ─── */
 const POOLS = [
@@ -221,9 +226,10 @@ function LiquidityModal({
   const [amtB, setAmtB] = useState("");
   const [pct, setPct] = useState(50);
   const [submitting, setSubmitting] = useState(false);
+  const [txStatus, setTxStatus] = useState<LiquidityTxStatus>({ step: "idle" });
   const { toast } = useToast();
 
-  const { address } = useWalletStore();
+  const { address, chainId } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
@@ -240,15 +246,42 @@ function LiquidityModal({
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
     setSubmitting(true);
+    setTxStatus({ step: "idle" });
+
+    if (canUseOnChain(chainId, pool.base)) {
+      await addLiquidityOnChain({
+        base:    pool.base,
+        quote:   pool.quote,
+        amountA: nA,
+        amountB: nB,
+        address,
+        chainId: chainId!,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            toast({
+              title: "Liquidity added on-chain!",
+              description: `Confirmed on Base. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,
+            });
+          }
+        },
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    setTxStatus({ step: "depositing" });
     await new Promise(r => setTimeout(r, 1500));
     addPosition(address, pool.id, lpTokens, valueUsd);
+    setTxStatus({ step: "success", lpTokens, valueUsd });
     setSubmitting(false);
     toast({
-      title: "Liquidity added!",
-      description: `Deposited ${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. You received ${lpTokens.toFixed(4)} LP tokens.`,
+      title: "Liquidity added (simulated)!",
+      description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, chainId, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
@@ -312,18 +345,31 @@ function LiquidityModal({
               ))}
             </div>
             <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
-            <span className="text-[9px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold">SIMULATED</span>
+            {pool && canUseOnChain(chainId, pool.base) ? (
+              <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold">ON-CHAIN</span>
+            ) : (
+              <span className="text-[9px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold">SIMULATED</span>
+            )}
           </div>
           <button onClick={onClose} className="text-muted-foreground text-sm">✕</button>
         </div>
 
-        {/* Simulation notice */}
-        <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2 mb-4">
-          <Info size={12} className="text-yellow-400 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-yellow-300/90 leading-relaxed">
-            <strong>Demo mode.</strong> No real transaction — your wallet balance is shown for reference only. No tokens will be deducted.
-          </p>
-        </div>
+        {/* Chain notice */}
+        {pool && canUseOnChain(chainId, pool.base) ? (
+          <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2 mb-4">
+            <CheckCircle2 size={12} className="text-green-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-green-300/90 leading-relaxed">
+              <strong>Real on-chain transaction.</strong> ETH and USDC will be deducted from your wallet on Base.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2 mb-4">
+            <Info size={12} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-yellow-300/90 leading-relaxed">
+              <strong>Demo mode.</strong> No real transaction — your wallet balance is shown for reference only.
+            </p>
+          </div>
+        )}
 
         {/* Wallet gate */}
         {!walletConnected ? (
@@ -418,12 +464,62 @@ function LiquidityModal({
                 <strong>Impermanent loss risk:</strong> If {pool.base} price diverges from {pool.quote}, your withdrawal ratio will differ from your deposit.
               </p>
             </div>
+            {/* ── Tx progress ── */}
+            {txStatus.step !== "idle" && (
+              <div className="bg-secondary/40 border border-border rounded-xl p-3 mb-3 space-y-2">
+                {(() => {
+                  const ORDER = ["checking","approving","approval_pending","depositing","deposit_pending","success"] as const;
+                  const idx   = ORDER.indexOf(txStatus.step as typeof ORDER[number]);
+                  return [
+                    { id: "checking",  label: "Checking allowance",   done: idx > 0 && txStatus.step !== "error", active: txStatus.step === "checking" },
+                    { id: "approving", label: "Approve USDC",          done: idx >= ORDER.indexOf("depositing") && txStatus.step !== "error", active: ["approving","approval_pending"].includes(txStatus.step), txHash: txStatus.step === "approval_pending" ? txStatus.txHash : undefined },
+                    { id: "depositing",label: "Add liquidity on Base", done: txStatus.step === "success", active: ["depositing","deposit_pending"].includes(txStatus.step), txHash: ["deposit_pending","success"].includes(txStatus.step) ? txStatus.txHash : undefined },
+                  ];
+                })().map(s => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    {s.done ? <CheckCircle2 size={13} className="text-green-400 shrink-0" />
+                     : s.active ? <Loader2 size={13} className="text-primary shrink-0 animate-spin" />
+                     : <div className="w-[13px] h-[13px] rounded-full border border-border shrink-0" />}
+                    <span className={cn("text-[11px] flex-1", s.done ? "text-green-400" : s.active ? "text-foreground font-medium" : "text-muted-foreground")}>
+                      {s.label}
+                    </span>
+                    {s.txHash && (
+                      <a href={`${EXPLORER_TX[chainId ?? 8453] ?? "https://basescan.org/tx/"}${s.txHash}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[10px] text-primary">
+                        tx <ExternalLink size={9} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+                {txStatus.step === "success" && (
+                  <div className="pt-1 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-[11px] text-green-400 font-semibold">✓ Confirmed on-chain</span>
+                    <button onClick={onClose} className="text-[11px] px-3 py-1 rounded-lg bg-green-600 text-white font-bold">Done</button>
+                  </div>
+                )}
+                {txStatus.step === "error" && (
+                  <p className="text-[11px] text-red-400 pt-1 border-t border-red-500/20">{txStatus.error}</p>
+                )}
+              </div>
+            )}
+
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success"}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
-              {submitting ? "Processing…" : amtA && amtB ? "Add Liquidity" : "Enter amounts"}
+              {submitting
+                ? (canUseOnChain(chainId, pool.base)
+                  ? txStatus.step === "approving" ? "Waiting for approval…"
+                  : txStatus.step === "approval_pending" ? "Confirming approval…"
+                  : txStatus.step === "depositing" ? "Sending…"
+                  : txStatus.step === "deposit_pending" ? "Confirming…"
+                  : "Processing…"
+                  : "Depositing…")
+                : txStatus.step === "error" ? "Retry"
+                : !amtA || !amtB ? "Enter amounts"
+                : canUseOnChain(chainId, pool.base) ? "Add Liquidity On-Chain" : "Add Liquidity"}
             </button>
           </>
         ) : (

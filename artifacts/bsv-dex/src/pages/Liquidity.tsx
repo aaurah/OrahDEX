@@ -4,13 +4,17 @@ import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
   X, Info, AlertTriangle, ChevronRight, BookOpen, Wallet,
-  Calculator, ArrowRight, Code2,
+  Calculator, ArrowRight, Code2, ExternalLink, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
+import {
+  addLiquidityOnChain, canUseOnChain,
+  EXPLORER_TX, type LiquidityTxStatus,
+} from "@/lib/onChainLiquidity";
 
 // ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
 // e.g. 0.3% pool fee → 0.25% to LPs + 0.05% to protocol (mirrors Uniswap v2)
@@ -272,6 +276,7 @@ function LiquidityModal({
   const [pct, setPct]   = useState(50);
   const [showIlInfo, setShowIlInfo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [txStatus, setTxStatus] = useState<LiquidityTxStatus>({ step: "idle" });
   const { toast } = useToast();
 
   const { address, network, chainId: walletChainId } = useWalletStore();
@@ -315,20 +320,50 @@ function LiquidityModal({
     if (!pool || !amtA || !amtB || submitting || !walletConnected || !address) return;
     const nA       = parseFloat(amtA);
     const nB       = parseFloat(amtB);
-    const priceA   = SPOT[pool.base]  ?? 1;
-    const priceB   = SPOT[pool.quote] ?? 1;
-    const valueUsd = nA * priceA + nB * priceB;
+    const priceA_  = SPOT[pool.base]  ?? 1;
+    const priceB_  = SPOT[pool.quote] ?? 1;
+    const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
     setSubmitting(true);
+    setTxStatus({ step: "idle" });
+
+    // ── Real on-chain path (Base + supported pairs) ────────────────────────
+    if (canUseOnChain(chainId, pool.base)) {
+      await addLiquidityOnChain({
+        base:    pool.base,
+        quote:   pool.quote,
+        amountA: nA,
+        amountB: nB,
+        address,
+        chainId: chainId!,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            toast({
+              title: "Liquidity added on-chain!",
+              description: `Real transaction confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded in your positions.`,
+            });
+          }
+        },
+      });
+      setSubmitting(false);
+      // Keep modal open on success so the user can see the tx link; onClose is called manually
+      return;
+    }
+
+    // ── Simulated path (all other chains / pairs) ──────────────────────────
+    setTxStatus({ step: "depositing" });
     await new Promise(r => setTimeout(r, 1500));
     addPosition(address, pool.id, lpTokens, valueUsd);
+    setTxStatus({ step: "success", lpTokens, valueUsd });
     setSubmitting(false);
     toast({
-      title: "Liquidity added!",
-      description: `Deposited ${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. You received ${lpTokens.toFixed(4)} LP tokens.`,
+      title: "Liquidity added (simulated)!",
+      description: `Deposited ${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens recorded.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, chainId, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
@@ -390,13 +425,22 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
-        {/* Simulation notice */}
-        <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2.5 mb-4">
-          <Info size={13} className="text-yellow-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-yellow-300/90 leading-relaxed">
-            <strong>Demo mode — no real transaction.</strong> This platform is under active testing. Your wallet balance is displayed for reference only. No tokens will be deducted from your wallet and no on-chain transaction will be submitted.
-          </p>
-        </div>
+        {/* Chain notice — real on-chain vs simulated */}
+        {pool && canUseOnChain(chainId, pool.base) ? (
+          <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
+            <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-green-300/90 leading-relaxed">
+              <strong>Real on-chain transaction.</strong> Your wallet will prompt you to sign. ETH and USDC will be deducted from your wallet and added to a Uniswap V3 pool on Base.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl px-3 py-2.5 mb-4">
+            <Info size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-300/90 leading-relaxed">
+              <strong>Demo mode — no real transaction.</strong> Your wallet balance is shown for reference only. No tokens will be deducted. Real on-chain support is rolling out chain by chain.
+            </p>
+          </div>
+        )}
 
         {/* Wallet gate — blocks the form until wallet is connected */}
         {!walletConnected ? (
@@ -526,12 +570,96 @@ function LiquidityModal({
               )}
             </div>
 
+            {/* ── Transaction progress (on-chain flow) ── */}
+            {txStatus.step !== "idle" && (
+              <div className="bg-secondary/40 border border-border rounded-xl p-3.5 mb-3 space-y-2.5">
+                {(() => {
+                  const ORDER = ["checking","approving","approval_pending","depositing","deposit_pending","success"] as const;
+                  const idx   = ORDER.indexOf(txStatus.step as typeof ORDER[number]);
+                  return [
+                    {
+                      id: "checking",
+                      label: "Checking USDC allowance",
+                      done:   idx > 0  && txStatus.step !== "error",
+                      active: txStatus.step === "checking",
+                    },
+                    {
+                      id: "approving",
+                      label: "Approve USDC spend",
+                      done:   idx >= ORDER.indexOf("depositing") && txStatus.step !== "error",
+                      active: ["approving","approval_pending"].includes(txStatus.step),
+                      txHash: ["approval_pending"].includes(txStatus.step) ? txStatus.txHash : undefined,
+                    },
+                    {
+                      id: "depositing",
+                      label: "Add liquidity to Base",
+                      done:   txStatus.step === "success",
+                      active: ["depositing","deposit_pending"].includes(txStatus.step),
+                      txHash: ["deposit_pending","success"].includes(txStatus.step) ? txStatus.txHash : undefined,
+                    },
+                  ];
+                })().map((s) => (
+                  <div key={s.id} className="flex items-center gap-2.5">
+                    {s.done ? (
+                      <CheckCircle2 size={15} className="text-green-400 shrink-0" />
+                    ) : s.active ? (
+                      <Loader2 size={15} className="text-primary shrink-0 animate-spin" />
+                    ) : (
+                      <div className="w-[15px] h-[15px] rounded-full border border-border shrink-0" />
+                    )}
+                    <span className={cn("text-xs flex-1",
+                      s.done ? "text-green-400" :
+                      s.active ? "text-foreground font-medium" :
+                      "text-muted-foreground")}>
+                      {s.label}
+                    </span>
+                    {s.txHash && (
+                      <a
+                        href={`${EXPLORER_TX[chainId ?? 8453] ?? "https://basescan.org/tx/"}${s.txHash}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[10px] text-primary hover:underline shrink-0"
+                      >
+                        tx <ExternalLink size={10} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+
+                {txStatus.step === "success" && (
+                  <div className="pt-1 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-xs text-green-400 font-semibold">✓ Confirmed on-chain</span>
+                    <button onClick={onClose}
+                      className="text-xs px-3 py-1 rounded-lg bg-green-600 hover:bg-green-700 text-white font-bold transition-colors">
+                      Done
+                    </button>
+                  </div>
+                )}
+                {txStatus.step === "error" && (
+                  <div className="pt-1 border-t border-red-500/20">
+                    <p className="text-xs text-red-400">{txStatus.error}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success"}
               className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {submitting ? "Processing…" : amtA && amtB ? "Add Liquidity" : "Enter amounts"}
+              {submitting
+                ? (canUseOnChain(chainId, pool.base)
+                  ? txStatus.step === "approving" ? "Waiting for approval…"
+                  : txStatus.step === "approval_pending" ? "Confirming approval…"
+                  : txStatus.step === "depositing" ? "Sending transaction…"
+                  : txStatus.step === "deposit_pending" ? "Confirming on-chain…"
+                  : "Processing…"
+                  : "Depositing…")
+                : txStatus.step === "error" ? "Retry"
+                : !amtA || !amtB ? "Enter amounts"
+                : canUseOnChain(chainId, pool.base)
+                  ? "Add Liquidity On-Chain"
+                  : "Add Liquidity (Simulated)"}
             </button>
           </>
         ) : (
