@@ -223,7 +223,7 @@ export function MobilePortfolio() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-foreground">TRON Wallet</p>
-              <p className="text-xs text-muted-foreground mt-0.5">TronLink · Trust · TokenPocket · OKX · Bitget</p>
+              <p className="text-xs text-muted-foreground mt-0.5">TronLink · imToken · Trust · TokenPocket · OKX</p>
               <div className="flex gap-1 mt-1.5">
                 {["TRX","USDT","BTT","WIN","JST"].map(s => (
                   <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">{s}</span>

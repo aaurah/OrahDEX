@@ -64,6 +64,7 @@ const BTC_WALLETS: WalletDef[] = [
 
 const TRON_WALLETS: WalletDef[] = [
   { id: "tronlink",    name: "TronLink",      icon: "🔴", description: "Official TRON browser extension — TRX, TRC-20, DApps", popular: true,  installUrl: "https://www.tronlink.org/" },
+  { id: "imtoken",     name: "imToken",       icon: "🔷", description: "imToken supports TRON — TRX, USDT-TRC20, BTT & all TRC-20", popular: true, installUrl: "https://token.im/download" },
   { id: "trust-tron",  name: "Trust Wallet",  icon: "🛡️", description: "Multi-chain mobile — TRX, USDT-TRC20, BTT & more",     popular: true,  installUrl: "https://trustwallet.com/download" },
   { id: "tokenpocket", name: "TokenPocket",   icon: "🟣", description: "Multi-chain DeFi wallet with full TRON support",        popular: false, installUrl: "https://www.tokenpocket.pro/en/download/app" },
   { id: "okx-tron",    name: "OKX Wallet",    icon: "⭕", description: "Web3 gateway by OKX — TRON + EVM + 70+ chains",         popular: false, installUrl: "https://www.okx.com/web3" },
@@ -754,24 +755,27 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const handleConnectTron = async (walletId: string) => {
     setConnectError(null);
 
-    if (walletId === "tronlink") {
+    /* Wallets that inject window.tronWeb (TronLink extension, imToken in-app browser) */
+    const tronWebWallets = ["tronlink", "imtoken"];
+    if (tronWebWallets.includes(walletId)) {
       const tronWeb = (window as any).tronWeb;
+      const w = TRON_WALLETS.find(x => x.id === walletId)!;
       if (!tronWeb || !tronWeb.ready) {
-        window.open("https://www.tronlink.org/", "_blank");
-        setConnectError("TronLink not detected. Install the extension and try again.");
+        window.open(w.installUrl, "_blank");
+        setConnectError(`${w.name} not detected. Open this page inside ${w.name} or install the app first.`);
         return;
       }
-      setConnecting("tronlink");
+      setConnecting(walletId);
       try {
         const address: string = tronWeb.defaultAddress?.base58 ?? "";
-        if (!address) throw new Error("No TRON address found. Make sure TronLink is unlocked and connected.");
+        if (!address) throw new Error(`No TRON address found. Make sure ${w.name} is unlocked and connected.`);
         const sunBalance = await tronWeb.trx.getBalance(address);
         const trxBalance = (Number(sunBalance) / 1e6).toFixed(4);
-        connect({ address, provider: "tronlink", network: "tron", balance: trxBalance });
-        setConnected("tronlink");
-        setTimeout(() => goToPrep(address, "tron", "tronlink"), 800);
+        connect({ address, provider: walletId, network: "tron", balance: trxBalance });
+        setConnected(walletId);
+        setTimeout(() => goToPrep(address, "tron", walletId), 800);
       } catch (err: any) {
-        setConnectError(err?.message ?? "TronLink connection failed. Make sure it is unlocked.");
+        setConnectError(err?.message ?? `${w.name} connection failed. Make sure it is unlocked.`);
       } finally {
         setConnecting(null);
       }
@@ -781,7 +785,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     /* Generic fallback for mobile wallets / others: open install link */
     const w = TRON_WALLETS.find(x => x.id === walletId);
     if (w?.installUrl) window.open(w.installUrl, "_blank");
-    setConnectError(`${w?.name ?? "Wallet"} not detected. Install it then try again.`);
+    setConnectError(`${w?.name ?? "Wallet"} not detected. Open this page inside the ${w?.name ?? "wallet"} app to connect.`);
   };
 
   const handleConnect = (walletId: string, _installUrl?: string) => {
