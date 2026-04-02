@@ -333,8 +333,15 @@ export const BNB_PAIRS = [
 
 // MATIC (Polygon) pairs
 export const MATIC_PAIRS = [
+  // Blue-chips
   "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","LINK",
   "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP","SUI","INJ",
+  // Stablecoins (bridged on Polygon)
+  "USDC","USDT","DAI","WBTC",
+  // Polygon / DeFi ecosystem
+  "AAVE","CRV","SUSHI","BAL","COMP","SNX","GRT","YFI","MKR","LDO",
+  "1INCH","SAND","MANA","AXS","IMX","GALA","ENJ",
+  "GHST","QUICK","DFYN",
 ];
 
 // AVAX (Avalanche) pairs
@@ -576,6 +583,8 @@ export const FALLBACK_PRICES: Record<string, number> = {
   TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
   POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
   MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,
+  // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
+  GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
