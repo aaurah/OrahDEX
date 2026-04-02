@@ -24,6 +24,7 @@ interface ChartProps {
   interval?: string;
   onIntervalChange?: (interval: string) => void;
   hideIntervalBar?: boolean;
+  subIndicator?: SubIndicator;
 }
 
 /* ── Intervals ──────────────────────────────────────────────────────────── */
@@ -222,8 +223,8 @@ function fmtPrice(v: number, price: number): string {
 /* ══════════════════════════════════════════════════════════════════════════
    ORAHCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange }: {
-  symbol: string; interval: string; onIntervalChange?: (iv: string) => void;
+function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp }: {
+  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator;
 }) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -254,9 +255,14 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const [subInd, setSubInd]       = useState<SubIndicator>('rsi');
+  const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'macd');
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set(['ma7', 'ma25']));
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
+
+  // Sync external subIndicator prop → internal state (allows parent to control it)
+  useEffect(() => {
+    if (subIndicatorProp) setSubInd(subIndicatorProp);
+  }, [subIndicatorProp]);
   const [showVol, setShowVol]     = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [chartReady, setChartReady] = useState(false);
@@ -846,6 +852,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
 /* ══════════════════════════════════════════════════════════════════════════
    EXPORT
 ══════════════════════════════════════════════════════════════════════════ */
-export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange }: ChartProps) {
-  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} />;
+export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator }: ChartProps) {
+  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} />;
 }

@@ -151,6 +151,17 @@ function fmtVol(v: number) {
 }
 
 const INDICATORS = ["MA", "EMA", "BOLL", "MACD", "KDJ", "RSI"] as const;
+type IndicatorName = typeof INDICATORS[number];
+
+// Maps tab name → Chart sub-panel indicator (null = overlay only, no sub-chart change)
+const INDICATOR_TO_SUB: Record<IndicatorName, "macd" | "rsi" | "stoch" | "cci" | "williams" | "none" | null> = {
+  MA:   null,    // main-chart overlay
+  EMA:  null,    // main-chart overlay
+  BOLL: null,    // main-chart overlay
+  MACD: "macd",
+  KDJ:  "stoch",
+  RSI:  "rsi",
+};
 const PERIODS = [
   { label: "Today", key: "today" },
   { label: "7D",    key: "7d" },
@@ -288,7 +299,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   });
 
   const [interval, setInterval] = useState<string>("1h");
-  const [activeIndicator, setActiveIndicator] = useState("MACD");
+  const [activeIndicator, setActiveIndicator] = useState<IndicatorName>("MACD");
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -553,7 +564,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         {/* ── CHART ── */}
         <div className="h-[360px] overflow-hidden">
-          <Chart symbol={symbol} interval={interval} onIntervalChange={handleIntervalChange} />
+          <Chart
+            symbol={symbol}
+            interval={interval}
+            onIntervalChange={handleIntervalChange}
+            subIndicator={INDICATOR_TO_SUB[activeIndicator] ?? undefined}
+          />
         </div>
 
         {/* ── INDICATOR TABS ── */}
