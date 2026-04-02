@@ -21,7 +21,7 @@ type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
 
 // ── Wallet prompt shown when no wallet is connected ───────────────────────────
-function WalletPrompt() {
+function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?: string }) {
   const openModal = useWalletModalStore((s) => s.open);
   return (
     <div className="flex flex-col h-full">
@@ -65,12 +65,12 @@ function WalletPrompt() {
           <div className="flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5">
             <span className="text-muted-foreground text-sm w-16">Price</span>
             <span className="flex-1 text-right font-mono text-sm">—</span>
-            <span className="text-muted-foreground text-sm ml-2">USDT</span>
+            <span className="text-muted-foreground text-sm ml-2">{quote}</span>
           </div>
           <div className="flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5">
             <span className="text-muted-foreground text-sm w-16">Amount</span>
             <span className="flex-1 text-right font-mono text-sm">—</span>
-            <span className="text-muted-foreground text-sm ml-2">BSV</span>
+            <span className="text-muted-foreground text-sm ml-2">{base}</span>
           </div>
         </div>
       </div>
@@ -517,7 +517,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     );
   };
 
-  if (!address) return <WalletPrompt />;
+  if (!address) return <WalletPrompt base={base} quote={quote} />;
 
   const isApproving = approvalStep === "checking" || approvalStep === "needed" || approvalStep === "approving";
   const isPending = placeOrder.isPending || signing || isApproving;

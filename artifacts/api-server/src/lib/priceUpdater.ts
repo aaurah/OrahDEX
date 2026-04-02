@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { triggerStopOrders } from "./stopOrderEngine.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -510,6 +511,11 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     logger.warn({ err }, "Own-trades price overlay failed");
   }
 
+  // ── POL → MATIC alias (Binance renamed MATIC to POL in late 2024) ──────────
+  // Keep both keys so all existing code that looks up prices["MATIC"] still works.
+  if (out["POL"] && !out["MATIC"]) out["MATIC"] = out["POL"];
+  if (out["MATIC"] && !out["POL"]) out["POL"] = out["MATIC"];
+
   // ── Merge any missing symbols from FALLBACK_PRICES ─────────────────────────
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (!out[sym]) {
@@ -795,14 +801,17 @@ export async function updateMarketPrices() {
       if (!baseUSD || baseUSD <= 0) continue;
 
       const changePercent = data?.usd_24h_change ?? 0;
-      const change = (baseUSD / (1 + changePercent / 100)) * (changePercent / 100);
-      const openPrice = baseUSD - change;
-      const volatility = Math.abs(change) * 1.5 || baseUSD * 0.01;
-      const high24h = openPrice + volatility;
-      const low24h = openPrice - volatility;
+      // openPrice, high, low computed in USD first — then converted to quote currency below
+      const changeUSD   = (baseUSD / (1 + changePercent / 100)) * (changePercent / 100);
+      const openUSD     = baseUSD - changeUSD;
+      const volatilityUSD = Math.abs(changeUSD) * 1.5 || baseUSD * 0.01;
+      const high24h_usd = openUSD + volatilityUSD;
+      const low24h_usd  = openUSD - volatilityUSD;
 
       let lastPrice = baseUSD;
       let vol = data?.usd_24h_vol ?? baseUSD * 1_000_000;
+      // quoteUSD tracks divisor so high/low can be converted to quote currency at the end
+      let quoteUSD = 1;
 
       // Helper: safely get USD price for a quote asset — prefers live sovereign
       // data, falls back to FALLBACK_PRICES, never returns 0.
@@ -813,53 +822,69 @@ export async function updateMarketPrices() {
 
       // Stablecoin quote (USDC/TUSD/USDD) — price ≈ same as USD value
       if (STABLECOIN_QUOTES.has(market.quoteAsset) && market.quoteAsset !== "USDT") {
-        const stableUSD = getQuoteUSD(market.quoteAsset, 1);
-        lastPrice = baseUSD / stableUSD;
-        vol = vol / stableUSD;
+        quoteUSD  = getQuoteUSD(market.quoteAsset, 1);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
       // ETH quote — compute cross rate
       if (market.quoteAsset === "ETH") {
-        const ethUSD = getQuoteUSD("ETH", 3400);
-        lastPrice = baseUSD / ethUSD;
-        vol = vol / ethUSD;
+        quoteUSD  = getQuoteUSD("ETH", 3400);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
       // BNB quote — compute cross rate
       if (market.quoteAsset === "BNB") {
-        const bnbUSD = getQuoteUSD("BNB", 380);
-        lastPrice = baseUSD / bnbUSD;
-        vol = vol / bnbUSD;
+        quoteUSD  = getQuoteUSD("BNB", 380);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
-      // EVM chain quote — generic cross rate handler (MATIC, AVAX, ARB, OP, FTM, CRO, MNT)
-      const EVM_QUOTE_ASSETS = ["MATIC","AVAX","ARB","OP","FTM","CRO","MNT"];
-      if (EVM_QUOTE_ASSETS.includes(market.quoteAsset)) {
-        const quoteUSD = getQuoteUSD(market.quoteAsset, 1);
+      // SOL quote — compute cross rate
+      if (market.quoteAsset === "SOL") {
+        quoteUSD  = getQuoteUSD("SOL", 140);
         lastPrice = baseUSD / quoteUSD;
-        vol = vol / quoteUSD;
+        vol       = vol / quoteUSD;
+      }
+
+      // EVM chain quote — generic cross rate handler (MATIC/POL, AVAX, ARB, OP, FTM, CRO, MNT)
+      const EVM_QUOTE_ASSETS = ["MATIC","POL","AVAX","ARB","OP","FTM","CRO","MNT"];
+      if (EVM_QUOTE_ASSETS.includes(market.quoteAsset)) {
+        // POL is the new name for MATIC — treat identically
+        const lookupSym = market.quoteAsset === "POL" ? "MATIC" : market.quoteAsset;
+        quoteUSD  = getQuoteUSD(lookupSym, 1);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
       // BCH quote — compute cross rate
       if (market.quoteAsset === "BCH") {
-        const bchUSD = getQuoteUSD("BCH", 380);
-        lastPrice = baseUSD / bchUSD;
-        vol = vol / bchUSD;
+        quoteUSD  = getQuoteUSD("BCH", 380);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
       // BTC quote — compute cross rate
       if (market.quoteAsset === "BTC") {
-        const btcUSD = getQuoteUSD("BTC", 68000);
-        lastPrice = baseUSD / btcUSD;
-        vol = vol / btcUSD;
+        quoteUSD  = getQuoteUSD("BTC", 68000);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
 
       // BSV quote — compute cross rate
       if (market.quoteAsset === "BSV") {
-        const bsvUSD = getQuoteUSD("BSV", 14);
-        lastPrice = baseUSD / bsvUSD;
-        vol = vol / bsvUSD;
+        quoteUSD  = getQuoteUSD("BSV", 14);
+        lastPrice = baseUSD / quoteUSD;
+        vol       = vol / quoteUSD;
       }
+
+      // Convert high/low from USD into quote currency (same divisor as lastPrice)
+      const high24h = high24h_usd / quoteUSD;
+      const low24h  = Math.max(low24h_usd / quoteUSD, 0.00000001);
+
+      // Compute 24h change in quote currency terms
+      const change        = changeUSD / quoteUSD;
 
       // Futures slight discount
       if (market.type === "futures") {
@@ -875,15 +900,18 @@ export async function updateMarketPrices() {
       }
 
       await db.update(marketsTable).set({
-        lastPrice: lastPrice.toFixed(8),
-        priceChange24h: change.toFixed(8),
+        lastPrice:            lastPrice.toFixed(8),
+        priceChange24h:       change.toFixed(8),
         priceChangePercent24h: changePercent.toFixed(4),
-        volume24h: (safePrice(vol) ? vol : 0).toFixed(2),
-        high24h: (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
-        low24h: Math.max(safePrice(low24h) ? low24h : lastPrice * 0.99, 0.00000001).toFixed(8),
-        marketCap: data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
+        volume24h:            (safePrice(vol) ? vol : 0).toFixed(2),
+        high24h:              (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
+        low24h:               (safePrice(low24h)  ? low24h  : lastPrice * 0.99).toFixed(8),
+        marketCap:            data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
     }
+
+    // After prices update, check for any open stop orders that should trigger
+    await triggerStopOrders();
 
   } catch (err) {
     logger.warn({ err }, "Failed to update prices from sovereign price engine");
