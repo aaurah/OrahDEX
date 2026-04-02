@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, ColorType, CandlestickSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, BarSeries } from 'lightweight-charts';
 import type { Candle } from '@workspace/api-client-react';
 import { useThemeStore } from '@/store/useThemeStore';
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
+
+type ChartType = 'candle' | 'bar' | 'line' | 'area';
+
+const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
+  { id: 'candle', label: 'Candlestick', svg: 'M5,2 L5,5 M5,9 L5,12 M3,5 L7,5 L7,9 L3,9 Z' },
+  { id: 'bar',   label: 'Bar',          svg: 'M7,2 L7,12 M7,4 L4,4 M7,9 L10,9' },
+  { id: 'line',  label: 'Line',         svg: 'M1,10 L4,6 L7,8 L10,4 L13,5' },
+  { id: 'area',  label: 'Area',         svg: 'M1,10 L4,6 L7,8 L10,4 L13,5 L13,12 L1,12 Z' },
+];
 
 /* ── Theme → chart colour map ───────────────────────────────────────────── */
 function getChartColors(theme: string) {
@@ -63,6 +72,8 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
   const [loading, setLoading]       = useState(true);
   const [lastPrice, setLastPrice]   = useState<number | null>(null);
   const [priceChange, setPriceChange] = useState<number>(0);
+  const [chartType, setChartType]   = useState<ChartType>('candle');
+  const [chartReady, setChartReady] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme } = useThemeStore();
 
@@ -154,14 +165,6 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         handleScale: true,
       });
 
-      const candleSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#0ecb81',
-        downColor: '#f6465d',
-        borderVisible: false,
-        wickUpColor: '#0ecb81',
-        wickDownColor: '#f6465d',
-      });
-
       const volumeSeries = chart.addSeries(HistogramSeries, {
         color: '#4ade8030',
         priceFormat: { type: 'volume' },
@@ -172,27 +175,68 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
       });
 
       chartRef.current = chart;
-      candleSeriesRef.current = candleSeries;
       volumeSeriesRef.current = volumeSeries;
+      setChartReady(true);
 
-      return () => { chart.remove(); chartRef.current = null; };
+      return () => { chart.remove(); chartRef.current = null; setChartReady(false); };
     }
     return;
   }, [candles.length > 0]);
+
+  /* ── Rebuild price series when chartType changes ──────────────────────── */
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    try { if (candleSeriesRef.current) chart.removeSeries(candleSeriesRef.current); } catch (_) {}
+    candleSeriesRef.current = null;
+
+    let series: any;
+    if (chartType === 'candle') {
+      series = chart.addSeries(CandlestickSeries, {
+        upColor: '#0ecb81', downColor: '#f6465d',
+        borderVisible: false,
+        wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
+      });
+    } else if (chartType === 'bar') {
+      series = chart.addSeries(BarSeries, {
+        upColor: '#0ecb81', downColor: '#f6465d',
+      });
+    } else if (chartType === 'line') {
+      series = chart.addSeries(LineSeries, {
+        color: '#4ade80', lineWidth: 2,
+      });
+    } else {
+      series = chart.addSeries(AreaSeries, {
+        lineColor: '#4ade80', topColor: '#4ade8040', bottomColor: '#4ade8004', lineWidth: 2,
+      });
+    }
+    candleSeriesRef.current = series;
+
+    if (candles.length > 0) {
+      const lastClose = candles[candles.length - 1]?.close ?? 0;
+      const priceFormat = lastClose < 0.001 ? { type: 'price' as const, minMove: 0.00000001, precision: 8 }
+        : lastClose < 0.1  ? { type: 'price' as const, minMove: 0.000001, precision: 6 }
+        : lastClose < 1    ? { type: 'price' as const, minMove: 0.0001,   precision: 4 }
+        : lastClose < 100  ? { type: 'price' as const, minMove: 0.01,     precision: 2 }
+        :                    { type: 'price' as const, minMove: 0.1,      precision: 1 };
+      series.applyOptions({ priceFormat });
+
+      if (chartType === 'candle' || chartType === 'bar') {
+        series.setData(candles.map(c => ({ time: Number(c.time) as any, open: c.open, high: c.high, low: c.low, close: c.close })));
+      } else {
+        series.setData(candles.map(c => ({ time: Number(c.time) as any, value: c.close })));
+      }
+      chart.timeScale().fitContent();
+    }
+  }, [chartReady, chartType]);
 
   /* ── Re-apply colours when theme changes ─────────────────────────────── */
   useEffect(() => {
     if (!chartRef.current) return;
     const c = getChartColors(theme);
     chartRef.current.applyOptions({
-      layout: {
-        background: { type: ColorType.Solid, color: c.bg },
-        textColor: c.text,
-      },
-      grid: {
-        vertLines: { color: c.grid },
-        horzLines: { color: c.grid },
-      },
+      layout: { background: { type: ColorType.Solid, color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       timeScale:      { borderColor: c.border },
       rightPriceScale:{ borderColor: c.border },
       crosshair: {
@@ -202,32 +246,30 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
     });
   }, [theme]);
 
+  /* ── Push new candle data to existing series ──────────────────────────── */
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
 
-    const tvCandles = candles.map(c => ({
-      time: Number(c.time) as any,
-      open: c.open, high: c.high, low: c.low, close: c.close,
-    }));
     const volumeBars = candles.map(c => ({
       time: Number(c.time) as any,
       value: (c as any).volume ?? 0,
       color: c.close >= c.open ? '#0ecb8130' : '#f6465d30',
     }));
+    volumeSeriesRef.current.setData(volumeBars);
 
     const lastClose = candles[candles.length - 1]?.close ?? 0;
-    const priceFormat = lastClose <= 0 ? { type: 'price' as const, minMove: 0.00000001, precision: 8 }
-      : lastClose < 0.000001  ? { type: 'price' as const, minMove: 0.000000000001, precision: 12 }
-      : lastClose < 0.00001   ? { type: 'price' as const, minMove: 0.0000000001,   precision: 10 }
-      : lastClose < 0.001     ? { type: 'price' as const, minMove: 0.00000001,     precision: 8  }
-      : lastClose < 0.1       ? { type: 'price' as const, minMove: 0.000001,       precision: 6  }
-      : lastClose < 1         ? { type: 'price' as const, minMove: 0.0001,         precision: 4  }
-      : lastClose < 100       ? { type: 'price' as const, minMove: 0.01,           precision: 2  }
-      :                         { type: 'price' as const, minMove: 0.1,            precision: 1  };
+    const priceFormat = lastClose < 0.001 ? { type: 'price' as const, minMove: 0.00000001, precision: 8 }
+      : lastClose < 0.1  ? { type: 'price' as const, minMove: 0.000001, precision: 6 }
+      : lastClose < 1    ? { type: 'price' as const, minMove: 0.0001,   precision: 4 }
+      : lastClose < 100  ? { type: 'price' as const, minMove: 0.01,     precision: 2 }
+      :                    { type: 'price' as const, minMove: 0.1,      precision: 1 };
     candleSeriesRef.current.applyOptions({ priceFormat });
 
-    candleSeriesRef.current.setData(tvCandles);
-    volumeSeriesRef.current.setData(volumeBars);
+    if (chartType === 'candle' || chartType === 'bar') {
+      candleSeriesRef.current.setData(candles.map(c => ({ time: Number(c.time) as any, open: c.open, high: c.high, low: c.low, close: c.close })));
+    } else {
+      candleSeriesRef.current.setData(candles.map(c => ({ time: Number(c.time) as any, value: c.close })));
+    }
     chartRef.current?.timeScale().fitContent();
   }, [candles]);
 
@@ -269,8 +311,9 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         )}
       </div>
 
-      {/* Interval selector — scrollable buttons + fixed BSV On-Chain badge */}
+      {/* Interval selector — scrollable intervals | chart type icons | BSV On-Chain badge */}
       <div className="flex items-center border-b shrink-0" style={{ borderColor: col.grid }}>
+        {/* Scrollable interval buttons */}
         <div className="flex items-center gap-0.5 px-2 py-1.5 overflow-x-auto scrollbar-hide min-w-0 flex-1">
           {INTERVALS.map(iv => (
             <button
@@ -288,6 +331,26 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
             </button>
           ))}
         </div>
+        {/* Chart type icons */}
+        <div className="flex items-center gap-0.5 shrink-0 px-1.5 border-l py-1" style={{ borderColor: col.grid }}>
+          {CHART_TYPES.map(ct => (
+            <button
+              key={ct.id}
+              title={ct.label}
+              onClick={() => setChartType(ct.id)}
+              className={`p-1 rounded transition-all ${
+                chartType === ct.id
+                  ? 'text-green-400 bg-green-500/15'
+                  : isLight ? 'text-gray-400 hover:text-gray-700 hover:bg-gray-100' : 'text-muted-foreground hover:text-foreground hover:bg-white/10'
+              }`}
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d={ct.svg} fill={ct.id === 'area' ? 'currentColor' : 'none'} fillOpacity={ct.id === 'area' ? 0.2 : 0} />
+              </svg>
+            </button>
+          ))}
+        </div>
+        {/* BSV On-Chain badge */}
         <div className="flex items-center gap-1 shrink-0 px-2 border-l" style={{ borderColor: col.grid }}>
           <span className="text-[10px] text-green-400/70 font-mono whitespace-nowrap">BSV On-Chain</span>
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
