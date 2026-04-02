@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, Settings2, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -149,7 +149,6 @@ function fmtVol(v: number) {
   return v.toFixed(2);
 }
 
-const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 const INDICATORS = ["MA", "EMA", "BOLL", "MACD", "KDJ", "RSI"] as const;
 const PERIODS = [
   { label: "Today", key: "today" },
@@ -453,31 +452,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </div>
         </div>
 
-        {/* ── TIMEFRAME BAR ── */}
-        <div className="flex items-center gap-0 px-4 pb-1 border-b border-border overflow-x-auto no-scrollbar">
-          {INTERVALS.map(iv => (
-            <button
-              key={iv}
-              onClick={() => handleIntervalChange(iv)}
-              className={cn(
-                "shrink-0 px-3 py-1.5 text-xs font-medium transition-colors",
-                interval === iv
-                  ? "text-foreground font-semibold border-b-2 border-primary"
-                  : "text-muted-foreground"
-              )}
-            >
-              {iv}
-            </button>
-          ))}
-          <div className="flex-1" />
-          <button className="shrink-0 p-1.5 text-muted-foreground">
-            <Settings2 size={14} />
-          </button>
-        </div>
-
         {/* ── CHART ── */}
         <div className="h-[320px]">
-          <Chart symbol={symbol} interval={interval} hideIntervalBar />
+          <Chart symbol={symbol} interval={interval} onIntervalChange={handleIntervalChange} />
         </div>
 
         {/* ── INDICATOR TABS ── */}
