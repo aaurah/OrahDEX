@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
 import {
   Droplets, Plus, Minus, TrendingUp, Zap, Award, BarChart3,
-  X, Info, AlertTriangle, ChevronRight, BookOpen, Wallet,
+  X, Info, AlertTriangle, ChevronRight, BookOpen,
   Calculator, ArrowRight, Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -276,8 +276,6 @@ function LiquidityModal({
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const chainId = walletChainId ?? 1;
   const { balances } = useEvmBalances(isEvm ? address : null, chainId);
-  const walletConnected = !!address;
-
   const handleAmtAChange = useCallback((val: string, p: typeof POOLS[0]) => {
     setAmtA(val);
     const n = parseFloat(val);
@@ -372,24 +370,7 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
-        {/* Wallet gate */}
-        {!walletConnected ? (
-          <div className="flex flex-col items-center justify-center py-10 gap-4">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-              <Wallet size={26} className="text-primary" />
-            </div>
-            <div className="text-center">
-              <p className="font-semibold text-base mb-1">Connect your wallet</p>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
-                Connect an EVM or BSV wallet to add or remove liquidity from this pool.
-              </p>
-            </div>
-            <button onClick={onClose}
-              className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">
-              Close &amp; Connect Wallet
-            </button>
-          </div>
-        ) : mode === "add" ? (
+        {mode === "add" ? (
           <>
             {/* ── ADD ── */}
 
