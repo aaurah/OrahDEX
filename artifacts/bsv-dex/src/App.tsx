@@ -34,6 +34,7 @@ const NotFound     = lazy(() => import("@/pages/not-found"));
 const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
 const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
 const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
+const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
@@ -69,7 +70,8 @@ const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
 const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
-const AdminLogsPage       = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
+const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
+const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -302,6 +304,7 @@ function Router() {
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
       <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
       <Route path="/admin/logs">      <AdminRoute><AdminLogsPage /></AdminRoute></Route>
+      <Route path="/admin/support">   <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
 
       {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
       <Route path="/">
@@ -322,6 +325,9 @@ function Router() {
       </Route>
       <Route path="/whitepaper">
         <Suspense fallback={<PageSkeleton />}><WhitePaper /></Suspense>
+      </Route>
+      <Route path="/support">
+        <Suspense fallback={<PageSkeleton />}><SupportPage /></Suspense>
       </Route>
 
       {/* ── Mobile layout ── */}

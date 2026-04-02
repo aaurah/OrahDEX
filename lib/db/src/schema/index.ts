@@ -11,3 +11,4 @@ export * from "./cexAccounts";
 export * from "./conversations";
 export * from "./messages";
 export * from "./copyTrading";
+export * from "./support";
