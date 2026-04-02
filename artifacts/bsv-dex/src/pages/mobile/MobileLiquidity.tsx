@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useLiquidityStore } from "@/store/useLiquidityStore";
 
 /* ─── pool data ─── */
 const POOLS = [
@@ -43,12 +44,7 @@ function poolApr(p: typeof POOLS[0]) {
   return (p.vol24 * (p.fee / 100) / p.tvl) * 365 * 100;
 }
 
-const FARM_POOLS = POOLS.filter(p => p.userLp > 0).map(p => ({
-  ...p,
-  staked: p.userLp * 0.6,
-  unstaked: p.userLp * 0.4,
-  earned: parseFloat((Math.random() * 12).toFixed(4)),
-}));
+// FARM_POOLS is now computed inside the main component from the real LP store
 
 function fmtTvl(n: number) {
   if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
@@ -229,31 +225,43 @@ function LiquidityModal({
 
   const { address } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
+  const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
 
+  const userPositions = address ? getUserPositions(address) : {};
+  const myLpTokens    = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
+
   const handleAdd = useCallback(async () => {
-    if (!pool || !amtA || !amtB || submitting || !walletConnected) return;
+    if (!pool || !amtA || !amtB || submitting || !walletConnected || !address) return;
+    const nA       = parseFloat(amtA);
+    const nB       = parseFloat(amtB);
+    const priceA_  = SPOT[pool.base]  ?? 1;
+    const priceB_  = SPOT[pool.quote] ?? 1;
+    const valueUsd = nA * priceA_ + nB * priceB_;
+    const lpTokens = valueUsd / 12.5;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
+    addPosition(address, pool.id, lpTokens, valueUsd);
     setSubmitting(false);
     toast({
       title: "Liquidity added!",
-      description: `Deposited ${parseFloat(amtA).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${parseFloat(amtB).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} to the ${pool.base}/${pool.quote} pool.`,
+      description: `Deposited ${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. You received ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
-    if (!pool || submitting || !walletConnected) return;
+    if (!pool || submitting || !walletConnected || !address) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
+    removePositionPct(address, pool.id, pct);
     setSubmitting(false);
     toast({
       title: "Liquidity removed!",
       description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, pct, submitting, walletConnected, toast, onClose]);
+  }, [pool, pct, submitting, walletConnected, address, removePositionPct, toast, onClose]);
 
   if (!pool) return null;
 
@@ -264,8 +272,8 @@ function LiquidityModal({
   const priceA   = SPOT[pool.base]  ?? 1;
   const priceB   = SPOT[pool.quote] ?? 1;
 
-  // Remove: user receives tokens proportional to 50/50 pool split
-  const lpValue     = pool.userLp * 12.5;
+  // Remove: user receives tokens proportional to 50/50 pool split (using real LP from store)
+  const lpValue     = myLpTokens * 12.5;
   const removeValue = lpValue * (pct / 100);
   const receiveA    = removeValue / 2 / priceA;
   const receiveB    = removeValue / 2 / priceB;
@@ -546,8 +554,11 @@ function PoolCard({ pool, onAdd, onRemove }: {
 }
 
 /* ── My Positions tab ── */
-function MyPositions({ onAdd, onRemove }: { onAdd: (p: typeof POOLS[0]) => void; onRemove: (p: typeof POOLS[0]) => void }) {
-  const myPools = POOLS.filter(p => p.userLp > 0);
+function MyPositions({ myPools, onAdd, onRemove }: {
+  myPools: (typeof POOLS[0] & { userLp: number })[];
+  onAdd: (p: typeof POOLS[0]) => void;
+  onRemove: (p: typeof POOLS[0]) => void;
+}) {
   if (!myPools.length) return (
     <div className="flex flex-col items-center justify-center h-48 text-center gap-3">
       <Droplets size={40} className="text-muted-foreground/40" />
@@ -598,7 +609,8 @@ function MyPositions({ onAdd, onRemove }: { onAdd: (p: typeof POOLS[0]) => void;
 }
 
 /* ── Farming tab ── */
-function Farming() {
+function Farming({ farmPools }: { farmPools: Array<typeof POOLS[0] & { userLp: number; staked: number; unstaked: number; earned: number }> }) {
+  const FARM_POOLS = farmPools;
   return (
     <div className="space-y-3">
       {/* Info banner */}
@@ -696,17 +708,35 @@ export function MobileLiquidity() {
   const [modalPool, setModalPool] = useState<typeof POOLS[0] | null>(null);
   const [modalMode, setModalMode] = useState<"add" | "remove">("add");
 
-  const openAdd = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("add"); };
-  const openRemove = (p: typeof POOLS[0]) => { setModalPool(p); setModalMode("remove"); };
+  const { address: walletAddress } = useWalletStore();
+  const { getUserPositions } = useLiquidityStore();
+  const userPositions = walletAddress ? getUserPositions(walletAddress) : {};
 
-  const sorted = [...POOLS].sort((a, b) =>
+  const enrichPool = (p: typeof POOLS[0]) => ({
+    ...p,
+    userLp: userPositions[p.id]?.lpTokens ?? 0,
+  });
+
+  const openAdd    = (p: typeof POOLS[0]) => { setModalPool(enrichPool(p)); setModalMode("add"); };
+  const openRemove = (p: typeof POOLS[0]) => { setModalPool(enrichPool(p)); setModalMode("remove"); };
+
+  const sorted = [...POOLS].map(enrichPool).sort((a, b) =>
     sortBy === "apr" ? (poolApr(b) + b.farmApr) - (poolApr(a) + a.farmApr)
     : sortBy === "tvl" ? b.tvl - a.tvl
     : b.vol24 - a.vol24
   );
 
   const totalTvl = POOLS.reduce((s, p) => s + p.tvl, 0);
-  const myPools = POOLS.filter(p => p.userLp > 0);
+  const myPools  = POOLS
+    .filter(p => (userPositions[p.id]?.lpTokens ?? 0) > 0)
+    .map(enrichPool);
+
+  const FARM_POOLS = myPools.map(p => ({
+    ...p,
+    staked:   p.userLp * 0.6,
+    unstaked: p.userLp * 0.4,
+    earned:   parseFloat((p.userLp * 0.008).toFixed(4)),
+  }));
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -779,8 +809,8 @@ export function MobileLiquidity() {
             ))}
           </>
         )}
-        {tab === "positions" && <MyPositions onAdd={openAdd} onRemove={openRemove} />}
-        {tab === "farming" && <Farming />}
+        {tab === "positions" && <MyPositions myPools={myPools} onAdd={openAdd} onRemove={openRemove} />}
+        {tab === "farming" && <Farming farmPools={FARM_POOLS} />}
       </div>
 
       {/* Modal */}

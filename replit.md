@@ -23,6 +23,7 @@ pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (
 - **Stats row**: 5 cards — TVL, 24h LP Fee Revenue, 24h Protocol Revenue, My Positions, Best Pool APR
 - **Modal fee breakdown**: Shows LP share (5/6) and protocol share (1/6) in the Add Liquidity stats
 - **How AMM Works panel**: Expanded to 8 cards + Solidity core logic callout (composability, protocol revenue, network effects, BSV settlement)
+- **LP Position Store**: `useLiquidityStore` (Zustand + localStorage key `orahdex-liquidity-positions`) tracks real user positions per wallet address and pool ID. Deposit saves `lpTokens = depositValueUsd / 12.5`. Remove updates/clears position by percentage. All pool list, positions tab, farming tab, and modal data flow through `enrichPool()` which merges real LP balances from the store over the static POOLS data.
 
 ## Stack
 
@@ -37,7 +38,7 @@ pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (
 - **Build**: esbuild (CJS bundle)
 - **Frontend**: React + Vite, TailwindCSS, TanStack React Query, Wouter
 - **Charts**: lightweight-charts v5 (TradingView library)
-- **State**: Zustand (wallet connection state)
+- **State**: Zustand (wallet state, liquidity positions, UI state)
 
 ## Structure
 
