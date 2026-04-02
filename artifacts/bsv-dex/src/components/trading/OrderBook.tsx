@@ -23,7 +23,8 @@ interface OrderBookProps {
   trades?: Trade[];
 }
 
-export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades = [] }: OrderBookProps) {
+export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades: tradesProp = [] }: OrderBookProps) {
+  const trades = Array.isArray(tradesProp) ? tradesProp : [];
   const [mode, setMode] = useState<BookMode>("full");
   const [panel, setPanel] = useState<Panel>("book");
   const [flashKey, setFlashKey] = useState<string | null>(null);

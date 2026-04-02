@@ -3,7 +3,8 @@ import { format } from "date-fns";
 import { formatPrice } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
-export function RecentTrades({ trades }: { trades: Trade[] }) {
+export function RecentTrades({ trades: tradesProp }: { trades: Trade[] }) {
+  const trades = Array.isArray(tradesProp) ? tradesProp : [];
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-card border-t border-border font-mono text-sm tabular-nums-aligned">
       <div className="px-4 py-2 border-b border-border flex justify-between text-xs text-muted-foreground font-sans bg-secondary/20">
