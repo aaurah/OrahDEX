@@ -403,7 +403,7 @@ export function FuturesTrading() {
           {/* ── Left: Order book ── */}
           <div className="w-[280px] border-r border-border shrink-0 flex flex-col min-h-0">
             <div className="flex-1 min-h-0">
-              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} />
+              <OrderBook data={orderBook} lastPrice={ticker.lastPrice} symbol={symbol} />
             </div>
           </div>
 
