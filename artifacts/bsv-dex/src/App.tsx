@@ -41,6 +41,8 @@ const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
 const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
 const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then(m => ({ default: m.MobileLiquidity })));
+const GenesisLiquidity = lazy(() => import("@/pages/GenesisLiquidity"));
+const MobileGenesis    = lazy(() => import("@/pages/mobile/MobileGenesis"));
 
 /* Admin — single chunk group for the whole admin section */
 const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
@@ -349,6 +351,7 @@ function Router() {
                 </Route>
                 <Route path="/dex"        component={DexHub} />
                 <Route path="/liquidity"  component={MobileLiquidity} />
+                <Route path="/genesis"    component={MobileGenesis} />
                 <Route path="/p2p"        component={P2P} />
                 <Route path="/bridge"     component={BridgePage} />
                 <Route path="/copy"       component={CopyTrading} />
@@ -373,6 +376,7 @@ function Router() {
                 <Route path="/futures/:symbol" component={FuturesTrading} />
                 <Route path="/dex"            component={DexHub} />
                 <Route path="/liquidity"      component={Liquidity} />
+                <Route path="/genesis"        component={GenesisLiquidity} />
                 <Route path="/p2p"            component={P2P} />
                 <Route path="/bridge"         component={BridgePage} />
                 <Route path="/copy"           component={CopyTrading} />
