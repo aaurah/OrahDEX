@@ -223,11 +223,17 @@ export function Markets() {
     const live = raw.filter(m => m.quoteAsset === quote && m.type !== "futures");
     return live.length > 0 ? live : null;
   };
-  const liveBsv = liveByQuote("BSV");
-  const liveBtc = liveByQuote("BTC");
-  const liveEth = liveByQuote("ETH");
-  const liveBnb = liveByQuote("BNB");
-  const liveBch = liveByQuote("BCH");
+  const liveBsv   = liveByQuote("BSV");
+  const liveBtc   = liveByQuote("BTC");
+  const liveEth   = liveByQuote("ETH");
+  const liveBnb   = liveByQuote("BNB");
+  const liveBch   = liveByQuote("BCH");
+  const liveMatic = liveByQuote("MATIC");
+  const liveAvax  = liveByQuote("AVAX");
+  const liveArb   = liveByQuote("ARB");
+  const liveOp    = liveByQuote("OP");
+  const liveFtm   = liveByQuote("FTM");
+  const liveCro   = liveByQuote("CRO");
 
   function getMarkets(): any[] {
     switch (tab) {
@@ -244,12 +250,12 @@ export function Markets() {
       case "btc":       return liveBtc ?? enrich(BTC_MARKETS.map(normalise));
       case "eth":       return liveEth ?? enrich(ETH_MARKETS.map(normalise));
       case "bnb":       return liveBnb ?? enrich(BNB_MARKETS.map(normalise));
-      case "matic":     return enrich(MATIC_MARKETS.map(normalise));
-      case "avax":      return enrich(AVAX_MARKETS.map(normalise));
-      case "arb":       return enrich(ARB_MARKETS.map(normalise));
-      case "op":        return enrich(OP_MARKETS.map(normalise));
-      case "ftm":       return enrich(FTM_MARKETS.map(normalise));
-      case "cro":       return enrich(CRO_MARKETS.map(normalise));
+      case "matic":     return liveMatic ?? enrich(MATIC_MARKETS.map(normalise));
+      case "avax":      return liveAvax  ?? enrich(AVAX_MARKETS.map(normalise));
+      case "arb":       return liveArb   ?? enrich(ARB_MARKETS.map(normalise));
+      case "op":        return liveOp    ?? enrich(OP_MARKETS.map(normalise));
+      case "ftm":       return liveFtm   ?? enrich(FTM_MARKETS.map(normalise));
+      case "cro":       return liveCro   ?? enrich(CRO_MARKETS.map(normalise));
       case "base":      return enrich(BASE_MARKETS.map(normalise));
       case "zora":      return enrich(ZORA_MARKETS.map(normalise));
       case "linea":     return enrich(LINEA_MARKETS.map(normalise));

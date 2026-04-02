@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { ordersTable } from "@workspace/db/schema";
+import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne } from "drizzle-orm";
 import crypto from "node:crypto";
 import { buildSettlement } from "../lib/settlement.js";
@@ -106,18 +106,37 @@ router.post("/orders", async (req, res) => {
     });
 
     // ── Attempt order matching ───────────────────────────────────────────────
-    // Works for BOTH limit orders (match if price crosses) and market orders
-    // (match against best available bot/user counter-order at any price).
+    // Works for limit, market, AND stop orders.
+    // Stop orders: check current market price immediately. If the stop condition
+    // is already met, execute as a market fill. Otherwise it stays "open" and
+    // a background trigger loop will fire it when price crosses.
     let settlementTxid: string | null = null;
     let matchedOrderId: string | null = null;
 
     const isMarket = body.type === "market";
     const isLimit  = body.type === "limit" && !!price;
 
-    if (isMarket || isLimit) {
+    // ── Stop order trigger check ─────────────────────────────────────────────
+    // If a stop order's trigger price is already beaten by the current market,
+    // convert it to a market order so it fills immediately.
+    let isStopTriggered = false;
+    if (body.type === "stop" && body.stopPrice) {
+      const stopTrigger = parseFloat(body.stopPrice);
+      const [mkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
+      const mktPrice = mkt ? parseFloat(mkt.lastPrice) : 0;
+      if (mktPrice > 0) {
+        // Buy-stop: trigger when price rises ABOVE stopPrice (breakout entry)
+        // Sell-stop: trigger when price falls BELOW stopPrice (stop-loss exit)
+        isStopTriggered =
+          (body.side === "buy"  && mktPrice >= stopTrigger) ||
+          (body.side === "sell" && mktPrice <= stopTrigger);
+      }
+    }
+
+    if (isMarket || isLimit || isStopTriggered) {
       const counterSide = body.side === "buy" ? "sell" : "buy";
 
-      // For limit orders restrict by price; market orders accept any price
+      // For limit orders restrict by price; market/stop orders accept any price
       // Format price safely — avoid scientific notation (e.g. 1e-8) which
       // breaks numeric DB comparisons on very small asset prices.
       const safePriceStr = price != null ? price.toFixed(8) : undefined;
@@ -128,6 +147,7 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
           ne(ordersTable.walletAddress, body.walletAddress),
+          // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [body.side === "buy"
                 ? lte(ordersTable.price, safePriceStr)
