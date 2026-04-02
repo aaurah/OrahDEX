@@ -13,6 +13,7 @@ import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 
@@ -26,9 +27,10 @@ const EVM_NATIVE: Record<number, string> = {
 };
 
 function getNativeAsset(network: string | null, chainId: number | null): string {
-  if (network === "bsv") return "BSV";
-  if (network === "sol") return "SOL";
-  if (network === "btc") return "BTC";
+  if (network === "bsv")  return "BSV";
+  if (network === "sol")  return "SOL";
+  if (network === "btc")  return "BTC";
+  if (network === "tron") return "TRX";
   if (network === "evm" && chainId) return EVM_NATIVE[chainId] ?? "ETH";
   return "ETH";
 }
@@ -38,6 +40,21 @@ const ASSET_COLORS: Record<string, string> = {
   USDT: "#22C55E", USDC: "#3B82F6", DAI: "#EAB308", WBTC: "#F97316",
   LINK: "#3B82F6", BSV: "#22C55E", BTC: "#F97316", SOL: "#9945FF",
   AVAX: "#E84142", FTM: "#1969FF", MNT: "#6B7280",
+  TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
+};
+
+const TRON_POOL_IDS = new Set(["trx-usdt","btt-usdt","btt-trx","win-trx","jst-usdt","trx-btc"]);
+
+const POOL_LABELS_MOBILE: Record<string, string> = {
+  "btc-usdt":  "BTC / USDT",  "eth-usdt":  "ETH / USDT",
+  "sol-usdt":  "SOL / USDT",  "bsv-usdt":  "BSV / USDT",
+  "bnb-usdt":  "BNB / USDT",  "xrp-usdt":  "XRP / USDT",
+  "ada-usdt":  "ADA / USDT",  "doge-usdt": "DOGE / USDT",
+  "dot-usdt":  "DOT / USDT",  "link-usdt": "LINK / USDT",
+  "bsv-btc":   "BSV / BTC",   "eth-btc":   "ETH / BTC",
+  "trx-usdt":  "TRX / USDT",  "btt-usdt":  "BTT / USDT",
+  "btt-trx":   "BTT / TRX",   "win-trx":   "WIN / TRX",
+  "jst-usdt":  "JST / USDT",  "trx-btc":   "TRX / BTC",
 };
 
 interface MarketRow { symbol: string; baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
@@ -76,6 +93,9 @@ export function MobilePortfolio() {
   const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
     chainId,
+  );
+  const { balances: tronBalances, refresh: tronRefresh } = useTronBalances(
+    network === "tron" ? address : null,
   );
 
   const nativeAsset = getNativeAsset(network, chainId);
@@ -118,6 +138,18 @@ export function MobilePortfolio() {
         const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
         const usdValue = b.usdValue > 0 ? b.usdValue : b.amount * price;
         const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
+        return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
+      });
+    }
+    // TRON: use real balances from useTronBalances hook
+    if (network === "tron" && tronBalances.length > 0) {
+      return tronBalances.map(b => {
+        const isStable = ["USDT","USDC"].includes(b.symbol);
+        const mkt = prices?.[b.symbol];
+        const price = b.price ?? (isStable ? 1 : (mkt?.lastPrice ?? 0));
+        const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+        const usdValue = b.usdValue ?? (b.amount * price);
+        const color = ASSET_COLORS[b.symbol] ?? "#EF4444";
         return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
       });
     }
@@ -179,6 +211,26 @@ export function MobilePortfolio() {
               </div>
             </div>
             <span className="text-blue-400 text-xs font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+          </button>
+
+          {/* TRON */}
+          <button
+            onClick={() => openWallet()}
+            className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-red-500/40 hover:bg-red-500/5 active:opacity-80 transition-all text-left group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+              🔴
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">TRON Wallet</p>
+              <p className="text-xs text-muted-foreground mt-0.5">TronLink · Trust · TokenPocket · OKX · Bitget</p>
+              <div className="flex gap-1 mt-1.5">
+                {["TRX","USDT","BTT","WIN","JST"].map(s => (
+                  <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">{s}</span>
+                ))}
+              </div>
+            </div>
+            <span className="text-red-400 text-xs font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
           </button>
 
           {/* BSV */}
@@ -279,7 +331,7 @@ export function MobilePortfolio() {
               {copied ? <Check size={13} /> : <Copy size={13} />}
             </button>
             <button
-              onClick={() => refetch()}
+              onClick={() => { refetch(); if (network === "evm") evmRefresh?.(); if (network === "tron") tronRefresh?.(); }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-foreground transition-all"
               title="Refresh"
             >
@@ -541,13 +593,11 @@ export function MobilePortfolio() {
             </div>
             <div className="flex flex-col gap-3">
               {lpPositions.map(([poolId, pos]) => {
-                const parts   = poolId.split("-");
-                const base    = parts[0]?.toUpperCase() ?? "?";
-                const quote   = parts[1]?.toUpperCase() ?? "?";
-                const display = `${base} / ${quote}`;
+                const display = POOL_LABELS_MOBILE[poolId] ?? poolId.toUpperCase().replace("-", " / ");
                 const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
                 const txUrl   = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
                 const dateStr = new Date(pos.depositedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                const isTronPool = TRON_POOL_IDS.has(poolId);
                 return (
                   <div key={poolId} className="bg-card border border-border rounded-2xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
@@ -563,6 +613,9 @@ export function MobilePortfolio() {
                       )}
                       {pos.chainId === 1 && (
                         <span className="text-[9px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/25 font-bold">Ethereum</span>
+                      )}
+                      {!pos.chainId && isTronPool && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 font-bold">TRON</span>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-sm">

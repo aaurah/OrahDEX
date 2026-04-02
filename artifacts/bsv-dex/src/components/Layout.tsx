@@ -211,7 +211,7 @@ export function Layout({ children }: { children: ReactNode }) {
       const shortAddr = address.length > 12
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
-      const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : "EVM";
+      const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
       toast({
         title: "Wallet Connected",
         description: `${provider ?? networkLabel} · ${shortAddr}`,

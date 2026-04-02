@@ -14,6 +14,18 @@ pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (
 - **Frontend**: `artifacts/bsv-dex/src/pages/CopyTrading.tsx` — leaderboard + my positions + deposit/withdraw modals + vault detail side panel
 - **Nav route**: `/copy` (CopyVault link added to Layout.tsx NAV_LINKS)
 
+## TRON Chain Support
+
+- **WalletNetwork type**: extended with `'tron'` in `useWalletStore.ts`
+- **TRON tab in WalletConnectModal**: 3-tab layout (EVM Wallets | TRON | Bitcoin SV). 5 Tron wallets: TronLink, Trust, TokenPocket, OKX, Bitget. `handleConnectTron` uses `window.tronWeb` injection for TronLink (TRC-20 native); other wallets open install link.
+- **useTronBalances hook**: `src/hooks/useTronBalances.ts` — fetches TRX native (÷1e6) + USDT-TRC20 (TR7NH…, ÷1e6), BTT (TAFjU…, ÷1e18), WIN (TLa2f…, ÷1e6), JST (TCFLL…, ÷1e18) via TronGrid API.
+- **TRON pools**: 6 pools added to both Liquidity.tsx and MobileLiquidity.tsx — trx-usdt, btt-usdt, btt-trx, win-trx, jst-usdt, trx-btc — all tagged `chain: "TRX"` with TRX/BTT/WIN/JST SPOT prices.
+- **Portfolio.tsx (desktop)**: imports `useTronBalances`; `getNativeAsset` returns `"TRX"` for tron; `getNetworkLabel` returns `"TRON Network"`; `ASSET_COLORS/BASE_ASSETS` include TRX/BTT/WIN/JST; Tron branch in balances builder uses real hook data; POOL_LABELS covers all 6 Tron pools; LP position TRON badge shown when `!pos.chainId && tronPool`.
+- **MobilePortfolio.tsx**: same Tron integrations — useTronBalances, getNativeAsset tron→TRX, ASSET_COLORS, POOL_LABELS_MOBILE, Tron rows branch, TRON wallet card on connect screen, TRON LP badge.
+- **Layout.tsx**: network label shows "TRON" for tron network.
+- **Prep/success modal**: red badge + description for tron network.
+- **Coin colors**: TRX=#EF4444, BTT=#9333ea, WIN=#F59E0B, JST=#06B6D4
+
 ## AMM Liquidity System
 
 - **Fee split**: `LP_FEE_RATIO = 5/6`, `PROTOCOL_FEE_RATIO = 1/6` — e.g. 0.3% pool → 0.25% LP + 0.05% protocol treasury

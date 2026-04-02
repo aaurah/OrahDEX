@@ -31,12 +31,20 @@ const POOLS = [
   { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   farmApr: 10.1, fee: 0.3,  userLp: 0,      chain: "BSV" },
   { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     farmApr: 22.8, fee: 0.2,  userLp: 320.0,  chain: "BSV" },
   { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  farmApr: 5.3,  fee: 0.3,  userLp: 0,      chain: "BSV" },
+  // ── Tron ecosystem ─────────────────────────────────────────────────────────
+  { id: "trx-usdt",  base: "TRX",  quote: "USDT", tvl: 148_200_000, vol24: 38_700_000,  farmApr: 12.4, fee: 0.25, userLp: 0,      chain: "TRX" },
+  { id: "btt-usdt",  base: "BTT",  quote: "USDT", tvl: 19_600_000,  vol24: 5_800_000,   farmApr: 24.6, fee: 0.3,  userLp: 0,      chain: "TRX" },
+  { id: "btt-trx",   base: "BTT",  quote: "TRX",  tvl: 8_400_000,   vol24: 2_100_000,   farmApr: 31.2, fee: 0.3,  userLp: 0,      chain: "TRX" },
+  { id: "win-trx",   base: "WIN",  quote: "TRX",  tvl: 4_200_000,   vol24: 1_050_000,   farmApr: 28.8, fee: 0.3,  userLp: 0,      chain: "TRX" },
+  { id: "jst-usdt",  base: "JST",  quote: "USDT", tvl: 6_800_000,   vol24: 1_620_000,   farmApr: 19.4, fee: 0.3,  userLp: 0,      chain: "TRX" },
+  { id: "trx-btc",   base: "TRX",  quote: "BTC",  tvl: 32_100_000,  vol24: 8_900_000,   farmApr: 9.7,  fee: 0.3,  userLp: 0,      chain: "TRX" },
 ];
 
 // Approximate spot prices for UI ratio calculations only
 const SPOT: Record<string, number> = {
   BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
   XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1,
+  TRX: 0.115, BTT: 0.00000095, WIN: 0.00007, JST: 0.028,
 };
 
 // ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
@@ -62,7 +70,8 @@ function fmtTvl(n: number) {
 const COIN_COLORS: Record<string, string> = {
   BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
   BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
-  DOT: "#EC4899", LINK: "#3B82F6",
+  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a",
+  TRX: "#EF4444", BTT: "#9333ea", WIN: "#F59E0B", JST: "#06B6D4",
 };
 
 type MainTab = "pools" | "positions" | "farming";

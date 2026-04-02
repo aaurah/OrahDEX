@@ -62,6 +62,14 @@ const BTC_WALLETS: WalletDef[] = [
   { id: "oyl",         name: "OYL Wallet", icon: "🛢️", description: "Bitcoin Ordinals & Runes wallet",             popular: false, installUrl: "https://oyl.io" },
 ];
 
+const TRON_WALLETS: WalletDef[] = [
+  { id: "tronlink",    name: "TronLink",      icon: "🔴", description: "Official TRON browser extension — TRX, TRC-20, DApps", popular: true,  installUrl: "https://www.tronlink.org/" },
+  { id: "trust-tron",  name: "Trust Wallet",  icon: "🛡️", description: "Multi-chain mobile — TRX, USDT-TRC20, BTT & more",     popular: true,  installUrl: "https://trustwallet.com/download" },
+  { id: "tokenpocket", name: "TokenPocket",   icon: "🟣", description: "Multi-chain DeFi wallet with full TRON support",        popular: false, installUrl: "https://www.tokenpocket.pro/en/download/app" },
+  { id: "okx-tron",    name: "OKX Wallet",    icon: "⭕", description: "Web3 gateway by OKX — TRON + EVM + 70+ chains",         popular: false, installUrl: "https://www.okx.com/web3" },
+  { id: "bitget-tron", name: "Bitget Wallet", icon: "🔵", description: "Multi-chain DeFi wallet — TRX & TRC-20 native",         popular: false, installUrl: "https://web3.bitget.com/en/wallet-download" },
+];
+
 /* ── EVM chain list (all major chains) ───────────────────────────────────── */
 const EVM_LAYER_CHAINS = [
   /* L1 — Base Chains */
@@ -164,13 +172,14 @@ function getEvmProvider(walletId: string): any {
 }
 
 type View = "landing" | "create" | "import" | "connect" | "prep";
-type ConnectTab = "reown" | "bsv";
+type ConnectTab = "reown" | "bsv" | "tron";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
   { id: "reown", label: "EVM Wallets", emoji: "🔗" },
-  { id: "bsv",   label: "Bitcoin SV",            emoji: "⚡" },
+  { id: "tron",  label: "TRON",        emoji: "🔴" },
+  { id: "bsv",   label: "Bitcoin SV",  emoji: "⚡" },
 ];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -741,8 +750,42 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     goToPrep(addr, "bsv", walletId);
   };
 
-  /* ── Dispatcher ─────────────────────────────────────────────────────────── */
+  /* ── TRON connection ────────────────────────────────────────────────────── */
+  const handleConnectTron = async (walletId: string) => {
+    setConnectError(null);
+
+    if (walletId === "tronlink") {
+      const tronWeb = (window as any).tronWeb;
+      if (!tronWeb || !tronWeb.ready) {
+        window.open("https://www.tronlink.org/", "_blank");
+        setConnectError("TronLink not detected. Install the extension and try again.");
+        return;
+      }
+      setConnecting("tronlink");
+      try {
+        const address: string = tronWeb.defaultAddress?.base58 ?? "";
+        if (!address) throw new Error("No TRON address found. Make sure TronLink is unlocked and connected.");
+        const sunBalance = await tronWeb.trx.getBalance(address);
+        const trxBalance = (Number(sunBalance) / 1e6).toFixed(4);
+        connect({ address, provider: "tronlink", network: "tron", balance: trxBalance });
+        setConnected("tronlink");
+        setTimeout(() => goToPrep(address, "tron", "tronlink"), 800);
+      } catch (err: any) {
+        setConnectError(err?.message ?? "TronLink connection failed. Make sure it is unlocked.");
+      } finally {
+        setConnecting(null);
+      }
+      return;
+    }
+
+    /* Generic fallback for mobile wallets / others: open install link */
+    const w = TRON_WALLETS.find(x => x.id === walletId);
+    if (w?.installUrl) window.open(w.installUrl, "_blank");
+    setConnectError(`${w?.name ?? "Wallet"} not detected. Install it then try again.`);
+  };
+
   const handleConnect = (walletId: string, _installUrl?: string) => {
+    if (connectTab === "tron") return handleConnectTron(walletId);
     return handleConnectBsv(walletId);
   };
 
@@ -810,7 +853,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setTimeout(() => goToPrep(addr, "evm", "aura-wallet"), 1500);
   };
 
-  const currentWallets = BSV_WALLETS;
+  const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
 
   return (
     <AnimatePresence>
@@ -1585,10 +1628,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           )}
 
                           {/* Network description */}
-                          {connectTab !== "reown" && (
+                          {connectTab === "bsv" && (
                           <div className="px-6 pt-3 pb-1">
                             <p className="text-[11px] text-muted-foreground leading-relaxed">
                               Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees.
+                            </p>
+                          </div>
+                          )}
+                          {connectTab === "tron" && (
+                          <div className="px-6 pt-3 pb-1">
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              Connect your TRON wallet to access TRX, USDT (TRC-20), BTT, WIN, JST and all TRON ecosystem liquidity pools.
                             </p>
                           </div>
                           )}
@@ -1643,6 +1693,15 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </p>
                         </div>
                       )}
+                      {/* TRON note */}
+                      {connectTab === "tron" && (
+                        <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-red-500/8 border border-red-500/20 rounded-xl">
+                          <Shield className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-red-300/80">
+                            TRON supports USDT (TRC-20) — the world's most-used stablecoin network — plus BTT, WIN, JST and the full TRON DeFi ecosystem.
+                          </p>
+                        </div>
+                      )}
                     </motion.div>
                   )}
 
@@ -1668,6 +1727,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             ? "EVM wallet ready — signs orders, settles on BSV"
                             : prepNetwork === "sol"
                             ? "Solana wallet ready — trades settle via BSV bridge"
+                            : prepNetwork === "tron"
+                            ? "TRON wallet ready — TRX, USDT-TRC20, BTT & more"
                             : "Bitcoin wallet ready — connected to OrahDEX"}
                         </p>
                       </div>
@@ -1691,9 +1752,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       <div className="flex items-center gap-2">
                         <span className={cn(
                           "text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border",
-                          prepNetwork === "bsv" ? "bg-green-500/15 border-green-500/30 text-green-400"
-                          : prepNetwork === "evm" ? "bg-violet-500/15 border-violet-500/30 text-violet-400"
-                          : prepNetwork === "sol" ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+                          prepNetwork === "bsv"  ? "bg-green-500/15 border-green-500/30 text-green-400"
+                          : prepNetwork === "evm"  ? "bg-violet-500/15 border-violet-500/30 text-violet-400"
+                          : prepNetwork === "sol"  ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-400"
+                          : prepNetwork === "tron" ? "bg-red-500/15 border-red-500/30 text-red-400"
                           : "bg-orange-500/15 border-orange-500/30 text-orange-400"
                         )}>
                           {prepNetwork.toUpperCase()}
