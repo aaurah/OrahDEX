@@ -269,23 +269,29 @@ function OrahChart({ symbol, interval, onIntervalChange }: {
         )}
       </div>
 
-      {/* Interval selector */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
-        {INTERVALS.map(iv => (
-          <button
-            key={iv}
-            onClick={() => onIntervalChange?.(iv)}
-            className={`shrink-0 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
-              interval === iv
-                ? 'bg-green-500/20 text-green-400 border border-green-500/40'
-                : isLight
-                  ? 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-            }`}
-          >
-            {iv}
-          </button>
-        ))}
+      {/* Interval selector — scrollable buttons + fixed BSV On-Chain badge */}
+      <div className="flex items-center border-b shrink-0" style={{ borderColor: col.grid }}>
+        <div className="flex items-center gap-0.5 px-2 py-1.5 overflow-x-auto scrollbar-hide min-w-0 flex-1">
+          {INTERVALS.map(iv => (
+            <button
+              key={iv}
+              onClick={() => onIntervalChange?.(iv)}
+              className={`shrink-0 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                interval === iv
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                  : isLight
+                    ? 'text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+              }`}
+            >
+              {iv}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 shrink-0 px-2 border-l" style={{ borderColor: col.grid }}>
+          <span className="text-[10px] text-green-400/70 font-mono whitespace-nowrap">BSV On-Chain</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+        </div>
       </div>
 
       {/* Chart canvas */}
