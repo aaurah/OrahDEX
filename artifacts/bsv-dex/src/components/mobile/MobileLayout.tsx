@@ -140,7 +140,6 @@ const TABS = [
   { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
   { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
-  { path: "/genesis", label: "Genesis", Icon: Zap },
   { path: "/p2p", label: "P2P", Icon: Users2 },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
   { path: "/settings", label: "Settings", Icon: Settings },
