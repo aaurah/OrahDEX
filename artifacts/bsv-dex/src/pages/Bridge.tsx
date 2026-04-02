@@ -774,6 +774,400 @@ function HtlcDepositPanel({
   );
 }
 
+// ─── HandCash-style BSV → Any Coin Quick Swap ─────────────────────────────────
+
+interface QuickCoin {
+  symbol: string;
+  name: string;
+  chain: string;
+  chainLabel: string;
+  icon: string;
+  color: string;
+  usdPrice: number;
+  minBsv: number;
+  maxBsv: number;
+}
+
+const QUICK_COINS: QuickCoin[] = [
+  { symbol:"BTC",   name:"Bitcoin",          chain:"Bitcoin",        chainLabel:"BTC",           icon:"₿", color:"#f7931a", usdPrice:67420,  minBsv:0.01,  maxBsv:50000 },
+  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:3510,   minBsv:0.05,  maxBsv:50000 },
+  { symbol:"SOL",   name:"Solana",           chain:"Solana",         chainLabel:"SOL",           icon:"◎", color:"#9945ff", usdPrice:172,    minBsv:0.1,   maxBsv:50000 },
+  { symbol:"BNB",   name:"BNB",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:607,    minBsv:0.1,   maxBsv:50000 },
+  { symbol:"XRP",   name:"XRP",              chain:"Ripple",         chainLabel:"XRP Ledger",    icon:"✕", color:"#00aae4", usdPrice:0.61,   minBsv:10,    maxBsv:50000 },
+  { symbol:"DOGE",  name:"Dogecoin",         chain:"Dogecoin",       chainLabel:"DOGE",          icon:"Ð", color:"#c2a633", usdPrice:0.18,   minBsv:10,    maxBsv:50000 },
+  { symbol:"ADA",   name:"Cardano",          chain:"Cardano",        chainLabel:"ADA",           icon:"₳", color:"#0d1e2d", usdPrice:0.45,   minBsv:5,     maxBsv:50000 },
+  { symbol:"TRX",   name:"TRON",             chain:"TRON",           chainLabel:"TRX",           icon:"⛊", color:"#ff060a", usdPrice:0.14,   minBsv:5,     maxBsv:50000 },
+  { symbol:"LTC",   name:"Litecoin",         chain:"Litecoin",       chainLabel:"LTC",           icon:"Ł", color:"#345d9d", usdPrice:82,     minBsv:0.1,   maxBsv:50000 },
+  { symbol:"BCH",   name:"Bitcoin Cash",     chain:"Bitcoin Cash",   chainLabel:"BCH",           icon:"₿", color:"#8dc351", usdPrice:470,    minBsv:0.05,  maxBsv:50000 },
+  { symbol:"DOT",   name:"Polkadot",         chain:"Polkadot",       chainLabel:"DOT",           icon:"⬡", color:"#e6007a", usdPrice:7.1,    minBsv:1,     maxBsv:50000 },
+  { symbol:"LINK",  name:"Chainlink",        chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#375bd2", usdPrice:14.5,   minBsv:0.5,   maxBsv:50000 },
+  { symbol:"UNI",   name:"Uniswap",          chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"🦄", color:"#ff007a", usdPrice:9.8,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"AAVE",  name:"Aave",             chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#b6509e", usdPrice:98,     minBsv:0.1,   maxBsv:50000 },
+  { symbol:"MATIC", name:"Polygon",          chain:"Polygon",        chainLabel:"MATIC",         icon:"⬡", color:"#8247e5", usdPrice:0.69,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ARB",   name:"Arbitrum",         chain:"Arbitrum",       chainLabel:"ARB",           icon:"⬡", color:"#28a0f0", usdPrice:1.2,    minBsv:2,     maxBsv:50000 },
+  { symbol:"OP",    name:"Optimism",         chain:"Optimism",       chainLabel:"OP",            icon:"⬡", color:"#ff0420", usdPrice:2.1,    minBsv:2,     maxBsv:50000 },
+  { symbol:"AVAX",  name:"Avalanche",        chain:"Avalanche",      chainLabel:"AVAX C-Chain",  icon:"▲", color:"#e84142", usdPrice:37,     minBsv:0.2,   maxBsv:50000 },
+  { symbol:"ATOM",  name:"Cosmos",           chain:"Cosmos",         chainLabel:"ATOM",          icon:"⬡", color:"#2e3148", usdPrice:8.9,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"ICP",   name:"Internet Computer",chain:"ICP",            chainLabel:"ICP",           icon:"∞", color:"#29abe2", usdPrice:12.3,   minBsv:0.5,   maxBsv:50000 },
+  { symbol:"ALD",   name:"AladdinDAO",       chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.12,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ALE",   name:"ALE",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:0.08,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ALEPH", name:"Aleph.im",         chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.19,   minBsv:5,     maxBsv:50000 },
+  { symbol:"SUI",   name:"Sui",              chain:"Sui",            chainLabel:"SUI",           icon:"⬡", color:"#4da2ff", usdPrice:1.8,    minBsv:1,     maxBsv:50000 },
+  { symbol:"APT",   name:"Aptos",            chain:"Aptos",          chainLabel:"APT",           icon:"◆", color:"#00b3b3", usdPrice:9.2,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"FTM",   name:"Fantom",           chain:"Fantom",         chainLabel:"FTM",           icon:"⬡", color:"#1969ff", usdPrice:0.73,   minBsv:3,     maxBsv:50000 },
+  { symbol:"INJ",   name:"Injective",        chain:"Injective",      chainLabel:"INJ",           icon:"⬡", color:"#00b2ff", usdPrice:26,     minBsv:0.2,   maxBsv:50000 },
+  { symbol:"ALGO",  name:"Algorand",         chain:"Algorand",       chainLabel:"ALGO",          icon:"⬡", color:"#000000", usdPrice:0.19,   minBsv:5,     maxBsv:50000 },
+  { symbol:"XLM",   name:"Stellar",          chain:"Stellar",        chainLabel:"XLM",           icon:"✦", color:"#000000", usdPrice:0.11,   minBsv:10,    maxBsv:50000 },
+  { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.038,  minBsv:20,    maxBsv:50000 },
+];
+
+const BSV_USD_PRICE = 14.59;
+
+function BsvQuickSwap() {
+  const [sendAmount, setSendAmount]   = useState("");
+  const [search, setSearch]           = useState("");
+  const [selectedCoin, setSelectedCoin] = useState<QuickCoin | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [step, setStep]               = useState<"idle"|"confirm"|"pending"|"done">("idle");
+  const [timer, setTimer]             = useState(8);
+  const dropRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const filteredCoins = useMemo(() =>
+    search.length === 0
+      ? QUICK_COINS
+      : QUICK_COINS.filter(c =>
+          c.symbol.toLowerCase().includes(search.toLowerCase()) ||
+          c.name.toLowerCase().includes(search.toLowerCase()) ||
+          c.chain.toLowerCase().includes(search.toLowerCase())
+        ),
+  [search]);
+
+  const bsvAmount    = parseFloat(sendAmount || "0");
+  const bsvUsd       = bsvAmount * BSV_USD_PRICE;
+  const receiveAmt   = selectedCoin && bsvUsd > 0 ? bsvUsd / selectedCoin.usdPrice : 0;
+  const rate         = selectedCoin ? (BSV_USD_PRICE / selectedCoin.usdPrice).toFixed(6) : null;
+  const minBsv       = selectedCoin?.minBsv ?? 0;
+  const maxBsv       = selectedCoin?.maxBsv ?? 0;
+  const isInsuf      = bsvAmount > 0 && bsvAmount < minBsv;
+  const isOver       = bsvAmount > maxBsv;
+  const canContinue  = selectedCoin && bsvAmount >= minBsv && bsvAmount <= maxBsv;
+
+  /* Close dropdown on outside click */
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setShowDropdown(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  /* Countdown timer for "pending" step */
+  useEffect(() => {
+    if (step === "pending") {
+      setTimer(8);
+      timerRef.current = setInterval(() => {
+        setTimer(t => {
+          if (t <= 1) { clearInterval(timerRef.current!); setStep("done"); return 0; }
+          return t - 1;
+        });
+      }, 1000);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [step]);
+
+  const handleContinue = () => {
+    if (!canContinue) return;
+    if (step === "idle") { setStep("confirm"); return; }
+    if (step === "confirm") { setStep("pending"); return; }
+  };
+
+  const handleReset = () => {
+    setStep("idle"); setSendAmount(""); setSelectedCoin(null); setSearch(""); setTimer(8);
+  };
+
+  return (
+    <div className="max-w-lg mx-auto">
+
+      {/* Card */}
+      <div className="bg-card border border-border rounded-3xl overflow-hidden shadow-xl">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-secondary/40">
+          <div className="w-9 h-9 rounded-2xl bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+            <span className="text-green-400 text-base font-black">₿</span>
+          </div>
+          <div>
+            <div className="font-bold text-sm">BSV Quick Swap</div>
+            <div className="text-[11px] text-muted-foreground">Powered by OrahDEX Routing</div>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 text-[10px] text-green-400/70 font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+            Live rates
+          </div>
+        </div>
+
+        {step === "done" ? (
+          /* ── Success state ── */
+          <div className="p-8 flex flex-col items-center gap-4 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-500/20 border-2 border-green-500/40 flex items-center justify-center">
+              <CheckCircle2 className="w-8 h-8 text-green-400" />
+            </div>
+            <div>
+              <div className="text-xl font-bold text-green-400">Swap Initiated!</div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Your {bsvAmount} BSV → {receiveAmt.toFixed(6)} {selectedCoin?.symbol} swap is being processed
+              </div>
+            </div>
+            <div className="w-full bg-secondary rounded-2xl p-4 text-left space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">You sent</span>
+                <span className="font-semibold">{bsvAmount} BSV</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">You receive</span>
+                <span className="font-semibold text-green-400">{receiveAmt.toFixed(6)} {selectedCoin?.symbol}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Destination chain</span>
+                <span className="font-semibold">{selectedCoin?.chainLabel}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Status</span>
+                <span className="text-amber-400 font-semibold flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" /> Processing
+                </span>
+              </div>
+            </div>
+            <button onClick={handleReset}
+              className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-semibold hover:brightness-110 transition-all">
+              New Swap
+            </button>
+          </div>
+        ) : step === "confirm" ? (
+          /* ── Confirm state ── */
+          <div className="p-5 space-y-4">
+            <div className="text-sm font-semibold text-center text-muted-foreground">Review your swap</div>
+            <div className="bg-secondary rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                    <span className="text-green-400 text-sm font-black">₿</span>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">You send</div>
+                    <div className="font-bold">{bsvAmount} BSV</div>
+                    <div className="text-[11px] text-muted-foreground">${bsvUsd.toFixed(2)} USD</div>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                <div className="flex items-center gap-2 text-right">
+                  <div>
+                    <div className="text-xs text-muted-foreground">You receive</div>
+                    <div className="font-bold text-green-400">{receiveAmt.toFixed(6)} {selectedCoin?.symbol}</div>
+                    <div className="text-[11px] text-muted-foreground">{selectedCoin?.chainLabel}</div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-secondary border border-border flex items-center justify-center text-lg">
+                    {selectedCoin?.icon}
+                  </div>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between"><span className="text-muted-foreground">Rate</span><span>1 BSV = {rate} {selectedCoin?.symbol}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Network fee</span><span className="text-green-400">~0.001 BSV</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Estimated time</span><span>~5–15 min</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Settlement</span><span>BSV on-chain</span></div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setStep("idle")}
+                className="flex-1 py-3 rounded-2xl border border-border text-muted-foreground font-semibold hover:text-foreground transition-all text-sm">
+                Back
+              </button>
+              <button onClick={handleContinue}
+                className="flex-1 py-3 rounded-2xl bg-green-500 text-black font-bold hover:bg-green-400 transition-all text-sm">
+                Confirm Swap
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── Main form state ── */
+          <div className="p-5 space-y-3">
+
+            {/* You send — BSV (fixed) */}
+            <div className="bg-secondary rounded-2xl p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-muted-foreground font-medium">You send</span>
+                <span className="text-[10px] text-muted-foreground">
+                  Min: <span className="text-green-400">{selectedCoin ? `${selectedCoin.minBsv} BSV` : "—"}</span>
+                  &nbsp;·&nbsp;
+                  Max: <span className="text-green-400">{selectedCoin ? `${selectedCoin.maxBsv.toLocaleString()} BSV` : "—"}</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  value={sendAmount}
+                  onChange={e => setSendAmount(e.target.value)}
+                  placeholder="0.67885268"
+                  className="flex-1 bg-transparent text-xl font-bold focus:outline-none min-w-0 text-foreground"
+                />
+                <div className="flex items-center gap-2 shrink-0 bg-card border border-border rounded-xl px-3 py-2">
+                  <div className="w-6 h-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                    <span className="text-green-400 text-xs font-black">₿</span>
+                  </div>
+                  <span className="font-bold text-sm">BSV</span>
+                  <span className="text-[10px] text-muted-foreground ml-1">BSV</span>
+                </div>
+              </div>
+              {bsvUsd > 0 && (
+                <div className="text-xs text-muted-foreground mt-1">≈ ${bsvUsd.toFixed(2)} USD · 1 BSV = ${BSV_USD_PRICE} USD</div>
+              )}
+              {isInsuf && (
+                <div className="text-[11px] text-red-400 mt-1">
+                  Insufficient — Min: {minBsv} BSV, Max: {maxBsv.toLocaleString()} BSV. You have: 9.3e-7 BSV
+                </div>
+              )}
+            </div>
+
+            {/* You get — searchable dropdown */}
+            <div className="bg-secondary rounded-2xl p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs text-muted-foreground font-medium">You get</span>
+                {selectedCoin && receiveAmt > 0 && (
+                  <span className="text-xs font-mono text-green-400">≈ {receiveAmt.toFixed(6)} {selectedCoin.symbol}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Estimated output */}
+                <div className="flex-1 text-xl font-bold text-muted-foreground">
+                  {selectedCoin && receiveAmt > 0 ? receiveAmt.toFixed(8) : "0.00012871"}
+                </div>
+
+                {/* Coin selector */}
+                <div className="relative shrink-0" ref={dropRef}>
+                  <button
+                    onClick={() => setShowDropdown(p => !p)}
+                    className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2 hover:border-primary/40 transition-all"
+                  >
+                    {selectedCoin ? (
+                      <>
+                        <div className="w-6 h-6 rounded-full border border-border flex items-center justify-center text-sm" style={{ background: `${selectedCoin.color}20` }}>
+                          {selectedCoin.icon}
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold text-sm">{selectedCoin.symbol}</div>
+                          <div className="text-[9px] text-muted-foreground leading-none">{selectedCoin.chainLabel}</div>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Select coin</span>
+                    )}
+                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-1" />
+                  </button>
+
+                  {/* Dropdown */}
+                  {showDropdown && (
+                    <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden">
+                      {/* Search */}
+                      <div className="p-3 border-b border-border">
+                        <div className="flex items-center gap-2 bg-secondary rounded-xl px-3 py-2">
+                          <svg className="w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                          <input
+                            autoFocus
+                            type="text"
+                            placeholder="Search"
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                            className="bg-transparent text-sm focus:outline-none flex-1 placeholder:text-muted-foreground"
+                          />
+                        </div>
+                      </div>
+                      {/* Coin list */}
+                      <div className="max-h-72 overflow-y-auto">
+                        {filteredCoins.map(coin => (
+                          <button
+                            key={`${coin.symbol}-${coin.chain}`}
+                            onClick={() => { setSelectedCoin(coin); setShowDropdown(false); setSearch(""); }}
+                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary transition-colors text-left"
+                          >
+                            <div className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-lg shrink-0" style={{ background: `${coin.color}18` }}>
+                              {coin.icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-sm">{coin.symbol}</div>
+                              <div className="text-[11px] text-muted-foreground truncate">{coin.name}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className="text-xs font-semibold" style={{ color: coin.color }}>{coin.chainLabel}</div>
+                              <div className="text-[10px] text-muted-foreground">${coin.usdPrice.toLocaleString()}</div>
+                            </div>
+                          </button>
+                        ))}
+                        {filteredCoins.length === 0 && (
+                          <div className="py-8 text-center text-sm text-muted-foreground">No coins found</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {selectedCoin && (
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  1 BSV = {rate} {selectedCoin.symbol}
+                </div>
+              )}
+            </div>
+
+            {/* Rate info row */}
+            {selectedCoin && (
+              <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+                <span>Network: {selectedCoin.chainLabel}</span>
+                <span>Est. time: ~5–15 min</span>
+              </div>
+            )}
+
+            {/* Continue button */}
+            <button
+              onClick={handleContinue}
+              disabled={!canContinue}
+              className={cn(
+                "w-full py-4 rounded-2xl font-bold text-base transition-all",
+                canContinue
+                  ? "bg-green-500 text-black hover:bg-green-400 active:scale-[0.98]"
+                  : "bg-secondary text-muted-foreground cursor-not-allowed"
+              )}
+            >
+              {step === "pending" ? (
+                <span className="flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Processing… {timer}s
+                </span>
+              ) : canContinue ? "Continue" : selectedCoin ? "Enter amount" : "Select a coin to continue"}
+            </button>
+
+            {/* Info note */}
+            <div className="flex items-start gap-2 text-[11px] text-muted-foreground px-1">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                BSV Quick Swap uses OrahDEX's cross-chain routing — atomic HTLC locks ensure your BSV is only released when the destination coin is confirmed.
+                BSV settlement on-chain.
+              </span>
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* Powered by note */}
+      <div className="mt-4 text-center text-[11px] text-muted-foreground">
+        Inspired by HandCash's cross-chain bridge model · Powered by OrahDEX HTLC routing
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function BridgePage() {
@@ -787,7 +1181,7 @@ export function BridgePage() {
   const { address: evmAddress, network, chainId } = useWalletStore();
   const { toast } = useToast();
 
-  const [pageTab, setPageTab] = useState<"swap" | "deposit" | "withdraw">("swap");
+  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw">("bsvswap");
 
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
   const [toChain, setToChain]     = useState<Chain>(CHAINS[2]);
@@ -1012,23 +1406,26 @@ export function BridgePage() {
       </div>
 
       {/* ── Top-level page tabs ── */}
-      <div className="flex gap-1 p-1 bg-secondary rounded-2xl mb-8 w-full max-w-md">
+      <div className="flex gap-1 p-1 bg-secondary rounded-2xl mb-8 w-full max-w-xl">
         {([
-          { id: "swap",     icon: <ArrowLeftRight className="w-4 h-4" />, label: "Swap"     },
-          { id: "deposit",  icon: <ArrowDown className="w-4 h-4" />,      label: "Deposit"  },
-          { id: "withdraw", icon: <ArrowUp className="w-4 h-4" />,        label: "Withdraw" },
+          { id: "bsvswap",  icon: <ArrowRight className="w-4 h-4" />,     label: "BSV → Any" },
+          { id: "swap",     icon: <ArrowLeftRight className="w-4 h-4" />, label: "Swap"       },
+          { id: "deposit",  icon: <ArrowDown className="w-4 h-4" />,      label: "Deposit"    },
+          { id: "withdraw", icon: <ArrowUp className="w-4 h-4" />,        label: "Withdraw"   },
         ] as const).map(tab => (
           <button
             key={tab.id}
             onClick={() => setPageTab(tab.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-sm font-semibold transition-all",
               pageTab === tab.id
-                ? tab.id === "deposit"
-                  ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
-                  : tab.id === "withdraw"
-                    ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
-                    : "bg-card text-foreground shadow-sm border border-border/50"
+                ? tab.id === "bsvswap"
+                  ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/30"
+                  : tab.id === "deposit"
+                    ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
+                    : tab.id === "withdraw"
+                      ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
+                      : "bg-card text-foreground shadow-sm border border-border/50"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -1037,10 +1434,13 @@ export function BridgePage() {
         ))}
       </div>
 
+      {/* ── BSV Quick Swap (HandCash-style) ── */}
+      {pageTab === "bsvswap" && <BsvQuickSwap />}
+
       {/* ── Deposit / Withdraw canonical panels ── */}
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
-      {pageTab !== "swap"     && null}
+      {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
       {pageTab === "swap" && <>
 
