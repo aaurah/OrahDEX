@@ -9,6 +9,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useToast } from "@/hooks/use-toast";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -186,6 +187,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
@@ -217,7 +220,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [orderResult, setOrderResult] = useState<{ matched: boolean; txid?: string } | null>(null);
+  const [orderResult, setOrderResult] = useState<{ matched: boolean; txid?: string; side: string; base: string; amount: string; price: string } | null>(null);
 
   const orderMutation = useMutation({
     mutationFn: async (body: object) => {
@@ -229,11 +232,58 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (!res.ok) throw new Error("Order failed");
       return res.json();
     },
-    onSuccess: (data) => {
-      setOrderResult({ matched: data?.matched ?? false, txid: data?.settlementTxid ?? data?.txid });
+    onSuccess: (data, variables: any) => {
+      const matched  = data?.matched ?? false;
+      const txid     = data?.settlementTxid ?? data?.txid;
+      const ordSide  = variables?.side ?? side;
+      const ordAmt   = variables?.quantity?.toString() ?? amount;
+      const ordBase  = base;
+      const ordPrice = variables?.price?.toString() ?? "";
+
+      setOrderResult({ matched, txid, side: ordSide, base: ordBase, amount: ordAmt, price: ordPrice });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
-      setTimeout(() => setOrderResult(null), 4000);
+      setTimeout(() => setOrderResult(null), 10000);
+
+      if (matched) {
+        toast({
+          title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
+          description: txid
+            ? `${ordAmt} ${ordBase} settled on BSV chain · ${txid.slice(0, 12)}…`
+            : `${ordAmt} ${ordBase} matched at market price`,
+        });
+        addNotification({
+          type: "order_filled",
+          title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
+          body: `${ordAmt} ${ordBase} settled · ${txid ? txid.slice(0, 12) + "…" : "matched"}`,
+          pair: symbol,
+          side: ordSide as "buy" | "sell",
+          txid: txid ?? undefined,
+        });
+      } else {
+        toast({
+          title: `📋 ${ordSide === "sell" ? "Sell" : "Buy"} Order Placed`,
+          description: ordPrice
+            ? `${ordAmt} ${ordBase} @ $${parseFloat(ordPrice).toLocaleString()} · open in order book, waiting for match`
+            : `${ordAmt} ${ordBase} open — waiting for a matching ${ordSide === "sell" ? "buyer" : "seller"}`,
+        });
+        addNotification({
+          type: "order_placed",
+          title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Open`,
+          body: ordPrice
+            ? `${ordAmt} ${ordBase} @ $${parseFloat(ordPrice).toLocaleString()} · waiting for match`
+            : `${ordAmt} ${ordBase} in order book`,
+          pair: symbol,
+          side: ordSide as "buy" | "sell",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Order Failed",
+        description: "Could not place order — check your balance and try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -991,15 +1041,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Order result banner */}
             {orderResult && (
               <div className={cn(
-                "flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-semibold",
+                "rounded-xl border p-3 space-y-1",
                 orderResult.matched
-                  ? "bg-green-500/10 border-green-500/25 text-green-400"
-                  : "bg-blue-500/10 border-blue-500/25 text-blue-300"
+                  ? "bg-green-500/10 border-green-500/25"
+                  : "bg-blue-500/10 border-blue-500/25"
               )}>
-                <CheckCircle2 size={16} className="shrink-0" />
-                {orderResult.matched
-                  ? `Filled! ${orderResult.txid ? `BSV: ${orderResult.txid.slice(0, 12)}…` : ""}`
-                  : "Order placed — waiting for match"}
+                <div className={cn(
+                  "flex items-center gap-2 text-sm font-bold",
+                  orderResult.matched ? "text-green-400" : "text-blue-300"
+                )}>
+                  <CheckCircle2 size={15} className="shrink-0" />
+                  {orderResult.matched
+                    ? `${orderResult.side === "sell" ? "Sell" : "Buy"} Order Filled!`
+                    : `${orderResult.side === "sell" ? "Sell" : "Buy"} Order Open`}
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {orderResult.matched
+                    ? (orderResult.txid
+                        ? `Settled on BSV chain · ${orderResult.txid.slice(0, 16)}…`
+                        : `${orderResult.amount} ${orderResult.base} matched at market price`)
+                    : orderResult.price
+                      ? `${orderResult.amount} ${orderResult.base} @ $${parseFloat(orderResult.price).toLocaleString()} · visible in order book. It will fill when the market reaches your price.`
+                      : `${orderResult.amount} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
+                  }
+                </p>
               </div>
             )}
 
