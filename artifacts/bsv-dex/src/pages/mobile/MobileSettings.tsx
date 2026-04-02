@@ -4,6 +4,7 @@ import {
   Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
+  Headphones, MessageCircle, HelpCircle, Mail,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -242,6 +243,37 @@ export function MobileSettings() {
         />
       </Section>
 
+
+      <Section title="Support">
+        <Row
+          icon={Headphones}
+          iconColor="#22c55e"
+          label="Help Centre"
+          value="FAQs, guides & contact form"
+          onClick={() => navigate("/support")}
+        />
+        <Row
+          icon={MessageCircle}
+          iconColor="#6366f1"
+          label="Live Chat"
+          value="Chat with Ora AI support"
+          onClick={() => window.dispatchEvent(new CustomEvent("mobile:openChat"))}
+        />
+        <Row
+          icon={Mail}
+          iconColor="#3b82f6"
+          label="Email Support"
+          value="support@orahdex.com"
+          onClick={() => { window.open("mailto:support@orahdex.com"); }}
+        />
+        <Row
+          icon={HelpCircle}
+          iconColor="#a855f7"
+          label="FAQ"
+          value="Browse common questions"
+          onClick={() => navigate("/support#faq")}
+        />
+      </Section>
 
       <Section title="About">
         <Row icon={Info} label="Version" value="1.0.0" />
