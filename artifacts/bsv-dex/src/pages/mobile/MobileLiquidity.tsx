@@ -4,9 +4,11 @@ import { useLocation } from "wouter";
 import {
   Droplets, Plus, Minus, TrendingUp, ArrowLeft, Info,
   ChevronDown, ChevronUp, Zap, Award, BarChart3, AlertTriangle,
-  Calculator, ArrowRight, Code2, ChevronRight,
+  Calculator, ArrowRight, Code2, ChevronRight, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 /* ─── pool data ─── */
 const POOLS = [
@@ -225,8 +227,12 @@ function LiquidityModal({
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
 
+  const { address } = useWalletStore();
+  const openWalletModal = useWalletModalStore((s) => s.open);
+  const walletConnected = !!address;
+
   const handleAdd = useCallback(async () => {
-    if (!pool || !amtA || !amtB || submitting) return;
+    if (!pool || !amtA || !amtB || submitting || !walletConnected) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
     setSubmitting(false);
@@ -235,10 +241,10 @@ function LiquidityModal({
       description: `Deposited ${parseFloat(amtA).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${parseFloat(amtB).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} to the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
-    if (!pool || submitting) return;
+    if (!pool || submitting || !walletConnected) return;
     setSubmitting(true);
     await new Promise(r => setTimeout(r, 1500));
     setSubmitting(false);
@@ -247,7 +253,7 @@ function LiquidityModal({
       description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, pct, submitting, toast, onClose]);
+  }, [pool, pct, submitting, walletConnected, toast, onClose]);
 
   if (!pool) return null;
 
@@ -302,7 +308,34 @@ function LiquidityModal({
           <button onClick={onClose} className="text-muted-foreground text-sm">✕</button>
         </div>
 
-        {mode === "add" ? (
+        {/* Wallet gate */}
+        {!walletConnected ? (
+          <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+              <Wallet size={26} className="text-primary" />
+            </div>
+            <div>
+              <p className="font-bold text-sm mb-1">Wallet required</p>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xs">
+                Connect an EVM or BSV wallet to add or remove liquidity and view your balances.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 w-full">
+              <button
+                onClick={openWalletModal}
+                className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm active:opacity-80"
+              >
+                Connect Wallet
+              </button>
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 rounded-xl border border-border text-sm text-muted-foreground"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : mode === "add" ? (
           <>
             <p className="text-xs text-muted-foreground mb-3">
               Both tokens auto-balance using the pool ratio (x·y=k). Enter one amount — the other fills automatically.
