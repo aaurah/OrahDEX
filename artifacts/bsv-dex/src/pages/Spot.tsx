@@ -145,7 +145,7 @@ export function SpotTrading() {
     ?? MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
   const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
-  const trades     = apiTrades  || generateMockTrades(ticker.lastPrice);
+  const trades     = Array.isArray(apiTrades) ? apiTrades : generateMockTrades(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);

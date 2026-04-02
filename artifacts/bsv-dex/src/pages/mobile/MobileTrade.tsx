@@ -342,7 +342,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: recentTrades = [] } = useQuery({
     queryKey: ["trades", symbol],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/trades`).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/markets/${encodedSymbol}/trades`);
+      const d = await r.json();
+      return Array.isArray(d) ? d : [];
+    },
     refetchInterval: 5000,
   });
 
