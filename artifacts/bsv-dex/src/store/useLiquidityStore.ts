@@ -5,11 +5,19 @@ export interface PositionEntry {
   lpTokens: number;
   depositedValueUsd: number;
   depositedAt: number;
+  txHash?: string;
+  chainId?: number;
 }
 
 interface LiquidityState {
   positions: Record<string, Record<string, PositionEntry>>;
-  addPosition: (walletAddress: string, poolId: string, lpTokens: number, valueUsd: number) => void;
+  addPosition: (
+    walletAddress: string,
+    poolId: string,
+    lpTokens: number,
+    valueUsd: number,
+    meta?: { txHash?: string; chainId?: number }
+  ) => void;
   removePositionPct: (walletAddress: string, poolId: string, pct: number) => void;
   getUserPositions: (walletAddress: string) => Record<string, PositionEntry>;
 }
@@ -19,7 +27,7 @@ export const useLiquidityStore = create<LiquidityState>()(
     (set, get) => ({
       positions: {},
 
-      addPosition: (walletAddress, poolId, lpTokens, valueUsd) =>
+      addPosition: (walletAddress, poolId, lpTokens, valueUsd, meta) =>
         set((state) => {
           const walletPos = state.positions[walletAddress] ?? {};
           const existing  = walletPos[poolId];
@@ -32,6 +40,8 @@ export const useLiquidityStore = create<LiquidityState>()(
                   lpTokens:          (existing?.lpTokens ?? 0) + lpTokens,
                   depositedValueUsd: (existing?.depositedValueUsd ?? 0) + valueUsd,
                   depositedAt:       existing?.depositedAt ?? Date.now(),
+                  txHash:            meta?.txHash ?? existing?.txHash,
+                  chainId:           meta?.chainId ?? existing?.chainId,
                 },
               },
             },

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 import {
   addLiquidityOnChain, getLiquidityMode,
   EXPLORER_TX, type LiquidityTxStatus,
@@ -229,9 +230,11 @@ function LiquidityModal({
   const [txStatus, setTxStatus] = useState<LiquidityTxStatus>({ step: "idle" });
   const { toast } = useToast();
 
-  const { address, chainId } = useWalletStore();
+  const { address, network, chainId } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
+  const isEvm = !address || network === "evm" || address?.startsWith("0x");
+  const { refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
   const walletConnected = !!address;
 
   const userPositions = address ? getUserPositions(address) : {};
@@ -261,7 +264,8 @@ function LiquidityModal({
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
-            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId: chainId ?? undefined });
+            refreshEvmBalances();
             toast({ title: "Liquidity added on-chain!", description: `Confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.` });
           }
         },
