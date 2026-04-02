@@ -17,7 +17,10 @@
  */
 
 import { encodeFunctionData, erc20Abi, maxUint256 } from "viem";
-import { getWalletClient as wagmiGetWalletClient } from "@wagmi/core";
+import {
+  sendTransaction as coreSendTx,
+  writeContract  as coreWriteContract,
+} from "@wagmi/core";
 import { checkAllowance, pollTxReceipt, getWagmiConfig } from "./reown";
 
 // ─── EVM chains we recognise ──────────────────────────────────────────────────
@@ -108,84 +111,55 @@ export interface LiquidityTxStatus {
   error?: string;
 }
 
-// ─── Unified wallet provider ──────────────────────────────────────────────────
+// ─── Unified transaction helpers ─────────────────────────────────────────────
+//
+// Both functions use @wagmi/core top-level actions which internally route to
+// whichever connector is active — MetaMask, Coinbase Wallet, WalletConnect,
+// Reown AppKit mobile — without needing window.ethereum at all.
 
-/**
- * Get a viem WalletClient that works whether the user is on:
- *   - An injected wallet  (MetaMask, Coinbase, etc.)  → window.ethereum exists
- *   - WalletConnect / Reown AppKit                    → wagmiGetWalletClient
- */
-async function getViemClient(chainId: number) {
-  const config = getWagmiConfig();
-  if (!config) return null;
-  try {
-    // wagmiGetWalletClient works for both injected AND WalletConnect sessions
-    const client = await wagmiGetWalletClient(config, { chainId });
-    return client ?? null;
-  } catch {
-    return null;
-  }
+function requireConfig() {
+  const cfg = getWagmiConfig();
+  if (!cfg) throw new Error("Wallet not initialised. Please refresh and reconnect.");
+  return cfg;
 }
 
 /**
- * Send a raw EVM transaction.
- * Tries window.ethereum first; falls back to wagmi wallet client for
- * WalletConnect / mobile sessions where window.ethereum is null.
+ * Send a raw EVM transaction via whichever wallet is connected.
+ * Works for injected wallets (MetaMask) AND WalletConnect / mobile.
  */
 async function sendTx(
-  from: string,
+  _from: string,          // kept for API compatibility; wagmi reads account from connector
   to: `0x${string}`,
   data: `0x${string}`,
   valueWei: bigint,
   chainId: number,
 ): Promise<string> {
-  // ── Path 1: injected wallet (MetaMask, etc.) ──────────────────────────────
-  const eth = (window as any).ethereum;
-  if (eth) {
-    const hash = await eth.request({
-      method: "eth_sendTransaction",
-      params: [{
-        from,
-        to,
-        data,
-        value: valueWei > 0n ? `0x${valueWei.toString(16)}` : undefined,
-      }],
-    });
-    if (!hash) throw new Error("Transaction was not submitted by the wallet.");
-    return hash as string;
-  }
-
-  // ── Path 2: WalletConnect / Reown AppKit (wagmi client) ──────────────────
-  const client = await getViemClient(chainId);
-  if (!client) {
-    throw new Error(
-      "No wallet provider found. Please reconnect your wallet and try again."
-    );
-  }
-  return await client.sendTransaction({
+  const config = requireConfig();
+  return await coreSendTx(config, {
     to,
     data,
     value: valueWei,
-    account: from as `0x${string}`,
-    chain: undefined,
+    chainId,
   });
 }
 
 /**
- * ERC-20 approve(spender, maxUint256) via either injected wallet or WalletConnect.
+ * ERC-20 approve(spender, maxUint256) via whichever wallet is connected.
  */
 async function approveErc20(
   tokenAddress: `0x${string}`,
   spender: `0x${string}`,
-  from: string,
+  _from: string,          // kept for API compatibility
   chainId: number,
 ): Promise<string> {
-  const approveData = encodeFunctionData({
-    abi: erc20Abi,
+  const config = requireConfig();
+  return await coreWriteContract(config, {
+    address:      tokenAddress,
+    abi:          erc20Abi,
     functionName: "approve",
-    args: [spender, maxUint256],
+    args:         [spender, maxUint256],
+    chainId,
   });
-  return sendTx(from, tokenAddress, approveData, 0n, chainId);
 }
 
 // ─── Uniswap V3 ABI fragments ─────────────────────────────────────────────────
