@@ -11,6 +11,8 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { useToast } from "@/hooks/use-toast";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
+import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -210,6 +212,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
+  const { quoteCurrency } = useSettingsStore();
+  const { prices: crossPrices } = useWalletPrices();
+  const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
+  const BSV_USD_RATE = crossPrices.BSV.usd || 14;
+  const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
+  const QUOTE_TO_USD: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
+    BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
+  };
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
@@ -384,6 +397,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
   const vol24  = parseFloat(ticker?.volume)    || 0;
   const volQuote = lastPrice * vol24;
+
+  // Quote-currency and cross-rate computations
+  const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;
+  const priceUSD      = lastPrice * quoteToUSD;
+  const isFiatTarget  = FIAT_CURRENCIES.some(c => c.code === quoteCurrency);
+  const isStableQuote = ["USDT","USDC","TUSD","USDD","FDUSD"].includes(quote);
+  const showConverted = isStableQuote && (isFiatTarget || ["BTC","ETH","BNB","SOL","BSV"].includes(quoteCurrency));
+  const convertedPrice = showConverted ? convertFromUsd(priceUSD, quoteCurrency) : null;
+  const quoteSym       = showConverted ? getCurrencySymbol(quoteCurrency) : null;
+  const isBTCBase = base === "BTC";
+  const isBSVBase = base === "BSV";
+  const crossBTC  = isBTCBase ? 1 : priceUSD > 0 ? priceUSD / BTC_USD_RATE : 0;
+  const crossBSV  = isBSVBase ? 1 : priceUSD > 0 ? priceUSD / BSV_USD_RATE : 0;
 
   const asks = (orderBook?.asks ?? []).slice(0, 8).reverse();
   const bids = (orderBook?.bids ?? []).slice(0, 8);
@@ -565,7 +591,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {change >= 0 ? "+" : ""}{change.toFixed(2)}%
             </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">≈${fmt(lastPrice)}</p>
+          {/* Quote currency + cross rates */}
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <p className="text-xs text-muted-foreground">
+              {convertedPrice !== null
+                ? `≈${quoteSym}${fmt(convertedPrice)}`
+                : `≈$${fmt(priceUSD)}`}
+            </p>
+            {crossBTC > 0 && !isBTCBase && (
+              <span className="text-[11px] text-orange-400 tabular-nums font-medium">
+                ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+              </span>
+            )}
+            {crossBSV > 0 && !isBSVBase && (
+              <span className="text-[11px] text-yellow-400 tabular-nums font-medium">
+                ⚡ {crossBSV < 0.001 ? crossBSV.toFixed(6) : crossBSV < 1 ? crossBSV.toFixed(4) : crossBSV.toFixed(2)}
+              </span>
+            )}
+          </div>
           <ContractAddressBadge baseAsset={base} variant="inline" className="mt-1" />
 
           {/* Stats grid */}
@@ -756,15 +799,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               })}
 
               {/* Mid price bar */}
-              <div className="flex items-center justify-center gap-3 py-2 border-y border-border/50 mx-0 my-0.5 bg-secondary/30">
+              <div className="flex items-center justify-center gap-2 py-2 border-y border-border/50 mx-0 my-0.5 bg-secondary/30 flex-wrap">
                 <span className={cn(
                   "text-sm font-bold tabular-nums",
                   change >= 0 ? "text-green-400" : "text-red-400"
                 )}>
                   {change >= 0 ? "▲" : "▼"} {fmt(lastPrice)}
                 </span>
-                <span className="text-[11px] text-muted-foreground">=</span>
-                <span className="text-[11px] text-muted-foreground tabular-nums">${fmt(lastPrice)}</span>
+                <span className="text-[11px] text-muted-foreground">≈</span>
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {convertedPrice !== null ? `${quoteSym}${fmt(convertedPrice)}` : `$${fmt(priceUSD)}`}
+                </span>
+                {!isBTCBase && crossBTC > 0 && (
+                  <span className="text-[10px] text-orange-400 tabular-nums font-medium">
+                    ₿{crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                  </span>
+                )}
+                {!isBSVBase && crossBSV > 0 && (
+                  <span className="text-[10px] text-yellow-400 tabular-nums font-medium">
+                    ⚡{crossBSV < 0.001 ? crossBSV.toFixed(6) : crossBSV < 1 ? crossBSV.toFixed(4) : crossBSV.toFixed(2)}
+                  </span>
+                )}
                 <span className={cn(
                   "text-[10px] font-semibold px-1.5 py-0.5 rounded",
                   change >= 0 ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
