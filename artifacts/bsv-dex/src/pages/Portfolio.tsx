@@ -1,6 +1,6 @@
 import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
-import { formatPrice, formatPercent, cn } from "@/lib/utils";
+import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
@@ -100,6 +100,7 @@ function getNetworkLabel(network: string | null, chainId: number | null, provide
   }
   return provider ?? "EVM";
 }
+
 
 const ASSET_COLORS: Record<string, string> = {
   BSV:  "#22C55E",
@@ -314,8 +315,8 @@ export function Portfolio() {
                   </span>
                 )}
                 {provider && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground border border-border capitalize">
-                    {provider}
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground border border-border">
+                    {getProviderLabel(provider)}
                   </span>
                 )}
               </div>
