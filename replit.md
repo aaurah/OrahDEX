@@ -240,6 +240,22 @@ Express 5 API server. Routes in `src/routes/`. Uses `@workspace/db` for DB and `
 - Notifications push `order_placed` + `order_filled` (with txid) correctly via notifQueue
 - Frontend polls `/api/notifications` every 20s for connected wallets
 
+**Price Engine — corrected (Apr 2026):**
+- `priceUpdater.ts` `fetchSovereignPrices()`: VAMM own-trade prices no longer override reference prices.
+  - If Binance returns a price → only volume is augmented from own trades, never price.
+  - If Binance is blocked → coins with FALLBACK_PRICES entries use the fallback (never VAMM price).
+  - Only truly unlisted coins (no Binance, no fallback) use own-trade price as last resort.
+- FALLBACK_PRICES updated to Apr 2026 values: BTC=83000, ETH=1800, SOL=130, BNB=580, BSV=55, etc.
+- `/api/coins/markets` endpoint: deduplication now prefers USDT/USDC-quoted markets (canonical USD price) over high-volume cross-rate markets (e.g. BTC/CRO would show CRO cross-rate, not USD).
+
+**Quote Currency Selector:**
+- `artifacts/bsv-dex/src/store/useSettingsStore.ts`: Zustand persisted store (`orahdex-settings-v1`) with `quoteCurrency` field.
+- `FIAT_CURRENCIES`: 52 world currencies (USD, EUR, GBP, JPY, CNY, KRW, INR, AUD, CAD, CHF, AED, SGD, BRL, MXN, etc.) with flag emoji, symbol, and approx rateToUsd.
+- `CRYPTO_QUOTE_CURRENCIES`: USDT, USDC, BTC, ETH, BNB, SOL, BSV with symbol and rateToUsd.
+- Helper exports: `getFxRate(code)`, `getCurrencySymbol(code)`, `convertFromUsd(usdAmount, code)`, `formatQuoteAmount(usdAmount, code, compact?)`.
+- `MobileSettings.tsx`: Quote Currency row now tappable → opens full-screen picker overlay with search, Crypto section, and World Currencies section. Selected currency persisted.
+- `DexHub.tsx`: All coin prices, volumes, market caps converted using selected quote currency. Column header shows `Price (CURRENCY_CODE)`. Ticker prices also converted.
+
 ### `lib/db` (`@workspace/db`)
 Database layer using Drizzle ORM.
 - `pnpm --filter @workspace/db run push` — push schema changes
