@@ -46,6 +46,7 @@ const USD: Record<string, number> = {
   IOTX: 0.042, HNT: 7.5, MOBILE: 0.00048, WIFI: 0.0028,
   PYTH: 0.48, JTO: 2.84, JITO: 2.84, BOME: 0.00982,
   NEW1: 0.42, NEW2: 0.182, NEW3: 0.082,
+  JUP: 1.28, ORCA: 3.82, SLERF: 0.48, CORE: 2.82,
 };
 
 function priceOf(sym: string): number {
@@ -185,6 +186,49 @@ const LINEA_BASES = [
   "CRV","BAL","COMP","LDO","RETH","SUSHI","MKR","GRT","ZK","PENDLE",
 ];
 
+// ── AI / ML tokens (vs USDT) ─────────────────────────────────────────────────
+const AI_BASES = [
+  "FET","AGIX","RNDR","TAO","WLD","NMR","OCEAN","AIOZ","ALT","ARKM",
+  "GRT","PYTH","CORE","INJ","NEAR","APT",
+];
+
+// ── Solana ecosystem (vs USDT) ────────────────────────────────────────────────
+const SOL_ECO_BASES = [
+  "SOL","RAY","JTO","PYTH","BONK","WIF","BOME","POPCAT",
+  "FARTCOIN","JUP","ORCA","SLERF","JITO",
+];
+
+// ── Meme tokens (vs USDT) ─────────────────────────────────────────────────────
+const MEME_BASES = [
+  "DOGE","SHIB","PEPE","FLOKI","WIF","BONK","TURBO","TRUMP",
+  "POPCAT","FARTCOIN","BRETT","DEGEN","BOME","TOSHI",
+];
+
+// ── DeFi protocols (vs USDT) ──────────────────────────────────────────────────
+const DEFI_BASES = [
+  "UNI","AAVE","CRV","COMP","MKR","SNX","BAL","SUSHI","CAKE","RAY",
+  "LDO","PENDLE","GMX","RDNT","MAGIC","JOE","OSMO","INJ",
+];
+
+// ── NEW / Trending pairs ───────────────────────────────────────────────────────
+const NEW_MARKETS: MobileMarket[] = [
+  mkSpot("PEPE",     "USDT", 120_000_000),
+  mkSpot("TRUMP",    "USDT",  80_000_000),
+  mkSpot("BONK",     "USDT",  60_000_000),
+  mkSpot("WIF",      "USDT",  50_000_000),
+  mkSpot("POPCAT",   "USDT",  45_000_000),
+  mkSpot("BRETT",    "USDT",  38_000_000),
+  mkSpot("RNDR",     "USDT",  40_000_000),
+  mkSpot("TAO",      "USDT",  25_000_000),
+  mkSpot("JTO",      "USDT",  35_000_000),
+  mkSpot("PYTH",     "USDT",  30_000_000),
+  mkSpot("FARTCOIN", "USDT",  32_000_000),
+  mkSpot("BOME",     "USDT",  22_000_000),
+  mkSpot("SLERF",    "USDT",  18_000_000),
+  mkSpot("WLD",      "USDT",  28_000_000),
+  mkSpot("ARKM",     "USDT",  22_000_000),
+];
+
 // ── Futures ──────────────────────────────────────────────────────────────────
 const FUTURES_RAW = [
   ["BSV", 55.85, 4.12, 8_200_000],
@@ -215,51 +259,97 @@ export const AVAX_MARKETS  = AVAX_BASES.map(b => mkSpot(b, "AVAX", priceOf(b) * 
 export const SOL_MARKETS   = SOL_BASES.map(b  => mkSpot(b, "SOL",  priceOf(b) * 100_000));
 export const FTM_MARKETS   = FTM_BASES.map(b  => mkSpot(b, "FTM",  priceOf(b) * 50_000));
 export const CRO_MARKETS   = CRO_BASES.map(b  => mkSpot(b, "CRO",  priceOf(b) * 40_000));
-export const MNT_MARKETS   = MNT_BASES.map(b   => mkSpot(b, "MNT",   priceOf(b) * 40_000));
-export const ZK_MARKETS    = ZK_BASES.map(b    => mkSpot(b, "ZK",    priceOf(b) * 35_000));
-export const SCR_MARKETS   = SCR_BASES.map(b   => mkSpot(b, "SCR",   priceOf(b) * 30_000));
-export const LINEA_MARKETS = LINEA_BASES.map(b => mkSpot(b, "LINEA", priceOf(b) * 28_000));
+export const MNT_MARKETS     = MNT_BASES.map(b     => mkSpot(b, "MNT",   priceOf(b) * 40_000));
+export const ZK_MARKETS      = ZK_BASES.map(b      => mkSpot(b, "ZK",    priceOf(b) * 35_000));
+export const SCR_MARKETS     = SCR_BASES.map(b     => mkSpot(b, "SCR",   priceOf(b) * 30_000));
+export const LINEA_MARKETS   = LINEA_BASES.map(b   => mkSpot(b, "LINEA", priceOf(b) * 28_000));
+export const AI_MARKETS      = AI_BASES.map(b      => mkSpot(b, "USDT",  priceOf(b) * 2_000_000));
+export const SOL_ECO_MARKETS = SOL_ECO_BASES.map(b => mkSpot(b, "USDT",  priceOf(b) * 5_000_000));
+export const MEME_MARKETS    = MEME_BASES.map(b    => mkSpot(b, "USDT",  priceOf(b) * 3_000_000));
+export const DEFI_MARKETS    = DEFI_BASES.map(b    => mkSpot(b, "USDT",  priceOf(b) * 2_500_000));
+export { NEW_MARKETS };
 export const FUTURES_MARKETS = FUTURES_RAW.map(([b, p, c, v]) => mkFut(b, p, c, v));
 
+// ── Category tab type (matches web Markets page) ──────────────────────────────
+export type CategoryTab =
+  "usd"|"new"|"btc"|"eth"|"bnb"|"matic"|"avax"|"arb"|"op"|
+  "ftm"|"cro"|"bch"|"bsv"|"ai"|"sol"|"meme"|"defi"|
+  "mnt"|"zk"|"scr"|"linea"|"futures";
+
+export const CATEGORY_TABS: { id: CategoryTab; label: string }[] = [
+  { id: "usd",     label: "USD"     },
+  { id: "new",     label: "NEW"     },
+  { id: "btc",     label: "BTC"     },
+  { id: "eth",     label: "ETH"     },
+  { id: "bnb",     label: "BNB"     },
+  { id: "matic",   label: "MATIC"   },
+  { id: "avax",    label: "AVAX"    },
+  { id: "arb",     label: "ARB"     },
+  { id: "op",      label: "OP"      },
+  { id: "ftm",     label: "FTM"     },
+  { id: "cro",     label: "CRO"     },
+  { id: "bch",     label: "BCH"     },
+  { id: "bsv",     label: "⚡BSV"   },
+  { id: "ai",      label: "AI"      },
+  { id: "sol",     label: "SOL"     },
+  { id: "meme",    label: "MEME"    },
+  { id: "defi",    label: "DEFI"    },
+  { id: "mnt",     label: "MNT"     },
+  { id: "zk",      label: "ZK"      },
+  { id: "scr",     label: "SCR"     },
+  { id: "linea",   label: "LINEA"   },
+  { id: "futures", label: "Futures" },
+];
+
+export const MARKETS_BY_CATEGORY: Record<CategoryTab, MobileMarket[]> = {
+  usd:     [...USDT_MARKETS, ...USDC_MARKETS],
+  new:     NEW_MARKETS,
+  btc:     BTC_MARKETS,
+  eth:     ETH_MARKETS,
+  bnb:     BNB_MARKETS,
+  matic:   MATIC_MARKETS,
+  avax:    AVAX_MARKETS,
+  arb:     ARB_MARKETS,
+  op:      OP_MARKETS,
+  ftm:     FTM_MARKETS,
+  cro:     CRO_MARKETS,
+  bch:     BCH_MARKETS,
+  bsv:     BSV_MARKETS,
+  ai:      AI_MARKETS,
+  sol:     SOL_ECO_MARKETS,
+  meme:    MEME_MARKETS,
+  defi:    DEFI_MARKETS,
+  mnt:     MNT_MARKETS,
+  zk:      ZK_MARKETS,
+  scr:     SCR_MARKETS,
+  linea:   LINEA_MARKETS,
+  futures: FUTURES_MARKETS,
+};
+
+// ── Legacy quote-tab exports (used by trade/[symbol].tsx getMockMarket) ────────
 export type QuoteId =
   "USDT"|"USDC"|"BTC"|"ETH"|"BSV"|"BCH"|"BNB"|"ARB"|"OP"|
   "MATIC"|"AVAX"|"SOL"|"FTM"|"CRO"|"MNT"|"ZK"|"SCR"|"LINEA";
 
 export const QUOTE_TABS: { id: QuoteId; label: string }[] = [
-  { id: "USDT",  label: "USDT"  },
-  { id: "USDC",  label: "USDC"  },
-  { id: "BTC",   label: "BTC"   },
-  { id: "ETH",   label: "ETH"   },
-  { id: "BSV",   label: "⚡BSV" },
-  { id: "BCH",   label: "BCH"   },
-  { id: "BNB",   label: "BNB"   },
-  { id: "ARB",   label: "ARB"   },
-  { id: "OP",    label: "OP"    },
-  { id: "MATIC", label: "MATIC" },
-  { id: "AVAX",  label: "AVAX"  },
-  { id: "SOL",   label: "SOL"   },
-  { id: "FTM",   label: "FTM"   },
-  { id: "CRO",   label: "CRO"   },
-  { id: "MNT",   label: "MNT"   },
-  { id: "ZK",    label: "ZK"    },
-  { id: "SCR",   label: "SCR"   },
-  { id: "LINEA", label: "LINEA" },
+  { id: "USDT",  label: "USDT"  }, { id: "USDC",  label: "USDC"  },
+  { id: "BTC",   label: "BTC"   }, { id: "ETH",   label: "ETH"   },
+  { id: "BSV",   label: "⚡BSV" }, { id: "BCH",   label: "BCH"   },
+  { id: "BNB",   label: "BNB"   }, { id: "ARB",   label: "ARB"   },
+  { id: "OP",    label: "OP"    }, { id: "MATIC", label: "MATIC" },
+  { id: "AVAX",  label: "AVAX"  }, { id: "SOL",   label: "SOL"   },
+  { id: "FTM",   label: "FTM"   }, { id: "CRO",   label: "CRO"   },
+  { id: "MNT",   label: "MNT"   }, { id: "ZK",    label: "ZK"    },
+  { id: "SCR",   label: "SCR"   }, { id: "LINEA", label: "LINEA" },
 ];
-
-export const MARKETS_BY_QUOTE: Record<QuoteId, MobileMarket[]> = {
-  USDT: USDT_MARKETS, USDC: USDC_MARKETS, BTC: BTC_MARKETS, ETH: ETH_MARKETS,
-  BSV: BSV_MARKETS, BCH: BCH_MARKETS, BNB: BNB_MARKETS, ARB: ARB_MARKETS,
-  OP: OP_MARKETS, MATIC: MATIC_MARKETS, AVAX: AVAX_MARKETS, SOL: SOL_MARKETS,
-  FTM: FTM_MARKETS, CRO: CRO_MARKETS, MNT: MNT_MARKETS,
-  ZK: ZK_MARKETS, SCR: SCR_MARKETS, LINEA: LINEA_MARKETS,
-};
 
 export const ALL_SPOT_MARKETS: MobileMarket[] = [
   ...USDT_MARKETS, ...USDC_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS,
-  ...BSV_MARKETS, ...BCH_MARKETS, ...BNB_MARKETS, ...ARB_MARKETS,
-  ...OP_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...SOL_MARKETS,
-  ...FTM_MARKETS, ...CRO_MARKETS, ...MNT_MARKETS,
-  ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
+  ...BSV_MARKETS,  ...BCH_MARKETS,  ...BNB_MARKETS, ...ARB_MARKETS,
+  ...OP_MARKETS,   ...MATIC_MARKETS,...AVAX_MARKETS, ...SOL_MARKETS,
+  ...FTM_MARKETS,  ...CRO_MARKETS,  ...MNT_MARKETS,
+  ...ZK_MARKETS,   ...SCR_MARKETS,  ...LINEA_MARKETS,
+  ...AI_MARKETS,   ...MEME_MARKETS, ...DEFI_MARKETS,
 ];
 
 /** Lookup or generate a market for any symbol like "AERO/USDC" or "GMX-ARB" */

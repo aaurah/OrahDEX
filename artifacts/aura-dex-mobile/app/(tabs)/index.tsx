@@ -10,8 +10,8 @@ import * as Haptics from "expo-haptics";
 import { useQuery } from "@tanstack/react-query";
 import { Colors } from "@/constants/colors";
 import {
-  MARKETS_BY_QUOTE, QUOTE_TABS, ALL_SPOT_MARKETS, FUTURES_MARKETS,
-  fmtPrice, getMockMarket, type QuoteId, type MobileMarket,
+  CATEGORY_TABS, MARKETS_BY_CATEGORY, ALL_SPOT_MARKETS,
+  fmtPrice, type CategoryTab, type MobileMarket,
 } from "@/utils/mockMarkets";
 
 const C = Colors.dark;
@@ -47,12 +47,10 @@ function MiniBar({ change }: { change: number }) {
   );
 }
 
-type MarketTab = QuoteId | "futures";
-
 export default function MarketsScreen() {
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<MarketTab>("USDT");
+  const [tab, setTab] = useState<CategoryTab>("usd");
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: apiMarkets, refetch } = useQuery({
@@ -64,17 +62,16 @@ export default function MarketsScreen() {
     retry: false,
   });
 
-  // Merge API data over mock
-  const allMarkets = useMemo<MobileMarket[]>(() => {
-    const base = [...ALL_SPOT_MARKETS];
-    if (apiMarkets && Array.isArray(apiMarkets) && apiMarkets.length > 0) {
-      const apiMap = new Map<string, MobileMarket>();
+  // Build API price lookup (enriches any matching symbol in mock data)
+  const apiPriceMap = useMemo<Map<string, MobileMarket>>(() => {
+    const map = new Map<string, MobileMarket>();
+    if (apiMarkets && Array.isArray(apiMarkets)) {
       (apiMarkets as any[]).forEach((m: any) => {
         const lp = parseFloat(m.lastPrice);
         if (lp > 0) {
           const sym = m.symbol;
           const [b, q] = sym.split("/");
-          apiMap.set(sym, {
+          map.set(sym, {
             symbol: sym, base: b ?? "", quote: q ?? "USDT",
             price: lp, change: parseFloat(m.priceChangePercent) || 0,
             volume: m.volume24h ?? "—", high: parseFloat(m.highPrice) || lp * 1.02,
@@ -82,23 +79,24 @@ export default function MarketsScreen() {
           });
         }
       });
-      return base.map(m => apiMap.get(m.symbol) ?? m);
     }
-    return base;
+    return map;
   }, [apiMarkets]);
 
+  function enrich(list: MobileMarket[]): MobileMarket[] {
+    return list.map(m => apiPriceMap.get(m.symbol) ?? m);
+  }
+
   const displayList = useMemo<MobileMarket[]>(() => {
-    const list: MobileMarket[] = tab === "futures"
-      ? FUTURES_MARKETS
-      : (allMarkets.filter(m => m.quote === tab));
-    if (!search) return list;
+    const raw = enrich(MARKETS_BY_CATEGORY[tab] ?? []);
+    if (!search) return raw;
     const q = search.toLowerCase();
-    return list.filter(m => m.base.toLowerCase().includes(q) || m.symbol.toLowerCase().includes(q));
-  }, [allMarkets, tab, search]);
+    return raw.filter(m => m.base.toLowerCase().includes(q) || m.symbol.toLowerCase().includes(q));
+  }, [apiPriceMap, tab, search]);
 
   const topGainers = useMemo(() =>
-    [...allMarkets].filter(m => m.quote === "USDT").sort((a, b) => b.change - a.change).slice(0, 4),
-  [allMarkets]);
+    [...ALL_SPOT_MARKETS].filter(m => m.quote === "USDT").sort((a, b) => b.change - a.change).slice(0, 4),
+  []);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -132,9 +130,9 @@ export default function MarketsScreen() {
         {/* Stats strip */}
         <View style={styles.statsRow}>
           {[
-            { label: "24h Vol", value: "$1.24B" },
-            { label: "Markets", value: `${allMarkets.length}+` },
-            { label: "Pairs", value: `${QUOTE_TABS.length} Quotes` },
+            { label: "24h Vol",    value: "$1.24B" },
+            { label: "Pairs",      value: `${ALL_SPOT_MARKETS.length}+` },
+            { label: "Categories", value: `${CATEGORY_TABS.length - 1}` },
           ].map(s => (
             <View key={s.label} style={styles.statItem}>
               <Text style={styles.statValue}>{s.value}</Text>
@@ -178,24 +176,18 @@ export default function MarketsScreen() {
           )}
         </View>
 
-        {/* Quote tabs — scrollable */}
+        {/* Category tabs — scrollable (matches web Markets page) */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabsRow}>
-          {(QUOTE_TABS as { id: QuoteId; label: string }[]).map(t => (
+          {CATEGORY_TABS.map(t => (
             <TouchableOpacity
               key={t.id}
               style={[styles.tabBtn, tab === t.id && styles.tabBtnActive]}
-              onPress={() => { Haptics.selectionAsync(); setTab(t.id); }}
+              onPress={() => { Haptics.selectionAsync(); setTab(t.id); setSearch(""); }}
             >
               <Text style={[styles.tabText, tab === t.id && styles.tabTextActive]}>{t.label}</Text>
             </TouchableOpacity>
           ))}
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === "futures" && styles.tabBtnActive]}
-            onPress={() => { Haptics.selectionAsync(); setTab("futures"); }}
-          >
-            <Text style={[styles.tabText, tab === "futures" && styles.tabTextActive]}>Futures</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* Column headers */}
