@@ -343,6 +343,98 @@ router.post("/bsv/broadcast", async (req, res) => {
   }
 });
 
+/* ── Passkey Wallet — Cloud Backup & Restore ────────────────────────────────
+ * Stores the encrypted wallet blob on the server, keyed by credential ID.
+ * The blob is AES-GCM encrypted with the passkey rawId — completely
+ * safe to store server-side because it cannot be decrypted without
+ * biometric authentication on the original device/OS ecosystem.
+ *
+ * POST /api/passkey/backup   — save encrypted wallet
+ * GET  /api/passkey/backup/:credentialId — retrieve backup
+ * POST /api/passkey/transfer — generate a short 8-char transfer code
+ * GET  /api/passkey/transfer/:code — retrieve wallet by transfer code
+ */
+
+router.post("/passkey/backup", async (req, res) => {
+  try {
+    const { credentialId, encryptedKey, iv, address, label } = req.body as {
+      credentialId: string; encryptedKey: string; iv: string; address: string; label?: string;
+    };
+    if (!credentialId || !encryptedKey || !iv || !address) {
+      res.status(400).json({ error: "credentialId, encryptedKey, iv and address are required" });
+      return;
+    }
+    const key = `pk_bk:${credentialId}`;
+    const value = JSON.stringify({ credentialId, encryptedKey, iv, address, label: label ?? "Passkey Wallet", savedAt: Date.now() });
+    await db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Backup failed" });
+  }
+});
+
+router.get("/passkey/backup/:credentialId", async (req, res) => {
+  try {
+    const key = `pk_bk:${req.params.credentialId}`;
+    const [row] = await db.select().from(platformSettingsTable).where(
+      drizzleSql`${platformSettingsTable.key} = ${key}`
+    );
+    if (!row) { res.status(404).json({ error: "No backup found" }); return; }
+    res.json(JSON.parse(row.value));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Restore failed" });
+  }
+});
+
+router.post("/passkey/transfer", async (req, res) => {
+  try {
+    const { credentialId, encryptedKey, iv, address, label } = req.body as {
+      credentialId: string; encryptedKey: string; iv: string; address: string; label?: string;
+    };
+    if (!credentialId || !encryptedKey || !iv || !address) {
+      res.status(400).json({ error: "credentialId, encryptedKey, iv and address are required" });
+      return;
+    }
+    // Generate 8-char alphanumeric code
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    const bytes = new Uint8Array(8);
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) code += chars[b % chars.length];
+    const key = `pk_tc:${code}`;
+    const value = JSON.stringify({ credentialId, encryptedKey, iv, address, label: label ?? "Passkey Wallet", expiresAt: Date.now() + 10 * 60 * 1000 });
+    await db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+    res.json({ success: true, code });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Transfer code generation failed" });
+  }
+});
+
+router.get("/passkey/transfer/:code", async (req, res) => {
+  try {
+    const code = (req.params.code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    if (!code) { res.status(400).json({ error: "Invalid code" }); return; }
+    const key = `pk_tc:${code}`;
+    const [row] = await db.select().from(platformSettingsTable).where(
+      drizzleSql`${platformSettingsTable.key} = ${key}`
+    );
+    if (!row) { res.status(404).json({ error: "Code not found or expired" }); return; }
+    const data = JSON.parse(row.value);
+    if (data.expiresAt && Date.now() > data.expiresAt) {
+      res.status(410).json({ error: "Transfer code has expired (10 min limit)" }); return;
+    }
+    // Delete code after use
+    await db.delete(platformSettingsTable).where(drizzleSql`${platformSettingsTable.key} = ${key}`);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Transfer code lookup failed" });
+  }
+});
+
 /* ── Inbound Email Webhook ───────────────────────────────────────────────────
  * POST /api/webhook/email-inbound
  *

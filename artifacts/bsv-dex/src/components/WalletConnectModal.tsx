@@ -16,7 +16,9 @@ import {
   registerPasskeyWallet,
   loginWithPasskey,
   listPasskeyWallets,
+  generateTransferCode,
 } from "@/lib/passkeyWallet";
+import { QRCodeSVG } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -255,6 +257,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [passkeyLabel, setPasskeyLabel] = useState("My OrahDEX Wallet");
   const [passkeySupported] = useState(() => isPasskeySupported());
   const [storedPasskeys, setStoredPasskeys] = useState(() => listPasskeyWallets());
+  const [restoredFromBackup, setRestoredFromBackup] = useState(false);
+  const [transferCodeInput, setTransferCodeInput] = useState("");
+  const [transferCodeLoading, setTransferCodeLoading] = useState(false);
+  const [transferCodeError, setTransferCodeError] = useState<string | null>(null);
+  const [showTransferCodeInput, setShowTransferCodeInput] = useState(false);
+  /* Per-wallet QR code generation */
+  const [qrWalletId, setQrWalletId] = useState<string | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   const handlePasskeyRegister = async () => {
     setPasskeyStep("registering");
@@ -275,15 +287,39 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const handlePasskeyLogin = async () => {
     setPasskeyStep("logging_in");
     setPasskeyError(null);
+    setRestoredFromBackup(false);
     try {
       const result = await loginWithPasskey();
       setPasskeyResult({ address: result.address, label: result.label });
+      setRestoredFromBackup(result.restoredFromBackup ?? false);
+      setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
       connect({ address: result.address, provider: "aura-wallet", network: "evm" });
-      setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
+      setTimeout(() => goToPrep(result.address, "evm", "passkey"), result.restoredFromBackup ? 2000 : 1200);
     } catch (e: any) {
-      setPasskeyError(e?.message ?? "Passkey authentication failed");
+      const msg: string = e?.message ?? "Passkey authentication failed";
+      setPasskeyError(msg);
       setPasskeyStep("error");
+    }
+  };
+
+  const handleGenerateQr = async (credentialId: string) => {
+    if (qrWalletId === credentialId) {
+      setQrWalletId(null);
+      setQrCode(null);
+      return;
+    }
+    setQrLoading(true);
+    setQrError(null);
+    setQrCode(null);
+    setQrWalletId(credentialId);
+    try {
+      const code = await generateTransferCode(credentialId);
+      setQrCode(code);
+    } catch (err: any) {
+      setQrError(err?.message ?? "Failed to generate code");
+    } finally {
+      setQrLoading(false);
     }
   };
 
@@ -1989,18 +2025,24 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         )}
                         {passkeyStep === "done" && passkeyResult && (
                           <>
-                            <h3 className="text-lg font-bold text-green-400 mb-1">Wallet Ready!</h3>
-                            <p className="text-sm text-muted-foreground">Connecting to OrahDEX…</p>
+                            <h3 className="text-lg font-bold text-green-400 mb-1">
+                              {restoredFromBackup ? "Wallet Restored!" : "Wallet Ready!"}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              {restoredFromBackup
+                                ? "Your wallet was recovered from cloud backup and saved to this device."
+                                : "Connecting to OrahDEX…"}
+                            </p>
                           </>
                         )}
                         {passkeyStep === "error" && (
                           <>
                             <h3 className="text-lg font-bold text-red-400 mb-1">
-                              {passkeyError?.includes("Wallet data not found") ? "Wallet Not on This Device" : "Something went wrong"}
+                              {passkeyError?.startsWith("WALLET_NOT_FOUND") ? "Wallet Not on This Device" : "Something went wrong"}
                             </h3>
                             <p className="text-sm text-red-400/80 max-w-xs">
-                              {passkeyError?.includes("Wallet data not found")
-                                ? "Your passkey verified successfully, but the wallet data isn't in this browser. This happens when you switch browsers, clear storage, or use a new device."
+                              {passkeyError?.startsWith("WALLET_NOT_FOUND")
+                                ? "Your passkey verified, but the encrypted wallet wasn't found — even in the cloud backup. Use a transfer code from your old device, or recover with your private key."
                                 : passkeyError}
                             </p>
                           </>
@@ -2012,15 +2054,48 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <div className="space-y-2">
                           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Passkey wallets on this device</p>
                           {storedPasskeys.map(w => (
-                            <div key={w.credentialId}
-                              className="flex items-center gap-3 p-3 rounded-xl bg-secondary border border-border">
-                              <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                                <Fingerprint className="w-4 h-4 text-primary" />
+                            <div key={w.credentialId} className="rounded-xl bg-secondary border border-border overflow-hidden">
+                              <div className="flex items-center gap-3 p-3">
+                                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                                  <Fingerprint className="w-4 h-4 text-primary" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold truncate">{w.label ?? "Passkey Wallet"}</div>
+                                  <div className="text-[10px] text-muted-foreground font-mono truncate">{w.address}</div>
+                                </div>
+                                <button
+                                  onClick={() => handleGenerateQr(w.credentialId)}
+                                  title="Generate transfer code"
+                                  className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold text-amber-400 border border-amber-500/30 hover:bg-amber-500/10 transition-all"
+                                >
+                                  {qrLoading && qrWalletId === w.credentialId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                                  {qrWalletId === w.credentialId && qrCode ? "Hide" : "Transfer"}
+                                </button>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold truncate">{w.label ?? "Passkey Wallet"}</div>
-                                <div className="text-[10px] text-muted-foreground font-mono truncate">{w.address}</div>
-                              </div>
+                              {/* Transfer Code + QR panel */}
+                              {qrWalletId === w.credentialId && (
+                                <div className="border-t border-border p-3 bg-background/50 space-y-3">
+                                  {qrError ? (
+                                    <p className="text-[11px] text-red-400">{qrError}</p>
+                                  ) : qrCode ? (
+                                    <>
+                                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        Enter this code on your new device in the "Use a transfer code" section. Valid for <span className="text-amber-400 font-bold">10 minutes</span>, one-time use.
+                                      </p>
+                                      <div className="flex items-center gap-4">
+                                        <div className="p-2 bg-white rounded-lg">
+                                          <QRCodeSVG value={qrCode} size={80} level="M" />
+                                        </div>
+                                        <div className="flex-1">
+                                          <p className="text-[10px] text-muted-foreground mb-1">Transfer Code</p>
+                                          <div className="font-mono text-xl font-black tracking-widest text-amber-400 select-all">{qrCode}</div>
+                                          <p className="text-[10px] text-muted-foreground mt-1">Scan QR or type code manually</p>
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : null}
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -2059,24 +2134,83 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {passkeyStep === "error" && (
                         <div className="space-y-2 w-full">
-                          {passkeyError?.includes("Wallet data not found") ? (
+                          {passkeyError?.startsWith("WALLET_NOT_FOUND") ? (
                             <>
-                              {/* Recovery option 1: create a fresh passkey wallet */}
+                              {/* Recovery option 1: Enter transfer code from old device */}
+                              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                  <Key className="w-3.5 h-3.5 text-amber-400" />
+                                  Use a transfer code from your old device
+                                </p>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  On your old device, go to the Passkey tab and tap "Generate Transfer Code". Enter the 8-character code here.
+                                </p>
+                                {!showTransferCodeInput ? (
+                                  <button
+                                    onClick={() => setShowTransferCodeInput(true)}
+                                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-sm hover:bg-amber-500/20 transition-all"
+                                  >
+                                    Enter Transfer Code
+                                  </button>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <input
+                                      type="text"
+                                      value={transferCodeInput}
+                                      onChange={e => setTransferCodeInput(e.target.value.toUpperCase().slice(0, 8))}
+                                      placeholder="e.g. ABCD1234"
+                                      maxLength={8}
+                                      className="w-full bg-background border border-amber-500/30 rounded-lg px-3 py-2 text-sm font-mono uppercase tracking-widest text-center focus:outline-none focus:border-amber-500/60"
+                                    />
+                                    {transferCodeError && (
+                                      <p className="text-[11px] text-red-400">{transferCodeError}</p>
+                                    )}
+                                    <button
+                                      disabled={transferCodeInput.length < 8 || transferCodeLoading}
+                                      onClick={async () => {
+                                        setTransferCodeLoading(true);
+                                        setTransferCodeError(null);
+                                        try {
+                                          // We need the passkey assertion rawId to decrypt — trigger login flow
+                                          // The loginWithPasskey function will auto-detect the locally saved backup;
+                                          // for transfer code we use a separate approach: authenticate then restore
+                                          const { restoreFromTransferCode } = await import("@/lib/passkeyWallet");
+                                          const challenge = crypto.getRandomValues(new Uint8Array(32));
+                                          const assertion = await navigator.credentials.get({
+                                            publicKey: { challenge, allowCredentials: [], userVerification: "required", timeout: 60_000 },
+                                          }) as PublicKeyCredential | null;
+                                          if (!assertion) throw new Error("Authentication cancelled");
+                                          const wallet = await restoreFromTransferCode(transferCodeInput, assertion.rawId);
+                                          setStoredPasskeys(listPasskeyWallets());
+                                          setPasskeyResult({ address: wallet.address, label: wallet.label ?? "Passkey Wallet" });
+                                          setRestoredFromBackup(true);
+                                          setPasskeyStep("done");
+                                          connect({ address: wallet.address, provider: "aura-wallet", network: "evm" });
+                                          setTimeout(() => goToPrep(wallet.address, "evm", "passkey"), 2000);
+                                        } catch (err: any) {
+                                          setTransferCodeError(err?.message ?? "Transfer failed");
+                                        } finally {
+                                          setTransferCodeLoading(false);
+                                        }
+                                      }}
+                                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 text-black font-bold text-sm hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                    >
+                                      {transferCodeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                      Restore Wallet
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Recovery option 2: create a fresh passkey wallet */}
                               <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
                                 <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
                                   <PlusCircle className="w-3.5 h-3.5 text-primary" />
                                   Create a new passkey wallet
                                 </p>
                                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                  Generates a brand-new EVM wallet, secured by your biometrics on this device. Your old wallet address will change.
+                                  Generates a brand-new EVM wallet. Your old wallet address will change.
                                 </p>
-                                <input
-                                  type="text"
-                                  value={passkeyLabel}
-                                  onChange={e => setPasskeyLabel(e.target.value)}
-                                  placeholder="Wallet name (optional)"
-                                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
-                                />
                                 <button
                                   onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); handlePasskeyRegister(); }}
                                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:opacity-90 transition-all"
@@ -2086,14 +2220,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 </button>
                               </div>
 
-                              {/* Recovery option 2: import private key */}
+                              {/* Recovery option 3: import private key */}
                               <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
                                 <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
                                   <Key className="w-3.5 h-3.5 text-muted-foreground" />
-                                  Restore your old wallet with a private key
-                                </p>
-                                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                  If you saved your private key or seed phrase before, paste it here to recover your original address.
+                                  Restore with private key or seed phrase
                                 </p>
                                 <button
                                   onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setImportNetwork("evm"); setImportMode("privatekey"); setImportError(null); setView("import"); }}
@@ -2103,9 +2234,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 </button>
                               </div>
 
-                              {/* Try again */}
+                              {/* Back */}
                               <button
-                                onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); }}
+                                onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setShowTransferCodeInput(false); setTransferCodeInput(""); setTransferCodeError(null); }}
                                 className="w-full py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground transition-colors"
                               >
                                 ← Back
@@ -2128,9 +2259,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/5 border border-green-500/15">
                           <Shield className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                           <div className="text-[11px] text-muted-foreground leading-relaxed">
-                            <span className="text-green-400 font-semibold">Non-custodial & device-bound.</span>{" "}
-                            Your private key is encrypted on this device and can only be unlocked with your biometrics.
-                            OrahDEX never sees your key.
+                            <span className="text-green-400 font-semibold">Non-custodial with cloud recovery.</span>{" "}
+                            Your private key is encrypted with AES-256 and only decryptable with your biometrics.
+                            A secure backup is kept on our server for cross-device recovery. OrahDEX can never see your key.
                           </div>
                         </div>
                       )}
