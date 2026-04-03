@@ -142,4 +142,46 @@ app.get("/api/bsv-status", async (_req, res) => {
   }
 });
 
+/* ── Thunderbird / Mozilla autoconfig XML ─────────────────────────────────── */
+const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<clientConfig version="1.1">
+  <emailProvider id="orahdex.org">
+    <domain>orahdex.org</domain>
+    <domain>orahdex.com</domain>
+    <displayName>OrahDEX Mail</displayName>
+    <displayShortName>OrahDEX</displayShortName>
+
+    <!-- Incoming: IMAP -->
+    <incomingServer type="imap">
+      <hostname>mail.orahdex.org</hostname>
+      <port>993</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </incomingServer>
+
+    <!-- Outgoing: SMTP -->
+    <outgoingServer type="smtp">
+      <hostname>mail.orahdex.org</hostname>
+      <port>465</port>
+      <socketType>SSL</socketType>
+      <authentication>password-cleartext</authentication>
+      <username>%EMAILADDRESS%</username>
+    </outgoingServer>
+  </emailProvider>
+</clientConfig>`;
+
+function serveAutoconfig(_req: any, res: any) {
+  res.set("Content-Type", "application/xml; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=86400");
+  res.send(AUTOCONFIG_XML);
+}
+
+/* Standard Mozilla autoconfig path */
+app.get("/.well-known/autoconfig/mail/config-v1.1.xml", serveAutoconfig);
+/* Alternate path served by some mail clients */
+app.get("/mail/config-v1.1.xml", serveAutoconfig);
+/* Via API prefix (used by the admin panel link) */
+app.get("/api/.well-known/autoconfig/mail/config-v1.1.xml", serveAutoconfig);
+
 export default app;

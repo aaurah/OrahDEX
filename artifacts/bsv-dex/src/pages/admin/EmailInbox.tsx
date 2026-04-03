@@ -74,31 +74,6 @@ export function AdminEmailInbox() {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const { data: smtpStatus } = useQuery<{
-    configured: boolean;
-    host?: string;
-    port?: number;
-    user?: string;
-    from?: string;
-    secure?: boolean;
-  }>({
-    queryKey: ["smtp-status"],
-    queryFn: () => fetch(`${BASE}/api/admin/mail/smtp-status`).then(r => r.json()),
-    refetchInterval: 60_000,
-    staleTime: 30_000,
-  });
-
-  const testSmtp = useMutation({
-    mutationFn: () => fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json()),
-    onSuccess: (data: { success: boolean; error?: string }) => {
-      if (data.success) {
-        toast({ title: "SMTP connection OK", description: "Your mail server is reachable and credentials are valid." });
-      } else {
-        toast({ title: "SMTP test failed", description: data.error ?? "Connection failed", variant: "destructive" });
-      }
-      qc.invalidateQueries({ queryKey: ["smtp-status"] });
-    },
-  });
 
   const webhookUrl = `${window.location.origin}${BASE}/api/webhook/email-inbound`;
   const copyWebhook = () => {
@@ -158,17 +133,7 @@ export function AdminEmailInbox() {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setComposing(false);
       setCompose({ from: "support@orahdex.org", to: "", subject: "", body: "" });
-      if (data?.smtpSent) {
-        toast({ title: "Email delivered", description: "Sent via SMTP and saved to Sent folder." });
-      } else if (data?.smtpError && data.smtpError !== "Not attempted") {
-        toast({
-          title: "Saved but not delivered",
-          description: `SMTP error: ${data.smtpError}`,
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Saved to Sent folder", description: "Configure SMTP in Setup → Step D to send real emails." });
-      }
+      toast({ title: "Saved to Sent folder", description: "Message saved. Configure your mail client using the setup guide to send real emails." });
     },
   });
 
@@ -243,41 +208,6 @@ export function AdminEmailInbox() {
         </div>
       </div>
 
-      {/* SMTP Status Banner */}
-      {smtpStatus !== undefined && !smtpStatus.configured && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/8 border border-amber-500/25">
-          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-amber-300">SMTP not configured — emails are saved locally only</p>
-            <p className="text-[10px] text-amber-400/70 mt-0.5">
-              Go to <strong>Admin → Integrations → Email / SMTP</strong> to add your mail server (Gmail, Mailgun, SendGrid, AWS SES…)
-            </p>
-          </div>
-          <a
-            href="/admin/integrations"
-            className="shrink-0 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap"
-          >
-            Configure →
-          </a>
-        </div>
-      )}
-      {smtpStatus?.configured && (
-        <div className="flex items-center gap-3 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
-          <Wifi className="w-4 h-4 text-green-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-green-300">SMTP connected — {smtpStatus.host}</p>
-            <p className="text-[10px] text-green-400/70">Sending from: {smtpStatus.from}</p>
-          </div>
-          <button
-            onClick={() => testSmtp.mutate()}
-            disabled={testSmtp.isPending}
-            className="shrink-0 flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-green-500/10 border border-green-500/25 text-green-300 hover:bg-green-500/20 transition-colors"
-          >
-            {testSmtp.isPending ? <div className="w-3 h-3 border border-green-400/30 border-t-green-400 rounded-full animate-spin" /> : <Wifi className="w-3 h-3" />}
-            Test
-          </button>
-        </div>
-      )}
 
       {/* Mail Client Setup Modal */}
       {showMailSetup && (
@@ -301,107 +231,118 @@ export function AdminEmailInbox() {
 
             {/* Body */}
             <div className="overflow-y-auto p-5 space-y-5">
-              {!smtpStatus?.configured ? (
-                /* Not configured yet */
-                <div className="p-4 bg-amber-500/8 border border-amber-500/25 rounded-xl flex items-start gap-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-amber-300">SMTP not configured yet</p>
-                    <p className="text-xs text-amber-400/70 mt-1 leading-relaxed">
-                      First add your SMTP credentials in <strong>Admin → Integrations → Email / SMTP</strong>, then come back here for the full connection details.
-                    </p>
-                    <a
-                      href="/admin/integrations"
-                      onClick={() => setShowMailSetup(false)}
-                      className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 transition-colors"
-                    >
-                      Configure SMTP →
-                    </a>
-                  </div>
-                </div>
-              ) : (
-                /* SMTP is configured — show connection details */
-                <>
-                  <div className="p-3 bg-green-500/8 border border-green-500/20 rounded-xl flex items-center gap-2.5">
-                    <Wifi className="w-4 h-4 text-green-400 shrink-0" />
-                    <p className="text-xs font-semibold text-green-300">SMTP is configured — use the details below in your mail client</p>
-                  </div>
 
-                  {/* SMTP / Outgoing */}
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
-                      <Send className="w-3 h-3" /> Outgoing Mail (SMTP)
-                    </p>
-                    <div className="space-y-2">
-                      {[
-                        { key: "smtp_host",   icon: Server,  label: "SMTP Server / Host",     value: smtpStatus.host ?? "" },
-                        { key: "smtp_port",   icon: Lock,    label: "Port",                   value: String(smtpStatus.port ?? 587) },
-                        { key: "smtp_user",   icon: User,    label: "Username",                value: smtpStatus.user ?? "" },
-                        { key: "smtp_sec",    icon: Shield,  label: "Security",               value: smtpStatus.secure ? "SSL/TLS (port 465)" : "STARTTLS (port 587)" },
-                        { key: "smtp_from",   icon: AtSign,  label: "From / Sender address",  value: smtpStatus.from ?? smtpStatus.user ?? "" },
-                      ].map(({ key, icon: Icon, label, value }) => (
-                        <div key={key} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl">
-                          <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-bold">{label}</p>
-                            <p className="text-sm font-mono text-foreground mt-0.5 truncate">{value || "—"}</p>
-                          </div>
-                          {value && (
-                            <button
-                              onClick={() => copyField(key, value)}
-                              className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
-                            >
-                              {copiedField === key ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <div className="flex items-start gap-3 p-3 bg-red-500/5 border border-red-500/15 rounded-xl">
-                        <Lock className="w-3.5 h-3.5 text-red-400/70 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-[9px] uppercase tracking-widest text-red-400/70 font-bold">Password</p>
-                          <p className="text-sm font-mono text-foreground mt-0.5">••••••••••••</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">Use the SMTP password you entered in Integrations → Email / SMTP. It is not shown here for security.</p>
-                        </div>
+              {/* Account list */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                  <AtSign className="w-3 h-3" /> OrahDEX Email Accounts
+                </p>
+                <div className="space-y-2">
+                  {[
+                    { addr: "support@orahdex.org",  color: "text-primary",          label: "Support (primary)" },
+                    { addr: "support@orahdex.com",  color: "text-primary",          label: "Support (.com alias)" },
+                    { addr: "admin@orahdex.org",    color: "text-violet-400",       label: "Admin" },
+                    { addr: "legal@orahdex.org",    color: "text-blue-400",         label: "Legal & Compliance" },
+                    { addr: "contact@orahdex.org",  color: "text-green-400",        label: "General Contact" },
+                    { addr: "privacy@orahdex.org",  color: "text-cyan-400",         label: "Privacy / GDPR" },
+                    { addr: "billing@orahdex.org",  color: "text-amber-400",        label: "Billing" },
+                    { addr: "press@orahdex.org",    color: "text-orange-400",       label: "Press & Media" },
+                  ].map(({ addr, color, label }) => (
+                    <div key={addr} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl">
+                      <AtSign className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-mono font-semibold ${color}`}>{addr}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{label}</p>
                       </div>
+                      <button
+                        onClick={() => copyField(addr, addr)}
+                        className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                      >
+                        {copiedField === addr ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
 
-                  {/* Thunderbird step-by-step */}
-                  <div>
-                    <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
-                      <Info className="w-3 h-3" /> Thunderbird Setup (step by step)
-                    </p>
-                    <ol className="space-y-2 text-xs text-muted-foreground leading-relaxed">
-                      {[
-                        "Open Thunderbird → Account Settings → Account Actions → Add Mail Account",
-                        `Your name: OrahDEX Admin`,
-                        `Email address: ${smtpStatus.from ?? smtpStatus.user ?? "support@orahdex.org"}`,
-                        "Click Configure Manually",
-                        `Outgoing SMTP: ${smtpStatus.host}  Port: ${smtpStatus.port ?? 587}  Auth: Normal password`,
-                        `Username: ${smtpStatus.user}  Password: (your SMTP password)`,
-                        "For incoming mail (IMAP/POP3): use your domain email provider's details (Google Workspace, Zoho, etc.)",
-                        "Click Done / Re-test — Thunderbird will verify the connection",
-                      ].map((step, i) => (
-                        <li key={i} className="flex items-start gap-2.5">
-                          <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-[9px] font-black text-primary mt-0.5">
-                            {i + 1}
-                          </span>
-                          <span className={step.includes("SMTP") || step.includes("Username") || step.includes("Outgoing") ? "font-mono text-foreground/90" : ""}>{step}</span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
+              {/* Thunderbird connection settings */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                  <Server className="w-3 h-3" /> Mail Server Settings (for any account above)
+                </p>
+                <div className="space-y-2">
+                  {[
+                    { key: "imap_host",  icon: Inbox,  label: "Incoming Server (IMAP)", value: "mail.orahdex.org" },
+                    { key: "imap_port",  icon: Lock,   label: "IMAP Port",              value: "993" },
+                    { key: "imap_sec",   icon: Shield, label: "IMAP Security",          value: "SSL/TLS" },
+                    { key: "smtp_host",  icon: Send,   label: "Outgoing Server (SMTP)", value: "mail.orahdex.org" },
+                    { key: "smtp_port",  icon: Lock,   label: "SMTP Port",              value: "465" },
+                    { key: "smtp_sec",   icon: Shield, label: "SMTP Security",          value: "SSL/TLS" },
+                    { key: "auth",       icon: User,   label: "Username",               value: "your full email address" },
+                  ].map(({ key, icon: Icon, label, value }) => (
+                    <div key={key} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl">
+                      <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] uppercase tracking-widest text-muted-foreground font-bold">{label}</p>
+                        <p className="text-sm font-mono text-foreground mt-0.5">{value}</p>
+                      </div>
+                      {!value.includes(" ") && (
+                        <button
+                          onClick={() => copyField(key, value)}
+                          className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                        >
+                          {copiedField === key ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-                  {/* IMAP note */}
-                  <div className="p-3.5 bg-secondary/40 border border-border rounded-xl">
-                    <p className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5"><Info className="w-3.5 h-3.5 text-primary" /> About incoming mail (IMAP)</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      OrahDEX uses this SMTP server only to <strong>send</strong> outbound emails. To also <strong>receive</strong> emails in Thunderbird, you need an IMAP account with your domain provider (e.g. Google Workspace for <code className="font-mono text-primary">@orahdex.org</code>). Your IMAP host, port, and credentials will come from that provider, not from here.
-                    </p>
-                  </div>
-                </>
-              )}
+              {/* Thunderbird step-by-step */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                  <Info className="w-3 h-3" /> Thunderbird — Add Account (step by step)
+                </p>
+                <ol className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                  {[
+                    "Open Thunderbird → hamburger menu → New Account → Email",
+                    "Your name: OrahDEX   ·   Email: support@orahdex.org (or whichever account)",
+                    "Password: your mailbox password   →   click Continue",
+                    "If auto-detect fails, click Configure Manually",
+                    "Incoming: IMAP · mail.orahdex.org · Port 993 · SSL/TLS · Normal password",
+                    "Outgoing: SMTP · mail.orahdex.org · Port 465 · SSL/TLS · Normal password",
+                    "Username (both): your full email address (e.g. support@orahdex.org)",
+                    "Click Re-test — Thunderbird will verify, then click Done",
+                  ].map((step, i) => (
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="shrink-0 w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-[9px] font-black text-primary mt-0.5">
+                        {i + 1}
+                      </span>
+                      <span className={i >= 4 && i <= 7 ? "font-mono text-foreground/90" : ""}>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              {/* Autoconfig download */}
+              <div className="p-3.5 bg-primary/5 border border-primary/20 rounded-xl">
+                <p className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1.5">
+                  <ExternalLink className="w-3.5 h-3.5 text-primary" /> Thunderbird Auto-Configure File
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+                  Thunderbird can auto-detect the server settings if you place this config file at <code className="font-mono text-primary">autoconfig.orahdex.org/mail/config-v1.1.xml</code> or point your DNS <code className="font-mono text-primary">autoconfig</code> CNAME to this server. The file is already served from this app.
+                </p>
+                <a
+                  href={`${window.location.origin}${BASE}/.well-known/autoconfig/mail/config-v1.1.xml`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  View autoconfig XML <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
             </div>
           </div>
         </div>
