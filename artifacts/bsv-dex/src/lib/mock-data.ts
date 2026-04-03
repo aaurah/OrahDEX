@@ -1012,6 +1012,45 @@ function mkTicker(sym: string, price: number, chgPct: number, vol: number, qVol:
   };
 }
 
+/** Known approximate USD prices for mock ticker generation. */
+const KNOWN_PRICES_USD: Record<string, number> = {
+  BTC: 68_310, ETH: 3_415, SOL: 148.5, BSV: 55.42, BNB: 392,
+  XRP: 0.5242, ADA: 0.4421, DOGE: 0.1185, DOT: 6.82, LINK: 14.52,
+  AVAX: 36.4, MATIC: 0.718, ARB: 1.12, OP: 2.41, SUI: 1.22,
+  INJ: 28.4, NEAR: 6.55, APT: 10.5, FTM: 0.82, CRO: 0.093,
+  ATOM: 8.42, TRX: 0.115, AERO: 1.24, BRETT: 0.089, TOSHI: 0.0012,
+  DEGEN: 0.0076, ZORA: 0.042, WLD: 2.85, ENS: 14.2, UNI: 7.95,
+  CAKE: 2.18, SUSHI: 1.31, COMP: 48.2, AAVE: 98.4, CRV: 0.42,
+  LDO: 1.82, MKR: 1480, SNX: 2.14, GMX: 28.4, GNS: 5.12,
+  PEPE: 0.0000082, SHIB: 0.0000088, FLOKI: 0.000024, WIF: 0.93,
+  MEME: 0.024, BONK: 0.000019, BOME: 0.0084, POPCAT: 0.18,
+  USDT: 1, USDC: 1, BUSD: 1, DAI: 1, FDUSD: 1,
+  BCH: 385, LTC: 82.4, ETC: 24.8, DASH: 28.1, ZEC: 30.2,
+  LINEA: 0, ZK: 0.15, SCR: 0.42, MNT: 0.65,
+};
+
+/**
+ * Generate a mock ticker for any trading pair using known coin prices.
+ * Falls back to BSV-USDT data only if both coins are completely unknown.
+ */
+export function generateTickerForSymbol(base: string, quote: string): any {
+  const baseUsd  = KNOWN_PRICES_USD[base.toUpperCase()];
+  const quoteUsd = KNOWN_PRICES_USD[quote.toUpperCase()];
+  const sym = `${base}-${quote}`;
+
+  if (baseUsd && quoteUsd && quoteUsd > 0) {
+    const price = baseUsd / quoteUsd;
+    // Seed deterministic change % from the symbol string
+    const seed  = [...sym].reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const chg   = ((seed % 1000) / 1000 - 0.45) * 8; // -3.6% to +4.4%
+    const vol   = baseUsd * 50_000 * (1 + (seed % 10) / 5);
+    return mkTicker(sym, price, chg, vol, vol * price);
+  }
+  // Unknown pair — return BSV-USDT shape but re-labelled
+  const fallback = { ...mkTicker(sym, 1, 0, 0, 0) };
+  return fallback;
+}
+
 export const MOCK_TICKER: Record<string, any> = {
   /* ── Spot ── */
   "BSV-USDT": mkTicker("BSV-USDT",  55.42,    4.41,  18_500_000,  1_025_000_000),

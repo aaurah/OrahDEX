@@ -25,7 +25,15 @@ function lpFee(poolFee: number)       { return poolFee * LP_FEE_RATIO; }
 function protocolFee(poolFee: number) { return poolFee * PROTOCOL_FEE_RATIO; }
 
 // ─── Pool data ────────────────────────────────────────────────────────────────
-const POOLS = [
+interface Pool {
+  id: string; base: string; quote: string;
+  tvl: number; vol24: number; fee: number; farmApr: number; userLp: number;
+  chain: string;
+  chainId?: number;
+}
+
+const POOLS: Pool[] = [
+  // ── BSV settlement (virtual AMM) ──────────────────────────────────────────
   { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  fee: 0.3,  farmApr: 4.2,  userLp: 0,      chain: "BSV" },
   { id: "eth-usdt",  base: "ETH",  quote: "USDT", tvl: 187_400_000, vol24: 44_100_000,  fee: 0.3,  farmApr: 6.1,  userLp: 0,      chain: "BSV" },
   { id: "sol-usdt",  base: "SOL",  quote: "USDT", tvl: 95_700_000,  vol24: 21_300_000,  fee: 0.3,  farmApr: 8.4,  userLp: 0,      chain: "BSV" },
@@ -38,19 +46,30 @@ const POOLS = [
   { id: "link-usdt", base: "LINK", quote: "USDT", tvl: 22_900_000,  vol24: 5_100_000,   fee: 0.3,  farmApr: 10.1, userLp: 0,      chain: "BSV" },
   { id: "bsv-btc",   base: "BSV",  quote: "BTC",  tvl: 4_100_000,   vol24: 980_000,     fee: 0.2,  farmApr: 22.8, userLp: 320.0,  chain: "BSV" },
   { id: "eth-btc",   base: "ETH",  quote: "BTC",  tvl: 76_500_000,  vol24: 17_200_000,  fee: 0.3,  farmApr: 5.3,  userLp: 0,      chain: "BSV" },
-  // ── Tron ecosystem ─────────────────────────────────────────────────────────
+  // ── Tron ecosystem ──────────────────────────────────────────────────────────
   { id: "trx-usdt",  base: "TRX",  quote: "USDT", tvl: 148_200_000, vol24: 38_700_000,  fee: 0.25, farmApr: 12.4, userLp: 0,      chain: "TRX" },
   { id: "btt-usdt",  base: "BTT",  quote: "USDT", tvl: 19_600_000,  vol24: 5_800_000,   fee: 0.3,  farmApr: 24.6, userLp: 0,      chain: "TRX" },
   { id: "btt-trx",   base: "BTT",  quote: "TRX",  tvl: 8_400_000,   vol24: 2_100_000,   fee: 0.3,  farmApr: 31.2, userLp: 0,      chain: "TRX" },
   { id: "win-trx",   base: "WIN",  quote: "TRX",  tvl: 4_200_000,   vol24: 1_050_000,   fee: 0.3,  farmApr: 28.8, userLp: 0,      chain: "TRX" },
   { id: "jst-usdt",  base: "JST",  quote: "USDT", tvl: 6_800_000,   vol24: 1_620_000,   fee: 0.3,  farmApr: 19.4, userLp: 0,      chain: "TRX" },
   { id: "trx-btc",   base: "TRX",  quote: "BTC",  tvl: 32_100_000,  vol24: 8_900_000,   fee: 0.3,  farmApr: 9.7,  userLp: 0,      chain: "TRX" },
+  // ── Base mainnet (chainId 8453) — Uniswap V3 on-chain ────────────────────
+  { id: "eth-usdt-base", base: "ETH", quote: "USDT", tvl: 28_400_000, vol24: 7_200_000,  fee: 0.3, farmApr: 8.2, userLp: 0, chain: "Base", chainId: 8453 },
+  { id: "eth-usdc-base", base: "ETH", quote: "USDC", tvl: 35_600_000, vol24: 9_100_000,  fee: 0.3, farmApr: 7.8, userLp: 0, chain: "Base", chainId: 8453 },
+  { id: "btc-usdt-base", base: "BTC", quote: "USDT", tvl: 22_100_000, vol24: 5_400_000,  fee: 0.3, farmApr: 5.1, userLp: 0, chain: "Base", chainId: 8453 },
+  { id: "btc-usdc-base", base: "BTC", quote: "USDC", tvl: 18_800_000, vol24: 4_300_000,  fee: 0.3, farmApr: 5.8, userLp: 0, chain: "Base", chainId: 8453 },
+  // ── Ethereum mainnet (chainId 1) — Uniswap V3 on-chain ───────────────────
+  { id: "eth-usdt-eth",  base: "ETH", quote: "USDT", tvl: 82_400_000, vol24: 19_300_000, fee: 0.3, farmApr: 4.2, userLp: 0, chain: "Ethereum", chainId: 1 },
+  { id: "eth-usdc-eth",  base: "ETH", quote: "USDC", tvl: 91_200_000, vol24: 21_800_000, fee: 0.3, farmApr: 3.9, userLp: 0, chain: "Ethereum", chainId: 1 },
+  { id: "btc-usdt-eth",  base: "BTC", quote: "USDT", tvl: 67_800_000, vol24: 15_200_000, fee: 0.3, farmApr: 3.4, userLp: 0, chain: "Ethereum", chainId: 1 },
+  { id: "btc-usdc-eth",  base: "BTC", quote: "USDC", tvl: 52_400_000, vol24: 12_100_000, fee: 0.3, farmApr: 3.7, userLp: 0, chain: "Ethereum", chainId: 1 },
 ];
 
 // Approximate spot prices used only for UI ratio calculations
 const SPOT: Record<string, number> = {
-  BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
-  XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1,
+  BTC: 68_310, ETH: 3_415, SOL: 148.5, BSV: 55.42, BNB: 392,
+  XRP: 0.5242, ADA: 0.4421, DOGE: 0.1185, DOT: 6.82, LINK: 14.52,
+  USDT: 1, USDC: 1,
   TRX: 0.115, BTT: 0.00000095, WIN: 0.00007, JST: 0.028,
 };
 
@@ -293,8 +312,11 @@ function LiquidityModal({
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
   const isEvm = !address || network === "evm" || address.startsWith("0x");
-  const chainId = walletChainId ?? 1;
-  const { balances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
+  const walletChain = walletChainId ?? 1;
+  // For on-chain deposits, use the pool's required chain; fall back to wallet chain
+  const targetChainId = pool?.chainId ?? walletChain;
+  const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
+  const { balances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, walletChain);
 
   const userPositions = address ? getUserPositions(address) : {};
   const myLpTokens   = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
@@ -336,7 +358,7 @@ function LiquidityModal({
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
-    const mode = getLiquidityMode(chainId, pool.base, pool.quote);
+    const mode = getLiquidityMode(targetChainId, pool.base, pool.quote);
 
     // ── Real on-chain Uniswap V3 deposit ────────────────────────────────────
     if (mode === "on_chain") {
@@ -346,11 +368,11 @@ function LiquidityModal({
         amountA: nA,
         amountB: nB,
         address,
-        chainId: chainId!,
+        chainId: targetChainId,
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
-            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId });
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId: targetChainId });
             refreshEvmBalances();
             toast({
               title: "Liquidity added on-chain!",
@@ -389,7 +411,7 @@ function LiquidityModal({
       description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, chainId, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
@@ -451,9 +473,19 @@ function LiquidityModal({
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X size={18} /></button>
         </div>
 
+        {/* Wrong chain warning */}
+        {wrongChain && (
+          <div className="flex items-start gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-3 py-2.5 mb-4">
+            <AlertTriangle size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-yellow-300/90 leading-relaxed">
+              <strong>Wrong network.</strong> This pool requires <strong>{pool?.chain}</strong> (chain {pool?.chainId}), but your wallet is on chain {walletChainId}. Switch your wallet to the correct network before depositing.
+            </p>
+          </div>
+        )}
+
         {/* Chain mode notice */}
         {(() => {
-          const mode = pool ? getLiquidityMode(chainId, pool.base, pool.quote) : "simulated";
+          const mode = pool ? getLiquidityMode(targetChainId, pool.base, pool.quote) : "simulated";
           if (mode === "on_chain") return (
             <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
               <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
@@ -653,7 +685,7 @@ function LiquidityModal({
                     </span>
                     {s.txHash && (
                       <a
-                        href={`${EXPLORER_TX[chainId ?? 8453] ?? "https://basescan.org/tx/"}${s.txHash}`}
+                        href={`${EXPLORER_TX[targetChainId] ?? "https://basescan.org/tx/"}${s.txHash}`}
                         target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-1 text-[10px] text-primary hover:underline shrink-0"
                       >
@@ -686,7 +718,7 @@ function LiquidityModal({
               className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {(() => {
-                const mode = getLiquidityMode(chainId, pool.base, pool.quote);
+                const mode = getLiquidityMode(targetChainId, pool.base, pool.quote);
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
@@ -791,7 +823,8 @@ export function Liquidity() {
 
   const [tab, setTab]         = useState<Tab>("pools");
   const [sortBy, setSortBy]   = useState<"apr" | "tvl" | "vol">("tvl");
-  const [modalPool, setModalPool] = useState<typeof POOLS[0] | null>(null);
+  const [chainFilter, setChainFilter] = useState<string>("all");
+  const [modalPool, setModalPool] = useState<Pool | null>(null);
   const [modalMode, setModalMode] = useState<"add" | "remove">("add");
   const [showAmmInfo, setShowAmmInfo] = useState(false);
 
@@ -807,11 +840,14 @@ export function Liquidity() {
   const openAdd    = (p: typeof POOLS[0]) => { setModalPool(enrichPool(p)); setModalMode("add"); };
   const openRemove = (p: typeof POOLS[0]) => { setModalPool(enrichPool(p)); setModalMode("remove"); };
 
-  const sorted = [...POOLS].map(enrichPool).sort((a, b) =>
-    sortBy === "apr" ? (poolApr(b) + b.farmApr) - (poolApr(a) + a.farmApr)
-    : sortBy === "tvl" ? b.tvl - a.tvl
-    : b.vol24 - a.vol24
-  );
+  const sorted = [...POOLS]
+    .filter(p => chainFilter === "all" || p.chain.toLowerCase() === chainFilter.toLowerCase())
+    .map(enrichPool)
+    .sort((a, b) =>
+      sortBy === "apr" ? (poolApr(b) + b.farmApr) - (poolApr(a) + a.farmApr)
+      : sortBy === "tvl" ? b.tvl - a.tvl
+      : b.vol24 - a.vol24
+    );
 
   const totalTvl = POOLS.reduce((s, p) => s + p.tvl, 0);
   const myPools  = POOLS
@@ -957,7 +993,22 @@ export function Liquidity() {
       {/* ── POOLS tab ── */}
       {tab === "pools" && (
         <>
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <span className="text-sm text-muted-foreground">Chain:</span>
+            {[
+              { id: "all",      label: "All Chains" },
+              { id: "bsv",      label: "⚡ BSV" },
+              { id: "trx",      label: "TRX" },
+              { id: "base",     label: "🔵 Base" },
+              { id: "ethereum", label: "⟠ Ethereum" },
+            ].map(c => (
+              <button key={c.id} onClick={() => setChainFilter(c.id)}
+                className={cn("px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors",
+                  chainFilter === c.id ? "bg-primary/15 border-primary/40 text-primary" : "border-border text-muted-foreground hover:border-primary/30")}>
+                {c.label}
+              </button>
+            ))}
+            <span className="flex-1" />
             <span className="text-sm text-muted-foreground">Sort by:</span>
             {(["tvl", "apr", "vol"] as const).map(s => (
               <button key={s} onClick={() => setSortBy(s)}
@@ -992,6 +1043,16 @@ export function Liquidity() {
                     <TokenPair base={pool.base} quote={pool.quote} />
                     {hasPos && <span className="text-[9px] px-1.5 py-0.5 bg-primary/20 text-primary rounded font-bold">MY POS</span>}
                     <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{pool.fee}% fee</span>
+                    <span className={cn(
+                      "text-[9px] px-1.5 py-0.5 rounded font-bold border",
+                      pool.chain === "BSV"      && "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+                      pool.chain === "TRX"      && "bg-red-500/15 text-red-400 border-red-500/30",
+                      pool.chain === "Base"     && "bg-blue-500/15 text-blue-400 border-blue-500/30",
+                      pool.chain === "Ethereum" && "bg-violet-500/15 text-violet-400 border-violet-500/30",
+                    )}>{pool.chain}</span>
+                    {(pool.chain === "Base" || pool.chain === "Ethereum") && (
+                      <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold">ON-CHAIN</span>
+                    )}
                   </div>
                   <span className="text-right text-sm font-semibold">{fmtTvl(pool.tvl)}</span>
                   <span className="text-right text-sm">{fmtTvl(pool.vol24)}</span>
