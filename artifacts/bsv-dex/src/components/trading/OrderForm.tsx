@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -11,10 +11,13 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
 import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
+import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
+import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
+  XCircle, Info, Route, Timer,
 } from "lucide-react";
 
 type Side = "buy" | "sell";
@@ -180,6 +183,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
 
+  // ── Precheck state (declared here, logic wired after balances are computed)
+  const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
+  const [precheckLoading, setPrecheckLoading] = useState(false);
+  const precheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
 
@@ -194,6 +202,39 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const quoteAvailable = quoteBalEntry?.amount ?? 0;
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
+
+  // ── Precheck runner (declared after balances so availableAmt is in scope) ──
+  const runPrecheck = useCallback(async (amt: string, px: string) => {
+    if (!address || !amt || parseFloat(amt) <= 0) {
+      setPrecheckResult(null);
+      return;
+    }
+    setPrecheckLoading(true);
+    try {
+      const result = await precheck({
+        symbol,
+        side,
+        type,
+        amount:           parseFloat(amt),
+        price:            px ? parseFloat(px) : undefined,
+        slippageBps:      Math.round(slippage * 100),
+        availableBalance: availableAmt,
+        currentPrice,
+        network:          (network as any) ?? "evm",
+        address:          address ?? "",
+      });
+      setPrecheckResult(result);
+    } finally {
+      setPrecheckLoading(false);
+    }
+  }, [address, symbol, side, type, slippage, availableAmt, currentPrice, network]);
+
+  // Debounce precheck 300 ms after amount/price changes
+  useEffect(() => {
+    if (precheckTimerRef.current) clearTimeout(precheckTimerRef.current);
+    precheckTimerRef.current = setTimeout(() => void runPrecheck(amount, price), 300);
+    return () => { if (precheckTimerRef.current) clearTimeout(precheckTimerRef.current); };
+  }, [amount, price, side, type, slippage, runPrecheck]);
 
   const placeOrder = usePlaceOrder({
     mutation: {
@@ -275,6 +316,36 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
+
+    // ── Golden path: run precheck (or use cached result) before anything ──
+    const timer = new TradeTimer();
+    timer.mark("precheck");
+    let check = precheckResult;
+    if (!check) {
+      check = await precheck({
+        symbol, side, type,
+        amount:           parseFloat(amount),
+        price:            price ? parseFloat(price) : undefined,
+        slippageBps:      Math.round(slippage * 100),
+        availableBalance: availableAmt,
+        currentPrice,
+        network:          (network as any) ?? "evm",
+        address:          address ?? "",
+      });
+      setPrecheckResult(check);
+    }
+    timer.end("precheck");
+
+    if (!check.ok) {
+      // Map the first blocking error to a toast. Never proceed.
+      const first = check.errors[0];
+      toast({
+        title: "Cannot place order",
+        description: first?.message ?? "Fix the errors below before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const currentChainId = useWalletStore.getState().chainId ?? 1;
     const addTx   = useWalletStore.getState().addPendingTx;
@@ -896,16 +967,59 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             </div>
           )}
 
+          {/* ── Precheck panel: errors + warnings ─────────────────────────── */}
+          {amount && parseFloat(amount) > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {precheckLoading && !precheckResult && (
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-0.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Checking order…
+                </div>
+              )}
+
+              {/* Errors — block submission */}
+              {precheckResult?.errors?.map((err, i) => (
+                <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-[11px]">
+                  <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-red-300 font-semibold">{err.message}</span>
+                    {err.detail && <span className="text-red-400/70 ml-1">· {err.detail}</span>}
+                  </div>
+                </div>
+              ))}
+
+              {/* Warnings — allow submission with notice */}
+              {precheckResult?.warnings?.map((warn, i) => (
+                <div key={i} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px]">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <span className="text-amber-300">{warn.message}</span>
+                </div>
+              ))}
+
+              {/* Route + min received — shown when precheck passes */}
+              {precheckResult?.ok && precheckResult.route && (
+                <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Route className="w-3 h-3" />
+                    {precheckResult.route.join(" → ")}
+                  </span>
+                  {precheckResult.minReceived != null && precheckResult.minReceived > 0 && (
+                    <span>Min: <span className="text-foreground font-mono">{precheckResult.minReceived.toFixed(6)}</span></span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Submit */}
           <button
             type="submit"
-            disabled={!canSubmit}
+            disabled={!canSubmit || (precheckResult != null && !precheckResult.ok)}
             className={cn(
               "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",
               side === "buy"
                 ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40 hover:-translate-y-0.5 active:translate-y-0"
                 : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40 hover:-translate-y-0.5 active:translate-y-0",
-              !canSubmit && "opacity-60 cursor-not-allowed !transform-none"
+              (!canSubmit || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
             {approvalStep === "checking" || approvalStep === "needed" ? (

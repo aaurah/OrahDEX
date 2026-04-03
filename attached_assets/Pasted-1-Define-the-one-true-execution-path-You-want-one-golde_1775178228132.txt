@@ -1,0 +1,134 @@
+1. Define the one true execution path
+
+You want one golden path from tap → on‑chain settlement:
+
+1. User action:• Place order / swap / P2P / bridge.
+
+2. Pre‑check layer (off‑chain, instant):• Balance check (wallet + token allowance).
+• Slippage check (price impact vs user tolerance).
+• Route check (is there a valid path + liquidity?).
+• If anything fails → clear error, no transaction created.
+
+3. Transaction build:• Build the exact on‑chain call:• AMM swap
+• Order placement
+• HTLC lock/unlock
+
+• Simulate if possible (EVM eth_call style) before broadcast.
+
+4. Sign & send:• User signs in wallet (Passkey / EVM / BSV).
+• Broadcast to chain / relayer.
+
+5. Confirmation & settlement:• Wait for N confirmations or BSV instant finality.
+• Mark trade as Success / Failed / Reverted.
+• Update UI + history.
+
+
+
+Everything you do should reinforce this path.
+
+---
+
+2. Optimize for speed where it actually matters
+
+You get “fast” not by magic, but by cutting latency at each layer:
+
+• Price & orderbook:• Cache quotes locally for a few seconds.
+• Use WebSockets or streaming where possible.
+• Don’t recompute heavy stuff on every keystroke.
+
+• Routing:• Pre‑compute best routes for popular pairs.
+• Keep a hot cache of:• BSV/USDT
+• BSV/ETH
+• BTC/USDT
+• ETH/USDT
+
+• Only recompute when liquidity or price moves beyond a threshold.
+
+• On‑chain calls:• Use lean contracts for the hot path:• No unnecessary storage writes.
+• No loops over large arrays.
+• No complex branching in the swap path.
+
+
+• Networks:• Use L2s / BSV for execution where possible.
+• Use L1s (BTC, ETH) mainly as settlement anchors, not high‑frequency venues.
+
+
+
+---
+
+3. Make “no errors” a product feature, not a hope
+
+You won’t eliminate all errors, but you can eliminate surprises.
+
+A. Pre‑emptive validation
+
+Before user signs:
+
+• Reject:• Insufficient balance
+• No route
+• Slippage too high
+• Market closed / pair disabled
+
+• Warn:• Low liquidity
+• High volatility
+• Unusual price vs oracle
+
+
+
+B. Clear error taxonomy
+
+Every failure should fall into a small set:
+
+• User-side:• Rejected signature
+• Insufficient funds
+• Wrong network
+
+• Protocol-side:• Revert (slippage, price moved)
+• Contract error
+
+• Infra-side:• Node unreachable
+• Timeout
+
+
+
+Map each to a human sentence in the UI.
+
+---
+
+4. Instrument everything
+
+You can’t improve what you can’t see.
+
+Track for every trade:
+
+• Time to:• Build transaction
+• Sign
+• Broadcast
+• First confirmation
+• Final settlement
+
+• Failure rate by:• Pair
+• Network
+• Wallet type
+• Time of day
+
+
+
+Then:
+
+• Kill routes / pairs that are unstable.
+• Prefer chains / paths that are consistently fast.
+• Surface “Fast / Reliable” badges in the UI.
+
+
+---
+
+5. Concrete priority order for you
+
+If “fast, on‑chain, no errors” is first, then your build order should be:
+
+1. Harden the trade engine path (one golden flow for swaps/orders).
+2. Add strict pre‑checks (no tx if it’s going to fail).
+3. Optimize routing + caching for your top 10 pairs.
+4. Instrument latency + failure metrics.
+5. Iterate only after you see real numbers.

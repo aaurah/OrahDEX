@@ -8,6 +8,8 @@ import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
 import { pushNotification } from "../lib/notifQueue.js";
+import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
+import { getCachedQuote } from "../lib/routeCache.js";
 
 const router: IRouter = Router();
 
@@ -336,7 +338,111 @@ router.delete("/orders/:orderId", async (req, res) => {
   }
 });
 
-// ── GET /settlements — recent BSV on-chain settlements ────────────────────────
+// ── POST /orders/precheck ─────────────────────────────────────────────────────
+// Validates a potential order WITHOUT creating any DB record or transaction.
+// Returns: { ok, errors[], warnings[], priceImpactPct, minReceived, route }
+router.post("/orders/precheck", async (req, res) => {
+  try {
+    const { symbol, side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
+
+    if (!symbol || !side || !amount) {
+      res.status(400).json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Missing fields" }], warnings: [] });
+      return;
+    }
+
+    const errors:   { code: string; detail?: string }[] = [];
+    const warnings: { code: string; message: string  }[] = [];
+
+    const qty = parseFloat(amount);
+    const px  = price ? parseFloat(price) : (currentPrice ?? 0);
+
+    // Pair enabled check (look up market)
+    const [mkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    if (!mkt) {
+      errors.push({ code: "PAIR_DISABLED", detail: `Market ${symbol} not found` });
+      res.json({ ok: false, errors, warnings });
+      return;
+    }
+
+    const marketPrice = parseFloat(mkt.lastPrice);
+    const orderValue  = px * qty;
+
+    // Min order size
+    if (orderValue < 0.5) errors.push({ code: "AMOUNT_TOO_SMALL", detail: "Min order $0.50" });
+
+    // Price required for limit/stop
+    if ((type === "limit" || type === "stop") && (!px || px <= 0)) {
+      errors.push({ code: "PRICE_REQUIRED" });
+    }
+
+    // Slippage / price impact (approximate AMM model)
+    const isTopTier  = ["BSV","BTC","ETH","BNB","SOL"].some(s => symbol.startsWith(s));
+    const poolTvlUsd = isTopTier ? 500_000 : 50_000;
+    const impact     = (orderValue / poolTvlUsd) * 100;
+    const slipPct    = (slippageBps ?? 50) / 100;
+
+    if (impact > slipPct && impact > 0.1) {
+      errors.push({ code: "SLIPPAGE_TOO_HIGH",
+        detail: `Impact ${impact.toFixed(2)}% > tolerance ${slipPct.toFixed(2)}%` });
+    }
+    if (impact > 1 && impact <= slipPct) {
+      warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
+    }
+    if (impact > 5) {
+      errors.push({ code: "PRICE_IMPACT_HIGH",
+        detail: `${impact.toFixed(1)}% impact — split into smaller orders` });
+    }
+
+    // Liquidity check — no open bot orders on the counter side? warn.
+    const [base, quote = "USDT"] = symbol.split("/");
+    const counterSide = side === "buy" ? "sell" : "buy";
+    const counterOrders = await db.select().from(ordersTable).where(
+      and(eq(ordersTable.symbol, symbol), eq(ordersTable.side, counterSide), eq(ordersTable.status, "open"))
+    );
+    if (counterOrders.length === 0) {
+      warnings.push({ code: "LOW_LIQUIDITY", message: "No counter-orders visible — your order may wait for a match." });
+    }
+
+    // Route from hot cache (if available)
+    const cached = getCachedQuote(base, quote);
+    const route  = cached?.route ?? [base, quote];
+    const feePct = cached?.feePct ?? 0.25;
+    const minReceived = qty * (1 - feePct / 100) * (1 - slipPct / 100);
+
+    res.json({
+      ok:            errors.length === 0,
+      errors,
+      warnings,
+      priceImpactPct: parseFloat(impact.toFixed(4)),
+      minReceived:   parseFloat(minReceived.toFixed(8)),
+      route,
+      marketPrice,
+      feePct,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Precheck error");
+    res.status(500).json({ ok: true, errors: [], warnings: [] }); // fail-open
+  }
+});
+
+// ── POST /metrics/trades ──────────────────────────────────────────────────────
+// Receives latency + outcome telemetry from the frontend (via sendBeacon).
+router.post("/metrics/trades", (req, res) => {
+  try {
+    const body = req.body;
+    if (body?.symbol) recordTradeMetric(body);
+    res.status(204).end();
+  } catch {
+    res.status(204).end();
+  }
+});
+
+// ── GET /metrics/trades ───────────────────────────────────────────────────────
+// Returns aggregate latency + failure metrics for each pair/network/wallet.
+router.get("/metrics/trades", (_req, res) => {
+  res.json({ metrics: getMetricsSummary() });
+});
+
 router.get("/settlements", async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
