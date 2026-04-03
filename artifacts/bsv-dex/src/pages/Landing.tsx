@@ -326,7 +326,7 @@ export function LandingPage() {
   return (
     <div
       className="min-h-screen text-white overflow-x-hidden"
-      style={{ background: "#080a0f" }}
+      style={{ background: "#000000" }}
     >
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 py-20">
