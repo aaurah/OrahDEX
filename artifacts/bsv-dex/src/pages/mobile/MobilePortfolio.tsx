@@ -2,12 +2,13 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine, ArrowUpFromLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap, Droplets, ExternalLink,
+  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
@@ -86,6 +87,7 @@ export function MobilePortfolio() {
   const { getBalances: getExchangeBalances } = useExchangeBalanceStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
+  const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -458,19 +460,28 @@ export function MobilePortfolio() {
             )}
           </div>
 
-          {/* Deposit / Withdraw */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Deposit / Withdraw / Bridge */}
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setDepositOpen(true)}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 active:opacity-90"
+              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90"
             >
-              <ArrowDownToLine size={16} /> Deposit
+              <ArrowDownToLine size={15} />
+              Deposit
             </button>
             <button
               onClick={() => setWithdrawOpen(true)}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-card border border-border text-foreground font-semibold text-sm active:opacity-80"
+              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-card border border-border text-foreground font-semibold text-xs active:opacity-80"
             >
-              <ArrowUpFromLine size={16} /> Withdraw
+              <ArrowUpFromLine size={15} />
+              Withdraw
+            </button>
+            <button
+              onClick={() => navigate("/deposit-bsv")}
+              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors"
+            >
+              <ArrowLeftRight size={15} />
+              Bridge
             </button>
           </div>
 
