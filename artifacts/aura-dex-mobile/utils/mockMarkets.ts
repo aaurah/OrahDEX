@@ -25,7 +25,8 @@ const USD: Record<string, number> = {
   ZK: 0.185, SCR: 0.76, LINEA: 0.0, ZORA: 0.88,
   GMX: 54.35, PENDLE: 7.28, MAGIC: 1.18, RDNT: 0.089,
   QUICK: 0.082, GHST: 0.78, SAND: 0.42, MANA: 0.42,
-  WETH: 3415, CBETH: 3596, WBTC: 68310, AERO: 1.21, BRETT: 0.158,
+  WETH: 3415, CBETH: 3596, WBTC: 68310, WSTETH: 3981, RETH: 3782,
+  DAI: 1, AERO: 1.21, BRETT: 0.158,
   DEGEN: 0.0182, TOSHI: 0.000948, BALD: 0.00082, RENZO: 0.58,
   JOE: 0.52, PANGOLIN: 0.082, BENQI: 0.012, YAK: 4.2,
   AAVE: 178, MKR: 2840, CRV: 0.548, LDO: 1.84, SNX: 3.12,
@@ -160,8 +161,29 @@ const FTM_BASES = ["ETH","BTC","AAVE","CRV","LINK","SNX","UNI"];
 // ── CRO pairs ────────────────────────────────────────────────────────────────
 const CRO_BASES = ["ETH","BTC","ADA","XRP","DOGE","LINK","AAVE"];
 
-// ── MNT pairs ────────────────────────────────────────────────────────────────
-const MNT_BASES = ["WETH","WBTC","AAVE","USDT","LINK","UNI"];
+// ── MNT pairs (Mantle) ───────────────────────────────────────────────────────
+const MNT_BASES = [
+  "ETH","BTC","USDC","USDT","DAI","WBTC","WSTETH","LINK","UNI",
+  "AAVE","WLD","ARB","OP","CRV","LDO","PENDLE","SNX","GRT","ZK","COMP",
+];
+
+// ── ZK pairs (zkSync Era) ────────────────────────────────────────────────────
+const ZK_BASES = [
+  "ETH","BTC","USDC","USDT","DAI","WSTETH","ARB","OP","MNT",
+  "LINK","UNI","AAVE","PENDLE","CRV","LDO","GRT","SNX","BAL","COMP",
+];
+
+// ── SCR pairs (Scroll) ───────────────────────────────────────────────────────
+const SCR_BASES = [
+  "ETH","BTC","USDC","USDT","DAI","WSTETH","LINK","UNI","AAVE",
+  "LDO","CRV","MKR","ZK","SNX","COMP","GRT","BAL","PENDLE","SUSHI",
+];
+
+// ── LINEA pairs (Linea) ──────────────────────────────────────────────────────
+const LINEA_BASES = [
+  "ETH","BTC","USDC","DAI","WSTETH","LINK","UNI","AAVE","SNX",
+  "CRV","BAL","COMP","LDO","RETH","SUSHI","MKR","GRT","ZK","PENDLE",
+];
 
 // ── Futures ──────────────────────────────────────────────────────────────────
 const FUTURES_RAW = [
@@ -193,10 +215,15 @@ export const AVAX_MARKETS  = AVAX_BASES.map(b => mkSpot(b, "AVAX", priceOf(b) * 
 export const SOL_MARKETS   = SOL_BASES.map(b  => mkSpot(b, "SOL",  priceOf(b) * 100_000));
 export const FTM_MARKETS   = FTM_BASES.map(b  => mkSpot(b, "FTM",  priceOf(b) * 50_000));
 export const CRO_MARKETS   = CRO_BASES.map(b  => mkSpot(b, "CRO",  priceOf(b) * 40_000));
-export const MNT_MARKETS   = MNT_BASES.map(b  => mkSpot(b, "MNT",  priceOf(b) * 40_000));
+export const MNT_MARKETS   = MNT_BASES.map(b   => mkSpot(b, "MNT",   priceOf(b) * 40_000));
+export const ZK_MARKETS    = ZK_BASES.map(b    => mkSpot(b, "ZK",    priceOf(b) * 35_000));
+export const SCR_MARKETS   = SCR_BASES.map(b   => mkSpot(b, "SCR",   priceOf(b) * 30_000));
+export const LINEA_MARKETS = LINEA_BASES.map(b => mkSpot(b, "LINEA", priceOf(b) * 28_000));
 export const FUTURES_MARKETS = FUTURES_RAW.map(([b, p, c, v]) => mkFut(b, p, c, v));
 
-export type QuoteId = "USDT"|"USDC"|"BTC"|"ETH"|"BSV"|"BCH"|"BNB"|"ARB"|"OP"|"MATIC"|"AVAX"|"SOL"|"FTM"|"CRO"|"MNT";
+export type QuoteId =
+  "USDT"|"USDC"|"BTC"|"ETH"|"BSV"|"BCH"|"BNB"|"ARB"|"OP"|
+  "MATIC"|"AVAX"|"SOL"|"FTM"|"CRO"|"MNT"|"ZK"|"SCR"|"LINEA";
 
 export const QUOTE_TABS: { id: QuoteId; label: string }[] = [
   { id: "USDT",  label: "USDT"  },
@@ -214,6 +241,9 @@ export const QUOTE_TABS: { id: QuoteId; label: string }[] = [
   { id: "FTM",   label: "FTM"   },
   { id: "CRO",   label: "CRO"   },
   { id: "MNT",   label: "MNT"   },
+  { id: "ZK",    label: "ZK"    },
+  { id: "SCR",   label: "SCR"   },
+  { id: "LINEA", label: "LINEA" },
 ];
 
 export const MARKETS_BY_QUOTE: Record<QuoteId, MobileMarket[]> = {
@@ -221,6 +251,7 @@ export const MARKETS_BY_QUOTE: Record<QuoteId, MobileMarket[]> = {
   BSV: BSV_MARKETS, BCH: BCH_MARKETS, BNB: BNB_MARKETS, ARB: ARB_MARKETS,
   OP: OP_MARKETS, MATIC: MATIC_MARKETS, AVAX: AVAX_MARKETS, SOL: SOL_MARKETS,
   FTM: FTM_MARKETS, CRO: CRO_MARKETS, MNT: MNT_MARKETS,
+  ZK: ZK_MARKETS, SCR: SCR_MARKETS, LINEA: LINEA_MARKETS,
 };
 
 export const ALL_SPOT_MARKETS: MobileMarket[] = [
@@ -228,6 +259,7 @@ export const ALL_SPOT_MARKETS: MobileMarket[] = [
   ...BSV_MARKETS, ...BCH_MARKETS, ...BNB_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...SOL_MARKETS,
   ...FTM_MARKETS, ...CRO_MARKETS, ...MNT_MARKETS,
+  ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
 ];
 
 /** Lookup or generate a market for any symbol like "AERO/USDC" or "GMX-ARB" */
