@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
@@ -166,6 +167,16 @@ export function MobileMarkets() {
 
   const { address, network, chainId } = useWalletStore();
   const { quoteCurrency } = useSettingsStore();
+  const { prices: crossPrices } = useWalletPrices();
+  const BTC_USD = crossPrices.BTC.usd || 83000;
+  const BSV_USD = crossPrices.BSV.usd || 14;
+  const ETH_USD = crossPrices.ETH.usd || 1800;
+  const CROSS_QUOTE_USD: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
+    BTC: BTC_USD, ETH: ETH_USD, BSV: BSV_USD,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
+  };
 
   /* Auto-switch to correct market category when wallet connects / chain changes */
   useEffect(() => {
@@ -343,7 +354,7 @@ export function MobileMarkets() {
         <MobileCoinVote />
       ) : (
         <>
-          {/* ── Column headers ── aligned to match MexcRow exactly ── */}
+          {/* ── Column headers ── */}
           <div className="flex items-center px-4 py-2 border-b border-border/30 bg-background/80">
             <div className="w-[23px] mr-2.5 shrink-0" />
             <button
@@ -354,11 +365,17 @@ export function MobileMarkets() {
             </button>
             <button
               onClick={() => toggleSort("price")}
-              className="flex items-center justify-end text-[11px] text-muted-foreground font-semibold w-32 pr-3"
+              className="flex flex-col items-end text-[11px] text-muted-foreground font-semibold w-36 pr-3"
             >
-              Price {quoteCurrency !== "USDT" && quoteCurrency !== "USDC" && (
-                <span className="text-primary/70 ml-0.5">{getCurrencySymbol(quoteCurrency)}</span>
-              )} <SortIcon k="price" />
+              <span className="flex items-center gap-0.5">
+                Price {quoteCurrency !== "USDT" && quoteCurrency !== "USDC" && (
+                  <span className="text-primary/70">{getCurrencySymbol(quoteCurrency)}</span>
+                )} <SortIcon k="price" />
+              </span>
+              <span className="flex items-center gap-2 text-[9px] font-normal mt-0.5">
+                <span className="text-orange-400/70">₿ BTC</span>
+                <span className="text-yellow-400/70">⚡ BSV</span>
+              </span>
             </button>
             <button
               onClick={() => toggleSort("chg")}
@@ -380,6 +397,9 @@ export function MobileMarkets() {
                   key={m.symbol}
                   m={m}
                   quoteCurrency={quoteCurrency}
+                  btcUSD={BTC_USD}
+                  bsvUSD={BSV_USD}
+                  quoteUSD={CROSS_QUOTE_USD[m.quote] ?? 1}
                   isFav={favorites.has(m.symbol)}
                   onFav={() => toggleFav(m.symbol)}
                   onTrade={() => goTrade(m)}
@@ -400,9 +420,21 @@ export function MobileMarkets() {
 
 const STABLE_QUOTE_SET = new Set(["USDT", "USDC", "TUSD", "USDD", "USD", "BUSD"]);
 
+function fmtCross(v: number, decimals: number): string {
+  if (!v) return "—";
+  if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (v >= 1)    return v.toFixed(decimals <= 4 ? 4 : decimals);
+  if (v >= 0.001) return v.toFixed(6);
+  return v.toFixed(8);
+}
+
 function MexcRow({
-  m, quoteCurrency, isFav, onFav, onTrade, onBuy
-}: { m: MktRow; quoteCurrency: string; isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void }) {
+  m, quoteCurrency, btcUSD, bsvUSD, quoteUSD, isFav, onFav, onTrade, onBuy
+}: {
+  m: MktRow; quoteCurrency: string;
+  btcUSD: number; bsvUSD: number; quoteUSD: number;
+  isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void;
+}) {
   const isUp = m.chg >= 0;
 
   // Apply currency conversion only when the pair's quote is a stablecoin (price is in USD)
@@ -412,6 +444,13 @@ function MexcRow({
 
   const displayPrice = showConverted ? convertFromUsd(m.price, quoteCurrency) : m.price;
   const currSym      = showConverted ? getCurrencySymbol(quoteCurrency) : "";
+
+  // Cross-rate computation: convert price → USD → BTC / BSV
+  const priceUSD = m.price * quoteUSD;
+  const isBTCBase = m.base === "BTC";
+  const isBSVBase = m.base === "BSV";
+  const priceBTC  = isBTCBase ? 1 : (priceUSD > 0 ? priceUSD / btcUSD : 0);
+  const priceBSV  = isBSVBase ? 1 : (priceUSD > 0 ? priceUSD / bsvUSD : 0);
 
   return (
     <div className="flex items-center px-4 py-[9px] active:bg-secondary/30 transition-colors">
@@ -441,9 +480,17 @@ function MexcRow({
         <ContractAddressBadge baseAsset={m.base} variant="inline" className="mt-[1px]" />
       </div>
 
-      <button onClick={onTrade} className="text-right pr-3">
-        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">
+      <button onClick={onTrade} className="text-right pr-3 w-36 shrink-0">
+        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight block">
           {currSym}{fmt(displayPrice)}
+        </span>
+        <span className="flex flex-col items-end gap-0 mt-[2px]">
+          <span className="text-[9px] text-orange-400 tabular-nums leading-none font-medium">
+            {isBTCBase ? "1 BTC" : `₿ ${fmtCross(priceBTC, 8)}`}
+          </span>
+          <span className="text-[9px] text-yellow-400 tabular-nums leading-none font-medium mt-[1px]">
+            {isBSVBase ? "1 BSV" : `⚡ ${fmtCross(priceBSV, 4)}`}
+          </span>
         </span>
       </button>
 
