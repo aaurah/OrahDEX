@@ -361,6 +361,16 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         vertLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
         horzLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
       },
+      watermark: {
+        visible: true,
+        color: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)',
+        text: 'OrahDEX',
+        fontSize: 36,
+        fontFamily: "'Inter', sans-serif",
+        fontStyle: 'bold',
+        horzAlign: 'center',
+        vertAlign: 'center',
+      },
     });
 
     /* Volume series */
@@ -445,6 +455,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         crosshair: {
           vertLine: { color: '#4ade80', labelBackgroundColor: c.cross },
           horzLine: { color: '#4ade80', labelBackgroundColor: c.cross },
+        },
+        watermark: {
+          color: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)',
         },
       });
     }
