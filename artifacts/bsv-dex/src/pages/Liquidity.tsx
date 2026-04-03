@@ -356,19 +356,6 @@ function LiquidityModal({
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
 
-    // Guard: for EVM wallets, ensure deposit doesn't exceed real on-chain balance
-    if (isEvm && balances.length > 0) {
-      const totalWalletUsd = balances.reduce((sum, b) => sum + (b.usdValue ?? 0), 0);
-      if (valueUsd > totalWalletUsd * 1.05) {
-        toast({
-          title: "Insufficient balance",
-          description: `Your wallet holds ≈ $${totalWalletUsd.toFixed(2)} — deposit ($${valueUsd.toFixed(2)}) exceeds that.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
