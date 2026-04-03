@@ -6,6 +6,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
+  MNT_MARKETS, ZK_MARKETS, SCR_MARKETS, LINEA_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
@@ -39,28 +40,32 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "futures";
+type Cat = "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
-  { id: "usd",       label: "USD" },
-  { id: "new",       label: "NEW" },
-  { id: "btc",       label: "BTC" },
-  { id: "eth",       label: "ETH" },
-  { id: "bnb",       label: "BNB" },
-  { id: "matic",     label: "MATIC" },
-  { id: "avax",      label: "AVAX" },
-  { id: "arb",       label: "ARB" },
-  { id: "op",        label: "OP" },
-  { id: "ftm",       label: "FTM" },
-  { id: "cro",       label: "CRO" },
-  { id: "bch",       label: "BCH" },
-  { id: "bsv",       label: "BSV" },
-  { id: "ai",        label: "AI" },
-  { id: "sol",       label: "SOL" },
-  { id: "meme",      label: "MEME" },
-  { id: "defi",      label: "DEFI" },
-  { id: "futures",   label: "Futures" },
+  { id: "usd",       label: "USD"      },
+  { id: "new",       label: "NEW"      },
+  { id: "btc",       label: "BTC"      },
+  { id: "eth",       label: "ETH"      },
+  { id: "bnb",       label: "BNB"      },
+  { id: "matic",     label: "MATIC"    },
+  { id: "avax",      label: "AVAX"     },
+  { id: "arb",       label: "ARB"      },
+  { id: "op",        label: "OP"       },
+  { id: "ftm",       label: "FTM"      },
+  { id: "cro",       label: "CRO"      },
+  { id: "bch",       label: "BCH"      },
+  { id: "bsv",       label: "BSV"      },
+  { id: "ai",        label: "AI"       },
+  { id: "sol",       label: "SOL"      },
+  { id: "meme",      label: "MEME"     },
+  { id: "defi",      label: "DEFI"     },
+  { id: "mnt",       label: "MNT"      },
+  { id: "zk",        label: "ZK"       },
+  { id: "scr",       label: "SCROLL"   },
+  { id: "linea",     label: "LINEA"    },
+  { id: "futures",   label: "Futures"  },
 ];
 
 /**
@@ -99,6 +104,10 @@ function getRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, ReturnType<typ
     case "sol":       return enrich(SOL_MARKETS);
     case "meme":      return enrich(MEME_MARKETS);
     case "defi":      return enrich(DEFI_MARKETS);
+    case "mnt":       return enrich(MNT_MARKETS);
+    case "zk":        return enrich(ZK_MARKETS);
+    case "scr":       return enrich(SCR_MARKETS);
+    case "linea":     return enrich(LINEA_MARKETS);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
