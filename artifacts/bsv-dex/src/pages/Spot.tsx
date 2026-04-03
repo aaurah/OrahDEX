@@ -7,7 +7,7 @@ import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
-import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol } from "@/lib/mock-data";
+import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
@@ -16,14 +16,27 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
-type QuoteTab = "USDT" | "ETH" | "BTC" | "BSV" | "BCH";
+type QuoteTab =
+  | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
+  | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
+  | "FTM"  | "CRO";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
-  { id: "USDT", label: "USDT", color: "text-green-400" },
-  { id: "BTC",  label: "BTC",  color: "text-orange-400" },
-  { id: "ETH",  label: "ETH",  color: "text-violet-400" },
-  { id: "BCH",  label: "BCH",  color: "text-emerald-400" },
-  { id: "BSV",  label: "BSV",  color: "text-green-400" },
+  { id: "USDT",  label: "USDT",  color: "text-green-400"  },
+  { id: "USDC",  label: "USDC",  color: "text-blue-400"   },
+  { id: "BTC",   label: "BTC",   color: "text-orange-400" },
+  { id: "ETH",   label: "ETH",   color: "text-violet-400" },
+  { id: "BSV",   label: "BSV",   color: "text-yellow-400" },
+  { id: "BCH",   label: "BCH",   color: "text-emerald-400"},
+  { id: "BNB",   label: "BNB",   color: "text-yellow-500" },
+  { id: "ARB",   label: "ARB",   color: "text-blue-400"   },
+  { id: "OP",    label: "OP",    color: "text-red-400"    },
+  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
+  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
+  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
+  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
+  { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
+  { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
 ];
 
 const COIN_COLORS: Record<string, string> = {
@@ -83,13 +96,20 @@ export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address } = useWalletStore();
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
-  const [quoteTab, setQuoteTab] = useState<QuoteTab>("USDT");
+  // Resolve the current pair's quote asset from the URL for smart tab initialisation
+  const urlQuote = (() => {
+    const raw = rawSymbol?.replace(/-/g, '/') ?? "BSV/USDT";
+    const q = raw.split('/')[1] ?? "USDT";
+    return (QUOTE_TABS.some(t => t.id === q) ? q : "USDT") as QuoteTab;
+  })();
+
+  const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
   const [marketSearch, setMarketSearch] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
-  const [dropQuote, setDropQuote] = useState<QuoteTab>("USDT");
+  const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
   const [cancelPairOnly, setCancelPairOnly] = useState(false);
   const pairDropRef = useRef<HTMLDivElement>(null);
@@ -104,6 +124,12 @@ export function SpotTrading() {
     if (pairDropOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pairDropOpen]);
+
+  // When navigating to a pair whose quote isn't in the current tab, auto-switch
+  useEffect(() => {
+    setDropQuote(urlQuote);
+    setQuoteTab(urlQuote);
+  }, [urlQuote]);
 
   const handleOrderBookFill = (fill: OrderBookFill) => {
     setOrderBookFill(fill as OrderFormFill);
@@ -167,10 +193,18 @@ export function SpotTrading() {
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
-  // Market list for pair selector
+  // Market list for pair selector — base is the full mock catalogue (all chains/quotes)
+  // then API data replaces any matching pair with live data.
   const allMarkets = useMemo(() => {
-    const raw = ((apiMarkets && (apiMarkets as any[]).length > 0) ? (apiMarkets as any[]) : []).map(normalise);
-    return raw.filter(m => m.type === "spot");
+    const apiNorm = ((apiMarkets && (apiMarkets as any[]).length > 0) ? (apiMarkets as any[]) : [])
+      .map(normalise)
+      .filter(m => m.type === "spot");
+    const mockNorm = ALL_SPOT_MOCK.map(normalise);
+    // deduplicate: API wins, then mock fills the rest
+    const deduped = new Map<string, ReturnType<typeof normalise>>();
+    mockNorm.forEach(m => { if (!deduped.has(m.symbol)) deduped.set(m.symbol, m); });
+    apiNorm.forEach(m => { deduped.set(m.symbol, m); }); // API overrides mock
+    return Array.from(deduped.values());
   }, [apiMarkets]);
 
   const currentMarket = useMemo(
@@ -250,9 +284,9 @@ export function SpotTrading() {
                   />
                 </div>
               </div>
-              {/* Quote tabs */}
+              {/* Quote tabs — only show tabs that have at least 1 pair */}
               <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
-                {QUOTE_TABS.map(t => (
+                {QUOTE_TABS.filter(t => (quoteCounts[t.id] ?? 0) > 0).map(t => (
                   <button
                     key={t.id}
                     onClick={() => setDropQuote(t.id)}
@@ -264,7 +298,7 @@ export function SpotTrading() {
                     )}
                   >
                     {t.id === "BSV" ? "⚡BSV" : t.label}
-                    <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id] ?? 0}</span>
+                    <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
                   </button>
                 ))}
               </div>
