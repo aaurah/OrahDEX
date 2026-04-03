@@ -457,39 +457,84 @@ function LiquidityModal({
               Both tokens auto-balance using the pool ratio (x·y=k). Enter one amount — the other fills automatically.
             </p>
             {/* Input A */}
-            <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-1">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-muted-foreground">{pool.base} amount</span>
-                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtA)||0)*priceA).toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input className="flex-1 bg-transparent text-lg font-bold outline-none"
-                  placeholder="0.00" value={amtA}
-                  onChange={e => handleAmtAChange(e.target.value)} inputMode="decimal" />
-                <div className="px-2 py-1 bg-background border border-border rounded-lg">
-                  <span className="text-xs font-bold" style={{ color: colorA }}>{pool.base}</span>
-                </div>
-              </div>
-            </div>
-            {/* Ratio connector */}
-            <div className="text-center py-1">
-              <span className="text-[10px] text-muted-foreground">1 {pool.base} = {(priceA/priceB).toLocaleString(undefined,{maximumFractionDigits:6})} {pool.quote}</span>
-            </div>
-            {/* Input B */}
-            <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
-                <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtB)||0)*priceB).toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input className="flex-1 bg-transparent text-lg font-bold outline-none"
-                  placeholder="0.00" value={amtB}
-                  onChange={e => handleAmtBChange(e.target.value)} inputMode="decimal" />
-                <div className="px-2 py-1 bg-background border border-border rounded-lg">
-                  <span className="text-xs font-bold" style={{ color: colorB }}>{pool.quote}</span>
-                </div>
-              </div>
-            </div>
+            {(() => {
+              const balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? null;
+              const balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? null;
+              const fmtBal = (n: number) => n < 0.0001 ? n.toExponential(2) : n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+              return (
+                <>
+                  <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">{pool.base} amount</span>
+                      <div className="flex items-center gap-2">
+                        {balA !== null && (
+                          <button
+                            onClick={() => handleAmtAChange(String(balA))}
+                            className="text-[10px] text-primary font-semibold hover:underline"
+                          >
+                            Bal: {fmtBal(balA)}
+                          </button>
+                        )}
+                        <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtA)||0)*priceA).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1 bg-transparent text-lg font-bold outline-none"
+                        placeholder="0.00" value={amtA}
+                        onChange={e => handleAmtAChange(e.target.value)} inputMode="decimal" />
+                      {balA !== null && (
+                        <button
+                          onClick={() => handleAmtAChange(String(balA))}
+                          className="text-[10px] font-bold px-2 py-1 rounded-md bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20"
+                        >
+                          MAX
+                        </button>
+                      )}
+                      <div className="px-2 py-1 bg-background border border-border rounded-lg">
+                        <span className="text-xs font-bold" style={{ color: colorA }}>{pool.base}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Ratio connector */}
+                  <div className="text-center py-1">
+                    <span className="text-[10px] text-muted-foreground">1 {pool.base} = {(priceA/priceB).toLocaleString(undefined,{maximumFractionDigits:6})} {pool.quote}</span>
+                  </div>
+                  {/* Input B */}
+                  <div className="bg-secondary/50 border border-border rounded-xl px-4 py-3 mb-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">{pool.quote} amount</span>
+                      <div className="flex items-center gap-2">
+                        {balB !== null && (
+                          <button
+                            onClick={() => handleAmtBChange(String(balB))}
+                            className="text-[10px] text-primary font-semibold hover:underline"
+                          >
+                            Bal: {fmtBal(balB)}
+                          </button>
+                        )}
+                        <span className="text-xs text-muted-foreground">≈ ${((parseFloat(amtB)||0)*priceB).toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input className="flex-1 bg-transparent text-lg font-bold outline-none"
+                        placeholder="0.00" value={amtB}
+                        onChange={e => handleAmtBChange(e.target.value)} inputMode="decimal" />
+                      {balB !== null && (
+                        <button
+                          onClick={() => handleAmtBChange(String(balB))}
+                          className="text-[10px] font-bold px-2 py-1 rounded-md bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20"
+                        >
+                          MAX
+                        </button>
+                      )}
+                      <div className="px-2 py-1 bg-background border border-border rounded-lg">
+                        <span className="text-xs font-bold" style={{ color: colorB }}>{pool.quote}</span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
             {/* Info rows */}
             <div className="space-y-2 mb-5">
               {[
