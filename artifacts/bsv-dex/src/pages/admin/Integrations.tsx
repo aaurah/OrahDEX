@@ -440,18 +440,16 @@ export function AdminIntegrations() {
         </div>
       </Section>
 
-      {/* ── 5. Email / SMTP ── */}
-      <Section
+      {/* SMTP section removed — email accounts managed via Thunderbird autoconfig */}
+      {false && <Section
         icon={<Mail className="w-4 h-4" />}
-        title="Email / SMTP"
-        description="Outbound email for KYC alerts, trade confirmations, password resets, and security notifications."
-        badge={countSet("smtp_host", "smtp_user") === 2 ? "Configured" : "Not configured"}
-        badgeColor={countSet("smtp_host", "smtp_user") === 2
-          ? "bg-green-400/10 text-green-400 border-green-400/20"
-          : "bg-amber-400/10 text-amber-400 border-amber-400/20"}
-        defaultOpen={true}
-        configuredCount={countSet("smtp_host", "smtp_user")}
-        totalCount={2}
+        title="Email / SMTP (disabled)"
+        description=""
+        badge=""
+        badgeColor=""
+        defaultOpen={false}
+        configuredCount={0}
+        totalCount={0}
       >
         {/* One-click provider presets */}
         <div className="space-y-3 mb-4">
@@ -585,9 +583,9 @@ export function AdminIntegrations() {
             <p className="text-[10px] text-muted-foreground/60">Fill in Host, Username and Password to test</p>
           )}
         </div>
-      </Section>
+      </Section>}
 
-      {/* ── 6. Security & Anti-Spam ── */}
+      {/* ── 5. Security & Anti-Spam ── */}
       <Section
         icon={<Shield className="w-4 h-4" />}
         title="Security & Anti-Spam"

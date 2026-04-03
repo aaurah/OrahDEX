@@ -11,10 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-type Tab = "emails" | "chat" | "tickets" | "faqs" | "notifications";
+type Tab = "chat" | "tickets" | "faqs" | "notifications";
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
-  { id: "emails",        label: "Email Setup",    icon: Mail },
   { id: "chat",          label: "Live Chat",      icon: MessageCircle },
   { id: "tickets",       label: "Tickets",        icon: Inbox },
   { id: "faqs",          label: "FAQ Manager",    icon: HelpCircle },
@@ -1054,7 +1053,7 @@ function NotificationsTab() {
 
 /* ── MAIN COMPONENT ─────────────────────────────────────────────────────────── */
 export function AdminSupportSettings() {
-  const [tab, setTab] = useState<Tab>("emails");
+  const [tab, setTab] = useState<Tab>("chat");
 
   return (
     <div className="space-y-6">
@@ -1082,7 +1081,6 @@ export function AdminSupportSettings() {
         ))}
       </div>
 
-      {tab === "emails"        && <EmailSetupTab />}
       {tab === "chat"          && <LiveChatTab />}
       {tab === "tickets"       && <TicketsTab />}
       {tab === "faqs"          && <FaqsTab />}
