@@ -19,6 +19,8 @@ interface LiquidityState {
     meta?: { txHash?: string; chainId?: number }
   ) => void;
   removePositionPct: (walletAddress: string, poolId: string, pct: number) => void;
+  removePosition: (walletAddress: string, poolId: string) => void;
+  clearWalletPositions: (walletAddress: string) => void;
   getUserPositions: (walletAddress: string) => Record<string, PositionEntry>;
 }
 
@@ -69,6 +71,20 @@ export const useLiquidityStore = create<LiquidityState>()(
               [walletAddress]: walletPos,
             },
           };
+        }),
+
+      removePosition: (walletAddress, poolId) =>
+        set((state) => {
+          const walletPos = { ...(state.positions[walletAddress] ?? {}) };
+          delete walletPos[poolId];
+          return { positions: { ...state.positions, [walletAddress]: walletPos } };
+        }),
+
+      clearWalletPositions: (walletAddress) =>
+        set((state) => {
+          const next = { ...state.positions };
+          delete next[walletAddress];
+          return { positions: next };
         }),
 
       getUserPositions: (walletAddress) =>
