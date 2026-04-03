@@ -4,8 +4,9 @@ import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
   AlertTriangle, CheckCircle2, Lock, Unlock, RefreshCw, Info,
   Layers, Link2, Globe, Copy, Check, ExternalLink, X, Loader2,
-  ArrowDown, ArrowUp, Coins, Flame,
+  ArrowDown, ArrowUp, Coins, Flame, Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
+import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { cn } from "@/lib/utils";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -1251,6 +1252,7 @@ export function BridgePage() {
   const { address: evmAddress, network, chainId } = useWalletStore();
   const { toast } = useToast();
 
+  const { data: bsvChain } = useBsvChain();
   const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw">("bsvswap");
 
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
@@ -1506,6 +1508,56 @@ export function BridgePage() {
 
       {/* ── BSV Quick Swap (HandCash-style) ── */}
       {pageTab === "bsvswap" && <BsvQuickSwap />}
+
+      {/* ── BSV Settlement Network Card (shown on BSV→Any and Swap tabs) ── */}
+      {(pageTab === "bsvswap" || pageTab === "swap") && (
+        <div className="rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-transparent p-4 mb-6 mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <span className={cn("w-2 h-2 rounded-full shrink-0", bsvChain?.online ? "bg-green-400 animate-pulse" : "bg-zinc-500")} />
+              <span className="text-xs font-bold text-green-400 uppercase tracking-wider">BSV Settlement Network</span>
+              <span className="text-[10px] text-muted-foreground hidden sm:inline">· All swaps settle on BSV mainnet</span>
+            </div>
+            <a href={bsvChain?.explorerUrl ?? "https://whatsonchain.com"} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[10px] text-primary hover:underline">
+              WhatsOnChain <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            {[
+              { icon: Layers,   label: "Block",       value: bsvChain?.blockHeight ? `#${bsvChain.blockHeight.toLocaleString()}` : "—", color: "text-green-400" },
+              { icon: Zap,      label: "Fee Rate",    value: `${bsvChain?.feeRateSatPerByte ?? 1} sat/B`,                              color: "text-orange-400" },
+              { icon: Cpu,      label: "Hashrate",    value: fmtHashrate(bsvChain?.hashrateEHs ?? 0),                                  color: "text-sky-400" },
+              { icon: Waves,    label: "Mempool",     value: fmtMempoolMb(bsvChain?.mempoolBytes ?? 0),                               color: "text-violet-400" },
+            ].map(({ icon: Icon, label, value, color }) => (
+              <div key={label} className="bg-background/40 rounded-xl px-3 py-2 flex items-center gap-2">
+                <Icon className={cn("w-4 h-4 shrink-0", color)} />
+                <div>
+                  <div className="text-[10px] text-muted-foreground">{label}</div>
+                  <div className={cn("text-xs font-bold font-mono", color)}>{value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" /> Avg confirmation: <span className="text-foreground font-semibold ml-1">~10 min</span>
+            </span>
+            {bsvChain?.medianTime ? (
+              <span>Last block: <span className="text-foreground font-semibold">{fmtBlockAge(bsvChain.medianTime)}</span></span>
+            ) : null}
+            {bsvChain?.bsvUsd && bsvChain.bsvUsd > 0 ? (
+              <span>BSV/USD: <span className="text-green-400 font-bold">${bsvChain.bsvUsd.toFixed(2)}</span></span>
+            ) : null}
+            {bsvChain?.bestBlockHash ? (
+              <span>Best block: <a href={bsvChain.explorerUrl} target="_blank" rel="noopener noreferrer"
+                className="text-primary font-mono hover:underline">{bsvChain.bestBlockHash.slice(0, 14)}…</a></span>
+            ) : null}
+          </div>
+        </div>
+      )}
 
       {/* ── Deposit / Withdraw canonical panels ── */}
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}

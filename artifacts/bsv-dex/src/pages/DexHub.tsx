@@ -6,11 +6,13 @@ import {
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
   ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
   Shield, Link2, Copy, Check, FlaskConical, Receipt, AlertTriangle, CheckCircle2, Info,
+  Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 
 /* ── Curated Base / Zora ecosystem tokens ── */
 const ZORA_COINS = [
@@ -421,6 +423,7 @@ export function DexHub() {
 
   const [, navigate] = useLocation();
   const online = useOnlineStatus();
+  const { data: bsvChain } = useBsvChain();
   const [view, setView]         = useState<View>("exchanges");
   const [search, setSearch]     = useState("");
   const [exType, setExType]     = useState<ExType>("all");
@@ -671,6 +674,47 @@ export function DexHub() {
             </ul>
           </div>
         ))}
+      </div>
+
+      {/* ── BSV On-Chain Network Stats strip ── */}
+      <div className="rounded-2xl border border-green-500/20 bg-gradient-to-r from-green-500/5 to-transparent mb-6 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <span className={cn("w-2 h-2 rounded-full", bsvChain?.online ? "bg-green-400 animate-pulse" : "bg-zinc-500")} />
+            <span className="text-xs font-bold text-green-400 uppercase tracking-wider">BSV Mainnet</span>
+            <span className="text-[10px] text-muted-foreground">· Settlement Layer · WhatsOnChain live data</span>
+          </div>
+          {bsvChain?.explorerUrl && (
+            <a href={bsvChain.explorerUrl} target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[10px] text-primary hover:underline">
+              View block <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {[
+            { icon: Layers,   label: "Block Height",  value: bsvChain?.blockHeight ? `#${bsvChain.blockHeight.toLocaleString()}` : "—", color: "text-green-400" },
+            { icon: Cpu,      label: "Hashrate",      value: fmtHashrate(bsvChain?.hashrateEHs ?? 0),                                 color: "text-sky-400"   },
+            { icon: Gauge,    label: "Difficulty",    value: fmtDifficulty(bsvChain?.difficulty ?? 0),                                color: "text-yellow-400"},
+            { icon: Zap,      label: "Fee Rate",      value: `${bsvChain?.feeRateSatPerByte ?? 1} sat/B`,                            color: "text-orange-400"},
+            { icon: Waves,    label: "Mempool",       value: fmtMempoolMb(bsvChain?.mempoolBytes ?? 0),                              color: "text-violet-400"},
+            { icon: Activity, label: "Mempool TXs",   value: bsvChain?.mempoolTxCount ? bsvChain.mempoolTxCount.toLocaleString() : "—", color: "text-blue-400"},
+          ].map(({ icon: Icon, label, value, color }) => (
+            <div key={label} className="text-center">
+              <Icon className={cn("w-4 h-4 mx-auto mb-1", color)} />
+              <div className={cn("text-sm font-bold font-mono", color)}>{value}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+            </div>
+          ))}
+        </div>
+        {bsvChain?.medianTime ? (
+          <div className="mt-2 pt-2 border-t border-border/30 text-[10px] text-muted-foreground flex flex-wrap gap-4">
+            <span>Median block: <span className="text-foreground">{fmtBlockAge(bsvChain.medianTime)}</span></span>
+            <span>Avg block time: <span className="text-foreground">~10 min</span></span>
+            {bsvChain.bsvUsd > 0 && <span>BSV/USD: <span className="text-green-400 font-bold">${bsvChain.bsvUsd.toFixed(2)}</span></span>}
+            <span>Best block hash: <a href={bsvChain.explorerUrl} target="_blank" rel="noopener noreferrer" className="text-primary font-mono hover:underline">{bsvChain.bestBlockHash.slice(0, 12)}…</a></span>
+          </div>
+        ) : null}
       </div>
 
       {/* ── Main view tabs ── */}
