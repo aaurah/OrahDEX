@@ -4,7 +4,7 @@ import {
   Mail, Inbox, Send, Star, Trash2, RefreshCw, Search, Plus,
   X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Circle,
   CheckCircle2, AlertCircle, Settings, Zap, Shield,
-  AlertTriangle, WifiOff, Wifi, Copy, Check, ExternalLink,
+  Copy, Check, ExternalLink,
   Server, Lock, User, AtSign, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -528,12 +528,6 @@ export function AdminEmailInbox() {
                   {copiedWebhook ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
                 </button>
               </div>
-              {!smtpStatus?.configured && (
-                <a href="/admin/integrations" className="flex items-center gap-1 text-[9px] text-amber-400/80 hover:text-amber-300 transition-colors">
-                  <AlertTriangle className="w-2.5 h-2.5" />
-                  Setup SMTP to send
-                </a>
-              )}
             </div>
           </div>
         </div>
