@@ -4,6 +4,7 @@ import { Search, X, Star, ChevronUp, ChevronDown, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
+import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
@@ -393,10 +394,21 @@ export function MobileMarkets() {
   );
 }
 
+const STABLE_QUOTE_SET = new Set(["USDT", "USDC", "TUSD", "USDD", "USD", "BUSD"]);
+
 function MexcRow({
   m, isFav, onFav, onTrade, onBuy
 }: { m: MktRow; isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void }) {
   const isUp = m.chg >= 0;
+  const { quoteCurrency } = useSettingsStore();
+
+  // Apply currency conversion only when the pair's quote is a stablecoin (price is in USD)
+  const isStableQuote = STABLE_QUOTE_SET.has(m.quote);
+  const isFiatTarget  = FIAT_CURRENCIES.some(c => c.code === quoteCurrency);
+  const showConverted = isStableQuote && (isFiatTarget || ["BTC","ETH","BNB","SOL","BSV"].includes(quoteCurrency));
+
+  const displayPrice = showConverted ? convertFromUsd(m.price, quoteCurrency) : m.price;
+  const currSym      = showConverted ? getCurrencySymbol(quoteCurrency) : "";
 
   return (
     <div className="flex items-center px-4 py-[9px] active:bg-secondary/30 transition-colors">
@@ -427,7 +439,9 @@ function MexcRow({
       </div>
 
       <button onClick={onTrade} className="text-right pr-3">
-        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">{fmt(m.price)}</span>
+        <span className="text-[14px] font-semibold text-foreground tabular-nums leading-tight">
+          {currSym}{fmt(displayPrice)}
+        </span>
       </button>
 
       <button
