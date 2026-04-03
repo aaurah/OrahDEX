@@ -2040,11 +2040,24 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <h3 className="text-lg font-bold text-red-400 mb-1">
                               {passkeyError?.startsWith("WALLET_NOT_FOUND") ? "Wallet Not on This Device" : "Something went wrong"}
                             </h3>
-                            <p className="text-sm text-red-400/80 max-w-xs">
-                              {passkeyError?.startsWith("WALLET_NOT_FOUND")
-                                ? "Your passkey verified, but the encrypted wallet wasn't found — even in the cloud backup. Use a transfer code from your old device, or recover with your private key."
-                                : passkeyError}
-                            </p>
+                            {passkeyError?.startsWith("WALLET_NOT_FOUND") ? (
+                              <div className="text-left w-full max-w-xs space-y-1.5">
+                                <p className="text-sm text-muted-foreground">Your passkey verified but the wallet isn't backed up yet. To get a transfer code:</p>
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 space-y-1">
+                                  <p className="text-[11px] text-amber-300 font-bold">Steps on your original browser/device:</p>
+                                  <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside">
+                                    <li>Open OrahDEX on the browser where you <span className="text-foreground font-semibold">first created this wallet</span></li>
+                                    <li>Tap <span className="text-foreground font-semibold">Connect</span> → <span className="text-foreground font-semibold">Passkey</span> tab</li>
+                                    <li>Tap the <span className="text-amber-400 font-bold">Transfer</span> button next to your wallet</li>
+                                    <li>Copy the 8-character code that appears</li>
+                                    <li>Enter it below on this device</li>
+                                  </ol>
+                                </div>
+                                <p className="text-[10px] text-muted-foreground">Your wallet will also auto-backup the next time you log in from your original browser, making future cross-device logins seamless.</p>
+                              </div>
+                            ) : (
+                              <p className="text-sm text-red-400/80 max-w-xs">{passkeyError}</p>
+                            )}
                           </>
                         )}
                       </div>
@@ -2143,17 +2156,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                   Use a transfer code from your old device
                                 </p>
                                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                  On your old device, go to the Passkey tab and tap "Generate Transfer Code". Enter the 8-character code here.
+                                  Enter the 8-character code shown on your original browser.
                                 </p>
-                                {!showTransferCodeInput ? (
-                                  <button
-                                    onClick={() => setShowTransferCodeInput(true)}
-                                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-sm hover:bg-amber-500/20 transition-all"
-                                  >
-                                    Enter Transfer Code
-                                  </button>
-                                ) : (
-                                  <div className="space-y-2">
+                                <div className="space-y-2">
                                     <input
                                       type="text"
                                       value={transferCodeInput}
@@ -2199,7 +2204,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                       Restore Wallet
                                     </button>
                                   </div>
-                                )}
                               </div>
 
                               {/* Recovery option 2: create a fresh passkey wallet */}

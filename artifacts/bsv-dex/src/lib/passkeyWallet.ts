@@ -329,6 +329,10 @@ export async function loginWithPasskey(): Promise<LoginResult> {
         "WALLET_NOT_FOUND:" + credentialId
       );
     }
+  } else {
+    // Wallet found locally — silently push a backup so cross-device login works
+    // in the future. This upgrades wallets created before backup was deployed.
+    pushBackupToServer(wallet);
   }
 
   // Decrypt the private key
