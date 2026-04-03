@@ -37,6 +37,41 @@ pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (
 - **How AMM Works panel**: Expanded to 8 cards + Solidity core logic callout (composability, protocol revenue, network effects, BSV settlement)
 - **LP Position Store**: `useLiquidityStore` (Zustand + localStorage key `orahdex-liquidity-positions`) tracks real user positions per wallet address and pool ID. Deposit saves `lpTokens = depositValueUsd / 12.5`. Remove updates/clears position by percentage. All pool list, positions tab, farming tab, and modal data flow through `enrichPool()` which merges real LP balances from the store over the static POOLS data.
 
+## Trade Engine — Golden Execution Path
+
+Implemented in `artifacts/bsv-dex/src/lib/tradeEngine.ts` and `tradeErrors.ts`.
+
+### Architecture
+
+Every trade flows through exactly 5 phases with per-phase latency tracking:
+1. **Precheck** (instant, off-chain) — balance, slippage, route validation BEFORE any tx is built
+2. **Build** — construct exact on-chain call (AMM swap / order / HTLC lock)
+3. **Sign** — user wallet prompt (Passkey / EVM / BSV)
+4. **Broadcast** — send to chain / BSV relayer
+5. **Confirm** — wait for finality, mark Success/Failed/Reverted
+
+### Key files
+
+- `artifacts/bsv-dex/src/lib/tradeErrors.ts` — canonical error taxonomy: `USER | PROTOCOL | INFRA` codes + human messages. 16 error codes + 4 warning codes.
+- `artifacts/bsv-dex/src/lib/tradeEngine.ts` — precheck function, TradeTimer, reportTradeMetrics(), getBadge(). Hot route cache (5s TTL, 0.1% price-move invalidation) for BSV/USDT, BSV/ETH, BTC/USDT, ETH/USDT, and 7 more top pairs.
+- `artifacts/api-server/src/lib/routeCache.ts` — server-side hot route cache, refreshes every 30s, skips recompute if price moved <0.1%.
+- `artifacts/api-server/src/lib/tradeMetrics.ts` — in-memory telemetry store; hourly TTL buckets per (pair, network, walletType); `deriveBadge()` → fast / reliable / slow / unstable.
+
+### API endpoints added
+
+- `POST /api/orders/precheck` — validates order without creating a DB record. Returns `{ok, errors[], warnings[], priceImpactPct, minReceived, route}`. Called by frontend precheck layer before every submit.
+- `POST /api/metrics/trades` — receives telemetry from frontend via `navigator.sendBeacon` (fire-and-forget).
+- `GET /api/metrics/trades` — returns aggregate latency + failure stats per pair/network/wallet.
+
+### OrderForm integration
+
+- Debounced precheck runs 300ms after any amount/price change.
+- Blocking errors (red panel) prevent submit and show human-readable message + detail.
+- Warnings (amber panel) allow submit with notice.
+- Route + min-received shown inline when check passes.
+- Submit button disabled if precheck has unresolved errors.
+- `TradeTimer` tracks ms per phase; `reportTradeMetrics` sends them to `/api/metrics/trades` on completion.
+
 ## Stack
 
 - **Monorepo tool**: pnpm workspaces

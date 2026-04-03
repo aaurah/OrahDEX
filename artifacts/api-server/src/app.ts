@@ -9,6 +9,7 @@ import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
 import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.js";
+import { startRouteCache } from "./lib/routeCache.js";
 
 const app: Express = express();
 
@@ -108,6 +109,7 @@ startPriceUpdater();
 startLiquidityBot();
 startFuturesProfitEngine();
 startBsvChainMonitor();
+startRouteCache();
 
 /* ── Connectivity ping — returns 204 ─────────────────────────────────────── */
 app.get("/api/ping", (_req, res) => {
