@@ -80,7 +80,7 @@ type Tab = "assets" | "defi" | "orders";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
-  const { getUserPositions } = useLiquidityStore();
+  const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const { getBalances: getExchangeBalances } = useExchangeBalanceStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
@@ -633,9 +633,19 @@ export function MobilePortfolio() {
                     <Droplets size={14} className="text-primary" />
                     <span className="text-xs font-semibold text-muted-foreground">Total LP Value</span>
                   </div>
-                  <span className="text-sm font-bold text-primary">
-                    ${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-primary">
+                      ${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    {address && (
+                      <button
+                        onClick={() => { if (window.confirm("Remove all LP positions? This only clears the local record — no on-chain change.")) clearWalletPositions(address); }}
+                        className="text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
                 </div>
                 )}
 
@@ -678,18 +688,28 @@ export function MobilePortfolio() {
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{dateStr}</span>
-                        {txUrl ? (
-                          <a
-                            href={txUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold"
-                          >
-                            View Tx <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : pos.txHash ? (
-                          <span className="font-mono text-[10px]">{pos.txHash.slice(0, 8)}…</span>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          {txUrl ? (
+                            <a
+                              href={txUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold"
+                            >
+                              View Tx <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : pos.txHash ? (
+                            <span className="font-mono text-[10px]">{pos.txHash.slice(0, 8)}…</span>
+                          ) : null}
+                          {address && (
+                            <button
+                              onClick={() => removePosition(address, poolId)}
+                              className="text-[10px] px-2 py-1.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );

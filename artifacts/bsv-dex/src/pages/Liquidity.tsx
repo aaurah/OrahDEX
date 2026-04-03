@@ -355,6 +355,20 @@ function LiquidityModal({
     const priceB_  = SPOT[pool.quote] ?? 1;
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
+
+    // Guard: for EVM wallets, ensure deposit doesn't exceed real on-chain balance
+    if (isEvm && balances.length > 0) {
+      const totalWalletUsd = balances.reduce((sum, b) => sum + (b.usdValue ?? 0), 0);
+      if (valueUsd > totalWalletUsd * 1.05) {
+        toast({
+          title: "Insufficient balance",
+          description: `Your wallet holds ≈ $${totalWalletUsd.toFixed(2)} — deposit ($${valueUsd.toFixed(2)}) exceeds that.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
@@ -423,7 +437,7 @@ function LiquidityModal({
       description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, isEvm, balances, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
