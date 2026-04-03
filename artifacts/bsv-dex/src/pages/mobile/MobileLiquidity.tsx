@@ -14,7 +14,7 @@ import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import {
   addLiquidityOnChain, getLiquidityMode,
-  EXPLORER_TX, type LiquidityTxStatus,
+  EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
 /* ─── pool data ─── */
@@ -496,9 +496,9 @@ function LiquidityModal({
                   const ORDER = ["checking","approving","approval_pending","depositing","deposit_pending","success"] as const;
                   const idx   = ORDER.indexOf(txStatus.step as typeof ORDER[number]);
                   return [
-                    { id: "checking",  label: "Checking allowance",   done: idx > 0 && txStatus.step !== "error", active: txStatus.step === "checking" },
-                    { id: "approving", label: "Approve USDC",          done: idx >= ORDER.indexOf("depositing") && txStatus.step !== "error", active: ["approving","approval_pending"].includes(txStatus.step), txHash: txStatus.step === "approval_pending" ? txStatus.txHash : undefined },
-                    { id: "depositing",label: "Add liquidity on Base", done: txStatus.step === "success", active: ["depositing","deposit_pending"].includes(txStatus.step), txHash: ["deposit_pending","success"].includes(txStatus.step) ? txStatus.txHash : undefined },
+                    { id: "checking",  label: `Checking ${pool.quote} allowance`, done: idx > 0 && txStatus.step !== "error", active: txStatus.step === "checking" },
+                    { id: "approving", label: `Approve ${pool.quote}`,             done: idx >= ORDER.indexOf("depositing") && txStatus.step !== "error", active: ["approving","approval_pending"].includes(txStatus.step), txHash: txStatus.step === "approval_pending" ? txStatus.txHash : undefined },
+                    { id: "depositing",label: `Add liquidity on ${CHAIN_NAMES[chainId ?? 8453] ?? "chain"}`, done: txStatus.step === "success", active: ["depositing","deposit_pending"].includes(txStatus.step), txHash: ["deposit_pending","success"].includes(txStatus.step) ? txStatus.txHash : undefined },
                   ];
                 })().map(s => (
                   <div key={s.id} className="flex items-center gap-2">

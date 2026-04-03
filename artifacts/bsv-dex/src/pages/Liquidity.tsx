@@ -13,7 +13,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
   addLiquidityOnChain, getLiquidityMode,
-  EXPLORER_TX, type LiquidityTxStatus,
+  EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
 // ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
@@ -649,20 +649,20 @@ function LiquidityModal({
                   return [
                     {
                       id: "checking",
-                      label: "Checking USDC allowance",
+                      label: `Checking ${pool?.quote ?? "token"} allowance`,
                       done:   idx > 0  && txStatus.step !== "error",
                       active: txStatus.step === "checking",
                     },
                     {
                       id: "approving",
-                      label: "Approve USDC spend",
+                      label: `Approve ${pool?.quote ?? "token"}`,
                       done:   idx >= ORDER.indexOf("depositing") && txStatus.step !== "error",
                       active: ["approving","approval_pending"].includes(txStatus.step),
                       txHash: ["approval_pending"].includes(txStatus.step) ? txStatus.txHash : undefined,
                     },
                     {
                       id: "depositing",
-                      label: "Add liquidity to Base",
+                      label: `Add liquidity on ${CHAIN_NAMES[targetChainId] ?? "chain"}`,
                       done:   txStatus.step === "success",
                       active: ["depositing","deposit_pending"].includes(txStatus.step),
                       txHash: ["deposit_pending","success"].includes(txStatus.step) ? txStatus.txHash : undefined,
