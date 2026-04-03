@@ -165,6 +165,7 @@ export function MobileMarkets() {
   const tabsRef = useRef<HTMLDivElement>(null);
 
   const { address, network, chainId } = useWalletStore();
+  const { quoteCurrency } = useSettingsStore();
 
   /* Auto-switch to correct market category when wallet connects / chain changes */
   useEffect(() => {
@@ -355,7 +356,9 @@ export function MobileMarkets() {
               onClick={() => toggleSort("price")}
               className="flex items-center justify-end text-[11px] text-muted-foreground font-semibold w-32 pr-3"
             >
-              Price <SortIcon k="price" />
+              Price {quoteCurrency !== "USDT" && quoteCurrency !== "USDC" && (
+                <span className="text-primary/70 ml-0.5">{getCurrencySymbol(quoteCurrency)}</span>
+              )} <SortIcon k="price" />
             </button>
             <button
               onClick={() => toggleSort("chg")}
@@ -376,6 +379,7 @@ export function MobileMarkets() {
                 <MexcRow
                   key={m.symbol}
                   m={m}
+                  quoteCurrency={quoteCurrency}
                   isFav={favorites.has(m.symbol)}
                   onFav={() => toggleFav(m.symbol)}
                   onTrade={() => goTrade(m)}
@@ -397,10 +401,9 @@ export function MobileMarkets() {
 const STABLE_QUOTE_SET = new Set(["USDT", "USDC", "TUSD", "USDD", "USD", "BUSD"]);
 
 function MexcRow({
-  m, isFav, onFav, onTrade, onBuy
-}: { m: MktRow; isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void }) {
+  m, quoteCurrency, isFav, onFav, onTrade, onBuy
+}: { m: MktRow; quoteCurrency: string; isFav: boolean; onFav: () => void; onTrade: () => void; onBuy: () => void }) {
   const isUp = m.chg >= 0;
-  const { quoteCurrency } = useSettingsStore();
 
   // Apply currency conversion only when the pair's quote is a stablecoin (price is in USD)
   const isStableQuote = STABLE_QUOTE_SET.has(m.quote);
