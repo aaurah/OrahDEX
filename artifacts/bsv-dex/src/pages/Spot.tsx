@@ -19,7 +19,7 @@ type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
   | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
   | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
-  | "FTM"  | "CRO";
+  | "FTM"  | "CRO"  | "MNT"  | "ZK"  | "SCR" | "LINEA";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "USDT",  label: "USDT",  color: "text-green-400"  },
@@ -37,6 +37,10 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "TRX",   label: "TRX",   color: "text-red-500"    },
   { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
   { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
+  { id: "MNT",   label: "MNT",   color: "text-teal-400"   },
+  { id: "ZK",    label: "ZK",    color: "text-purple-400" },
+  { id: "SCR",   label: "SCR",   color: "text-orange-300" },
+  { id: "LINEA", label: "LINEA", color: "text-sky-400"    },
 ];
 
 const COIN_COLORS: Record<string, string> = {
