@@ -627,7 +627,9 @@ function StepCard({
 
 export function AdminSetupGuide() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [filter, setFilter] = useState<"all" | Priority>("all");
+  const [autoFilling, setAutoFilling] = useState(false);
 
   const { data: integrations = {}, refetch: refetchInt } = useQuery({
     queryKey: ["admin-integrations"],
@@ -642,6 +644,24 @@ export function AdminSetupGuide() {
   const refresh = () => {
     refetchInt();
     refetchSite();
+  };
+
+  const handleAutoFill = async () => {
+    setAutoFilling(true);
+    try {
+      const res = await fetch(`${BASE}/api/admin/auto-setup`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Auto-setup failed");
+      refresh();
+      toast({
+        title: "Auto-fill complete!",
+        description: `${data.applied?.length ?? 0} settings filled. Email test account created — check Integrations → Email for credentials.`,
+      });
+    } catch (e: any) {
+      toast({ title: "Auto-fill failed", description: e.message, variant: "destructive" });
+    } finally {
+      setAutoFilling(false);
+    }
   };
 
   const isStepDone = (s: Step) => {
@@ -680,12 +700,41 @@ export function AdminSetupGuide() {
             Configure everything inline — click any step to expand its form and save without leaving this page.
           </p>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={handleAutoFill}
+            disabled={autoFilling}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-60 shadow-lg shadow-primary/20"
+          >
+            {autoFilling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            {autoFilling ? "Setting up…" : "Auto Fill All"}
+          </button>
+          <button
+            onClick={refresh}
+            className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+            title="Refresh status"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Auto-fill banner */}
+      <div className="flex items-start gap-3 p-4 bg-primary/5 border border-primary/20 rounded-2xl">
+        <Zap className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-foreground">New here? Click "Auto Fill All" to set everything up instantly</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Fills platform name, emails, fees, BSV node, and creates a free working email account automatically. You can customise any field afterwards.
+          </p>
+        </div>
         <button
-          onClick={refresh}
-          className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all shrink-0"
-          title="Refresh status"
+          onClick={handleAutoFill}
+          disabled={autoFilling}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs hover:opacity-90 transition-all disabled:opacity-60 shrink-0"
         >
-          <RefreshCw className="w-4 h-4" />
+          {autoFilling ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+          {autoFilling ? "Working…" : "Auto Fill All"}
         </button>
       </div>
 
