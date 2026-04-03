@@ -76,6 +76,22 @@ export const EXPLORER_TX: Record<number, string> = {
   25:     "https://cronoscan.com/tx/",
 };
 
+export const CHAIN_NAMES: Record<number, string> = {
+  1:      "Ethereum",
+  8453:   "Base",
+  56:     "BNB Chain",
+  137:    "Polygon",
+  42161:  "Arbitrum",
+  10:     "Optimism",
+  59144:  "Linea",
+  324:    "zkSync Era",
+  43114:  "Avalanche",
+  250:    "Fantom",
+  25:     "Cronos",
+  534352: "Scroll",
+  5000:   "Mantle",
+};
+
 // ─── Mode helpers ─────────────────────────────────────────────────────────────
 
 export type LiquidityMode = "on_chain" | "live" | "simulated";

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
-import { EXPLORER_TX } from "@/lib/onChainLiquidity";
+import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -75,7 +75,7 @@ function useLivePrices() {
 
 const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e", cancelled: "#6b7280" };
 
-type Tab = "assets" | "orders";
+type Tab = "assets" | "defi" | "orders";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
@@ -158,10 +158,12 @@ export function MobilePortfolio() {
     return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: 0, change: 0, value: 0, isNative: true }];
   })();
 
-  const total = rows.reduce((s, r) => s + r.value, 0);
+  const tokensTotal = rows.reduce((s, r) => s + r.value, 0);
+  const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
+  const total = tokensTotal + lpTotalValue;
   const nonZero = rows.filter(r => r.amount > 0);
-  const totalChange = total > 0 && nonZero.length > 0
-    ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / total * 100
+  const totalChange = tokensTotal > 0 && nonZero.length > 0
+    ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
     : 0;
 
   const handleCopy = () => {
@@ -354,7 +356,7 @@ export function MobilePortfolio() {
           {/* Total value card */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground">Wallet Balance</p>
+              <p className="text-xs text-muted-foreground">Total Balance</p>
               <span className={cn(
                 "text-[10px] font-bold px-2 py-0.5 rounded-full border",
                 network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
@@ -390,6 +392,19 @@ export function MobilePortfolio() {
                 </div>
               );
             })()}
+
+            {/* LP value breakdown — shown when user has liquidity positions */}
+            {lpTotalValue > 0 && (
+              <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border/50">
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Droplets size={11} className="text-primary" />
+                  <span>DeFi (LP positions)</span>
+                </div>
+                <span className="text-[11px] font-semibold text-primary">
+                  +${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
 
             {/* Allocation bar — only show if there's a real balance */}
             {total > 0 && (
@@ -448,17 +463,22 @@ export function MobilePortfolio() {
 
           {/* Tabs */}
           <div className="flex gap-2">
-            {(["assets", "orders"] as Tab[]).map(t => (
+            {(["assets", "defi", "orders"] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
                   tab === t
                     ? "bg-primary/15 border-primary/40 text-primary"
                     : "bg-card border-border text-muted-foreground"
                 }`}
               >
-                {t === "assets" ? "Assets" : "Orders"}
+                {t === "assets" ? "Token" : t === "defi" ? "DeFi" : "Orders"}
+                {t === "defi" && lpPositions.length > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
+                    {lpPositions.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -527,6 +547,86 @@ export function MobilePortfolio() {
             </>
           )}
 
+          {/* DeFi tab */}
+          {tab === "defi" && (
+            lpPositions.length === 0 ? (
+              <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                <Droplets className="w-8 h-8 opacity-30 mb-1" />
+                <p className="text-sm font-medium">No DeFi positions yet</p>
+                <p className="text-xs opacity-60 text-center">Add liquidity to a pool to earn fees</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3 mb-4">
+                {/* DeFi summary row */}
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Droplets size={14} className="text-primary" />
+                    <span className="text-xs font-semibold text-muted-foreground">Total DeFi Value</span>
+                  </div>
+                  <span className="text-sm font-bold text-primary">
+                    ${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                {lpPositions.map(([poolId, pos]) => {
+                  const display = POOL_LABELS_MOBILE[poolId] ?? poolId.toUpperCase().replace("-", " / ");
+                  const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
+                  const txUrl   = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
+                  const dateStr = new Date(pos.depositedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+                  const isTronPool = TRON_POOL_IDS.has(poolId);
+                  const chainName = pos.chainId ? (CHAIN_NAMES[pos.chainId] ?? `Chain ${pos.chainId}`) : isTronPool ? "TRON" : null;
+                  const chainColor = pos.chainId === 1 ? { bg: "bg-violet-500/15", text: "text-violet-400", border: "border-violet-500/25" }
+                    : pos.chainId === 8453 ? { bg: "bg-blue-500/15", text: "text-blue-400", border: "border-blue-500/25" }
+                    : isTronPool ? { bg: "bg-red-500/15", text: "text-red-400", border: "border-red-500/25" }
+                    : { bg: "bg-secondary/50", text: "text-muted-foreground", border: "border-border" };
+                  return (
+                    <div key={poolId} className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-sm">{display}</div>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                            <span className="text-[10px] text-green-400 font-semibold">ACTIVE · EARNING FEES</span>
+                          </div>
+                        </div>
+                        {chainName && (
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${chainColor.bg} ${chainColor.text} ${chainColor.border}`}>
+                            {chainName}
+                          </span>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-secondary/30 rounded-xl p-3">
+                          <div className="text-[10px] text-muted-foreground mb-0.5">LP Tokens</div>
+                          <div className="font-mono font-bold text-sm">{pos.lpTokens.toFixed(4)}</div>
+                        </div>
+                        <div className="bg-secondary/30 rounded-xl p-3">
+                          <div className="text-[10px] text-muted-foreground mb-0.5">Est. Value</div>
+                          <div className="font-mono font-bold text-sm">${pos.depositedValueUsd.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{dateStr}</span>
+                        {txUrl ? (
+                          <a
+                            href={txUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold"
+                          >
+                            View Tx <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : pos.txHash ? (
+                          <span className="font-mono text-[10px]">{pos.txHash.slice(0, 8)}…</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+
           {/* Orders tab */}
           {tab === "orders" && (
             myOrders.length === 0 ? (
@@ -583,72 +683,6 @@ export function MobilePortfolio() {
           )}
         </div>
 
-        {/* ── LP Positions ───────────────────────────────────────────── */}
-        {lpPositions.length > 0 && (
-          <div className="mx-4 mb-6 mt-2">
-            <div className="flex items-center gap-2 mb-3">
-              <Droplets className="w-4 h-4 text-primary" />
-              <h3 className="text-sm font-bold">Liquidity Positions</h3>
-              <span className="text-[10px] text-muted-foreground ml-auto">{lpPositions.length} active</span>
-            </div>
-            <div className="flex flex-col gap-3">
-              {lpPositions.map(([poolId, pos]) => {
-                const display = POOL_LABELS_MOBILE[poolId] ?? poolId.toUpperCase().replace("-", " / ");
-                const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
-                const txUrl   = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
-                const dateStr = new Date(pos.depositedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-                const isTronPool = TRON_POOL_IDS.has(poolId);
-                return (
-                  <div key={poolId} className="bg-card border border-border rounded-2xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-bold text-sm">{display}</div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                          <span className="text-[10px] text-green-400 font-semibold">ACTIVE · EARNING FEES</span>
-                        </div>
-                      </div>
-                      {pos.chainId === 8453 && (
-                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/25 font-bold">Base</span>
-                      )}
-                      {pos.chainId === 1 && (
-                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 border border-violet-500/25 font-bold">Ethereum</span>
-                      )}
-                      {!pos.chainId && isTronPool && (
-                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 font-bold">TRON</span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div className="bg-secondary/30 rounded-xl p-3">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">LP Tokens</div>
-                        <div className="font-mono font-bold text-sm">{pos.lpTokens.toFixed(4)}</div>
-                      </div>
-                      <div className="bg-secondary/30 rounded-xl p-3">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">Deposited</div>
-                        <div className="font-mono font-bold text-sm">${pos.depositedValueUsd.toFixed(2)}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{dateStr}</span>
-                      {txUrl ? (
-                        <a
-                          href={txUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold"
-                        >
-                          View Tx <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : pos.txHash ? (
-                        <span className="font-mono text-[10px]">{pos.txHash.slice(0, 8)}…</span>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     </>
   );
