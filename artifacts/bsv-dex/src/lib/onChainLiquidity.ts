@@ -31,10 +31,10 @@ const EVM_CHAIN_IDS = new Set([
 
 // ─── Token addresses per chain ────────────────────────────────────────────────
 export const CHAIN_TOKEN_ADDRESSES: Record<number, Partial<Record<string, string>>> = {
-  8453: {  // Base mainnet
+  8453: {  // Base mainnet — USDC is the primary stable; USDT exists but has no liquid V3 pool
     WETH:  "0x4200000000000000000000000000000000000006",
     USDC:  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    USDT:  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    USDT:  "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",  // real Base USDT (Tether)
     WBTC:  "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
   },
   1: {     // Ethereum mainnet
@@ -51,7 +51,9 @@ const UNI_V3_POSITION_MANAGER: Record<number, string> = {
 };
 
 const SUPPORTED_V3_PAIRS: Record<number, Set<string>> = {
-  8453: new Set(["ETH/USDT", "ETH/USDC", "BTC/USDT", "BTC/USDC"]),
+  // Base: USDC is the primary stable — no liquid Uni V3 USDT pools on Base
+  8453: new Set(["ETH/USDC", "BTC/USDC"]),
+  // Ethereum mainnet: both USDC and USDT pools exist on Uni V3
   1:    new Set(["ETH/USDT", "ETH/USDC", "BTC/USDT", "BTC/USDC"]),
 };
 
@@ -260,13 +262,13 @@ export async function addLiquidityOnChain(params: AddLiquidityParams): Promise<v
 
   const baseKey   = base.toUpperCase() === "ETH" ? "WETH"
                   : base.toUpperCase() === "BTC"  ? "WBTC"
-                  : `W${base.toUpperCase()}`;
-  const quoteKey  = quote.toUpperCase() === "USDT" ? "USDC" : quote.toUpperCase();
+                  : base.toUpperCase();
+  const quoteKey  = quote.toUpperCase();  // use the actual quote token — never swap USDT for USDC
   const baseAddr  = tokens[baseKey] as `0x${string}` | undefined;
   const quoteAddr = tokens[quoteKey] as `0x${string}` | undefined;
 
   if (!baseAddr || !quoteAddr) {
-    update({ step: "error", error: `Token pair ${base}/${quote} is not mapped on this chain.` });
+    update({ step: "error", error: `Token pair ${base}/${quote} is not supported on this network. Switch to Ethereum mainnet or use ETH/USDC on Base.` });
     return;
   }
 
