@@ -9,6 +9,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { useToast } from "@/hooks/use-toast";
 
 /* ── Notifications drawer — backed by the real notification store ── */
@@ -208,6 +209,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
+  const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
@@ -254,27 +256,34 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onSuccess: (data, variables: any) => {
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
+      const fillPx   = data?.price ?? parseFloat(variables?.price ?? "0");
       const ordSide  = variables?.side ?? side;
-      const ordAmt   = variables?.quantity?.toString() ?? amount;
+      const ordAmt   = parseFloat(variables?.quantity ?? amount ?? "0");
       const ordBase  = base;
       const ordPrice = variables?.price?.toString() ?? "";
 
-      setOrderResult({ matched, txid, side: ordSide, base: ordBase, amount: ordAmt, price: ordPrice });
+      setOrderResult({ matched, txid, side: ordSide, base: ordBase, amount: ordAmt.toString(), price: ordPrice });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       setTimeout(() => setOrderResult(null), 10000);
 
-      if (matched) {
+      if (matched && address) {
+        // Credit the received token to the exchange balance ledger
+        applyFill(address, ordSide as "buy" | "sell", ordBase, quote, ordAmt, fillPx);
+
+        const receivedQty  = ordSide === "sell"
+          ? (ordAmt * fillPx * 0.999).toFixed(2)
+          : (ordAmt * 0.999).toFixed(6);
+        const receivedTok  = ordSide === "sell" ? quote : ordBase;
+
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: txid
-            ? `${ordAmt} ${ordBase} settled on BSV chain · ${txid.slice(0, 12)}…`
-            : `${ordAmt} ${ordBase} matched at market price`,
+          description: `${receivedQty} ${receivedTok} credited to your OrahDEX balance · view in Portfolio → DeFi`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `${ordAmt} ${ordBase} settled · ${txid ? txid.slice(0, 12) + "…" : "matched"}`,
+          body: `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -1057,6 +1066,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
+              {/* OrahDEX exchange balance row */}
+              {address && (() => {
+                const dexTok = side === "sell" ? base : quote;
+                const dexBal = getDexBalance(address, dexTok);
+                if (dexBal <= 0) return null;
+                return (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-amber-400/80 border-b border-dashed border-amber-400/30">
+                      OrahDEX Bal
+                    </span>
+                    <span className="text-[10px] font-semibold text-amber-400 tabular-nums">
+                      {dexBal < 0.0001 ? dexBal.toExponential(2) : dexTok === "USDT" || dexTok === "USDC" ? dexBal.toFixed(2) : dexBal.toFixed(6)}&nbsp;{dexTok}
+                    </span>
+                  </div>
+                );
+              })()}
+
               {/* Low / zero balance hint */}
               {address && available === 0 && (
                 <div className="text-[10px] text-amber-400 leading-tight px-0.5">
@@ -1095,9 +1121,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {orderResult.matched
-                    ? (orderResult.txid
-                        ? `Settled on BSV chain · ${orderResult.txid.slice(0, 16)}…`
-                        : `${orderResult.amount} ${orderResult.base} matched at market price`)
+                    ? (() => {
+                        const receivedQty  = orderResult.side === "sell"
+                          ? (parseFloat(orderResult.amount) * parseFloat(orderResult.price || "0") * 0.999).toFixed(2)
+                          : (parseFloat(orderResult.amount) * 0.999).toFixed(6);
+                        const receivedTok  = orderResult.side === "sell" ? quote : orderResult.base;
+                        return `+${receivedQty} ${receivedTok} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
+                      })()
                     : orderResult.price
                       ? `${orderResult.amount} ${orderResult.base} @ $${parseFloat(orderResult.price).toLocaleString()} · visible in order book. It will fill when the market reaches your price.`
                       : `${orderResult.amount} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
