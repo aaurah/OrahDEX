@@ -1,5 +1,6 @@
 export * from "./markets";
 export * from "./orders";
+export * from "./balances";
 export * from "./trades";
 export * from "./futures";
 export * from "./platform";

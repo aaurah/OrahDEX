@@ -10,6 +10,7 @@ import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
+import { lockForOrder, unlockFunds, settleTrade, seedInitialBalances, getBalances } from "../lib/ledger.js";
 
 const router: IRouter = Router();
 
@@ -95,6 +96,37 @@ router.post("/orders", async (req, res) => {
 
     await db.insert(ordersTable).values(newOrder);
     req.log.info({ orderId: id, side: body.side, networkType }, "Order placed");
+
+    // ── Lock balance for this order ──────────────────────────────────────────
+    // BUY → lock quote asset (e.g. USDT).  SELL → lock base asset.
+    // If user has no balance rows yet, seed demo balances first.
+    try {
+      const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+      const lockAsset  = body.side === "buy" ? quoteAsset : baseAsset;
+      const lockAmount = body.side === "buy"
+        ? (price ? (price * quantity).toString() : "0")
+        : quantity.toString();
+
+      if (parseFloat(lockAmount) > 0 && lockAsset) {
+        let existingBal = await getBalances(body.walletAddress);
+        if (existingBal.length === 0) {
+          await seedInitialBalances(body.walletAddress);
+          existingBal = await getBalances(body.walletAddress);
+        }
+        await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
+      }
+    } catch (ledgerErr: any) {
+      // If balance lock fails (e.g. insufficient funds), cancel the order and report
+      if (ledgerErr?.message?.startsWith("INSUFFICIENT_FUNDS")) {
+        await db.update(ordersTable)
+          .set({ status: "cancelled", updatedAt: new Date() })
+          .where(eq(ordersTable.id, id));
+        res.status(422).json({ error: "Insufficient balance", code: "INSUFFICIENT_FUNDS" });
+        return;
+      }
+      // Other ledger errors: log but don't block the order (graceful fallback)
+      req.log.warn({ ledgerErr }, "Ledger lock failed — order placed without lock");
+    }
 
     /* Push order-placed notification to the user */
     const orderPair = body.symbol;
@@ -233,6 +265,24 @@ router.post("/orders", async (req, res) => {
           wasRealBroadcast ? "BSV settlement BROADCAST to mainnet ✓" : "BSV settlement committed (deterministic txid)"
         );
 
+        // ── Settle balances in the ledger ───────────────────────────────────
+        const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+        const buyerAddress  = body.side === "buy" ? body.walletAddress : match.walletAddress;
+        const sellerAddress = body.side === "sell" ? body.walletAddress : match.walletAddress;
+
+        try {
+          await settleTrade({
+            buyerAddress,
+            sellerAddress,
+            baseAsset:  baseAsset!,
+            quoteAsset: quoteAsset!,
+            amount:     quantity.toString(),
+            price:      fillPrice.toString(),
+          });
+        } catch (settleErr) {
+          req.log.warn({ settleErr }, "Ledger settlement failed — order still marked filled");
+        }
+
         // If matched against the bot, just delete the consumed bot order
         // (keeps the bot order table clean; real users keep their filled rows)
         if (match.walletAddress === BOT_ADDRESS) {
@@ -329,6 +379,22 @@ router.delete("/orders/:orderId", async (req, res) => {
     if (!order) {
       res.status(404).json({ error: "Order not found or not owned by this wallet" });
       return;
+    }
+
+    // ── Unlock the reserved balance ──────────────────────────────────────────
+    try {
+      const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
+      const lockAsset  = order.side === "buy" ? quoteAsset : baseAsset;
+      const remaining  = parseFloat(order.remainingQuantity);
+      const lockAmount = order.side === "buy"
+        ? (parseFloat(order.price ?? "0") * remaining).toString()
+        : remaining.toString();
+
+      if (parseFloat(lockAmount) > 0 && lockAsset) {
+        await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
+      }
+    } catch (unlockErr) {
+      req.log.warn({ unlockErr }, "Ledger unlock failed on cancel");
     }
 
     res.json(serializeOrder(order));

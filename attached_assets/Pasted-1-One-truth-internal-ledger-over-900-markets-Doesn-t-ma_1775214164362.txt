@@ -1,0 +1,348 @@
+1. One truth: internal ledger over 900+ markets
+
+Doesn’t matter if it’s 9 pairs or 9,000—your engine needs a single balance model:
+
+-- One row per user + asset
+CREATE TABLE user_balances (
+  id           BIGSERIAL PRIMARY KEY,
+  user_id      BIGINT NOT NULL,
+  asset_symbol TEXT NOT NULL,      -- 'ETH', 'USDT', 'BSV', 'AAVE', ...
+  available    NUMERIC(36,18) NOT NULL DEFAULT 0,
+  locked       NUMERIC(36,18) NOT NULL DEFAULT 0,
+  UNIQUE (user_id, asset_symbol)
+);
+
+
+Rules:
+
+• Only this table is truth for balances.
+• UI never “fakes” balance changes—always refetch from backend.
+• Every trade / swap / LP action is a DB transaction that updates this table.
+
+
+---
+
+2. Spot orders (orderbook) — balance must cut on placement
+
+2.1 Order table
+
+CREATE TABLE orders (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL,
+  market     TEXT NOT NULL,      -- 'ETH/USDT'
+  side       TEXT NOT NULL,      -- 'BUY' | 'SELL'
+  price      NUMERIC(36,18) NOT NULL,
+  amount     NUMERIC(36,18) NOT NULL,
+  filled     NUMERIC(36,18) NOT NULL DEFAULT 0,
+  status     TEXT NOT NULL,      -- 'OPEN' | 'PARTIAL' | 'FILLED' | 'CANCELLED'
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+
+2.2 Place order (pseudocode for your devs)
+
+Language-agnostic, but this is how it should behave in any stack:
+
+// market = 'ETH/USDT' → base='ETH', quote='USDT'
+function placeOrder({ userId, market, side, price, amount }) {
+  db.transaction(tx => {
+    const { base, quote } = parseMarket(market);
+
+    if (side === 'BUY') {
+      const cost = price * amount;
+
+      // Lock quote asset
+      const bal = tx.selectForUpdate(`
+        SELECT available FROM user_balances
+        WHERE user_id = ? AND asset_symbol = ?
+      `, [userId, quote]);
+
+      if (bal.available < cost) throw 'INSUFFICIENT_FUNDS';
+
+      tx.exec(`
+        UPDATE user_balances
+        SET available = available - ?, locked = locked + ?
+        WHERE user_id = ? AND asset_symbol = ?
+      `, [cost, cost, userId, quote]);
+
+    } else { // SELL
+      const bal = tx.selectForUpdate(`
+        SELECT available FROM user_balances
+        WHERE user_id = ? AND asset_symbol = ?
+      `, [userId, base]);
+
+      if (bal.available < amount) throw 'INSUFFICIENT_FUNDS';
+
+      tx.exec(`
+        UPDATE user_balances
+        SET available = available - ?, locked = locked + ?
+        WHERE user_id = ? AND asset_symbol = ?
+      `, [amount, amount, userId, base]);
+    }
+
+    tx.exec(`
+      INSERT INTO orders (user_id, market, side, price, amount, status)
+      VALUES (?, ?, ?, ?, ?, 'OPEN')
+    `, [userId, market, side, price, amount]);
+  });
+}
+
+
+Key:
+
+• SELECT ... FOR UPDATE + single transaction.
+• If this pattern isn’t used, you get “order placed but balance not cutting”.
+
+
+---
+
+3. Matching engine — move from locked → available
+
+When a trade fills:
+
+• Buyer:• locked_quote -= cost
+• available_base += filled_amount
+
+• Seller:• locked_base -= filled_amount
+• available_quote += cost
+
+
+
+All inside one transaction:
+
+function settleTrade(trade) {
+  const { buyerId, sellerId, base, quote, price, amount } = trade;
+  const cost = price * amount;
+
+  db.transaction(tx => {
+    // Lock all relevant rows
+    tx.exec(`
+      SELECT id FROM user_balances
+      WHERE (user_id = ? AND asset_symbol IN (?, ?))
+         OR (user_id = ? AND asset_symbol IN (?, ?))
+      FOR UPDATE
+    `, [buyerId, base, quote, sellerId, base, quote]);
+
+    // Buyer
+    tx.exec(`
+      UPDATE user_balances
+      SET locked = locked - ?, available = available + ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [cost, amount, buyerId, base]);
+
+    // Seller
+    tx.exec(`
+      UPDATE user_balances
+      SET locked = locked - ?, available = available + ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [amount, cost, sellerId, quote]);
+  });
+}
+
+
+---
+
+4. AMM swaps (no orderbook) — direct balance swap
+
+For swap-only pairs (AMM):
+
+1. User signs on-chain tx (EVM or BSV HTLC) → you get a confirmed event.
+2. On confirmation, you update internal ledger.
+
+
+Example: user swaps A → B via pool:
+
+function settleSwap({ userId, assetIn, assetOut, amountIn, amountOut }) {
+  db.transaction(tx => {
+    const balIn = tx.selectForUpdate(`
+      SELECT available FROM user_balances
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [userId, assetIn]);
+
+    if (balIn.available < amountIn) throw 'INSUFFICIENT_FUNDS';
+
+    tx.exec(`
+      UPDATE user_balances
+      SET available = available - ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [amountIn, userId, assetIn]);
+
+    tx.exec(`
+      UPDATE user_balances
+      SET available = available + ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [amountOut, userId, assetOut]);
+  });
+}
+
+
+On-chain BSV settlement:
+
+• Your BSV node / indexer watches HTLC / settlement tx.
+• When confirmed, it calls this function with the final amounts.
+
+
+---
+
+5. Liquidity add/remove — no double-counting
+
+5.1 LP positions
+
+CREATE TABLE liquidity_positions (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    BIGINT NOT NULL,
+  pool_id    BIGINT NOT NULL,
+  asset_a    TEXT NOT NULL,
+  asset_b    TEXT NOT NULL,
+  amount_a   NUMERIC(36,18) NOT NULL,
+  amount_b   NUMERIC(36,18) NOT NULL,
+  lp_tokens  NUMERIC(36,18) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+
+5.2 Add liquidity
+
+function addLiquidity({ userId, poolId, assetA, assetB, amountA, amountB }) {
+  db.transaction(tx => {
+    const balA = tx.selectForUpdate(`
+      SELECT available FROM user_balances
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [userId, assetA]);
+
+    const balB = tx.selectForUpdate(`
+      SELECT available FROM user_balances
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [userId, assetB]);
+
+    if (balA.available < amountA || balB.available < amountB) {
+      throw 'INSUFFICIENT_FUNDS';
+    }
+
+    tx.exec(`
+      UPDATE user_balances
+      SET available = available - ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [amountA, userId, assetA]);
+
+    tx.exec(`
+      UPDATE user_balances
+      SET available = available - ?
+      WHERE user_id = ? AND asset_symbol = ?
+    `, [amountB, userId, assetB]);
+
+    const lpTokens = computeLpTokensFromPool(tx, poolId, amountA, amountB);
+
+    tx.exec(`
+      INSERT INTO liquidity_positions (user_id, pool_id, asset_a, asset_b, amount_a, amount_b, lp_tokens)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [userId, poolId, assetA, assetB, amountA, amountB, lpTokens]);
+
+    updatePoolReserves(tx, poolId, amountA, amountB);
+  });
+}
+
+
+Important:
+
+• LP value is not added back into user_balances.
+• It’s shown separately in “DeFi / LP positions” to avoid double / triple counting.
+
+
+---
+
+6. Portfolio & API — stop the double/triple bug
+
+Your “double / triple” portfolio issue is almost always:
+
+• Summing:• available
+• locked
+• plus LP value
+• plus maybe open orders again
+→ all as if they’re separate assets.
+
+
+
+6.1 `/balances` API (raw ledger)
+
+SELECT asset_symbol, available, locked
+FROM user_balances
+WHERE user_id = ?;
+
+
+Response:
+
+{
+  "balances": [
+    { "asset": "ETH", "available": "0.0107", "locked": "0.0000" },
+    { "asset": "USDT", "available": "250.00", "locked": "50.00" }
+  ]
+}
+
+
+6.2 `/portfolio` API (derived view)
+
+• Start from user_balances.
+• Add separate fields for LP value, PnL, etc.
+
+
+{
+  "total_usd": "127.35",
+  "tokens": [
+    {
+      "asset": "ETH",
+      "available": "0.0107",
+      "locked": "0.0000",
+      "lp_exposure": "0.0050",
+      "usd_value": "19.35"
+    }
+  ],
+  "defi": {
+    "lp_positions": [
+      {
+        "pool": "ETH/USDT",
+        "lp_tokens": "8.6400",
+        "est_value_usd": "108.00"
+      }
+    ]
+  }
+}
+
+
+Rule for your devs:
+
+• Never sum available + locked + lp_exposure and then also add LP value again.
+• Decide one canonical way to compute total USD and stick to it.
+
+
+---
+
+7. BSV settlement — where it plugs in
+
+For every action that touches real funds:
+
+1. User signs on-chain tx (EVM or BSV).
+2. Your backend watches chain (BSV node / indexer / webhook).
+3. On confirmed:• If it’s a deposit → increase available in user_balances.
+• If it’s a withdrawal → decrease available (or locked if pre-reserved).
+• If it’s a cross-chain settlement → call settleTrade / settleSwap with final amounts.
+
+
+
+The internal ledger is the mirror of on-chain reality, not a guess.
+
+---
+
+8. What to literally send to your Replit dev
+
+You can paste this to them:
+
+• Implement user_balances(available, locked) as the single source of truth.
+• Wrap all trade, swap, and liquidity operations in DB transactions with row locks (SELECT ... FOR UPDATE).
+• On order placement, move funds from available → locked.
+• On trade fill, move from locked → available in the other asset.
+• On AMM swap, directly debit available of input asset and credit available of output asset.
+• On LP add/remove, adjust available only and track LP in liquidity_positions—do not also treat LP as free balance.
+• /balances must read only from user_balances.
+• /portfolio can show LP and DeFi value, but must not double-count the same units.
+• On-chain BSV settlement events should call these ledger functions once tx is confirmed.

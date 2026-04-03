@@ -1,0 +1,299 @@
+1. Core principle: single source of truth = internal ledger
+
+You need one canonical table that owns balances.
+No UI math, no “derived” balances as truth.
+
+Suggested schema (simplified):
+
+-- One row per user + asset
+CREATE TABLE user_balances (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL,
+  asset_symbol  TEXT NOT NULL,
+  available     NUMERIC(36, 18) NOT NULL DEFAULT 0,
+  locked        NUMERIC(36, 18) NOT NULL DEFAULT 0,
+  UNIQUE (user_id, asset_symbol)
+);
+
+CREATE TABLE orders (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL,
+  market        TEXT NOT NULL, -- e.g. "BSV/USDT"
+  side          TEXT NOT NULL, -- 'BUY' | 'SELL'
+  price         NUMERIC(36, 18) NOT NULL,
+  amount        NUMERIC(36, 18) NOT NULL,
+  filled        NUMERIC(36, 18) NOT NULL DEFAULT 0,
+  status        TEXT NOT NULL, -- 'OPEN' | 'PARTIAL' | 'FILLED' | 'CANCELLED'
+  created_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE TABLE liquidity_positions (
+  id            BIGSERIAL PRIMARY KEY,
+  user_id       BIGINT NOT NULL,
+  pool_id       BIGINT NOT NULL,
+  asset_a       TEXT NOT NULL,
+  asset_b       TEXT NOT NULL,
+  amount_a      NUMERIC(36, 18) NOT NULL,
+  amount_b      NUMERIC(36, 18) NOT NULL,
+  lp_tokens     NUMERIC(36, 18) NOT NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT now()
+);
+
+
+---
+
+2. Order placement: atomic balance lock
+
+When user places an order, you must:
+
+1. Check available balance.
+2. Move from available → locked.
+3. Insert order.
+4. Do all of that in one DB transaction.
+
+
+Example (TypeScript + SQL pseudo):
+
+async function placeOrder(params: {
+  userId: number;
+  market: string;      // e.g. "BSV/USDT"
+  side: 'BUY' | 'SELL';
+  price: string;
+  amount: string;
+}) {
+  return db.tx(async (tx) => {
+    const { base, quote } = parseMarket(params.market); // BSV, USDT
+
+    if (params.side === 'BUY') {
+      // cost = price * amount
+      const cost = mul(params.price, params.amount);
+
+      const bal = await tx.one(`
+        SELECT available FROM user_balances
+        WHERE user_id = $1 AND asset_symbol = $2
+        FOR UPDATE
+      `, [params.userId, quote]);
+
+      if (lt(bal.available, cost)) throw new Error('INSUFFICIENT_FUNDS');
+
+      await tx.none(`
+        UPDATE user_balances
+        SET available = available - $1,
+            locked    = locked + $1
+        WHERE user_id = $2 AND asset_symbol = $3
+      `, [cost, params.userId, quote]);
+
+    } else {
+      // SELL: lock base asset
+      const bal = await tx.one(`
+        SELECT available FROM user_balances
+        WHERE user_id = $1 AND asset_symbol = $2
+        FOR UPDATE
+      `, [params.userId, base]);
+
+      if (lt(bal.available, params.amount)) throw new Error('INSUFFICIENT_FUNDS');
+
+      await tx.none(`
+        UPDATE user_balances
+        SET available = available - $1,
+            locked    = locked + $1
+        WHERE user_id = $2 AND asset_symbol = $3
+      `, [params.amount, params.userId, base]);
+    }
+
+    const order = await tx.one(`
+      INSERT INTO orders (user_id, market, side, price, amount, status)
+      VALUES ($1, $2, $3, $4, $5, 'OPEN')
+      RETURNING *
+    `, [params.userId, params.market, params.side, params.price, params.amount]);
+
+    return order;
+  });
+}
+
+
+Key: FOR UPDATE + single transaction = no double-spend, no “balance not cutting”.
+
+---
+
+3. Matching engine: settle from locked → available
+
+When trades execute:
+
+• For SELLER:
+locked_base -= filled_amount
+available_quote += filled_amount * price - fee
+• For BUYER:
+locked_quote -= cost
+available_base += filled_amount - fee
+
+
+Again, all in one transaction per match batch.
+
+async function settleTrade(tx, trade) {
+  const { buyerId, sellerId, base, quote, price, amount } = trade;
+  const cost = mul(price, amount);
+
+  // Lock rows for both users + both assets
+  await tx.none(`
+    SELECT id FROM user_balances
+    WHERE (user_id = $1 AND asset_symbol IN ($3, $4))
+       OR (user_id = $2 AND asset_symbol IN ($3, $4))
+    FOR UPDATE
+  `, [buyerId, sellerId, base, quote]);
+
+  // Buyer
+  await tx.none(`
+    UPDATE user_balances
+    SET locked    = locked - $1,
+        available = available + $2
+    WHERE user_id = $3 AND asset_symbol = $4
+  `, [cost, amount, buyerId, base]);
+
+  // Seller
+  await tx.none(`
+    UPDATE user_balances
+    SET locked    = locked - $1,
+        available = available + $2
+    WHERE user_id = $3 AND asset_symbol = $4
+  `, [amount, cost, sellerId, quote]);
+}
+
+
+---
+
+4. Liquidity provision: same pattern, no UI magic
+
+When user adds liquidity:
+
+1. Check available for both assets.
+2. Deduct from available (you can either:• move to locked and then to pool, or
+• directly reduce available and mint LP position).
+
+3. Insert liquidity_positions row.
+4. Update pool reserves.
+
+
+All in one transaction.
+
+async function addLiquidity(params: {
+  userId: number;
+  poolId: number;
+  assetA: string;
+  assetB: string;
+  amountA: string;
+  amountB: string;
+}) {
+  return db.tx(async (tx) => {
+    const balA = await tx.one(`
+      SELECT available FROM user_balances
+      WHERE user_id = $1 AND asset_symbol = $2
+      FOR UPDATE
+    `, [params.userId, params.assetA]);
+
+    const balB = await tx.one(`
+      SELECT available FROM user_balances
+      WHERE user_id = $1 AND asset_symbol = $2
+      FOR UPDATE
+    `, [params.userId, params.assetB]);
+
+    if (lt(balA.available, params.amountA) || lt(balB.available, params.amountB)) {
+      throw new Error('INSUFFICIENT_FUNDS');
+    }
+
+    await tx.none(`
+      UPDATE user_balances
+      SET available = available - $1
+      WHERE user_id = $2 AND asset_symbol = $3
+    `, [params.amountA, params.userId, params.assetA]);
+
+    await tx.none(`
+      UPDATE user_balances
+      SET available = available - $1
+      WHERE user_id = $2 AND asset_symbol = $3
+    `, [params.amountB, params.userId, params.assetB]);
+
+    // compute LP tokens from pool state
+    const lpTokens = await computeLpTokens(tx, params.poolId, params.amountA, params.amountB);
+
+    await tx.one(`
+      INSERT INTO liquidity_positions (user_id, pool_id, asset_a, asset_b, amount_a, amount_b, lp_tokens)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      RETURNING *
+    `, [params.userId, params.poolId, params.assetA, params.assetB, params.amountA, params.amountB, lpTokens]);
+
+    await updatePoolReserves(tx, params.poolId, params.amountA, params.amountB);
+
+    return { lpTokens };
+  });
+}
+
+
+---
+
+5. API: stop double-counting in portfolio
+
+Your “double / triple” portfolio bug is almost certainly:
+
+• Counting the same asset in multiple places (e.g. available + locked + pool share incorrectly), or
+• Joining on trades/liquidity and summing not grouped by user/asset correctly.
+
+
+Safe pattern for /balances API:
+
+SELECT asset_symbol,
+       available,
+       locked
+FROM user_balances
+WHERE user_id = $1;
+
+
+Safe pattern for /portfolio API:
+
+• Start from user_balances as base.
+• Add derived values (LP share, pending rewards) as separate fields, not merged into the raw balance.
+
+
+Example response:
+
+{
+  "balances": [
+    {
+      "asset": "BSV",
+      "available": "10.0",
+      "locked": "2.0",
+      "in_pools": "5.0",
+      "total_effective": "17.0"
+    }
+  ]
+}
+
+
+But internally, only available + locked are ledger truth.
+in_pools is computed from liquidity_positions and pool reserves.
+
+---
+
+6. Frontend: always trust backend, never local math
+
+• Never let the UI “simulate” balance changes and treat that as truth.
+• After:• placing order,
+• adding liquidity,
+• cancelling order,
+• removing liquidity,
+always refetch /balances from backend and render that.
+
+
+---
+
+7. What you can hand to Replit devs
+
+You can literally say:
+
+1. Implement user_balances with available + locked as the single source of truth.
+2. Wrap order placement, trade settlement, and liquidity add/remove in DB transactions with FOR UPDATE row locks.
+3. On order placement, move funds from available → locked.
+4. On trade settlement, move from locked → available for the other asset.
+5. On liquidity add, reduce available and create liquidity_positions.
+6. /balances must read only from user_balances.
+7. /portfolio can add derived fields but must not double-count the same units.
