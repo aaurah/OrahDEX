@@ -44,6 +44,8 @@ const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then
 const GenesisLiquidity = lazy(() => import("@/pages/GenesisLiquidity"));
 const MobileGenesis    = lazy(() => import("@/pages/mobile/MobileGenesis"));
 const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
+const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
+const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
 
 /* Admin — single chunk group for the whole admin section */
 const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
@@ -360,6 +362,8 @@ function Router() {
                 <Route path="/keeper"     component={KeeperProfile} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
                 <Route path="/settings"   component={MobileSettings} />
+                <Route path="/deposit-bsv" component={MobileHandCashBridge} />
+                <Route path="/qr-scan"    component={MobileQRScanner} />
                 <Route component={MobileMarkets} />
               </Switch>
             </Suspense>

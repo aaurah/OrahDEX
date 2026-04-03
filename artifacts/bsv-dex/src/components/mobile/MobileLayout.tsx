@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown, Zap } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown, Zap, QrCode } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -226,6 +226,15 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground active:bg-secondary transition-colors shrink-0 mr-2"
           >
             <ThemeIcon size={18} className="text-foreground/80" />
+          </button>
+
+          {/* QR Scan button */}
+          <button
+            onClick={() => navigate("/qr-scan")}
+            title="QR Scanner"
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground active:bg-secondary transition-colors shrink-0 mr-1.5"
+          >
+            <QrCode size={17} className="text-foreground/80" />
           </button>
 
           {/* Buy button */}
