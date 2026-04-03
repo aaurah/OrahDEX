@@ -1000,6 +1000,23 @@ export const FUTURES_MARKETS: any[] = [
 
 export const MOCK_MARKETS: any[] = [...USDT_MARKETS, ...BSV_MARKETS, ...FUTURES_MARKETS];
 
+/**
+ * Every spot market across all chains and quote assets.
+ * Used as a full fallback in the Spot trade page pair selector.
+ */
+export const ALL_SPOT_MOCK: any[] = [
+  ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+  ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS, ...BNB_MARKETS,
+  ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS, ...OP_MARKETS,
+  ...FTM_MARKETS, ...CRO_MARKETS,
+  ...BASE_MARKETS, ...ZORA_MARKETS, ...LINEA_MARKETS,
+  ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
+  ...SOL_MARKETS, ...AI_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...DEPIN_MARKETS, ...BRC20_MARKETS,
+  ...UNISWAP_MARKETS, ...PANCAKE_MARKETS, ...NEW_MARKETS,
+].filter(m => !m.type || m.type === "spot");
+
 const BSV_ETH_PRICE = 55.42 / 3415; // ≈ 0.016228 ETH per BSV
 
 function mkTicker(sym: string, price: number, chgPct: number, vol: number, qVol: number): any {
