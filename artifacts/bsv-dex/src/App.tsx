@@ -189,7 +189,8 @@ function Router() {
           .then(async (accounts: string[]) => {
             if (!accounts?.length) {
               disconnect();
-            } else if (accounts[0] && !address) {
+            } else if (accounts[0] && accounts[0].toLowerCase() !== address?.toLowerCase()) {
+              // Always sync — even if we have an old stored address from a different account
               const chainHex: string = await eth.request({ method: "eth_chainId" });
               useWalletStore.getState().connect({
                 address: accounts[0], provider: "metamask", network: "evm",

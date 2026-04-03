@@ -67,10 +67,10 @@ const POOLS: Pool[] = [
 
 // Approximate spot prices used only for UI ratio calculations
 const SPOT: Record<string, number> = {
-  BTC: 68_310, ETH: 3_415, SOL: 148.5, BSV: 55.42, BNB: 392,
-  XRP: 0.5242, ADA: 0.4421, DOGE: 0.1185, DOT: 6.82, LINK: 14.52,
+  BTC: 83_000, ETH: 1_800, SOL: 130, BSV: 55, BNB: 580,
+  XRP: 0.52, ADA: 0.44, DOGE: 0.12, DOT: 6.8, LINK: 14.5,
   USDT: 1, USDC: 1,
-  TRX: 0.115, BTT: 0.00000095, WIN: 0.00007, JST: 0.028,
+  TRX: 0.24, BTT: 0.0000009, WIN: 0.00006, JST: 0.025,
 };
 
 // Pool APR derived from AMM fee revenue: vol24 * fee% / tvl * 365
