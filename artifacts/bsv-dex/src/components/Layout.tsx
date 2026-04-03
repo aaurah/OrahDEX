@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -11,6 +11,7 @@ import { TxStatusBar } from "./TxStatusBar";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 
 /* ── Heavy modals — loaded only when first opened ── */
 const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
@@ -18,20 +19,6 @@ const AiAssistant        = lazy(() => import("./AiAssistant").then(m => ({ defau
 const BuyCryptoModal     = lazy(() => import("./BuyCryptoModal").then(m => ({ default: m.BuyCryptoModal })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-type BsvStatus = { online: boolean; blockHeight: number; bestBlockHash: string };
-
-function useBsvStatus() {
-  return useQuery<BsvStatus>({
-    queryKey: ["bsv-status"],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`);
-      return r.ok ? r.json() : { online: false, blockHeight: 0, bestBlockHash: "" };
-    },
-    refetchInterval: 30_000,
-    staleTime: 25_000,
-  });
-}
 
 const THEME_ICONS = { dark: Moon, light: Sun, amoled: Smartphone, system: Monitor };
 const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
@@ -135,10 +122,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [buyOpen, setBuyOpen] = useState(false);
+  const [bsvPopover, setBsvPopover] = useState(false);
+  const bsvPopoverRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
-  const { data: bsvStatus } = useBsvStatus();
-  const bsvOnline = bsvStatus?.online ?? false;
-  const bsvBlock  = bsvStatus?.blockHeight ?? 0;
+  const { data: bsvChain } = useBsvChain();
+  const bsvOnline = bsvChain?.online ?? false;
+  const bsvBlock  = bsvChain?.blockHeight ?? 0;
   const announcements = usePlatformAnnouncements();
   const { notifications, addNotification, markAllRead, clearAll, unreadCount } = useNotificationStore();
   const unread = unreadCount() + announcements.length;
@@ -460,13 +449,81 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
-          {/* BSV LIVE badge — hide when wallet is connected to save header space */}
+          {/* BSV LIVE badge — clickable popover with full on-chain details */}
           {!address && (
-            <span className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none">
-              <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
-              <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
-              {bsvBlock > 0 && <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>}
-            </span>
+            <div className="relative hidden sm:block" ref={bsvPopoverRef}>
+              <button
+                onClick={() => setBsvPopover(p => !p)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none hover:bg-green-500/10 transition-colors"
+              >
+                <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+                <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
+                {bsvBlock > 0 && <span className="text-green-400/80">#{bsvBlock.toLocaleString()}</span>}
+              </button>
+
+              {bsvPopover && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setBsvPopover(false)} />
+                  <div className="absolute right-0 top-8 z-50 w-72 bg-card border border-green-500/20 rounded-2xl shadow-2xl p-4 space-y-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("w-2 h-2 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
+                        <span className="text-xs font-bold text-foreground">BSV Mainnet</span>
+                      </div>
+                      <a href={bsvChain?.explorerUrl ?? "https://whatsonchain.com"} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[10px] text-primary hover:underline">
+                        Explorer <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+
+                    {/* Stats grid */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { icon: Layers, label: "Block Height", value: bsvBlock > 0 ? `#${bsvBlock.toLocaleString()}` : "—", color: "text-green-400" },
+                        { icon: Cpu, label: "Hashrate", value: fmtHashrate(bsvChain?.hashrateEHs ?? 0), color: "text-sky-400" },
+                        { icon: Gauge, label: "Difficulty", value: fmtDifficulty(bsvChain?.difficulty ?? 0), color: "text-yellow-400" },
+                        { icon: Zap, label: "Fee Rate", value: `${bsvChain?.feeRateSatPerByte ?? 1} sat/B`, color: "text-orange-400" },
+                        { icon: Waves, label: "Mempool", value: fmtMempoolMb(bsvChain?.mempoolBytes ?? 0), color: "text-violet-400" },
+                        { icon: Activity, label: "Mempool TXs", value: (bsvChain?.mempoolTxCount ?? 0) > 0 ? (bsvChain!.mempoolTxCount).toLocaleString() : "—", color: "text-blue-400" },
+                      ].map(({ icon: Icon, label, value, color }) => (
+                        <div key={label} className="bg-secondary/50 rounded-xl p-2.5">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <Icon className={cn("w-3 h-3", color)} />
+                            <span className="text-[10px] text-muted-foreground">{label}</span>
+                          </div>
+                          <div className={cn("text-xs font-bold font-mono", color)}>{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Avg block time + last checked */}
+                    <div className="border-t border-border/50 pt-2 space-y-1">
+                      <div className="flex justify-between text-[10px] text-muted-foreground">
+                        <span>Avg block time</span>
+                        <span className="text-foreground font-mono">~10 min</span>
+                      </div>
+                      {bsvChain?.medianTime ? (
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>Median block</span>
+                          <span className="text-foreground font-mono">{fmtBlockAge(bsvChain.medianTime)}</span>
+                        </div>
+                      ) : null}
+                      {bsvChain?.bsvUsd && bsvChain.bsvUsd > 0 ? (
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>BSV/USD (WoC)</span>
+                          <span className="text-green-400 font-bold font-mono">${bsvChain.bsvUsd.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="text-[10px] text-muted-foreground/60 text-center">
+                      Data from WhatsOnChain · updates every 60s
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {/* Buy Crypto — global header CTA */}

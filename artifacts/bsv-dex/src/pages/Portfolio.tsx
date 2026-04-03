@@ -1,7 +1,8 @@
 import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp } from "lucide-react";
+import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity } from "lucide-react";
+import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
@@ -194,6 +195,7 @@ export function Portfolio() {
 
   const chainInfo  = getChainInfo(chainId);
   const networkLabel = getNetworkLabel(network, chainId, provider);
+  const { data: bsvChain } = useBsvChain();
 
   const isPaymailAddr = network === "bsv" && address?.includes("@");
 
@@ -383,6 +385,59 @@ export function Portfolio() {
             <div className="w-2 h-2 rounded-full bg-green-400 shrink-0 animate-pulse" />
             On-chain balance fetched via{" "}
             <span className="font-mono text-green-400 truncate max-w-xs">{bsvBalResult.bsvAddress}</span>
+          </div>
+        )}
+
+        {/* BSV On-Chain Network Stats — shown when connected via BSV network */}
+        {network === "bsv" && (
+          <div className="mb-4 rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-transparent p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className={cn("w-2 h-2 rounded-full", bsvChain?.online ? "bg-green-400 animate-pulse" : "bg-zinc-500")} />
+                <span className="text-xs font-bold text-green-400 uppercase tracking-wider">BSV Mainnet</span>
+              </div>
+              <a href={bsvChain?.explorerUrl ?? "https://whatsonchain.com"} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-primary hover:underline">
+                WhatsOnChain <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {[
+                { icon: Layers,   label: "Block",      value: bsvChain?.blockHeight ? `#${bsvChain.blockHeight.toLocaleString()}` : "—", color: "text-green-400" },
+                { icon: Zap,      label: "Fee Rate",   value: `${bsvChain?.feeRateSatPerByte ?? 1} sat/B`,                             color: "text-orange-400" },
+                { icon: Cpu,      label: "Hashrate",   value: fmtHashrate(bsvChain?.hashrateEHs ?? 0),                                 color: "text-sky-400" },
+              ].map(({ icon: Icon, label, value, color }) => (
+                <div key={label} className="bg-background/40 rounded-xl px-2 py-2 text-center">
+                  <Icon className={cn("w-3.5 h-3.5 mx-auto mb-1", color)} />
+                  <div className={cn("text-xs font-bold font-mono", color)}>{value}</div>
+                  <div className="text-[10px] text-muted-foreground">{label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { icon: Gauge,    label: "Difficulty", value: fmtDifficulty(bsvChain?.difficulty ?? 0),          color: "text-yellow-400" },
+                { icon: Waves,    label: "Mempool",    value: fmtMempoolMb(bsvChain?.mempoolBytes ?? 0),         color: "text-violet-400" },
+                { icon: Activity, label: "Mempool TXs",value: bsvChain?.mempoolTxCount ? bsvChain.mempoolTxCount.toLocaleString() : "—", color: "text-blue-400" },
+              ].map(({ icon: Icon, label, value, color }) => (
+                <div key={label} className="bg-background/40 rounded-xl px-2 py-2 text-center">
+                  <Icon className={cn("w-3.5 h-3.5 mx-auto mb-1", color)} />
+                  <div className={cn("text-xs font-bold font-mono", color)}>{value}</div>
+                  <div className="text-[10px] text-muted-foreground">{label}</div>
+                </div>
+              ))}
+            </div>
+            {(bsvChain?.medianTime || (bsvChain?.bsvUsd && bsvChain.bsvUsd > 0)) && (
+              <div className="mt-2 pt-2 border-t border-border/30 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+                {bsvChain?.medianTime ? (
+                  <span>Last block: <span className="text-foreground font-semibold">{fmtBlockAge(bsvChain.medianTime)}</span></span>
+                ) : null}
+                {bsvChain?.bsvUsd && bsvChain.bsvUsd > 0 ? (
+                  <span>BSV/USD: <span className="text-green-400 font-bold">${bsvChain.bsvUsd.toFixed(2)}</span></span>
+                ) : null}
+                <span>Avg block: <span className="text-foreground">~10 min</span></span>
+              </div>
+            )}
           </div>
         )}
 
