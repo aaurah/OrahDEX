@@ -51,10 +51,11 @@ const UNI_V3_POSITION_MANAGER: Record<number, string> = {
 };
 
 const SUPPORTED_V3_PAIRS: Record<number, Set<string>> = {
-  // Base: USDC is the primary stable — no liquid Uni V3 USDT pools on Base
+  // Base mainnet: ETH/USDC and BTC/USDC are fully liquid on Uniswap V3
   8453: new Set(["ETH/USDC", "BTC/USDC"]),
-  // Ethereum mainnet: both USDC and USDT pools exist on Uni V3
-  1:    new Set(["ETH/USDT", "ETH/USDC", "BTC/USDT", "BTC/USDC"]),
+  // Ethereum mainnet: deposit via live mode (position recorded, BSV-settled)
+  // On-chain Uni V3 mint reverts due to pool price ratio constraints at small sizes
+  // 1: new Set([...]) — intentionally empty; all Ethereum pairs use "live" mode
 };
 
 export const TOKEN_DECIMALS: Record<string, number> = {
@@ -384,6 +385,6 @@ export async function addLiquidityOnChain(params: AddLiquidityParams): Promise<v
 }
 
 const SPOT_PRICES: Record<string, number> = {
-  BTC: 71_000, ETH: 2_160, SOL: 92, BSV: 14, BNB: 640,
-  XRP: 1.42, ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2, USDT: 1, USDC: 1,
+  BTC: 83_000, ETH: 1_800, SOL: 130, BSV: 55, BNB: 580,
+  XRP: 0.52, ADA: 0.44, DOGE: 0.12, DOT: 6.8, LINK: 14.5, USDT: 1, USDC: 1,
 };
