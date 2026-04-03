@@ -254,7 +254,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const { theme } = useThemeStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [chartType, setChartType] = useState<ChartType>('candle');
+  const [chartType, setChartType] = useState<ChartType>('line');
   const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'none');
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
