@@ -12,7 +12,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
-  addLiquidityOnChain, getLiquidityMode,
+  addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
@@ -387,16 +387,28 @@ function LiquidityModal({
 
     // ── Live wallet mode (EVM connected, pair not yet on V3) ────────────────
     if (mode === "live") {
-      setTxStatus({ step: "depositing" });
-      await new Promise(r => setTimeout(r, 900));
-      addPosition(address, pool.id, lpTokens, valueUsd);
-      setTxStatus({ step: "success", lpTokens, valueUsd });
-      setSubmitting(false);
-      toast({
-        title: "Position recorded!",
-        description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} added. ${lpTokens.toFixed(4)} LP tokens.`,
+      await addLiquidityLive({
+        base:     pool.base,
+        quote:    pool.quote,
+        amountA:  nA,
+        amountB:  nB,
+        address,
+        chainId:  targetChainId,
+        valueUsd,
+        lpTokens,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            toast({
+              title: "Position recorded!",
+              description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} added. ${lpTokens.toFixed(4)} LP tokens.`,
+            });
+            onClose();
+          }
+        },
       });
-      onClose();
+      setSubmitting(false);
       return;
     }
 

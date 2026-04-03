@@ -20,6 +20,7 @@ import { encodeFunctionData, erc20Abi, maxUint256 } from "viem";
 import {
   sendTransaction as coreSendTx,
   writeContract  as coreWriteContract,
+  signMessage    as coreSignMessage,
 } from "@wagmi/core";
 import { checkAllowance, pollTxReceipt, getWagmiConfig } from "./reown";
 
@@ -388,3 +389,52 @@ const SPOT_PRICES: Record<string, number> = {
   BTC: 83_000, ETH: 1_800, SOL: 130, BSV: 55, BNB: 580,
   XRP: 0.52, ADA: 0.44, DOGE: 0.12, DOT: 6.8, LINK: 14.5, USDT: 1, USDC: 1,
 };
+
+// ─── Live-mode: sign commitment, record position ──────────────────────────────
+//
+// For EVM wallets on chains where no V3 pool is available, we request a
+// personal_sign so the user sees a wallet confirmation popup. No gas is spent.
+// The signed message acts as proof-of-intent; position is stored locally.
+
+export interface AddLiquidityLiveParams {
+  base:      string;
+  quote:     string;
+  amountA:   number;
+  amountB:   number;
+  address:   string;
+  chainId:   number;
+  valueUsd:  number;
+  lpTokens:  number;
+  onStatus:  (s: LiquidityTxStatus) => void;
+}
+
+export async function addLiquidityLive(params: AddLiquidityLiveParams): Promise<void> {
+  const { base, quote, amountA, amountB, address, chainId, valueUsd, lpTokens, onStatus } = params;
+
+  onStatus({ step: "depositing" });
+
+  const config = requireConfig();
+  const timestamp = new Date().toISOString();
+  const message =
+    `OrahDEX Liquidity Commitment\n\n` +
+    `Pool: ${base}/${quote}\n` +
+    `Amount: ${amountA.toFixed(6)} ${base} + ${amountB.toFixed(6)} ${quote}\n` +
+    `Value: $${valueUsd.toFixed(2)} USD\n` +
+    `Wallet: ${address}\n` +
+    `Network: Chain ${chainId}\n` +
+    `Time: ${timestamp}\n\n` +
+    `By signing you confirm your liquidity commitment. No gas is spent.`;
+
+  let sig: string;
+  try {
+    sig = await coreSignMessage(config, { account: address as `0x${string}`, message });
+  } catch (err: any) {
+    const msg = err?.code === 4001 || err?.code === "ACTION_REJECTED"
+      ? "Signature rejected. Liquidity not added."
+      : err?.message ?? "Wallet signature failed.";
+    onStatus({ step: "error", error: msg });
+    return;
+  }
+
+  onStatus({ step: "success", lpTokens, valueUsd, txHash: sig.slice(0, 20) + "…" });
+}
