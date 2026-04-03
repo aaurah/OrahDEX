@@ -1,5 +1,6 @@
 import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
 import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
@@ -175,6 +176,7 @@ export function Portfolio() {
   });
 
   const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
+  const { quoteCurrency } = useSettingsStore();
   const { getUserPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
@@ -475,7 +477,7 @@ export function Portfolio() {
                   <div className="h-14 w-52 bg-muted/40 rounded-xl animate-pulse" />
                 ) : (
                   <span className="text-5xl font-bold font-mono tracking-tight text-foreground">
-                    {hideBalances ? "••••••" : `$${formatPrice(totalValueUSD)}`}
+                    {hideBalances ? "••••••" : formatQuoteAmount(totalValueUSD, quoteCurrency)}
                   </span>
                 )}
               </div>
@@ -588,7 +590,7 @@ export function Portfolio() {
                           </div>
                         </td>
                         <td className="p-4 text-right font-mono text-sm">
-                          {stableSet.has(bal.asset) ? "$1.00" : bal.price > 0 ? `$${formatPrice(bal.price)}` : "—"}
+                          {stableSet.has(bal.asset) ? formatQuoteAmount(1, quoteCurrency) : bal.price > 0 ? formatQuoteAmount(bal.price, quoteCurrency) : "—"}
                         </td>
                         <td className={`p-4 text-right text-sm font-semibold ${bal.change24hPercent >= 0 ? "text-green-400" : "text-red-400"}`}>
                           {stableSet.has(bal.asset) ? "0.00%" : `${bal.change24hPercent >= 0 ? "+" : ""}${bal.change24hPercent.toFixed(2)}%`}
@@ -601,7 +603,7 @@ export function Portfolio() {
                               : <span className="text-muted-foreground/50 text-xs italic">—</span>}
                         </td>
                         <td className="p-4 text-right font-mono font-medium">
-                          {hideBalances ? "•••" : `$${formatPrice(bal.valueUSD)}`}
+                          {hideBalances ? "•••" : formatQuoteAmount(bal.valueUSD, quoteCurrency)}
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -700,7 +702,7 @@ export function Portfolio() {
                         </td>
                         <td className="p-4 text-right font-mono font-medium text-sm">
                           <div className="flex flex-col items-end gap-0.5">
-                            <span>{hideBalances ? "•••" : `$${formatPrice(pos.depositedValueUsd)}`}</span>
+                            <span>{hideBalances ? "•••" : formatQuoteAmount(pos.depositedValueUsd, quoteCurrency)}</span>
                             <span className="flex items-center gap-1 text-xs text-green-400 font-semibold">
                               <TrendingUp className="w-3 h-3" /> Earning fees
                             </span>
