@@ -808,16 +808,16 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           </div>
         )}
         <div ref={mainRef} className="w-full h-full" />
-        {/* Watermark — sits above the canvas, below the loading overlay */}
+        {/* Watermark — top-left corner */}
         {!loading && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[5]">
+          <div className="absolute top-3 left-3 pointer-events-none z-[5]">
             <span
               className="select-none font-black uppercase"
               style={{
-                fontSize: 'clamp(20px, 4.5vw, 36px)',
+                fontSize: '13px',
                 fontFamily: "'Inter', sans-serif",
-                color: theme === 'light' ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.09)',
-                letterSpacing: '0.18em',
+                color: theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.18)',
+                letterSpacing: '0.15em',
               }}
             >
               OrahDEX
