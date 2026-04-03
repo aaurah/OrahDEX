@@ -4,6 +4,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { getTxExplorerUrl } from "@/store/useWalletStore";
 import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
@@ -141,6 +142,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const { address, network, balance, chainId: walletChainId } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
+  const { applyFill } = useExchangeBalanceStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
 
   const chainId = walletChainId ?? 1;
@@ -239,23 +241,32 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const placeOrder = usePlaceOrder({
     mutation: {
       onSuccess: (data: any) => {
-        const matched = data?.matched ?? false;
-        const txid    = data?.settlementTxid ?? data?.txid ?? null;
-        const url     = data?.explorerUrl ?? null;
+        const matched  = data?.matched ?? false;
+        const txid     = data?.settlementTxid ?? data?.txid ?? null;
+        const url      = data?.explorerUrl ?? null;
+        const fillPx   = data?.price ?? parseFloat(price || "0");
+        const qty      = parseFloat(amount || "0");
         if (matched) {
           setSettlement({ matched: true, txid, explorerUrl: url });
+
+          // Credit the exchange balance ledger so Portfolio reflects the trade
+          if (address && qty > 0 && fillPx > 0) {
+            applyFill(address, side as "buy" | "sell", base, quote, qty, fillPx);
+          }
+
+          const receivedQty = side === "sell"
+            ? (qty * fillPx * 0.999).toFixed(2)
+            : (qty * 0.999).toFixed(6);
+          const receivedTok = side === "sell" ? quote : base;
+
           toast({
             title: "Order Filled ✓",
-            description: txid
-              ? `Settled on BSV chain · ${txid.slice(0, 12)}…`
-              : `${side.toUpperCase()} ${amount} ${base} matched`,
+            description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
           });
           addNotification({
             type: "order_filled",
             title: `${side.toUpperCase()} Order Filled ✓`,
-            body: txid
-              ? `${amount} ${base} settled on BSV chain · ${txid.slice(0, 12)}…`
-              : `${amount} ${base} @ market · matched instantly`,
+            body: `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
