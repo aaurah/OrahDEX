@@ -255,8 +255,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
   const [chartType, setChartType] = useState<ChartType>('candle');
-  const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'macd');
-  const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set(['ma7', 'ma25']));
+  const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'none');
+  const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
 
   // Sync external subIndicator prop → internal state (allows parent to control it)

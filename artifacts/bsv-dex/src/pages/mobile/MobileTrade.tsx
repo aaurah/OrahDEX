@@ -316,7 +316,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   });
 
   const [interval, setInterval] = useState<string>("1h");
-  const [activeIndicator, setActiveIndicator] = useState<IndicatorName>("MACD");
+  const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -595,7 +595,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             symbol={symbol}
             interval={interval}
             onIntervalChange={handleIntervalChange}
-            subIndicator={INDICATOR_TO_SUB[activeIndicator] ?? undefined}
+            subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
           />
         </div>
 
