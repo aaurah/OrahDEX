@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
+import { useSettingsStore, convertFromUsd, getCurrencySymbol, formatQuoteAmount } from "@/store/useSettingsStore";
 
 /* ── Curated Base / Zora ecosystem tokens ── */
 const ZORA_COINS = [
@@ -424,6 +425,8 @@ export function DexHub() {
   const [, navigate] = useLocation();
   const online = useOnlineStatus();
   const { data: bsvChain } = useBsvChain();
+  const { quoteCurrency } = useSettingsStore();
+  const qSym = getCurrencySymbol(quoteCurrency);
   const [view, setView]         = useState<View>("exchanges");
   const [search, setSearch]     = useState("");
   const [exType, setExType]     = useState<ExType>("all");
@@ -522,11 +525,12 @@ export function DexHub() {
 
   function fmtPrice(p: number) {
     if (!p) return "—";
-    if (p >= 10000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
-    if (p >= 1)     return p.toFixed(2);
-    if (p >= 0.01)  return p.toFixed(4);
-    if (p >= 0.0001) return p.toFixed(6);
-    return p.toFixed(8);
+    const c = convertFromUsd(p, quoteCurrency);
+    if (c >= 10000) return c.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (c >= 1)     return c.toFixed(2);
+    if (c >= 0.01)  return c.toFixed(4);
+    if (c >= 0.0001) return c.toFixed(6);
+    return c.toFixed(8);
   }
 
   function fmtVol(v: number) {
@@ -952,7 +956,7 @@ export function DexHub() {
                       Coin {coinSort === "base" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
                     <th className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("price")}>
-                      Price {coinSort === "price" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
+                      Price ({quoteCurrency}) {coinSort === "price" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
                     </th>
                     <th className="px-3 py-3 font-medium text-right cursor-pointer hover:text-foreground select-none" onClick={() => toggleCoinSort("chg")}>
                       24h% {coinSort === "chg" ? (coinSortDir === "asc" ? <ChevronUp className="inline w-3 h-3" /> : <ChevronDown className="inline w-3 h-3" />) : ""}
@@ -999,7 +1003,7 @@ export function DexHub() {
                         </td>
 
                         <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold tabular-nums">
-                          ${fmtPrice(coin.price)}
+                          {qSym}{fmtPrice(coin.price)}
                         </td>
 
                         <td className="px-3 py-2.5 text-right">
@@ -1012,11 +1016,11 @@ export function DexHub() {
                         </td>
 
                         <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden md:table-cell">
-                          ${fmtVol(coin.volume24h)}
+                          {qSym}{fmtVol(coin.volume24h)}
                         </td>
 
                         <td className="px-3 py-2.5 text-right text-sm text-muted-foreground tabular-nums font-mono hidden lg:table-cell">
-                          ${fmtVol(coin.marketCap)}
+                          {qSym}{fmtVol(coin.marketCap)}
                         </td>
 
                         <td className="px-3 py-2.5 text-center">
@@ -1088,7 +1092,7 @@ export function DexHub() {
                       <span className="ml-2 text-xs font-semibold text-muted-foreground">{selectedCoin.symbol}</span>
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      ${fmtPrice(selectedCoin.price)}
+                      {qSym}{fmtPrice(selectedCoin.price)}
                       <span className={cn("ml-2 text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
                         {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
                       </span>
@@ -1172,8 +1176,8 @@ export function DexHub() {
 
                           {/* Price + volume */}
                           <div className="text-right shrink-0">
-                            <p className="text-sm font-mono font-semibold tabular-nums">${fmtPrice(t.convertedLast || t.price)}</p>
-                            <p className="text-[10px] text-muted-foreground tabular-nums">${fmtVol(t.convertedVol)} vol</p>
+                            <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.convertedLast || t.price)}</p>
+                            <p className="text-[10px] text-muted-foreground tabular-nums">{qSym}{fmtVol(t.convertedVol)} vol</p>
                           </div>
 
                           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />

@@ -4,7 +4,7 @@ import {
   Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
-  Headphones, MessageCircle, HelpCircle, Mail,
+  Headphones, MessageCircle, HelpCircle, Mail, Search, X,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -12,6 +12,7 @@ import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
+import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
 import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -100,11 +101,14 @@ export function MobileSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { isEnabled, credentialId, setEnabled } = useBiometricStore();
   const { theme, setTheme } = useThemeStore();
+  const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
   const [, navigate] = useLocation();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [bioLoading, setBioLoading] = useState(false);
   const [bioToast, setBioToast] = useState<BiometricToastState>({ show: false });
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [currencySearch, setCurrencySearch] = useState("");
 
   const supported = isBiometricSupported();
 
@@ -176,7 +180,12 @@ export function MobileSettings() {
       <Section title="Trading">
         <Row icon={Percent} label="Default Slippage" value="0.5%" />
         <Row icon={Zap} label="Default Leverage" value="10x" />
-        <Row icon={DollarSign} label="Quote Currency" value="USDT" />
+        <Row
+          icon={DollarSign}
+          label="Quote Currency"
+          value={quoteCurrency}
+          onClick={() => { setShowCurrencyPicker(true); setCurrencySearch(""); }}
+        />
       </Section>
 
       <Section title="Preferences">
@@ -312,6 +321,119 @@ export function MobileSettings() {
           <p className="text-sm leading-snug">{bioToast.message}</p>
         </div>
       )}
+
+      {/* ── Quote Currency Picker Overlay ── */}
+      {showCurrencyPicker && (() => {
+        const q = currencySearch.toLowerCase();
+        const filteredCrypto = CRYPTO_QUOTE_CURRENCIES.filter(c =>
+          c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+        );
+        const filteredFiat = FIAT_CURRENCIES.filter(c =>
+          c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+        );
+        return (
+          <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-4 py-4 border-b border-border shrink-0">
+              <button
+                onClick={() => setShowCurrencyPicker(false)}
+                className="w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center shrink-0"
+              >
+                <X size={16} className="text-foreground" />
+              </button>
+              <div className="flex-1">
+                <h2 className="text-base font-bold text-foreground">Quote Currency</h2>
+                <p className="text-[11px] text-muted-foreground">Prices displayed in selected currency</p>
+              </div>
+            </div>
+
+            {/* Search */}
+            <div className="px-4 py-3 shrink-0">
+              <div className="flex items-center gap-2 bg-secondary/40 border border-border rounded-xl px-3 py-2.5">
+                <Search size={14} className="text-muted-foreground shrink-0" />
+                <input
+                  type="text"
+                  placeholder="Search currency..."
+                  value={currencySearch}
+                  onChange={e => setCurrencySearch(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                  autoFocus
+                />
+                {currencySearch && (
+                  <button onClick={() => setCurrencySearch("")}>
+                    <X size={13} className="text-muted-foreground" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Scrollable list */}
+            <div className="flex-1 overflow-y-auto px-4 pb-8">
+              {/* Crypto */}
+              {filteredCrypto.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2 mt-1">Crypto</p>
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border mb-4">
+                    {filteredCrypto.map(c => (
+                      <button
+                        key={c.code}
+                        onClick={() => { setQuoteCurrency(c.code); setShowCurrencyPicker(false); }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-secondary/40",
+                          quoteCurrency === c.code ? "bg-primary/10" : ""
+                        )}
+                      >
+                        <span className="text-lg w-7 text-center">{c.flag}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{c.code}</p>
+                          <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                        </div>
+                        <span className="text-sm font-mono text-muted-foreground shrink-0">{c.symbol}</span>
+                        {quoteCurrency === c.code && (
+                          <CheckCircle2 size={15} className="text-primary shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Fiat */}
+              {filteredFiat.length > 0 && (
+                <>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">World Currencies</p>
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+                    {filteredFiat.map(c => (
+                      <button
+                        key={c.code}
+                        onClick={() => { setQuoteCurrency(c.code); setShowCurrencyPicker(false); }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-secondary/40",
+                          quoteCurrency === c.code ? "bg-primary/10" : ""
+                        )}
+                      >
+                        <span className="text-lg w-7 text-center">{c.flag}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{c.code}</p>
+                          <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                        </div>
+                        <span className="text-sm font-mono text-muted-foreground shrink-0">{c.symbol}</span>
+                        {quoteCurrency === c.code && (
+                          <CheckCircle2 size={15} className="text-primary shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {filteredCrypto.length === 0 && filteredFiat.length === 0 && (
+                <div className="text-center py-10 text-muted-foreground text-sm">No currencies found</div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

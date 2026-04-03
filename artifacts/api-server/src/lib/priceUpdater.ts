@@ -489,7 +489,10 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     logger.warn({ err }, "WhatsOnChain BSV rate fetch failed");
   }
 
-  // ── 3. Own last-trade prices (sovereign, overrides ref feeds) ─────────────
+  // ── 3. Own last-trade volume overlay (DO NOT override prices from Binance) ──
+  // VAMM-generated trades have simulated prices that diverge from market rates.
+  // Only use own-trade data to augment trading volume, never to replace the
+  // Binance reference price for coins that Binance already covers.
   try {
     const since = new Date(Date.now() - 60 * 60 * 1000); // last 1 hour
     const recentTrades = await db
@@ -498,7 +501,6 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
       .where(gte(tradesTable.timestamp, since))
       .orderBy(desc(tradesTable.timestamp));
 
-    // For each USDT pair, the trade price IS the USD price
     for (const trade of recentTrades) {
       const parts = trade.symbol.split("/");
       const base  = parts[0];
@@ -506,16 +508,23 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
       if (!base || quote !== "USDT") continue;
       const tradePrice = parseFloat(trade.price);
       if (!tradePrice || tradePrice <= 0) continue;
-      // Own trade price is our most authoritative source
-      out[base] = {
-        usd:            tradePrice,
-        usd_24h_change: out[base]?.usd_24h_change ?? 0,
-        usd_24h_vol:    (out[base]?.usd_24h_vol ?? 0) + parseFloat(trade.total),
-        usd_market_cap: out[base]?.usd_market_cap ?? 0,
-      };
+      if (out[base]) {
+        // Binance already has a price — only add to volume, never overwrite price
+        out[base].usd_24h_vol = (out[base].usd_24h_vol ?? 0) + parseFloat(trade.total);
+      } else if (!FALLBACK_PRICES[base]) {
+        // Coin not on Binance AND not in our fallback table — own trade is only reference
+        out[base] = {
+          usd:            tradePrice,
+          usd_24h_change: 0,
+          usd_24h_vol:    parseFloat(trade.total),
+          usd_market_cap: 0,
+        };
+      }
+      // If coin has FALLBACK_PRICES but Binance is down, skip VAMM price —
+      // FALLBACK_PRICES will be used in step 4 below (never let VAMM override known reference prices)
     }
   } catch (err) {
-    logger.warn({ err }, "Own-trades price overlay failed");
+    logger.warn({ err }, "Own-trades volume overlay failed");
   }
 
   // ── POL → MATIC alias (Binance renamed MATIC to POL in late 2024) ──────────
@@ -593,14 +602,14 @@ function simulateDailyChange(symbol: string): number {
   return Math.max(-vol, Math.min(vol, parseFloat(raw.toFixed(2))));
 }
 
-// Default fallback prices (approximate) when CoinGecko is down — updated Mar 2026
+// Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:14.35,BTC:70725,ETH:2152,SOL:91.44,XRP:1.43,BNB:638,ADA:0.75,
-  DOGE:0.094,DOT:1.41,AVAX:9.55,MATIC:0.40,LINK:13.0,UNI:6.5,ATOM:4.5,
-  LTC:85,BCH:477,TRX:0.23,ETC:20,NEAR:2.5,ICP:8.0,VET:0.025,FIL:4.0,
-  SAND:0.30,MANA:0.30,APT:5.5,ARB:0.46,OP:0.75,SUI:2.5,INJ:18,
-  PEPE:0.0000090,SHIB:0.0000120,
+  BSV:55,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
+  LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
+  SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
+  PEPE:0.0000085,SHIB:0.0000110,
   // ── DeFi ─────────────────────────────────────────────────────────────────────
   MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
   GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,

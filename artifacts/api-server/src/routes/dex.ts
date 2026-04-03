@@ -199,16 +199,45 @@ router.get("/coins/markets", async (req, res) => {
       .from(marketsTable)
       .orderBy(desc(marketsTable.volume24h));
 
-    const seen = new Set<string>();
+    const spotMarkets = markets.filter(m => m.type === "spot");
+
+    // ── Step 1: Build a USD-price map preferring USDT/USDC-quoted markets ──────
+    // This ensures that e.g. BTC shows ~$83k, not the BTC/CRO cross-rate in CRO.
+    const STABLE_QUOTES = new Set(["USDT", "USDC", "TUSD", "BUSD", "USDD", "USD"]);
+    const usdPriceMap = new Map<string, { market: typeof spotMarkets[0]; usdPrice: number }>();
+
+    // Pass 1: stable-quoted markets are canonical USD prices
+    for (const m of spotMarkets) {
+      if (!STABLE_QUOTES.has(m.quoteAsset)) continue;
+      const p = parseFloat(m.lastPrice ?? "0");
+      if (!p || !Number.isFinite(p)) continue;
+      const existing = usdPriceMap.get(m.baseAsset);
+      const vol = parseFloat(m.volume24h ?? "0");
+      if (!existing || vol > parseFloat(existing.market.volume24h ?? "0")) {
+        usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
+      }
+    }
+
+    // Pass 2: for coins with no stable quote, fall back to highest-volume market
+    for (const m of spotMarkets) {
+      if (usdPriceMap.has(m.baseAsset)) continue;
+      const p = parseFloat(m.lastPrice ?? "0");
+      if (!p || !Number.isFinite(p)) continue;
+      const existing = usdPriceMap.get(m.baseAsset);
+      const vol = parseFloat(m.volume24h ?? "0");
+      if (!existing || vol > parseFloat(existing.market.volume24h ?? "0")) {
+        usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
+      }
+    }
+
+    // ── Step 2: Build coin list sorted by volume of the representative market ──
+    const sorted = [...usdPriceMap.values()].sort(
+      (a, b) => parseFloat(b.market.volume24h ?? "0") - parseFloat(a.market.volume24h ?? "0")
+    );
+
     const coins: any[] = [];
     let rank = 1;
-
-    for (const m of markets) {
-      if (m.type !== "spot") continue;
-      if (seen.has(m.baseAsset)) continue;
-      seen.add(m.baseAsset);
-
-      const price     = parseFloat(m.lastPrice ?? "0");
+    for (const { market: m, usdPrice } of sorted) {
       const change24h = parseFloat(m.priceChangePercent24h ?? "0");
       const vol24h    = parseFloat(m.volume24h ?? "0");
       const high24h   = parseFloat(m.high24h ?? "0");
@@ -220,12 +249,12 @@ router.get("/coins/markets", async (req, res) => {
         name:          m.baseAsset,
         symbol:        m.baseAsset,
         image:         null,
-        price,
-        marketCap:     parseFloat(m.marketCap ?? "0") || price * 10_000_000,
+        price:         usdPrice,
+        marketCap:     parseFloat(m.marketCap ?? "0") || usdPrice * 10_000_000,
         volume24h:     vol24h,
         change24h,
-        high24h:       high24h || price * 1.02,
-        low24h:        low24h  || price * 0.98,
+        high24h:       high24h || usdPrice * 1.02,
+        low24h:        low24h  || usdPrice * 0.98,
         circulatingSupply: 0,
         source:        "orahdex",
       });
