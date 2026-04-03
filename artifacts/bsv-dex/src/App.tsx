@@ -43,6 +43,7 @@ const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m =
 const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then(m => ({ default: m.MobileLiquidity })));
 const GenesisLiquidity = lazy(() => import("@/pages/GenesisLiquidity"));
 const MobileGenesis    = lazy(() => import("@/pages/mobile/MobileGenesis"));
+const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
 
 /* Admin — single chunk group for the whole admin section */
 const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
@@ -356,6 +357,7 @@ function Router() {
                 <Route path="/p2p"        component={P2P} />
                 <Route path="/bridge"     component={BridgePage} />
                 <Route path="/copy"       component={CopyTrading} />
+                <Route path="/keeper"     component={KeeperProfile} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
                 <Route path="/settings"   component={MobileSettings} />
                 <Route component={MobileMarkets} />
@@ -381,6 +383,7 @@ function Router() {
                 <Route path="/p2p"            component={P2P} />
                 <Route path="/bridge"         component={BridgePage} />
                 <Route path="/copy"           component={CopyTrading} />
+                <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
                 <Route component={NotFound} />
               </Switch>

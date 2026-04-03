@@ -11,7 +11,7 @@
 
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { marketsTable, htlcLocksTable, ordersTable } from "@workspace/db/schema";
+import { marketsTable, htlcLocksTable, ordersTable, keepersTable } from "@workspace/db/schema";
 import { eq, ilike, and, sum, sql as drizzleSql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logger } from "../lib/logger.js";
@@ -107,19 +107,34 @@ async function resolveKeeperTier(address: string | undefined): Promise<KeeperInf
 
     const volumeBsv = parseFloat(result[0]?.totalVolume ?? "0");
 
+    let tier = 0 as 0 | 1 | 2 | 3;
     for (const cfg of TIER_CONFIG) {
-      if (volumeBsv >= cfg.threshold) {
-        return {
-          address: addr,
-          tier: cfg.tier,
-          tierName: cfg.name,
-          feeMultiplier: cfg.feeBps / 30,
-          feeBps: cfg.feeBps,
-          discountPct: cfg.discountPct,
-          pools: cfg.tier >= 2 ? ["keeper-exclusive", "deep-liquidity"] : cfg.tier === 1 ? ["guardian-pool"] : [],
-        };
-      }
+      if (volumeBsv >= cfg.threshold) { tier = cfg.tier; break; }
     }
+
+    // Role bonus from Keeper Registry: LiquidityKeeper or OracleKeeper → +1 tier (capped at 3)
+    try {
+      const [keeper] = await db.select({ roles: keepersTable.roles, active: keepersTable.active })
+        .from(keepersTable)
+        .where(eq(keepersTable.walletAddress, addr));
+      if (keeper?.active) {
+        const roles = keeper.roles as string[];
+        if ((roles.includes("LiquidityKeeper") || roles.includes("OracleKeeper")) && tier < 3) {
+          tier = (tier + 1) as 0 | 1 | 2 | 3;
+        }
+      }
+    } catch { /* ignore registry lookup failures */ }
+
+    const cfg = TIER_CONFIG.find(c => c.tier === tier) ?? TIER_CONFIG[3];
+    return {
+      address: addr,
+      tier: cfg.tier,
+      tierName: cfg.name,
+      feeMultiplier: cfg.feeBps / 30,
+      feeBps: cfg.feeBps,
+      discountPct: cfg.discountPct,
+      pools: cfg.tier >= 2 ? ["keeper-exclusive", "deep-liquidity"] : cfg.tier === 1 ? ["guardian-pool"] : [],
+    };
   } catch {
     // fall through to standard
   }
