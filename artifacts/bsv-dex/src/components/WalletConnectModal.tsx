@@ -1995,8 +1995,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         )}
                         {passkeyStep === "error" && (
                           <>
-                            <h3 className="text-lg font-bold text-red-400 mb-1">Something went wrong</h3>
-                            <p className="text-sm text-red-400/80 max-w-xs">{passkeyError}</p>
+                            <h3 className="text-lg font-bold text-red-400 mb-1">
+                              {passkeyError?.includes("Wallet data not found") ? "Wallet Not on This Device" : "Something went wrong"}
+                            </h3>
+                            <p className="text-sm text-red-400/80 max-w-xs">
+                              {passkeyError?.includes("Wallet data not found")
+                                ? "Your passkey verified successfully, but the wallet data isn't in this browser. This happens when you switch browsers, clear storage, or use a new device."
+                                : passkeyError}
+                            </p>
                           </>
                         )}
                       </div>
@@ -2052,12 +2058,69 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       )}
 
                       {passkeyStep === "error" && (
-                        <button
-                          onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); }}
-                          className="w-full py-3 rounded-xl bg-secondary text-foreground font-semibold hover:bg-secondary/80 transition-colors"
-                        >
-                          Try Again
-                        </button>
+                        <div className="space-y-2 w-full">
+                          {passkeyError?.includes("Wallet data not found") ? (
+                            <>
+                              {/* Recovery option 1: create a fresh passkey wallet */}
+                              <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+                                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                  <PlusCircle className="w-3.5 h-3.5 text-primary" />
+                                  Create a new passkey wallet
+                                </p>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  Generates a brand-new EVM wallet, secured by your biometrics on this device. Your old wallet address will change.
+                                </p>
+                                <input
+                                  type="text"
+                                  value={passkeyLabel}
+                                  onChange={e => setPasskeyLabel(e.target.value)}
+                                  placeholder="Wallet name (optional)"
+                                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary/50"
+                                />
+                                <button
+                                  onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); handlePasskeyRegister(); }}
+                                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:opacity-90 transition-all"
+                                >
+                                  <Fingerprint className="w-4 h-4" />
+                                  Create New Passkey Wallet
+                                </button>
+                              </div>
+
+                              {/* Recovery option 2: import private key */}
+                              <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
+                                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                                  <Key className="w-3.5 h-3.5 text-muted-foreground" />
+                                  Restore your old wallet with a private key
+                                </p>
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                  If you saved your private key or seed phrase before, paste it here to recover your original address.
+                                </p>
+                                <button
+                                  onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); setImportNetwork("evm"); setImportMode("privatekey"); setImportError(null); setView("import"); }}
+                                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+                                >
+                                  Import Private Key / Seed Phrase
+                                </button>
+                              </div>
+
+                              {/* Try again */}
+                              <button
+                                onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); }}
+                                className="w-full py-2 rounded-xl text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              >
+                                ← Back
+                              </button>
+                            </>
+                          ) : (
+                            /* Generic error — just try again */
+                            <button
+                              onClick={() => { setPasskeyStep("idle"); setPasskeyError(null); }}
+                              className="w-full py-3 rounded-xl bg-secondary text-foreground font-semibold hover:bg-secondary/80 transition-colors"
+                            >
+                              Try Again
+                            </button>
+                          )}
+                        </div>
                       )}
 
                       {/* Security note */}
