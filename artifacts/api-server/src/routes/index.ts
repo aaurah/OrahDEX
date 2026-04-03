@@ -20,6 +20,8 @@ import supportRouter from "./support.js";
 import virtualAmmRouter from "./virtualAmm.js";
 import liquidityRouter from "./liquidity.js";
 import swapRouter from "./swap.js";
+import keeperRouter from "./keeper.js";
+import p2pIntentsRouter from "./p2pIntents.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
@@ -66,6 +68,8 @@ router.use(coinVotesRouter);
 router.use(copyTradingRouter);
 router.use(supportRouter);
 router.use(virtualAmmRouter);
+router.use(keeperRouter);
+router.use(p2pIntentsRouter);
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {

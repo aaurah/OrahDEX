@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useSEO } from "@/hooks/useSEO";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useWalletStore } from "@/store/useWalletStore";
 import {
   Users2, Search, ChevronDown, Shield, Star, Clock, Plus, X, Check,
   ArrowUpDown, Filter, Globe, Zap, AlertCircle, MessageSquare, Lock,
@@ -7,6 +9,8 @@ import {
   ArrowLeftRight, Link2, Unlock, RefreshCw, AlertTriangle, Timer,
 } from "lucide-react";
 import { cn, formatPrice } from "@/lib/utils";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -378,6 +382,10 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
   const [selectedPayments, setSelectedPayments] = useState<string[]>(["Bank Transfer"]);
   const [terms, setTerms] = useState("");
   const [posted, setPosted] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [isPosting, setIsPosting] = useState(false);
+  const { address: walletAddress } = useWalletStore();
+  const qc = useQueryClient();
 
   const togglePayment = (m: string) =>
     setSelectedPayments(p => p.includes(m) ? p.filter(x => x !== m) : [...p, m]);
@@ -533,17 +541,65 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border flex gap-3 shrink-0">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
-            Cancel
-          </button>
-          <button
-            onClick={() => setPosted(true)}
-            disabled={!available || !minLimit || !maxLimit || selectedPayments.length === 0}
-            className="flex-2 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm disabled:opacity-40 hover:bg-primary/90 transition-colors"
-          >
-            Post Ad
-          </button>
+        <div className="px-6 py-4 border-t border-border flex flex-col gap-2 shrink-0">
+          {postError && (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {postError}
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                setPostError(null);
+                setIsPosting(true);
+                try {
+                  const coinPrice = COIN_PRICES[coin] ?? 1;
+                  const price = priceType === "market"
+                    ? coinPrice * (1 + parseFloat(pricePct || "0") / 100)
+                    : parseFloat(fixedPrice || String(coinPrice));
+                  const availAmt = parseFloat(available);
+                  const minAmtOut = adSide === "buy"
+                    ? (availAmt * 0.9)   // buyer intents: willing to give FIAT, get coin
+                    : (availAmt * 0.9);  // seller intents: willing to give coin
+
+                  const makerAddr = walletAddress ?? `anon-${Math.random().toString(36).slice(2,8)}`;
+                  const r = await fetch(`${BASE}/api/p2p/intents`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      makerAddress:  makerAddr,
+                      tokenIn:       adSide === "buy" ? fiat  : coin,
+                      tokenOut:      adSide === "buy" ? coin  : fiat,
+                      amountIn:      String(adSide === "buy" ? parseFloat(maxLimit || "1000") : availAmt),
+                      minAmountOut:  String(minAmtOut),
+                      price:         String(price),
+                      fiat,
+                      paymentMethods: selectedPayments.join(","),
+                      terms,
+                      expiresInMs: 24 * 60 * 60 * 1000,
+                    }),
+                  });
+                  if (!r.ok) {
+                    const e = await r.json();
+                    throw new Error(e.error ?? "Failed to post");
+                  }
+                  qc.invalidateQueries({ queryKey: ["p2p-intents"] });
+                  setPosted(true);
+                } catch (e: any) {
+                  setPostError(e?.message ?? "Failed to post ad");
+                } finally {
+                  setIsPosting(false);
+                }
+              }}
+              disabled={!available || !minLimit || !maxLimit || selectedPayments.length === 0 || isPosting}
+              className="flex-2 px-8 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm disabled:opacity-40 hover:bg-primary/90 transition-colors"
+            >
+              {isPosting ? "Posting…" : "Post Ad"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -603,15 +659,82 @@ export function P2P() {
     advance(2, 1200); advance(3, 2800); advance(4, 4200);
   };
 
+  // ── Live intents from real API ─────────────────────────────────────────────
+  const intentsQ = useQuery<{ intents: Array<{
+    intentId: string; makerAddress: string; tokenIn: string; tokenOut: string;
+    amountIn: string; minAmountOut: string; price: string; fiat: string;
+    paymentMethods: string; terms: string; status: string; createdAt: string;
+  }> }>({
+    queryKey: ["p2p-intents", side, coin, fiat],
+    queryFn: async () => {
+      const tokenIn  = side === "buy" ? fiat  : coin;
+      const tokenOut = side === "buy" ? coin  : fiat;
+      const r = await fetch(`${BASE}/api/p2p/intents?status=open&tokenIn=${tokenIn}&tokenOut=${tokenOut}&limit=20`);
+      if (!r.ok) return { intents: [] };
+      return r.json();
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  // Convert live intents to Offer-compatible objects for display
+  const liveOffers: (Offer & { isLive?: boolean })[] = useMemo(() => {
+    if (!intentsQ.data?.intents) return [];
+    const coinPrice = COIN_PRICES[coin] ?? 1;
+    return intentsQ.data.intents.map((intent, idx) => {
+      const price = parseFloat(intent.price ?? "0") || coinPrice;
+      const amtIn = parseFloat(intent.amountIn);
+      const available = side === "buy"
+        ? parseFloat(intent.minAmountOut)
+        : amtIn;
+      const shortAddr = intent.makerAddress.length > 10
+        ? `${intent.makerAddress.slice(0, 6)}…${intent.makerAddress.slice(-4)}`
+        : intent.makerAddress;
+      return {
+        id: intent.intentId,
+        side,
+        coin,
+        fiat,
+        price,
+        available,
+        minLimit: Math.max(10, Math.round(price * available * 0.02)),
+        maxLimit: Math.round(price * available * 0.9),
+        paymentMethods: intent.paymentMethods ? intent.paymentMethods.split(",").map(s => s.trim()).filter(Boolean) : ["Any"],
+        terms: intent.terms || "",
+        isLive: true,
+        trader: {
+          name: shortAddr,
+          trades: 0,
+          completion: 100,
+          rating: 5.0,
+          verified: false,
+          topTrader: false,
+          online: true,
+          responseTime: "< 10 min",
+          joinedYear: 2024,
+        },
+      } as Offer & { isLive?: boolean };
+    });
+  }, [intentsQ.data, side, coin, fiat]);
+
   const filtered = useMemo(() => {
-    let list = OFFERS.filter(o => o.side === side && o.coin === coin && o.fiat === fiat);
-    if (payFilter !== "All methods") list = list.filter(o => o.paymentMethods.includes(payFilter));
+    let mockList = OFFERS.filter(o => o.side === side && o.coin === coin && o.fiat === fiat);
+    if (payFilter !== "All methods") mockList = mockList.filter(o => o.paymentMethods.includes(payFilter));
     if (amountFilter) {
       const amt = parseFloat(amountFilter);
-      list = list.filter(o => !isNaN(amt) && amt >= o.minLimit && amt <= o.maxLimit);
+      mockList = mockList.filter(o => !isNaN(amt) && amt >= o.minLimit && amt <= o.maxLimit);
     }
-    return list.sort((a, b) => side === "buy" ? a.price - b.price : b.price - a.price);
-  }, [side, coin, fiat, payFilter, amountFilter]);
+    // Live intents go first, then mock offers
+    const combined: (Offer & { isLive?: boolean })[] = [
+      ...liveOffers,
+      ...mockList.map(o => ({ ...o, isLive: false as const })),
+    ];
+    return combined.sort((a, b) => {
+      if (a.isLive && !b.isLive) return -1;
+      if (!a.isLive && b.isLive) return 1;
+      return side === "buy" ? a.price - b.price : b.price - a.price;
+    });
+  }, [side, coin, fiat, payFilter, amountFilter, liveOffers]);
 
   // stats for hero
   const totalVolume24h = 48_900_000;
@@ -935,10 +1058,24 @@ export function P2P() {
         ) : (
           <div className="space-y-2">
             {filtered.map((offer, idx) => {
+              const offerWithLive = offer as Offer & { isLive?: boolean };
               const avatarIdx = AVATARS.indexOf(offer.trader.avatar ?? "") % AVATAR_COLORS.length;
               return (
                 <div key={offer.id}
-                  className="group bg-card hover:bg-card/80 border border-border hover:border-primary/30 rounded-2xl p-4 transition-all duration-150">
+                  className={cn(
+                    "group bg-card hover:bg-card/80 border rounded-2xl p-4 transition-all duration-150",
+                    offerWithLive.isLive
+                      ? "border-primary/40 hover:border-primary/60 bg-primary/5"
+                      : "border-border hover:border-primary/30",
+                  )}>
+                  {offerWithLive.isLive && (
+                    <div className="flex items-center gap-1 mb-2 -mt-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                        Live Intent
+                      </span>
+                    </div>
+                  )}
                   {/* Mobile layout */}
                   <div className="lg:hidden">
                     <div className="flex items-start justify-between gap-3 mb-3">
