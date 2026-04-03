@@ -502,7 +502,7 @@ export function AdminBotProfit() {
                 Once funded, every matched trade will automatically build a real BSV OP_RETURN transaction
                 signed by this wallet's private key and broadcast to the BSV mainnet via WhatsOnChain.
                 The txid will be verifiable at <span className="text-green-400">whatsonchain.com</span>.
-                Minimum recommended deposit: <span className="text-white/60">0.001 BSV</span> (~{(0.001 * 55).toFixed(3)} USD).
+                Minimum recommended deposit: <span className="text-white/60">0.001 BSV</span> (~{(0.001 * 14.35).toFixed(3)} USD).
               </div>
             )}
 

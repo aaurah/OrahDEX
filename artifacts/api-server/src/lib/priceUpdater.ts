@@ -605,7 +605,7 @@ function simulateDailyChange(symbol: string): number {
 // Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:55,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  BSV:14,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
   DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
   LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
   SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
@@ -952,7 +952,7 @@ export async function updateMarketPrices() {
 
       // BSV quote — compute cross rate
       if (market.quoteAsset === "BSV") {
-        quoteUSD  = getQuoteUSD("BSV", 55);
+        quoteUSD  = getQuoteUSD("BSV", 14);
         lastPrice = baseUSD / quoteUSD;
         vol       = vol / quoteUSD;
       }
