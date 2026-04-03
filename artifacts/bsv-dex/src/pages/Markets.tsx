@@ -20,6 +20,7 @@ import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { AiInsightsBar } from "@/components/AiInsightsBar";
+import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -333,8 +334,26 @@ export function Markets() {
   const toggleStar = (symbol: string) =>
     setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
 
+  const { quoteCurrency } = useSettingsStore();
+  const isFiatTarget = FIAT_CURRENCIES.some(c => c.code === quoteCurrency);
+  const isCryptoQuoteCurrency = ["BTC","ETH","BNB","SOL","BSV"].includes(quoteCurrency);
+  const qSym = getCurrencySymbol(quoteCurrency);
+
   const meta = TAB_META.find(t => t.id === tab)!;
   const isCrossQuote = ["bsv","btc","eth","bnb","matic","avax","arb","op","ftm","cro","bch"].includes(tab);
+  // Apply fiat/crypto conversion only for USD-quoted tabs (not cross-rate tabs)
+  const applyQConversion = !isCrossQuote && (isFiatTarget || isCryptoQuoteCurrency) && quoteCurrency !== "USDT" && quoteCurrency !== "USDC";
+
+  function qPrice(p: number): string {
+    if (!p) return "—";
+    if (!applyQConversion) return formatPrice(p);
+    const c = convertFromUsd(p, quoteCurrency);
+    if (c >= 10000) return c.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (c >= 1)     return c.toFixed(2);
+    if (c >= 0.01)  return c.toFixed(4);
+    if (c >= 0.0001) return c.toFixed(6);
+    return c.toFixed(8);
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -597,8 +616,9 @@ export function Markets() {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-sm font-semibold">
-                        {formatPrice(price)}
-                        {isCrossQuote && (
+                        {applyQConversion && <span className="text-muted-foreground/60 text-[10px] mr-0.5">{qSym}</span>}
+                        {qPrice(price)}
+                        {isCrossQuote && !applyQConversion && (
                           <span className="text-[10px] text-muted-foreground ml-1">{quote}</span>
                         )}
                       </td>
@@ -606,10 +626,10 @@ export function Markets() {
                         {isUp ? "+" : ""}{chg.toFixed(2)}%
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
-                        {formatPrice(parseFloat(m.high24h) || 0)}
+                        {qPrice(parseFloat(m.high24h) || 0)}
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
-                        {formatPrice(parseFloat(m.low24h) || 0)}
+                        {qPrice(parseFloat(m.low24h) || 0)}
                       </td>
                       <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
                         {formatVolume(parseFloat(m.volume24h) || 0)}
