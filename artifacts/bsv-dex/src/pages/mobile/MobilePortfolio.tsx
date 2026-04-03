@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn, getProviderLabel } from "@/lib/utils";
+import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
@@ -80,6 +81,7 @@ type Tab = "assets" | "defi" | "orders";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
+  const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const { getBalances: getExchangeBalances } = useExchangeBalanceStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
@@ -384,7 +386,7 @@ export function MobilePortfolio() {
               <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
             ) : (
               <p className="text-3xl font-bold text-foreground tracking-tight">
-                ${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {formatQuoteAmount(total, quoteCurrency)}
               </p>
             )}
 
@@ -559,7 +561,7 @@ export function MobilePortfolio() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-foreground">
-                        ${r.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatQuoteAmount(r.value, quoteCurrency)}
                       </p>
                       {r.change !== 0 && (
                         <p className={`text-xs font-medium mt-0.5 ${r.change >= 0 ? "text-green-500" : "text-red-500"}`}>
