@@ -7,7 +7,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
-import { cn } from "@/lib/utils";
+import { cn, getProviderLabel } from "@/lib/utils";
 
 // BSV mock holdings (used when connected via BSV wallet)
 const BSV_HOLDINGS = [
@@ -132,7 +132,7 @@ export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <p className="text-sm font-bold text-foreground">My Wallet</p>
-              <p className="text-[10px] text-muted-foreground">{provider}</p>
+              <p className="text-[10px] text-muted-foreground">{getProviderLabel(provider)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

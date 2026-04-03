@@ -38,3 +38,25 @@ export function shortenAddress(address: string): string {
   if (!address || address.length < 10) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
+
+const PROVIDER_LABELS: Record<string, string> = {
+  "aura-wallet":   "OrahDEX Wallet",
+  "passkey":       "Passkey Wallet",
+  "handcash":      "HandCash",
+  "relayx":        "RelayX",
+  "panda":         "Panda Wallet",
+  "sensilet":      "Sensilet",
+  "twetch":        "Twetch",
+  "yours":         "Yours Wallet",
+  "metamask":      "MetaMask",
+  "coinbase":      "Coinbase Wallet",
+  "walletconnect": "WalletConnect",
+  "tronlink":      "TronLink",
+  "phantom":       "Phantom",
+  "reown":         "WalletConnect",
+};
+
+export function getProviderLabel(provider: string | null | undefined): string {
+  if (!provider) return "";
+  return PROVIDER_LABELS[provider.toLowerCase()] ?? provider;
+}

@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
-import { cn } from "@/lib/utils";
+import { cn, getProviderLabel } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
@@ -321,8 +321,8 @@ export function MobilePortfolio() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
             {network && (
-              <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">
-                {provider ?? network} · {network.toUpperCase()}
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
               </p>
             )}
           </div>
@@ -377,7 +377,7 @@ export function MobilePortfolio() {
                   : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
                   : "bg-secondary text-muted-foreground border-border"
               )}>
-                {(provider ?? network ?? "").toUpperCase()}
+                {provider ? getProviderLabel(provider) : (network ?? "").toUpperCase()}
               </span>
             </div>
             {pricesLoading && total === 0 ? (
