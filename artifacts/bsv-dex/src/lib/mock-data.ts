@@ -957,7 +957,7 @@ export const BRC20_MARKETS: any[] = [
   spot("TBTC",  "USDT", 70215,  -1.92,   8_000_000),  // tBTC — decentralized bridge
   /* ── Bitcoin Cash ecosystem ── */
   spot("BCH",   "USDT", 477,     1.10,  28_000_000),
-  spot("BSV",   "USDT", 14.35,   4.41,  18_500_000),
+  spot("BSV",   "USDT", 55.42,   4.41,  18_500_000),
 ];
 
 export const NEW_MARKETS: any[] = [

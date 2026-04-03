@@ -7,6 +7,7 @@ import {
   ArrowDown, ArrowUp, Coins, Flame, Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { cn } from "@/lib/utils";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -892,9 +893,10 @@ const QUICK_COINS: QuickCoin[] = [
   { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.038,  minBsv:20,    maxBsv:50000 },
 ];
 
-const BSV_USD_PRICE = 14.59;
-
 function BsvQuickSwap() {
+  const { prices: livePrices } = useWalletPrices();
+  const BSV_USD_PRICE = livePrices?.BSV?.usd ?? 55;
+
   const [sendAmount, setSendAmount]   = useState("");
   const [search, setSearch]           = useState("");
   const [selectedCoin, setSelectedCoin] = useState<QuickCoin | null>(null);

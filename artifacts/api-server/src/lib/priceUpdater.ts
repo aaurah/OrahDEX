@@ -952,7 +952,7 @@ export async function updateMarketPrices() {
 
       // BSV quote — compute cross rate
       if (market.quoteAsset === "BSV") {
-        quoteUSD  = getQuoteUSD("BSV", 14);
+        quoteUSD  = getQuoteUSD("BSV", 55);
         lastPrice = baseUSD / quoteUSD;
         vol       = vol / quoteUSD;
       }
