@@ -4,7 +4,7 @@ import {
   Eye, EyeOff, Check, Save, RefreshCw,
   AlertTriangle, CheckCircle2, Cpu, Globe, Zap,
   Wallet, Bell, Shield, Mail, BarChart3, MessageSquare,
-  ChevronDown, ChevronUp, Wifi, WifiOff, Loader2,
+  ChevronDown, ChevronUp, Wifi, WifiOff, Loader2, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -218,7 +218,6 @@ export function AdminIntegrations() {
 
   const testSmtpMutation = useMutation({
     mutationFn: async () => {
-      // Save first so the API reads the latest values from DB
       await saveIntegrations(form);
       return fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
     },
@@ -231,6 +230,32 @@ export function AdminIntegrations() {
         toast({ title: "SMTP test failed", description: data.error ?? "Connection failed", variant: "destructive" });
       }
     },
+  });
+
+  const autoEmailMutation = useMutation({
+    mutationFn: () =>
+      fetch(`${BASE}/api/admin/auto-setup-email`, { method: "POST" }).then(r => r.json()),
+    onSuccess: (data: { success: boolean; user?: string; pass?: string; host?: string; port?: number; from?: string; error?: string }) => {
+      if (!data.success) {
+        toast({ title: "Failed", description: data.error ?? "Could not create test account", variant: "destructive" });
+        return;
+      }
+      qc.invalidateQueries({ queryKey: ["admin-integrations"] });
+      setForm(f => ({
+        ...f,
+        smtp_host: data.host ?? "smtp.ethereal.email",
+        smtp_port: String(data.port ?? 587),
+        smtp_user: data.user ?? "",
+        smtp_pass: data.pass ?? "",
+        smtp_from: data.from ?? data.user ?? "",
+      }));
+      setSmtpTestResult(null);
+      toast({
+        title: "Free test email account created!",
+        description: `Credentials filled in. Click Save All, then Test Connection. View sent emails at ethereal.email/messages using these credentials.`,
+      });
+    },
+    onError: () => toast({ title: "Failed to create test account", variant: "destructive" }),
   });
 
   const countSet = (...keys: (keyof IntegrationSettings)[]) =>
@@ -440,22 +465,42 @@ export function AdminIntegrations() {
         </div>
       </Section>
 
-      {/* SMTP section removed — email accounts managed via Thunderbird autoconfig */}
-      {false && <Section
+      {/* ── Email / SMTP ── */}
+      <Section
         icon={<Mail className="w-4 h-4" />}
-        title="Email / SMTP (disabled)"
-        description=""
-        badge=""
-        badgeColor=""
-        defaultOpen={false}
-        configuredCount={0}
-        totalCount={0}
+        title="Email / SMTP"
+        description="Send transactional emails from OrahDEX (password resets, trade confirmations, notifications)."
+        badge={form.smtp_host ? "Configured" : "Not set"}
+        badgeColor={form.smtp_host ? "bg-green-400/10 text-green-400 border-green-400/20" : "bg-amber-400/10 text-amber-400 border-amber-400/20"}
+        defaultOpen={!form.smtp_host}
+        configuredCount={countSet("smtp_host", "smtp_user", "smtp_pass")}
+        totalCount={3}
       >
+        {/* Instant free test account */}
+        <div className="flex items-start gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl mb-4">
+          <Zap className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-foreground">No email provider? Generate a free test account instantly</p>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              Creates a free Ethereal test inbox — no signup needed. Emails won't reach real inboxes but you can view them
+              at <a href="https://ethereal.email/messages" target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">ethereal.email/messages</a> using the generated credentials. Perfect for testing.
+            </p>
+          </div>
+          <button
+            onClick={() => autoEmailMutation.mutate()}
+            disabled={autoEmailMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-xs hover:opacity-90 transition-all disabled:opacity-60 shrink-0"
+          >
+            {autoEmailMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+            {autoEmailMutation.isPending ? "Generating…" : "Generate Free Test Account"}
+          </button>
+        </div>
+
         {/* One-click provider presets */}
         <div className="space-y-3 mb-4">
           <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5 text-primary" />
-            Quick Fill — click a provider to auto-fill all SMTP fields:
+            Or quick-fill with a real provider:
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {([
@@ -475,13 +520,13 @@ export function AdminIntegrations() {
                 label: "Gmail",
                 color: "text-yellow-400 border-yellow-500/30 bg-yellow-500/8 hover:bg-yellow-500/15",
                 fill: { smtp_host: "smtp.gmail.com", smtp_port: "587", smtp_user: "", smtp_from: "" },
-                note: "Username = your Gmail address\nPassword = App Password (not your login password)\nEnable 2FA then create App Password at myaccount.google.com/apppasswords",
+                note: "Username = your Gmail address\nPassword = App Password (not login password)\nEnable 2FA → myaccount.google.com/apppasswords",
               },
               {
-                label: "Zoho Mail",
-                color: "text-orange-400 border-orange-500/30 bg-orange-500/8 hover:bg-orange-500/15",
-                fill: { smtp_host: "smtp.zoho.com", smtp_port: "587", smtp_user: "", smtp_from: "" },
-                note: "Username = your Zoho email\nPassword = your Zoho password\nFree plan: 5 users, 5GB each",
+                label: "Brevo",
+                color: "text-emerald-400 border-emerald-500/30 bg-emerald-500/8 hover:bg-emerald-500/15",
+                fill: { smtp_host: "smtp-relay.brevo.com", smtp_port: "587", smtp_user: "", smtp_from: "" },
+                note: "Username = your Brevo login email\nPassword = Brevo SMTP key (not login password)\nFree: 300 emails/day",
               },
             ] as const).map(({ label, color, fill, note }) => (
               <button
@@ -491,7 +536,7 @@ export function AdminIntegrations() {
                 onClick={() => {
                   setForm(f => ({ ...f, ...fill }));
                   setSmtpTestResult(null);
-                  toast({ title: `${label} preset loaded`, description: "Fields pre-filled — add your password and click Save All." });
+                  toast({ title: `${label} preset loaded`, description: "Fill in your password/API key then click Save All." });
                 }}
                 className={cn(
                   "flex flex-col items-start gap-1 px-3 py-2.5 rounded-xl border text-xs font-bold transition-all",
@@ -499,13 +544,14 @@ export function AdminIntegrations() {
                 )}
               >
                 <span className="text-sm">{label}</span>
-                <span className="text-[10px] font-normal opacity-70 text-left leading-tight whitespace-pre-line">{note.split("\n")[2]}</span>
+                <span className="text-[10px] font-normal opacity-70 text-left leading-tight">{note.split("\n")[2]}</span>
               </button>
             ))}
           </div>
-          <p className="text-[10px] text-muted-foreground/60 italic">Hover a provider card to see full setup notes. After selecting, add your password and click Save All.</p>
+          <p className="text-[10px] text-muted-foreground/60 italic">Hover a card to see full instructions. Add your password and click Save All.</p>
         </div>
 
+        {/* SMTP fields */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <MaskedField
             label="SMTP Host"
@@ -513,7 +559,7 @@ export function AdminIntegrations() {
             onChange={set("smtp_host")}
             placeholder="smtp.sendgrid.net"
             type="text"
-            hint="SMTP server hostname. Works with SendGrid, Mailgun, AWS SES, Gmail, etc."
+            hint="SMTP server hostname."
           />
           <MaskedField
             label="SMTP Port"
@@ -521,7 +567,7 @@ export function AdminIntegrations() {
             onChange={set("smtp_port")}
             placeholder="587"
             type="number"
-            hint="Common ports: 587 (STARTTLS), 465 (SSL). Use 587 for most providers."
+            hint="587 (STARTTLS) or 465 (SSL)."
           />
           <MaskedField
             label="SMTP Username"
@@ -529,14 +575,14 @@ export function AdminIntegrations() {
             onChange={set("smtp_user")}
             placeholder="apikey or your@email.com"
             type="text"
-            hint="Your SMTP login. For SendGrid use 'apikey' as the username."
+            hint="For SendGrid use 'apikey' as username."
           />
           <MaskedField
             label="SMTP Password / API Key"
             value={form.smtp_pass}
             onChange={set("smtp_pass")}
-            placeholder="SG.xxxxxxxxxxxxxxxxxxxx"
-            hint="SMTP password or API key. For SendGrid this is your SG API key."
+            placeholder="password or API key"
+            hint="SMTP password or API key from your provider."
           />
           <MaskedField
             label="From Email Address"
@@ -544,7 +590,7 @@ export function AdminIntegrations() {
             onChange={set("smtp_from")}
             placeholder="noreply@orahdex.org"
             type="email"
-            hint="Sender address shown in all outgoing emails. Must match a verified sender in your provider."
+            hint="Sender address shown on all outgoing emails."
           />
         </div>
 
@@ -563,7 +609,7 @@ export function AdminIntegrations() {
             {testSmtpMutation.isPending
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
               : <Wifi className="w-3.5 h-3.5" />}
-            {testSmtpMutation.isPending ? "Testing connection…" : "Test Connection"}
+            {testSmtpMutation.isPending ? "Testing…" : "Test Connection"}
           </button>
 
           {smtpTestResult && (
@@ -579,11 +625,28 @@ export function AdminIntegrations() {
             </div>
           )}
 
-          {!form.smtp_host && (
-            <p className="text-[10px] text-muted-foreground/60">Fill in Host, Username and Password to test</p>
+          {form.smtp_host === "smtp.ethereal.email" && (
+            <a
+              href="https://ethereal.email/messages"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-500/30 bg-violet-500/8 text-violet-400 text-xs font-semibold hover:bg-violet-500/15 transition-all"
+            >
+              <ExternalLink className="w-3 h-3" />
+              View sent emails at ethereal.email
+            </a>
           )}
         </div>
-      </Section>}
+
+        {form.smtp_host === "smtp.ethereal.email" && (
+          <div className="mt-3 p-3 bg-violet-500/5 border border-violet-500/20 rounded-xl text-xs text-muted-foreground leading-relaxed">
+            <span className="font-bold text-violet-400">Test mode active.</span> Emails are captured at Ethereal (not delivered to real inboxes).
+            Log in to <a href="https://ethereal.email/messages" target="_blank" rel="noreferrer" className="text-violet-400 underline">ethereal.email/messages</a> with
+            your SMTP Username and Password above to view sent messages.
+            To switch to real delivery, paste your SendGrid/Mailgun/Gmail credentials above and click Save All.
+          </div>
+        )}
+      </Section>
 
       {/* ── 5. Security & Anti-Spam ── */}
       <Section

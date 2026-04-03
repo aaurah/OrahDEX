@@ -14,6 +14,7 @@ export interface SmtpConfig {
 export interface MailResult {
   success: boolean;
   messageId?: string;
+  previewUrl?: string;
   error?: string;
 }
 
@@ -62,7 +63,7 @@ export async function sendMail(opts: {
   try {
     const cfg = await getSmtpConfig();
     if (!cfg) {
-      return { success: false, error: "SMTP not configured. Go to Admin → Setup → Step D to add your mail server settings." };
+      return { success: false, error: "Email not configured. Go to Admin → Integrations → Email and click 'Generate Free Test Account' or enter your SMTP details." };
     }
 
     const transporter = createTransporter(cfg);
@@ -76,7 +77,8 @@ export async function sendMail(opts: {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    return { success: true, messageId: info.messageId };
+    const previewUrl = nodemailer.getTestMessageUrl(info) || undefined;
+    return { success: true, messageId: info.messageId, previewUrl: previewUrl as string | undefined };
   } catch (err: any) {
     return { success: false, error: err?.message ?? "SMTP send failed" };
   }
@@ -86,7 +88,7 @@ export async function testSmtpConnection(): Promise<MailResult> {
   try {
     const cfg = await getSmtpConfig();
     if (!cfg) {
-      return { success: false, error: "SMTP not configured. Add smtp_host, smtp_user, smtp_pass in Integrations." };
+      return { success: false, error: "Email not configured. Click 'Generate Free Test Account' in Admin → Integrations → Email to set up instantly." };
     }
     const transporter = createTransporter(cfg);
     await transporter.verify();
@@ -103,6 +105,7 @@ export async function getSmtpStatus(): Promise<{
   user?: string;
   from?: string;
   secure?: boolean;
+  isTestAccount?: boolean;
 }> {
   const cfg = await getSmtpConfig();
   if (!cfg) return { configured: false };
@@ -113,5 +116,32 @@ export async function getSmtpStatus(): Promise<{
     user: cfg.user,
     from: cfg.from,
     secure: cfg.secure,
+    isTestAccount: cfg.host === "smtp.ethereal.email",
+  };
+}
+
+export async function autoSetupTestEmail(): Promise<{ user: string; pass: string; host: string; port: number; from: string }> {
+  const testAccount = await nodemailer.createTestAccount();
+
+  const settings = [
+    { key: "smtp_host", value: "smtp.ethereal.email" },
+    { key: "smtp_port", value: "587" },
+    { key: "smtp_user", value: testAccount.user },
+    { key: "smtp_pass", value: testAccount.pass },
+    { key: "smtp_from", value: testAccount.user },
+  ];
+
+  for (const { key, value } of settings) {
+    await db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  }
+
+  return {
+    user: testAccount.user,
+    pass: testAccount.pass,
+    host: "smtp.ethereal.email",
+    port: 587,
+    from: testAccount.user,
   };
 }

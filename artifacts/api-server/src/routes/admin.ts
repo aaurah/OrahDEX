@@ -6,7 +6,7 @@ import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { sendMail, testSmtpConnection, getSmtpStatus } from "../lib/mailer.js";
+import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
 
 const router = Router();
 
@@ -1518,4 +1518,98 @@ router.patch("/markets/:symbol/status", async (req, res) => {
   }
 });
 
+/* ─── AUTO-SETUP — seed all defaults + test email in one click ────────────── */
+
+const SITE_DEFAULTS: Record<string, string> = {
+  site_name: "OrahDEX",
+  site_domain: "orahdex.org",
+  contact_email: "support@orahdex.org",
+  legal_email: "legal@orahdex.org",
+  privacy_email: "privacy@orahdex.org",
+  company_name: "OrahDEX Ltd.",
+  canonical_url: "https://orahdex.org",
+  maker_fee: "0.001",
+  taker_fee: "0.001",
+  seo_title: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
+  seo_description: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
+  seo_keywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures",
+  twitter_site: "@orahdex",
+  twitter_card: "summary_large_image",
+  terms_url: "/terms",
+  privacy_url: "/privacy",
+  whitepaper_url: "/whitepaper",
+  footer_text: "© 2025 OrahDEX. All rights reserved.",
+  default_theme: "dark",
+};
+
+const INTEGRATION_DEFAULTS: Record<string, string> = {
+  bsv_rpc_url: "https://api.whatsonchain.com/v1/bsv/main",
+};
+
+router.post("/auto-setup", async (_req, res) => {
+  try {
+    const applied: string[] = [];
+
+    // 1. Seed site settings (only if not already set)
+    const existingRows = await db.select().from(platformSettingsTable);
+
+    for (const [key, value] of Object.entries(SITE_DEFAULTS)) {
+      const dbKey = `site::${key}`;
+      await db.insert(platformSettingsTable)
+        .values({ key: dbKey, value })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+      applied.push(key);
+    }
+
+    // 2. Seed integration defaults (only if empty)
+    for (const [key, value] of Object.entries(INTEGRATION_DEFAULTS)) {
+      const existing = existingRows.find(r => r.key === key);
+      if (!existing?.value?.trim()) {
+        await db.insert(platformSettingsTable)
+          .values({ key, value })
+          .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+        applied.push(key);
+      }
+    }
+
+    // 3. Auto-setup free test email (always — generates fresh credentials)
+    const emailAccount = await autoSetupTestEmail();
+    applied.push("smtp (test account)");
+
+    res.json({
+      success: true,
+      message: "All defaults applied successfully!",
+      applied,
+      email: {
+        host: emailAccount.host,
+        port: emailAccount.port,
+        user: emailAccount.user,
+        from: emailAccount.from,
+        note: "Test email active — sent emails are viewable at https://ethereal.email/messages (login with the username/password in Integrations → Email)",
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Auto-setup failed" });
+  }
+});
+
+/* ─── SMTP auto-setup (email only) ──────────────────────────────────────────── */
+
+router.post("/auto-setup-email", async (_req, res) => {
+  try {
+    const emailAccount = await autoSetupTestEmail();
+    res.json({
+      success: true,
+      host: emailAccount.host,
+      port: emailAccount.port,
+      user: emailAccount.user,
+      from: emailAccount.from,
+      note: "Free test account created via Ethereal. Sent emails are viewable at https://ethereal.email/messages",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Email auto-setup failed" });
+  }
+});
+
 export default router;
+
