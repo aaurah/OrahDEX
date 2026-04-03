@@ -21,6 +21,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { AiInsightsBar } from "@/components/AiInsightsBar";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -339,6 +340,44 @@ export function Markets() {
   const isCryptoQuoteCurrency = ["BTC","ETH","BNB","SOL","BSV"].includes(quoteCurrency);
   const qSym = getCurrencySymbol(quoteCurrency);
 
+  /* ── Cross-rate: BTC price & BSV price for every row ── */
+  const { prices: liveCrossRates } = useWalletPrices();
+  const BTC_USD = liveCrossRates.BTC.usd || 83000;
+  const BSV_USD = liveCrossRates.BSV.usd || 14;
+  const ETH_USD = liveCrossRates.ETH.usd || 1800;
+
+  const QUOTE_USD: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
+    BTC: BTC_USD, ETH: ETH_USD, BSV: BSV_USD,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
+    CRO: 0.085, TRX: 0.24, DOT: 6.8, ATOM: 4.2,
+    NEAR: 2.4, SUI: 2.2, APT: 5.0, INJ: 16,
+    XRP: 0.52, ADA: 0.44, DOGE: 0.12, LINK: 14.5,
+    UNI: 6.2, SAND: 0.25, MANA: 0.25,
+  };
+
+  function toUSD(price: number, quoteAsset: string): number {
+    return price * (QUOTE_USD[quoteAsset] ?? 1);
+  }
+
+  function fmtBTC(usd: number): string {
+    if (!usd) return "—";
+    const v = usd / BTC_USD;
+    if (v >= 1)      return v.toFixed(4);
+    if (v >= 0.001)  return v.toFixed(6);
+    return v.toFixed(8);
+  }
+
+  function fmtBSV(usd: number): string {
+    if (!usd) return "—";
+    const v = usd / BSV_USD;
+    if (v >= 1000)  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (v >= 1)     return v.toFixed(4);
+    if (v >= 0.001) return v.toFixed(6);
+    return v.toFixed(8);
+  }
+
   const meta = TAB_META.find(t => t.id === tab)!;
   const isCrossQuote = ["bsv","btc","eth","bnb","matic","avax","arb","op","ftm","cro","bch"].includes(tab);
   // Apply fiat/crypto conversion only for USD-quoted tabs (not cross-rate tabs)
@@ -567,6 +606,18 @@ export function Markets() {
                   <th className="px-4 py-3">Pair</th>
                   <th className="px-4 py-3 text-right">Price</th>
                   <th className="px-4 py-3 text-right">24h %</th>
+                  <th className="px-4 py-3 text-right hidden xl:table-cell">
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="w-3 h-3 rounded-full inline-block" style={{background:"#F97316"}} />
+                      BTC Price
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 text-right hidden xl:table-cell">
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="w-3 h-3 rounded-full inline-block" style={{background:"#EAB308"}} />
+                      BSV Price
+                    </span>
+                  </th>
                   <th className="px-4 py-3 text-right hidden lg:table-cell">24h High</th>
                   <th className="px-4 py-3 text-right hidden lg:table-cell">24h Low</th>
                   <th className="px-4 py-3 text-right hidden md:table-cell">Volume 24h</th>
@@ -584,6 +635,10 @@ export function Markets() {
                   const tradeHref = tab === "futures"
                     ? `/futures/${m.symbol.replace(/\//g, "-")}`
                     : `/trade/${m.symbol.replace(/\//g, "-")}`;
+
+                  const priceUSD = toUSD(price, quote);
+                  const btcCellVal = base === "BTC" ? "1 BTC" : fmtBTC(priceUSD);
+                  const bsvCellVal = base === "BSV" ? "1 BSV" : fmtBSV(priceUSD);
 
                   return (
                     <tr key={m.symbol} className="hover:bg-white/5 transition-colors group">
@@ -625,6 +680,18 @@ export function Markets() {
                       <td className={cn("px-4 py-3.5 text-right font-mono text-sm font-semibold", isUp ? "text-green-400" : "text-red-400")}>
                         {isUp ? "+" : ""}{chg.toFixed(2)}%
                       </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-xs hidden xl:table-cell">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-orange-400 font-semibold tabular-nums">{btcCellVal}</span>
+                          <span className="text-muted-foreground/50 text-[10px]">BTC</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono text-xs hidden xl:table-cell">
+                        <div className="flex flex-col items-end gap-0.5">
+                          <span className="text-yellow-400 font-semibold tabular-nums">{bsvCellVal}</span>
+                          <span className="text-muted-foreground/50 text-[10px]">BSV</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
                         {qPrice(parseFloat(m.high24h) || 0)}
                       </td>
@@ -658,7 +725,7 @@ export function Markets() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-16 text-center text-muted-foreground text-sm">
+                    <td colSpan={12} className="py-16 text-center text-muted-foreground text-sm">
                       {search ? `No results for "${search}"` : tab === "favorites" ? "Star pairs to see them here" : "Loading markets…"}
                     </td>
                   </tr>

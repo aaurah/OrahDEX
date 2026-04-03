@@ -22,7 +22,7 @@ function fut(base: string, price: number, chg: number, vol: number): any {
 
 // ─── USDT PAIRS ───────────────────────────────────────────────────────────────
 export const USDT_MARKETS: any[] = [
-  spot("BSV",  "USDT",  55.42,  4.41,  18_500_000,  1_050_000_000),
+  spot("BSV",  "USDT",  14.35,  4.41,  18_500_000,  1_050_000_000),
   spot("BTC",  "USDT",  68310,  -1.85, 2_450_000_000, 1_340_000_000_000),
   spot("ETH",  "USDT",  3415,   1.32,  950_000_000, 410_000_000_000),
   spot("SOL",  "USDT",  148.5,  3.21,  420_000_000,  64_000_000_000),
@@ -77,7 +77,7 @@ export const USDT_MARKETS: any[] = [
 ];
 
 // ─── BSV PAIRS ────────────────────────────────────────────────────────────────
-const BSV_PRICE = 55.42;
+const BSV_PRICE = 14.35;
 function bsvPair(base: string, usdtPrice: number, chg: number, vol: number): any {
   const p = usdtPrice / BSV_PRICE;
   return spot(base, "BSV", p, chg, vol / BSV_PRICE);
@@ -168,7 +168,7 @@ export const BTC_MARKETS: any[] = [
 
 // ─── STABLECOIN PAIRS (USDC / TUSD / USDD) ───────────────────────────────────
 const STABLE_BASES: [string,number,number,number][] = [
-  ["BSV",  0.055, 4.41,  18_500_000],
+  ["BSV",  14.35, 4.41,  18_500_000],
   ["BTC",  68310, -1.85, 2_450_000_000],
   ["ETH",  3415,  1.32,  950_000_000],
   ["SOL",  148.5, 3.21,  420_000_000],
@@ -245,7 +245,7 @@ export const BNB_MARKETS: any[] = [
   bnbPair("ATOM",  8.42,   -0.78,   18_000_000),
   bnbPair("LTC",   78.2,    0.45,   32_000_000),
   bnbPair("BCH",   384,     1.10,   28_000_000),
-  bnbPair("BSV",   55.42,   4.41,   18_500_000),
+  bnbPair("BSV",   14.35,   4.41,   18_500_000),
   bnbPair("TRX",   0.1205,  2.31,   35_000_000),
   bnbPair("NEAR",  6.55,    4.82,   24_000_000),
   bnbPair("APT",   10.5,    5.21,   18_000_000),
@@ -317,7 +317,7 @@ export const AVAX_MARKETS: any[] = [
   avaxPair("ATOM",  8.42,   -0.78,   18_000_000),
   avaxPair("LTC",   78.2,    0.45,   32_000_000),
   avaxPair("BCH",   384,     1.10,   28_000_000),
-  avaxPair("BSV",   55.42,   4.41,   18_500_000),
+  avaxPair("BSV",   14.35,   4.41,   18_500_000),
   avaxPair("NEAR",  6.55,    4.82,   24_000_000),
   avaxPair("APT",   10.5,    5.21,   18_000_000),
   avaxPair("ARB",   1.12,    2.85,   28_000_000),
@@ -487,7 +487,7 @@ function ethPair(base: string, usdtPrice: number, chg: number, vol: number): any
   return spot(base, "ETH", p, chg, vol / ETH_PRICE);
 }
 export const ETH_MARKETS: any[] = [
-  ethPair("BSV",   55.42,   4.41,   18_500_000),
+  ethPair("BSV",   14.35,   4.41,   18_500_000),
   ethPair("BTC",   68310,  -1.85, 2_450_000_000),
   ethPair("SOL",   148.5,   3.21,  420_000_000),
   ethPair("XRP",   0.5242, -0.64,  110_000_000),
@@ -978,7 +978,7 @@ export const NEW_MARKETS: any[] = [
 
 // ─── FUTURES ──────────────────────────────────────────────────────────────────
 export const FUTURES_MARKETS: any[] = [
-  fut("BSV",   55.42,   4.41,  18_500_000),
+  fut("BSV",   14.35,   4.41,  18_500_000),
   fut("BTC",   68310,  -1.85, 2_450_000_000),
   fut("ETH",   3415,    1.32,  950_000_000),
   fut("SOL",   148.5,   3.21,  420_000_000),
@@ -1017,7 +1017,7 @@ export const ALL_SPOT_MOCK: any[] = [
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS, ...NEW_MARKETS,
 ].filter(m => !m.type || m.type === "spot");
 
-const BSV_ETH_PRICE = 55.42 / 3415; // ≈ 0.016228 ETH per BSV
+const BSV_ETH_PRICE = 14.35 / 3415; // ≈ 0.004203 ETH per BSV
 
 function mkTicker(sym: string, price: number, chgPct: number, vol: number, qVol: number): any {
   const chg = price * chgPct / 100;
@@ -1031,7 +1031,7 @@ function mkTicker(sym: string, price: number, chgPct: number, vol: number, qVol:
 
 /** Known approximate USD prices for mock ticker generation. */
 const KNOWN_PRICES_USD: Record<string, number> = {
-  BTC: 68_310, ETH: 3_415, SOL: 148.5, BSV: 55.42, BNB: 392,
+  BTC: 68_310, ETH: 3_415, SOL: 148.5, BSV: 14.35, BNB: 392,
   XRP: 0.5242, ADA: 0.4421, DOGE: 0.1185, DOT: 6.82, LINK: 14.52,
   AVAX: 36.4, MATIC: 0.718, ARB: 1.12, OP: 2.41, SUI: 1.22,
   INJ: 28.4, NEAR: 6.55, APT: 10.5, FTM: 0.82, CRO: 0.093,
@@ -1070,10 +1070,10 @@ export function generateTickerForSymbol(base: string, quote: string): any {
 
 export const MOCK_TICKER: Record<string, any> = {
   /* ── Spot ── */
-  "BSV-USDT": mkTicker("BSV-USDT",  55.42,    4.41,  18_500_000,  1_025_000_000),
+  "BSV-USDT": mkTicker("BSV-USDT",  14.35,    4.41,  18_500_000,  1_025_000_000),
   "BSV-ETH":  { symbol: "BSV-ETH",  lastPrice: BSV_ETH_PRICE, bidPrice: BSV_ETH_PRICE * 0.9997, askPrice: BSV_ETH_PRICE * 1.0003, openPrice: BSV_ETH_PRICE * 0.958, highPrice: BSV_ETH_PRICE * 1.02, lowPrice: BSV_ETH_PRICE * 0.952, volume: 5_420_000, quoteVolume: 5_420_000 * BSV_ETH_PRICE, priceChange: BSV_ETH_PRICE * 0.044, priceChangePercent: 4.41, timestamp: new Date().toISOString() },
   /* ── Perp futures ── */
-  "BSV-USDT-PERP":  mkTicker("BSV-USDT-PERP",   55.42,   4.41,  18_500_000,   1_025_000_000),
+  "BSV-USDT-PERP":  mkTicker("BSV-USDT-PERP",   14.35,   4.41,  18_500_000,   1_025_000_000),
   "BTC-USDT-PERP":  mkTicker("BTC-USDT-PERP",   68310,  -1.85,  2_450_000_000, 167_400_000_000),
   "ETH-USDT-PERP":  mkTicker("ETH-USDT-PERP",   3415,    1.32,  950_000_000,   3_245_000_000),
   "SOL-USDT-PERP":  mkTicker("SOL-USDT-PERP",   148.5,   3.21,  420_000_000,    62_370_000),

@@ -50,7 +50,7 @@ interface VammMarket {
 
 /* ── Seed prices (USDT per 1 base unit) ──────────────────────────────────── */
 const SEED_PRICES: Record<string, number> = {
-  BTC: 71_000, ETH: 2_160, SOL: 92,   BSV: 55,   BNB: 640,
+  BTC: 71_000, ETH: 2_160, SOL: 92,   BSV: 14,   BNB: 640,
   XRP: 1.42,   ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2,
   AVAX: 38,    MATIC: 0.82, LTC: 87,  BCH: 490,  UNI: 8.4,
   AAVE: 165,   MKR: 2_800, COMP: 48,  CRV: 0.48, SNX: 1.82,

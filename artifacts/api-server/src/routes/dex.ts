@@ -112,7 +112,7 @@ async function fetchKeyPrices() {
   } catch {}
   if (!results["BTC"]) results["BTC"] = { usd: FALLBACK_PRICES["BTC"] ?? 70000, change24h: 0 };
   if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
-  if (!results["BSV"]) results["BSV"] = { usd: FALLBACK_PRICES["BSV"] ?? 55,    change24h: 0 };
+  if (!results["BSV"]) results["BSV"] = { usd: FALLBACK_PRICES["BSV"] ?? 14,    change24h: 0 };
   return results;
 }
 

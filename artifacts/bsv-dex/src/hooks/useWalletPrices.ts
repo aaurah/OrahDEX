@@ -17,7 +17,7 @@ export interface WalletPrices {
 const FALLBACK: WalletPrices = {
   BTC:  { usd: 65000, change24h: 0 },
   ETH:  { usd: 3200,  change24h: 0 },
-  BSV:  { usd: 55,    change24h: 0 },
+  BSV:  { usd: 14,    change24h: 0 },
   USDT: { usd: 1,     change24h: 0 },
 };
 

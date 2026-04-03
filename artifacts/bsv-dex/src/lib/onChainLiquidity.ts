@@ -386,7 +386,7 @@ export async function addLiquidityOnChain(params: AddLiquidityParams): Promise<v
 }
 
 const SPOT_PRICES: Record<string, number> = {
-  BTC: 83_000, ETH: 1_800, SOL: 130, BSV: 55, BNB: 580,
+  BTC: 83_000, ETH: 1_800, SOL: 130, BSV: 14, BNB: 580,
   XRP: 0.52, ADA: 0.44, DOGE: 0.12, DOT: 6.8, LINK: 14.5, USDT: 1, USDC: 1,
 };
 
