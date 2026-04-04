@@ -8,7 +8,7 @@ import { useNotificationStore } from "@/store/useNotificationStore";
 import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { getTxExplorerUrl } from "@/store/useWalletStore";
-import { checkAllowance, approveToken, fetchEvmBalance } from "@/lib/reown";
+import { checkAllowance, approveToken, fetchEvmBalance, signMessageWithReownProvider } from "@/lib/reown";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
 import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
@@ -484,6 +484,26 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
+  // ── API-locked balance for external EVM wallets ───────────────────────────
+  // External EVM wallets (Reown, MetaMask, Coinbase) use on-chain balances for
+  // display, but the API also maintains a ledger lock for open orders.
+  // Fetch and show the locked amount so the user can see reserved funds.
+  const [apiLockedAmt, setApiLockedAmt] = useState<number>(0);
+  useEffect(() => {
+    if (usesApiBalance || !address || !availableSym) { setApiLockedAmt(0); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/balances/${availableSym}?walletAddress=${encodeURIComponent(address)}`);
+        if (!r.ok || cancelled) return;
+        const j = await r.json();
+        const locked = parseFloat(j.locked ?? "0") || 0;
+        if (!cancelled) setApiLockedAmt(locked);
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [usesApiBalance, address, availableSym, side]);
+
   // ── Precheck runner (declared after balances so availableAmt is in scope) ──
   const runPrecheck = useCallback(async (amt: string, px: string) => {
     if (!address || !amt || parseFloat(amt) <= 0) {
@@ -820,12 +840,25 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         setSigning(true);
         const message = buildOrderMessage();
 
-        if (evmConnected) {
-          // Wagmi path — covers MetaMask (injected), Reown/WalletConnect, Coinbase Wallet, etc.
-          // This triggers the correct wallet UI regardless of how the user connected.
+        if (provider === "reown") {
+          // Primary path for Reown/WalletConnect connections: use the live
+          // WalletConnect session directly so the signing prompt appears in
+          // the user's wallet app even when wagmi's connector state is stale.
+          const reownSig = await signMessageWithReownProvider(message, address!);
+          if (reownSig) {
+            evmSignature = reownSig;
+          } else if (evmConnected) {
+            // Wagmi fallback if direct provider lookup returned nothing
+            evmSignature = await signMessageAsync({ message });
+          } else {
+            // Session unavailable — reconnect needed
+            throw new Error("REOWN_SESSION_UNAVAILABLE");
+          }
+        } else if (evmConnected) {
+          // Wagmi path — covers MetaMask (injected), Coinbase Wallet, etc.
           evmSignature = await signMessageAsync({ message });
         } else {
-          // Fallback: raw window.ethereum for non-wagmi injected wallets
+          // Last-resort: raw window.ethereum for non-wagmi injected wallets
           const eth = (window as any).ethereum;
           if (eth) {
             evmSignature = await eth.request({
@@ -833,15 +866,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               params: [message, address],
             });
           }
-          // If neither wagmi nor window.ethereum is available, proceed without signature
-          // (the order is still recorded but won't have ECDSA proof)
         }
       } catch (err: any) {
         setSigning(false);
         setApprovalStep("idle");
         // 4001 = MetaMask user rejected; ACTION_REJECTED = wagmi/ethers rejection
         const isRejected = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
-          err?.name === "UserRejectedRequestError" || err?.message?.toLowerCase().includes("rejected");
+          err?.name === "UserRejectedRequestError" ||
+          err?.message?.toLowerCase().includes("rejected") ||
+          err?.message?.toLowerCase().includes("denied");
         if (isRejected) {
           toast({
             title: "Signing rejected",
@@ -850,8 +883,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           });
           return;
         }
-        // Non-rejection errors: proceed without signature (soft fail)
+        if (err?.message === "REOWN_SESSION_UNAVAILABLE") {
+          toast({
+            title: "Wallet session expired",
+            description: "Your WalletConnect session has expired. Please reconnect your wallet and try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        // Non-rejection errors: warn the user and still place the order
         console.warn("[OrahDEX] Order signing failed (non-rejection):", err);
+        toast({
+          title: "Signing unavailable",
+          description: "Could not get wallet signature. The order will still be placed — reconnect your wallet to sign future orders.",
+        });
       } finally {
         setSigning(false);
       }
@@ -908,6 +953,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             const bal = await fetchEvmBalance(address, currentChainId);
             if (bal !== null) setbal(bal);
             refreshBalances();
+            // Re-fetch API locked amount so "In open orders" row updates immediately
+            try {
+              const r = await fetch(`${API_BASE}/balances/${availableSym}?walletAddress=${encodeURIComponent(address)}`);
+              if (r.ok) {
+                const j = await r.json();
+                setApiLockedAmt(parseFloat(j.locked ?? "0") || 0);
+              }
+            } catch { /* non-critical */ }
           }
         },
       }
@@ -1014,6 +1067,18 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             )}
           </div>
         </div>
+        {/* Locked-in-orders row (external EVM wallets only) */}
+        {!usesApiBalance && apiLockedAmt > 0 && (
+          <div className="flex items-center justify-between text-xs px-0.5 -mt-1.5">
+            <span className="flex items-center gap-1 text-amber-400/80">
+              <Lock className="w-3 h-3" />
+              In open orders
+            </span>
+            <span className="font-mono text-amber-400/80">
+              -{apiLockedAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })}{" "}{availableSym}
+            </span>
+          </div>
+        )}
 
         {/* Stop order info */}
         {type === "stop" && (
