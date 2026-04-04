@@ -1,11 +1,14 @@
 /**
  * internalBsvWallet.ts
  *
- * Generates and persists a custodial BSV wallet for each EVM user.
- * The private key is AES-256-GCM encrypted at rest; it is NEVER returned
- * to the client — only the public BSV address (P2PKH) is exposed.
+ * Generates and persists a custodial BTC/BSV/BCH wallet for each EVM user.
  *
- * Uses @noble/secp256k1 + Node.js crypto so no extra dependencies are needed.
+ * One secp256k1 keypair derives:
+ *   • BSV address  = BTC legacy address  (P2PKH, version 0x00, Base58Check, starts with "1")
+ *   • BCH address  (same key, CashAddr encoding, starts with "bitcoincash:q")
+ *
+ * The private key is AES-256-GCM encrypted at rest; it is NEVER returned to
+ * the client — only the three public addresses are exposed.
  */
 
 import * as secp from "@noble/secp256k1";
@@ -47,7 +50,20 @@ export function decrypt(stored: string): string {
   return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
 }
 
-// ── BSV P2PKH address generation ──────────────────────────────────────────────
+// ── Hash utilities ────────────────────────────────────────────────────────────
+
+function hash256(buf: Buffer): Buffer {
+  return createHash("sha256").update(
+    createHash("sha256").update(buf).digest()
+  ).digest();
+}
+
+function hash160(buf: Buffer): Buffer {
+  const sha = createHash("sha256").update(buf).digest();
+  return createHash("ripemd160").update(sha).digest();
+}
+
+// ── Base58Check (BSV / BTC legacy P2PKH) ─────────────────────────────────────
 
 const BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -65,29 +81,89 @@ function base58Encode(bytes: Buffer): string {
   return result;
 }
 
-function hash256(buf: Buffer): Buffer {
-  return createHash("sha256").update(createHash("sha256").update(buf).digest()).digest();
+/**
+ * P2PKH address — BSV and BTC both use version byte 0x00 and Base58Check.
+ * The resulting address string is IDENTICAL for both chains.
+ */
+function pubKeyToLegacyAddress(compressedPubKey: Uint8Array): string {
+  const pkh      = hash160(Buffer.from(compressedPubKey));
+  const versioned = Buffer.concat([Buffer.from([0x00]), pkh]);
+  const checksum  = hash256(versioned).slice(0, 4);
+  return base58Encode(Buffer.concat([versioned, checksum]));
 }
 
-function hash160(buf: Buffer): Buffer {
-  const sha = createHash("sha256").update(buf).digest();
-  return createHash("ripemd160").update(sha).digest();
+// ── CashAddr (BCH) ───────────────────────────────────────────────────────────
+
+const CASHADDR_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const BCH_PREFIX        = "bitcoincash";
+
+function convertBits(data: number[], fromBits: number, toBits: number, pad: boolean): number[] {
+  const result: number[] = [];
+  let acc = 0, bits = 0;
+  const maxv = (1 << toBits) - 1;
+  for (const b of data) {
+    acc = ((acc << fromBits) | b) >>> 0;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      result.push((acc >>> bits) & maxv);
+    }
+  }
+  if (pad && bits > 0) result.push((acc << (toBits - bits)) & maxv);
+  return result;
 }
 
-function publicKeyToBsvAddress(compressedPubKey: Uint8Array): string {
-  const pubKeyHash  = hash160(Buffer.from(compressedPubKey));       // 20 bytes
-  const versioned   = Buffer.concat([Buffer.from([0x00]), pubKeyHash]); // 0x00 = mainnet P2PKH
-  const checksum    = hash256(versioned).slice(0, 4);
-  const payload     = Buffer.concat([versioned, checksum]);          // 25 bytes
-  return base58Encode(payload);
+function cashAddrChecksum(payload: number[]): bigint {
+  const GEN = [0x98f2bc8e61n, 0x79b76d99e2n, 0xf33e5fb3c4n, 0xae2eabe2a8n, 0x1e4f43e470n];
+  let c = 1n;
+  for (const d of payload) {
+    const c0 = c >> 35n;
+    c = ((c & 0x07ffffffffn) << 5n) ^ BigInt(d);
+    for (let i = 0; i < 5; i++) {
+      if ((c0 >> BigInt(i)) & 1n) c ^= GEN[i];
+    }
+  }
+  return c ^ 1n;
 }
 
-function generateBsvKeypair(): { privateKeyHex: string; address: string } {
-  const privBytes      = randomBytes(32);
-  const compressedPub  = secp.getPublicKey(privBytes, true); // 33 bytes
+function expandPrefix(prefix: string): number[] {
+  const out: number[] = [];
+  for (const ch of prefix) out.push(ch.charCodeAt(0) & 0x1f);
+  out.push(0); // separator
+  return out;
+}
+
+/**
+ * Convert a pubkey hash to BCH CashAddr format.
+ * Version byte 0x00 = P2PKH, 160-bit hash.
+ */
+function pubKeyHashToCashAddr(pkh: Buffer): string {
+  // 0x00 = type P2PKH (bits 7-3 = 0) + hash-size 160-bit (bits 2-0 = 0)
+  const payload5 = convertBits([0x00, ...Array.from(pkh)], 8, 5, true);
+  const checksumData = [...expandPrefix(BCH_PREFIX), ...payload5, 0, 0, 0, 0, 0, 0, 0, 0];
+  const checksum = cashAddrChecksum(checksumData);
+  const checksumArr: number[] = [];
+  for (let i = 7; i >= 0; i--) {
+    checksumArr.push(Number((checksum >> BigInt(i * 5)) & 0x1fn));
+  }
+  return BCH_PREFIX + ":" + [...payload5, ...checksumArr].map(d => CASHADDR_CHARSET[d]).join("");
+}
+
+// ── Keypair generation ────────────────────────────────────────────────────────
+
+function generateKeypair(): {
+  privateKeyHex: string;
+  legacyAddress: string; // BSV = BTC legacy P2PKH (identical string)
+  bchAddress: string;    // BCH CashAddr
+} {
+  const privBytes     = randomBytes(32);
+  const compressedPub = secp.getPublicKey(privBytes, true); // 33 bytes
+  const pkh           = hash160(Buffer.from(compressedPub));
+
   return {
     privateKeyHex: Buffer.from(privBytes).toString("hex"),
-    address: publicKeyToBsvAddress(compressedPub),
+    legacyAddress: pubKeyToLegacyAddress(compressedPub),
+    bchAddress:    pubKeyHashToCashAddr(pkh),
   };
 }
 
@@ -98,52 +174,86 @@ async function ensureTable(): Promise<void> {
     CREATE TABLE IF NOT EXISTS internal_bsv_wallets (
       evm_address   TEXT PRIMARY KEY,
       bsv_address   TEXT NOT NULL,
+      bch_address   TEXT NOT NULL DEFAULT '',
       encrypted_key TEXT NOT NULL,
       created_at    TIMESTAMPTZ DEFAULT NOW()
     )
+  `);
+  // Add bch_address column to existing tables that were created before this column existed
+  await pool.query(`
+    ALTER TABLE internal_bsv_wallets
+      ADD COLUMN IF NOT EXISTS bch_address TEXT NOT NULL DEFAULT ''
   `);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/** Returns existing or freshly-generated BSV address for an EVM wallet. */
-export async function getOrCreateBsvWallet(
-  evmAddress: string,
-): Promise<{ bsvAddress: string; isNew: boolean }> {
+export interface BsvWalletResult {
+  /** BSV P2PKH address — identical to the BTC legacy (P2PKH) address */
+  bsvAddress: string;
+  /** BTC legacy P2PKH address — same string as bsvAddress, different network */
+  btcAddress: string;
+  /** BCH CashAddr — same key, BCH-specific encoding (bitcoincash:q...) */
+  bchAddress: string;
+  isNew: boolean;
+}
+
+/** Returns existing or freshly-generated addresses for an EVM wallet. */
+export async function getOrCreateBsvWallet(evmAddress: string): Promise<BsvWalletResult> {
   await ensureTable();
 
   const evmLower = evmAddress.toLowerCase();
 
-  const { rows } = await pool.query<{ bsv_address: string }>(
-    "SELECT bsv_address FROM internal_bsv_wallets WHERE evm_address = $1",
+  const { rows } = await pool.query<{ bsv_address: string; bch_address: string; encrypted_key: string }>(
+    "SELECT bsv_address, bch_address, encrypted_key FROM internal_bsv_wallets WHERE evm_address = $1",
     [evmLower],
   );
 
   if (rows.length > 0) {
-    return { bsvAddress: rows[0].bsv_address, isNew: false };
+    const bsvAddress = rows[0].bsv_address;
+    let bchAddress  = rows[0].bch_address;
+
+    // Backfill BCH address for wallets created before this column was added
+    if (!bchAddress) {
+      try {
+        const privHex      = decrypt(rows[0].encrypted_key);
+        const privBytes    = Buffer.from(privHex, "hex");
+        const compressedPub = secp.getPublicKey(privBytes, true);
+        const pkh          = hash160(Buffer.from(compressedPub));
+        bchAddress         = pubKeyHashToCashAddr(pkh);
+        await pool.query(
+          "UPDATE internal_bsv_wallets SET bch_address = $1 WHERE evm_address = $2",
+          [bchAddress, evmLower],
+        );
+      } catch {
+        bchAddress = "";
+      }
+    }
+
+    return { bsvAddress, btcAddress: bsvAddress, bchAddress, isNew: false };
   }
 
-  const { privateKeyHex, address } = generateBsvKeypair();
+  const { privateKeyHex, legacyAddress, bchAddress } = generateKeypair();
   const enc = encrypt(privateKeyHex);
 
   await pool.query(
-    `INSERT INTO internal_bsv_wallets (evm_address, bsv_address, encrypted_key)
-     VALUES ($1, $2, $3)
+    `INSERT INTO internal_bsv_wallets (evm_address, bsv_address, bch_address, encrypted_key)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (evm_address) DO NOTHING`,
-    [evmLower, address, enc],
+    [evmLower, legacyAddress, bchAddress, enc],
   );
 
-  return { bsvAddress: address, isNew: true };
+  return { bsvAddress: legacyAddress, btcAddress: legacyAddress, bchAddress, isNew: true };
 }
 
-/** Retrieves just the BSV address (returns null if not yet provisioned). */
-export async function getBsvWallet(
-  evmAddress: string,
-): Promise<string | null> {
+/** Retrieves addresses (returns null if not yet provisioned). */
+export async function getBsvWallet(evmAddress: string): Promise<BsvWalletResult | null> {
   await ensureTable();
-  const { rows } = await pool.query<{ bsv_address: string }>(
-    "SELECT bsv_address FROM internal_bsv_wallets WHERE evm_address = $1",
+  const { rows } = await pool.query<{ bsv_address: string; bch_address: string }>(
+    "SELECT bsv_address, bch_address FROM internal_bsv_wallets WHERE evm_address = $1",
     [evmAddress.toLowerCase()],
   );
-  return rows[0]?.bsv_address ?? null;
+  if (!rows[0]) return null;
+  const bsvAddress = rows[0].bsv_address;
+  return { bsvAddress, btcAddress: bsvAddress, bchAddress: rows[0].bch_address, isNew: false };
 }
