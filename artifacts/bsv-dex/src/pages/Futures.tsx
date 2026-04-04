@@ -1,8 +1,8 @@
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
-import { useState, useEffect, useRef } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
@@ -119,9 +119,34 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId, isDemo } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, connectDemo } = useWalletStore();
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
+
+  // Demo activation (mirrors Spot page behaviour)
+  const [demoLoading, setDemoLoading] = useState(false);
+  const handleDemo = async () => {
+    setDemoLoading(true);
+    try {
+      let demoAddr = localStorage.getItem("orahdex_demo_address");
+      if (!demoAddr) {
+        const uuid = crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase();
+        demoAddr = `DEMO_${uuid}`;
+        localStorage.setItem("orahdex_demo_address", demoAddr);
+      }
+      const resp = await fetch(`${API_BASE}/demo/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: demoAddr }),
+      });
+      if (!resp.ok) throw new Error("Demo activation failed");
+      connectDemo(demoAddr);
+    } catch {
+      toast({ title: "Demo error", description: "Could not start demo. Please try again.", variant: "destructive" });
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
@@ -179,6 +204,27 @@ export function FuturesTrading() {
   const openOrders = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
+  // ── Futures positions (fetched from /api/futures/positions) ─────────────────
+  const [positions, setPositions] = useState<any[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+
+  const fetchPositions = useCallback(async () => {
+    if (!address) { setPositions([]); return; }
+    setPositionsLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/futures/positions?walletAddress=${encodeURIComponent(address)}&_t=${Date.now()}`);
+      if (r.ok) setPositions(await r.json());
+    } catch { /* silently ignore */ }
+    finally { setPositionsLoading(false); }
+  }, [address]);
+
+  useEffect(() => {
+    void fetchPositions();
+    if (!address) return;
+    const t = setInterval(() => void fetchPositions(), 5000);
+    return () => clearInterval(t);
+  }, [address, fetchPositions]);
+
   const countdown = useFundingCountdown();
 
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
@@ -214,23 +260,7 @@ export function FuturesTrading() {
     : futChainInfo?.nativeSymbol ?? "ETH";
   const balSourceLabel = futChainInfo?.l2Label ? `${nativeSymbol} (${futChainInfo.l2Label})` : nativeSymbol;
 
-  const placeOrder = usePlaceOrder({
-    mutation: {
-      onSuccess: (data: any) => {
-        const matched = data?.matched ?? false;
-        toast({
-          title: matched ? `${futuresSide === "buy" ? "Long" : "Short"} Position Opened ✓` : "Futures Order Open",
-          description: matched
-            ? `${base} ${futuresSide === "buy" ? "Long" : "Short"} ${leverage}× — matched & settled on BSV`
-            : `${base}-PERP ${futuresSide === "buy" ? "Buy/Long" : "Sell/Short"} ${leverage}× @ ${orderType === "market" ? "market price" : `$${price}`} · pending match`,
-        });
-        setSize("");
-      },
-      onError: () => {
-        toast({ title: "Order Failed", description: "Could not open futures position. Please try again.", variant: "destructive" });
-      },
-    },
-  });
+  const [futuresSubmitting, setFuturesSubmitting] = useState(false);
 
   const handleFuturesSubmit = async (side: "buy" | "sell") => {
     if (!address) { openModal(); return; }
@@ -239,19 +269,38 @@ export function FuturesTrading() {
       return;
     }
     setFuturesSide(side);
-    placeOrder.mutate({
-      data: {
-        symbol: `${base}/USDT-PERP`,
-        walletAddress: address,
-        side,
-        type: orderType === "stop" ? "limit" : orderType,
-        price: orderType !== "market" && price ? parseFloat(price) : undefined,
-        quantity: parseFloat(size),
-        networkType: isEvm ? "evm" : "bsv",
-        leverage,
-        marginMode,
-      } as any,
-    });
+    setFuturesSubmitting(true);
+    try {
+      const resp = await fetch(`${API_BASE}/futures/positions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: `${base}/USDT-PERP`,
+          walletAddress: address,
+          side: side === "buy" ? "long" : "short",
+          leverage,
+          quantity: parseFloat(size),
+          price: orderType !== "market" && price ? parseFloat(price) : undefined,
+          orderType: orderType === "stop" ? "limit" : orderType,
+          marginMode,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      toast({
+        title: `${side === "buy" ? "Long" : "Short"} Position Opened ✓`,
+        description: `${base}-PERP ${side === "buy" ? "Long" : "Short"} ${leverage}× @ ${orderType === "market" ? "market price" : `$${price}`}`,
+      });
+      setSize("");
+      // Refresh positions & balance after trade
+      void fetchPositions();
+    } catch (err: any) {
+      toast({ title: "Order Failed", description: err.message ?? "Could not open futures position. Please try again.", variant: "destructive" });
+    } finally {
+      setFuturesSubmitting(false);
+    }
   };
 
   const ticker = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
@@ -428,7 +477,7 @@ export function FuturesTrading() {
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
               <div className="flex gap-0 px-3 border-b border-border text-xs font-medium shrink-0">
                 {([
-                  { key: "positions", label: "Positions (0)" },
+                  { key: "positions", label: `Positions (${positions.length})` },
                   { key: "orders",    label: `Open Orders (${openOrders.length})` },
                   { key: "history",   label: `Trade History (${filledOrders.length})` },
                 ] as { key: "positions" | "orders" | "history"; label: string }[]).map((t) => (
@@ -450,15 +499,57 @@ export function FuturesTrading() {
               <div className="flex-1 overflow-auto">
                 {/* Positions tab */}
                 {bottomTab === "positions" && (
-                  <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                    {address ? (
-                      <span>No open positions · Place a trade to get started</span>
-                    ) : (
+                  !address ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                       <button onClick={() => openModal()} className="flex items-center gap-2 text-primary hover:underline font-medium">
                         <Wallet className="w-4 h-4" /> Connect wallet to view positions
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  ) : positionsLoading && positions.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading positions…
+                    </div>
+                  ) : positions.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                      No open positions · Place a trade to get started
+                    </div>
+                  ) : (
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="sticky top-0 bg-card">
+                        <tr className="text-muted-foreground font-sans border-b border-border">
+                          <th className="p-2 font-medium">Pair</th>
+                          <th className="p-2 font-medium">Side</th>
+                          <th className="p-2 font-medium text-right">Size</th>
+                          <th className="p-2 font-medium text-right">Entry</th>
+                          <th className="p-2 font-medium text-right">Mark</th>
+                          <th className="p-2 font-medium text-right">Liq.</th>
+                          <th className="p-2 font-medium text-right">PnL</th>
+                          <th className="p-2 font-medium text-right">Margin</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {positions.map((p: any) => {
+                          const pnl = parseFloat(p.unrealizedPnl ?? "0");
+                          return (
+                            <tr key={p.id} className="hover:bg-white/5 transition-colors">
+                              <td className="p-2">{p.symbol}</td>
+                              <td className={cn("p-2 font-semibold capitalize", p.side === "long" ? "text-green-400" : "text-red-400")}>
+                                {p.side} {p.leverage}×
+                              </td>
+                              <td className="p-2 text-right">{Number(p.quantity).toFixed(4)}</td>
+                              <td className="p-2 text-right">{formatPrice(parseFloat(p.entryPrice))}</td>
+                              <td className="p-2 text-right">{formatPrice(parseFloat(p.markPrice))}</td>
+                              <td className="p-2 text-right text-orange-400">{formatPrice(parseFloat(p.liquidationPrice))}</td>
+                              <td className={cn("p-2 text-right font-bold", pnl >= 0 ? "text-green-400" : "text-red-400")}>
+                                {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
+                              </td>
+                              <td className="p-2 text-right">{Number(p.margin).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )
                 )}
 
                 {/* Open Orders tab */}
@@ -682,9 +773,14 @@ export function FuturesTrading() {
                   <button
                     key={pct}
                     onClick={() => {
-                      const portion = nativeBal * (pct / 100);
+                      // Use demo USDT balance in demo mode, native balance otherwise
+                      const availBal = isDemo ? demoUsdtBal : nativeBal;
+                      const portion = availBal * (pct / 100);
                       const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;
-                      setSize((portion * leverage / entryPrice).toFixed(4));
+                      // In demo mode, portion is USDT so convert to base units; otherwise use native
+                      setSize(isDemo
+                        ? (portion * leverage / entryPrice).toFixed(4)
+                        : (portion * leverage / entryPrice).toFixed(4));
                     }}
                     className="flex-1 py-1 text-[10px] font-semibold bg-secondary border border-border rounded-lg text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all"
                   >
@@ -715,29 +811,39 @@ export function FuturesTrading() {
                 <div className="flex gap-2 pt-1">
                   <button
                     onClick={() => handleFuturesSubmit("buy")}
-                    disabled={placeOrder.isPending}
+                    disabled={futuresSubmitting}
                     className="flex-1 bg-green-500 hover:bg-green-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-green-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                   >
-                    {placeOrder.isPending && futuresSide === "buy" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {futuresSubmitting && futuresSide === "buy" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     Buy / Long
                   </button>
                   <button
                     onClick={() => handleFuturesSubmit("sell")}
-                    disabled={placeOrder.isPending}
+                    disabled={futuresSubmitting}
                     className="flex-1 bg-red-500 hover:bg-red-500/90 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-red-500/20 transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                   >
-                    {placeOrder.isPending && futuresSide === "sell" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {futuresSubmitting && futuresSide === "sell" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     Sell / Short
                   </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => openModal()}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
-                >
-                  <Wallet className="w-4 h-4" />
-                  Connect Wallet to Trade
-                </button>
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    onClick={() => openModal()}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Connect Wallet to Trade
+                  </button>
+                  <button
+                    onClick={handleDemo}
+                    disabled={demoLoading}
+                    className="w-full flex items-center justify-center gap-2 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 hover:border-yellow-500 py-2.5 rounded-xl font-semibold text-sm transition-all disabled:opacity-60"
+                  >
+                    {demoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Try Demo ($80,000 virtual USDT)
+                  </button>
+                </div>
               )}
 
               {/* Settle note */}

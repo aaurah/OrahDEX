@@ -38,7 +38,9 @@ router.get("/orders", async (req, res) => {
     }
 
     const limit  = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const symbol = req.query.symbol as string | undefined;
+    // Normalize symbol: accept both "BSV-USDT" (URL/dash) and "BSV/USDT" (DB/slash)
+    const rawSym = req.query.symbol as string | undefined;
+    const symbol = rawSym ? rawSym.replace(/-/g, "/") : undefined;
     const status = req.query.status as string | undefined;
 
     // Push all filters to the DB — never fetch all rows and slice in memory
