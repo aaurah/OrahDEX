@@ -541,7 +541,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Buy Crypto — global header CTA */}
           <button
             onClick={() => setBuyOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 hover:border-primary/60 rounded-lg text-xs font-bold transition-all hidden sm:flex"
+            className="flex items-center gap-1 px-2.5 py-0.5 bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 hover:border-primary/60 rounded-md text-xs font-semibold transition-all hidden sm:flex"
             title="Buy crypto instantly"
           >
             <CreditCard className="w-3.5 h-3.5" />
@@ -553,7 +553,7 @@ export function Layout({ children }: { children: ReactNode }) {
           ) : (
             <button
               onClick={() => openWalletModal()}
-              className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 hover:brightness-110 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/40 active:scale-95 transition-all"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-3 py-1 rounded-lg font-semibold text-xs shadow-md shadow-primary/20 hover:brightness-110 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
             >
               <Wallet className="w-4 h-4" />
               <span className="hidden sm:inline">Connect Wallet</span>
