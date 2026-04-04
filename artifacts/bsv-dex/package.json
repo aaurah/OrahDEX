@@ -75,8 +75,12 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
+    "@noble/secp256k1": "^3.0.0",
     "@reown/appkit": "^1.8.19",
     "@reown/appkit-adapter-wagmi": "^1.8.19",
+    "@scure/bip32": "^2.0.1",
+    "@scure/bip39": "^2.0.1",
     "@wagmi/core": "^3.4.1",
     "@workspace/integrations-openai-ai-react": "workspace:*",
     "jsqr": "^1.4.0",

@@ -4,6 +4,22 @@
 
 pnpm workspace monorepo using TypeScript. A full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform comparable to Binance, Poloniex, and Bitfinex with on-chain BSV settlement.
 
+## OrahDEX Native HD Wallet (BIP39 + BIP44 All-Chains)
+
+- **Feature**: One BIP39 seed phrase generates wallet addresses for ALL supported chains — non-custodial, browser-only derivation.
+- **BIP44 Derivation Paths**:
+  - EVM (Ethereum, BSC, Polygon, Arbitrum…): `m/44'/60'/0'/0/0`
+  - BTC (Bitcoin): `m/44'/0'/0'/0/0`
+  - BCH (Bitcoin Cash, CashAddr `bitcoincash:q…`): `m/44'/145'/0'/0/0`
+  - BSV (Bitcoin SV): `m/44'/236'/0'/0/0`
+- **Library**: `artifacts/bsv-dex/src/lib/seedPhrase.ts` — uses `@scure/bip32` HDKey, `@scure/bip39` mnemonicToSeed, `@noble/hashes` for SHA256 + RIPEMD160 (HASH160). CashAddr polymod checksum implemented inline.
+- **Packages** (bsv-dex direct deps): `@scure/bip32@2.0.1`, `@scure/bip39@2.0.1`, `@noble/hashes@2.0.1`, `@noble/secp256k1`.
+- **Key exports**: `generateMnemonic(12|24)`, `deriveAllAddresses(mnemonic[]) → Promise<{evm,btc,bch,bsv}>`, `validateMnemonic(input)`.
+- **UI**: `WalletConnectModal.tsx` — "OrahDEX Wallet (All Chains)" card is now the first option in the Real Account panel (before EVM external wallets, before BSV). Derive button shows spinner while deriving. Done screen shows all 4 addresses with colored rows.
+- **Import flow**: Supports seed phrase import (→ all chains) OR EVM private key (→ EVM only). Network selector removed.
+- **Store**: `useWalletStore.ts` has `internalBtcAddress` field (new, alongside `internalBsvAddress`, `internalBchAddress`) populated after HD wallet connect. All reset on disconnect/demo.
+- **Compatible with**: MetaMask (EVM path), Trust Wallet, Ledger, Trezor, and any BIP44-compliant wallet.
+
 ## CopyVault — On-Chain Copy Trading
 
 - **Architecture**: ERC4626-style vault accounting. Followers deposit USDT → get shares at current share price. Share price = TVL / totalShares.
