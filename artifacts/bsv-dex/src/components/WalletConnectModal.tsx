@@ -1274,9 +1274,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             Connect
                           </button>
                         </div>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {["🔵 Ethereum","🟡 BNB Chain","🟣 Polygon","🔷 Arbitrum","🔴 Optimism","🔵 Base"].map(c => (
+                            <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-blue-500/10 text-blue-300/80 border border-blue-500/15 rounded">{c}</span>
+                          ))}
+                        </div>
                         <div className="flex flex-wrap gap-1">
                           {["🦊 MetaMask","🔵 Coinbase","🛡️ Trust","⭕ OKX","🌈 Rainbow","🔒 Ledger"].map(w => (
-                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-blue-500/10 text-blue-300/80 border border-blue-500/15 rounded">{w}</span>
+                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-white/8 rounded">{w}</span>
                           ))}
                         </div>
                       </div>
@@ -1313,9 +1318,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             Connect
                           </button>
                         </div>
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {["⚡ Bitcoin SV","🔗 Metanet","📜 OP_RETURN scripts","⛓ UTXO-native"].map(c => (
+                            <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-green-500/10 text-green-300/80 border border-green-500/15 rounded">{c}</span>
+                          ))}
+                        </div>
                         <div className="flex flex-wrap gap-1">
                           {["✋ HandCash","⚡ RelayX","🐼 Panda","🔷 Sensilet","💛 Yours"].map(w => (
-                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-green-500/10 text-green-300/80 border border-green-500/15 rounded">{w}</span>
+                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-white/8 rounded">{w}</span>
                           ))}
                         </div>
                       </div>
