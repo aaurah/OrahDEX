@@ -303,7 +303,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   /* passkey state */
   const [passkeyStep, setPasskeyStep] = useState<"idle"|"registering"|"logging_in"|"done"|"error">("idle");
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
-  const [passkeyResult, setPasskeyResult] = useState<{ address: string; label: string } | null>(null);
+  const [passkeyResult, setPasskeyResult] = useState<{ address: string; label: string; chains?: { evm: string; sol?: string; btc?: string; bch?: string; bsv?: string } } | null>(null);
   const [passkeyLabel, setPasskeyLabel] = useState("My OrahDEX Wallet");
   const [passkeySupported] = useState(() => isPasskeySupported());
   const [storedPasskeys, setStoredPasskeys] = useState(() => listPasskeyWallets());
@@ -363,10 +363,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setPasskeyError(null);
     try {
       const result = await registerPasskeyWallet(passkeyLabel || "My OrahDEX Wallet");
-      setPasskeyResult({ address: result.address, label: result.label });
+      setPasskeyResult({ address: result.address, label: result.label, chains: result.chains });
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
       connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
     } catch (e: any) {
       setPasskeyError(e?.message ?? "Passkey creation failed");
@@ -380,11 +384,15 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setRestoredFromBackup(false);
     try {
       const result = await loginWithPasskey();
-      setPasskeyResult({ address: result.address, label: result.label });
+      setPasskeyResult({ address: result.address, label: result.label, chains: result.chains });
       setRestoredFromBackup(result.restoredFromBackup ?? false);
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
       connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), result.restoredFromBackup ? 2000 : 1200);
     } catch (e: any) {
       const msg: string = e?.message ?? "Passkey authentication failed";
@@ -1150,7 +1158,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                             <p className="text-[11px] text-muted-foreground font-medium">
                               {passkeySupported
-                                ? "Face ID · Touch ID · Windows Hello — no seed phrase"
+                                ? "EVM · SOL · BTC · BCH · BSV — biometrics, no seed phrase"
                                 : "Not supported in this browser"}
                             </p>
                           </div>
@@ -1171,6 +1179,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <PlusCircle className="w-4 h-4" />
                               Create New
                             </button>
+                          </div>
+                        )}
+                        {passkeySupported && (
+                          <div className="mt-3 space-y-2">
+                            <div className="flex flex-wrap gap-1">
+                              {["🔵 ETH/EVM", "🟣 Solana", "🟠 Bitcoin", "🟢 BCH", "⚡ BSV"].map(c => (
+                                <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-primary/10 text-primary/80 border border-primary/15 rounded">{c}</span>
+                              ))}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground/60">
+                              BIP39 HD wallet secured by biometrics — no seed phrase to write down
+                            </p>
                           </div>
                         )}
                         {passkeySupported && storedPasskeys.length > 0 && (
@@ -2311,11 +2331,30 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <h3 className="text-lg font-bold text-green-400 mb-1">
                               {restoredFromBackup ? "Wallet Restored!" : "Wallet Ready!"}
                             </h3>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground mb-3">
                               {restoredFromBackup
                                 ? "Your wallet was recovered from cloud backup and saved to this device."
                                 : "Connecting to OrahDEX…"}
                             </p>
+                            {passkeyResult.chains && (
+                              <div className="w-full space-y-1.5">
+                                {[
+                                  { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: passkeyResult.chains.evm, color: "blue" },
+                                  { label: "SOL", sub: "Solana · Phantom-compatible", addr: passkeyResult.chains.sol, color: "violet" },
+                                  { label: "BTC", sub: "Bitcoin", addr: passkeyResult.chains.btc, color: "orange" },
+                                  { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: passkeyResult.chains.bch, color: "green" },
+                                  { label: "BSV", sub: "Bitcoin SV", addr: passkeyResult.chains.bsv, color: "emerald" },
+                                ].filter(r => r.addr).map(({ label, sub, addr, color }) => (
+                                  <div key={label} className={`flex items-center gap-2 p-2 rounded-lg bg-${color}-500/8 border border-${color}-500/20`}>
+                                    <span className={`text-[10px] font-black text-${color}-400 w-7 shrink-0`}>{label}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[9px] text-muted-foreground">{sub}</p>
+                                      <p className="text-[10px] font-mono text-foreground/80 truncate">{addr}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </>
                         )}
                         {passkeyStep === "error" && (

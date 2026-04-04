@@ -202,14 +202,24 @@ async function tryRestoreFromServer(
 
 // ─── Registration ─────────────────────────────────────────────────────────────
 
+export interface PasskeyChainAddresses {
+  evm: string;
+  sol?: string;
+  btc?: string;
+  bch?: string;
+  bsv?: string;
+}
+
 export interface RegisterResult {
   address:      string;
   credentialId: string;
   label:        string;
+  chains?:      PasskeyChainAddresses;
 }
 
 /**
- * Create a new passkey and generate a matching EVM wallet.
+ * Create a new passkey and generate a BIP39 HD wallet (all 5 chains).
+ * The 12-word mnemonic is encrypted with the passkey rawId — never stored in plain text.
  *
  * @param label  Optional display name for the wallet (default: "Passkey Wallet").
  */
@@ -246,17 +256,18 @@ export async function registerPasskeyWallet(
   const rawId        = credential.rawId;
   const credentialId = b642url(buf2b64(rawId));
 
-  // Generate a fresh EVM wallet
-  const { generatePrivateKey, privateKeyToAccount } = await import("viem/accounts");
-  const privateKey = generatePrivateKey();
-  const account    = privateKeyToAccount(privateKey);
+  // Generate a BIP39 mnemonic and derive all 5 chain addresses
+  const { generateMnemonic, deriveAllAddresses } = await import("./seedPhrase");
+  const words    = generateMnemonic(12);
+  const addrs    = await deriveAllAddresses(words);
+  const mnemonic = words.join(" ");
 
-  // Encrypt the private key so it can only be decrypted after a passkey assertion
-  const { encryptedKey, iv } = await encryptPrivateKey(privateKey, rawId);
+  // Encrypt the mnemonic so it can only be decrypted after a passkey assertion
+  const { encryptedKey, iv } = await encryptPrivateKey(mnemonic, rawId);
 
   const wallet: PasskeyWallet = {
     credentialId,
-    address:     account.address,
+    address:     addrs.evm,
     encryptedKey,
     iv,
     label,
@@ -268,16 +279,22 @@ export async function registerPasskeyWallet(
   // Silently back up to server (encrypted — safe to store remotely)
   pushBackupToServer(wallet);
 
-  return { address: account.address, credentialId, label };
+  return {
+    address: addrs.evm,
+    credentialId,
+    label,
+    chains: { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv },
+  };
 }
 
 // ─── Authentication ───────────────────────────────────────────────────────────
 
 export interface LoginResult {
-  address:          string;
-  credentialId:     string;
-  label:            string;
-  restoredFromBackup?: boolean;  // true when wallet was recovered from server
+  address:             string;
+  credentialId:        string;
+  label:               string;
+  restoredFromBackup?: boolean;
+  chains?:             PasskeyChainAddresses;
 }
 
 /**
@@ -335,16 +352,32 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     pushBackupToServer(wallet);
   }
 
-  // Decrypt the private key
-  const privateKey = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
-  const { privateKeyToAccount } = await import("viem/accounts");
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  // Decrypt the secret — may be a BIP39 mnemonic (new) or raw EVM private key (legacy)
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+
+  let address: string;
+  let chains: PasskeyChainAddresses | undefined;
+
+  if (isMnemonic) {
+    // New format: derive all 5 chain addresses from the BIP39 mnemonic
+    const { deriveAllAddresses } = await import("./seedPhrase");
+    const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
+    address = addrs.evm;
+    chains  = { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv };
+  } else {
+    // Legacy format: raw EVM private key (0x...)
+    const { privateKeyToAccount } = await import("viem/accounts");
+    address = privateKeyToAccount(secret as `0x${string}`).address;
+  }
 
   return {
-    address:             account.address,
+    address,
     credentialId,
     label:               wallet.label ?? "Passkey Wallet",
     restoredFromBackup,
+    chains,
   };
 }
 
