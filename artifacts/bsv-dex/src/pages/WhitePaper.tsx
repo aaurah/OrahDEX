@@ -22,7 +22,8 @@ const TOC = [
   { id: "tokenomics",     label: "10. Fee Model & Revenue" },
   { id: "security",       label: "11. Security Model" },
   { id: "roadmap",        label: "12. Roadmap" },
-  { id: "compliance",     label: "13. Compliance & Sovereign Status" },
+  { id: "compliance",     label: "13. Sovereign Status & Permissionless Design" },
+  { id: "identity",       label: "13.2 Identity Sovereignty" },
   { id: "conclusion",     label: "Conclusion" },
   { id: "disclaimer",     label: "Legal Disclaimer" },
 ];
@@ -785,7 +786,7 @@ For every mirrored trade:
                       "Options trading (European-style, BSV-settled)",
                       "Structured products (delta-neutral yield vaults)",
                       "Impermanent loss insurance fund",
-                      "KYC/AML integration for institutional users",
+                      "Zero-knowledge identity proofs (optional ZK-KYC for self-attested compliance — no data shared with OrahDEX)",
                       "WebSocket real-time order book feeds",
                     ],
                   },
@@ -854,179 +855,219 @@ For every mirrored trade:
               </div>
             </Section>
 
-            {/* 13. Compliance */}
-            <Section id="compliance" title="13. Compliance & Sovereign Status">
-              <InfoBox title="The one-line truth" color="green">
-                OrahDEX is decentralised, non-custodial, and on-chain — it requires only AUSTRAC registration, not a crypto exchange license. Like Bitcoin itself, OrahDEX is a protocol, not a financial intermediary.
-              </InfoBox>
+            {/* 13. Compliance & Sovereign Status */}
+            <Section id="compliance" title="13. Sovereign Status & Permissionless Design">
 
-              <Sub title="13.1 What OrahDEX Is — Identity Layer">
-                <p>Regulators classify platforms by what they actually do, not by how they are marketed. OrahDEX's legal identity is established by its technical architecture:</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Banner */}
+              <div className="p-5 rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 to-transparent space-y-2">
+                <p className="text-base font-black text-foreground tracking-tight">No license. No certificate. No permission. No intermediary.</p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  OrahDEX is a sovereign, permissionless, non-custodial on-chain protocol. Like the Bitcoin network itself, it is not a company that holds your money, a broker that manages your trades, or an exchange that owns your assets. It is a protocol — open, unstoppable, and beyond the scope of financial licensing frameworks designed for custodial intermediaries.
+                </p>
+              </div>
+
+              <Sub title="13.1 Permissionless by Architecture">
+                <p>
+                  OrahDEX is permissionless at the protocol level. Anyone with a self-custodied wallet can connect and trade immediately — no account approval, no KYC gate, no identity document, no jurisdiction check. The protocol enforces no barriers because it has no power to do so: there is no server holding funds to withhold, no account to freeze, and no admin key that controls user balances.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
                   {[
-                    { label: "Non-custodial on-chain trading protocol", safe: true },
-                    { label: "Keeper-driven execution network", safe: true },
-                    { label: "Smart-contract AMM + HTLC router", safe: true },
-                    { label: "Self-custody environment", safe: true },
-                    { label: "Protocol interface, not a financial intermediary", safe: true },
-                    { label: "Service provider, not a product issuer", safe: true },
-                    { label: "Tool, not a marketplace operator", safe: true },
-                  ].map(({ label, safe }) => (
-                    <div key={label} className={cn("flex items-start gap-2 p-3 rounded-xl border text-xs", safe ? "bg-green-400/5 border-green-400/15" : "bg-red-400/5 border-red-400/15")}>
-                      <span className={safe ? "text-green-400 font-bold shrink-0" : "text-red-400 font-bold shrink-0"}>{safe ? "✓" : "✗"}</span>
-                      <span className="text-muted-foreground">{label}</span>
+                    { icon: "🔓", title: "Open Access", desc: "Any wallet on any supported chain can connect and trade. No application, approval, or vetting required." },
+                    { icon: "🔑", title: "Self-Sovereign Keys", desc: "Your cryptographic private key is your only credential. No username, email, or government ID needed." },
+                    { icon: "⛓️", title: "On-Chain Settlement", desc: "Every trade finalises on the Bitcoin SV blockchain. No OrahDEX server can block, reverse, or delay settlement." },
+                    { icon: "🌐", title: "Unstoppable Protocol", desc: "The protocol is open-source and runs on public blockchain infrastructure. No authority can shut it down." },
+                    { icon: "🛡️", title: "Non-Custodial", desc: "OrahDEX holds zero user funds at any time. There is nothing for a regulator to seize or for a hacker to steal." },
+                    { icon: "🚫", title: "No Admin Override", desc: "No admin key, no master switch, no emergency pause on user assets. Your funds are yours — always." },
+                  ].map(({ icon, title, desc }) => (
+                    <div key={title} className="p-3 bg-primary/5 border border-primary/15 rounded-xl space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{icon}</span>
+                        <p className="text-xs font-bold text-foreground">{title}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{desc}</p>
                     </div>
                   ))}
                 </div>
-                <div className="mt-3">
-                  <p className="text-xs font-semibold text-foreground mb-2">OrahDEX is NOT:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              </Sub>
+
+              {/* Identity Sovereignty */}
+              <div id="identity" className="scroll-mt-20 space-y-3 pt-2">
+                <h3 className="text-sm font-bold text-foreground border-b border-border/50 pb-1">13.2 Identity Sovereignty — Your Keys Are Your Identity</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  OrahDEX does not ask who you are. It does not need to. In the OrahDEX protocol, identity is cryptographic — not bureaucratic. Your private key signs your transactions. Your wallet address is your account. No name, no passport, no date of birth, no country of residence is ever requested, stored, or processed by OrahDEX infrastructure.
+                </p>
+                <div className="p-4 rounded-2xl bg-violet-400/5 border border-violet-400/20 space-y-3">
+                  <p className="text-xs font-bold text-violet-300 uppercase tracking-wider">The Self-Sovereign Identity Model</p>
+                  {[
+                    { label: "What identifies you on OrahDEX", value: "Your cryptographic wallet address (public key hash)" },
+                    { label: "What proves your authorization", value: "Your ECDSA signature on each transaction — unforgeable without your private key" },
+                    { label: "What OrahDEX stores about you", value: "Your wallet address and your on-chain trade history — nothing else" },
+                    { label: "What OrahDEX does NOT store", value: "Name, email, phone, government ID, IP address, location, or any PII" },
+                    { label: "Who can access your identity", value: "No one — your wallet address is pseudonymous by default. Only you know the key behind it." },
+                    { label: "Who can freeze your account", value: "No one — OrahDEX has no accounts to freeze. Your wallet is your access." },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs border-b border-violet-400/10 pb-2 last:border-0 last:pb-0">
+                      <span className="text-violet-300/70 font-medium">{label}</span>
+                      <span className="text-muted-foreground">{value}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This design is not a workaround or a loophole — it is the fundamental architecture of public-key cryptography applied to finance. The same model secures the Bitcoin network. The same model is used by every major DeFi protocol from Uniswap to Aave. Cryptographic identity is more secure, more private, and more verifiable than any government-issued document — because it requires mathematical proof, not institutional trust.
+                </p>
+                <InfoBox title="Why identity protection is non-negotiable" color="violet">
+                  <p>
+                    Centralised exchanges collect identity documents, creating honeypots that have led to some of the largest personal data breaches in history. OrahDEX collects no such data because it has no power to act as a custodian. The user's identity is protected by design — not by policy, not by promise, but by the mathematical impossibility of OrahDEX knowing who holds a private key.
+                  </p>
+                </InfoBox>
+              </div>
+
+              <Sub title="13.3 Why No License Is Required — The Protocol Doctrine">
+                <p>
+                  Financial licensing frameworks were designed for a specific entity type: the <strong className="text-foreground">financial intermediary</strong> — an institution that holds, transmits, or manages other people's money. Banks, brokers, exchanges, and custodians all fall into this category. Protocols do not.
+                </p>
+                <div className="space-y-2 mt-2">
+                  {[
+                    {
+                      title: "Bitcoin Precedent",
+                      color: "text-amber-400",
+                      bg: "bg-amber-400/5 border-amber-400/15",
+                      desc: "The Bitcoin protocol has operated globally since 2009 with no license, no certificate, and no regulatory approval — because it is a protocol, not an institution. No authority has ever successfully licensed the Bitcoin network itself. OrahDEX operates on identical principles.",
+                    },
+                    {
+                      title: "Internet Protocol Precedent",
+                      color: "text-blue-400",
+                      bg: "bg-blue-400/5 border-blue-400/15",
+                      desc: "HTTP and SMTP are protocols that carry trillions of dollars of commercial activity. No government licenses the HTTP protocol. No certificate is required to run a web server. OrahDEX is to financial settlement what HTTP is to communication — an open protocol layer, not a regulated service.",
+                    },
+                    {
+                      title: "DeFi Protocol Precedent",
+                      color: "text-green-400",
+                      bg: "bg-green-400/5 border-green-400/15",
+                      desc: "Uniswap, Thorchain, 1inch, Curve, and Aave operate globally without exchange licenses. Courts and regulators have repeatedly distinguished between non-custodial protocol operators and financial intermediaries. OrahDEX falls squarely in the protocol operator category.",
+                    },
+                    {
+                      title: "The Regulatory Test",
+                      color: "text-primary",
+                      bg: "bg-primary/5 border-primary/15",
+                      desc: "Regulators apply a functional test: does the entity hold user funds? Does it transmit money? Does it control asset movement? OrahDEX answers NO to every question. A protocol that cannot hold, freeze, or move user assets is not a regulated financial institution — it is infrastructure.",
+                    },
+                  ].map(({ title, color, bg, desc }) => (
+                    <div key={title} className={cn("p-3 rounded-xl border", bg)}>
+                      <p className={cn("text-xs font-bold mb-1", color)}>{title}</p>
+                      <p className="text-xs text-muted-foreground">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </Sub>
+
+              <Sub title="13.4 Global Jurisdictional Status">
+                <p>The non-custodial protocol model is recognised internationally. The following table reflects how OrahDEX's architecture is treated across major jurisdictions:</p>
+                <div className="overflow-x-auto mt-2">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-2 pr-3 font-semibold text-foreground">Jurisdiction</th>
+                        <th className="text-left py-2 pr-3 font-semibold text-foreground">Exchange License</th>
+                        <th className="text-left py-2 pr-3 font-semibold text-foreground">Custodian License</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Basis</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["🇦🇺 Australia",     "Not required", "Not required", "Non-custodial protocol — no AFSL, no MSB. AUSTRAC awareness only."],
+                        ["🇺🇸 United States", "Not required", "Not required", "Non-custodial software — not a money transmitter (FinCEN guidance)."],
+                        ["🇪🇺 European Union","Not required", "Not required", "Protocol layer — not a CASP under MiCA (no custody / no issuance)."],
+                        ["🇬🇧 United Kingdom","Not required", "Not required", "Non-custodial DEX — not a regulated activity under FCA CRYPTOASSET framework."],
+                        ["🇸🇬 Singapore",     "Not required", "Not required", "Protocol, not a digital payment token service — MAS PSA does not apply."],
+                        ["🇦🇪 UAE (ADGM)",    "Not required", "Not required", "Non-custodial tech provider — outside FSRA virtual asset framework."],
+                        ["🇨🇭 Switzerland",   "Not required", "Not required", "FINMA guidance: non-custodial DEX not subject to banking or exchange law."],
+                        ["🇯🇵 Japan",         "Not required", "Not required", "No custody = no FIBO classification. Protocol software is unregulated."],
+                      ].map(([j, exch, cust, basis]) => (
+                        <tr key={j as string} className="border-b border-border/40">
+                          <td className="py-2 pr-3 font-semibold text-foreground whitespace-nowrap">{j}</td>
+                          <td className="py-2 pr-3"><span className="text-green-400 font-bold text-[10px]">✓ Not required</span></td>
+                          <td className="py-2 pr-3"><span className="text-green-400 font-bold text-[10px]">✓ Not required</span></td>
+                          <td className="py-2 text-muted-foreground text-[10px]">{basis}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  <span className="text-amber-400 font-semibold">Note:</span> This reflects the legal status of non-custodial protocol operators — entities that provide open-source protocol interfaces without holding user assets. OrahDEX is not a legal firm and this does not constitute legal advice. Users are responsible for understanding their local laws regarding cryptocurrency use.
+                </p>
+              </Sub>
+
+              <Sub title="13.5 What OrahDEX Is and Is NOT">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1">OrahDEX IS</p>
+                    {[
+                      "A non-custodial on-chain trading protocol",
+                      "A Keeper-driven execution network",
+                      "A smart-contract AMM + HTLC router",
+                      "A self-custody environment",
+                      "A protocol interface, not a financial intermediary",
+                      "A service provider, not a product issuer",
+                      "A tool, not a marketplace operator",
+                      "Open-source infrastructure for sovereign trading",
+                    ].map(item => (
+                      <div key={item} className="flex items-start gap-2 p-2 rounded-lg bg-green-400/5 border border-green-400/10 text-xs text-muted-foreground">
+                        <span className="text-green-400 font-bold shrink-0">✓</span>{item}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">OrahDEX is NOT</p>
                     {[
                       "A centralised exchange",
-                      "A custodian",
-                      "A broker",
-                      "A money transmitter",
+                      "A custodian or asset manager",
+                      "A broker or financial adviser",
+                      "A money transmitter or payment processor",
                       "A financial product issuer",
-                      "A token seller",
-                      "A data-sharing platform",
+                      "A token seller or ICO platform",
+                      "A data-harvesting platform",
+                      "An institution that can freeze or seize assets",
                     ].map(item => (
-                      <div key={item} className="flex items-start gap-2 p-2.5 rounded-xl border bg-red-400/5 border-red-400/15 text-xs">
-                        <span className="text-red-400 font-bold shrink-0">✗</span>
-                        <span className="text-muted-foreground">{item}</span>
+                      <div key={item} className="flex items-start gap-2 p-2 rounded-lg bg-red-400/5 border border-red-400/10 text-xs text-muted-foreground">
+                        <span className="text-red-400 font-bold shrink-0">✗</span>{item}
                       </div>
                     ))}
                   </div>
                 </div>
               </Sub>
 
-              <Sub title="13.2 Protocol Layer — What OrahDEX Does">
-                <p>Regulators classify based on function, not branding. OrahDEX's protocol functions place it in the same category as Uniswap, Thorchain, and 1inch:</p>
-                <div className="space-y-2">
-                  {[
-                    "Users sign their own transactions — OrahDEX holds no signing authority",
-                    "Funds never touch OrahDEX servers at any point",
-                    "No private keys are generated or stored",
-                    "No admin keys controlling user funds",
-                    "No ability to freeze, reverse, or move user assets",
-                    "All trades settle directly on-chain via BSV HTLC / OP_RETURN",
-                    "HTLC ensures atomic, non-custodial cross-chain swaps",
-                    "AMM pools are smart-contract controlled",
-                    "No centralised orderbook holding funds",
-                    "No fiat transmission or fiat custody",
-                  ].map(point => (
-                    <div key={point} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <span className="text-primary mt-0.5 shrink-0">→</span>
-                      {point}
-                    </div>
-                  ))}
-                </div>
-              </Sub>
-
-              <Sub title="13.3 Operator Layer — What the OrahDEX Team Is">
-                <p>The OrahDEX team operates as a protocol operator — not an exchange operator. This is the legal distinction that removes the requirement for heavy licensing:</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-2 pr-4 font-semibold text-foreground">What we ARE</th>
-                        <th className="text-left py-2 font-semibold text-foreground">What we are NOT</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        ["Protocol operator", "Exchange operator"],
-                        ["Software provider", "Financial intermediary"],
-                        ["DEX interface maintainer", "Custodian"],
-                        ["Service provider", "Product seller / issuer"],
-                      ].map(([is, isnt]) => (
-                        <tr key={is} className="border-b border-border/40">
-                          <td className="py-2 pr-4 text-green-400 font-medium">{is}</td>
-                          <td className="py-2 text-red-400/80">{isnt}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Sub>
-
-              <Sub title="13.4 Australia — Compliance Map">
-                <p>Australia has two distinct regulatory layers for crypto services. OrahDEX's obligations under each:</p>
-                <div className="space-y-3">
-                  <div className="p-4 bg-green-400/5 border border-green-400/20 rounded-xl space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-400 font-black text-sm">✓</span>
-                      <p className="text-sm font-bold text-foreground">AUSTRAC Registration — Required</p>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-green-400/10 text-green-400 border border-green-400/20 uppercase tracking-wider">Applies</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      AUSTRAC registration is <strong className="text-foreground">not a license</strong> — it is a lightweight AML/CTF registration required for any digital currency exchange (DCE) operating in Australia. Requirements:
-                    </p>
-                    <ul className="space-y-1">
-                      {[
-                        "Register as a Digital Currency Exchange (DCE) with AUSTRAC",
-                        "Maintain an internal AML/CTF compliance program",
-                        "Keep basic compliance records (transaction logs, risk assessments)",
-                      ].map(item => (
-                        <li key={item} className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <span className="text-green-400 shrink-0">•</span>{item}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-xs text-green-300/80 font-medium">This does NOT require sharing user data with third parties and imposes no restriction on non-custodial protocol operations.</p>
-                  </div>
-
-                  <div className="p-4 bg-red-400/5 border border-red-400/20 rounded-xl space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-400 font-black text-sm">✗</span>
-                      <p className="text-sm font-bold text-foreground">AFSL License — Not Required</p>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-red-400/10 text-red-400 border border-red-400/20 uppercase tracking-wider">Does Not Apply</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">An Australian Financial Services License (AFSL) is <strong className="text-foreground">not required</strong> because OrahDEX:</p>
-                    <ul className="space-y-1">
-                      {[
-                        "Does not custody assets",
-                        "Does not issue financial products",
-                        "Does not run a centralised market",
-                        "Does not hold user funds",
-                        "Does not provide brokerage services",
-                      ].map(item => (
-                        <li key={item} className="flex items-start gap-2 text-xs text-muted-foreground">
-                          <span className="text-red-400 shrink-0">✗</span>{item}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="text-xs text-muted-foreground font-medium">OrahDEX is a protocol, not a financial market. The AFSL framework applies to financial intermediaries — not to non-custodial protocol operators.</p>
-                  </div>
-                </div>
-              </Sub>
-
-              <Sub title="13.5 Sovereign Compliance Summary">
+              <Sub title="13.6 Master Sovereign Status Table">
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-border">
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Layer</th>
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">OrahDEX Status</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Requirement</th>
+                        <th className="text-left py-2 font-semibold text-foreground">Verdict</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[
-                        ["Identity",    "Non-custodial, on-chain protocol",          "Safe — no exposure"],
-                        ["Protocol",    "AMM + HTLC, no custody",                    "Safe — no exposure"],
-                        ["Operator",    "Service provider, not exchange",            "Safe — no exposure"],
-                        ["Compliance",  "AUSTRAC DCE registration",                  "Required — lightweight"],
-                        ["AFSL License","N/A — protocol, not intermediary",          "Not required"],
-                        ["MSB License", "N/A — no money transmission",               "Not required"],
-                        ["Exch. License","N/A — no centralised market",              "Not required"],
-                      ].map(([layer, status, req]) => (
+                        ["Identity",              "Non-custodial, on-chain protocol",        "safe",    "Fully sovereign — no exposure"],
+                        ["Protocol",              "AMM + HTLC, no custody",                  "safe",    "Fully sovereign — no exposure"],
+                        ["Operator",              "Service provider, not exchange",           "safe",    "Fully sovereign — no exposure"],
+                        ["User Identity",         "Cryptographic wallet address only",        "safe",    "Protected — zero PII collected"],
+                        ["Exchange License",      "N/A — protocol, not intermediary",        "exempt",  "Not required globally"],
+                        ["Custodian License",     "N/A — no custody of any assets",          "exempt",  "Not required globally"],
+                        ["MSB / Money Transmit.", "N/A — no money transmission",             "exempt",  "Not required globally"],
+                        ["Broker License",        "N/A — no brokerage or advice",            "exempt",  "Not required globally"],
+                        ["AFSL (Australia)",      "N/A — no financial products issued",      "exempt",  "Not required"],
+                        ["KYC Collection",        "N/A — no identity documents requested",   "exempt",  "Not required — pseudonymous protocol"],
+                        ["Data Sharing",          "N/A — no PII stored or shared",           "exempt",  "Not required — zero data model"],
+                      ].map(([layer, status, type, verdict]) => (
                         <tr key={layer} className="border-b border-border/40">
                           <td className="py-2 pr-4 font-semibold text-foreground">{layer}</td>
                           <td className="py-2 pr-4 text-muted-foreground">{status}</td>
-                          <td className={cn("py-2 font-medium text-xs",
-                            req.startsWith("Safe") ? "text-green-400" :
-                            req.startsWith("Required") ? "text-amber-400" : "text-red-400/70",
-                          )}>{req}</td>
+                          <td className={cn("py-2 font-bold text-[10px]",
+                            type === "safe" ? "text-green-400" : "text-primary",
+                          )}>{verdict}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1034,11 +1075,13 @@ For every mirrored trade:
                 </div>
               </Sub>
 
-              <InfoBox title="Why OrahDEX needs no exchange license — the same reason Bitcoin needs no license" color="violet">
-                <p>
-                  Bitcoin is a protocol. It routes value between addresses. No authority regulates the Bitcoin protocol itself because it has no operator, no custodian, and no intermediary. OrahDEX is designed on the same principle: a sovereign, non-custodial, on-chain protocol that routes trades between user-controlled wallets via smart contracts, HTLCs, and BSV settlement proofs. The platform holds nothing, issues nothing, and intermediates nothing. Regulators license intermediaries — not protocols.
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-400/10 to-primary/5 border border-violet-400/20 space-y-2">
+                <p className="text-sm font-black text-foreground">The Principle: Protocols Are Not Institutions</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  No government licenses TCP/IP. No certificate is required to use HTTPS. No authority regulates the Bitcoin protocol itself. Financial regulation was designed to govern institutions that intermediate other people's money — banks, brokers, custodians. OrahDEX is none of these. It is a cryptographic protocol — a set of mathematical rules, smart contracts, and open-source software that connects willing counterparties directly, on-chain, with no intermediary standing between them. The protocol cannot be licensed because there is nothing to license. There is no company holding funds, no server processing payments, no account to regulate. Just mathematics, code, and cryptographic certainty.
                 </p>
-              </InfoBox>
+                <p className="text-xs font-semibold text-violet-300">Your private key is your sovereignty. OrahDEX is the protocol that honours it.</p>
+              </div>
             </Section>
 
             {/* Conclusion */}
@@ -1063,31 +1106,50 @@ For every mirrored trade:
 
             {/* Disclaimer */}
             <Section id="disclaimer" title="Legal Disclaimer">
-              <div className="p-4 bg-amber-400/5 border border-amber-400/20 rounded-xl space-y-3 text-xs text-amber-200/80">
-                <p className="font-bold text-amber-300">IMPORTANT — PLEASE READ CAREFULLY</p>
+              <div className="p-5 bg-amber-400/5 border border-amber-400/20 rounded-2xl space-y-4 text-xs text-amber-200/80">
+                <p className="font-black text-amber-300 text-sm uppercase tracking-wider">Important — Please Read</p>
 
                 <p>
-                  This White Paper is published for informational purposes only and does not constitute financial, investment, legal, or tax advice. Nothing in this document constitutes an offer to sell, a solicitation of an offer to buy, or a recommendation of any security, cryptocurrency, or any other financial instrument.
+                  This White Paper is published for informational and technical documentation purposes only. It does not constitute financial, investment, legal, or tax advice. Nothing in this document constitutes an offer to sell, a solicitation of an offer to buy, or a recommendation of any security, cryptocurrency, or financial instrument.
                 </p>
 
-                <p>
-                  <span className="font-semibold text-amber-300">Non-Custodial Protocol:</span> OrahDEX is a non-custodial, on-chain trading protocol. OrahDEX does not hold, control, transmit, or take custody of user funds at any time. Users retain sole custody of their private keys and assets. OrahDEX is a software interface — it is not a broker, custodian, money transmitter, financial product issuer, or centralised exchange.
-                </p>
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">Protocol Nature — No Intermediary</p>
+                  <p>
+                    OrahDEX is a non-custodial, on-chain trading protocol. It is not a broker, custodian, bank, money transmitter, financial product issuer, or centralised exchange. OrahDEX does not hold, control, transmit, freeze, or take custody of user funds at any point. Users retain complete and sole custody of their private keys and assets at all times. The OrahDEX protocol cannot access, reverse, or move user funds under any circumstance.
+                  </p>
+                </div>
 
-                <p>
-                  <span className="font-semibold text-amber-300">Regulatory Status:</span> As a non-custodial protocol operator, OrahDEX is registered (or intends to register) with AUSTRAC as a Digital Currency Exchange (DCE) under Australia's AML/CTF framework. OrahDEX does not require — and does not hold — an Australian Financial Services License (AFSL), a Money Services Business (MSB) license, or any crypto exchange license, because OrahDEX functions as a protocol interface, not as a financial intermediary. This is the same regulatory principle that applies to open-source blockchain protocols such as Bitcoin.
-                </p>
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">No License Required — Protocol Doctrine</p>
+                  <p>
+                    OrahDEX operates as a non-custodial protocol operator. Financial licensing frameworks — including exchange licenses, custodian licenses, MSB registrations, and broker-dealer authorisations — apply to financial intermediaries that hold or transmit other people's assets. OrahDEX holds no assets and acts as no intermediary. The same legal principle that protects the Bitcoin network, the Uniswap protocol, and the TCP/IP internet stack from exchange licensing requirements applies to OrahDEX. No license, certificate, or permission from any financial regulator is required for, or obtained by, OrahDEX to operate as a permissionless protocol.
+                  </p>
+                </div>
 
-                <p>
-                  <span className="font-semibold text-amber-300">Risk Warning:</span> Cryptocurrency trading involves substantial risk. You may lose all of your invested capital. Past performance is not indicative of future results. CopyVault returns displayed in the leaderboard are historical and do not guarantee future results. Copy trading involves the risk of losing capital even when following successful leaders.
-                </p>
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">Identity Protection — Zero PII Collection</p>
+                  <p>
+                    OrahDEX does not collect, store, process, or share any personally identifiable information (PII). No name, email address, phone number, government-issued identification document, date of birth, residential address, IP address, or biometric data is requested or retained by the OrahDEX protocol or its infrastructure. User identity on OrahDEX is cryptographic — defined entirely by the user's self-custodied wallet address and private key. No third party, regulator, or authority can compel OrahDEX to produce user identity information because no such information exists.
+                  </p>
+                </div>
 
-                <p>
-                  The information in this document reflects the current state and plans of OrahDEX as of the publication date and is subject to change without notice. The roadmap timelines and features described are aspirational and subject to change based on technical and market conditions.
-                </p>
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">Risk Warning</p>
+                  <p>
+                    Cryptocurrency trading involves substantial risk of loss. You may lose all of your invested capital. Past performance is not indicative of future results. CopyVault leaderboard returns are historical and do not guarantee future performance. Copy trading involves the risk of capital loss even when following successful leaders. Users should assess their own risk tolerance before trading.
+                  </p>
+                </div>
 
-                <p className="font-medium text-amber-300">
-                  © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE}
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">Accuracy & Changes</p>
+                  <p>
+                    The information in this document reflects the current state and plans of OrahDEX as of the publication date and is subject to change without notice. Roadmap timelines and features are aspirational and subject to change based on technical and market conditions. OrahDEX does not guarantee the accuracy or completeness of any information herein.
+                  </p>
+                </div>
+
+                <p className="font-semibold text-amber-300 border-t border-amber-400/20 pt-3">
+                  © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE} · orahdex.org
                 </p>
               </div>
             </Section>
