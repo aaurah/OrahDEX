@@ -115,8 +115,20 @@ function usePlatformAnnouncements() {
   return notifs;
 }
 
+function getNotifPath(n: { type: string; pair?: string; txid?: string }): string | null {
+  const { type, pair } = n;
+  if (pair) {
+    const isFutures = pair.endsWith("-PERP");
+    if (type === "order_placed" || type === "order_filled" || type === "order_cancelled" || type === "trade" || type === "price_alert") {
+      return isFutures ? `/futures/${pair}` : `/trade/${pair}`;
+    }
+  }
+  if (type === "bridge") return "/bridge";
+  return null;
+}
+
 export function Layout({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { address, network, provider, chainId, isDemo } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
@@ -402,14 +414,34 @@ export function Layout({ children }: { children: ReactNode }) {
                       {notifications.map(n => {
                         const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
+                        const dest = getNotifPath(n);
                         return (
-                          <div key={n.id} className={cn("px-4 py-3 border-b border-border/40 hover:bg-white/3 transition-colors last:border-0", !n.read && "bg-primary/5")}>
+                          <div
+                            key={n.id}
+                            role={dest ? "button" : undefined}
+                            tabIndex={dest ? 0 : undefined}
+                            onClick={() => {
+                              if (dest) {
+                                setNotifOpen(false);
+                                navigate(dest);
+                              }
+                            }}
+                            onKeyDown={e => { if (dest && (e.key === "Enter" || e.key === " ")) { setNotifOpen(false); navigate(dest); } }}
+                            className={cn(
+                              "px-4 py-3 border-b border-border/40 transition-colors last:border-0",
+                              !n.read && "bg-primary/5",
+                              dest ? "cursor-pointer hover:bg-white/5 active:bg-white/8" : "hover:bg-white/3",
+                            )}
+                          >
                             <div className="flex items-start gap-2.5">
                               <Icon className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-1">
                                   <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
-                                  {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+                                    {dest && <ExternalLink className="w-3 h-3 text-muted-foreground/40" />}
+                                  </div>
                                 </div>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
                                 {n.txid && (
