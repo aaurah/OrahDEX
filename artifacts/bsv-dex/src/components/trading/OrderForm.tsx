@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSignMessage, useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -410,6 +411,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [approvalStep, setApprovalStep] = useState<
     "idle" | "checking" | "needed" | "approving" | "approved"
   >("idle");
+
+  // Wagmi sign — covers MetaMask (injected) AND Reown/WalletConnect wallets
+  const { signMessageAsync } = useSignMessage();
+  const { isConnected: evmConnected } = useAccount();
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
   } | null>(null);
@@ -807,22 +812,46 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     // ── Step 3: Sign the order intent (EVM limit / stop orders only) ───────
     // Market orders already have the on-chain tx hash from Step 2.
     // For limit and stop orders we sign the intent to prove ownership.
+    // Demo wallets and Aura internal wallets skip client-side signing.
     let evmSignature: string | undefined;
-    if (isEvm && type !== "market" && (window as any).ethereum) {
+    const needsEcdsaSign = isEvm && type !== "market" && !isDemo && !isOrahWallet;
+    if (needsEcdsaSign) {
       try {
         setSigning(true);
         const message = buildOrderMessage();
-        evmSignature = await (window as any).ethereum.request({
-          method: "personal_sign",
-          params: [message, address],
-        });
+
+        if (evmConnected) {
+          // Wagmi path — covers MetaMask (injected), Reown/WalletConnect, Coinbase Wallet, etc.
+          // This triggers the correct wallet UI regardless of how the user connected.
+          evmSignature = await signMessageAsync({ message });
+        } else {
+          // Fallback: raw window.ethereum for non-wagmi injected wallets
+          const eth = (window as any).ethereum;
+          if (eth) {
+            evmSignature = await eth.request({
+              method: "personal_sign",
+              params: [message, address],
+            });
+          }
+          // If neither wagmi nor window.ethereum is available, proceed without signature
+          // (the order is still recorded but won't have ECDSA proof)
+        }
       } catch (err: any) {
         setSigning(false);
         setApprovalStep("idle");
-        if (err?.code === 4001) {
-          toast({ title: "Signing rejected", description: "You cancelled the signature request.", variant: "destructive" });
+        // 4001 = MetaMask user rejected; ACTION_REJECTED = wagmi/ethers rejection
+        const isRejected = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+          err?.name === "UserRejectedRequestError" || err?.message?.toLowerCase().includes("rejected");
+        if (isRejected) {
+          toast({
+            title: "Signing rejected",
+            description: "You cancelled the wallet signature request. The order was not placed.",
+            variant: "destructive",
+          });
           return;
         }
+        // Non-rejection errors: proceed without signature (soft fail)
+        console.warn("[OrahDEX] Order signing failed (non-rejection):", err);
       } finally {
         setSigning(false);
       }
