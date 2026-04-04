@@ -231,7 +231,7 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
         </div>
         <button
           onClick={() => openModal()}
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-2 rounded-lg font-semibold text-sm shadow-md shadow-primary/20 hover:shadow-primary/35 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150"
+          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-3.5 rounded-xl font-bold text-sm shadow-md shadow-primary/20 hover:shadow-primary/35 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150"
         >
           <Wallet className="w-4 h-4" />
           Connect Wallet
