@@ -344,11 +344,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
 }) {
-  const { address, network, balance, chainId: walletChainId, isDemo, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill } = useExchangeBalanceStore();
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
+  // Orah HD Wallet users (any network) have their trading balance tracked in the API ledger.
+  // Demo users also use the API ledger. External EVM wallets (MetaMask, WalletConnect) use on-chain balances.
+  const isOrahWallet = provider === 'aura-wallet';
+  const usesApiBalance = isDemo || isOrahWallet;
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -375,12 +379,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     setDemoBalances({ [b]: bAmt, [q]: qAmt });
   }, []);
   useEffect(() => {
-    if (!isDemo || !address) { setDemoBalances({}); return; }
+    if (!usesApiBalance || !address) { setDemoBalances({}); return; }
     const parts2 = symbol.split("/");
     const b = parts2[0];
     const q = parts2[1] ?? "USDT";
     fetchDemoBalances(b, q, address);
-  }, [isDemo, address, symbol, fetchDemoBalances]);
+  }, [usesApiBalance, address, symbol, fetchDemoBalances]);
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -464,11 +468,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const quoteBalEntry = tokenBalances.find(t => t.symbol.toUpperCase() === quote.toUpperCase());
   // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
-  // Demo wallets: use balances fetched from the API ledger; otherwise use on-chain values
-  const baseAvailable  = isDemo
+  // Orah Wallet & demo: use balances fetched from the API ledger; external EVM wallets use on-chain values
+  const baseAvailable  = usesApiBalance
     ? (demoBalances[base] ?? 0)
     : (isNativeBase ? nativeBal : (baseBalEntry?.amount ?? 0));
-  const quoteAvailable = isDemo
+  const quoteAvailable = usesApiBalance
     ? (demoBalances[quote] ?? 0)
     : (quoteBalEntry?.amount ?? 0);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
@@ -866,8 +870,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           }
 
           // Refresh native + token balances after any trade
-          if (isDemo && address) {
-            // Re-fetch demo balances from API ledger after every fill
+          if (usesApiBalance && address) {
+            // Re-fetch API ledger balances after every fill (covers demo + Orah Wallet)
             fetchDemoBalances(base, quote, address);
           } else if (isEvm && address) {
             const bal = await fetchEvmBalance(address, currentChainId);

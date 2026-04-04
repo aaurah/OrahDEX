@@ -119,7 +119,9 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId, isDemo, connectDemo } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, provider, connectDemo } = useWalletStore();
+  const isOrahWallet = provider === 'aura-wallet';
+  const usesApiBalance = isDemo || isOrahWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
@@ -230,15 +232,15 @@ export function FuturesTrading() {
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
   const nativeBal = balance ? parseFloat(balance) : 0;
 
-  // ── Demo: fetch USDT balance from API ledger ─────────────────────────────────
+  // ── Orah Wallet & Demo: fetch USDT balance from API ledger ───────────────────
   const [demoUsdtBal, setDemoUsdtBal] = useState(0);
   useEffect(() => {
-    if (!isDemo || !address) { setDemoUsdtBal(0); return; }
+    if (!usesApiBalance || !address) { setDemoUsdtBal(0); return; }
     fetch(`${API_BASE}/balances/USDT?walletAddress=${address}`)
       .then(r => r.ok ? r.json() : null)
       .then(j => j ? setDemoUsdtBal(parseFloat(j.available ?? "0") || 0) : null)
       .catch(() => {});
-  }, [isDemo, address]);
+  }, [usesApiBalance, address]);
 
   // Canonical L2 chain awareness — BaseETH/ArbETH/OPETH all = ETH at 1:1
   const CHAIN_INFO_FUT: Record<number, { nativeSymbol: string; l2Label: string | null }> = {
@@ -714,11 +716,11 @@ export function FuturesTrading() {
                 <span>Available</span>
                 {address ? (
                   <div className="flex items-center gap-1.5">
-                    {isDemo ? (
+                    {usesApiBalance ? (
                       <>
                         <span className="font-mono text-foreground">{demoUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                         <span className="font-mono text-foreground">USDT</span>
-                        <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>
+                        {isDemo && <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>}
                       </>
                     ) : (
                       <>
@@ -773,14 +775,11 @@ export function FuturesTrading() {
                   <button
                     key={pct}
                     onClick={() => {
-                      // Use demo USDT balance in demo mode, native balance otherwise
-                      const availBal = isDemo ? demoUsdtBal : nativeBal;
+                      // Use USDT ledger balance for Orah/demo wallets, native balance for external EVM wallets
+                      const availBal = usesApiBalance ? demoUsdtBal : nativeBal;
                       const portion = availBal * (pct / 100);
                       const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;
-                      // In demo mode, portion is USDT so convert to base units; otherwise use native
-                      setSize(isDemo
-                        ? (portion * leverage / entryPrice).toFixed(4)
-                        : (portion * leverage / entryPrice).toFixed(4));
+                      setSize((portion * leverage / entryPrice).toFixed(4));
                     }}
                     className="flex-1 py-1 text-[10px] font-semibold bg-secondary border border-border rounded-lg text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all"
                   >
