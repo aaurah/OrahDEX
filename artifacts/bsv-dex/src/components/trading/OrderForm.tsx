@@ -682,10 +682,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     // Per-chain router + token registry — correct addresses for every network
     const routerAddr = getChainRouter(currentChainId);
 
+    // Only use window.ethereum for INJECTED wallets (MetaMask, Coinbase Wallet, etc.)
+    // Reown/WalletConnect wallets connect via the WalletConnect session — using
+    // window.ethereum with them would send requests to a different (injected) wallet.
+    const isInjectedWallet = isEvm && provider !== "reown" && !!(window as any).ethereum;
+
     // ── Step 1: ERC-20 Allowance check for EVM sells ──────────────────────
     // If the user is selling an ERC-20 token, verify the DEX router has
     // enough allowance via allowance(owner, router). If not, request approve().
-    if (isEvm && side === "sell" && (window as any).ethereum) {
+    if (isInjectedWallet && side === "sell") {
       // Look up the token contract on the CURRENT chain (not hardcoded mainnet)
       const token = getChainToken(currentChainId, base);
       if (token?.address) {
@@ -739,11 +744,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     }
 
     // ── Step 2: EVM market orders — execute on-chain router swap ──────────
-    // For market orders on EVM chains, we call swapExactTokensForTokens (or the
-    // native-in/out variants) directly on the Uniswap v2-compatible router for
-    // this chain. The result tx hash is forwarded to the API as proof-of-trade.
+    // Only runs for INJECTED wallets (MetaMask etc.) — Reown/WalletConnect
+    // wallets route through the API directly; no window.ethereum needed.
     let onChainTxHash: string | undefined;
-    if (isEvm && type === "market" && (window as any).ethereum) {
+    if (isInjectedWallet && type === "market") {
       try {
         setSigning(true);
 
@@ -842,84 +846,105 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     }
 
     // ── Step 3: Sign the order intent (EVM limit / stop orders only) ───────
-    // Market orders already have the on-chain tx hash from Step 2.
-    // For limit and stop orders we sign the intent to prove ownership.
-    // Demo wallets and Orah Wallet skip client-side signing.
+    // Market orders already have the on-chain tx hash from Step 2 (injected wallets)
+    // or go straight to the API (Reown wallets).
+    // Demo wallets and Orah Wallet skip client-side signing entirely.
     let evmSignature: string | undefined;
     const needsEcdsaSign = isEvm && type !== "market" && !isDemo && !isOrahWallet;
     if (needsEcdsaSign) {
+      setSigning(true);
       try {
-        setSigning(true);
         const message = buildOrderMessage();
+        let signed = false;
 
-        if (provider === "reown") {
-          // Primary path: use the live WalletConnect/Reown session directly.
-          // Falls back through wagmi, then proceeds without signature if both fail
-          // (signing is optional — the order is still placed without it).
-          let signed = false;
+        // Primary path: wagmi signMessageAsync handles BOTH injected wallets
+        // (MetaMask, Coinbase, Brave) AND WalletConnect/Reown sessions transparently.
+        if (evmConnected) {
+          try {
+            evmSignature = await signMessageAsync({ message });
+            signed = true;
+          } catch (wagmiErr: any) {
+            // Only hard-stop on explicit user rejection — never on a technical error
+            const isRejected =
+              wagmiErr?.code === 4001 ||
+              wagmiErr?.code === "ACTION_REJECTED" ||
+              wagmiErr?.name === "UserRejectedRequestError" ||
+              wagmiErr?.message?.toLowerCase().includes("user rejected") ||
+              wagmiErr?.message?.toLowerCase().includes("user denied");
+            if (isRejected) {
+              setSigning(false);
+              setApprovalStep("idle");
+              toast({
+                title: "Signing rejected",
+                description: "You cancelled the wallet prompt. The order was not placed.",
+                variant: "destructive",
+              });
+              return;
+            }
+            // Technical error — try Reown provider loop as fallback
+            console.warn("[OrahDEX] wagmi sign failed, trying Reown provider:", wagmiErr?.message);
+          }
+        }
+
+        // Fallback: iterate over Reown connectors (handles edge cases where
+        // wagmi reports disconnected but Reown session is still active)
+        if (!signed && provider === "reown") {
           try {
             const reownSig = await signMessageWithReownProvider(message, address!);
             if (reownSig) { evmSignature = reownSig; signed = true; }
-          } catch { /* try next path */ }
+          } catch { /* silently fall through */ }
+        }
 
-          if (!signed && evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message });
-              signed = true;
-            } catch (wagmiErr: any) {
-              // Propagate user rejections so the order is NOT placed
-              const isRejected =
-                wagmiErr?.code === 4001 ||
-                wagmiErr?.code === "ACTION_REJECTED" ||
-                wagmiErr?.name === "UserRejectedRequestError" ||
-                wagmiErr?.message?.toLowerCase().includes("rejected");
-              if (isRejected) throw wagmiErr;
-            }
-          }
-
-          if (!signed) {
-            // Could not sign — warn the user but still allow order placement
-            console.warn("[OrahDEX] Reown signing unavailable; placing order without signature");
-            toast({
-              title: "Signing unavailable",
-              description: "Could not get wallet signature. Order will still be placed — reconnect wallet to sign future orders.",
-            });
-          }
-        } else if (evmConnected) {
-          // Wagmi path — covers MetaMask (injected), Coinbase Wallet, etc.
-          evmSignature = await signMessageAsync({ message });
-        } else {
-          // Last-resort: raw window.ethereum for non-wagmi injected wallets
-          const eth = (window as any).ethereum;
-          if (eth) {
-            evmSignature = await eth.request({
+        // Last resort: raw injected provider (for non-wagmi wallets)
+        if (!signed && isInjectedWallet) {
+          try {
+            evmSignature = await (window as any).ethereum.request({
               method: "personal_sign",
               params: [message, address],
             });
+            if (evmSignature) signed = true;
+          } catch (rawErr: any) {
+            const isRejected =
+              rawErr?.code === 4001 ||
+              rawErr?.message?.toLowerCase().includes("user rejected") ||
+              rawErr?.message?.toLowerCase().includes("user denied");
+            if (isRejected) {
+              setSigning(false);
+              setApprovalStep("idle");
+              toast({
+                title: "Signing rejected",
+                description: "You cancelled the wallet prompt. The order was not placed.",
+                variant: "destructive",
+              });
+              return;
+            }
           }
         }
+
+        if (!signed) {
+          // Could not sign — warn but proceed: order still goes through unsigned
+          console.warn("[OrahDEX] All signing paths failed; placing order without signature");
+          toast({
+            title: "Signing unavailable",
+            description: "Order placed without wallet signature. Reconnect your wallet to sign future orders.",
+          });
+        }
       } catch (err: any) {
+        // Unexpected outer error — always proceed to API unless clearly rejected
+        const isRejected =
+          err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+          err?.name === "UserRejectedRequestError";
         setSigning(false);
         setApprovalStep("idle");
-        // 4001 = MetaMask user rejected; ACTION_REJECTED = wagmi/ethers rejection
-        const isRejected = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
-          err?.name === "UserRejectedRequestError" ||
-          err?.message?.toLowerCase().includes("rejected") ||
-          err?.message?.toLowerCase().includes("denied");
         if (isRejected) {
           toast({
             title: "Signing rejected",
-            description: "You cancelled the wallet signature request. The order was not placed.",
+            description: "You cancelled the wallet prompt. The order was not placed.",
             variant: "destructive",
           });
           return;
         }
-        // Non-rejection errors: warn the user and still place the order
-        console.warn("[OrahDEX] Order signing failed (non-rejection):", err);
-        toast({
-          title: "Signing unavailable",
-          description: "Could not get wallet signature. The order will still be placed — reconnect your wallet to sign future orders.",
-        });
+        console.warn("[OrahDEX] Unexpected signing error:", err);
       } finally {
         setSigning(false);
       }
