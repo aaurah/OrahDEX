@@ -47,6 +47,8 @@ router.get("/futures/positions", async (req, res) => {
       .from(futuresPositionsTable)
       .where(and(eq(futuresPositionsTable.walletAddress, walletAddress), eq(futuresPositionsTable.status, "open")));
 
+    // Disable caching so the UI always gets fresh position data after trades
+    res.setHeader("Cache-Control", "no-store");
     res.json(
       positions.map((p) => ({
         id: p.id,
@@ -78,13 +80,22 @@ router.get("/futures/positions", async (req, res) => {
 router.post("/futures/positions", async (req, res) => {
   try {
     const body = req.body;
-    if (!body.walletAddress || !body.symbol || !body.side || !body.leverage || !body.quantity || !body.orderType || !body.marginMode) {
-      res.status(400).json({ error: "Missing required fields" });
+    if (!body.walletAddress || !body.symbol || !body.side || !body.leverage || !body.quantity) {
+      res.status(400).json({ error: "Missing required fields: walletAddress, symbol, side, leverage, quantity" });
       return;
     }
 
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
-    const entryPrice = body.price || (market ? parseFloat(market.lastPrice) : 55.42);
+    // Normalize symbol: "BSV-USDT-PERP" → "BSV/USDT-PERP", strip -PERP suffix to look up base market
+    const symbol = (body.symbol as string).replace(/^([A-Z0-9]+)-([A-Z0-9]+)(-PERP)?$/, "$1/$2$3");
+    const baseMarketSymbol = symbol.replace("-PERP", "");
+    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, baseMarketSymbol));
+    // Use body price → live market price → fail loudly (no magic fallback)
+    const rawEntry = body.price || (market ? parseFloat(market.lastPrice) : null);
+    if (!rawEntry || rawEntry <= 0) {
+      res.status(400).json({ error: `No market price available for ${symbol}. Please retry.` });
+      return;
+    }
+    const entryPrice: number = rawEntry;
     const leverage = parseFloat(body.leverage);
     const quantity = parseFloat(body.quantity);
     const margin = (entryPrice * quantity) / leverage;
@@ -98,7 +109,7 @@ router.post("/futures/positions", async (req, res) => {
     const newPosition = {
       id,
       walletAddress: body.walletAddress,
-      symbol: body.symbol,
+      symbol,
       side: body.side,
       leverage: leverage.toString(),
       entryPrice: entryPrice.toString(),
@@ -110,7 +121,7 @@ router.post("/futures/positions", async (req, res) => {
       unrealizedPnlPercent: "0",
       realizedPnl: "0",
       fundingFee: "0",
-      marginMode: body.marginMode,
+      marginMode: (body.marginMode as string) ?? "cross",
       status: "open",
       txid: body.signedTx ? crypto.randomBytes(32).toString("hex") : null,
     };
