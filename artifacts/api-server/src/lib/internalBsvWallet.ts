@@ -45,7 +45,7 @@ export function decrypt(stored: string): string {
   const iv  = Buffer.from(ivHex, "hex");
   const tag = Buffer.from(tagHex, "hex");
   const enc = Buffer.from(encHex, "hex");
-  const d   = createDecipheriv("aes-256-gcm", key, iv);
+  const d   = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
   d.setAuthTag(tag);
   return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
 }
