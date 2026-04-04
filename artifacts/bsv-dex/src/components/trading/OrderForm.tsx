@@ -1546,9 +1546,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             <span className="text-muted-foreground">Network</span>
             <span className={cn(
               "font-bold text-[10px] uppercase px-1.5 py-0.5 rounded border",
-              isEvm ? "text-violet-400 border-violet-500/30 bg-violet-500/10" : "text-green-400 border-green-500/30 bg-green-500/10"
+              isEvm ? "text-violet-400 border-violet-500/30 bg-violet-500/10"
+                    : network === 'btc' ? "text-orange-400 border-orange-500/30 bg-orange-500/10"
+                    : network === 'sol' ? "text-purple-400 border-purple-500/30 bg-purple-500/10"
+                    : network === 'bch' ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
+                    : "text-green-400 border-green-500/30 bg-green-500/10"
             )}>
-              {isEvm ? "⬡ EVM" : "₿ BSV"}
+              {isEvm ? "⬡ EVM" : network === 'btc' ? "₿ BTC" : network === 'sol' ? "◎ SOL" : network === 'bch' ? "🟢 BCH" : "₿ BSV"}
             </span>
           </div>
         </div>
