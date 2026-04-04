@@ -10,6 +10,7 @@ import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-r
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
+import { API_BASE } from "@/lib/api";
 
 const LEVERAGE_OPTIONS = [2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 
@@ -117,7 +118,7 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo } = useWalletStore();
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
@@ -179,8 +180,18 @@ export function FuturesTrading() {
 
   const countdown = useFundingCountdown();
 
-  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
   const nativeBal = balance ? parseFloat(balance) : 0;
+
+  // ── Demo: fetch USDT balance from API ledger ─────────────────────────────────
+  const [demoUsdtBal, setDemoUsdtBal] = useState(0);
+  useEffect(() => {
+    if (!isDemo || !address) { setDemoUsdtBal(0); return; }
+    fetch(`${API_BASE}/balances/USDT?walletAddress=${address}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(j => j ? setDemoUsdtBal(parseFloat(j.available ?? "0") || 0) : null)
+      .catch(() => {});
+  }, [isDemo, address]);
 
   // Canonical L2 chain awareness — BaseETH/ArbETH/OPETH all = ETH at 1:1
   const CHAIN_INFO_FUT: Record<number, { nativeSymbol: string; l2Label: string | null }> = {
@@ -613,12 +624,22 @@ export function FuturesTrading() {
                 <span>Available</span>
                 {address ? (
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-foreground">{nativeBal.toFixed(4)}</span>
-                    <span className="font-mono text-foreground">{nativeSymbol}</span>
-                    {futChainInfo?.l2Label && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                        {futChainInfo.l2Label}
-                      </span>
+                    {isDemo ? (
+                      <>
+                        <span className="font-mono text-foreground">{demoUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-mono text-foreground">USDT</span>
+                        <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-mono text-foreground">{nativeBal.toFixed(4)}</span>
+                        <span className="font-mono text-foreground">{nativeSymbol}</span>
+                        {futChainInfo?.l2Label && (
+                          <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                            {futChainInfo.l2Label}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (
