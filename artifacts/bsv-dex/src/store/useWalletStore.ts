@@ -57,6 +57,8 @@ interface WalletState {
   setInternalBchAddress: (addr: string | null) => void;
   setInternalBtcAddress: (addr: string | null) => void;
   setInternalSolAddress: (addr: string | null) => void;
+  /** Switch the active network for multi-chain wallets (HD/passkey). */
+  switchNetworkType: (network: WalletNetwork) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -157,6 +159,27 @@ export const useWalletStore = create<WalletState>()(
       setInternalBchAddress: (internalBchAddress) => set({ internalBchAddress }),
       setInternalBtcAddress: (internalBtcAddress) => set({ internalBtcAddress }),
       setInternalSolAddress: (internalSolAddress) => set({ internalSolAddress }),
+
+      switchNetworkType: (network) =>
+        set((s) => {
+          // When switching away from EVM, capture the EVM address so we can return to it later
+          const evmAddr = s.internalEvmAddress ?? (s.network === 'evm' ? s.address : null);
+          // Resolve the address for the requested network using stored internal addresses
+          let newAddress: string | null = null;
+          if (network === 'evm')  newAddress = evmAddr;
+          if (network === 'bsv')  newAddress = s.internalBsvAddress;
+          if (network === 'btc')  newAddress = s.internalBtcAddress;
+          if (network === 'sol')  newAddress = s.internalSolAddress;
+          if (!newAddress) return {}; // no address available for this network — no-op
+          return {
+            network,
+            address: newAddress,
+            balance: null,
+            chainId: null,
+            // Persist EVM address so we can switch back
+            internalEvmAddress: evmAddr,
+          };
+        }),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),

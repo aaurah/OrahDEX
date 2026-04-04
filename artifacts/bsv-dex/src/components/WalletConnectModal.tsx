@@ -199,6 +199,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const connect = useWalletStore((s) => s.connect);
   const connectDemo = useWalletStore((s) => s.connectDemo);
   const setBalance = useWalletStore((s) => s.setBalance);
+  const setInternalEvmAddress = useWalletStore((s) => s.setInternalEvmAddress);
   const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
   const setInternalBchAddress = useWalletStore((s) => s.setInternalBchAddress);
   const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
@@ -367,6 +368,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
       connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
       if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
@@ -389,6 +391,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
       connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
       if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
@@ -1001,6 +1004,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const addrs = await deriveAllAddresses(mnemonic);
       setHdAddresses(addrs);
       connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
@@ -1023,6 +1027,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setHdAddresses(addrs);
       setImportAddress(addrs.evm);
       connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
