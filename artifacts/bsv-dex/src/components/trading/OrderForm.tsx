@@ -1005,7 +1005,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 type="number"
                 value={stopPrice}
                 onChange={(e) => setStopPrice(e.target.value)}
-                className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
+                className="flex-1 min-w-0 bg-transparent text-right text-foreground font-mono focus:outline-none"
                 placeholder="0.00"
                 min="0"
                 step="any"
@@ -1017,13 +1017,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           {/* Price */}
           {type === "limit" || type === "stop" ? (
             <div className="group flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
-              <span className="text-muted-foreground text-sm w-16">{type === "stop" ? "Limit" : "Price"}</span>
+              <span className="text-muted-foreground text-sm w-16 shrink-0">{type === "stop" ? "Limit" : "Price"}</span>
               <input
                 type="number"
                 data-testid="order-price-input"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
-                className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
+                className="flex-1 min-w-0 bg-transparent text-right text-foreground font-mono focus:outline-none"
                 placeholder="0.00"
                 min="0"
                 step="any"
@@ -1046,7 +1046,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               data-testid="order-amount-input"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
+              className="flex-1 min-w-0 bg-transparent text-right text-foreground font-mono focus:outline-none"
               placeholder="0.00"
               min="0"
               step="any"
