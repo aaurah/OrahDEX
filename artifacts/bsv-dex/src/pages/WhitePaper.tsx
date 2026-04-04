@@ -193,6 +193,8 @@ export function WhitePaper() {
                 <span>{PUBLISH_DATE}</span>
                 <span>·</span>
                 <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
+                <span>·</span>
+                <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
                 <Metric value="950+" label="Trading Pairs" sub="Spot + Futures + VAMM" />
@@ -1149,7 +1151,7 @@ For every mirrored trade:
                 </div>
 
                 <p className="font-semibold text-amber-300 border-t border-amber-400/20 pt-3">
-                  © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE} · orahdex.org
+                  © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE} · orahdex.org · orahdex.com
                 </p>
               </div>
             </Section>
