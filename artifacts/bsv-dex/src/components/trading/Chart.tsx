@@ -341,9 +341,32 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     };
   }, [closes, candles]);
 
+  /* Sanitize candles — strip zeros, NaN, and statistical outliers that
+     would cause the chart to zoom out to extreme scales               */
+  const sanitizedCandles = useMemo(() => {
+    if (!candles.length) return candles;
+    // Step 1: basic validity
+    const valid = candles.filter(c =>
+      c.open > 0 && c.close > 0 && c.high > 0 && c.low > 0 &&
+      isFinite(c.open) && isFinite(c.close) && isFinite(c.high) && isFinite(c.low) &&
+      c.high >= c.low && c.high >= Math.min(c.open, c.close)
+    );
+    if (!valid.length) return candles;
+    // Step 2: compute median close to detect extreme outliers
+    const sorted = [...valid].map(c => c.close).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    // Allow candles within 20x of median (catches real crashes/pumps but blocks garbage data)
+    const filtered = valid.filter(c =>
+      c.close >= median / 20 && c.close <= median * 20 &&
+      c.open  >= median / 20 && c.open  <= median * 20 &&
+      c.high  <= median * 25 && c.low   >= median / 25
+    );
+    return filtered.length >= 5 ? filtered : valid;
+  }, [candles]);
+
   const displayCandles = useMemo(() =>
-    chartType === 'heikinashi' ? computeHeikinAshi(candles) : candles,
-  [candles, chartType]);
+    chartType === 'heikinashi' ? computeHeikinAshi(sanitizedCandles) : sanitizedCandles,
+  [sanitizedCandles, chartType]);
 
   /* ── Create main chart ──────────────────────────────────────────────── */
   useEffect(() => {
