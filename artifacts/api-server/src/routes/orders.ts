@@ -103,8 +103,15 @@ router.post("/orders", async (req, res) => {
     try {
       const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
       const lockAsset  = body.side === "buy" ? quoteAsset : baseAsset;
+      // For market buy orders we don't yet know the fill price —
+      // use the current market price as the lock estimate.
+      let lockPrice = price;
+      if (!lockPrice && body.side === "buy") {
+        const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
+        lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
+      }
       const lockAmount = body.side === "buy"
-        ? (price ? (price * quantity).toString() : "0")
+        ? (lockPrice ? (lockPrice * quantity).toString() : "0")
         : quantity.toString();
 
       if (parseFloat(lockAmount) > 0 && lockAsset) {
@@ -197,13 +204,32 @@ router.post("/orders", async (req, res) => {
         return body.side === "buy" ? pa - pb : pb - pa;
       });
 
-      const match = sorted[0];
-      if (match) {
-        // Use the matched order's price (bot's price) as the fill price
-        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
-        const fillTotal = (quantity * fillPrice).toFixed(8);
+      // ── Multi-fill loop: consume counter-orders until qty is satisfied ───────
+      // This correctly handles large orders that span multiple counter-orders,
+      // and does partial consumption of bot orders (instead of deleting the
+      // entire bot order when only a fraction of it is needed).
+      let remainingQty   = quantity;
+      let totalFilled    = 0;
+      let totalFillValue = 0;
+      let lastFillPrice  = 0;
+      let lastTxid: string | null = null;
+      let lastMatchId: string | null = null;
 
-        // ── Settle on BSV chain ─────────────────────────────────────────────
+      const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+
+      for (const match of sorted) {
+        if (remainingQty <= 0.000001) break;
+
+        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity) - parseFloat(match.filledQuantity ?? "0");
+        if (matchAvail <= 0) continue;
+
+        const fillQty   = Math.min(remainingQty, matchAvail);
+        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
+        const fillValue = fillQty * fillPrice;
+        const fillTotal = fillValue.toFixed(8);
+        const isBot     = match.walletAddress === BOT_ADDRESS;
+
+        // ── Settle this fill on BSV chain ─────────────────────────────────
         const tradeId = crypto.randomUUID();
         const opReturnPayload = [
           "ORAH", "v1",
@@ -211,12 +237,11 @@ router.post("/orders", async (req, res) => {
           body.symbol,
           (body.side === "buy" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
           (body.side === "sell" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
-          quantity.toString(),
+          fillQty.toString(),
           fillPrice.toString(),
           Date.now().toString(),
         ].join("|");
 
-        // Build deterministic txid as fallback
         const fallbackSettlement = buildSettlement({
           tradeId,
           pair:          body.symbol,
@@ -226,16 +251,15 @@ router.post("/orders", async (req, res) => {
           sellerAddress: body.side === "sell" ? body.walletAddress : match.walletAddress,
           buyerNetwork:  body.side === "buy" ? networkType : (match.networkType ?? "evm"),
           sellerNetwork: body.side === "sell" ? networkType : (match.networkType ?? "evm"),
-          amount:        quantity.toString(),
+          amount:        fillQty.toString(),
           price:         fillPrice.toString(),
           total:         fillTotal,
           timestamp:     Date.now(),
         });
 
-        let broadcastTxid = fallbackSettlement.txid;
+        let broadcastTxid  = fallbackSettlement.txid;
         let wasRealBroadcast = false;
 
-        // Attempt real on-chain broadcast (non-blocking — fall back on any failure)
         try {
           const wallet  = await getOrCreateWallet();
           const balance = await fetchWalletBalance(wallet.address);
@@ -247,52 +271,45 @@ router.post("/orders", async (req, res) => {
               utxo:            best,
               opReturnPayload,
             });
-            if (result.broadcast) {
-              broadcastTxid    = result.txid;
-              wasRealBroadcast = true;
-            }
+            if (result.broadcast) { broadcastTxid = result.txid; wasRealBroadcast = true; }
           }
         } catch (broadcastErr) {
           req.log.warn({ broadcastErr }, "BSV broadcast attempt failed — using deterministic txid");
         }
 
-        settlementTxid = broadcastTxid;
-        matchedOrderId = match.id;
-
         req.log.info(
-          { txid: broadcastTxid, buyOrder: id, sellOrder: match.id,
-            fillPrice, isBot: match.walletAddress === BOT_ADDRESS, realBroadcast: wasRealBroadcast },
+          { txid: broadcastTxid, fillQty, fillPrice, isBot, realBroadcast: wasRealBroadcast },
           wasRealBroadcast ? "BSV settlement BROADCAST to mainnet ✓" : "BSV settlement committed (deterministic txid)"
         );
 
-        // ── Settle balances in the ledger ───────────────────────────────────
-        const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+        // ── Settle balances in the ledger ─────────────────────────────────
         const buyerAddress  = body.side === "buy" ? body.walletAddress : match.walletAddress;
         const sellerAddress = body.side === "sell" ? body.walletAddress : match.walletAddress;
-
         try {
-          await settleTrade({
-            buyerAddress,
-            sellerAddress,
-            baseAsset:  baseAsset!,
-            quoteAsset: quoteAsset!,
-            amount:     quantity.toString(),
-            price:      fillPrice.toString(),
-          });
+          await settleTrade({ buyerAddress, sellerAddress, baseAsset: baseAsset!, quoteAsset: quoteAsset!, amount: fillQty.toString(), price: fillPrice.toString() });
         } catch (settleErr) {
-          req.log.warn({ settleErr }, "Ledger settlement failed — order still marked filled");
+          req.log.warn({ settleErr }, "Ledger settlement failed");
         }
 
-        // If matched against the bot, just delete the consumed bot order
-        // (keeps the bot order table clean; real users keep their filled rows)
-        if (match.walletAddress === BOT_ADDRESS) {
-          await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+        // ── Update the counter-order (partial or full consume) ────────────
+        const newMatchFilled    = (parseFloat(match.filledQuantity ?? "0") + fillQty);
+        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
+        const isMatchFullyFilled = newMatchRemaining <= 0.000001;
+
+        if (isBot) {
+          if (isMatchFullyFilled) {
+            await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+          } else {
+            await db.update(ordersTable)
+              .set({ filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(), updatedAt: new Date() })
+              .where(eq(ordersTable.id, match.id));
+          }
         } else {
           await db.update(ordersTable)
             .set({
-              status:            "filled",
-              filledQuantity:    match.quantity,
-              remainingQuantity: "0",
+              status:            isMatchFullyFilled ? "filled" : "open",
+              filledQuantity:    newMatchFilled.toString(),
+              remainingQuantity: newMatchRemaining.toString(),
               txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
@@ -300,16 +317,32 @@ router.post("/orders", async (req, res) => {
             .where(eq(ordersTable.id, match.id));
         }
 
-        // Mark the user's new order as filled
+        totalFilled    += fillQty;
+        totalFillValue += fillValue;
+        remainingQty   -= fillQty;
+        lastFillPrice   = fillPrice;
+        lastTxid        = broadcastTxid;
+        lastMatchId     = match.id;
+        settlementTxid  = broadcastTxid;
+        matchedOrderId  = match.id;
+      }
+
+      if (totalFilled > 0) {
+        // ── Mark the user's order with actual fill amount ─────────────────
+        const avgFillPrice    = totalFillValue / totalFilled;
+        const isFullyFilled   = remainingQty <= 0.000001;
+        const correctFee      = (totalFillValue * 0.001).toFixed(8);
+
         await db.update(ordersTable)
           .set({
-            status:            "filled",
-            filledQuantity:    quantity.toString(),
-            remainingQuantity: "0",
-            price:             isMarket ? fillPrice.toString() : undefined,
-            total:             fillTotal,
-            txid:              broadcastTxid,
-            matchedOrderId:    match.id,
+            status:            isFullyFilled ? "filled" : "open",
+            filledQuantity:    totalFilled.toString(),
+            remainingQuantity: Math.max(0, remainingQty).toString(),
+            price:             isMarket ? avgFillPrice.toString() : undefined,
+            total:             totalFillValue.toFixed(8),
+            fee:               correctFee,
+            txid:              lastTxid,
+            matchedOrderId:    lastMatchId,
             updatedAt:         new Date(),
           })
           .where(eq(ordersTable.id, id));
@@ -318,11 +351,11 @@ router.post("/orders", async (req, res) => {
         const fillSymbol = body.symbol as string;
         const fillBase   = fillSymbol.split("/")[0];
         pushNotification(body.walletAddress, {
-          type:  "order_filled",
-          title: `Order Filled ✓`,
-          body:  `${quantity} ${fillBase} @ $${fillPrice.toFixed(4)} · BSV settled on-chain`,
+          type:  isFullyFilled ? "order_filled" : "order_partial",
+          title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
+          body:  `${totalFilled.toFixed(4)} ${fillBase} @ $${avgFillPrice.toFixed(4)} avg · BSV settled on-chain`,
           pair:  fillSymbol,
-          txid:  broadcastTxid ?? undefined,
+          txid:  lastTxid ?? undefined,
           side:  body.side,
         });
       }
@@ -420,9 +453,9 @@ router.post("/orders/precheck", async (req, res) => {
     const warnings: { code: string; message: string  }[] = [];
 
     const qty = parseFloat(amount);
-    const px  = price ? parseFloat(price) : (currentPrice ?? 0);
 
-    // Pair enabled check (look up market)
+    // Pair enabled check (look up market) — must happen BEFORE px calculation
+    // so we can use the DB market price as fallback for market orders.
     const [mkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!mkt) {
       errors.push({ code: "PAIR_DISABLED", detail: `Market ${symbol} not found` });
@@ -431,6 +464,9 @@ router.post("/orders/precheck", async (req, res) => {
     }
 
     const marketPrice = parseFloat(mkt.lastPrice);
+    // For market orders without a price, fall back to the live market price
+    // so slippage/impact calculations work correctly.
+    const px  = price ? parseFloat(price) : (currentPrice ?? marketPrice ?? 0);
     const orderValue  = px * qty;
 
     // Min order size
@@ -487,7 +523,7 @@ router.post("/orders/precheck", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Precheck error");
-    res.status(500).json({ ok: true, errors: [], warnings: [] }); // fail-open
+    res.status(500).json({ ok: false, errors: [{ code: "SERVER_ERROR", detail: "Precheck failed — try again" }], warnings: [] });
   }
 });
 
