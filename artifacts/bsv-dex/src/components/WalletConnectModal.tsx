@@ -1192,7 +1192,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <h3 className="font-black text-[15px] text-foreground leading-tight">OrahDEX Wallet</h3>
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">All Chains</span>
                             </div>
-                            <p className="text-[11px] text-primary/80 font-semibold">EVM · BTC · BCH · BSV — one seed phrase</p>
+                            <p className="text-[11px] text-primary/80 font-semibold">EVM · SOL · BTC · BCH · BSV — one seed phrase</p>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 mb-3">
@@ -1212,12 +1212,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1">
-                          {["🔵 ETH/EVM", "🟠 Bitcoin", "🟢 BCH", "⚡ BSV"].map(c => (
+                          {["🔵 ETH/EVM", "🟣 Solana", "🟠 Bitcoin", "🟢 BCH", "⚡ BSV"].map(c => (
                             <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-primary/10 text-primary/80 border border-primary/15 rounded">{c}</span>
                           ))}
                         </div>
                         <p className="text-[10px] text-muted-foreground/60 mt-2">
-                          BIP39 · non-custodial · compatible with MetaMask, Trust Wallet &amp; Ledger
+                          BIP39 · non-custodial · compatible with MetaMask, Phantom, Trust Wallet &amp; Ledger
                         </p>
                       </div>
 
@@ -1449,7 +1449,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                             <div>
                               <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">One phrase → EVM · BTC · BCH · BSV</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">One phrase → EVM · SOL · BTC · BCH · BSV</p>
                             </div>
                             <Check className="w-4 h-4 text-primary ml-auto shrink-0" />
                           </div>
@@ -1577,7 +1577,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                             <div className="flex-1">
                               <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5">Derives EVM · BTC · BCH · BSV from one phrase</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">Derives EVM · SOL · BTC · BCH · BSV from one phrase</p>
                             </div>
                           </div>
 
