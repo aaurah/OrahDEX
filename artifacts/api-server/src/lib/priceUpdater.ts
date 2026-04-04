@@ -997,10 +997,17 @@ export async function updateMarketPrices() {
 }
 
 let updateInterval: NodeJS.Timeout | null = null;
+let _priceUpdating = false;
 
 export function startPriceUpdater() {
   seedMarketsIfNeeded().then(() => updateMarketPrices());
-  updateInterval = setInterval(updateMarketPrices, 60_000);
+  updateInterval = setInterval(async () => {
+    if (_priceUpdating) { logger.warn("Price updater: previous tick still running, skipping"); return; }
+    _priceUpdating = true;
+    try { await updateMarketPrices(); }
+    catch (err) { logger.warn({ err }, "Price updater tick error"); }
+    finally { _priceUpdating = false; }
+  }, 60_000);
   logger.info("Live price updater started (interval: 60s)");
 }
 

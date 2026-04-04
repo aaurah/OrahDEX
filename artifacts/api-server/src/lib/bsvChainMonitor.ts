@@ -166,6 +166,13 @@ export async function getBsvChainStatus(): Promise<BsvChainStatus> {
 
 export function startBsvChainMonitor(): void {
   logger.info("BSV chain monitor starting — polling WhatsOnChain every 60 s");
+  let _busy = false;
   fetchChainInfo();
-  setInterval(fetchChainInfo, 60_000);
+  setInterval(async () => {
+    if (_busy) { logger.warn("BSV chain monitor: previous fetch still running, skipping"); return; }
+    _busy = true;
+    try { await fetchChainInfo(); }
+    catch (err) { logger.warn({ err }, "BSV chain monitor tick error"); }
+    finally { _busy = false; }
+  }, 60_000);
 }
