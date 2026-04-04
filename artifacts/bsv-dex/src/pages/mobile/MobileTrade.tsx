@@ -198,7 +198,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress, internalBsvAddress, internalBchAddress } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
@@ -362,9 +362,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isMobileBsvChain = baseChain === "bsv";
   const hasMobileInternalBsv = !!internalBsvAddress && network === "evm";
   const mobileBsvHandled = isMobileBsvChain && hasMobileInternalBsv;
-  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled;
+  const isMobileBtcChain = baseChain === "bitcoin";
+  const hasMobileInternalBtc = !!internalBtcAddress && network === "evm";
+  const mobileBtcHandled = isMobileBtcChain && hasMobileInternalBtc;
+  const isMobileSolChain = baseChain === "solana";
+  const hasMobileInternalSol = !!internalSolAddress && network === "evm";
+  const mobileSolHandled = isMobileSolChain && hasMobileInternalSol;
+  const hasMobileSeparateBtcAddr = !!internalBtcAddress && internalBtcAddress !== internalBsvAddress;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled && !mobileBtcHandled && !mobileSolHandled;
   const showMobileEvmInfo = side === "buy" && !!address && network === "bsv" && isBaseEvmChain && hasMobileInternalEvm;
   const showMobileBsvInfo = side === "buy" && !!address && network === "evm" && isMobileBsvChain && hasMobileInternalBsv;
+  const showMobileBtcInfo = side === "buy" && !!address && network === "evm" && isMobileBtcChain && hasMobileInternalBtc;
+  const showMobileSolInfo = side === "buy" && !!address && network === "evm" && isMobileSolChain && hasMobileInternalSol;
   const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -1153,46 +1162,85 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
             )}
 
-            {/* ── BSV/BTC/BCH Sub-wallet info (EVM users buying BSV assets) ── */}
+            {/* ── BSV Sub-wallet info (EVM users buying BSV assets) ── */}
             {showMobileBsvInfo && (
               <div className="rounded-xl border border-teal-500/30 bg-teal-500/8 px-3 py-2.5 space-y-1.5">
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-teal-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your OrahDEX BSV · BTC · BCH wallet</p>
+                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your OrahDEX BSV wallet</p>
                     <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
-                      One key covers <span className="text-teal-300 font-medium">BSV, BTC &amp; BCH</span> — BSV &amp; BTC share the same address, BCH has its own CashAddr.
+                      {hasMobileSeparateBtcAddr
+                        ? <>Your <span className="text-teal-300 font-medium">HD wallet</span> gives each chain its own BIP44 address — BSV, BTC, BCH &amp; SOL all separate.</>
+                        : <>One key covers <span className="text-teal-300 font-medium">BSV, BTC &amp; BCH</span> — same address for BSV &amp; BTC, separate CashAddr for BCH.</>
+                      }
                     </p>
                   </div>
                 </div>
-                {/* BSV = BTC legacy address (same string) */}
                 <div className="flex items-center gap-2 bg-black/20 border border-teal-500/20 rounded-lg px-2.5 py-1.5">
-                  <span className="text-teal-400/70 text-[10px] font-medium shrink-0">BSV·BTC</span>
+                  <span className="text-teal-400/70 text-[10px] font-medium shrink-0">{hasMobileSeparateBtcAddr ? "BSV" : "BSV·BTC"}</span>
                   <span className="text-[10px] font-mono text-teal-300 truncate flex-1">{internalBsvAddress}</span>
-                  <button
-                    type="button"
-                    onClick={() => navigator.clipboard?.writeText(internalBsvAddress ?? "")}
-                    className="shrink-0 text-teal-400/50"
-                    title="Copy BSV/BTC"
-                  >
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalBsvAddress ?? "")}
+                    className="shrink-0 text-teal-400/50" title="Copy BSV">
                     <Link2 size={11} />
                   </button>
                 </div>
-                {/* BCH CashAddr */}
                 {internalBchAddress && (
                   <div className="flex items-center gap-2 bg-black/20 border border-teal-500/20 rounded-lg px-2.5 py-1.5">
                     <span className="text-teal-400/70 text-[10px] font-medium shrink-0">BCH</span>
                     <span className="text-[10px] font-mono text-teal-300 truncate flex-1">{internalBchAddress}</span>
-                    <button
-                      type="button"
-                      onClick={() => navigator.clipboard?.writeText(internalBchAddress)}
-                      className="shrink-0 text-teal-400/50"
-                      title="Copy BCH"
-                    >
+                    <button type="button" onClick={() => navigator.clipboard?.writeText(internalBchAddress)}
+                      className="shrink-0 text-teal-400/50" title="Copy BCH">
                       <Link2 size={11} />
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ── BTC Sub-wallet info (EVM users buying BTC — HD wallet only) ── */}
+            {showMobileBtcInfo && (
+              <div className="rounded-xl border border-orange-500/30 bg-orange-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-orange-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-orange-300 font-semibold">Sent to your OrahDEX BTC wallet</p>
+                    <p className="text-[10px] text-orange-200/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-orange-300 font-medium">m/44'/0'/0'/0/0</span> — compatible with any BIP44 wallet.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-orange-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-orange-400/70 text-[10px] font-medium shrink-0">BTC</span>
+                  <span className="text-[10px] font-mono text-orange-300 truncate flex-1">{internalBtcAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalBtcAddress ?? "")}
+                    className="shrink-0 text-orange-400/50" title="Copy BTC">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── SOL Sub-wallet info (EVM users buying SOL — HD wallet only) ── */}
+            {showMobileSolInfo && (
+              <div className="rounded-xl border border-violet-500/30 bg-violet-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-violet-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-violet-300 font-semibold">Sent to your OrahDEX Solana wallet</p>
+                    <p className="text-[10px] text-violet-200/70 leading-relaxed mt-0.5">
+                      Derived via <span className="text-violet-300 font-medium">SLIP-0010 m/44'/501'/0'/0'</span> — Phantom-compatible.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-violet-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-violet-400/70 text-[10px] font-medium shrink-0">SOL</span>
+                  <span className="text-[10px] font-mono text-violet-300 truncate flex-1">{internalSolAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalSolAddress ?? "")}
+                    className="shrink-0 text-violet-400/50" title="Copy SOL">
+                    <Link2 size={11} />
+                  </button>
+                </div>
               </div>
             )}
 
