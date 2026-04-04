@@ -27,6 +27,7 @@ import { db, pool } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 
@@ -689,6 +690,43 @@ router.delete("/user/api-keys/:id", (req, res) => {
   if (!k) { res.status(404).json({ error: "Key not found" }); return; }
   k.status = "revoked";
   res.json({ success: true });
+});
+
+/* ─── INTERNAL EVM WALLET (auto-provisioned for BSV users) ──────────────────
+ *
+ *  GET  /api/user/evm-wallet?bsvAddress=<addr>   — fetch existing address
+ *  POST /api/user/evm-wallet                     — create-or-get (idempotent)
+ *
+ *  Response: { evmAddress: string, isNew: boolean }
+ *  The private key is NEVER returned to the client.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+router.get("/user/evm-wallet", async (req, res) => {
+  const bsvAddress = (req.query.bsvAddress as string ?? "").trim();
+  if (!bsvAddress) { res.status(400).json({ error: "bsvAddress required" }); return; }
+  try {
+    const evmAddress = await getEvmWallet(bsvAddress);
+    if (!evmAddress) { res.status(404).json({ error: "No internal EVM wallet provisioned yet" }); return; }
+    res.json({ evmAddress, isNew: false });
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch internal EVM wallet");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/user/evm-wallet", async (req, res) => {
+  const { bsvAddress } = req.body as { bsvAddress?: string };
+  if (!bsvAddress || typeof bsvAddress !== "string" || !bsvAddress.trim()) {
+    res.status(400).json({ error: "bsvAddress required" });
+    return;
+  }
+  try {
+    const result = await getOrCreateEvmWallet(bsvAddress.trim());
+    res.status(result.isNew ? 201 : 200).json(result);
+  } catch (err) {
+    logger.error({ err }, "Failed to provision internal EVM wallet");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 /** POST /api/connect-session — desktop creates a pairing session */
