@@ -136,20 +136,6 @@ export function SpotTrading() {
   const symbol = decodedRaw.includes('/') ? decodedRaw : decodedRaw.replace(/-/g, '/');
   const [base = '', quote = ''] = symbol.split('/');
 
-  useSEO({
-    title: `${base}/${quote} Spot Trading — Live Price & Chart`,
-    description: `Trade ${base}/${quote} on OrahDEX spot market. Real-time price chart, order book, and depth data. Place limit, market, and stop orders instantly.`,
-    keywords: `${base} ${quote} trading, ${base} price, buy ${base}, sell ${base}, ${rawSymbol} spot, OrahDEX spot`,
-    url: `/trade/${rawSymbol}`,
-    jsonLd: {
-      "@context": "https://schema.org",
-      "@type": "WebPage",
-      "name": `${base}/${quote} Spot Trading on OrahDEX`,
-      "description": `Live ${base}/${quote} spot trading with real-time charts and order book`,
-      "url": `https://orahdex.replit.app/trade/${rawSymbol}`
-    }
-  });
-
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
@@ -167,13 +153,23 @@ export function SpotTrading() {
     ?? generateTickerForSymbol(base, quote);
   const isPositive = ticker.priceChangePercent >= 0;
 
-  /* ── Live browser-tab price title ────────────────────────────────────── */
-  useEffect(() => {
-    const price = ticker.lastPrice;
-    const sign  = ticker.priceChangePercent >= 0 ? "▲" : "▼";
-    document.title = `${sign} ${formatPrice(price)} | ${base}/${quote} | OrahDEX`;
-    return () => { document.title = "OrahDEX"; };
-  }, [ticker.lastPrice, ticker.priceChangePercent, base, quote]);
+  /* ── SEO + live browser-tab title (price in title so it updates as price changes) ── */
+  const seoJsonLd = useMemo(() => ({
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    "name": `${base}/${quote} Spot Trading on OrahDEX`,
+    "description": `Live ${base}/${quote} spot trading with real-time charts and order book`,
+    "url": `https://orahdex.replit.app/trade/${rawSymbol}`
+  }), [base, quote, rawSymbol]);
+
+  const priceSign = ticker.priceChangePercent >= 0 ? "▲" : "▼";
+  useSEO({
+    title: `${priceSign} ${formatPrice(ticker.lastPrice)} | ${base}/${quote}`,
+    description: `Trade ${base}/${quote} on OrahDEX spot market. Real-time price chart, order book, and depth data. Place limit, market, and stop orders instantly.`,
+    keywords: `${base} ${quote} trading, ${base} price, buy ${base}, sell ${base}, ${rawSymbol} spot, OrahDEX spot`,
+    url: `/trade/${rawSymbol}`,
+    jsonLd: seoJsonLd,
+  });
 
   const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
   const trades     = Array.isArray(apiTrades) ? apiTrades : generateMockTrades(ticker.lastPrice);
