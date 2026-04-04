@@ -575,11 +575,15 @@ export function SpotTrading() {
                 );
               })()}
 
-              {/* ── Trade History (market trades) ── */}
-              {bottomTab === "trades" && (
-                trades.length === 0 ? (
+              {/* ── Trade History (user's own filled orders) ── */}
+              {bottomTab === "trades" && (() => {
+                const myTrades = (hideOtherPairs
+                  ? filledOrders.filter((o: any) => o.symbol === symbol)
+                  : filledOrders
+                ).filter((o: any) => o.status === "filled");
+                return myTrades.length === 0 ? (
                   <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
-                    No trade history for this pair.
+                    {!address ? "Log in or connect wallet to view trade history." : "No filled trades yet. Place an order to get started."}
                   </div>
                 ) : (
                   <table className="w-full text-left text-[11px] font-mono">
@@ -587,27 +591,46 @@ export function SpotTrading() {
                       <tr className="text-muted-foreground font-sans border-b border-border">
                         <th className="px-3 py-1.5 font-medium">Time</th>
                         <th className="px-3 py-1.5 font-medium">Pair</th>
+                        <th className="px-3 py-1.5 font-medium">Type</th>
                         <th className="px-3 py-1.5 font-medium">Side</th>
-                        <th className="px-3 py-1.5 font-medium text-right">Price</th>
+                        <th className="px-3 py-1.5 font-medium text-right">Fill Price</th>
                         <th className="px-3 py-1.5 font-medium text-right">Amount</th>
                         <th className="px-3 py-1.5 font-medium text-right">Total</th>
+                        <th className="px-3 py-1.5 font-medium">BSV Settlement</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
-                      {(trades as any[]).slice(0, 50).map((t: any, i: number) => (
-                        <tr key={t.id ?? i} className="hover:bg-white/5 transition-colors">
-                          <td className="px-3 py-1.5 text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
-                          <td className="px-3 py-1.5">{symbol}</td>
-                          <td className={cn("px-3 py-1.5 font-semibold capitalize", t.side === "buy" ? "text-buy" : "text-sell")}>{t.side}</td>
-                          <td className={cn("px-3 py-1.5 text-right font-mono", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</td>
-                          <td className="px-3 py-1.5 text-right">{Number(t.quantity).toFixed(4)}</td>
-                          <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(t.price * t.quantity)}</td>
-                        </tr>
-                      ))}
+                      {myTrades.slice(0, 50).map((o: any, i: number) => {
+                        const qty   = Number(o.quantity);
+                        const px    = Number(o.price ?? 0);
+                        const total = px * qty;
+                        return (
+                          <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
+                            <td className="px-3 py-1.5 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                            <td className="px-3 py-1.5">{o.symbol}</td>
+                            <td className="px-3 py-1.5 capitalize text-muted-foreground">{o.type ?? "limit"}</td>
+                            <td className={cn("px-3 py-1.5 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
+                            <td className={cn("px-3 py-1.5 text-right font-mono", o.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(px)}</td>
+                            <td className="px-3 py-1.5 text-right">{qty.toFixed(4)}</td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
+                            <td className="px-3 py-1.5">
+                              {o.txid ? (
+                                <a href={`https://whatsonchain.com/tx/${o.txid}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                  <span className="text-[10px] font-mono">{o.txid.slice(0, 8)}…</span>
+                                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground text-[10px]">pending</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                )
-              )}
+                );
+              })()}
 
               {/* ── Liquidity & CEX Panel ── */}
               {bottomTab === "liquidity" && (() => {

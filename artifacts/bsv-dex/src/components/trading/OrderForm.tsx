@@ -845,12 +845,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
       }
     }
 
-    // ── Step 3: Sign the order intent (EVM limit / stop orders only) ───────
-    // Market orders already have the on-chain tx hash from Step 2 (injected wallets)
-    // or go straight to the API (Reown wallets).
-    // Demo wallets and Orah Wallet skip client-side signing entirely.
+    // ── Step 3: Sign the order intent ───────────────────────────────────────
+    // ALL EVM order types (market, limit, stop) require a wallet signature
+    // to prove ownership. Exceptions:
+    //   • Injected wallets that did an on-chain swap (Step 2) already signed
+    //     via eth_sendTransaction — no second prompt needed.
+    //   • Demo / Orah Wallet bypass signing entirely.
     let evmSignature: string | undefined;
-    const needsEcdsaSign = isEvm && type !== "market" && !isDemo && !isOrahWallet;
+    const needsEcdsaSign = isEvm && !isDemo && !isOrahWallet && !onChainTxHash;
     if (needsEcdsaSign) {
       setSigning(true);
       try {
@@ -1634,7 +1636,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             ) : approvalStep === "approving" ? (
               <><Lock className="w-4 h-4 animate-pulse" /> Approving {base}…</>
             ) : signing ? (
-              <><PenLine className="w-4 h-4 animate-pulse" /> Sign in MetaMask…</>
+              <><PenLine className="w-4 h-4 animate-pulse" /> Sign in Wallet…</>
             ) : isPending ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : (
