@@ -31,10 +31,10 @@ router.get("/portfolio", async (req, res) => {
       balances = await getBalances(walletAddress);
     }
 
-    // Gather symbols for price lookup
+    // Gather symbols for price lookup — DB stores symbols with slash (BTC/USDT)
     const symbols = balances
-      .filter(b => b.asset !== "USDT")
-      .map(b => `${b.asset}-USDT`)
+      .filter(b => b.asset !== "USDT" && b.asset !== "USDC" && b.asset !== "BUSD")
+      .map(b => `${b.asset}/USDT`)
       .filter(Boolean);
 
     const liveMarkets = await db
@@ -48,7 +48,7 @@ router.get("/portfolio", async (req, res) => {
 
     const priceMap: Record<string, { price: number; change24h: number }> = {};
     for (const m of liveMarkets) {
-      const base = m.symbol.split("-")[0]!;
+      const base = m.symbol.split("/")[0]!;
       priceMap[base] = {
         price:    parseFloat(m.lastPrice),
         change24h: parseFloat(m.priceChangePercent24h),

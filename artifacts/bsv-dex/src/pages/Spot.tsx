@@ -616,7 +616,8 @@ export function SpotTrading() {
                 const bidWall = bids.reduce((s: number, b: any) => s + (b.price * b.quantity), 0);
                 const askWall = asks.reduce((s: number, a: any) => s + (a.price * a.quantity), 0);
                 const bestBid = bids[0]?.price ?? 0;
-                const bestAsk = asks[asks.length - 1]?.price ?? asks[0]?.price ?? 0;
+                // asks are sorted ascending (lowest first) — index 0 is the best (cheapest) ask
+                const bestAsk = asks[0]?.price ?? 0;
                 const spread = bestAsk > bestBid ? bestAsk - bestBid : 0;
                 const midPrice = (bestBid + bestAsk) / 2;
                 const spreadPct = midPrice > 0 ? (spread / midPrice) * 100 : 0;

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
@@ -37,15 +37,21 @@ router.get("/orders", async (req, res) => {
       return;
     }
 
+    const limit  = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const symbol = req.query.symbol as string | undefined;
+    const status = req.query.status as string | undefined;
+
+    // Push all filters to the DB — never fetch all rows and slice in memory
+    const conditions = [eq(ordersTable.walletAddress, walletAddress)];
+    if (symbol) conditions.push(eq(ordersTable.symbol, symbol));
+    if (status) conditions.push(eq(ordersTable.status, status));
+
     const orders = await db.select().from(ordersTable)
-      .where(eq(ordersTable.walletAddress, walletAddress));
+      .where(and(...conditions))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(limit);
 
-    const filtered = orders
-      .filter((o) => !req.query.symbol || o.symbol === req.query.symbol)
-      .filter((o) => !req.query.status || o.status === req.query.status)
-      .slice(0, parseInt(req.query.limit as string) || 50);
-
-    res.json(filtered.map(serializeOrder));
+    res.json(orders.map(serializeOrder));
   } catch (err) {
     req.log.error({ err }, "Failed to get orders");
     res.status(500).json({ error: "Internal server error" });
@@ -420,10 +426,19 @@ router.delete("/orders/:orderId", async (req, res) => {
     // ── Unlock the reserved balance ──────────────────────────────────────────
     try {
       const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
-      const lockAsset  = order.side === "buy" ? quoteAsset : baseAsset;
-      const remaining  = parseFloat(order.remainingQuantity);
+      const lockAsset = order.side === "buy" ? quoteAsset : baseAsset;
+      const remaining = parseFloat(order.remainingQuantity);
+
+      // Market orders have no stored price — look up current market price so
+      // the unlock amount mirrors what was locked at order placement time.
+      let lockPrice = parseFloat(order.price ?? "0");
+      if (!lockPrice && order.side === "buy") {
+        const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, order.symbol));
+        lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
+      }
+
       const lockAmount = order.side === "buy"
-        ? (parseFloat(order.price ?? "0") * remaining).toString()
+        ? (lockPrice * remaining).toString()
         : remaining.toString();
 
       if (parseFloat(lockAmount) > 0 && lockAsset) {
@@ -487,15 +502,16 @@ router.post("/orders/precheck", async (req, res) => {
     const slipPct    = (slippageBps ?? 50) / 100;
 
     if (impact > slipPct && impact > 0.1) {
+      // Impact exceeds tolerance — single consolidated error
       errors.push({ code: "SLIPPAGE_TOO_HIGH",
         detail: `Impact ${impact.toFixed(2)}% > tolerance ${slipPct.toFixed(2)}%` });
-    }
-    if (impact > 1 && impact <= slipPct) {
-      warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
-    }
-    if (impact > 5) {
+    } else if (impact > 5) {
+      // Within tolerance but still high impact — show as error
       errors.push({ code: "PRICE_IMPACT_HIGH",
         detail: `${impact.toFixed(1)}% impact — split into smaller orders` });
+    } else if (impact > 1) {
+      // Moderate impact within tolerance — just warn
+      warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
     }
 
     // Liquidity check — no open bot orders on the counter side? warn.

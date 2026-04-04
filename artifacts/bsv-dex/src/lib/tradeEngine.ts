@@ -196,20 +196,20 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
       priceImpactPct = Math.min((orderValueUsd / liquidityUsd) * 100, 50);
     }
 
-    // Slippage check
+    // Slippage + impact checks — use else-if so only one blocking error fires
     const slippagePct = slippageBps / 100;
-    if (priceImpactPct > slippagePct) {
+    if (priceImpactPct > 5) {
+      // Severe impact always wins — clearer message than generic slippage error
+      errors.push(makeError("PRICE_IMPACT_HIGH",
+        `${priceImpactPct.toFixed(1)}% price impact — split into smaller orders`));
+    } else if (priceImpactPct > slippagePct) {
       errors.push(makeError("SLIPPAGE_TOO_HIGH",
         `Price impact ${priceImpactPct.toFixed(2)}% > slippage tolerance ${slippagePct.toFixed(2)}%`));
     }
 
-    // Warnings on moderate impact
+    // Moderate impact warning (only when not already a blocking error)
     if (priceImpactPct > 1 && priceImpactPct <= slippagePct) {
       warnings.push(makeWarning("PRICE_IMPACT_MODERATE"));
-    }
-    if (priceImpactPct > 5) {
-      errors.push(makeError("PRICE_IMPACT_HIGH",
-        `${priceImpactPct.toFixed(1)}% price impact — split into smaller orders`));
     }
   }
 
