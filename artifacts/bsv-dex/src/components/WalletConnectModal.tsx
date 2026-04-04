@@ -305,7 +305,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [passkeyStep, setPasskeyStep] = useState<"idle"|"registering"|"logging_in"|"done"|"error">("idle");
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeyResult, setPasskeyResult] = useState<{ address: string; label: string; chains?: { evm: string; sol?: string; btc?: string; bch?: string; bsv?: string } } | null>(null);
-  const [passkeyLabel, setPasskeyLabel] = useState("My OrahDEX Wallet");
+  const [passkeyLabel, setPasskeyLabel] = useState("My Orah Wallet");
   const [passkeySupported] = useState(() => isPasskeySupported());
   const [storedPasskeys, setStoredPasskeys] = useState(() => listPasskeyWallets());
   const [restoredFromBackup, setRestoredFromBackup] = useState(false);
@@ -363,11 +363,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setPasskeyStep("registering");
     setPasskeyError(null);
     try {
-      const result = await registerPasskeyWallet(passkeyLabel || "My OrahDEX Wallet");
+      const result = await registerPasskeyWallet(passkeyLabel || "My Orah Wallet");
       setPasskeyResult({ address: result.address, label: result.label, chains: result.chains });
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm" });
       setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
@@ -390,7 +390,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setRestoredFromBackup(result.restoredFromBackup ?? false);
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "aura-wallet", network: "evm" });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm" });
       setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
@@ -1003,14 +1003,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     try {
       const addrs = await deriveAllAddresses(mnemonic);
       setHdAddresses(addrs);
-      connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm" });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
       setCreateStep("done");
-      setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
+      setTimeout(() => goToPrep(addrs.evm, "evm", "orah-wallet"), 2500);
     } finally {
       setHdDeriving(false);
     }
@@ -1026,14 +1026,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const addrs = await deriveAllAddresses(result.words);
       setHdAddresses(addrs);
       setImportAddress(addrs.evm);
-      connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm" });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
       setImportStep("done");
-      setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
+      setTimeout(() => goToPrep(addrs.evm, "evm", "orah-wallet"), 2500);
     } finally {
       setHdDeriving(false);
     }
@@ -1056,9 +1056,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
     setImportAddress(addr);
-    connect({ address: addr, provider: "aura-wallet", network: "evm" });
+    connect({ address: addr, provider: "orah-wallet", network: "evm" });
     setImportStep("done");
-    setTimeout(() => goToPrep(addr, "evm", "aura-wallet"), 1500);
+    setTimeout(() => goToPrep(addr, "evm", "orah-wallet"), 1500);
   };
 
   const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
@@ -1214,7 +1214,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <h3 className="font-black text-[15px] text-foreground leading-tight">OrahDEX Wallet</h3>
+                              <h3 className="font-black text-[15px] text-foreground leading-tight">Orah Wallet</h3>
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">All Chains</span>
                             </div>
                             <p className="text-[11px] text-primary/80 font-semibold">EVM · SOL · BTC · BCH · BSV — one seed phrase</p>
@@ -1744,7 +1744,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                     : "bg-white/5 text-muted-foreground cursor-not-allowed"
                                 )}
                               >
-                                {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Import OrahDEX Wallet"}
+                                {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Import Orah Wallet"}
                               </button>
                             </div>
                           )}
@@ -2252,7 +2252,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </span>
                         {prepProvider && (
                           <span className="text-[10px] font-semibold text-muted-foreground capitalize bg-white/5 border border-border px-2 py-0.5 rounded-full">
-                            {prepProvider === "aura-wallet" || prepProvider === "passkey" ? "OrahDEX Wallet" : prepProvider}
+                            {prepProvider === "orah-wallet" || prepProvider === "passkey" ? "Orah Wallet" : prepProvider}
                           </span>
                         )}
                       </div>
@@ -2565,7 +2565,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                           setPasskeyResult({ address: wallet.address, label: wallet.label ?? "Passkey Wallet" });
                                           setRestoredFromBackup(true);
                                           setPasskeyStep("done");
-                                          connect({ address: wallet.address, provider: "aura-wallet", network: "evm" });
+                                          connect({ address: wallet.address, provider: "orah-wallet", network: "evm" });
                                           setTimeout(() => goToPrep(wallet.address, "evm", "passkey"), 2000);
                                         } catch (err: any) {
                                           setTransferCodeError(err?.message ?? "Transfer failed");

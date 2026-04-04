@@ -120,7 +120,7 @@ export function FuturesTrading() {
   const seoBase = rawSymbol.split("-")[0];
 
   const { address, network, balance, chainId: walletChainId, isDemo, provider, connectDemo } = useWalletStore();
-  const isOrahWallet = provider === 'aura-wallet';
+  const isOrahWallet = provider === 'orah-wallet';
   const usesApiBalance = isDemo || isOrahWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();

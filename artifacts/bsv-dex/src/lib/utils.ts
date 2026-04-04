@@ -40,7 +40,7 @@ export function shortenAddress(address: string): string {
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
-  "aura-wallet":   "OrahDEX Wallet",
+  "orah-wallet":   "Orah Wallet",
   "passkey":       "Passkey Wallet",
   "handcash":      "HandCash",
   "relayx":        "RelayX",

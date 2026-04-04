@@ -200,6 +200,6 @@ export const useWalletStore = create<WalletState>()(
           pendingTxs: s.pendingTxs.filter((tx) => tx.status === 'pending'),
         })),
     }),
-    { name: 'aura-dex-wallet' }
+    { name: 'orah-wallet' }
   )
 );
