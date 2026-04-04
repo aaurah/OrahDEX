@@ -4,7 +4,7 @@ import {
   Activity, LogOut, Info, FileText, ChevronRight,
   Fingerprint, AlertCircle, CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
-  Headphones, MessageCircle, HelpCircle, Mail, Search, X,
+  Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -252,6 +252,17 @@ export function MobileSettings() {
         />
       </Section>
 
+
+      {/* ── API Access ── */}
+      <Section title="API Access">
+        <Row
+          icon={Key}
+          iconColor="#6366f1"
+          label="API Keys"
+          value="Generate keys for bots & integrations"
+          onClick={() => navigate("/settings/api-keys")}
+        />
+      </Section>
 
       <Section title="Support">
         <Row

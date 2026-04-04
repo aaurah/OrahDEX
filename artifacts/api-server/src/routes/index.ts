@@ -652,6 +652,45 @@ setInterval(() => {
   }
 }, 60_000);
 
+/* ─── USER API KEYS ───────────────────────────────────────────────────────── */
+
+const userApiKeys: Map<string, {
+  id: string; wallet: string; name: string;
+  key: string; permission: string; rateLimit: number;
+  calls24h: number; status: string; createdAt: string;
+}> = new Map();
+
+router.get("/user/api-keys", (req, res) => {
+  const wallet = (req.query.wallet as string ?? "").toLowerCase().trim();
+  if (!wallet) { res.status(400).json({ error: "wallet required" }); return; }
+  const keys = [...userApiKeys.values()].filter(k => k.wallet === wallet);
+  res.json(keys);
+});
+
+router.post("/user/api-keys", (req, res) => {
+  const { wallet, name, permission = "read", rateLimit = 100 } = req.body as any;
+  if (!wallet || !name) { res.status(400).json({ error: "wallet and name required" }); return; }
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const rand = Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const id = `ukey_${Date.now().toString(36)}`;
+  const key = {
+    id, wallet: wallet.toLowerCase(),
+    name, permission, rateLimit: parseInt(rateLimit) || 100,
+    key: `orah_usr_${rand}`,
+    calls24h: 0, status: "active",
+    createdAt: new Date().toISOString().split("T")[0],
+  };
+  userApiKeys.set(id, key);
+  res.status(201).json(key);
+});
+
+router.delete("/user/api-keys/:id", (req, res) => {
+  const k = userApiKeys.get(req.params.id);
+  if (!k) { res.status(404).json({ error: "Key not found" }); return; }
+  k.status = "revoked";
+  res.json({ success: true });
+});
+
 /** POST /api/connect-session — desktop creates a pairing session */
 router.post("/connect-session", (_req, res) => {
   const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
