@@ -181,11 +181,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
 }) {
-  const { address, network, balance, chainId: walletChainId } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill } = useExchangeBalanceStore();
-  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -196,6 +196,28 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     isEvm ? address : null,
     isEvm ? chainId : null
   );
+
+  // ── Demo balances fetched from API ──────────────────────────────────────────
+  const [demoBalances, setDemoBalances] = useState<Record<string, number>>({});
+  const fetchDemoBalances = useCallback(async (b: string, q: string, addr: string) => {
+    const fetchOne = async (asset: string) => {
+      try {
+        const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${addr}`);
+        if (!r.ok) return 0;
+        const j = await r.json();
+        return parseFloat(j.available ?? "0") || 0;
+      } catch { return 0; }
+    };
+    const [bAmt, qAmt] = await Promise.all([fetchOne(b), fetchOne(q)]);
+    setDemoBalances({ [b]: bAmt, [q]: qAmt });
+  }, []);
+  useEffect(() => {
+    if (!isDemo || !address) { setDemoBalances({}); return; }
+    const parts2 = symbol.split("/");
+    const b = parts2[0];
+    const q = parts2[1] ?? "USDT";
+    fetchDemoBalances(b, q, address);
+  }, [isDemo, address, symbol, fetchDemoBalances]);
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -242,8 +264,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const quoteBalEntry = tokenBalances.find(t => t.symbol.toUpperCase() === quote.toUpperCase());
   // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
-  const baseAvailable  = isNativeBase ? nativeBal : (baseBalEntry?.amount  ?? 0);
-  const quoteAvailable = quoteBalEntry?.amount ?? 0;
+  // Demo wallets: use balances fetched from the API ledger; otherwise use on-chain values
+  const baseAvailable  = isDemo
+    ? (demoBalances[base] ?? 0)
+    : (isNativeBase ? nativeBal : (baseBalEntry?.amount ?? 0));
+  const quoteAvailable = isDemo
+    ? (demoBalances[quote] ?? 0)
+    : (quoteBalEntry?.amount ?? 0);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
@@ -631,7 +658,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           }
 
           // Refresh native + token balances after any trade
-          if (isEvm && address) {
+          if (isDemo && address) {
+            // Re-fetch demo balances from API ledger after every fill
+            fetchDemoBalances(base, quote, address);
+          } else if (isEvm && address) {
             const bal = await fetchEvmBalance(address, currentChainId);
             if (bal !== null) setbal(bal);
             refreshBalances();
