@@ -1581,10 +1581,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
                               { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
                               { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: null },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
                               { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
                             ].map(({ label, sub, addr, color, net }) => {
-                              const isActive = walletState.network === net && net !== null;
+                              const isActive = walletState.network === net;
                               const inner = (
                                 <>
                                   <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
@@ -1592,7 +1592,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                     <p className="text-[10px] text-muted-foreground">{sub}</p>
                                     <p className="text-xs font-mono text-foreground truncate">{addr}</p>
                                   </div>
-                                  {net && !isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
+                                  {!isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
                                   {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
                                 </>
                               );
@@ -1765,10 +1765,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
                               { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
                               { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: null },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
                               { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
                             ].map(({ label, sub, addr, color, net }) => {
-                              const isActive = walletState.network === net && net !== null;
+                              const isActive = walletState.network === net;
                               const inner = (
                                 <>
                                   <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
@@ -1776,7 +1776,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                     <p className="text-[10px] text-muted-foreground">{sub}</p>
                                     <p className="text-xs font-mono text-foreground truncate">{addr}</p>
                                   </div>
-                                  {net && !isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
+                                  {!isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
                                   {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
                                 </>
                               );

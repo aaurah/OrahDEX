@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type WalletNetwork = 'bsv' | 'evm' | 'sol' | 'btc' | 'tron';
+export type WalletNetwork = 'bsv' | 'evm' | 'sol' | 'btc' | 'tron' | 'bch';
 
 export interface ConnectedWallet {
   address: string;
@@ -170,6 +170,7 @@ export const useWalletStore = create<WalletState>()(
           if (network === 'bsv')  newAddress = s.internalBsvAddress;
           if (network === 'btc')  newAddress = s.internalBtcAddress;
           if (network === 'sol')  newAddress = s.internalSolAddress;
+          if (network === 'bch')  newAddress = s.internalBchAddress;
           if (!newAddress) return {}; // no address available for this network — no-op
           return {
             network,

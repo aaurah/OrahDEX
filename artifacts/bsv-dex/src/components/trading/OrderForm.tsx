@@ -844,7 +844,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           // Attach the on-chain swap txHash for market orders so the API can
           // record it and generate the corresponding BSV settlement tx.
           signedTx:       onChainTxHash ?? evmSignature,
-          networkType:    isEvm ? "evm" : "bsv",
+          networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
           // Optional cross-chain receive address (e.g. Cardano addr when BSV wallet buys ADA)
           receiveAddress: receiveAddress.trim() || undefined,
         } as any,

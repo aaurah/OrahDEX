@@ -18,17 +18,17 @@ interface Props {
 }
 
 const NETWORK_LABELS: Record<WalletNetwork, string> = {
-  evm: 'EVM', bsv: 'BSV', btc: 'BTC', sol: 'SOL', tron: 'TRON',
+  evm: 'EVM', bsv: 'BSV', btc: 'BTC', sol: 'SOL', tron: 'TRON', bch: 'BCH',
 };
 const NETWORK_ICONS: Record<WalletNetwork, string> = {
-  evm: '⟠', bsv: '₿', btc: '₿', sol: '◎', tron: '⊕',
+  evm: '⟠', bsv: '₿', btc: '₿', sol: '◎', tron: '⊕', bch: '🟢',
 };
 
 export function WalletOptionsDropdown({ compact = false }: Props) {
   const {
     address, provider, network, balance, isDemo,
     disconnect, connectDemo, switchNetworkType,
-    internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress,
+    internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress, internalBchAddress,
   } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen]           = useState(false);
@@ -50,7 +50,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
   const balanceLabel = balance
     ? `${parseFloat(balance).toFixed(4)} ${
-        network === 'evm' ? 'ETH' : network === 'bsv' ? 'BSV' : network === 'sol' ? 'SOL' : 'BTC'
+        network === 'evm' ? 'ETH' : network === 'bsv' ? 'BSV' : network === 'sol' ? 'SOL' : network === 'bch' ? 'BCH' : 'BTC'
       }`
     : null;
 
@@ -264,6 +264,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             if (internalBsvAddress)    available.push('bsv');
             if (internalBtcAddress)    available.push('btc');
             if (internalSolAddress)    available.push('sol');
+            if (internalBchAddress)    available.push('bch');
             if (available.length < 2)  return null; // single-network wallet — nothing to switch
             return (
               <div className="px-3 py-2.5 border-b border-border">
