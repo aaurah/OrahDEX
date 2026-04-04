@@ -18,12 +18,167 @@ import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
-  XCircle, Info, Route, Timer, FlaskConical,
+  XCircle, Info, Route, Timer, FlaskConical, Smartphone, QrCode,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
+
+// ── Mobile QR connect panel ────────────────────────────────────────────────────
+type QRState = "idle" | "loading" | "showing" | "connected" | "expired" | "error";
+
+function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
+  const connect = useWalletStore((s) => s.connect);
+  const { toast } = useToast();
+  const [qrState, setQrState] = useState<QRState>("idle");
+  const [token, setToken] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number>(0);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
+  const startSession = async () => {
+    stopPolling();
+    setQrState("loading");
+    setToken(null);
+    try {
+      const res = await fetch(`${API_BASE}/connect-session`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      const { token: t, expiresAt: exp } = await res.json() as { token: string; expiresAt: number };
+      setToken(t);
+      setExpiresAt(exp);
+      setSecondsLeft(Math.max(0, Math.round((exp - Date.now()) / 1000)));
+      setQrState("showing");
+
+      // countdown
+      countdownRef.current = setInterval(() => {
+        const s = Math.max(0, Math.round((exp - Date.now()) / 1000));
+        setSecondsLeft(s);
+        if (s <= 0) {
+          stopPolling();
+          setQrState("expired");
+        }
+      }, 1000);
+
+      // poll for connection
+      pollRef.current = setInterval(async () => {
+        try {
+          const pr = await fetch(`${API_BASE}/connect-session/${t}`);
+          if (!pr.ok) { stopPolling(); setQrState("expired"); return; }
+          const data = await pr.json() as { status: string; address?: string; chain?: string; walletType?: string };
+          if (data.status === "connected" && data.address) {
+            stopPolling();
+            const network = data.chain === "BSV" ? "bsv" : data.chain === "TRON" ? "tron" : "evm";
+            connect({ address: data.address, provider: data.walletType ?? "mobile", network });
+            setQrState("connected");
+            toast({ title: "Mobile connected!", description: `${data.address.slice(0, 8)}…${data.address.slice(-6)}` });
+            setTimeout(onConnected, 1200);
+          }
+        } catch { /* network hiccup — keep polling */ }
+      }, 2000);
+    } catch {
+      setQrState("error");
+    }
+  };
+
+  const qrUri = token ? `orahdex://connect?token=${token}&expires=${expiresAt}` : "";
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = String(secondsLeft % 60).padStart(2, "0");
+
+  if (qrState === "idle") {
+    return (
+      <button
+        onClick={startSession}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-primary/25 bg-primary/5 text-primary font-semibold text-sm hover:bg-primary/10 transition-colors"
+      >
+        <Smartphone className="w-4 h-4" />
+        Connect via Mobile App
+      </button>
+    );
+  }
+
+  if (qrState === "loading") {
+    return (
+      <div className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-primary/20 bg-primary/5 text-primary text-sm">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Generating QR…
+      </div>
+    );
+  }
+
+  if (qrState === "connected") {
+    return (
+      <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-green-500/40 bg-green-500/10 text-green-400 font-bold text-sm">
+        <CheckCircle2 className="w-4 h-4" />
+        Mobile connected!
+      </div>
+    );
+  }
+
+  if (qrState === "expired" || qrState === "error") {
+    return (
+      <div className="w-full space-y-2">
+        <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+          <XCircle className="w-3.5 h-3.5 text-red-400" />
+          {qrState === "expired" ? "QR code expired" : "Could not generate QR"}
+        </div>
+        <button
+          onClick={startSession}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-primary/25 bg-primary/5 text-primary font-semibold text-sm hover:bg-primary/10 transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
+  // showing — render QR code
+  return (
+    <div className="w-full space-y-3">
+      <div className="flex items-center gap-2">
+        <QrCode className="w-3.5 h-3.5 text-primary" />
+        <span className="text-xs font-semibold text-foreground">Scan with OrahDEX Mobile</span>
+        <span className={cn(
+          "ml-auto text-[10px] font-mono font-bold tabular-nums",
+          secondsLeft < 60 ? "text-red-400" : "text-muted-foreground",
+        )}>
+          {mins}:{secs}
+        </span>
+      </div>
+      <div className="flex justify-center">
+        <div className="p-3 rounded-2xl bg-white shadow-lg shadow-black/30">
+          <QRCodeSVG
+            value={qrUri}
+            size={148}
+            level="M"
+            bgColor="#ffffff"
+            fgColor="#000000"
+          />
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
+        Open the OrahDEX mobile app → QR Scanner → Scan to Connect.<br />
+        Your wallet will link automatically.
+      </p>
+      <button
+        onClick={() => { stopPolling(); setQrState("idle"); }}
+        className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
 
 // ── Wallet prompt shown when no wallet is connected ───────────────────────────
 function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?: string }) {
@@ -77,6 +232,10 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
           <Wallet className="w-4 h-4" />
           Connect Wallet
         </button>
+        {/* Mobile QR connect */}
+        <div className="w-full">
+          <MobileConnectQR onConnected={() => {}} />
+        </div>
         {/* Demo shortcut */}
         <div className="w-full">
           <div className="relative flex items-center gap-2 mb-3">
