@@ -352,7 +352,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
   // Orah HD Wallet users (any network) have their trading balance tracked in the API ledger.
   // Demo users also use the API ledger. External EVM wallets (MetaMask, WalletConnect) use on-chain balances.
-  const isOrahWallet = provider === 'aura-wallet';
+  const isOrahWallet = provider === 'orah-wallet';
   const usesApiBalance = isDemo || isOrahWallet;
 
   const chainId = walletChainId ?? 1;
@@ -812,7 +812,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     // ── Step 3: Sign the order intent (EVM limit / stop orders only) ───────
     // Market orders already have the on-chain tx hash from Step 2.
     // For limit and stop orders we sign the intent to prove ownership.
-    // Demo wallets and Aura internal wallets skip client-side signing.
+    // Demo wallets and Orah Wallet skip client-side signing.
     let evmSignature: string | undefined;
     const needsEcdsaSign = isEvm && type !== "market" && !isDemo && !isOrahWallet;
     if (needsEcdsaSign) {

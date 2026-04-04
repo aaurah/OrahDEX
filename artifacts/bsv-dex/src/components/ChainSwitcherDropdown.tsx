@@ -373,9 +373,9 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
        No browser extension needed — we own the key, so just update the
        store with the new chainId and fetch the balance via the target
        chain's public RPC (bypasses window.ethereum entirely). */
-    if (provider === "aura-wallet") {
+    if (provider === "orah-wallet") {
       try {
-        connect({ address: address!, provider: "aura-wallet", network: "evm", chainId: chain.id });
+        connect({ address: address!, provider: "orah-wallet", network: "evm", chainId: chain.id });
         // Fetch balance directly from the target chain's public RPC
         const rpcUrl = CHAIN_RPC_URLS[chain.id] ?? chain.rpcUrl;
         let bal: string | null = null;

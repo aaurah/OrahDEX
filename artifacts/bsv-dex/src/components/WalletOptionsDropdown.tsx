@@ -163,7 +163,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="flex flex-col items-start">
             {provider && (
               <span className="text-[10px] text-muted-foreground leading-none">
-                {provider === 'aura-wallet' ? 'Orah Wallet' : provider}
+                {provider === 'orah-wallet' ? 'Orah Wallet' : provider}
               </span>
             )}
             <span className="text-sm font-mono text-foreground leading-tight">
@@ -195,7 +195,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                   </span>
                 ) : (
                   <span className="text-xs text-muted-foreground font-medium">
-                    {provider === 'aura-wallet' ? 'Orah Wallet' : provider} · {network?.toUpperCase()}
+                    {provider === 'orah-wallet' ? 'Orah Wallet' : provider} · {network?.toUpperCase()}
                   </span>
                 )}
               </div>
