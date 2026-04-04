@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useThemeStore } from "@/store/useThemeStore";
+import { SocialBar } from "@/components/SocialBar";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
@@ -731,6 +732,7 @@ export function LandingPage() {
             <span>·</span>
             <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           </div>
+          <SocialBar iconSize="sm" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/30">
             © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
           </p>
