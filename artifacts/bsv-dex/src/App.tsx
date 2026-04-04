@@ -184,8 +184,9 @@ function Router() {
 
     const eth = (window as any).ethereum;
 
-    const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
-    if (network === "evm" && storedProvider !== "reown") {
+    const { network, address, disconnect, provider: storedProvider, isDemo } = useWalletStore.getState();
+    // Demo wallets survive page refresh via Zustand persist — never try to validate them against MetaMask
+    if (network === "evm" && storedProvider !== "reown" && !isDemo) {
       if (!eth) {
         disconnect();
       } else {
@@ -207,8 +208,8 @@ function Router() {
     }
 
     const onAccountsChanged = async (accounts: string[]) => {
-      const { provider: p } = useWalletStore.getState();
-      if (p === "reown") return;
+      const { provider: p, isDemo: demoActive } = useWalletStore.getState();
+      if (p === "reown" || demoActive) return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
@@ -222,8 +223,8 @@ function Router() {
     };
 
     const onChainChanged = async (chainHex: string) => {
-      const { address: addr, provider: p } = useWalletStore.getState();
-      if (p === "reown" || !addr) return;
+      const { address: addr, provider: p, isDemo: demoActive } = useWalletStore.getState();
+      if (p === "reown" || demoActive || !addr) return;
       const chainId = parseInt(chainHex, 16);
       useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
