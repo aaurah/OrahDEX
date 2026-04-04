@@ -21,7 +21,7 @@ import {
   listPasskeyWallets,
   generateTransferCode,
 } from "@/lib/passkeyWallet";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -2428,8 +2428,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                         Enter this code on your new device in the "Use a transfer code" section. Valid for <span className="text-amber-400 font-bold">10 minutes</span>, one-time use.
                                       </p>
                                       <div className="flex items-center gap-4">
-                                        <div className="p-2 bg-white rounded-lg">
-                                          <QRCodeSVG value={qrCode} size={80} level="M" />
+                                        <div className="p-2 bg-white rounded-lg" style={{ colorScheme: "light" }}>
+                                          <QRCodeCanvas value={qrCode} size={80} level="M" bgColor="#ffffff" fgColor="#000000" />
                                         </div>
                                         <div className="flex-1">
                                           <p className="text-[10px] text-muted-foreground mb-1">Transfer Code</p>
@@ -2656,14 +2656,14 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {/* QR code (only when pending + token available) */}
                       {mqrStatus === "pending" && mqrToken && (
                         <div className="flex flex-col items-center gap-3 w-full">
-                          <div className="p-4 bg-white rounded-2xl shadow-lg">
-                            <QRCodeSVG
+                          <div className="p-4 bg-white rounded-2xl shadow-lg" style={{ colorScheme: "light" }}>
+                            <QRCodeCanvas
                               value={`orahdex://connect?token=${mqrToken}&expires=${mqrExpires}`}
                               size={200}
                               bgColor="#ffffff"
                               fgColor="#000000"
                               level="M"
-                              includeMargin={false}
+                              marginSize={0}
                             />
                           </div>
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { ArrowLeft, ChevronDown, ArrowDown, Copy, Check, RefreshCw, Zap, CheckCircle2, Clock, AlertCircle, QrCode } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
@@ -218,8 +218,8 @@ function DepositWizard({ onBack }: { onBack: () => void }) {
 
       {/* QR Code */}
       <div className="flex flex-col items-center gap-3 py-4 bg-secondary/30 rounded-3xl border border-border/40">
-        <div className="bg-white p-3 rounded-2xl">
-          <QRCodeSVG value={BSV_DEPOSIT_ADDRESS} size={160} bgColor="#ffffff" fgColor="#000000" level="M" />
+        <div className="bg-white p-3 rounded-2xl" style={{ colorScheme: "light" }}>
+          <QRCodeCanvas value={BSV_DEPOSIT_ADDRESS} size={160} bgColor="#ffffff" fgColor="#000000" level="M" />
         </div>
         <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wide">Scan to send {asset.symbol}</p>
       </div>

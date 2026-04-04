@@ -5,7 +5,7 @@ import {
   RefreshCw, Smartphone, Wifi, WifiOff, User
 } from "lucide-react";
 import jsQR from "jsqr";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
@@ -524,14 +524,14 @@ export function MobileQRScanner() {
             {address ? (
               <>
                 {/* QR card */}
-                <div className="bg-white rounded-3xl p-6 flex flex-col items-center gap-4">
-                  <QRCodeSVG
+                <div className="bg-white rounded-3xl p-6 flex flex-col items-center gap-4" style={{ colorScheme: "light" }}>
+                  <QRCodeCanvas
                     value={address}
                     size={220}
                     bgColor="#ffffff"
                     fgColor="#000000"
                     level="M"
-                    includeMargin={false}
+                    marginSize={0}
                   />
                 </div>
 
