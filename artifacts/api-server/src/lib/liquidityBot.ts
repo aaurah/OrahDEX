@@ -268,7 +268,13 @@ async function runCycle(): Promise<void> {
 /* ── Public start function ──────────────────────────────────────────────── */
 export function startLiquidityBot(): void {
   logger.info("Liquidity bot starting — seeding order books…");
-  // First run immediately, then every 120 s
+  let _busy = false;
   runCycle();
-  setInterval(runCycle, 120_000);
+  setInterval(async () => {
+    if (_busy) { logger.warn("Liquidity bot: previous cycle still running, skipping"); return; }
+    _busy = true;
+    try { await runCycle(); }
+    catch (err) { logger.warn({ err }, "Liquidity bot cycle error"); }
+    finally { _busy = false; }
+  }, 120_000);
 }

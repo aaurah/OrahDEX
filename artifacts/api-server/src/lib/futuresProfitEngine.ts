@@ -177,11 +177,26 @@ const ONE_MINUTE  = 60 * 1000;
 export function startFuturesProfitEngine(): void {
   logger.info("Futures profit engine starting — funding rates & liquidations active");
 
+  let _fundingBusy = false;
+  let _liqBusy = false;
+
   /* funding: run immediately then every 8 h */
   runFundingCycle();
-  setInterval(runFundingCycle, EIGHT_HOURS);
+  setInterval(async () => {
+    if (_fundingBusy) { logger.warn("Futures: funding cycle still running, skipping"); return; }
+    _fundingBusy = true;
+    try { await runFundingCycle(); }
+    catch (err) { logger.warn({ err }, "Futures funding cycle error"); }
+    finally { _fundingBusy = false; }
+  }, EIGHT_HOURS);
 
   /* liquidations: run immediately then every 60 s */
   runLiquidationCycle();
-  setInterval(runLiquidationCycle, ONE_MINUTE);
+  setInterval(async () => {
+    if (_liqBusy) { logger.warn("Futures: liquidation cycle still running, skipping"); return; }
+    _liqBusy = true;
+    try { await runLiquidationCycle(); }
+    catch (err) { logger.warn({ err }, "Futures liquidation cycle error"); }
+    finally { _liqBusy = false; }
+  }, ONE_MINUTE);
 }
