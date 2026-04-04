@@ -742,6 +742,106 @@ router.delete("/api-keys/:id", (req, res) => {
   res.json({ success: true });
 });
 
+/* ─── API CONFIGURATION (advanced settings) ─────────────────────────────── */
+
+const API_CONFIG_DEFAULTS: Record<string, string> = {
+  // Rate limiting
+  rateLimitGlobal:          "1000",
+  rateLimitPublicKey:       "2000",
+  rateLimitPrivateKey:      "500",
+  rateLimitBurst:           "50",
+  rateLimitWindowMs:        "60000",
+  rateLimitIpEnabled:       "true",
+  rateLimitIpMax:           "200",
+  ipWhitelist:              "",
+  ipBlacklist:              "",
+  // CORS & security
+  corsOrigins:              "*",
+  corsMethods:              "GET,POST,PUT,DELETE,OPTIONS",
+  corsAllowedHeaders:       "Content-Type,Authorization,X-API-Key",
+  corsMaxAgeSec:            "86400",
+  corsCredentials:          "false",
+  // Request pipeline
+  requestTimeoutGetMs:      "30000",
+  requestTimeoutPostMs:     "60000",
+  maxBodySizeMb:            "2",
+  jsonDepth:                "10",
+  queryParamLimit:          "100",
+  // Caching TTLs (seconds)
+  cacheTtlMarkets:          "15",
+  cacheTtlOrderbook:        "5",
+  cacheTtlCandles:          "30",
+  cacheTtlHealth:           "10",
+  cacheTtlPairs:            "120",
+  cacheTtlAi:               "60",
+  // WebSocket
+  wsMaxConnections:         "500",
+  wsHeartbeatIntervalMs:    "30000",
+  wsMaxMessageSizeKb:       "64",
+  wsAuthRequired:           "false",
+  // Background service intervals (ms)
+  svcPriceUpdaterMs:        "60000",
+  svcLiquidityBotMs:        "120000",
+  svcBsvChainMonitorMs:     "60000",
+  svcFuturesEngineMs:       "120000",
+  // Webhook
+  webhookUrl:               "",
+  webhookSecret:            "",
+  webhookRetries:           "3",
+  webhookTimeoutMs:         "5000",
+  webhookOnTrade:           "true",
+  webhookOnOrder:           "true",
+  webhookOnLiquidation:     "false",
+  // Circuit breaker
+  cbEnabled:                "true",
+  cbFailureThreshold:       "5",
+  cbResetMs:                "30000",
+  cbHalfOpenRequests:       "2",
+  // Misc
+  maintenanceMode:          "false",
+  debugLogging:             "false",
+  apiVersion:               "v1.4.2",
+  responseCompression:      "true",
+  compressionLevel:         "6",
+  compressionThresholdBytes:"512",
+};
+
+router.get("/api-config", async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable)
+      .where(sql`${platformSettingsTable.key} like ${"api_config::%"}`);
+    const stored: Record<string, string> = {};
+    for (const r of rows) stored[r.key.replace("api_config::", "")] = r.value;
+    res.json({ ...API_CONFIG_DEFAULTS, ...stored });
+  } catch { res.json(API_CONFIG_DEFAULTS); }
+});
+
+router.put("/api-config", async (req, res) => {
+  try {
+    const body = req.body as Record<string, string>;
+    for (const [key, value] of Object.entries(body)) {
+      if (!(key in API_CONFIG_DEFAULTS)) continue;
+      const dbKey = `api_config::${key}`;
+      await db.insert(platformSettingsTable)
+        .values({ key: dbKey, value: String(value) })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: String(value), updatedAt: new Date() } });
+    }
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Failed to save" }); }
+});
+
+router.post("/api-config/reset", async (_req, res) => {
+  try {
+    for (const key of Object.keys(API_CONFIG_DEFAULTS)) {
+      const dbKey = `api_config::${key}`;
+      await db.insert(platformSettingsTable)
+        .values({ key: dbKey, value: API_CONFIG_DEFAULTS[key] })
+        .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: API_CONFIG_DEFAULTS[key], updatedAt: new Date() } });
+    }
+    res.json({ success: true, config: API_CONFIG_DEFAULTS });
+  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Reset failed" }); }
+});
+
 /* ─── CONTRACTS / NEW COIN ─── */
 router.get("/contracts", (_req, res) => res.json(deployedContracts));
 
