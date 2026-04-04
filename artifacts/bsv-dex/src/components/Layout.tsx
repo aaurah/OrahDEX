@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -269,11 +269,6 @@ export function Layout({ children }: { children: ReactNode }) {
   const [bannerDismissed, setBannerDismissed] = useState(() => sessionStorage.getItem("maintenance_banner") === "1");
   const dismissBanner = () => { sessionStorage.setItem("maintenance_banner", "1"); setBannerDismissed(true); };
 
-  const [sidebarExpanded, setSidebarExpanded] = useState(() => localStorage.getItem("orahdex_sidebar") !== "collapsed");
-  const toggleSidebar = () => setSidebarExpanded(v => {
-    localStorage.setItem("orahdex_sidebar", v ? "collapsed" : "expanded");
-    return !v;
-  });
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
@@ -559,133 +554,99 @@ export function Layout({ children }: { children: ReactNode }) {
           )}
 
           <button
-            className="md:hidden p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle navigation"
           >
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
       </header>
 
-      {/* Mobile Menu */}
+      {/* ── Nav Drawer overlay (all screen sizes) ── */}
       {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-16 left-0 w-full bg-card border-b border-border z-30 shadow-xl">
-          <nav className="flex flex-col p-4 gap-2">
-            {NAV_LINKS.map((link) => {
-              const isActive = link.href === "/" ? location === "/" : location.startsWith("/" + link.href.split("/")[1]);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-xl font-medium",
-                    isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                  )}
-                >
-                  <link.icon className="w-5 h-5" />
-                  {link.label}
-                </Link>
-              );
-            })}
-            <Link
-              href="/settings"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl font-medium",
-                location.startsWith("/settings") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-              )}
-            >
-              <Settings className="w-5 h-5" />
-              Settings
-            </Link>
-          </nav>
-          {!address && (
-            <div className="px-4 pb-4">
+        <div
+          className="fixed inset-0 z-50 flex"
+          onClick={() => setIsMobileMenuOpen(false)}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+          {/* Drawer panel */}
+          <div
+            className="relative w-64 bg-card border-r border-border flex flex-col shadow-2xl animate-in slide-in-from-left duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-4 h-16 border-b border-border shrink-0">
+              <Link href="/" onClick={() => setIsMobileMenuOpen(false)}>
+                <BrandLogo textSize="text-lg" />
+              </Link>
               <button
-                onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-5 py-3 rounded-xl font-bold shadow-lg shadow-primary/30"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               >
-                <Wallet className="w-4 h-4" />
-                Connect Wallet
+                <X className="w-5 h-5" />
               </button>
             </div>
-          )}
+
+            {/* Nav links */}
+            <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+              {NAV_LINKS.map((link) => {
+                const isActive = link.href === "/" ? location === "/" : location.startsWith("/" + link.href.split("/")[1]);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    )}
+                  >
+                    <link.icon className="w-5 h-5 shrink-0" />
+                    <span className="text-sm">{link.label}</span>
+                    {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            {/* Bottom: Settings + wallet CTA */}
+            <div className="border-t border-border px-2 py-3 space-y-1">
+              <Link
+                href="/settings"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
+                  location.startsWith("/settings")
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                )}
+              >
+                <Settings className="w-5 h-5 shrink-0" />
+                <span className="text-sm">Settings</span>
+              </Link>
+              {!address && (
+                <button
+                  onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
+                  className="mt-1 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 hover:brightness-110 transition-all"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Connect Wallet
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ── Body: sidebar + main content ── */}
-      <div className="flex flex-1 relative z-0">
-
-        {/* ── Desktop sidebar ── */}
-        <aside className={cn(
-          "hidden md:flex flex-col shrink-0 sticky top-16 h-[calc(100vh-4rem)] bg-card border-r border-border overflow-hidden transition-all duration-200 z-30",
-          sidebarExpanded ? "w-52" : "w-14"
-        )}>
-          {/* Nav items */}
-          <nav className="flex-1 overflow-y-auto py-3 space-y-0.5">
-            {NAV_LINKS.map((link) => {
-              const isActive = location.startsWith("/" + link.href.split("/")[1]);
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  title={!sidebarExpanded ? link.label : undefined}
-                  className={cn(
-                    "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl font-medium transition-all group",
-                    isActive
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-                  )}
-                >
-                  <link.icon className="w-5 h-5 shrink-0" />
-                  {sidebarExpanded && (
-                    <span className="text-sm whitespace-nowrap leading-none">{link.label}</span>
-                  )}
-                  {isActive && !sidebarExpanded && (
-                    <span className="absolute left-0 w-0.5 h-6 bg-primary rounded-r-full" />
-                  )}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Divider + Settings */}
-          <div className="border-t border-border py-2 space-y-0.5">
-            <Link
-              href="/settings"
-              title={!sidebarExpanded ? "Settings" : undefined}
-              className={cn(
-                "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl font-medium transition-all",
-                location.startsWith("/settings")
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
-              )}
-            >
-              <Settings className="w-5 h-5 shrink-0" />
-              {sidebarExpanded && <span className="text-sm whitespace-nowrap">Settings</span>}
-            </Link>
-
-            {/* Collapse / expand toggle */}
-            <button
-              onClick={toggleSidebar}
-              title={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
-              className="flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all w-[calc(100%-1rem)]"
-            >
-              {sidebarExpanded
-                ? <><ChevronLeft className="w-5 h-5 shrink-0" /><span className="text-sm whitespace-nowrap">Collapse</span></>
-                : <ChevronRight className="w-5 h-5 shrink-0" />
-              }
-            </button>
-          </div>
-        </aside>
-
-        {/* ── Main content ── */}
-        <main className="flex-1 min-w-0 relative">
-          {children}
-        </main>
-
-      </div>
+      {/* ── Main content (full width always) ── */}
+      <main className="flex-1 min-w-0 relative z-0">
+        {children}
+      </main>
 
       <Suspense fallback={null}>
         <WalletConnectModal
