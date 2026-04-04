@@ -87,12 +87,12 @@ const CHAINS: Chain[] = [
 ];
 
 const SPOT_PRICES: Record<string, number> = {
-  BSV: 68, BTC: 67420, ETH: 3510, SOL: 172, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
-  ARB: 1.2, OP: 2.1, POL: 0.7, MATIC: 0.7, cbBTC: 67420, WBTC: 67420, BONK: 0.000022,
-  BNB: 590, AVAX: 38, TRX: 0.12, DOT: 7.5,
-  ZK: 0.18, MNT: 0.85, BLAST: 0.011, MODE: 0.035, BOBA: 0.19, METIS: 38, TAIKO: 1.8,
-  GNO: 280, CELO: 0.65, GLMR: 0.28, S: 0.52,
-  DEGEN: 0.0042, XAI: 0.21, APE: 1.3, MAGIC: 0.62, RED: 0.08,
+  BSV: 15, BTC: 83000, ETH: 1800, SOL: 130, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
+  ARB: 0.39, OP: 0.69, POL: 0.23, MATIC: 0.23, cbBTC: 83000, WBTC: 83000, BONK: 0.000017,
+  BNB: 580, AVAX: 20, TRX: 0.07, DOT: 4.2,
+  ZK: 0.065, MNT: 0.72, BLAST: 0.008, MODE: 0.022, BOBA: 0.14, METIS: 28, TAIKO: 1.1,
+  GNO: 160, CELO: 0.47, GLMR: 0.12, S: 0.38,
+  DEGEN: 0.0018, XAI: 0.095, APE: 0.62, MAGIC: 0.31, RED: 0.055,
 };
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
@@ -861,41 +861,41 @@ interface QuickCoin {
 }
 
 const QUICK_COINS: QuickCoin[] = [
-  { symbol:"BTC",   name:"Bitcoin",          chain:"Bitcoin",        chainLabel:"BTC",           icon:"₿", color:"#f7931a", usdPrice:67420,  minBsv:0.01,  maxBsv:50000 },
-  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:3510,   minBsv:0.05,  maxBsv:50000 },
-  { symbol:"SOL",   name:"Solana",           chain:"Solana",         chainLabel:"SOL",           icon:"◎", color:"#9945ff", usdPrice:172,    minBsv:0.1,   maxBsv:50000 },
-  { symbol:"BNB",   name:"BNB",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:607,    minBsv:0.1,   maxBsv:50000 },
-  { symbol:"XRP",   name:"XRP",              chain:"Ripple",         chainLabel:"XRP Ledger",    icon:"✕", color:"#00aae4", usdPrice:0.61,   minBsv:10,    maxBsv:50000 },
-  { symbol:"DOGE",  name:"Dogecoin",         chain:"Dogecoin",       chainLabel:"DOGE",          icon:"Ð", color:"#c2a633", usdPrice:0.18,   minBsv:10,    maxBsv:50000 },
-  { symbol:"ADA",   name:"Cardano",          chain:"Cardano",        chainLabel:"ADA",           icon:"₳", color:"#0d1e2d", usdPrice:0.45,   minBsv:5,     maxBsv:50000 },
-  { symbol:"TRX",   name:"TRON",             chain:"TRON",           chainLabel:"TRX",           icon:"⛊", color:"#ff060a", usdPrice:0.14,   minBsv:5,     maxBsv:50000 },
-  { symbol:"LTC",   name:"Litecoin",         chain:"Litecoin",       chainLabel:"LTC",           icon:"Ł", color:"#345d9d", usdPrice:82,     minBsv:0.1,   maxBsv:50000 },
-  { symbol:"BCH",   name:"Bitcoin Cash",     chain:"Bitcoin Cash",   chainLabel:"BCH",           icon:"₿", color:"#8dc351", usdPrice:470,    minBsv:0.05,  maxBsv:50000 },
-  { symbol:"DOT",   name:"Polkadot",         chain:"Polkadot",       chainLabel:"DOT",           icon:"⬡", color:"#e6007a", usdPrice:7.1,    minBsv:1,     maxBsv:50000 },
-  { symbol:"LINK",  name:"Chainlink",        chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#375bd2", usdPrice:14.5,   minBsv:0.5,   maxBsv:50000 },
-  { symbol:"UNI",   name:"Uniswap",          chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"🦄", color:"#ff007a", usdPrice:9.8,    minBsv:0.5,   maxBsv:50000 },
-  { symbol:"AAVE",  name:"Aave",             chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#b6509e", usdPrice:98,     minBsv:0.1,   maxBsv:50000 },
-  { symbol:"MATIC", name:"Polygon",          chain:"Polygon",        chainLabel:"MATIC",         icon:"⬡", color:"#8247e5", usdPrice:0.69,   minBsv:5,     maxBsv:50000 },
-  { symbol:"ARB",   name:"Arbitrum",         chain:"Arbitrum",       chainLabel:"ARB",           icon:"⬡", color:"#28a0f0", usdPrice:1.2,    minBsv:2,     maxBsv:50000 },
-  { symbol:"OP",    name:"Optimism",         chain:"Optimism",       chainLabel:"OP",            icon:"⬡", color:"#ff0420", usdPrice:2.1,    minBsv:2,     maxBsv:50000 },
-  { symbol:"AVAX",  name:"Avalanche",        chain:"Avalanche",      chainLabel:"AVAX C-Chain",  icon:"▲", color:"#e84142", usdPrice:37,     minBsv:0.2,   maxBsv:50000 },
-  { symbol:"ATOM",  name:"Cosmos",           chain:"Cosmos",         chainLabel:"ATOM",          icon:"⬡", color:"#2e3148", usdPrice:8.9,    minBsv:0.5,   maxBsv:50000 },
-  { symbol:"ICP",   name:"Internet Computer",chain:"ICP",            chainLabel:"ICP",           icon:"∞", color:"#29abe2", usdPrice:12.3,   minBsv:0.5,   maxBsv:50000 },
-  { symbol:"ALD",   name:"AladdinDAO",       chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.12,   minBsv:5,     maxBsv:50000 },
-  { symbol:"ALE",   name:"ALE",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:0.08,   minBsv:5,     maxBsv:50000 },
-  { symbol:"ALEPH", name:"Aleph.im",         chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.19,   minBsv:5,     maxBsv:50000 },
-  { symbol:"SUI",   name:"Sui",              chain:"Sui",            chainLabel:"SUI",           icon:"⬡", color:"#4da2ff", usdPrice:1.8,    minBsv:1,     maxBsv:50000 },
-  { symbol:"APT",   name:"Aptos",            chain:"Aptos",          chainLabel:"APT",           icon:"◆", color:"#00b3b3", usdPrice:9.2,    minBsv:0.5,   maxBsv:50000 },
-  { symbol:"FTM",   name:"Fantom",           chain:"Fantom",         chainLabel:"FTM",           icon:"⬡", color:"#1969ff", usdPrice:0.73,   minBsv:3,     maxBsv:50000 },
-  { symbol:"INJ",   name:"Injective",        chain:"Injective",      chainLabel:"INJ",           icon:"⬡", color:"#00b2ff", usdPrice:26,     minBsv:0.2,   maxBsv:50000 },
-  { symbol:"ALGO",  name:"Algorand",         chain:"Algorand",       chainLabel:"ALGO",          icon:"⬡", color:"#000000", usdPrice:0.19,   minBsv:5,     maxBsv:50000 },
-  { symbol:"XLM",   name:"Stellar",          chain:"Stellar",        chainLabel:"XLM",           icon:"✦", color:"#000000", usdPrice:0.11,   minBsv:10,    maxBsv:50000 },
-  { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.038,  minBsv:20,    maxBsv:50000 },
+  { symbol:"BTC",   name:"Bitcoin",          chain:"Bitcoin",        chainLabel:"BTC",           icon:"₿", color:"#f7931a", usdPrice:83000,  minBsv:0.01,  maxBsv:50000 },
+  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:1800,   minBsv:0.05,  maxBsv:50000 },
+  { symbol:"SOL",   name:"Solana",           chain:"Solana",         chainLabel:"SOL",           icon:"◎", color:"#9945ff", usdPrice:130,    minBsv:0.1,   maxBsv:50000 },
+  { symbol:"BNB",   name:"BNB",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:580,    minBsv:0.1,   maxBsv:50000 },
+  { symbol:"XRP",   name:"XRP",              chain:"Ripple",         chainLabel:"XRP Ledger",    icon:"✕", color:"#00aae4", usdPrice:2.1,    minBsv:10,    maxBsv:50000 },
+  { symbol:"DOGE",  name:"Dogecoin",         chain:"Dogecoin",       chainLabel:"DOGE",          icon:"Ð", color:"#c2a633", usdPrice:0.17,   minBsv:10,    maxBsv:50000 },
+  { symbol:"ADA",   name:"Cardano",          chain:"Cardano",        chainLabel:"ADA",           icon:"₳", color:"#0d1e2d", usdPrice:0.63,   minBsv:5,     maxBsv:50000 },
+  { symbol:"TRX",   name:"TRON",             chain:"TRON",           chainLabel:"TRX",           icon:"⛊", color:"#ff060a", usdPrice:0.07,   minBsv:5,     maxBsv:50000 },
+  { symbol:"LTC",   name:"Litecoin",         chain:"Litecoin",       chainLabel:"LTC",           icon:"Ł", color:"#345d9d", usdPrice:84,     minBsv:0.1,   maxBsv:50000 },
+  { symbol:"BCH",   name:"Bitcoin Cash",     chain:"Bitcoin Cash",   chainLabel:"BCH",           icon:"₿", color:"#8dc351", usdPrice:310,    minBsv:0.05,  maxBsv:50000 },
+  { symbol:"DOT",   name:"Polkadot",         chain:"Polkadot",       chainLabel:"DOT",           icon:"⬡", color:"#e6007a", usdPrice:4.2,    minBsv:1,     maxBsv:50000 },
+  { symbol:"LINK",  name:"Chainlink",        chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#375bd2", usdPrice:13,     minBsv:0.5,   maxBsv:50000 },
+  { symbol:"UNI",   name:"Uniswap",          chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"🦄", color:"#ff007a", usdPrice:6.2,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"AAVE",  name:"Aave",             chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#b6509e", usdPrice:140,    minBsv:0.1,   maxBsv:50000 },
+  { symbol:"MATIC", name:"Polygon",          chain:"Polygon",        chainLabel:"MATIC",         icon:"⬡", color:"#8247e5", usdPrice:0.23,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ARB",   name:"Arbitrum",         chain:"Arbitrum",       chainLabel:"ARB",           icon:"⬡", color:"#28a0f0", usdPrice:0.39,   minBsv:2,     maxBsv:50000 },
+  { symbol:"OP",    name:"Optimism",         chain:"Optimism",       chainLabel:"OP",            icon:"⬡", color:"#ff0420", usdPrice:0.69,   minBsv:2,     maxBsv:50000 },
+  { symbol:"AVAX",  name:"Avalanche",        chain:"Avalanche",      chainLabel:"AVAX C-Chain",  icon:"▲", color:"#e84142", usdPrice:20,     minBsv:0.2,   maxBsv:50000 },
+  { symbol:"ATOM",  name:"Cosmos",           chain:"Cosmos",         chainLabel:"ATOM",          icon:"⬡", color:"#2e3148", usdPrice:4.2,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"ICP",   name:"Internet Computer",chain:"ICP",            chainLabel:"ICP",           icon:"∞", color:"#29abe2", usdPrice:5.5,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"ALD",   name:"AladdinDAO",       chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.09,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ALE",   name:"ALE",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:0.06,   minBsv:5,     maxBsv:50000 },
+  { symbol:"ALEPH", name:"Aleph.im",         chain:"Ethereum",       chainLabel:"ETH (ERC20)",   icon:"⬡", color:"#627eea", usdPrice:0.14,   minBsv:5,     maxBsv:50000 },
+  { symbol:"SUI",   name:"Sui",              chain:"Sui",            chainLabel:"SUI",           icon:"⬡", color:"#4da2ff", usdPrice:2.3,    minBsv:1,     maxBsv:50000 },
+  { symbol:"APT",   name:"Aptos",            chain:"Aptos",          chainLabel:"APT",           icon:"◆", color:"#00b3b3", usdPrice:5.1,    minBsv:0.5,   maxBsv:50000 },
+  { symbol:"FTM",   name:"Fantom",           chain:"Fantom",         chainLabel:"FTM",           icon:"⬡", color:"#1969ff", usdPrice:0.55,   minBsv:3,     maxBsv:50000 },
+  { symbol:"INJ",   name:"Injective",        chain:"Injective",      chainLabel:"INJ",           icon:"⬡", color:"#00b2ff", usdPrice:9.5,    minBsv:0.2,   maxBsv:50000 },
+  { symbol:"ALGO",  name:"Algorand",         chain:"Algorand",       chainLabel:"ALGO",          icon:"⬡", color:"#000000", usdPrice:0.21,   minBsv:5,     maxBsv:50000 },
+  { symbol:"XLM",   name:"Stellar",          chain:"Stellar",        chainLabel:"XLM",           icon:"✦", color:"#000000", usdPrice:0.26,   minBsv:10,    maxBsv:50000 },
+  { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.022,  minBsv:20,    maxBsv:50000 },
 ];
 
 function BsvQuickSwap() {
   const { prices: livePrices } = useWalletPrices();
-  const BSV_USD_PRICE = livePrices?.BSV?.usd ?? 55;
+  const BSV_USD_PRICE = livePrices?.BSV?.usd ?? 15;
 
   const [sendAmount, setSendAmount]   = useState("");
   const [search, setSearch]           = useState("");
