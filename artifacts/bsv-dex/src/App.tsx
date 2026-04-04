@@ -15,6 +15,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
+import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 import { MobileLayout } from "@/components/mobile/MobileLayout";
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
@@ -411,6 +412,7 @@ const AUTO_LOCK_MS = 30_000;
 function AppContent() {
   const { isEnabled, isLocked, lock } = useBiometricStore();
   useInternalEvmWallet();
+  useInternalBsvWallet();
   const hiddenAt = useRef<number | null>(null);
 
   useEffect(() => {

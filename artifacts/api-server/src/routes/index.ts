@@ -28,6 +28,7 @@ import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspac
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js";
+import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 
@@ -725,6 +726,43 @@ router.post("/user/evm-wallet", async (req, res) => {
     res.status(result.isNew ? 201 : 200).json(result);
   } catch (err) {
     logger.error({ err }, "Failed to provision internal EVM wallet");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ─── INTERNAL BSV WALLET (auto-provisioned for EVM users) ──────────────────
+ *
+ *  GET  /api/user/bsv-wallet?evmAddress=<addr>   — fetch existing address
+ *  POST /api/user/bsv-wallet                     — create-or-get (idempotent)
+ *
+ *  Response: { bsvAddress: string, isNew: boolean }
+ *  The private key is NEVER returned to the client.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+router.get("/user/bsv-wallet", async (req, res) => {
+  const evmAddress = (req.query.evmAddress as string ?? "").trim();
+  if (!evmAddress) { res.status(400).json({ error: "evmAddress required" }); return; }
+  try {
+    const bsvAddress = await getBsvWallet(evmAddress);
+    if (!bsvAddress) { res.status(404).json({ error: "No internal BSV wallet provisioned yet" }); return; }
+    res.json({ bsvAddress, isNew: false });
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch internal BSV wallet");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/user/bsv-wallet", async (req, res) => {
+  const { evmAddress } = req.body as { evmAddress?: string };
+  if (!evmAddress || typeof evmAddress !== "string" || !evmAddress.trim()) {
+    res.status(400).json({ error: "evmAddress required" });
+    return;
+  }
+  try {
+    const result = await getOrCreateBsvWallet(evmAddress.trim());
+    res.status(result.isNew ? 201 : 200).json(result);
+  } catch (err) {
+    logger.error({ err }, "Failed to provision internal BSV wallet");
     res.status(500).json({ error: "Internal server error" });
   }
 });
