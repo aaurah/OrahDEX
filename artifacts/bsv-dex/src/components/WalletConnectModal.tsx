@@ -1574,24 +1574,43 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           <div className="text-center">
                             <h3 className="text-xl font-bold">Wallet Created!</h3>
-                            <p className="text-xs text-muted-foreground mt-1">All your chain addresses from this seed phrase</p>
+                            <p className="text-xs text-muted-foreground mt-1">Tap a chain to connect with that address</p>
                           </div>
                           <div className="w-full space-y-2">
                             {[
-                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
-                              { label: "SOL", sub: "Solana · Phantom-compatible", addr: hdAddresses.sol, color: "violet" },
-                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
-                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },
-                            ].map(({ label, sub, addr, color }) => (
-                              <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20`}>
-                                <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[10px] text-muted-foreground">{sub}</p>
-                                  <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
+                              { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: null },
+                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
+                            ].map(({ label, sub, addr, color, net }) => {
+                              const isActive = walletState.network === net && net !== null;
+                              const inner = (
+                                <>
+                                  <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] text-muted-foreground">{sub}</p>
+                                    <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                                  </div>
+                                  {net && !isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
+                                  {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                </>
+                              );
+                              return net ? (
+                                <button
+                                  key={label}
+                                  onClick={() => { walletState.switchNetworkType(net); onClose(); }}
+                                  className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all
+                                    ${isActive ? `bg-${color}-500/15 border-${color}-500/40` : `bg-${color}-500/8 border-${color}-500/20 hover:bg-${color}-500/15 hover:border-${color}-500/40`}`}
+                                >
+                                  {inner}
+                                </button>
+                              ) : (
+                                <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20 opacity-50`}>
+                                  {inner}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1739,24 +1758,43 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           <div className="text-center">
                             <h3 className="text-xl font-bold">Wallet Imported!</h3>
-                            <p className="text-xs text-muted-foreground mt-1">All your chain addresses from this seed phrase</p>
+                            <p className="text-xs text-muted-foreground mt-1">Tap a chain to connect with that address</p>
                           </div>
                           <div className="w-full space-y-2">
                             {[
-                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
-                              { label: "SOL", sub: "Solana · Phantom-compatible", addr: hdAddresses.sol, color: "violet" },
-                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
-                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },
-                            ].map(({ label, sub, addr, color }) => (
-                              <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20`}>
-                                <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[10px] text-muted-foreground">{sub}</p>
-                                  <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
+                              { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: null },
+                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
+                            ].map(({ label, sub, addr, color, net }) => {
+                              const isActive = walletState.network === net && net !== null;
+                              const inner = (
+                                <>
+                                  <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] text-muted-foreground">{sub}</p>
+                                    <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                                  </div>
+                                  {net && !isActive && <span className="text-[9px] text-muted-foreground/50 shrink-0">Tap to use</span>}
+                                  {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                </>
+                              );
+                              return net ? (
+                                <button
+                                  key={label}
+                                  onClick={() => { walletState.switchNetworkType(net); onClose(); }}
+                                  className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all
+                                    ${isActive ? `bg-${color}-500/15 border-${color}-500/40` : `bg-${color}-500/8 border-${color}-500/20 hover:bg-${color}-500/15 hover:border-${color}-500/40`}`}
+                                >
+                                  {inner}
+                                </button>
+                              ) : (
+                                <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20 opacity-50`}>
+                                  {inner}
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
