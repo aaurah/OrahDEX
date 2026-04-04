@@ -99,6 +99,7 @@ export function SpotTrading() {
   })();
 
   const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
+  const [candleInterval, setCandleInterval] = useState("1h");
   const [marketSearch, setMarketSearch] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
@@ -150,7 +151,7 @@ export function SpotTrading() {
   });
 
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: '1h', limit: 100 });
+  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
     query: { refetchInterval: 4000, staleTime: 2000 },
   });
@@ -391,7 +392,11 @@ export function SpotTrading() {
         {/* CENTER: Chart & Bottom Tabs */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 border-b border-border relative min-h-0" style={{ minHeight: "320px" }}>
-            <Chart symbol={symbol} />
+            <Chart
+              symbol={symbol}
+              interval={candleInterval}
+              onIntervalChange={setCandleInterval}
+            />
           </div>
           <div className="h-[220px] shrink-0 bg-card flex flex-col border-t border-border">
             {/* Tab bar + controls row */}

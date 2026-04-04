@@ -622,32 +622,51 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </div>
         </div>
 
-        {/* ── CHART ── */}
-        <div className="h-[360px] overflow-hidden">
-          <Chart
-            symbol={symbol}
-            interval={interval}
-            onIntervalChange={handleIntervalChange}
-            subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
-          />
-        </div>
+        {/* ── TIMEFRAME + INDICATOR ROW ── */}
+        <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
+          {/* Timeframe pills */}
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d"] as const).map(iv => (
+            <button
+              key={iv}
+              onClick={() => handleIntervalChange(iv)}
+              className={cn(
+                "shrink-0 px-2.5 py-1 rounded-md text-[12px] font-semibold transition-all mr-0.5",
+                interval === iv
+                  ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+            >{iv}</button>
+          ))}
 
-        {/* ── INDICATOR TABS ── */}
-        <div className="flex overflow-x-auto no-scrollbar border-b border-border px-1">
+          {/* Divider */}
+          <div className="w-px h-5 mx-2 bg-border shrink-0" />
+
+          {/* Indicator pills */}
           {INDICATORS.map(ind => (
             <button
               key={ind}
-              onClick={() => setActiveIndicator(ind)}
+              onClick={() => setActiveIndicator(ind === activeIndicator ? null : ind)}
               className={cn(
-                "shrink-0 px-3.5 py-2 text-xs font-semibold transition-colors",
+                "shrink-0 px-2.5 py-1 rounded-md text-[12px] font-semibold transition-all mr-0.5",
                 activeIndicator === ind
-                  ? "text-foreground border-b-2 border-primary"
-                  : "text-muted-foreground"
+                  ? "bg-primary/20 text-primary border border-primary/40"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
               )}
             >
               {ind}
             </button>
           ))}
+        </div>
+
+        {/* ── CHART ── */}
+        <div className="h-[340px] overflow-hidden">
+          <Chart
+            symbol={symbol}
+            interval={interval}
+            onIntervalChange={handleIntervalChange}
+            hideIntervalBar={true}
+            subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
+          />
         </div>
 
         {/* ── PERFORMANCE ROW ── */}
