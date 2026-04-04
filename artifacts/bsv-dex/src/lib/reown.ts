@@ -269,6 +269,40 @@ export function isUserDisconnecting(): boolean {
 }
 
 /**
+ * Sign a message directly via the Reown/WalletConnect EIP-1193 provider.
+ * This is the authoritative signing path for Reown connections — it goes
+ * through the live WalletConnect session rather than wagmi's connector state,
+ * so it works even when useAccount().isConnected is stale.
+ * Returns null if the provider is unavailable (e.g. no active session).
+ */
+export async function signMessageWithReownProvider(
+  message: string,
+  address: string,
+): Promise<string | null> {
+  if (!_adapter?.wagmiConfig) return null;
+  // Hex-encode the message (EIP-191 personal_sign expects 0x-prefixed hex)
+  const hexMsg =
+    "0x" +
+    Array.from(new TextEncoder().encode(message))
+      .map(b => b.toString(16).padStart(2, "0"))
+      .join("");
+  for (const connector of _adapter.wagmiConfig.connectors) {
+    try {
+      const provider = await (connector as any).getProvider?.();
+      if (!provider) continue;
+      const sig = await (provider as any).request({
+        method: "personal_sign",
+        params: [hexMsg, address],
+      });
+      if (sig) return sig as string;
+    } catch {
+      // This connector isn't active; try next
+    }
+  }
+  return null;
+}
+
+/**
  * Fully disconnect from the Reown session — kills the WalletConnect/AppKit
  * session so re-opening the modal shows the wallet picker from scratch.
  */
