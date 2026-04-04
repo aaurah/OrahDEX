@@ -744,29 +744,29 @@ export function FuturesTrading() {
               {/* Price input */}
               {orderType !== "market" && (
                 <div className="bg-secondary border border-border rounded-xl px-3 py-2 flex items-center gap-2 focus-within:border-primary/50 transition-colors">
-                  <span className="text-muted-foreground text-xs w-10">Price</span>
+                  <span className="text-muted-foreground text-xs w-10 shrink-0">Price</span>
                   <input
                     type="number"
-                    className="flex-1 bg-transparent text-right text-sm font-mono outline-none"
+                    className="flex-1 min-w-0 bg-transparent text-right text-sm font-mono outline-none"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     placeholder={String(ticker.lastPrice)}
                   />
-                  <span className="text-muted-foreground text-xs">USDT</span>
+                  <span className="text-muted-foreground text-xs shrink-0">USDT</span>
                 </div>
               )}
 
               {/* Size input */}
               <div className="bg-secondary border border-border rounded-xl px-3 py-2 flex items-center gap-2 focus-within:border-primary/50 transition-colors">
-                <span className="text-muted-foreground text-xs w-10">Size</span>
+                <span className="text-muted-foreground text-xs w-10 shrink-0">Size</span>
                 <input
                   type="number"
-                  className="flex-1 bg-transparent text-right text-sm font-mono outline-none"
+                  className="flex-1 min-w-0 bg-transparent text-right text-sm font-mono outline-none"
                   value={size}
                   onChange={(e) => setSize(e.target.value)}
                   placeholder="0"
                 />
-                <span className="text-muted-foreground text-xs">{base}</span>
+                <span className="text-muted-foreground text-xs shrink-0">{base}</span>
               </div>
 
               {/* PCT quick-fill */}
