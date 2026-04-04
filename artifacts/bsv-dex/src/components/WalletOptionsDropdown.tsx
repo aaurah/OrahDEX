@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
-import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown, FlaskConical, RotateCcw, ArrowLeftRight, Loader2 } from 'lucide-react';
-import { useWalletStore } from '@/store/useWalletStore';
+import { LogOut, Wallet, Copy, Check, ChevronDown, FlaskConical, RotateCcw, ArrowLeftRight, Loader2 } from 'lucide-react';
+import { useWalletStore, type WalletNetwork } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
 import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
@@ -17,8 +17,19 @@ interface Props {
   compact?: boolean;
 }
 
+const NETWORK_LABELS: Record<WalletNetwork, string> = {
+  evm: 'EVM', bsv: 'BSV', btc: 'BTC', sol: 'SOL', tron: 'TRON',
+};
+const NETWORK_ICONS: Record<WalletNetwork, string> = {
+  evm: '⟠', bsv: '₿', btc: '₿', sol: '◎', tron: '⊕',
+};
+
 export function WalletOptionsDropdown({ compact = false }: Props) {
-  const { address, provider, network, balance, isDemo, disconnect, connectDemo } = useWalletStore();
+  const {
+    address, provider, network, balance, isDemo,
+    disconnect, connectDemo, switchNetworkType,
+    internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress,
+  } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen]           = useState(false);
   const [copied, setCopied]       = useState(false);
@@ -240,10 +251,48 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             </div>
           </div>
 
-          {/* Change chain — only for EVM real accounts */}
+          {/* Network type switcher — shown for multi-chain wallets (passkey/HD) */}
+          {!isDemo && (() => {
+            // Determine which networks this wallet supports
+            const evmAddr   = internalEvmAddress ?? (network === 'evm' ? address : null);
+            const available: WalletNetwork[] = [];
+            if (evmAddr)               available.push('evm');
+            if (internalBsvAddress)    available.push('bsv');
+            if (internalBtcAddress)    available.push('btc');
+            if (internalSolAddress)    available.push('sol');
+            if (available.length < 2)  return null; // single-network wallet — nothing to switch
+            return (
+              <div className="px-3 py-2.5 border-b border-border">
+                <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
+                <div className="flex gap-1">
+                  {available.map((net) => {
+                    const isActive = network === net;
+                    return (
+                      <button
+                        key={net}
+                        onClick={() => { if (!isActive) { switchNetworkType(net); setOpen(false); } }}
+                        disabled={isActive}
+                        className={cn(
+                          "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border",
+                          isActive
+                            ? "bg-primary/15 text-primary border-primary/40"
+                            : "bg-white/5 text-muted-foreground border-transparent hover:bg-white/10 hover:text-foreground"
+                        )}
+                      >
+                        <span className="text-base leading-none">{NETWORK_ICONS[net]}</span>
+                        <span>{NETWORK_LABELS[net]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Change EVM chain — only for EVM real accounts */}
           {network === 'evm' && !isDemo && (
             <div className="px-4 py-3 border-b border-border">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Change Chain</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Change EVM Chain</p>
               <ChainSwitcherDropdown inline />
             </div>
           )}
