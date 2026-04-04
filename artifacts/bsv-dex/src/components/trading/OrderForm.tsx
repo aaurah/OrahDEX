@@ -54,8 +54,8 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
   return (
     <div className="flex flex-col h-full">
       <div className="flex opacity-30 pointer-events-none select-none">
-        <div className="flex-1 py-4 text-center font-bold text-sm text-buy border-b-2 border-buy bg-buy/5">Buy</div>
-        <div className="flex-1 py-4 text-center font-bold text-sm text-muted-foreground border-b-2 border-transparent">Sell</div>
+        <div className="flex-1 py-2 text-center font-semibold text-xs text-buy border-b-2 border-buy bg-buy/5">Buy</div>
+        <div className="flex-1 py-2 text-center font-semibold text-xs text-muted-foreground border-b-2 border-transparent">Sell</div>
       </div>
       <div className="flex-1 flex flex-col items-center justify-center gap-5 px-5 py-6">
         <div className="relative">
@@ -686,14 +686,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
       {/* Buy / Sell tabs + Auto Borrow */}
       <div className="flex items-stretch border-b border-border shrink-0">
         <button
-          className={cn("flex-1 py-3 text-center font-bold text-sm transition-colors border-b-2",
+          className={cn("flex-1 py-2 text-center font-semibold text-xs transition-colors border-b-2",
             side === "buy" ? "text-buy border-buy bg-buy/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("buy")}
         >
           Buy
         </button>
         <button
-          className={cn("flex-1 py-3 text-center font-bold text-sm transition-colors border-b-2",
+          className={cn("flex-1 py-2 text-center font-semibold text-xs transition-colors border-b-2",
             side === "sell" ? "text-sell border-sell bg-sell/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("sell")}
         >
