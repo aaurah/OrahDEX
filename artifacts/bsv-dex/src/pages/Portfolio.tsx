@@ -14,6 +14,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -171,6 +172,7 @@ export function Portfolio() {
   });
 
   const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
+  const openWallet = useWalletModalStore((s) => s.open);
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
@@ -223,12 +225,124 @@ export function Portfolio() {
 
   if (!address) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-        <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mb-5">
-          <History className="w-10 h-10 text-primary" />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-lg mx-auto px-4 py-10 space-y-6">
+
+          {/* Hero */}
+          <div className="rounded-3xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-8 text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center mx-auto">
+              <Zap className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-black text-foreground tracking-tight">Login to Trade</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
+              Connect your wallet to view balances, track P&amp;L, deposit, withdraw, and start trading instantly.
+            </p>
+          </div>
+
+          {/* Wallet type cards */}
+          <div className="space-y-3">
+            <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground px-1">Choose your wallet type</p>
+
+            {/* EVM */}
+            <button
+              onClick={() => openWallet()}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-blue-500/40 hover:bg-blue-500/5 transition-all text-left group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+                🦊
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">EVM Wallets</p>
+                <p className="text-xs text-muted-foreground mt-0.5">MetaMask · Coinbase · Trust · Ledger + all L2s</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {["ETH","BNB","MATIC","ARB","BASE"].map(s => (
+                    <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{s}</span>
+                  ))}
+                </div>
+              </div>
+              <span className="text-blue-400 text-sm font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+            </button>
+
+            {/* TRON */}
+            <button
+              onClick={() => openWallet()}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-red-500/40 hover:bg-red-500/5 transition-all text-left group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+                🔴
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">TRON Wallet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">TronLink · imToken · Trust · TokenPocket · OKX</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {["TRX","USDT","BTT","WIN","JST"].map(s => (
+                    <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20">{s}</span>
+                  ))}
+                </div>
+              </div>
+              <span className="text-red-400 text-sm font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+            </button>
+
+            {/* BSV */}
+            <button
+              onClick={() => openWallet()}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-primary/40 hover:bg-primary/5 transition-all text-left group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+                ⚡
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">Bitcoin SV Wallet</p>
+                <p className="text-xs text-muted-foreground mt-0.5">HandCash · RelayX · Panda · Sensilet · manual</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {["BSV","FAST","LOW FEE"].map(s => (
+                    <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">{s}</span>
+                  ))}
+                </div>
+              </div>
+              <span className="text-primary text-sm font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+            </button>
+
+            {/* Other (SOL / BTC) */}
+            <button
+              onClick={() => openWallet()}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-violet-500/40 hover:bg-violet-500/5 transition-all text-left group"
+            >
+              <div className="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center shrink-0 text-xl group-hover:scale-105 transition-transform">
+                🌐
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">Other Wallets</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Phantom (SOL) · UniSat · Xverse (BTC) · more</p>
+                <div className="flex gap-1 mt-1.5 flex-wrap">
+                  {["SOL","BTC","ORDINALS"].map(s => (
+                    <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">{s}</span>
+                  ))}
+                </div>
+              </div>
+              <span className="text-violet-400 text-sm font-semibold shrink-0 group-hover:translate-x-0.5 transition-transform">→</span>
+            </button>
+          </div>
+
+          {/* Features */}
+          <div className="p-5 rounded-2xl bg-secondary/40 border border-border">
+            <p className="text-xs font-semibold text-muted-foreground mb-3">After connecting you can:</p>
+            <div className="space-y-2.5">
+              {[
+                { icon: "📊", text: "View live portfolio balance & P&L" },
+                { icon: "💸", text: "Deposit & withdraw instantly" },
+                { icon: "⚡", text: "Trade spot & futures markets" },
+                { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
+              ].map(f => (
+                <div key={f.text} className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                  <span className="text-base leading-none">{f.icon}</span>
+                  {f.text}
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
-        <h2 className="text-2xl font-bold mb-3">Portfolio Overview</h2>
-        <p className="text-muted-foreground mb-8">Connect your wallet to view your balances, open orders, and transaction history on OrahDEX.</p>
       </div>
     );
   }
