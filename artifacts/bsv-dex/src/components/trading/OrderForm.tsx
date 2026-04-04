@@ -274,12 +274,12 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
           <div className="flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5">
             <span className="text-muted-foreground text-sm w-16">Price</span>
             <span className="flex-1 text-right font-mono text-sm">—</span>
-            <span className="text-muted-foreground text-sm ml-2">{quote}</span>
+            <span className="text-muted-foreground text-xs ml-2 shrink-0">{quote}</span>
           </div>
           <div className="flex items-center bg-secondary border border-border rounded-xl px-3 py-2.5">
             <span className="text-muted-foreground text-sm w-16">Amount</span>
             <span className="flex-1 text-right font-mono text-sm">—</span>
-            <span className="text-muted-foreground text-sm ml-2">{base}</span>
+            <span className="text-muted-foreground text-xs ml-2 shrink-0">{base}</span>
           </div>
         </div>
       </div>
@@ -391,6 +391,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
+  const [autoBorrow, setAutoBorrow] = useState(false);
 
   const [filledFromBook, setFilledFromBook] = useState(false);
   // When the user clicks a row in the Order Book, fill price + amount here
@@ -847,6 +848,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
           // Optional cross-chain receive address (e.g. Cardano addr when BSV wallet buys ADA)
           receiveAddress: receiveAddress.trim() || undefined,
+          autoBorrow,
         } as any,
       },
       {
@@ -882,8 +884,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
       }
     );
   };
-
-  const [autoBorrow, setAutoBorrow] = useState(false);
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
@@ -1010,7 +1010,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 min="0"
                 step="any"
               />
-              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
+              <span className="text-muted-foreground text-xs ml-2 shrink-0">{quote}</span>
             </div>
           )}
 
@@ -1028,13 +1028,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 min="0"
                 step="any"
               />
-              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
+              <span className="text-muted-foreground text-xs ml-2 shrink-0">{quote}</span>
             </div>
           ) : (
             <div className="flex items-center bg-secondary/50 border border-border rounded-xl px-3 py-2.5 cursor-not-allowed">
               <span className="text-muted-foreground text-sm w-16">Price</span>
               <span className="flex-1 text-right text-muted-foreground font-mono">Market Price</span>
-              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
+              <span className="text-muted-foreground text-xs ml-2 shrink-0">{quote}</span>
             </div>
           )}
 
@@ -1051,7 +1051,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               min="0"
               step="any"
             />
-            <span className="text-muted-foreground text-sm ml-2 shrink-0">{base}</span>
+            <span className="text-muted-foreground text-xs ml-2 shrink-0">{base}</span>
           </div>
 
           {/* Slippage (market orders only) */}
@@ -1417,7 +1417,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             <div className="flex items-center bg-secondary/30 border border-transparent rounded-xl px-3 py-2.5">
               <span className="text-muted-foreground text-sm w-16">Total</span>
               <span className="flex-1 text-right text-foreground font-mono">{formatPrice(isNaN(total) ? 0 : total)}</span>
-              <span className="text-muted-foreground text-sm ml-2">{quote}</span>
+              <span className="text-muted-foreground text-xs ml-2 shrink-0">{quote}</span>
             </div>
           )}
 
