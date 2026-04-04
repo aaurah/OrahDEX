@@ -732,7 +732,7 @@ export function LandingPage() {
             <span>·</span>
             <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           </div>
-          <SocialBar iconSize="sm" className="max-w-sm" />
+          <SocialBar iconSize="sm" variant="landing" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/30">
             © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
           </p>
