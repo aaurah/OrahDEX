@@ -377,15 +377,15 @@ export function LandingPage() {
             <button
               onClick={cycleTheme}
               title={`Switch theme — current: ${LAND_THEME_LABELS[safeTheme]}`}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground text-xs font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg border border-border bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground text-xs font-semibold transition-all"
             >
-              <ThemeIcon className="w-3.5 h-3.5" />
+              <ThemeIcon className="w-3 h-3" />
               <span className="hidden sm:block">{LAND_THEME_LABELS[safeTheme]}</span>
             </button>
-            <Link href="/markets" className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2 rounded-xl border border-border hover:border-border/80 bg-card/60">
+            <Link href="/markets" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors px-3 py-1 rounded-lg border border-border hover:border-border/80 bg-card/60">
               Markets
             </Link>
-            <Link href="/trade/BSV-USDT" className="text-sm font-bold text-black px-4 py-2 rounded-xl bg-green-400 hover:bg-green-300 transition-all hover:scale-[1.02] shadow-lg shadow-green-500/20">
+            <Link href="/trade/BSV-USDT" className="text-xs font-bold text-black px-3 py-1 rounded-lg bg-green-400 hover:bg-green-300 transition-all hover:scale-[1.02] shadow-md shadow-green-500/20">
               Launch App
             </Link>
           </div>
