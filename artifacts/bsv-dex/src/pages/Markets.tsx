@@ -237,92 +237,104 @@ export function Markets() {
   const liveFtm   = liveByQuote("FTM");
   const liveCro   = liveByQuote("CRO");
 
+  /** Only show pairs that are in the DB and have a real price (tradeable) */
+  const tradeable = (arr: any[]) =>
+    arr.filter(m => parseFloat(m.lastPrice || "0") > 0);
+
+  /** Get all live pairs for a quote asset — DB-only, no mock fallback */
+  const dbByQuote = (quote: string) =>
+    tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
+
+  /** For category tabs: cross-reference mock list with DB pairs so only real DB pairs show */
+  const dbBySymbols = (mockList: any[]) => {
+    const symbols = new Set(mockList.map((m: any) => m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`));
+    return tradeable(raw.filter(m => symbols.has(m.symbol)));
+  };
+
   function getMarkets(): any[] {
     switch (tab) {
-      case "favorites": {
-        const favLive = raw.filter(m => stars.has(m.symbol));
-        return favLive.length > 0 ? favLive : enrich(ALL_MOCK()).filter(m => stars.has(m.symbol));
-      }
-      case "new":       return NEW_MARKETS.map(normalise);
-      case "usd": {
-        /* Use live API data when available — shows ALL pairs in DB */
-        const live = raw.filter(m => m.quoteAsset === usdSub && m.type !== "futures");
-        return live.length > 0 ? live : enrich(STABLE_MOCK[usdSub].map(normalise));
-      }
-      case "btc":       return liveBtc ?? enrich(BTC_MARKETS.map(normalise));
-      case "eth":       return liveEth ?? enrich(ETH_MARKETS.map(normalise));
-      case "bnb":       return liveBnb ?? enrich(BNB_MARKETS.map(normalise));
-      case "matic":     return liveMatic ?? enrich(MATIC_MARKETS.map(normalise));
-      case "avax":      return liveAvax  ?? enrich(AVAX_MARKETS.map(normalise));
-      case "arb":       return liveArb   ?? enrich(ARB_MARKETS.map(normalise));
-      case "op":        return liveOp    ?? enrich(OP_MARKETS.map(normalise));
-      case "ftm":       return liveFtm   ?? enrich(FTM_MARKETS.map(normalise));
-      case "cro":       return liveCro   ?? enrich(CRO_MARKETS.map(normalise));
-      case "base":      return enrich(BASE_MARKETS.map(normalise));
-      case "zora":      return enrich(ZORA_MARKETS.map(normalise));
-      case "linea":     return enrich(LINEA_MARKETS.map(normalise));
-      case "zk":        return enrich(ZK_MARKETS.map(normalise));
-      case "scr":       return enrich(SCR_MARKETS.map(normalise));
-      case "mnt":       return enrich(MNT_MARKETS.map(normalise));
-      case "sol":       return enrich(SOL_MARKETS.map(normalise));
-      case "bch":       return liveBch ?? enrich(BCH_MARKETS.map(normalise));
-      case "bsv":       return liveBsv ?? enrich(BSV_MARKETS.map(normalise));
-      case "ai":        return enrich(AI_MARKETS.map(normalise));
-      case "depin":     return enrich(DEPIN_MARKETS.map(normalise));
-      case "meme":      return enrich(MEME_MARKETS.map(normalise));
-      case "defi":      return enrich(DEFI_MARKETS.map(normalise));
-      case "uniswap":   return enrich(UNISWAP_MARKETS.map(normalise));
-      case "pancake":   return enrich(PANCAKE_MARKETS.map(normalise));
-      case "gaming":    return enrich(GAMING_MARKETS.map(normalise));
-      case "cosmos":    return enrich(COSMOS_MARKETS.map(normalise));
-      case "l1":        return enrich(L1_MARKETS.map(normalise));
-      case "l2":        return enrich(L2_MARKETS.map(normalise));
-      case "rwa":       return enrich(RWA_MARKETS.map(normalise));
-      case "exchange":  return enrich(EXCHANGE_MARKETS.map(normalise));
-      case "brc20":     return enrich(BRC20_MARKETS.map(normalise));
-      case "futures":   return enrich(FUTURES_MARKETS.map(normalise));
-      default:          return [];
+      case "favorites":
+        return tradeable(raw.filter(m => stars.has(m.symbol)));
+      case "new":
+        // NEW_MARKETS defines symbols; cross-reference with live DB data
+        return dbBySymbols(NEW_MARKETS.map(normalise));
+      case "usd":
+        return dbByQuote(usdSub);
+      case "bsv":     return dbByQuote("BSV");
+      case "btc":     return dbByQuote("BTC");
+      case "eth":     return dbByQuote("ETH");
+      case "bnb":     return dbByQuote("BNB");
+      case "matic":   return dbByQuote("MATIC");
+      case "avax":    return dbByQuote("AVAX");
+      case "arb":     return dbByQuote("ARB");
+      case "op":      return dbByQuote("OP");
+      case "ftm":     return dbByQuote("FTM");
+      case "cro":     return dbByQuote("CRO");
+      case "base":    return dbByQuote("BASE");
+      case "linea":   return dbByQuote("LINEA");
+      case "zk":      return dbByQuote("ZK");
+      case "scr":     return dbByQuote("SCR");
+      case "mnt":     return dbByQuote("MNT");
+      case "bch":     return dbByQuote("BCH");
+      case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
+      case "sol":     return dbBySymbols(SOL_MARKETS.map(normalise));
+      case "ai":      return dbBySymbols(AI_MARKETS.map(normalise));
+      case "depin":   return dbBySymbols(DEPIN_MARKETS.map(normalise));
+      case "meme":    return dbBySymbols(MEME_MARKETS.map(normalise));
+      case "defi":    return dbBySymbols(DEFI_MARKETS.map(normalise));
+      case "uniswap": return dbBySymbols(UNISWAP_MARKETS.map(normalise));
+      case "pancake": return dbBySymbols(PANCAKE_MARKETS.map(normalise));
+      case "gaming":  return dbBySymbols(GAMING_MARKETS.map(normalise));
+      case "cosmos":  return dbBySymbols(COSMOS_MARKETS.map(normalise));
+      case "l1":      return dbBySymbols(L1_MARKETS.map(normalise));
+      case "l2":      return dbBySymbols(L2_MARKETS.map(normalise));
+      case "rwa":     return dbBySymbols(RWA_MARKETS.map(normalise));
+      case "exchange":return dbBySymbols(EXCHANGE_MARKETS.map(normalise));
+      case "brc20":   return dbBySymbols(BRC20_MARKETS.map(normalise));
+      case "futures": return tradeable(raw.filter(m => m.type === "futures"));
+      default:        return [];
     }
   }
 
   function tabCount(t: Tab): number {
-    const liveCount = (q: string) => raw.filter(m => m.quoteAsset === q && m.type !== "futures").length;
+    const dbQ  = (q: string) => tradeable(raw.filter(m => m.quoteAsset === q && m.type !== "futures")).length;
+    const dbS  = (list: any[]) => dbBySymbols(list.map(normalise)).length;
     switch (t) {
-      case "favorites": return raw.filter(m => stars.has(m.symbol)).length || ALL_MOCK().filter(m => stars.has(m.symbol)).length;
-      case "new":       return NEW_MARKETS.length;
-      case "usd":       return liveCount(usdSub) || STABLE_MOCK[usdSub].length;
-      case "btc":       return liveCount("BTC") || BTC_MARKETS.length;
-      case "eth":       return liveCount("ETH") || ETH_MARKETS.length;
-      case "bnb":       return liveCount("BNB") || BNB_MARKETS.length;
-      case "matic":     return MATIC_MARKETS.length;
-      case "avax":      return AVAX_MARKETS.length;
-      case "arb":       return ARB_MARKETS.length;
-      case "op":        return OP_MARKETS.length;
-      case "ftm":       return FTM_MARKETS.length;
-      case "cro":       return CRO_MARKETS.length;
-      case "base":      return BASE_MARKETS.length;
-      case "zora":      return ZORA_MARKETS.length;
-      case "linea":     return LINEA_MARKETS.length;
-      case "zk":        return ZK_MARKETS.length;
-      case "scr":       return SCR_MARKETS.length;
-      case "mnt":       return MNT_MARKETS.length;
-      case "sol":       return SOL_MARKETS.length;
-      case "bch":       return liveCount("BCH") || BCH_MARKETS.length;
-      case "bsv":       return liveCount("BSV") || BSV_MARKETS.length;
-      case "ai":        return AI_MARKETS.length;
-      case "depin":     return DEPIN_MARKETS.length;
-      case "meme":      return MEME_MARKETS.length;
-      case "defi":      return DEFI_MARKETS.length;
-      case "uniswap":   return UNISWAP_MARKETS.length;
-      case "pancake":   return PANCAKE_MARKETS.length;
-      case "gaming":    return GAMING_MARKETS.length;
-      case "cosmos":    return COSMOS_MARKETS.length;
-      case "l1":        return L1_MARKETS.length;
-      case "l2":        return L2_MARKETS.length;
-      case "rwa":       return RWA_MARKETS.length;
-      case "exchange":  return EXCHANGE_MARKETS.length;
-      case "brc20":     return BRC20_MARKETS.length;
-      case "futures":   return FUTURES_MARKETS.length;
+      case "favorites": return tradeable(raw.filter(m => stars.has(m.symbol))).length;
+      case "new":       return dbBySymbols(NEW_MARKETS.map(normalise)).length;
+      case "usd":       return dbQ(usdSub);
+      case "bsv":       return dbQ("BSV");
+      case "btc":       return dbQ("BTC");
+      case "eth":       return dbQ("ETH");
+      case "bnb":       return dbQ("BNB");
+      case "matic":     return dbQ("MATIC");
+      case "avax":      return dbQ("AVAX");
+      case "arb":       return dbQ("ARB");
+      case "op":        return dbQ("OP");
+      case "ftm":       return dbQ("FTM");
+      case "cro":       return dbQ("CRO");
+      case "base":      return dbQ("BASE");
+      case "linea":     return dbQ("LINEA");
+      case "zk":        return dbQ("ZK");
+      case "scr":       return dbQ("SCR");
+      case "mnt":       return dbQ("MNT");
+      case "bch":       return dbQ("BCH");
+      case "zora":      return dbS(ZORA_MARKETS);
+      case "sol":       return dbS(SOL_MARKETS);
+      case "ai":        return dbS(AI_MARKETS);
+      case "depin":     return dbS(DEPIN_MARKETS);
+      case "meme":      return dbS(MEME_MARKETS);
+      case "defi":      return dbS(DEFI_MARKETS);
+      case "uniswap":   return dbS(UNISWAP_MARKETS);
+      case "pancake":   return dbS(PANCAKE_MARKETS);
+      case "gaming":    return dbS(GAMING_MARKETS);
+      case "cosmos":    return dbS(COSMOS_MARKETS);
+      case "l1":        return dbS(L1_MARKETS);
+      case "l2":        return dbS(L2_MARKETS);
+      case "rwa":       return dbS(RWA_MARKETS);
+      case "exchange":  return dbS(EXCHANGE_MARKETS);
+      case "brc20":     return dbS(BRC20_MARKETS);
+      case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length;
       default:          return 0;
     }
   }
