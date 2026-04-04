@@ -12,7 +12,7 @@ import { API_BASE } from "@/lib/api";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
-import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
+import { generateMnemonic, deriveAllAddresses, validateMnemonic, type HdWalletAddresses } from "@/lib/seedPhrase";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   isPasskeySupported,
@@ -199,6 +199,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const connect = useWalletStore((s) => s.connect);
   const connectDemo = useWalletStore((s) => s.connectDemo);
   const setBalance = useWalletStore((s) => s.setBalance);
+  const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
+  const setInternalBchAddress = useWalletStore((s) => s.setInternalBchAddress);
+  const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
   const walletState = useWalletStore();
   const initialTab = useWalletModalStore((s) => s.initialTab);
 
@@ -262,7 +265,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [mnemonic, setMnemonic] = useState<string[]>([]);
   const [createStep, setCreateStep] = useState<CreateStep>("generate");
-  const [createNetwork, setCreateNetwork] = useState<WalletNetwork>("bsv");
+  const [createNetwork, setCreateNetwork] = useState<WalletNetwork>("evm");
+  const [isHdWallet, setIsHdWallet] = useState(true);
+  const [hdAddresses, setHdAddresses] = useState<HdWalletAddresses | null>(null);
+  const [hdDeriving, setHdDeriving] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -960,8 +966,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   /* ── Create wallet ────────────────────────────────────────────────────────── */
-  const startCreate = (network: WalletNetwork) => {
+  const startCreate = (network: WalletNetwork, hdMode = true) => {
     setCreateNetwork(network);
+    setIsHdWallet(hdMode);
+    setHdAddresses(null);
     setMnemonic(generateMnemonic(wordCount));
     setCreateStep("generate");
     setRevealed(false);
@@ -970,7 +978,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setView("create");
   };
 
-  const regenerate = () => { setMnemonic(generateMnemonic(wordCount)); setCopied(false); setRevealed(false); setConfirmed(false); };
+  const regenerate = () => { setMnemonic(generateMnemonic(wordCount)); setCopied(false); setRevealed(false); setConfirmed(false); setHdAddresses(null); };
 
   const handleCopy = () => {
     navigator.clipboard?.writeText(mnemonic.join(" "));
@@ -978,25 +986,41 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const finishCreate = () => {
-    const net = createNetwork === "evm" ? "evm" : "bsv";
-    const address = deriveAddress(mnemonic, net);
-    connect({ address, provider: "aura-wallet", network: net });
-    setCreateStep("done");
-    setTimeout(() => goToPrep(address, net, "aura-wallet"), 1500);
+  const finishCreate = async () => {
+    setHdDeriving(true);
+    try {
+      const addrs = await deriveAllAddresses(mnemonic);
+      setHdAddresses(addrs);
+      connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      setInternalBsvAddress(addrs.bsv);
+      setInternalBchAddress(addrs.bch);
+      setInternalBtcAddress(addrs.btc);
+      setCreateStep("done");
+      setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
+    } finally {
+      setHdDeriving(false);
+    }
   };
 
   /* ── Import wallet — seed phrase ──────────────────────────────────────────── */
-  const handleImport = () => {
+  const handleImport = async () => {
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
     setImportError(null);
-    const net = importNetwork === "evm" ? "evm" : "bsv";
-    const addr = deriveAddress(result.words, net);
-    setImportAddress(addr);
-    connect({ address: addr, provider: "aura-wallet", network: net });
-    setImportStep("done");
-    setTimeout(() => goToPrep(addr, net, "aura-wallet"), 1500);
+    setHdDeriving(true);
+    try {
+      const addrs = await deriveAllAddresses(result.words);
+      setHdAddresses(addrs);
+      setImportAddress(addrs.evm);
+      connect({ address: addrs.evm, provider: "aura-wallet", network: "evm" });
+      setInternalBsvAddress(addrs.bsv);
+      setInternalBchAddress(addrs.bch);
+      setInternalBtcAddress(addrs.btc);
+      setImportStep("done");
+      setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
+    } finally {
+      setHdDeriving(false);
+    }
   };
 
   /* ── Import wallet — EVM private key ─────────────────────────────────────── */
@@ -1154,7 +1178,47 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         )}
                       </div>
 
-                      {/* ① EVM — primary option (most common user) */}
+                      {/* ① OrahDEX Native Wallet — all-chains HD wallet */}
+                      <div className="rounded-2xl border border-primary/40 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+                            <Layers className="w-6 h-6 text-primary" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-black text-[15px] text-foreground leading-tight">OrahDEX Wallet</h3>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">All Chains</span>
+                            </div>
+                            <p className="text-[11px] text-primary/80 font-semibold">EVM · BTC · BCH · BSV — one seed phrase</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <button
+                            onClick={() => startCreate("evm")}
+                            className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                            Create New
+                          </button>
+                          <button
+                            onClick={() => { setImportMode("seed"); setImportError(null); setView("import"); }}
+                            className="flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/40 text-primary font-bold text-sm hover:bg-primary/10 transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                            Import Phrase
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {["🔵 ETH/EVM", "🟠 Bitcoin", "🟢 BCH", "⚡ BSV"].map(c => (
+                            <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-primary/10 text-primary/80 border border-primary/15 rounded">{c}</span>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/60 mt-2">
+                          BIP39 · non-custodial · compatible with MetaMask, Trust Wallet &amp; Ledger
+                        </p>
+                      </div>
+
+                      {/* ② EVM — external wallet option */}
                       <div className="rounded-2xl border border-blue-500/35 bg-gradient-to-br from-blue-500/8 via-transparent to-transparent p-4">
                         <div className="flex items-center gap-3 mb-3">
                           <div className="w-11 h-11 rounded-xl bg-blue-500/20 flex items-center justify-center text-xl shrink-0">🔵</div>
@@ -1375,42 +1439,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {createStep === "generate" && (
                         <>
-                          {/* Network selector */}
-                          <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => setCreateNetwork("evm")}
-                                className={cn(
-                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
-                                  createNetwork === "evm"
-                                    ? "border-blue-500/60 bg-blue-500/15 text-blue-300"
-                                    : "border-border text-muted-foreground hover:border-blue-500/30"
-                                )}
-                              >
-                                <span className="text-base">🔵</span>
-                                EVM Wallet
-                                {createNetwork === "evm" && <Check className="w-3.5 h-3.5 ml-auto" />}
-                              </button>
-                              <button
-                                onClick={() => setCreateNetwork("bsv")}
-                                className={cn(
-                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
-                                  createNetwork === "bsv"
-                                    ? "border-green-500/60 bg-green-500/15 text-green-300"
-                                    : "border-border text-muted-foreground hover:border-green-500/30"
-                                )}
-                              >
-                                <span className="text-base">⚡</span>
-                                Bitcoin SV
-                                {createNetwork === "bsv" && <Check className="w-3.5 h-3.5 ml-auto" />}
-                              </button>
+                          {/* All-chains banner */}
+                          <div className="flex items-center gap-3 p-3.5 rounded-xl bg-gradient-to-r from-primary/10 via-blue-500/5 to-emerald-500/5 border border-primary/25">
+                            <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+                              <Layers className="w-5 h-5 text-primary" />
                             </div>
-                            {createNetwork === "evm" && (
-                              <p className="text-[10px] text-muted-foreground/70 mt-1.5 px-1">
-                                BIP44 · m/44&apos;/60&apos;/0&apos;/0/0 — works on Ethereum, Polygon, BSC, Arbitrum, Optimism, Base &amp; all EVM chains
-                              </p>
-                            )}
+                            <div>
+                              <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">One phrase → EVM · BTC · BCH · BSV</p>
+                            </div>
+                            <Check className="w-4 h-4 text-primary ml-auto shrink-0" />
                           </div>
 
                           {/* Word count */}
@@ -1480,26 +1518,42 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </span>
                           </label>
 
-                          <button onClick={finishCreate} disabled={!confirmed || !revealed}
-                            className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all",
-                              confirmed && revealed
+                          <button onClick={finishCreate} disabled={!confirmed || !revealed || hdDeriving}
+                            className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                              confirmed && revealed && !hdDeriving
                                 ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
                                 : "bg-white/5 text-muted-foreground cursor-not-allowed"
                             )}>
-                            Create Wallet
+                            {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Create Wallet"}
                           </button>
                         </>
                       )}
 
-                      {createStep === "done" && (
-                        <div className="py-10 flex flex-col items-center gap-4">
-                          <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center">
-                            <CheckCircle2 className="w-10 h-10 text-green-400" />
+                      {createStep === "done" && hdAddresses && (
+                        <div className="py-6 flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 rounded-full bg-green-500/15 flex items-center justify-center">
+                            <CheckCircle2 className="w-8 h-8 text-green-400" />
                           </div>
-                          <h3 className="text-xl font-bold">Wallet Created!</h3>
-                          <p className="text-sm text-muted-foreground text-center max-w-xs">
-                            Your new {createNetwork.toUpperCase()} wallet is ready. Keep your seed phrase safe.
-                          </p>
+                          <div className="text-center">
+                            <h3 className="text-xl font-bold">Wallet Created!</h3>
+                            <p className="text-xs text-muted-foreground mt-1">All your chain addresses from this seed phrase</p>
+                          </div>
+                          <div className="w-full space-y-2">
+                            {[
+                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
+                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },
+                            ].map(({ label, sub, addr, color }) => (
+                              <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20`}>
+                                <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] text-muted-foreground">{sub}</p>
+                                  <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </motion.div>
@@ -1512,69 +1566,45 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
                       {importStep === "enter" && (
                         <>
-                          {/* Network selector */}
-                          <div>
-                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                            <div className="grid grid-cols-2 gap-2">
-                              <button
-                                onClick={() => { setImportNetwork("evm"); setImportError(null); }}
-                                className={cn(
-                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
-                                  importNetwork === "evm"
-                                    ? "border-blue-500/60 bg-blue-500/15 text-blue-300"
-                                    : "border-border text-muted-foreground hover:border-blue-500/30"
-                                )}
-                              >
-                                <span className="text-base">🔵</span>
-                                EVM Wallet
-                                {importNetwork === "evm" && <Check className="w-3.5 h-3.5 ml-auto" />}
-                              </button>
-                              <button
-                                onClick={() => { setImportNetwork("bsv"); setImportMode("seed"); setImportError(null); }}
-                                className={cn(
-                                  "flex items-center gap-2 px-4 py-3 rounded-xl border font-bold text-sm transition-all",
-                                  importNetwork === "bsv"
-                                    ? "border-green-500/60 bg-green-500/15 text-green-300"
-                                    : "border-border text-muted-foreground hover:border-green-500/30"
-                                )}
-                              >
-                                <span className="text-base">⚡</span>
-                                Bitcoin SV
-                                {importNetwork === "bsv" && <Check className="w-3.5 h-3.5 ml-auto" />}
-                              </button>
+                          {/* All-chains banner + method selector */}
+                          <div className="flex items-center gap-3 p-3.5 rounded-xl bg-gradient-to-r from-primary/10 via-blue-500/5 to-emerald-500/5 border border-primary/25">
+                            <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+                              <Layers className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">Derives EVM · BTC · BCH · BSV from one phrase</p>
                             </div>
                           </div>
 
-                          {/* Import method (only for EVM) */}
-                          {importNetwork === "evm" && (
-                            <div className="flex gap-1 p-1 bg-white/5 rounded-xl border border-border">
-                              <button
-                                onClick={() => { setImportMode("seed"); setImportError(null); }}
-                                className={cn(
-                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
-                                  importMode === "seed"
-                                    ? "bg-blue-600 text-white shadow"
-                                    : "text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                <Download className="w-3.5 h-3.5" /> Seed Phrase
-                              </button>
-                              <button
-                                onClick={() => { setImportMode("privatekey"); setImportError(null); }}
-                                className={cn(
-                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
-                                  importMode === "privatekey"
-                                    ? "bg-blue-600 text-white shadow"
-                                    : "text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                <Key className="w-3.5 h-3.5" /> Private Key
-                              </button>
-                            </div>
-                          )}
+                          {/* Import method */}
+                          <div className="flex gap-1 p-1 bg-white/5 rounded-xl border border-border">
+                            <button
+                              onClick={() => { setImportMode("seed"); setImportError(null); }}
+                              className={cn(
+                                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                importMode === "seed"
+                                  ? "bg-primary text-primary-foreground shadow"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <Download className="w-3.5 h-3.5" /> Seed Phrase
+                            </button>
+                            <button
+                              onClick={() => { setImportMode("privatekey"); setImportError(null); }}
+                              className={cn(
+                                "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                importMode === "privatekey"
+                                  ? "bg-blue-600 text-white shadow"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <Key className="w-3.5 h-3.5" /> EVM Private Key
+                            </button>
+                          </div>
 
                           {/* Private key input (EVM only) */}
-                          {importMode === "privatekey" && importNetwork === "evm" ? (
+                          {importMode === "privatekey" ? (
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Private Key</p>
@@ -1649,40 +1679,45 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               </div>
                               <button
                                 onClick={handleImport}
-                                disabled={importInput.trim().length === 0}
-                                className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all mt-3",
-                                  importInput.trim().length > 0
-                                    ? importNetwork === "evm"
-                                      ? "bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20"
-                                      : "bg-violet-600 text-white hover:bg-violet-500 shadow-lg shadow-violet-500/20"
+                                disabled={importInput.trim().length === 0 || hdDeriving}
+                                className={cn("w-full py-3.5 rounded-xl font-bold text-sm transition-all mt-3 flex items-center justify-center gap-2",
+                                  importInput.trim().length > 0 && !hdDeriving
+                                    ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
                                     : "bg-white/5 text-muted-foreground cursor-not-allowed"
                                 )}
                               >
-                                Import {importNetwork === "evm" ? "EVM" : "BSV"} Wallet
+                                {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Import OrahDEX Wallet"}
                               </button>
                             </div>
                           )}
                         </>
                       )}
 
-                      {importStep === "done" && (
-                        <div className="py-10 flex flex-col items-center gap-4">
-                          <div className={cn("w-20 h-20 rounded-full flex items-center justify-center",
-                            importNetwork === "evm" ? "bg-blue-500/15" : "bg-green-500/15"
-                          )}>
-                            <CheckCircle2 className={cn("w-10 h-10", importNetwork === "evm" ? "text-blue-400" : "text-green-400")} />
+                      {importStep === "done" && hdAddresses && (
+                        <div className="py-6 flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center">
+                            <CheckCircle2 className="w-8 h-8 text-primary" />
                           </div>
-                          <h3 className="text-xl font-bold">Wallet Imported!</h3>
-                          <p className="text-sm text-muted-foreground text-center max-w-xs font-mono">
-                            {importAddress.slice(0, 14)}...{importAddress.slice(-8)}
-                          </p>
-                          <span className={cn("px-3 py-1.5 text-xs font-semibold rounded-full uppercase",
-                            importNetwork === "evm"
-                              ? "bg-blue-500/15 text-blue-400"
-                              : "bg-green-500/15 text-green-400"
-                          )}>
-                            {importNetwork === "evm" ? "EVM Wallet" : "Bitcoin SV"}
-                          </span>
+                          <div className="text-center">
+                            <h3 className="text-xl font-bold">Wallet Imported!</h3>
+                            <p className="text-xs text-muted-foreground mt-1">All your chain addresses from this seed phrase</p>
+                          </div>
+                          <div className="w-full space-y-2">
+                            {[
+                              { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
+                              { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
+                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },
+                            ].map(({ label, sub, addr, color }) => (
+                              <div key={label} className={`flex items-center gap-3 p-3 rounded-xl bg-${color}-500/8 border border-${color}-500/20`}>
+                                <span className={`text-xs font-black text-${color}-400 w-8 shrink-0`}>{label}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] text-muted-foreground">{sub}</p>
+                                  <p className="text-xs font-mono text-foreground truncate">{addr}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </motion.div>

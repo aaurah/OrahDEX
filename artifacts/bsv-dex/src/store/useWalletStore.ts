@@ -38,10 +38,12 @@ interface WalletState {
   /** Auto-provisioned EVM address for BSV-wallet users (custodial sub-account). */
   internalEvmAddress: string | null;
   /** Auto-provisioned BSV address for EVM-wallet users (custodial sub-account).
-   *  BSV P2PKH address = BTC legacy address (identical string, same key). */
+   *  For HD-wallet users this is the BIP44 m/44'/236'/0'/0/0 BSV address. */
   internalBsvAddress: string | null;
-  /** BCH CashAddr derived from the same key as internalBsvAddress. */
+  /** BCH CashAddr — either derived from the custodial key or from m/44'/145'/0'/0/0. */
   internalBchAddress: string | null;
+  /** BTC address for HD-wallet users (m/44'/0'/0'/0/0 — different from BSV path). */
+  internalBtcAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
   connectDemo: (address: string) => void;
@@ -51,6 +53,7 @@ interface WalletState {
   setInternalEvmAddress: (addr: string | null) => void;
   setInternalBsvAddress: (addr: string | null) => void;
   setInternalBchAddress: (addr: string | null) => void;
+  setInternalBtcAddress: (addr: string | null) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -93,6 +96,7 @@ export const useWalletStore = create<WalletState>()(
       internalEvmAddress: null,
       internalBsvAddress: null,
       internalBchAddress: null,
+      internalBtcAddress: null,
 
       connect: (wallet) =>
         set({
@@ -106,6 +110,7 @@ export const useWalletStore = create<WalletState>()(
           internalEvmAddress: null,
           internalBsvAddress: null,
           internalBchAddress: null,
+          internalBtcAddress: null,
         }),
 
       connectDemo: (address) =>
@@ -120,6 +125,7 @@ export const useWalletStore = create<WalletState>()(
           internalEvmAddress: null,
           internalBsvAddress: null,
           internalBchAddress: null,
+          internalBtcAddress: null,
         }),
 
       disconnect: () =>
@@ -134,6 +140,7 @@ export const useWalletStore = create<WalletState>()(
           internalEvmAddress: null,
           internalBsvAddress: null,
           internalBchAddress: null,
+          internalBtcAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
@@ -141,6 +148,7 @@ export const useWalletStore = create<WalletState>()(
       setInternalEvmAddress: (internalEvmAddress) => set({ internalEvmAddress }),
       setInternalBsvAddress: (internalBsvAddress) => set({ internalBsvAddress }),
       setInternalBchAddress: (internalBchAddress) => set({ internalBchAddress }),
+      setInternalBtcAddress: (internalBtcAddress) => set({ internalBtcAddress }),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),
