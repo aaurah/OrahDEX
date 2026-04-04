@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
+import { SocialBar } from "@/components/SocialBar";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useBiometricStore } from "@/store/useBiometricStore";
@@ -324,7 +325,8 @@ export function WebSettings() {
           <p className="text-[11px] text-muted-foreground mt-1 tracking-wide">
             Non-custodial · On-chain settlement · BSV
           </p>
-          <div className="flex items-center gap-1 mt-2">
+          <SocialBar iconSize="sm" className="mt-3 max-w-sm" />
+          <div className="flex items-center gap-1 mt-3">
             <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
             <span className="text-[10px] text-green-400/60 font-medium">Live</span>
           </div>
