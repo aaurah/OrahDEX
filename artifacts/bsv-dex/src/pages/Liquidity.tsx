@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { CoinLogo, COIN_COLORS } from "@/components/CoinLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -86,25 +87,12 @@ function fmtTvl(n: number) {
   return "$" + n.toFixed(0);
 }
 
-const COIN_COLORS: Record<string, string> = {
-  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
-  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
-  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a",
-  TRX: "#EF4444", BTT: "#9333ea", WIN: "#F59E0B", JST: "#06B6D4",
-};
-
 function TokenPair({ base, quote }: { base: string; quote: string }) {
-  const cA = COIN_COLORS[base]  ?? "#EAB308";
-  const cB = COIN_COLORS[quote] ?? "#16a34a";
   return (
     <div className="flex items-center gap-2">
       <div className="flex -space-x-2">
-        {[base, quote].map((t, i) => (
-          <div key={i} className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
-            style={{ backgroundColor: (i === 0 ? cA : cB) + "33", color: i === 0 ? cA : cB }}>
-            {t[0]}
-          </div>
-        ))}
+        <CoinLogo symbol={base}  size={32} ring />
+        <CoinLogo symbol={quote} size={32} ring />
       </div>
       <span className="text-sm font-bold">{base}/{quote}</span>
     </div>
@@ -470,10 +458,8 @@ function LiquidityModal({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="flex -space-x-2">
-              {[pool.base, pool.quote].map((t, i) => (
-                <div key={i} className="w-9 h-9 rounded-full border-2 border-background flex items-center justify-center text-xs font-bold"
-                  style={{ backgroundColor: (i === 0 ? colorA : colorB) + "33", color: i === 0 ? colorA : colorB }}>{t[0]}</div>
-              ))}
+              <CoinLogo symbol={pool.base}  size={36} ring />
+              <CoinLogo symbol={pool.quote} size={36} ring />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -774,16 +760,14 @@ function LiquidityModal({
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold mb-1">You receive</p>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
-                    style={{ backgroundColor: colorA + "33", color: colorA }}>{pool.base[0]}</span>
+                  <CoinLogo symbol={pool.base}  size={16} />
                   {pool.base}
                 </span>
                 <span className="font-mono font-semibold">{receiveA.toFixed(6)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center"
-                    style={{ backgroundColor: colorB + "33", color: colorB }}>{pool.quote[0]}</span>
+                  <CoinLogo symbol={pool.quote} size={16} />
                   {pool.quote}
                 </span>
                 <span className="font-mono font-semibold">{receiveB.toFixed(pool.quote === "USDT" ? 2 : 6)}</span>

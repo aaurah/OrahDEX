@@ -1,4 +1,5 @@
 import { useParams, Link } from "wouter";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets, useCancelOrder } from "@workspace/api-client-react";
@@ -43,16 +44,6 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "LINEA", label: "LINEA", color: "text-sky-400"    },
 ];
 
-const COIN_COLORS: Record<string, string> = {
-  BSV:"#EAB308", BTC:"#F97316", ETH:"#8B5CF6", SOL:"#06B6D4",
-  XRP:"#3B82F6", BNB:"#EAB308", ADA:"#2563EB", DOGE:"#EAB308",
-  DOT:"#E11D48", AVAX:"#EF4444", MATIC:"#7C3AED", LINK:"#2563EB",
-  UNI:"#EC4899", ATOM:"#6366F1", LTC:"#6B7280", BCH:"#22C55E",
-  TRX:"#EF4444", NEAR:"#10B981", APT:"#06B6D4", ARB:"#60A5FA",
-  OP:"#EF4444",  SUI:"#3B82F6", INJ:"#2563EB", PEPE:"#22C55E",
-  SHIB:"#F97316",MKR:"#22C55E", AAVE:"#7C3AED", CRV:"#F43F5E",
-  FET:"#06B6D4",
-};
 
 const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmApr: number }> = {
   "BTC/USDT":  { tvl: 423_600_000, vol24: 98_200_000,  fee: 0.3,  farmApr: 4.2  },
@@ -321,7 +312,6 @@ export function SpotTrading() {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
-                    const bgColor = COIN_COLORS[m.baseAsset] ?? "#6B7280";
                     return (
                       <Link
                         key={m.symbol}
@@ -332,12 +322,7 @@ export function SpotTrading() {
                           isActive && "bg-primary/10 border-l-2 border-l-primary"
                         )}
                       >
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-black text-white shrink-0"
-                          style={{ background: bgColor }}
-                        >
-                          {m.baseAsset.slice(0, 2)}
-                        </div>
+                        <CoinLogo symbol={m.baseAsset} size={24} />
                         <div className="flex-1 min-w-0">
                           <span className="text-xs font-semibold text-foreground">{m.baseAsset}</span>
                           <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>

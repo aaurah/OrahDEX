@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Zap, RefreshCw, AlertTriangle, CheckCircle2, Search,
@@ -27,14 +28,6 @@ interface MarketDetail {
   trades: Array<{ id: string; time: number; side: "buy"|"sell"; amount: number; price: number; total: number }>;
 }
 
-const COIN_COLORS: Record<string, string> = {
-  BTC:"#F7931A",ETH:"#627EEA",SOL:"#9945FF",BSV:"#EAB308",BNB:"#F3BA2F",
-  XRP:"#00AAE4",ADA:"#0033AD",DOGE:"#C2A633",DOT:"#E6007A",LINK:"#2A5ADA",
-  AVAX:"#E84142",MATIC:"#8247E5",LTC:"#A6A9AA",BCH:"#8DC351",UNI:"#FF007A",
-  AAVE:"#B6509E",TRX:"#EF4444",BTT:"#9333EA",WIN:"#F59E0B",JST:"#06B6D4",
-  NEAR:"#00C08B",ATOM:"#2E3148",ARB:"#2D374B",OP:"#FF0420",SEI:"#8E2EE6",
-  INJ:"#00A3FF",PEPE:"#37A900",SHIB:"#FFA409",FLOKI:"#F5A623",WIF:"#9B59B6",BONK:"#F7500F",
-};
 function fmt(n: number): string {
   if (!isFinite(n)||isNaN(n)) return "—";
   if (n>=1_000_000) return `${(n/1_000_000).toFixed(2)}M`;
@@ -50,13 +43,7 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 function CoinIcon({ symbol, size=28 }: { symbol:string; size?:number }) {
-  const c = COIN_COLORS[symbol]??"#6B7280";
-  return (
-    <div className="rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
-      style={{width:size,height:size,background:c,fontSize:size*0.35}}>
-      {symbol.slice(0,2)}
-    </div>
-  );
+  return <CoinLogo symbol={symbol} size={size} />;
 }
 
 /* ── Full-screen receipt ─────────────────────────────────────────────────*/

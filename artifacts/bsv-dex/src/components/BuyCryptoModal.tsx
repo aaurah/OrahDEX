@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { CoinLogo } from "@/components/CoinLogo";
 import {
   X, Search, ChevronRight, ExternalLink, CheckCircle,
   Wallet, CreditCard, Building2, Zap, Star, Shield, RefreshCw,
@@ -808,7 +809,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                   return (
                     <button key={c.symbol} onClick={()=>selectCoin(c.symbol)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-left group">
-                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-black text-white shrink-0 shadow" style={{background:c.color}}>{c.symbol.slice(0,2)}</div>
+                      <CoinLogo symbol={c.symbol} size={36} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">{c.symbol}</span>
@@ -836,7 +837,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
             <div className="p-4 space-y-4">
               {/* Selected coin */}
               <div className="flex items-center gap-3 p-3 bg-secondary/40 rounded-xl">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-black text-white shrink-0" style={{background:coinDef?.color??"#6B7280"}}>{coin.slice(0,2)}</div>
+                <CoinLogo symbol={coin} size={36} />
                 <div className="flex-1">
                   <div className="font-bold text-sm">{coin} · {coinDef?.name}</div>
                   <div className="text-xs text-muted-foreground">{allProvidersForCoin.length} providers available</div>
@@ -890,7 +891,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
               {/* Summary pills */}
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/60 border border-border rounded-xl">
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-white" style={{background:coinDef?.color??"#6B7280"}}>{coin.slice(0,2)}</div>
+                  <CoinLogo symbol={coin} size={20} />
                   <span className="text-xs font-bold">{coin}</span>
                 </div>
                 {payMethodDef && (
