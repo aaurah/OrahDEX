@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
@@ -392,6 +392,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
   const vol24  = parseFloat(ticker?.volume)    || 0;
   const volQuote = lastPrice * vol24;
+
+  /* ── Live browser-tab price title ────────────────────────────────────── */
+  useEffect(() => {
+    if (!lastPrice) return;
+    const sign = change >= 0 ? "▲" : "▼";
+    document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
+    return () => { document.title = "OrahDEX"; };
+  }, [lastPrice, change, base, quote]);
 
   // Quote-currency and cross-rate computations
   const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;
