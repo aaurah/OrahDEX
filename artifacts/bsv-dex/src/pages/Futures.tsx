@@ -454,7 +454,7 @@ export function FuturesTrading() {
                     {address ? (
                       <span>No open positions · Place a trade to get started</span>
                     ) : (
-                      <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                      <button onClick={() => openModal()} className="flex items-center gap-2 text-primary hover:underline font-medium">
                         <Wallet className="w-4 h-4" /> Connect wallet to view positions
                       </button>
                     )}
@@ -466,7 +466,7 @@ export function FuturesTrading() {
                   openOrders.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                       {address ? "No open orders." : (
-                        <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                        <button onClick={() => openModal()} className="flex items-center gap-2 text-primary hover:underline font-medium">
                           <Wallet className="w-4 h-4" /> Connect wallet to view orders
                         </button>
                       )}
@@ -512,7 +512,7 @@ export function FuturesTrading() {
                   filledOrders.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                       {address ? "No trade history yet." : (
-                        <button onClick={openModal} className="flex items-center gap-2 text-primary hover:underline font-medium">
+                        <button onClick={() => openModal()} className="flex items-center gap-2 text-primary hover:underline font-medium">
                           <Wallet className="w-4 h-4" /> Connect wallet to view history
                         </button>
                       )}
@@ -642,7 +642,7 @@ export function FuturesTrading() {
                     )}
                   </div>
                 ) : (
-                  <button onClick={openModal} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
+                  <button onClick={() => openModal()} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
                     <Wallet className="w-3 h-3" /> Connect Wallet
                   </button>
                 )}
@@ -732,7 +732,7 @@ export function FuturesTrading() {
                 </div>
               ) : (
                 <button
-                  onClick={openModal}
+                  onClick={() => openModal()}
                   className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-violet-600 to-primary text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all"
                 >
                   <Wallet className="w-4 h-4" />

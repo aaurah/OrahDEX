@@ -278,7 +278,7 @@ export function AdminApiSettings() {
           { label: "Global Rate Limit", value: `${cfg.rateLimitGlobal ?? 1000} req/min`, icon: Gauge, color: "text-primary" },
           { label: "Request Timeout", value: `${num(cfg.requestTimeoutGetMs, 30000) / 1000}s GET`, icon: Clock, color: "text-amber-400" },
           { label: "Active API Keys", value: `${activeCount} keys`, icon: Key, color: "text-green-400" },
-          { label: "API Calls / 24h", value: totalCalls.toLocaleString(), icon: Activity, color: "text-blue-400" },
+          { label: "API Calls / 24h", value: Number(totalCalls ?? 0).toLocaleString(), icon: Activity, color: "text-blue-400" },
         ].map(s => (
           <div key={s.label} className="bg-card border border-border rounded-xl p-3 flex items-center gap-3">
             <s.icon className={cn("w-4 h-4 shrink-0", s.color)} />

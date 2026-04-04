@@ -586,7 +586,7 @@ export function MobileHandCashBridge() {
   const [, navigate] = useLocation();
   const [mode, setMode] = useState<"deposit" | "withdraw">("deposit");
 
-  const handleBack = () => navigate(-1);
+  const handleBack = () => window.history.back();
 
   return (
     <div className="flex flex-col h-full bg-background">

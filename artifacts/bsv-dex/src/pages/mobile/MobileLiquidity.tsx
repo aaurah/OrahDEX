@@ -429,7 +429,7 @@ function LiquidityModal({
             </div>
             <div className="flex flex-col gap-2 w-full">
               <button
-                onClick={openWalletModal}
+                onClick={() => openWalletModal()}
                 className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm active:opacity-80"
               >
                 Connect Wallet

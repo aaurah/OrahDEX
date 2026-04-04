@@ -81,7 +81,7 @@ export function AdminLiquidityBot() {
   const isDirty = draft !== null;
 
   const handleSave = () => saveMut.mutate(current);
-  const handleReset = () => resetMut.mutate({});
+  const handleReset = () => resetMut.mutate(undefined as never);
 
   return (
     <div className="space-y-6">
