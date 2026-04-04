@@ -400,20 +400,19 @@ export function Markets() {
       <AiInsightsBar />
 
       {/* Header */}
-      <div className="px-6 lg:px-10 pt-0 pb-4 border-b border-border bg-card/40">
-        <div className="max-w-7xl mx-auto">
+      <div className="px-3 md:px-5 pt-0 pb-3 border-b border-border bg-card/40">
           {/* Main tabs — slim Poloniex-style with desktop scroll arrows */}
-          <div className="mt-3 relative flex items-center gap-0">
+          <div className="mt-2 relative flex items-center gap-0">
             {/* Left arrow — desktop only */}
             <button
               onClick={() => scrollTabsBy(-240)}
               className={cn(
-                "hidden md:flex shrink-0 items-center justify-center w-7 h-7 rounded-lg border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all mr-1",
+                "hidden md:flex shrink-0 items-center justify-center w-6 h-6 rounded-md border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all mr-1",
                 !tabCanScrollLeft && "opacity-30 pointer-events-none"
               )}
               aria-label="Scroll tabs left"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="w-3.5 h-3.5" />
             </button>
 
             {/* Scrollable tab row */}
@@ -470,159 +469,127 @@ export function Markets() {
             <button
               onClick={() => scrollTabsBy(240)}
               className={cn(
-                "hidden md:flex shrink-0 items-center justify-center w-7 h-7 rounded-lg border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all ml-1",
+                "hidden md:flex shrink-0 items-center justify-center w-6 h-6 rounded-md border border-border/60 bg-card/80 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/10 transition-all mx-1",
                 !tabCanScrollRight && "opacity-30 pointer-events-none"
               )}
               aria-label="Scroll tabs right"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
+
+            {/* Search — inline with tab row on desktop */}
+            <div className="relative hidden md:block shrink-0 ml-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder={`Search ${tab === "usd" ? usdSub : meta.label} pairs…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-44 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary focus:w-56 transition-all"
+              />
+            </div>
           </div>
 
-          {/* Wallet-aware market banner */}
+          {/* Sub-rows: USD sub-tabs and mobile search */}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {tab === "usd" && (
+              <>
+                {USD_SUBS.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => setUsdSub(s.id)}
+                    className={cn(
+                      "px-3 py-1 rounded-md text-xs font-bold border transition-all",
+                      usdSub === s.id
+                        ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                        : "text-muted-foreground border-border hover:text-foreground hover:bg-white/5"
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+                <span className="text-xs text-muted-foreground">· {tabCount("usd")} pairs</span>
+              </>
+            )}
+            {tab !== "usd" && (
+              <span className="text-xs text-muted-foreground">
+                <span className={meta.color}>{filtered.length}</span> {meta.desc.split("·")[0].trim()} pairs
+              </span>
+            )}
+            {/* Mobile search */}
+            <div className="relative md:hidden ml-auto">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-36 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary transition-all"
+              />
+            </div>
+          </div>
+
+          {/* Conditional notice banners */}
           {showWalletBanner && (
-            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-primary/10 border border-primary/30 rounded-xl">
-              <Wallet className="w-4 h-4 text-primary shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-primary">
-                  Showing {walletChainLabel} Markets
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Markets automatically filtered for your connected {walletChainLabel} wallet. You can switch to any tab manually.
-                </p>
-              </div>
-              <button
-                onClick={() => setWalletBannerDismissed(true)}
-                className="text-muted-foreground hover:text-foreground transition-colors shrink-0 p-1"
-                title="Dismiss"
-              >
+            <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/30 rounded-xl">
+              <Wallet className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span className="text-xs font-semibold text-primary flex-1 min-w-0">Showing {walletChainLabel} Markets</span>
+              <button onClick={() => setWalletBannerDismissed(true)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
-
-          {/* BSV fastest settlement callout */}
           {tab === "bsv" && (
-            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-green-500/10 border border-green-500/30 rounded-xl">
-              <span className="text-xl leading-none">⚡</span>
-              <div>
-                <p className="text-xs font-bold text-green-400">BSV — World's Fastest Settlement Chain</p>
-                <p className="text-[11px] text-green-300/70 mt-0.5">Every OrahDEX trade settles instantly on-chain via BSV. No bridges. No Layer 2s. True finality in seconds.</p>
-              </div>
-              <div className="ml-auto flex items-center gap-3 shrink-0">
-                <div className="text-center">
-                  <p className="text-[10px] text-green-500/60 uppercase tracking-wider">Settlement</p>
-                  <p className="text-sm font-black text-green-400">&lt; 5s</p>
-                </div>
-                <div className="w-px h-8 bg-green-500/20" />
-                <div className="text-center">
-                  <p className="text-[10px] text-green-500/60 uppercase tracking-wider">Fees</p>
-                  <p className="text-sm font-black text-green-400">~$0.001</p>
-                </div>
-              </div>
+            <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-xl">
+              <span className="text-base leading-none">⚡</span>
+              <span className="text-xs font-bold text-green-400">BSV — World's Fastest Settlement</span>
+              <span className="text-[11px] text-green-300/60 hidden sm:inline">· &lt;5s · ~$0.001 fee</span>
             </div>
           )}
-
-          {/* BASE curated notice */}
           {tab === "base" && (
-            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
-              <span className="text-xl leading-none">🔵</span>
-              <div>
-                <p className="text-xs font-bold text-blue-400">Base L2 — Curated Pairs Only</p>
-                <p className="text-[11px] text-blue-300/70 mt-0.5">Showing verified Base-native tokens (AERO, BRETT, TOSHI, DEGEN…) and bridged blue-chips. Zora social/creator coins are listed separately under the ZORA tab.</p>
-              </div>
+            <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+              <span className="text-base leading-none">🔵</span>
+              <span className="text-xs font-bold text-blue-400">Base L2 — Curated Pairs Only</span>
             </div>
           )}
-
-          {/* ZORA social coins notice */}
           {tab === "zora" && (
-            <div className="mt-3 flex items-center gap-3 px-4 py-2.5 bg-pink-500/10 border border-pink-500/30 rounded-xl">
-              <span className="text-xl leading-none">🎨</span>
-              <div>
-                <p className="text-xs font-bold text-pink-400">Zora Social Coins — Creator Economy</p>
-                <p className="text-[11px] text-pink-300/70 mt-0.5">On Zora Network, every post, photo, or artwork mints a tradeable ERC-20 coin. Sorted by 24h volume. Extremely high volatility — trade carefully.</p>
-              </div>
-              <div className="ml-auto shrink-0">
-                <span className="px-2 py-1 rounded-lg bg-pink-500/20 border border-pink-500/30 text-[10px] font-bold text-pink-400 uppercase tracking-wider">High Risk</span>
-              </div>
+            <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-pink-500/10 border border-pink-500/30 rounded-xl">
+              <span className="text-base leading-none">🎨</span>
+              <span className="text-xs font-bold text-pink-400">Zora Social Coins</span>
+              <span className="ml-auto px-1.5 py-0.5 rounded bg-pink-500/20 border border-pink-500/30 text-[10px] font-bold text-pink-400 uppercase">High Risk</span>
             </div>
           )}
-
-          {/* USD sub-tabs */}
-          {tab === "usd" && (
-            <div className="flex items-center gap-2 mt-3">
-              {USD_SUBS.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => setUsdSub(s.id)}
-                  className={cn(
-                    "px-4 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                    usdSub === s.id
-                      ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
-                      : "text-muted-foreground border-border hover:text-foreground hover:bg-white/5"
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-              <span className="text-xs text-muted-foreground ml-1">
-                · {tabCount("usd")} pairs
-              </span>
-            </div>
-          )}
-
-          {/* Search + descriptor row */}
-          <div className="flex items-center gap-3 mt-3 flex-wrap">
-            <div className="relative max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={tab === "usd" ? `Search ${usdSub} pairs…` : `Search ${meta.label} pairs…`}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary transition-all"
-              />
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-border rounded-xl">
-              <Zap className={cn("w-3.5 h-3.5", meta.color)} />
-              <span className="text-xs font-semibold text-foreground/70">
-                {tab === "usd" ? `All pairs quoted in ${usdSub}` : meta.desc}
-                {" · "}<span className={meta.color}>{filtered.length} markets</span>
-              </span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4">
+        <div className="px-3 md:px-5 py-3">
           <div className="bg-card border border-border rounded-2xl shadow-lg overflow-x-auto">
             <table className="w-full min-w-[820px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-border bg-secondary/40 text-muted-foreground text-xs font-semibold uppercase tracking-wide">
-                  <th className="px-4 py-3 w-8"></th>
-                  <th className="px-4 py-3">#</th>
-                  <th className="px-4 py-3">Pair</th>
-                  <th className="px-4 py-3 text-right">Price</th>
-                  <th className="px-4 py-3 text-right">24h %</th>
-                  <th className="px-4 py-3 text-right hidden xl:table-cell">
+                  <th className="px-3 py-2.5 w-8"></th>
+                  <th className="px-3 py-2.5">#</th>
+                  <th className="px-3 py-2.5">Pair</th>
+                  <th className="px-3 py-2.5 text-right">Price</th>
+                  <th className="px-3 py-2.5 text-right">24h %</th>
+                  <th className="px-3 py-2.5 text-right hidden lg:table-cell">
                     <span className="flex items-center justify-end gap-1">
-                      <span className="w-3 h-3 rounded-full inline-block" style={{background:"#F97316"}} />
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{background:"#F97316"}} />
                       BTC Price
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-right hidden xl:table-cell">
+                  <th className="px-3 py-2.5 text-right hidden lg:table-cell">
                     <span className="flex items-center justify-end gap-1">
-                      <span className="w-3 h-3 rounded-full inline-block" style={{background:"#EAB308"}} />
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{background:"#EAB308"}} />
                       BSV Price
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-right hidden lg:table-cell">24h High</th>
-                  <th className="px-4 py-3 text-right hidden lg:table-cell">24h Low</th>
-                  <th className="px-4 py-3 text-right hidden md:table-cell">Volume 24h</th>
-                  <th className="px-4 py-3 text-right hidden md:table-cell">Market Cap</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-3 py-2.5 text-right hidden xl:table-cell">24h High</th>
+                  <th className="px-3 py-2.5 text-right hidden xl:table-cell">24h Low</th>
+                  <th className="px-3 py-2.5 text-right hidden lg:table-cell">Volume 24h</th>
+                  <th className="px-3 py-2.5 text-right hidden xl:table-cell">Market Cap</th>
+                  <th className="px-3 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -642,14 +609,14 @@ export function Markets() {
 
                   return (
                     <tr key={m.symbol} className="hover:bg-white/5 transition-colors group">
-                      <td className="px-4 py-3.5">
+                      <td className="px-3 py-2.5">
                         <button onClick={() => toggleStar(m.symbol)} className="text-muted-foreground hover:text-green-400 transition-colors">
                           <Star className={cn("w-3.5 h-3.5", stars.has(m.symbol) && "fill-green-400 text-green-400")} />
                         </button>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-3">
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
                           {coinBadge(base)}
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5">
@@ -670,38 +637,38 @@ export function Markets() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm font-semibold">
+                      <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
                         {applyQConversion && <span className="text-muted-foreground/60 text-[10px] mr-0.5">{qSym}</span>}
                         {qPrice(price)}
                         {isCrossQuote && !applyQConversion && (
                           <span className="text-[10px] text-muted-foreground ml-1">{quote}</span>
                         )}
                       </td>
-                      <td className={cn("px-4 py-3.5 text-right font-mono text-sm font-semibold", isUp ? "text-green-400" : "text-red-400")}>
+                      <td className={cn("px-3 py-2.5 text-right font-mono text-sm font-semibold", isUp ? "text-green-400" : "text-red-400")}>
                         {isUp ? "+" : ""}{chg.toFixed(2)}%
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-xs hidden xl:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell">
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-orange-400 font-semibold tabular-nums">{btcCellVal}</span>
                           <span className="text-muted-foreground/50 text-[10px]">BTC</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-xs hidden xl:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-xs hidden lg:table-cell">
                         <div className="flex flex-col items-end gap-0.5">
                           <span className="text-yellow-400 font-semibold tabular-nums">{bsvCellVal}</span>
                           <span className="text-muted-foreground/50 text-[10px]">BSV</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-muted-foreground hidden xl:table-cell">
                         {qPrice(parseFloat(m.high24h) || 0)}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-xs text-muted-foreground hidden lg:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-muted-foreground hidden xl:table-cell">
                         {qPrice(parseFloat(m.low24h) || 0)}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-sm text-muted-foreground hidden lg:table-cell">
                         {formatVolume(parseFloat(m.volume24h) || 0)}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono text-sm text-muted-foreground hidden md:table-cell">
+                      <td className="px-3 py-2.5 text-right font-mono text-sm text-muted-foreground hidden xl:table-cell">
                         {m.marketCap ? formatVolume(parseFloat(m.marketCap) || 0) : <span className="text-muted-foreground/30">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right">

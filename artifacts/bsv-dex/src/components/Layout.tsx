@@ -288,11 +288,19 @@ export function Layout({ children }: { children: ReactNode }) {
           <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400/60 hover:text-amber-300 transition-colors text-base leading-none">✕</button>
         </div>
       )}
-      <header className="sticky top-0 h-16 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-4 lg:px-6 shrink-0 z-40">
-        <div className="flex items-center gap-4">
+      <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">
+        <div className="flex items-center gap-2">
+          {/* Hamburger — left side */}
+          <button
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors shrink-0"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle navigation"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
           {/* Brand */}
           <Link href="/" className="flex items-center group">
-            <BrandLogo textSize="text-xl" />
+            <BrandLogo textSize="text-lg" />
           </Link>
         </div>
 
@@ -553,13 +561,6 @@ export function Layout({ children }: { children: ReactNode }) {
             </button>
           )}
 
-          <button
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            aria-label="Toggle navigation"
-          >
-            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
         </div>
       </header>
 
