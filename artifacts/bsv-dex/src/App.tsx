@@ -40,6 +40,7 @@ const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ defau
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
 const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
+const UserApiKeys     = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
 const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
 const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then(m => ({ default: m.MobileLiquidity })));
 const GenesisLiquidity = lazy(() => import("@/pages/GenesisLiquidity"));
@@ -363,7 +364,8 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/keeper"     component={KeeperProfile} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
-                <Route path="/settings"   component={MobileSettings} />
+                <Route path="/settings"           component={MobileSettings} />
+                <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
                 <Route path="/qr-scan"    component={MobileQRScanner} />
                 <Route component={MobileMarkets} />
@@ -391,7 +393,8 @@ function Router() {
                 <Route path="/copy"           component={CopyTrading} />
                 <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
-                <Route path="/settings"       component={WebSettings} />
+                <Route path="/settings"           component={WebSettings} />
+                <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route component={NotFound} />
               </Switch>
             </Suspense>
