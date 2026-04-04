@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -14,6 +14,7 @@ import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { useToast } from "@/hooks/use-toast";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
+import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -352,6 +353,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
   const [showOrderForm, setShowOrderForm] = useState(false);
+  const [receiveAddress, setReceiveAddress] = useState("");
+  const baseChain = getAssetNativeChain(base);
+  const canReceiveBase = walletCanReceive(network, baseChain);
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase;
+  const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
+  const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
   const encodedSymbol = encodeURIComponent(symbol);
 
@@ -526,8 +533,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       price:     usePrice,
       stopPrice: useStop,
       quantity:  amtNum,
-      networkType: address.startsWith("0x") ? "evm" : "bsv",
-    });
+      networkType:    address.startsWith("0x") ? "evm" : "bsv",
+      receiveAddress: receiveAddress.trim() || undefined,
+    } as any);
   }
 
   return (
@@ -1109,6 +1117,42 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <span className="text-sm text-muted-foreground flex-1">Total ({quote})</span>
               <span className="text-sm font-semibold tabular-nums">{amtNum > 0 ? total : ""}</span>
             </div>
+
+            {/* ── Cross-chain receive notice ── */}
+            {showCrossChainNotice && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 space-y-2">
+                <div className="flex items-start gap-2">
+                  <Info size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-amber-300 font-semibold">{base} lives on {crossChainName}</p>
+                    <p className="text-[10px] text-amber-200/70 leading-relaxed mt-0.5">
+                      Bought {base} goes to your <span className="text-amber-300 font-medium">OrahDEX balance</span>. Add a {crossChainName} address to withdraw later.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-amber-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-amber-400/80 text-[10px] font-medium shrink-0">{base}</span>
+                  <input
+                    type="text"
+                    value={receiveAddress}
+                    onChange={e => setReceiveAddress(e.target.value)}
+                    placeholder={crossChainPlaceholder}
+                    className="flex-1 bg-transparent text-[10px] font-mono text-foreground focus:outline-none placeholder:text-muted-foreground/40 min-w-0"
+                  />
+                  {receiveAddress && (
+                    <button type="button" onClick={() => setReceiveAddress("")} className="shrink-0 text-muted-foreground/40">
+                      <XCircle size={13} />
+                    </button>
+                  )}
+                </div>
+                {receiveAddress && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-green-400">
+                    <CheckCircle2 size={11} className="shrink-0" />
+                    Will be queued for {crossChainName} withdrawal after fill.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Available / Max Buy / Est. Fee */}
             <div className="space-y-1.5 px-1">

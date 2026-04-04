@@ -22,6 +22,10 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
+import {
+  CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
+  getAssetNativeChain, walletCanReceive,
+} from "@/lib/crossChain";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -408,6 +412,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
 
+  // ── Cross-chain receive address ──────────────────────────────────────────────
+  const [receiveAddress, setReceiveAddress] = useState("");
+
   // ── Precheck state (declared here, logic wired after balances are computed)
   const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
   const [precheckLoading, setPrecheckLoading] = useState(false);
@@ -415,6 +422,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
+
+  // Cross-chain derived values (must come after `base` is declared)
+  const baseChain = getAssetNativeChain(base);
+  const canReceive = walletCanReceive(network, baseChain);
+  const showCrossChainNotice = side === "buy" && !!address && !canReceive && !isDemo;
+  const chainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
+  const addrPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
   // Derive available balance for each side using real on-chain data:
   // • Sell: how much of the base asset the user has (e.g. BSV, BTC, ETH)
@@ -487,14 +501,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             : (qty * 0.999).toFixed(6);
           const receivedTok = side === "sell" ? quote : base;
 
+          const isCrossChainFill = side === "buy" && !walletCanReceive(network, getAssetNativeChain(receivedTok));
+          const fillChainName = CHAIN_DISPLAY[getAssetNativeChain(receivedTok)] ?? receivedTok;
           toast({
             title: "Order Filled ✓",
-            description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+            description: isCrossChainFill
+              ? `+${receivedQty} ${receivedTok} → OrahDEX balance. To withdraw to ${fillChainName}, go to Portfolio → Withdraw.`
+              : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
           });
           addNotification({
             type: "order_filled",
             title: `${side.toUpperCase()} Order Filled ✓`,
-            body: `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
+            body: isCrossChainFill
+              ? `+${receivedQty} ${receivedTok} in OrahDEX balance · withdraw to ${fillChainName} via Portfolio`
+              : `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -794,6 +814,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           // record it and generate the corresponding BSV settlement tx.
           signedTx:       onChainTxHash ?? evmSignature,
           networkType:    isEvm ? "evm" : "bsv",
+          // Optional cross-chain receive address (e.g. Cardano addr when BSV wallet buys ADA)
+          receiveAddress: receiveAddress.trim() || undefined,
         } as any,
       },
       {
@@ -1087,6 +1109,50 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               </button>
             ))}
           </div>
+
+          {/* ── Cross-chain receive address ────────────────────────────── */}
+          {showCrossChainNotice && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 space-y-2.5">
+              <div className="flex items-start gap-2">
+                <Info className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-amber-300 font-semibold leading-snug">
+                    {base} lives on {chainName}
+                  </p>
+                  <p className="text-[10px] text-amber-200/70 leading-relaxed mt-0.5">
+                    Bought {base} goes to your <span className="text-amber-300 font-medium">OrahDEX balance</span>. Your connected wallet can't hold {base} directly. To withdraw to {chainName} later, provide your {base} address below or go to <span className="text-amber-300 font-medium">Portfolio → Withdraw</span>.
+                  </p>
+                </div>
+              </div>
+              <div className="group flex items-center bg-black/20 border border-amber-500/20 rounded-lg px-3 py-2 focus-within:border-amber-400/50 transition-all">
+                <span className="text-amber-400/80 text-[11px] shrink-0 mr-2 font-medium">
+                  {base} addr
+                </span>
+                <input
+                  type="text"
+                  value={receiveAddress}
+                  onChange={e => setReceiveAddress(e.target.value)}
+                  placeholder={addrPlaceholder}
+                  className="flex-1 bg-transparent text-[11px] text-foreground font-mono focus:outline-none placeholder:text-muted-foreground/40 min-w-0"
+                />
+                {receiveAddress && (
+                  <button
+                    type="button"
+                    onClick={() => setReceiveAddress("")}
+                    className="text-muted-foreground/40 hover:text-muted-foreground ml-1 shrink-0"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {receiveAddress && (
+                <div className="flex items-center gap-1.5 text-[10px] text-green-400">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  {base} will be queued for withdrawal to this address after order fills.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Live Quote Panel (Sovereign Routing API) ─────────────── */}
           {!!amount && parseFloat(amount) > 0 && (
