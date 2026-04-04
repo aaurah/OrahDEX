@@ -162,7 +162,9 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
           <div className="flex flex-col items-start">
             {provider && (
-              <span className="text-[10px] text-muted-foreground capitalize leading-none">{provider}</span>
+              <span className="text-[10px] text-muted-foreground leading-none">
+                {provider === 'aura-wallet' ? 'Orah Wallet' : provider}
+              </span>
             )}
             <span className="text-sm font-mono text-foreground leading-tight">
               {shortenAddress(address)}
@@ -192,7 +194,9 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                     <FlaskConical className="w-3 h-3" /> Demo Mode
                   </span>
                 ) : (
-                  <span className="text-xs text-muted-foreground capitalize font-medium">{provider} · {network?.toUpperCase()}</span>
+                  <span className="text-xs text-muted-foreground font-medium">
+                    {provider === 'aura-wallet' ? 'Orah Wallet' : provider} · {network?.toUpperCase()}
+                  </span>
                 )}
               </div>
               <button
