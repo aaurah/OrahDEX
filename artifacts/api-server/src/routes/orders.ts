@@ -460,7 +460,9 @@ router.delete("/orders/:orderId", async (req, res) => {
 // Returns: { ok, errors[], warnings[], priceImpactPct, minReceived, route }
 router.post("/orders/precheck", async (req, res) => {
   try {
-    const { symbol, side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
+    const { side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
+    // Normalize symbol format: accept both "BSV-USDT" (URL style) and "BSV/USDT" (DB style)
+    const symbol: string = (req.body.symbol ?? "").replace("-", "/");
 
     if (!symbol || !side || !amount) {
       res.status(400).json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Missing fields" }], warnings: [] });
@@ -496,9 +498,14 @@ router.post("/orders/precheck", async (req, res) => {
     }
 
     // Slippage / price impact (approximate AMM model)
+    // For limit orders, use the market price (not the limit price) to compute
+    // impact — a limit order far from market will just sit in the book and not
+    // cause any immediate impact. Using the limit price would cause false
+    // positives for high-value or off-market limit orders.
     const isTopTier  = ["BSV","BTC","ETH","BNB","SOL"].some(s => symbol.startsWith(s));
     const poolTvlUsd = isTopTier ? 500_000 : 50_000;
-    const impact     = (orderValue / poolTvlUsd) * 100;
+    const execPrice  = (type === "limit" || type === "stop") ? marketPrice : px;
+    const impact     = ((execPrice * qty) / poolTvlUsd) * 100;
     const slipPct    = (slippageBps ?? 50) / 100;
 
     if (impact > slipPct && impact > 0.1) {

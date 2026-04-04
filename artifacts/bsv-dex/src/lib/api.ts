@@ -1,1 +1,1 @@
-export const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+export const API_BASE = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";

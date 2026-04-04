@@ -159,7 +159,7 @@ export function MobileQRScanner() {
     setConnecting(true);
     setConnError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/connect-session/${token}`, {
+      const res = await fetch(`${API_BASE}/connect-session/${token}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address, chain: "BSV", walletType: walletType ?? "mobile" }),

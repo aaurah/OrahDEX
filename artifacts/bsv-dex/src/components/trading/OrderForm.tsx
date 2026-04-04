@@ -879,6 +879,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     );
   };
 
+  const [autoBorrow, setAutoBorrow] = useState(false);
+
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
   const isApproving = approvalStep === "checking" || approvalStep === "needed" || approvalStep === "approving";
@@ -887,13 +889,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
 
-  const [autoBorrow, setAutoBorrow] = useState(false);
-
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
       {/* Buy / Sell tabs + Auto Borrow */}
       <div className="flex items-stretch border-b border-border shrink-0">
         <button
+          data-testid="order-side-buy"
           className={cn("flex-1 py-2 text-center font-semibold text-xs transition-colors border-b-2",
             side === "buy" ? "text-buy border-buy bg-buy/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("buy")}
@@ -901,6 +902,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           Buy
         </button>
         <button
+          data-testid="order-side-sell"
           className={cn("flex-1 py-2 text-center font-semibold text-xs transition-colors border-b-2",
             side === "sell" ? "text-sell border-sell bg-sell/5" : "text-muted-foreground border-transparent hover:bg-white/5")}
           onClick={() => setSide("sell")}
@@ -949,6 +951,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         <div className="flex gap-0 text-xs font-medium bg-secondary p-0.5 rounded-lg">
           {(["limit", "market", "stop"] as OrderType[]).map((t) => (
             <button key={t}
+              data-testid={`order-type-${t}`}
               className={cn("flex-1 py-1.5 rounded-md transition-colors capitalize",
                 type === t ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
               onClick={() => setType(t)}
@@ -1013,6 +1016,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               <span className="text-muted-foreground text-sm w-16">{type === "stop" ? "Limit" : "Price"}</span>
               <input
                 type="number"
+                data-testid="order-price-input"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
@@ -1035,6 +1039,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             <span className="text-muted-foreground text-sm w-16 shrink-0">Amount</span>
             <input
               type="number"
+              data-testid="order-amount-input"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               className="flex-1 bg-transparent text-right text-foreground font-mono focus:outline-none"
@@ -1468,6 +1473,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           {/* Submit */}
           <button
             type="submit"
+            data-testid="order-submit-btn"
             disabled={!canSubmit || (precheckResult != null && !precheckResult.ok)}
             className={cn(
               "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",

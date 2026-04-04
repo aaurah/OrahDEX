@@ -333,7 +333,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setMqrStatus("pending");
     setMqrAddress(null);
     try {
-      const res = await fetch(`${API_BASE}/api/connect-session`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/connect-session`, { method: "POST" });
       const data = await res.json() as { token: string; expiresAt: number };
       setMqrToken(data.token);
       setMqrExpires(data.expiresAt);
@@ -341,7 +341,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       mqrPollRef.current = setInterval(async () => {
         if (Date.now() > data.expiresAt) { setMqrStatus("expired"); stopMqrPoll(); return; }
         try {
-          const poll = await fetch(`${API_BASE}/api/connect-session/${data.token}`);
+          const poll = await fetch(`${API_BASE}/connect-session/${data.token}`);
           if (!poll.ok) { stopMqrPoll(); return; }
           const pollData = await poll.json() as { status: string; address?: string; chain?: string; walletType?: string };
           if (pollData.status === "connected" && pollData.address) {

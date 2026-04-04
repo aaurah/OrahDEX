@@ -25,7 +25,7 @@ const RP_NAME      = "OrahDEX";
 const PBKDF2_SALT  = new TextEncoder().encode("OrahDEX-passkey-wallet-v1");
 const PBKDF2_ITER  = 100_000;
 
-const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+const API_BASE = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 export interface PasskeyWallet {
   credentialId: string;  // base64url
@@ -158,7 +158,7 @@ async function decryptPrivateKey(
 /** Push encrypted wallet blob to the server (fire-and-forget, silent on error). */
 async function pushBackupToServer(wallet: PasskeyWallet): Promise<void> {
   try {
-    await fetch(`${API_BASE}/api/passkey/backup`, {
+    await fetch(`${API_BASE}/passkey/backup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -180,7 +180,7 @@ async function tryRestoreFromServer(
   rawId: ArrayBuffer
 ): Promise<PasskeyWallet | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/passkey/backup/${encodeURIComponent(credentialId)}`);
+    const res = await fetch(`${API_BASE}/passkey/backup/${encodeURIComponent(credentialId)}`);
     if (!res.ok) return null;
     const data = await res.json() as { encryptedKey: string; iv: string; address: string; label?: string };
     if (!data.encryptedKey || !data.iv || !data.address) return null;
@@ -394,7 +394,7 @@ export async function generateTransferCode(credentialId: string): Promise<string
   const wallet  = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) throw new Error("Wallet not found in localStorage");
 
-  const res = await fetch(`${API_BASE}/api/passkey/transfer`, {
+  const res = await fetch(`${API_BASE}/passkey/transfer`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({
@@ -420,7 +420,7 @@ export async function restoreFromTransferCode(
   code: string,
   rawId: ArrayBuffer
 ): Promise<PasskeyWallet> {
-  const res = await fetch(`${API_BASE}/api/passkey/transfer/${encodeURIComponent(code.toUpperCase())}`);
+  const res = await fetch(`${API_BASE}/passkey/transfer/${encodeURIComponent(code.toUpperCase())}`);
   if (!res.ok) {
     const err = await res.json() as { error: string };
     throw new Error(err.error ?? "Transfer code lookup failed");
