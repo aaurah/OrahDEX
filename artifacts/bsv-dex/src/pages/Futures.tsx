@@ -1,4 +1,5 @@
 import { useParams, useLocation } from "wouter";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect, useRef } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, usePlaceOrder, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
@@ -364,9 +365,7 @@ export function FuturesTrading() {
                             isActive && "bg-primary/10 border-l-2 border-l-primary"
                           )}
                         >
-                          <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[8px] font-black text-primary shrink-0">
-                            {m.baseAsset?.slice(0, 2)}
-                          </div>
+                          <CoinLogo symbol={m.baseAsset ?? ""} size={24} />
                           <div className="flex-1 min-w-0">
                             <span className="text-xs font-semibold">{m.baseAsset}</span>
                             <span className="text-[10px] text-muted-foreground">/USDT PERP</span>

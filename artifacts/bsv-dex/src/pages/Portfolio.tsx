@@ -1,4 +1,5 @@
 import { useSEO } from "@/hooks/useSEO";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
@@ -37,12 +38,6 @@ const POOL_LABELS: Record<string, { display: string; base: string; quote: string
   "trx-btc":   { display: "TRX / BTC",   base: "TRX",  quote: "BTC"  },
 };
 
-const COIN_COLORS_LP: Record<string, string> = {
-  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
-  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
-  TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
-  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a", USDC: "#2775CA",
-};
 
 interface ChainInfo {
   name: string;
@@ -657,8 +652,8 @@ export function Portfolio() {
                 <tbody className="divide-y divide-border">
                   {lpPositions.map(([poolId, pos]) => {
                     const label  = POOL_LABELS[poolId];
-                    const cA     = label ? (COIN_COLORS_LP[label.base]  ?? "#EAB308") : "#EAB308";
-                    const cB     = label ? (COIN_COLORS_LP[label.quote] ?? "#16a34a") : "#16a34a";
+                    const _base  = label?.base  ?? "?";
+                    const _quote = label?.quote ?? "?";
                     const display = label?.display ?? poolId.toUpperCase().replace("-", " / ");
                     const explorerBase = pos.chainId ? EXPLORER_TX[pos.chainId] : null;
                     const txUrl  = explorerBase && pos.txHash ? `${explorerBase}${pos.txHash}` : null;
@@ -670,14 +665,8 @@ export function Portfolio() {
                         <td className="p-4">
                           <div className="flex items-center gap-3">
                             <div className="flex -space-x-2">
-                              <div className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
-                                style={{ backgroundColor: cA + "33", color: cA }}>
-                                {label?.base?.[0] ?? "?"}
-                              </div>
-                              <div className="w-8 h-8 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold"
-                                style={{ backgroundColor: cB + "33", color: cB }}>
-                                {label?.quote?.[0] ?? "?"}
-                              </div>
+                              <CoinLogo symbol={_base}  size={32} ring />
+                              <CoinLogo symbol={_quote} size={32} ring />
                             </div>
                             <div>
                               <div className="font-bold text-sm text-foreground">{display}</div>

@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { CoinLogo, COIN_COLORS } from "@/components/CoinLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import {
@@ -67,12 +68,6 @@ function fmtTvl(n: number) {
   return "$" + n.toFixed(0);
 }
 
-const COIN_COLORS: Record<string, string> = {
-  BTC: "#F97316", ETH: "#8B5CF6", SOL: "#06B6D4", BSV: "#EAB308",
-  BNB: "#EAB308", XRP: "#3B82F6", ADA: "#2563EB", DOGE: "#EAB308",
-  DOT: "#EC4899", LINK: "#3B82F6", USDT: "#16a34a",
-  TRX: "#EF4444", BTT: "#9333ea", WIN: "#F59E0B", JST: "#06B6D4",
-};
 
 type MainTab = "pools" | "positions" | "farming";
 
@@ -377,12 +372,8 @@ function LiquidityModal({
           <div className="flex items-center gap-2">
             {/* Token badges */}
             <div className="flex -space-x-2">
-              {[pool.base, pool.quote].map((t, i) => (
-                <div key={i}
-                  className="w-7 h-7 rounded-full border-2 border-background flex items-center justify-center text-[9px] font-bold"
-                  style={{ backgroundColor: (i === 0 ? colorA : colorB) + "33", color: i === 0 ? colorA : colorB }}
-                >{t[0]}</div>
-              ))}
+              <CoinLogo symbol={pool.base}  size={28} ring />
+              <CoinLogo symbol={pool.quote} size={28} ring />
             </div>
             <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
             {(() => {
@@ -695,12 +686,8 @@ function PoolCard({ pool, onAdd, onRemove }: {
       <button className="w-full flex items-center gap-3 px-4 py-3" onClick={() => setExpanded(e => !e)}>
         {/* Token pair icons */}
         <div className="flex -space-x-2 shrink-0">
-          {[pool.base, pool.quote].map((t, i) => (
-            <div key={i}
-              className="w-7 h-7 rounded-full border-2 border-background flex items-center justify-center text-[9px] font-bold"
-              style={{ backgroundColor: (i === 0 ? colorA : colorB) + "33", color: i === 0 ? colorA : colorB }}
-            >{t[0]}</div>
-          ))}
+          <CoinLogo symbol={pool.base}  size={28} ring />
+          <CoinLogo symbol={pool.quote} size={28} ring />
         </div>
         {/* Pair name */}
         <div className="flex-1 text-left">
@@ -784,10 +771,8 @@ function MyPositions({ myPools, onAdd, onRemove }: {
           <div key={pool.id} className="bg-card border border-primary/25 rounded-xl p-4">
             <div className="flex items-center gap-2.5 mb-3">
               <div className="flex -space-x-2">
-                {[pool.base, pool.quote].map((t, i) => (
-                  <div key={i} className="w-7 h-7 rounded-full border-2 border-background flex items-center justify-center text-[9px] font-bold"
-                    style={{ backgroundColor: (i === 0 ? colorA : colorB) + "33", color: i === 0 ? colorA : colorB }}>{t[0]}</div>
-                ))}
+                <CoinLogo symbol={pool.base}  size={28} ring />
+                <CoinLogo symbol={pool.quote} size={28} ring />
               </div>
               <span className="font-bold text-sm">{pool.base}/{pool.quote}</span>
               <span className="ml-auto text-[10px] px-2 py-0.5 bg-green-500/15 text-green-500 rounded-full font-bold">
@@ -869,10 +854,8 @@ function Farming({ farmPools }: { farmPools: Array<typeof POOLS[0] & { userLp: n
               <div key={fp.id} className="bg-card border border-border rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="flex -space-x-2">
-                    {[fp.base, fp.quote].map((t, i) => (
-                      <div key={i} className="w-6 h-6 rounded-full border-2 border-background flex items-center justify-center text-[8px] font-bold"
-                        style={{ backgroundColor: (i === 0 ? colorA : colorB) + "33", color: i === 0 ? colorA : colorB }}>{t[0]}</div>
-                    ))}
+                    <CoinLogo symbol={fp.base}  size={24} ring />
+                    <CoinLogo symbol={fp.quote} size={24} ring />
                   </div>
                   <span className="font-semibold text-sm">{fp.base}/{fp.quote}</span>
                   <span className="ml-auto text-xs font-bold text-green-400">+{fp.farmApr}% farm APR</span>

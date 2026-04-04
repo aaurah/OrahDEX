@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2 } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
@@ -131,11 +132,6 @@ function ShareToast({ visible, copied }: { visible: boolean; copied: boolean }) 
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const COIN_COLORS: Record<string, string> = {
-  BSV: "#EAB308", BTC: "#F97316", ETH: "#8B5CF6",
-  SOL: "#06B6D4", XRP: "#3B82F6", BNB: "#EAB308",
-  ADA: "#2563EB",
-};
 
 function fmt(p: number) {
   if (!p || !isFinite(p)) return "—";
@@ -202,7 +198,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const base = symbol.split("/")[0];
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
-  const color = COIN_COLORS[base] ?? "#EAB308";
 
   const { address, balance: walletBalance, chainId: walletChainId, network } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
@@ -548,12 +543,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           onClick={() => setSelectorOpen(true)}
           className="flex items-center gap-1.5 flex-1 min-w-0"
         >
-          <div
-            className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold shrink-0"
-            style={{ backgroundColor: color + "22", color }}
-          >
-            {base[0]}
-          </div>
+          <CoinLogo symbol={base} size={20} />
           <span className="text-base font-bold truncate">
             {base}<span className="text-muted-foreground font-normal text-sm">/{quote}</span>
           </span>

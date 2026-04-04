@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -35,16 +36,6 @@ const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDD", label: "USDD" },
 ];
 
-const COIN_COLORS: Record<string, string> = {
-  BSV:"#EAB308", BTC:"#F97316", ETH:"#8B5CF6", SOL:"#06B6D4",
-  XRP:"#3B82F6", BNB:"#EAB308", ADA:"#2563EB", DOGE:"#EAB308",
-  DOT:"#E11D48", AVAX:"#EF4444", MATIC:"#7C3AED", LINK:"#2563EB",
-  UNI:"#EC4899", ATOM:"#6366F1", LTC:"#6B7280", BCH:"#22C55E",
-  TRX:"#EF4444", NEAR:"#10B981", APT:"#06B6D4", ARB:"#60A5FA",
-  OP:"#EF4444", SUI:"#3B82F6", INJ:"#2563EB", PEPE:"#22C55E",
-  SHIB:"#F97316", MKR:"#22C55E", AAVE:"#7C3AED", CRV:"#F43F5E",
-  FET:"#06B6D4", AGIX:"#7C3AED", OCEAN:"#2563EB", RNDR:"#F97316",
-};
 
 interface TabMeta { id: Tab; label: string; color: string; desc: string }
 const TAB_META: TabMeta[] = [
@@ -96,16 +87,6 @@ function normalise(m: any): any {
     lastPrice: price, priceChangePercent24h: chg, volume24h: vol, type };
 }
 
-function coinBadge(base: string) {
-  return (
-    <div
-      className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow"
-      style={{ background: COIN_COLORS[base] ?? "#6B7280" }}
-    >
-      {base.slice(0, 2)}
-    </div>
-  );
-}
 
 const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
@@ -629,7 +610,7 @@ export function Markets() {
                       <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          {coinBadge(base)}
+                          <CoinLogo symbol={base} size={32} />
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold text-sm text-foreground">{base}</span>

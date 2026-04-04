@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Zap, RefreshCw, AlertTriangle, CheckCircle2, Info, Search,
@@ -53,23 +54,8 @@ function tsToTime(ts: number) {
   return new Date(ts).toLocaleString([], { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit", second:"2-digit" });
 }
 
-const COIN_COLORS: Record<string, string> = {
-  BTC:"#F7931A",ETH:"#627EEA",SOL:"#9945FF",BSV:"#EAB308",BNB:"#F3BA2F",
-  XRP:"#00AAE4",ADA:"#0033AD",DOGE:"#C2A633",DOT:"#E6007A",LINK:"#2A5ADA",
-  AVAX:"#E84142",MATIC:"#8247E5",LTC:"#A6A9AA",BCH:"#8DC351",UNI:"#FF007A",
-  AAVE:"#B6509E",MKR:"#1AAB9B",TRX:"#EF4444",BTT:"#9333EA",WIN:"#F59E0B",
-  JST:"#06B6D4",NEAR:"#00C08B",ATOM:"#2E3148",FTM:"#1969FF",ARB:"#2D374B",
-  OP:"#FF0420",SUI:"#4DA2FF",SEI:"#8E2EE6",INJ:"#00A3FF",PEPE:"#37A900",
-  SHIB:"#FFA409",FLOKI:"#F5A623",WIF:"#9B59B6",BONK:"#F7500F",
-};
 function CoinIcon({ symbol, size=32 }: { symbol:string; size?:number }) {
-  const c = COIN_COLORS[symbol] ?? "#6B7280";
-  return (
-    <div className="rounded-full flex items-center justify-center font-bold text-white flex-shrink-0"
-      style={{ width:size, height:size, background:c, fontSize:Math.max(8,size*0.35) }}>
-      {symbol.slice(0,2)}
-    </div>
-  );
+  return <CoinLogo symbol={symbol} size={size} />;
 }
 function DepthBar({ impact }: { impact:number }) {
   const pct = Math.min(impact, 5);
