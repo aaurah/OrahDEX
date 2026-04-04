@@ -2,8 +2,8 @@ import { useState, useRef } from "react";
 import {
   Globe, Image, Palette, Link2, FileText, Search, Code2,
   Check, Upload, Eye, EyeOff, RefreshCw, Save, Trash2,
-  Twitter, Youtube, MessageCircle, Github, Linkedin,
-  Facebook, Instagram, Send,
+  X, Play, MessageCircle, GitBranch, Users,
+  Share2, Camera, Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -335,14 +335,14 @@ export function AdminSiteSettings() {
         {activeTab === "social" && (
           <div className="space-y-0">
             {[
-              { key: "twitterUrl",   label: "Twitter / X",  icon: Twitter,        placeholder: "https://x.com/orahdex" },
+              { key: "twitterUrl",   label: "Twitter / X",  icon: X,              placeholder: "https://x.com/orahdex" },
               { key: "telegramUrl",  label: "Telegram",     icon: Send,           placeholder: "https://t.me/orahdex" },
               { key: "discordUrl",   label: "Discord",      icon: MessageCircle,  placeholder: "https://discord.gg/orahdex" },
-              { key: "githubUrl",    label: "GitHub",       icon: Github,         placeholder: "https://github.com/orahdex" },
-              { key: "linkedinUrl",  label: "LinkedIn",     icon: Linkedin,       placeholder: "https://linkedin.com/company/orahdex" },
-              { key: "facebookUrl",  label: "Facebook",     icon: Facebook,       placeholder: "https://facebook.com/orahdex" },
-              { key: "instagramUrl", label: "Instagram",    icon: Instagram,      placeholder: "https://instagram.com/orahdex" },
-              { key: "youtubeUrl",   label: "YouTube",      icon: Youtube,        placeholder: "https://youtube.com/@orahdex" },
+              { key: "githubUrl",    label: "GitHub",       icon: GitBranch,      placeholder: "https://github.com/orahdex" },
+              { key: "linkedinUrl",  label: "LinkedIn",     icon: Users,          placeholder: "https://linkedin.com/company/orahdex" },
+              { key: "facebookUrl",  label: "Facebook",     icon: Share2,         placeholder: "https://facebook.com/orahdex" },
+              { key: "instagramUrl", label: "Instagram",    icon: Camera,         placeholder: "https://instagram.com/orahdex" },
+              { key: "youtubeUrl",   label: "YouTube",      icon: Play,           placeholder: "https://youtube.com/@orahdex" },
               { key: "mediumUrl",    label: "Medium / Blog",icon: FileText,       placeholder: "https://medium.com/@orahdex" },
               { key: "redditUrl",    label: "Reddit",       icon: Globe,          placeholder: "https://reddit.com/r/orahdex" },
             ].map(item => (
