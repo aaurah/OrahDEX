@@ -13,7 +13,7 @@
 
 import { makeError, makeWarning, type TradeError, type TradeWarning } from "./tradeErrors";
 
-const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+const API_BASE = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -164,7 +164,7 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 3000);
-        const resp = await fetch(`${API_BASE}/api/orders/precheck`, {
+        const resp = await fetch(`${API_BASE}/orders/precheck`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ symbol, side, type, amount, price, slippageBps, currentPrice }),
@@ -265,7 +265,7 @@ export async function reportTradeMetrics(params: {
 }) {
   try {
     navigator.sendBeacon(
-      `${API_BASE}/api/metrics/trades`,
+      `${API_BASE}/metrics/trades`,
       JSON.stringify(params),
     );
   } catch {
