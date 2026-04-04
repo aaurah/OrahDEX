@@ -97,11 +97,29 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
   }
 
   const SEED_ASSETS = [
-    { asset: "USDT", min: 500,   max: 15000, dec: 2 },
-    { asset: "BSV",  min: 5,     max: 200,   dec: 4 },
-    { asset: "BTC",  min: 0.001, max: 0.5,   dec: 8 },
-    { asset: "ETH",  min: 0.05,  max: 8,     dec: 6 },
-    { asset: "BNB",  min: 0.5,   max: 20,    dec: 4 },
+    // Stablecoins — generous seed so any quote asset works
+    { asset: "USDT",  min: 1000, max: 20000, dec: 2 },
+    { asset: "USDC",  min: 1000, max: 20000, dec: 2 },
+    { asset: "BUSD",  min: 500,  max: 10000, dec: 2 },
+    { asset: "DAI",   min: 500,  max: 10000, dec: 2 },
+    // Major chains
+    { asset: "BTC",   min: 0.01,  max: 1.0,   dec: 8 },
+    { asset: "ETH",   min: 0.5,   max: 10,    dec: 6 },
+    { asset: "BSV",   min: 10,    max: 300,   dec: 4 },
+    { asset: "BNB",   min: 1,     max: 30,    dec: 4 },
+    { asset: "SOL",   min: 5,     max: 100,   dec: 4 },
+    { asset: "MATIC", min: 100,   max: 3000,  dec: 2 },
+    { asset: "BCH",   min: 0.5,   max: 20,    dec: 6 },
+    { asset: "LTC",   min: 0.5,   max: 20,    dec: 6 },
+    { asset: "XRP",   min: 100,   max: 5000,  dec: 2 },
+    { asset: "ADA",   min: 100,   max: 5000,  dec: 2 },
+    // DeFi tokens
+    { asset: "LINK",  min: 10,    max: 500,   dec: 4 },
+    { asset: "UNI",   min: 10,    max: 500,   dec: 4 },
+    { asset: "AAVE",  min: 1,     max: 50,    dec: 4 },
+    { asset: "DOGE",  min: 500,   max: 20000, dec: 2 },
+    { asset: "DOT",   min: 10,    max: 300,   dec: 4 },
+    { asset: "AVAX",  min: 5,     max: 100,   dec: 4 },
   ];
 
   const client = await pool.connect();
@@ -124,6 +142,48 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
   } finally {
     client.release();
   }
+}
+
+// ── Ensure a specific asset has at least `minAmount` available ────────────────
+// Called before locking for an order when the user's balance is missing or
+// insufficient for that asset.  Credits a demo amount so any pair can be traded.
+
+const ASSET_SEED_AMOUNTS: Record<string, { amount: string }> = {
+  USDT: { amount: "5000" }, USDC: { amount: "5000" }, BUSD: { amount: "5000" },
+  DAI:  { amount: "5000" }, TUSD: { amount: "5000" }, FDUSD: { amount: "5000" },
+  BTC:  { amount: "0.5" },  ETH:  { amount: "5" },    BSV:   { amount: "100" },
+  BNB:  { amount: "15" },   SOL:  { amount: "50" },   MATIC: { amount: "1000" },
+  BCH:  { amount: "10" },   LTC:  { amount: "10" },   XRP:   { amount: "2000" },
+  ADA:  { amount: "2000" }, LINK: { amount: "200" },  UNI:   { amount: "200" },
+  AAVE: { amount: "20" },   DOGE: { amount: "5000" }, DOT:   { amount: "100" },
+  AVAX: { amount: "50" },
+};
+
+export async function ensureSeedForAsset(
+  walletAddress: string,
+  asset:         string,
+  neededAmount:  string,
+): Promise<void> {
+  // Read current available
+  const { rows } = await pool.query<{ available: string }>(
+    `SELECT available FROM user_balances
+     WHERE wallet_address = $1 AND asset_symbol = $2`,
+    [walletAddress, asset],
+  );
+  const current = rows[0] ? parseFloat(rows[0].available) : 0;
+  const needed  = parseFloat(neededAmount);
+  if (current >= needed) return;  // already sufficient
+
+  // Credit the difference (or a default seed amount, whichever is larger)
+  const defaultSeed = parseFloat(ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000");
+  const credit = Math.max(needed - current + defaultSeed * 0.5, defaultSeed).toFixed(8);
+  await pool.query(
+    `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+     VALUES ($1, $2, $3, '0', now())
+     ON CONFLICT (wallet_address, asset_symbol)
+     DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
+    [walletAddress, asset, credit],
+  );
 }
 
 // ── Credit (direct add to available — e.g. on deposit) ──────────────────────

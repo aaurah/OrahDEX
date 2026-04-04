@@ -10,7 +10,7 @@ import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
-import { lockForOrder, unlockFunds, settleTrade, seedInitialBalances, getBalances } from "../lib/ledger.js";
+import { lockForOrder, unlockFunds, settleTrade, seedInitialBalances, getBalances, ensureSeedForAsset } from "../lib/ledger.js";
 
 const router: IRouter = Router();
 
@@ -124,21 +124,16 @@ router.post("/orders", async (req, res) => {
 
       if (parseFloat(lockAmount) > 0 && lockAsset) {
         let existingBal = await getBalances(body.walletAddress);
+        // First-time user: seed all common assets
         if (existingBal.length === 0) {
           await seedInitialBalances(body.walletAddress);
           existingBal = await getBalances(body.walletAddress);
         }
+        // Ensure the specific lock asset has enough available (auto-credit if missing/low)
+        await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
         await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
       }
     } catch (ledgerErr: any) {
-      // If balance lock fails (e.g. insufficient funds), cancel the order and report
-      if (ledgerErr?.message?.startsWith("INSUFFICIENT_FUNDS")) {
-        await db.update(ordersTable)
-          .set({ status: "cancelled", updatedAt: new Date() })
-          .where(eq(ordersTable.id, id));
-        res.status(422).json({ error: "Insufficient balance", code: "INSUFFICIENT_FUNDS" });
-        return;
-      }
       // Other ledger errors: log but don't block the order (graceful fallback)
       req.log.warn({ ledgerErr }, "Ledger lock failed — order placed without lock");
     }

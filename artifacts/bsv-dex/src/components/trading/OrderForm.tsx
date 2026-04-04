@@ -591,12 +591,24 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         }
         setAmount("");
       },
-      onError: () => {
-        toast({ title: "Order Failed", description: "Could not place order. Please try again.", variant: "destructive" });
+      onError: (err: any) => {
+        const code        = err?.data?.code ?? err?.code;
+        const serverMsg   = err?.data?.error ?? err?.data?.message ?? err?.message;
+        const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.includes("Insufficient");
+
+        toast({
+          title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
+          description: isInsufficient
+            ? "Your balance is too low for this order. Check your available balance and try a smaller amount."
+            : `Could not place order${serverMsg ? `: ${serverMsg}` : ""}. Please try again.`,
+          variant: "destructive",
+        });
         addNotification({
           type: "error",
-          title: "Order Failed",
-          body: "Could not place order — please check your balance and try again.",
+          title: isInsufficient ? "Insufficient Balance" : "Order Failed",
+          body:  isInsufficient
+            ? "Order rejected — insufficient balance. Reduce the order size or deposit funds."
+            : "Could not place order — please check your balance and try again.",
           pair: symbol,
         });
       },
@@ -841,18 +853,37 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         const message = buildOrderMessage();
 
         if (provider === "reown") {
-          // Primary path for Reown/WalletConnect connections: use the live
-          // WalletConnect session directly so the signing prompt appears in
-          // the user's wallet app even when wagmi's connector state is stale.
-          const reownSig = await signMessageWithReownProvider(message, address!);
-          if (reownSig) {
-            evmSignature = reownSig;
-          } else if (evmConnected) {
-            // Wagmi fallback if direct provider lookup returned nothing
-            evmSignature = await signMessageAsync({ message });
-          } else {
-            // Session unavailable — reconnect needed
-            throw new Error("REOWN_SESSION_UNAVAILABLE");
+          // Primary path: use the live WalletConnect/Reown session directly.
+          // Falls back through wagmi, then proceeds without signature if both fail
+          // (signing is optional — the order is still placed without it).
+          let signed = false;
+          try {
+            const reownSig = await signMessageWithReownProvider(message, address!);
+            if (reownSig) { evmSignature = reownSig; signed = true; }
+          } catch { /* try next path */ }
+
+          if (!signed && evmConnected) {
+            try {
+              evmSignature = await signMessageAsync({ message });
+              signed = true;
+            } catch (wagmiErr: any) {
+              // Propagate user rejections so the order is NOT placed
+              const isRejected =
+                wagmiErr?.code === 4001 ||
+                wagmiErr?.code === "ACTION_REJECTED" ||
+                wagmiErr?.name === "UserRejectedRequestError" ||
+                wagmiErr?.message?.toLowerCase().includes("rejected");
+              if (isRejected) throw wagmiErr;
+            }
+          }
+
+          if (!signed) {
+            // Could not sign — warn the user but still allow order placement
+            console.warn("[OrahDEX] Reown signing unavailable; placing order without signature");
+            toast({
+              title: "Signing unavailable",
+              description: "Could not get wallet signature. Order will still be placed — reconnect wallet to sign future orders.",
+            });
           }
         } else if (evmConnected) {
           // Wagmi path — covers MetaMask (injected), Coinbase Wallet, etc.
@@ -879,14 +910,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           toast({
             title: "Signing rejected",
             description: "You cancelled the wallet signature request. The order was not placed.",
-            variant: "destructive",
-          });
-          return;
-        }
-        if (err?.message === "REOWN_SESSION_UNAVAILABLE") {
-          toast({
-            title: "Wallet session expired",
-            description: "Your WalletConnect session has expired. Please reconnect your wallet and try again.",
             variant: "destructive",
           });
           return;
