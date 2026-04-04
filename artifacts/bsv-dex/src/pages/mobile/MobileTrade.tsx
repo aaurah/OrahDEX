@@ -198,7 +198,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress, internalBsvAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
@@ -359,8 +359,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isBaseEvmChain = baseChain === "evm";
   const hasMobileInternalEvm = !!internalEvmAddress && network === "bsv";
   const mobileEvmHandled = isBaseEvmChain && hasMobileInternalEvm;
-  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled;
+  const isMobileBsvChain = baseChain === "bsv";
+  const hasMobileInternalBsv = !!internalBsvAddress && network === "evm";
+  const mobileBsvHandled = isMobileBsvChain && hasMobileInternalBsv;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled;
   const showMobileEvmInfo = side === "buy" && !!address && network === "bsv" && isBaseEvmChain && hasMobileInternalEvm;
+  const showMobileBsvInfo = side === "buy" && !!address && network === "evm" && isMobileBsvChain && hasMobileInternalBsv;
   const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -1141,6 +1145,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     type="button"
                     onClick={() => navigator.clipboard?.writeText(internalEvmAddress ?? "")}
                     className="shrink-0 text-emerald-400/50"
+                    title="Copy"
+                  >
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── BSV Sub-wallet info (EVM users buying BSV assets) ── */}
+            {showMobileBsvInfo && (
+              <div className="rounded-xl border border-teal-500/30 bg-teal-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-teal-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your OrahDEX BSV wallet</p>
+                    <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
+                      Your EVM account includes a free custodial BSV address. {base} lands there automatically — withdraw anytime from Portfolio.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-teal-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-teal-400/70 text-[10px] font-medium shrink-0">BSV</span>
+                  <span className="text-[10px] font-mono text-teal-300 truncate flex-1">{internalBsvAddress}</span>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(internalBsvAddress ?? "")}
+                    className="shrink-0 text-teal-400/50"
                     title="Copy"
                   >
                     <Link2 size={11} />
