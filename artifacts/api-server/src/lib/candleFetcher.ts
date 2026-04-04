@@ -53,7 +53,7 @@ interface Candle {
 /* ── In-memory candle cache — 5 min TTL ─────────────────────────────────────── */
 interface CacheEntry { data: Candle[]; ts: number }
 const candleCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 1000; // 1 min — keeps last candle close fresh
 
 function getCached(key: string): Candle[] | null {
   const e = candleCache.get(key);
@@ -163,6 +163,19 @@ function generateFallbackCandles(lastPrice: number, interval: string, limit: num
   return candles;
 }
 
+/* ── Pin the last candle's close to the live price ──────────────────────────── */
+function pinLastCandle(candles: Candle[], lastPrice: number): Candle[] {
+  if (!candles.length || !(lastPrice > 0)) return candles;
+  const last = candles[candles.length - 1];
+  candles[candles.length - 1] = {
+    ...last,
+    close: lastPrice,
+    high:  Math.max(last.high, lastPrice),
+    low:   Math.min(last.low,  lastPrice),
+  };
+  return candles;
+}
+
 /* ── Main export ───────────────────────────────────────────────────────────────── */
 export async function fetchRealCandles(
   symbol: string,
@@ -172,7 +185,8 @@ export async function fetchRealCandles(
 ): Promise<Candle[]> {
   const cacheKey = `${symbol}:${interval}:${limit}`;
   const cached   = getCached(cacheKey);
-  if (cached) return cached;
+  // Return cached but always re-pin the last candle to the live price
+  if (cached) return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1] }], lastPrice);
 
   // ── 1. Own trades (sovereign source of truth) ──────────────────────────────
   try {
@@ -180,7 +194,7 @@ export async function fetchRealCandles(
     const ownCandles  = await buildCandlesFromOwnTrades(symbol, intervalSec, limit);
     if (ownCandles.length >= Math.min(3, limit)) {
       setCached(cacheKey, ownCandles);
-      return ownCandles;
+      return pinLastCandle(ownCandles, lastPrice);
     }
   } catch (err) {
     logger.warn({ err, symbol }, "Own-trades candle build failed");
@@ -197,7 +211,7 @@ export async function fetchRealCandles(
     try {
       const candles = await fetchBinanceCandles(binanceSym, interval, limit);
       setCached(cacheKey, candles);
-      return candles;
+      return pinLastCandle(candles, lastPrice);
     } catch (err) {
       logger.warn({ err, symbol }, "Binance candle fetch failed — using synthetic");
     }
@@ -206,5 +220,5 @@ export async function fetchRealCandles(
   // ── 3. Synthetic fallback ───────────────────────────────────────────────────
   const candles = generateFallbackCandles(lastPrice, interval, limit);
   setCached(cacheKey, candles);
-  return candles;
+  return pinLastCandle(candles, lastPrice);
 }
