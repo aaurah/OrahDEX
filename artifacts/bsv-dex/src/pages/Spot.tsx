@@ -737,7 +737,7 @@ export function SpotTrading() {
         </div>
 
         {/* FAR-RIGHT: Order Form + AI Analysis */}
-        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
+        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
           <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
           <div className="p-2 border-t border-border">
             <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
