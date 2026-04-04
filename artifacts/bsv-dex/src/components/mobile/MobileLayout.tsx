@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown, Zap, QrCode } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, CreditCard, MessageCircle, Send, X, ChevronDown, Zap, QrCode, Cable } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -141,6 +141,7 @@ const TABS = [
   { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
   { path: "/p2p", label: "P2P", Icon: Users2 },
+  { path: "/bridge", label: "Bridge", Icon: Cable },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
   { path: "/settings", label: "Settings", Icon: Settings },
 ];
@@ -267,7 +268,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {/* Bottom tab bar — 6 tabs */}
+      {/* Bottom tab bar — 7 tabs */}
       <div className="shrink-0 flex items-stretch border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
@@ -277,10 +278,10 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <button
               key={tab.path}
               onClick={() => navigate(tab.path)}
-              className="flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors active:bg-white/5"
+              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors active:bg-white/5"
             >
               <tab.Icon
-                size={20}
+                size={18}
                 className={active ? "text-primary" : "text-muted-foreground"}
                 strokeWidth={active ? 2.5 : 1.5}
               />
