@@ -466,7 +466,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="relative hidden sm:block" ref={bsvPopoverRef}>
               <button
                 onClick={() => setBsvPopover(p => !p)}
-                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-green-500/30 text-[10px] font-bold uppercase tracking-wider select-none hover:bg-green-500/10 transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/30 border border-green-500/30 text-xs font-semibold uppercase tracking-wider select-none hover:bg-green-500/10 transition-colors"
               >
                 <span className={cn("w-1.5 h-1.5 rounded-full", bsvOnline ? "bg-green-400 animate-pulse" : "bg-red-400")} />
                 <span className={bsvOnline ? "text-green-400" : "text-red-400"}>BSV {bsvOnline ? "LIVE" : "—"}</span>
@@ -541,10 +541,10 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Buy Crypto — global header CTA */}
           <button
             onClick={() => setBuyOpen(true)}
-            className="flex items-center gap-1 px-2.5 py-0.5 bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 hover:border-primary/60 rounded-md text-xs font-semibold transition-all hidden sm:flex"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 hover:border-primary/60 rounded-lg text-xs font-semibold transition-all hidden sm:flex"
             title="Buy crypto instantly"
           >
-            <CreditCard className="w-3.5 h-3.5" />
+            <CreditCard className="w-3 h-3" />
             Buy
           </button>
 
@@ -553,9 +553,9 @@ export function Layout({ children }: { children: ReactNode }) {
           ) : (
             <button
               onClick={() => openWalletModal()}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-3 py-1 rounded-lg font-semibold text-xs shadow-md shadow-primary/20 hover:brightness-110 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
+              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-2.5 py-1 rounded-lg font-semibold text-xs shadow-md shadow-primary/20 hover:brightness-110 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
             >
-              <Wallet className="w-4 h-4" />
+              <Wallet className="w-3 h-3" />
               <span className="hidden sm:inline">Connect Wallet</span>
               <span className="sm:hidden">Connect</span>
             </button>
