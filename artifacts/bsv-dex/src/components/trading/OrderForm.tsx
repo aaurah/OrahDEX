@@ -344,7 +344,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
 }) {
-  const { address, network, balance, chainId: walletChainId, isDemo, internalEvmAddress, internalBsvAddress } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, internalEvmAddress, internalBsvAddress, internalBchAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill } = useExchangeBalanceStore();
@@ -1133,12 +1133,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                     Sent to your OrahDEX EVM wallet
                   </p>
                   <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
-                    As a BSV user you get a free custodial EVM address. Bought {base} lands there automatically — no extra steps needed.
+                    One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — Ethereum, BSC, Polygon, Arbitrum, Base and more.
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-between bg-black/20 border border-emerald-500/20 rounded-lg px-2.5 py-1.5">
-                <span className="text-[10px] text-emerald-400/70 font-medium shrink-0 mr-2">EVM addr</span>
+                <span className="text-[10px] text-emerald-400/70 font-medium shrink-0 mr-2">All EVM</span>
                 <span className="text-[10px] font-mono text-emerald-300 truncate flex-1">{internalEvmAddress}</span>
                 <button
                   type="button"
@@ -1152,32 +1152,48 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             </div>
           )}
 
-          {/* ── BSV Sub-wallet (EVM users buying BSV assets) ─────────── */}
+          {/* ── BSV/BTC/BCH Sub-wallet (EVM users buying BSV assets) ── */}
           {showBsvWalletInfo && (
             <div className="rounded-xl border border-teal-500/30 bg-teal-500/8 px-3 py-2.5 space-y-1.5">
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-teal-300 font-semibold leading-snug">
-                    Sent to your OrahDEX BSV wallet
+                    Sent to your OrahDEX BSV · BTC · BCH wallet
                   </p>
                   <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
-                    As an EVM user you get a free custodial BSV address. Bought {base} lands there automatically — withdraw anytime from Portfolio.
+                    One key covers <span className="text-teal-300 font-medium">BSV, BTC &amp; BCH</span> — same address for BSV &amp; BTC, separate CashAddr for BCH. Withdraw anytime from Portfolio.
                   </p>
                 </div>
               </div>
+              {/* BSV = BTC legacy address */}
               <div className="flex items-center justify-between bg-black/20 border border-teal-500/20 rounded-lg px-2.5 py-1.5">
-                <span className="text-[10px] text-teal-400/70 font-medium shrink-0 mr-2">BSV addr</span>
+                <span className="text-[10px] text-teal-400/70 font-medium shrink-0 mr-2 w-16">BSV · BTC</span>
                 <span className="text-[10px] font-mono text-teal-300 truncate flex-1">{internalBsvAddress}</span>
                 <button
                   type="button"
                   onClick={() => { navigator.clipboard?.writeText(internalBsvAddress!); }}
                   className="ml-1.5 text-teal-400/50 hover:text-teal-400 transition-colors shrink-0"
-                  title="Copy BSV address"
+                  title="Copy BSV/BTC address"
                 >
                   <Route className="w-3 h-3" />
                 </button>
               </div>
+              {/* BCH CashAddr */}
+              {internalBchAddress && (
+                <div className="flex items-center justify-between bg-black/20 border border-teal-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-[10px] text-teal-400/70 font-medium shrink-0 mr-2 w-16">BCH</span>
+                  <span className="text-[10px] font-mono text-teal-300 truncate flex-1">{internalBchAddress}</span>
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard?.writeText(internalBchAddress); }}
+                    className="ml-1.5 text-teal-400/50 hover:text-teal-400 transition-colors shrink-0"
+                    title="Copy BCH address"
+                  >
+                    <Route className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

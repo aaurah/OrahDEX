@@ -1,10 +1,16 @@
 /**
  * useInternalBsvWallet
  *
- * When an EVM wallet is connected, automatically provisions a custodial BSV
- * sub-account on OrahDEX. The private key never leaves the server; only the
- * BSV address is returned and stored in the wallet store so UI components
- * can display it and route cross-chain orders to it.
+ * When an EVM wallet is connected, automatically provisions a custodial
+ * BTC/BSV/BCH sub-account on OrahDEX.
+ *
+ * One secp256k1 keypair covers three chains:
+ *   • BSV  (P2PKH  "1…")  ← same string as BTC legacy
+ *   • BTC  (P2PKH  "1…")  ← same string as BSV
+ *   • BCH  (CashAddr "bitcoincash:q…")
+ *
+ * The private key never leaves the server; only the public addresses are
+ * returned and stored in the wallet store.
  */
 
 import { useEffect, useRef } from "react";
@@ -16,6 +22,7 @@ export function useInternalBsvWallet() {
   const network            = useWalletStore(s => s.network);
   const isDemo             = useWalletStore(s => s.isDemo);
   const setInternalBsv     = useWalletStore(s => s.setInternalBsvAddress);
+  const setInternalBch     = useWalletStore(s => s.setInternalBchAddress);
   const internalBsvAddress = useWalletStore(s => s.internalBsvAddress);
 
   const provisionedFor = useRef<string | null>(null);
@@ -23,7 +30,7 @@ export function useInternalBsvWallet() {
   useEffect(() => {
     // Only provision for real EVM wallets
     if (!address || network !== "evm" || isDemo) {
-      if (!address) setInternalBsv(null);
+      if (!address) { setInternalBsv(null); setInternalBch(null); }
       return;
     }
 
@@ -38,11 +45,12 @@ export function useInternalBsvWallet() {
       body: JSON.stringify({ evmAddress: address }),
     })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { bsvAddress: string; isNew: boolean }) => {
-        setInternalBsv(data.bsvAddress);
+      .then((data: { bsvAddress: string; btcAddress: string; bchAddress: string; isNew: boolean }) => {
+        setInternalBsv(data.bsvAddress);   // BSV = BTC (same string)
+        setInternalBch(data.bchAddress);   // BCH CashAddr
       })
       .catch(err => {
-        console.warn("[OrahDEX] Could not provision internal BSV wallet:", err);
+        console.warn("[OrahDEX] Could not provision internal BSV/BTC/BCH wallet:", err);
       });
   }, [address, network, isDemo]);
 }

@@ -37,8 +37,11 @@ interface WalletState {
 
   /** Auto-provisioned EVM address for BSV-wallet users (custodial sub-account). */
   internalEvmAddress: string | null;
-  /** Auto-provisioned BSV address for EVM-wallet users (custodial sub-account). */
+  /** Auto-provisioned BSV address for EVM-wallet users (custodial sub-account).
+   *  BSV P2PKH address = BTC legacy address (identical string, same key). */
   internalBsvAddress: string | null;
+  /** BCH CashAddr derived from the same key as internalBsvAddress. */
+  internalBchAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
   connectDemo: (address: string) => void;
@@ -47,6 +50,7 @@ interface WalletState {
   setBalance: (balance: string | null) => void;
   setInternalEvmAddress: (addr: string | null) => void;
   setInternalBsvAddress: (addr: string | null) => void;
+  setInternalBchAddress: (addr: string | null) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -88,6 +92,7 @@ export const useWalletStore = create<WalletState>()(
       pendingTxs: [],
       internalEvmAddress: null,
       internalBsvAddress: null,
+      internalBchAddress: null,
 
       connect: (wallet) =>
         set({
@@ -100,6 +105,7 @@ export const useWalletStore = create<WalletState>()(
           isDemo: false,
           internalEvmAddress: null,
           internalBsvAddress: null,
+          internalBchAddress: null,
         }),
 
       connectDemo: (address) =>
@@ -113,6 +119,7 @@ export const useWalletStore = create<WalletState>()(
           isDemo: true,
           internalEvmAddress: null,
           internalBsvAddress: null,
+          internalBchAddress: null,
         }),
 
       disconnect: () =>
@@ -126,12 +133,14 @@ export const useWalletStore = create<WalletState>()(
           isDemo: false,
           internalEvmAddress: null,
           internalBsvAddress: null,
+          internalBchAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBalance: (balance) => set({ balance }),
       setInternalEvmAddress: (internalEvmAddress) => set({ internalEvmAddress }),
       setInternalBsvAddress: (internalBsvAddress) => set({ internalBsvAddress }),
+      setInternalBchAddress: (internalBchAddress) => set({ internalBchAddress }),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),

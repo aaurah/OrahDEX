@@ -743,9 +743,9 @@ router.get("/user/bsv-wallet", async (req, res) => {
   const evmAddress = (req.query.evmAddress as string ?? "").trim();
   if (!evmAddress) { res.status(400).json({ error: "evmAddress required" }); return; }
   try {
-    const bsvAddress = await getBsvWallet(evmAddress);
-    if (!bsvAddress) { res.status(404).json({ error: "No internal BSV wallet provisioned yet" }); return; }
-    res.json({ bsvAddress, isNew: false });
+    const result = await getBsvWallet(evmAddress);
+    if (!result) { res.status(404).json({ error: "No internal BSV wallet provisioned yet" }); return; }
+    res.json(result);
   } catch (err) {
     logger.error({ err }, "Failed to fetch internal BSV wallet");
     res.status(500).json({ error: "Internal server error" });
