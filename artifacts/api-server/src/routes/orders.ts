@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull } from "drizzle-orm";
 import crypto from "node:crypto";
 import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
@@ -220,8 +220,11 @@ router.post("/orders", async (req, res) => {
       for (const match of sorted) {
         if (remainingQty <= 0.000001) break;
 
-        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity) - parseFloat(match.filledQuantity ?? "0");
-        if (matchAvail <= 0) continue;
+        // Use remainingQuantity directly — it is always kept up-to-date by
+        // prior partial fills, so we must NOT subtract filledQuantity again
+        // (that would double-count and produce negative availability).
+        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
+        if (matchAvail <= 0.000001) continue;
 
         const fillQty   = Math.min(remainingQty, matchAvail);
         const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
@@ -338,7 +341,7 @@ router.post("/orders", async (req, res) => {
             status:            isFullyFilled ? "filled" : "open",
             filledQuantity:    totalFilled.toString(),
             remainingQuantity: Math.max(0, remainingQty).toString(),
-            price:             isMarket ? avgFillPrice.toString() : undefined,
+            price:             (isMarket || isStopTriggered) ? avgFillPrice.toString() : undefined,
             total:             totalFillValue.toFixed(8),
             fee:               correctFee,
             txid:              lastTxid,
@@ -550,7 +553,7 @@ router.get("/settlements", async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
     const settled = await db.select().from(ordersTable)
-      .where(and(eq(ordersTable.status, "filled"), ne(ordersTable.txid, "NULL")));
+      .where(and(eq(ordersTable.status, "filled"), isNotNull(ordersTable.txid)));
 
     const real = settled
       .filter(o => o.txid && o.txid.length > 0)
