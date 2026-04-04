@@ -584,7 +584,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
     const timestamps = candles.map(c => Number(c.time) as any);
     const addSub = (ref: React.MutableRefObject<any>, color: string, data: (number|null)[], width = 1) => {
-      const s = chart.addSeries(LineSeries, { color, lineWidth: width, crosshairMarkerVisible: false, lastValueVisible: true, priceLineVisible: false });
+      const s = chart.addSeries(LineSeries, { color, lineWidth: width as any, crosshairMarkerVisible: false, lastValueVisible: true, priceLineVisible: false });
       s.setData(data.map((v, i) => v != null ? { time: timestamps[i], value: v } : null).filter(Boolean) as any);
       ref.current = s;
       return s;

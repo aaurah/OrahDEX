@@ -80,20 +80,21 @@ export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
 
 // ─── Crypto helpers ───────────────────────────────────────────────────────────
 
-/** ArrayBuffer → standard base64 (safe for any length — avoids spread stack overflow) */
-function buf2b64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
+/** ArrayBuffer or Uint8Array → standard base64 */
+function buf2b64(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
-/** Standard base64 → Uint8Array */
-function b642buf(b64: string): Uint8Array {
+/** Standard base64 → Uint8Array (backed by a plain ArrayBuffer for WebCrypto compatibility) */
+function b642buf(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
+  const ab = new ArrayBuffer(binary.length);
+  const bytes = new Uint8Array(ab);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return bytes as Uint8Array<ArrayBuffer>;
 }
 
 /** Standard base64 → URL-safe base64 (strips padding) */

@@ -67,7 +67,7 @@ const CHAIN_ICON: Record<string, string> = { BSV: "⚡", BTC: "₿", ETH: "⬡",
 export function MobileQRScanner() {
   const [, navigate] = useLocation();
   const { toast }    = useToast();
-  const { address, walletType } = useWalletStore();
+  const { address, provider: walletType } = useWalletStore();
 
   /* tabs: "scan" | "myqr" */
   const [tab, setTab] = useState<"scan" | "myqr">("scan");
@@ -205,7 +205,7 @@ export function MobileQRScanner() {
         style={{ paddingTop: "max(14px, env(safe-area-inset-top, 14px))" }}
       >
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => window.history.back()}
           className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 text-white active:bg-white/20"
         >
           <ArrowLeft size={18} />
@@ -379,7 +379,7 @@ export function MobileQRScanner() {
                   <div className="pt-2 space-y-2">
                     {connected ? (
                       <button
-                        onClick={() => navigate(-1)}
+                        onClick={() => window.history.back()}
                         className="w-full py-3.5 rounded-2xl bg-green-500 text-black font-bold text-sm active:scale-95 transition-transform"
                       >
                         Done

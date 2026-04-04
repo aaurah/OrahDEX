@@ -6,7 +6,7 @@ const SITE_NAME = "OrahDEX";
 
 interface SEOOptions {
   title: string;
-  description: string;
+  description?: string;
   keywords?: string;
   image?: string;
   url?: string;
@@ -60,7 +60,7 @@ export function useSEO({
 
     document.title = fullTitle;
 
-    setMeta("description", description);
+    if (description) setMeta("description", description);
     if (keywords) setMeta("keywords", keywords);
     setMeta("robots", "index, follow, max-snippet:-1, max-image-preview:large");
 
@@ -68,7 +68,7 @@ export function useSEO({
 
     setMeta("og:type", type, "property");
     setMeta("og:title", fullTitle, "property");
-    setMeta("og:description", description, "property");
+    if (description) setMeta("og:description", description, "property");
     setMeta("og:url", fullUrl, "property");
     setMeta("og:image", image, "property");
     setMeta("og:image:alt", title, "property");
@@ -76,7 +76,7 @@ export function useSEO({
 
     setMeta("twitter:card", "summary_large_image");
     setMeta("twitter:title", fullTitle);
-    setMeta("twitter:description", description);
+    if (description) setMeta("twitter:description", description);
     setMeta("twitter:image", image);
     setMeta("twitter:image:alt", title);
 

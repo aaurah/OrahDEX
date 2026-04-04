@@ -95,7 +95,7 @@ export function UserApiKeys() {
             </div>
             <p className="font-semibold">Connect your wallet</p>
             <p className="text-sm text-muted-foreground">API keys are linked to your wallet address. Connect first to generate keys.</p>
-            <button onClick={openWallet}
+            <button onClick={() => openWallet()}
               className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-semibold text-sm">
               Connect Wallet
             </button>
