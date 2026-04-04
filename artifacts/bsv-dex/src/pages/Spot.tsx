@@ -166,6 +166,15 @@ export function SpotTrading() {
     ?? MOCK_TICKER[rawSymbol]
     ?? generateTickerForSymbol(base, quote);
   const isPositive = ticker.priceChangePercent >= 0;
+
+  /* ── Live browser-tab price title ────────────────────────────────────── */
+  useEffect(() => {
+    const price = ticker.lastPrice;
+    const sign  = ticker.priceChangePercent >= 0 ? "▲" : "▼";
+    document.title = `${sign} ${formatPrice(price)} | ${base}/${quote} | OrahDEX`;
+    return () => { document.title = "OrahDEX"; };
+  }, [ticker.lastPrice, ticker.priceChangePercent, base, quote]);
+
   const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
   const trades     = Array.isArray(apiTrades) ? apiTrades : generateMockTrades(ticker.lastPrice);
 
