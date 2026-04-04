@@ -233,6 +233,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const wrapRef   = useRef<HTMLDivElement>(null);
   /* Always-current candles ref so crosshair callback never goes stale */
   const candlesRef = useRef<Candle[]>([]);
+  /* Always-current display candles ref for live last-bar updates */
+  const displayCandlesRef = useRef<Candle[]>([]);
 
   /* series refs */
   const priceSeriesRef   = useRef<any>(null);
@@ -372,6 +374,36 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const displayCandles = useMemo(() =>
     chartType === 'heikinashi' ? computeHeikinAshi(sanitizedCandles) : sanitizedCandles,
   [sanitizedCandles, chartType]);
+
+  /* Keep displayCandlesRef always current */
+  useEffect(() => { displayCandlesRef.current = displayCandles; }, [displayCandles]);
+
+  /* ── Live last-bar update — fires on every ticker tick ───────────────────
+     Calls series.update() instead of setData() so only the last bar redraws */
+  useEffect(() => {
+    const series = priceSeriesRef.current;
+    const livePrice = ticker?.last;
+    if (!series || !livePrice || livePrice <= 0) return;
+    const dc = displayCandlesRef.current;
+    if (!dc.length) return;
+    const last = dc[dc.length - 1];
+    const t = Number(last.time) as any;
+    try {
+      if (chartType === 'candle' || chartType === 'heikinashi' || chartType === 'bar') {
+        series.update({ time: t, open: last.open, high: Math.max(last.high, livePrice), low: Math.min(last.low, livePrice), close: livePrice });
+      } else {
+        series.update({ time: t, value: livePrice });
+      }
+    } catch (_) {}
+    /* Keep crosshair hover info in sync with live price */
+    const cr = candlesRef.current;
+    if (cr.length) {
+      const lr = cr[cr.length - 1];
+      lr.close = livePrice;
+      lr.high  = Math.max(lr.high, livePrice);
+      lr.low   = Math.min(lr.low,  livePrice);
+    }
+  }, [ticker, chartType]);
 
   /* ── Create main chart ──────────────────────────────────────────────── */
   useEffect(() => {
