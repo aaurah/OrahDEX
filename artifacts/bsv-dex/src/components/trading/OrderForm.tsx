@@ -557,7 +557,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           symbol,
           walletAddress: address,
           side,
-          type:           type === "stop" ? "limit" : type,
+          type,
           price:          type !== "market" ? parseFloat(price) : undefined,
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
@@ -842,9 +842,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 )}
                 onClick={() => {
                   const portion = availableAmt * (pct / 100);
-                  if (side === "buy" && price && parseFloat(price) > 0) {
-                    setAmount((portion / parseFloat(price)).toFixed(6));
+                  if (side === "buy") {
+                    // available is in quote (USDT) — divide by price to get base token qty
+                    const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+                    if (px > 0) setAmount((portion / px).toFixed(6));
                   } else {
+                    // available is already in base tokens
                     setAmount(portion > 0 ? portion.toFixed(6) : "");
                   }
                 }}
@@ -872,9 +875,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                     ? <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/50" />
                     : liveQuote
                       ? <>{liveQuote.expectedOut.toFixed(6)} {quoteTokenOut}</>
-                      : <>≈ {type === "limit" && price
-                          ? formatPrice(total)
-                          : formatPrice(parseFloat(amount) * currentPrice)} {type === "limit" ? quote : base}</>
+                      : side === "buy"
+                        ? <>{parseFloat(amount || "0").toFixed(6)} {base}</>
+                        : <>≈ {formatPrice(type === "limit" && price
+                            ? parseFloat(price) * parseFloat(amount || "0")
+                            : parseFloat(amount || "0") * currentPrice)} {quote}</>
                   }
                 </span>
               </div>
