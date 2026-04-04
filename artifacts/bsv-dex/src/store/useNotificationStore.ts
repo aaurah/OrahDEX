@@ -1,7 +1,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type NotifType = "order_placed" | "order_filled" | "order_cancelled" | "trade" | "bridge" | "price_alert" | "info" | "warning" | "success" | "error";
+export type NotifType =
+  | "order_placed"
+  | "order_filled"
+  | "order_cancelled"
+  | "trade"
+  | "bridge"
+  | "price_alert"
+  | "wallet_connected"
+  | "wallet_disconnected"
+  | "info"
+  | "warning"
+  | "success"
+  | "error";
 
 export interface AppNotification {
   id: string;
@@ -14,6 +26,7 @@ export interface AppNotification {
   pair?: string;
   amount?: string;
   side?: "buy" | "sell";
+  href?: string;
 }
 
 interface NotificationState {
@@ -66,7 +79,7 @@ export const useNotificationStore = create<NotificationState>()(
       unreadCount: () => get().notifications.filter((n) => !n.read).length,
     }),
     {
-      name: "orahdex_notifs_v3",
+      name: "orahdex_notifs_v4",
       partialize: (s) => ({ notifications: s.notifications.slice(0, 50) }),
     },
   ),

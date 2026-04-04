@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw, LogIn, LogOut, ChevronRight } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -74,29 +74,33 @@ interface PlatformNotif {
 }
 
 const NOTIF_TYPE_ICON: Record<string, typeof Info> = {
-  order_placed:    ShoppingCart,
-  order_filled:    CheckCheck,
-  order_cancelled: AlertTriangle,
-  trade:           Zap,
-  bridge:          Link2,
-  price_alert:     Activity,
-  info:            Info,
-  warning:         AlertTriangle,
-  success:         CheckCheck,
-  error:           AlertTriangle,
+  order_placed:       ShoppingCart,
+  order_filled:       CheckCheck,
+  order_cancelled:    AlertTriangle,
+  trade:              Zap,
+  bridge:             Link2,
+  price_alert:        Activity,
+  wallet_connected:   LogIn,
+  wallet_disconnected: LogOut,
+  info:               Info,
+  warning:            AlertTriangle,
+  success:            CheckCheck,
+  error:              AlertTriangle,
 };
 
 const NOTIF_TYPE_COLOR: Record<string, string> = {
-  order_placed:    "text-blue-400",
-  order_filled:    "text-green-400",
-  order_cancelled: "text-amber-400",
-  trade:           "text-violet-400",
-  bridge:          "text-cyan-400",
-  price_alert:     "text-orange-400",
-  info:            "text-blue-400",
-  warning:         "text-amber-400",
-  success:         "text-green-400",
-  error:           "text-red-400",
+  order_placed:       "text-blue-400",
+  order_filled:       "text-green-400",
+  order_cancelled:    "text-amber-400",
+  trade:              "text-violet-400",
+  bridge:             "text-cyan-400",
+  price_alert:        "text-orange-400",
+  wallet_connected:   "text-green-400",
+  wallet_disconnected: "text-amber-400",
+  info:               "text-blue-400",
+  warning:            "text-amber-400",
+  success:            "text-green-400",
+  error:              "text-red-400",
 };
 
 function usePlatformAnnouncements() {
@@ -115,15 +119,18 @@ function usePlatformAnnouncements() {
   return notifs;
 }
 
-function getNotifPath(n: { type: string; pair?: string; txid?: string }): string | null {
+function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
+  if (n.href) return n.href;
   const { type, pair } = n;
   if (pair) {
-    const isFutures = pair.endsWith("-PERP");
-    if (type === "order_placed" || type === "order_filled" || type === "order_cancelled" || type === "trade" || type === "price_alert") {
-      return isFutures ? `/futures/${pair}` : `/trade/${pair}`;
+    const urlPair = pair.replace("/", "-"); // "BSV/USDT" → "BSV-USDT"
+    const isFutures = urlPair.includes("PERP");
+    if (["order_placed", "order_filled", "order_cancelled", "trade", "price_alert"].includes(type)) {
+      return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
   if (type === "bridge") return "/bridge";
+  if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
   return null;
 }
 
@@ -142,7 +149,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const bsvOnline = bsvChain?.online ?? false;
   const bsvBlock  = bsvChain?.blockHeight ?? 0;
   const announcements = usePlatformAnnouncements();
-  const { notifications, addNotification, markAllRead, clearAll, unreadCount } = useNotificationStore();
+  const { notifications, addNotification, markRead, markAllRead, clearAll, unreadCount } = useNotificationStore();
   const unread = unreadCount() + announcements.length;
   const lastPollRef = useRef<number>(0);
 
@@ -214,9 +221,17 @@ export function Layout({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
+      const providerLabel = provider ?? networkLabel;
       toast({
-        title: "Wallet Connected",
-        description: `${provider ?? networkLabel} · ${shortAddr}`,
+        title: isDemo ? "Demo Mode Active" : "Wallet Connected",
+        description: isDemo ? "$80,000 virtual balance · Start paper trading" : `${providerLabel} · ${shortAddr}`,
+      });
+      addNotification({
+        type: "wallet_connected",
+        title: isDemo ? "Demo Mode Active" : "Wallet Connected",
+        body: isDemo
+          ? "$80,000 virtual balance · trades settle via OrahDEX engine"
+          : `${providerLabel} · ${shortAddr} · ready to trade`,
       });
       /* Register wallet in the DB so it shows in the admin user list */
       const { chainId: cid } = useWalletStore.getState();
@@ -231,7 +246,12 @@ export function Layout({ children }: { children: ReactNode }) {
         }),
       }).catch(() => {});
     } else if (prev && !address) {
-      toast({ title: "Wallet Disconnected", description: "You have been disconnected from your wallet." });
+      toast({ title: "Wallet Disconnected", description: "Your wallet session has ended." });
+      addNotification({
+        type: "wallet_disconnected",
+        title: "Wallet Disconnected",
+        body: `${prev.slice(0, 6)}…${prev.slice(-4)} · session ended`,
+      });
     }
     prevAddressRef.current = address;
   }, [address]);
@@ -401,11 +421,22 @@ export function Layout({ children }: { children: ReactNode }) {
                 {/* Unified notification feed */}
                 <div className="overflow-y-auto flex-1">
                   {notifications.length === 0 && announcements.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
-                      <Bell className="w-6 h-6 opacity-30" />
-                      <p className="text-xs">No notifications yet</p>
-                      {!address && (
-                        <p className="text-[10px] text-center px-4">Connect your wallet to receive order and trade updates</p>
+                    <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-3 px-4">
+                      <Bell className="w-7 h-7 opacity-20" />
+                      <p className="text-xs font-medium">No notifications yet</p>
+                      {!address ? (
+                        <>
+                          <p className="text-[10px] text-center text-muted-foreground/70">Connect your wallet to receive order fills, trade confirmations, and price alerts.</p>
+                          <button
+                            onClick={() => { setNotifOpen(false); openWalletModal(); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold transition-colors"
+                          >
+                            <Wallet className="w-3.5 h-3.5" />
+                            Connect Wallet
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-[10px] text-center text-muted-foreground/70">Place an order or make a trade to see activity here.</p>
                       )}
                     </div>
                   ) : (
@@ -415,32 +446,60 @@ export function Layout({ children }: { children: ReactNode }) {
                         const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
                         const dest = getNotifPath(n);
+                        const isExternal = dest?.startsWith("http");
+                        const relTime = (() => {
+                          const diff = Date.now() - n.timestamp;
+                          if (diff < 60_000) return "just now";
+                          if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+                          if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+                          return new Date(n.timestamp).toLocaleDateString();
+                        })();
                         return (
                           <div
                             key={n.id}
                             role={dest ? "button" : undefined}
                             tabIndex={dest ? 0 : undefined}
                             onClick={() => {
-                              if (dest) {
-                                setNotifOpen(false);
+                              markRead(n.id);
+                              if (!dest) return;
+                              setNotifOpen(false);
+                              if (isExternal) {
+                                window.open(dest, "_blank", "noopener,noreferrer");
+                              } else {
                                 navigate(dest);
                               }
                             }}
-                            onKeyDown={e => { if (dest && (e.key === "Enter" || e.key === " ")) { setNotifOpen(false); navigate(dest); } }}
+                            onKeyDown={e => {
+                              if (dest && (e.key === "Enter" || e.key === " ")) {
+                                markRead(n.id);
+                                setNotifOpen(false);
+                                isExternal ? window.open(dest, "_blank", "noopener,noreferrer") : navigate(dest);
+                              }
+                            }}
                             className={cn(
-                              "px-4 py-3 border-b border-border/40 transition-colors last:border-0",
+                              "px-4 py-3 border-b border-border/40 transition-colors last:border-0 group",
                               !n.read && "bg-primary/5",
-                              dest ? "cursor-pointer hover:bg-white/5 active:bg-white/8" : "hover:bg-white/3",
+                              dest ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : "cursor-default",
                             )}
                           >
                             <div className="flex items-start gap-2.5">
-                              <Icon className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
+                              <div className={cn(
+                                "w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5",
+                                n.type === "wallet_connected" ? "bg-green-500/10" :
+                                n.type === "wallet_disconnected" ? "bg-amber-500/10" :
+                                n.type === "order_filled" || n.type === "success" ? "bg-green-500/10" :
+                                n.type === "order_cancelled" || n.type === "error" ? "bg-red-500/10" :
+                                n.type === "warning" ? "bg-amber-500/10" :
+                                "bg-primary/10",
+                              )}>
+                                <Icon className={cn("w-3.5 h-3.5", color)} />
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-1">
                                   <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                                    {dest && <ExternalLink className="w-3 h-3 text-muted-foreground/40" />}
+                                    {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />}
+                                    {dest && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors" />}
                                   </div>
                                 </div>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
@@ -449,15 +508,13 @@ export function Layout({ children }: { children: ReactNode }) {
                                     href={`https://whatsonchain.com/tx/${n.txid}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-[10px] text-primary hover:underline font-mono"
+                                    className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline font-mono mt-0.5"
                                     onClick={e => e.stopPropagation()}
                                   >
-                                    {n.txid.slice(0, 12)}… ↗
+                                    {n.txid.slice(0, 12)}… <ExternalLink className="w-2.5 h-2.5" />
                                   </a>
                                 )}
-                                <p className="text-[10px] text-muted-foreground/50 mt-0.5">
-                                  {new Date(n.timestamp).toLocaleTimeString()}
-                                </p>
+                                <p className="text-[10px] text-muted-foreground/40 mt-0.5">{relTime}</p>
                               </div>
                             </div>
                           </div>
@@ -466,19 +523,20 @@ export function Layout({ children }: { children: ReactNode }) {
 
                       {/* Platform announcements (from admin panel) */}
                       {announcements.map(n => {
-                        const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
                         return (
-                          <div key={n.id} className="px-4 py-3 border-b border-border/40 hover:bg-white/3 transition-colors last:border-0 bg-secondary/10">
+                          <div key={n.id} className="px-4 py-3 border-b border-border/40 transition-colors last:border-0 bg-secondary/10">
                             <div className="flex items-start gap-2.5">
-                              <Megaphone className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", color)} />
+                              <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 bg-primary/10">
+                                <Megaphone className={cn("w-3.5 h-3.5", color)} />
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   <span className="text-[9px] font-bold text-primary uppercase tracking-widest">Platform</span>
                                 </div>
                                 <p className="text-xs font-semibold text-foreground leading-snug">{n.title}</p>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
-                                <p className="text-[10px] text-muted-foreground/50 mt-1">
+                                <p className="text-[10px] text-muted-foreground/40 mt-1">
                                   {new Date(n.createdAt).toLocaleDateString()}
                                 </p>
                               </div>
