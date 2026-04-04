@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -117,7 +117,7 @@ function usePlatformAnnouncements() {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { address, network, provider, chainId } = useWalletStore();
+  const { address, network, provider, chainId, isDemo } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -271,8 +271,16 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
+      {/* ── Demo mode ribbon ── */}
+      {isDemo && (
+        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500/20 border-b border-yellow-500/40 text-yellow-400 text-xs font-bold z-50">
+          <FlaskConical className="w-3.5 h-3.5 shrink-0" />
+          <span>DEMO MODE — You are trading with <strong>$80,000 virtual paper money</strong>. No real funds are at risk.</span>
+        </div>
+      )}
+
       {/* ── Maintenance / testing ribbon ── */}
-      {!bannerDismissed && (
+      {!isDemo && !bannerDismissed && (
         <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-xs font-medium z-50">
           <span className="text-amber-400">⚠</span>
           <span>OrahDEX is currently <strong>under active testing</strong> — some features may be incomplete or change without notice.</span>

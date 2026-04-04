@@ -32,9 +32,11 @@ interface WalletState {
   chainId: number | null;
   balance: string | null;
   isConnecting: boolean;
+  isDemo: boolean;
   pendingTxs: PendingTx[];
 
   connect: (wallet: ConnectedWallet) => void;
+  connectDemo: (address: string) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBalance: (balance: string | null) => void;
@@ -75,6 +77,7 @@ export const useWalletStore = create<WalletState>()(
       chainId: null,
       balance: null,
       isConnecting: false,
+      isDemo: false,
       pendingTxs: [],
 
       connect: (wallet) =>
@@ -85,6 +88,18 @@ export const useWalletStore = create<WalletState>()(
           chainId: wallet.chainId ?? null,
           balance: wallet.balance ?? null,
           isConnecting: false,
+          isDemo: false,
+        }),
+
+      connectDemo: (address) =>
+        set({
+          address,
+          provider: "demo",
+          network: "evm",
+          chainId: null,
+          balance: null,
+          isConnecting: false,
+          isDemo: true,
         }),
 
       disconnect: () =>
@@ -95,6 +110,7 @@ export const useWalletStore = create<WalletState>()(
           chainId: null,
           balance: null,
           isConnecting: false,
+          isDemo: false,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
