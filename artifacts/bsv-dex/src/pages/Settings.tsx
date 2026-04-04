@@ -1,0 +1,453 @@
+import { useState } from "react";
+import {
+  Link2, Shield, Percent, Zap, DollarSign, Bell,
+  Activity, LogOut, Info, FileText, ChevronRight,
+  Fingerprint, AlertCircle, CheckCircle2,
+  Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
+  Headphones, MessageCircle, HelpCircle, Mail, Search, X,
+  Settings as SettingsIcon,
+} from "lucide-react";
+import { useLocation } from "wouter";
+import { useWalletStore } from "@/store/useWalletStore";
+import { disconnectReown } from "@/lib/reown";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useBiometricStore } from "@/store/useBiometricStore";
+import { useThemeStore, type Theme } from "@/store/useThemeStore";
+import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
+import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
+import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/BrandLogo";
+
+const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
+  { id: "dark",   label: "Dark",   Icon: Moon,       color: "#6366f1" },
+  { id: "light",  label: "Light",  Icon: Sun,        color: "#f59e0b" },
+  { id: "amoled", label: "Amoled", Icon: Smartphone, color: "#22c55e" },
+  { id: "system", label: "System", Icon: Monitor,    color: "#64748b" },
+];
+
+function Toggle({ value, onChange, loading = false }: { value: boolean; onChange: (v: boolean) => void; loading?: boolean }) {
+  return (
+    <button
+      onClick={() => !loading && onChange(!value)}
+      disabled={loading}
+      className={cn(
+        "w-11 h-6 rounded-full transition-colors relative shrink-0",
+        value ? "bg-primary/60" : "bg-muted",
+        loading ? "opacity-60 cursor-wait" : ""
+      )}
+    >
+      <div
+        className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
+          value ? "translate-x-5" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+function Row({
+  icon: Icon, iconColor = "#EAB308", label, value, onClick, rightEl, danger = false,
+}: {
+  icon: any; iconColor?: string; label: string; value?: string;
+  onClick?: () => void; rightEl?: React.ReactNode; danger?: boolean;
+}) {
+  const inner = (
+    <>
+      <div
+        className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+        style={{ backgroundColor: iconColor + "20" }}
+      >
+        <Icon size={15} style={{ color: iconColor }} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${danger ? "text-red-500" : "text-foreground"}`}>{label}</p>
+        {value && <p className="text-xs text-muted-foreground mt-0.5 truncate">{value}</p>}
+      </div>
+      {rightEl ?? (onClick ? <ChevronRight size={14} className="text-muted-foreground shrink-0" /> : null)}
+    </>
+  );
+
+  if (rightEl) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3.5 w-full" onClick={onClick}>
+        {inner}
+      </div>
+    );
+  }
+  return (
+    <button className="flex items-center gap-3 px-4 py-3.5 w-full text-left hover:bg-secondary/30 transition-colors" onClick={onClick}>
+      {inner}
+    </button>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1 mb-2 mt-6">{title}</p>
+      <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+type BiometricToastState = { show: false } | { show: true; success: boolean; message: string };
+
+export function WebSettings() {
+  const { address, provider, network, disconnect } = useWalletStore();
+  const { open: openWallet } = useWalletModalStore();
+  const { isEnabled, setEnabled } = useBiometricStore();
+  const { theme, setTheme } = useThemeStore();
+  const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
+  const [, navigate] = useLocation();
+  const [notifications, setNotifications] = useState(true);
+  const [haptics, setHaptics] = useState(true);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioToast, setBioToast] = useState<BiometricToastState>({ show: false });
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+  const [currencySearch, setCurrencySearch] = useState("");
+
+  const supported = isBiometricSupported();
+
+  const showToast = (success: boolean, message: string) => {
+    setBioToast({ show: true, success, message });
+    setTimeout(() => setBioToast({ show: false }), 3500);
+  };
+
+  const handleBiometricToggle = async (newValue: boolean) => {
+    if (newValue) {
+      if (!supported) {
+        showToast(false, "Biometrics not supported in this browser. Try Chrome/Safari on a device with a sensor.");
+        return;
+      }
+      setBioLoading(true);
+      const result = await registerBiometric();
+      setBioLoading(false);
+      if (result.success) {
+        setEnabled(true, result.credentialId);
+        showToast(true, "Biometric lock enabled! The app will lock when you leave.");
+      } else {
+        showToast(false, result.error);
+      }
+    } else {
+      setEnabled(false, null);
+      showToast(true, "Biometric lock disabled.");
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (window.confirm("Disconnect your wallet?")) {
+      if (provider === "reown") await disconnectReown();
+      disconnect();
+    }
+  };
+
+  return (
+    <div className="min-h-full bg-background">
+      <div className="max-w-2xl mx-auto px-4 py-8 pb-16">
+        {/* Page header */}
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-9 h-9 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <SettingsIcon size={18} className="text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Settings</h1>
+            <p className="text-xs text-muted-foreground">Manage your account, trading preferences & appearance</p>
+          </div>
+        </div>
+
+        {/* ── Wallet ── */}
+        <Section title="Wallet">
+          {address ? (
+            <>
+              <Row
+                icon={Link2}
+                label="Connected Wallet"
+                value={`${provider} · ${address.slice(0, 14)}...${address.slice(-6)}`}
+              />
+              <Row
+                icon={Shield}
+                label="Network"
+                value={network === "evm" ? "EVM (Ethereum Compatible)" : network === "bsv" ? "Bitcoin SV" : network === "tron" ? "TRON" : network === "sol" ? "Solana" : String(network)}
+              />
+              <Row
+                icon={LogOut}
+                iconColor="#ef4444"
+                label="Disconnect Wallet"
+                onClick={handleDisconnect}
+                danger
+              />
+            </>
+          ) : (
+            <Row icon={Link2} label="Connect Wallet" value="Click to connect your wallet" onClick={openWallet} />
+          )}
+        </Section>
+
+        {/* ── Trading ── */}
+        <Section title="Trading">
+          <Row icon={Percent} label="Default Slippage" value="0.5%" />
+          <Row icon={Zap} label="Default Leverage" value="10x" />
+          <Row
+            icon={DollarSign}
+            label="Quote Currency"
+            value={quoteCurrency}
+            onClick={() => { setShowCurrencyPicker(true); setCurrencySearch(""); }}
+          />
+        </Section>
+
+        {/* ── Preferences ── */}
+        <Section title="Preferences">
+          {/* Theme picker */}
+          <div className="px-4 py-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "#6366f120" }}>
+                <Palette size={15} style={{ color: "#6366f1" }} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Appearance</p>
+                <p className="text-xs text-muted-foreground">Choose your display theme</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {THEMES.map(({ id, label, Icon, color }) => {
+                const active = theme === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setTheme(id)}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 py-4 rounded-xl border transition-all",
+                      active
+                        ? "border-primary/60 bg-primary/10"
+                        : "border-border bg-secondary/30 hover:bg-secondary/60"
+                    )}
+                  >
+                    <Icon size={20} style={{ color: active ? color : undefined }} className={active ? "" : "text-muted-foreground"} />
+                    <span className={cn("text-xs font-semibold", active ? "text-foreground" : "text-muted-foreground")}>
+                      {label}
+                    </span>
+                    {active && <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <Row
+            icon={Bell}
+            label="Price Alerts"
+            value="Get notified on significant price moves"
+            rightEl={<Toggle value={notifications} onChange={setNotifications} />}
+          />
+          <Row
+            icon={Activity}
+            label="Haptic Feedback"
+            value="Vibration on interactions (mobile)"
+            rightEl={<Toggle value={haptics} onChange={setHaptics} />}
+          />
+          <Row
+            icon={Fingerprint}
+            iconColor={isEnabled ? "#7c3aed" : "#EAB308"}
+            label="Biometric Lock"
+            value={
+              !supported ? "Not supported on this device/browser" :
+              isEnabled ? "Enabled — app locks when you leave" :
+              "Protect app with fingerprint / face ID"
+            }
+            rightEl={
+              <Toggle
+                value={isEnabled}
+                onChange={handleBiometricToggle}
+                loading={bioLoading}
+              />
+            }
+          />
+        </Section>
+
+        {/* ── Support ── */}
+        <Section title="Support">
+          <Row
+            icon={Headphones}
+            iconColor="#22c55e"
+            label="Help Centre"
+            value="FAQs, guides & contact form"
+            onClick={() => navigate("/support")}
+          />
+          <Row
+            icon={MessageCircle}
+            iconColor="#6366f1"
+            label="Live Chat"
+            value="Chat with Ora AI support"
+            onClick={() => window.dispatchEvent(new CustomEvent("open:ai-assistant"))}
+          />
+          <Row
+            icon={Mail}
+            iconColor="#3b82f6"
+            label="Email Support"
+            value="support@orahdex.com"
+            onClick={() => window.open("mailto:support@orahdex.com")}
+          />
+          <Row
+            icon={HelpCircle}
+            iconColor="#a855f7"
+            label="FAQ"
+            value="Browse common questions"
+            onClick={() => navigate("/support#faq")}
+          />
+        </Section>
+
+        {/* ── About ── */}
+        <Section title="About">
+          <Row icon={Info} label="Version" value="1.0.0" />
+          <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
+          <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
+          <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
+        </Section>
+
+        {/* Branding footer */}
+        <div className="flex flex-col items-center py-10 gap-1.5">
+          <BrandLogo textSize="text-2xl" tooltip={false} />
+          <p className="text-xs font-semibold text-green-400 tracking-widest uppercase mt-0.5">
+            Trade means DEX
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1 tracking-wide">
+            Non-custodial · On-chain settlement · BSV
+          </p>
+          <div className="flex items-center gap-1 mt-2">
+            <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse" />
+            <span className="text-[10px] text-green-400/60 font-medium">Live</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toast notification */}
+      {bioToast.show && (
+        <div className={cn(
+          "fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-start gap-3 p-4 rounded-2xl border shadow-xl transition-all max-w-sm w-full mx-4",
+          bioToast.success
+            ? "bg-green-950/90 border-green-500/30 text-green-300"
+            : "bg-red-950/90 border-red-500/30 text-red-300"
+        )}>
+          {bioToast.success
+            ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
+            : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          }
+          <p className="text-sm leading-snug">{bioToast.message}</p>
+        </div>
+      )}
+
+      {/* Quote Currency Picker Modal */}
+      {showCurrencyPicker && (() => {
+        const q = currencySearch.toLowerCase();
+        const filteredCrypto = CRYPTO_QUOTE_CURRENCIES.filter(c =>
+          c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+        );
+        const filteredFiat = FIAT_CURRENCIES.filter(c =>
+          c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <div className="w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ maxHeight: "80vh" }}>
+              {/* Header */}
+              <div className="flex items-center gap-3 px-4 py-4 border-b border-border shrink-0">
+                <button
+                  onClick={() => setShowCurrencyPicker(false)}
+                  className="w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center shrink-0"
+                >
+                  <X size={16} className="text-foreground" />
+                </button>
+                <div className="flex-1">
+                  <h2 className="text-base font-bold text-foreground">Quote Currency</h2>
+                  <p className="text-[11px] text-muted-foreground">Prices displayed in selected currency</p>
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="px-4 py-3 shrink-0">
+                <div className="flex items-center gap-2 bg-secondary/40 border border-border rounded-xl px-3 py-2.5">
+                  <Search size={14} className="text-muted-foreground shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Search currency..."
+                    value={currencySearch}
+                    onChange={e => setCurrencySearch(e.target.value)}
+                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                    autoFocus
+                  />
+                  {currencySearch && (
+                    <button onClick={() => setCurrencySearch("")}>
+                      <X size={13} className="text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Scrollable list */}
+              <div className="flex-1 overflow-y-auto px-4 pb-6">
+                {filteredCrypto.length > 0 && (
+                  <>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2 mt-1">Crypto</p>
+                    <div className="bg-background border border-border rounded-2xl overflow-hidden divide-y divide-border mb-4">
+                      {filteredCrypto.map(c => (
+                        <button
+                          key={c.code}
+                          onClick={() => { setQuoteCurrency(c.code); setShowCurrencyPicker(false); }}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/40",
+                            quoteCurrency === c.code ? "bg-primary/10" : ""
+                          )}
+                        >
+                          <span className="text-lg w-7 text-center">{c.flag}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground">{c.code}</p>
+                            <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                          </div>
+                          <span className="text-sm font-mono text-muted-foreground shrink-0">{c.symbol}</span>
+                          {quoteCurrency === c.code && (
+                            <CheckCircle2 size={15} className="text-primary shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {filteredFiat.length > 0 && (
+                  <>
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">World Currencies</p>
+                    <div className="bg-background border border-border rounded-2xl overflow-hidden divide-y divide-border">
+                      {filteredFiat.map(c => (
+                        <button
+                          key={c.code}
+                          onClick={() => { setQuoteCurrency(c.code); setShowCurrencyPicker(false); }}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/40",
+                            quoteCurrency === c.code ? "bg-primary/10" : ""
+                          )}
+                        >
+                          <span className="text-lg w-7 text-center">{c.flag}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-foreground">{c.code}</p>
+                            <p className="text-xs text-muted-foreground truncate">{c.name}</p>
+                          </div>
+                          <span className="text-sm font-mono text-muted-foreground shrink-0">{c.symbol}</span>
+                          {quoteCurrency === c.code && (
+                            <CheckCircle2 size={15} className="text-primary shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {filteredCrypto.length === 0 && filteredFiat.length === 0 && (
+                  <div className="text-center py-10 text-muted-foreground text-sm">No currencies found</div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}

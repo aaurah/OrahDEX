@@ -34,6 +34,7 @@ const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({
 const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
 const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
+const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
@@ -389,6 +390,7 @@ function Router() {
                 <Route path="/copy"           component={CopyTrading} />
                 <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
+                <Route path="/settings"       component={WebSettings} />
                 <Route component={NotFound} />
               </Switch>
             </Suspense>
