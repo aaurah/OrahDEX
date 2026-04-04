@@ -20,7 +20,7 @@ import {
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
   XCircle, Info, Route, Timer, FlaskConical, Smartphone, QrCode,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
@@ -160,8 +160,8 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
         </span>
       </div>
       <div className="flex justify-center">
-        <div className="p-3 rounded-2xl bg-white shadow-lg shadow-black/30">
-          <QRCodeSVG
+        <div className="p-3 rounded-2xl bg-white shadow-lg shadow-black/30" style={{ colorScheme: "light" }}>
+          <QRCodeCanvas
             value={qrUri}
             size={148}
             level="M"
