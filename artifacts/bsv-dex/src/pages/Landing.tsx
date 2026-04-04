@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity } from "lucide-react";
+import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { useThemeStore } from "@/store/useThemeStore";
+
+/* ── Theme cycle helpers ─────────────────────────────────────────────────── */
+const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
+type LandTheme = typeof LAND_THEME_CYCLE[number];
+const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
+const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -85,11 +92,11 @@ function KeeperCard({ tier, icon, desc, fee, color }: {
       <div className="text-3xl">{icon}</div>
       <div>
         <p className="font-black text-lg tracking-wide" style={{ color }}>{tier}</p>
-        <p className="text-xs text-gray-400 mt-1 leading-relaxed">{desc}</p>
+        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{desc}</p>
       </div>
-      <div className="mt-auto pt-3 border-t border-white/5">
-        <p className="text-xs text-gray-500">Maker fee</p>
-        <p className="font-bold text-white">{fee}</p>
+      <div className="mt-auto pt-3 border-t border-border/50">
+        <p className="text-xs text-muted-foreground/60">Maker fee</p>
+        <p className="font-bold text-foreground">{fee}</p>
       </div>
     </div>
   );
@@ -104,7 +111,7 @@ function PhaseCard({ phase, title, desc, icon: Icon, active }: {
     <div className={`relative flex flex-col gap-4 rounded-2xl border p-6 transition-all ${
       active
         ? "border-green-500/40 bg-green-500/5"
-        : "border-white/8 bg-white/3 opacity-70"
+        : "border-border bg-card/40 opacity-70"
     }`}>
       {active && (
         <span className="absolute top-4 right-4 text-[9px] font-black px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 uppercase tracking-widest">
@@ -112,16 +119,16 @@ function PhaseCard({ phase, title, desc, icon: Icon, active }: {
         </span>
       )}
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-        active ? "bg-green-500/15" : "bg-white/5"
+        active ? "bg-green-500/15" : "bg-foreground/5"
       }`}>
-        <Icon className={`w-5 h-5 ${active ? "text-green-400" : "text-gray-500"}`} />
+        <Icon className={`w-5 h-5 ${active ? "text-green-400" : "text-muted-foreground/50"}`} />
       </div>
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs font-black text-gray-500 uppercase tracking-widest">Phase {phase}</span>
+          <span className="text-xs font-black text-muted-foreground/60 uppercase tracking-widest">Phase {phase}</span>
         </div>
-        <p className={`font-black text-base ${active ? "text-white" : "text-gray-400"}`}>{title}</p>
-        <p className="text-sm text-gray-500 mt-1 leading-relaxed">{desc}</p>
+        <p className={`font-black text-base ${active ? "text-foreground" : "text-muted-foreground"}`}>{title}</p>
+        <p className="text-sm text-muted-foreground/70 mt-1 leading-relaxed">{desc}</p>
       </div>
     </div>
   );
@@ -132,9 +139,9 @@ function StatPill({ label, value, color = "text-green-400" }: {
   label: string; value: string | number; color?: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 px-6 py-4 rounded-2xl border border-white/8 bg-white/3 min-w-[120px]">
+    <div className="flex flex-col items-center gap-1 px-6 py-4 rounded-2xl border border-border bg-card/60 min-w-[120px]">
       <span className={`text-2xl font-black ${color}`}>{value}</span>
-      <span className="text-xs text-gray-500 uppercase tracking-widest font-semibold">{label}</span>
+      <span className="text-xs text-muted-foreground/60 uppercase tracking-widest font-semibold">{label}</span>
     </div>
   );
 }
@@ -202,10 +209,10 @@ function OraAiSection() {
           <span className="inline-flex items-center gap-2 text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-4">
             <Sparkles className="w-3.5 h-3.5" /> AI Intelligence
           </span>
-          <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+          <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
             Meet <span className="text-green-400">Ora</span>
           </h2>
-          <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+          <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
             Your AI co-pilot for every trade. Ora monitors 900+ markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
@@ -219,13 +226,13 @@ function OraAiSection() {
             { icon: TrendingUp, label: "Trade Signals", desc: "Buy, sell, or hold signals for every major pair — with confidence scores and Ora's reasoning behind each call.", color: "#F5A623" },
             { icon: MessageSquare, label: "Always Available", desc: "Ask Ora anything: price targets, portfolio breakdowns, chart explanations, or what a BSV settlement actually means.", color: "#60a5fa" },
           ].map(({ icon: Icon, label, desc, color }) => (
-            <div key={label} className="flex flex-col gap-3 p-5 rounded-2xl border border-white/8 bg-white/3 hover:bg-white/5 transition-colors">
+            <div key={label} className="flex flex-col gap-3 p-5 rounded-2xl border border-border bg-card/60 hover:bg-card transition-colors">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
                 <Icon className="w-4.5 h-4.5" style={{ color }} />
               </div>
               <div>
-                <p className="font-bold text-white text-sm mb-1">{label}</p>
-                <p className="text-xs text-gray-400 leading-relaxed">{desc}</p>
+                <p className="font-bold text-foreground text-sm mb-1">{label}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
               </div>
             </div>
           ))}
@@ -235,14 +242,14 @@ function OraAiSection() {
         <div className="rounded-2xl border border-green-500/15 bg-green-500/4 p-6 mb-8">
           <div className="flex items-center gap-2 mb-5">
             <Sparkles className="w-4 h-4 text-green-400" />
-            <span className="text-sm font-black text-white">Live Market Insights</span>
+            <span className="text-sm font-black text-foreground">Live Market Insights</span>
             <span className="ml-auto text-[10px] text-green-500/60 font-bold uppercase tracking-wider">Powered by Ora</span>
           </div>
 
           {loading ? (
             <div className="flex flex-col gap-3">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-12 rounded-xl bg-white/4 animate-pulse" />
+                <div key={i} className="h-12 rounded-xl bg-foreground/4 animate-pulse" />
               ))}
             </div>
           ) : insights.length > 0 ? (
@@ -250,14 +257,14 @@ function OraAiSection() {
               {insights.map(ins => (
                 <div key={ins.id} className={`flex items-start gap-3 p-4 rounded-xl border ${sentimentColor(ins.sentiment)}`}>
                   {sentimentIcon(ins.sentiment)}
-                  <p className="text-sm text-gray-300 leading-relaxed">{ins.content}</p>
+                  <p className="text-sm text-foreground/80 leading-relaxed">{ins.content}</p>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex items-center gap-3 p-4 rounded-xl border border-white/8 bg-white/3">
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-border bg-card/50">
               <Sparkles className="w-4 h-4 text-green-400 shrink-0" />
-              <p className="text-sm text-gray-400">Ora is analysing the markets. Insights will appear shortly.</p>
+              <p className="text-sm text-muted-foreground">Ora is analysing the markets. Insights will appear shortly.</p>
             </div>
           )}
         </div>
@@ -275,7 +282,7 @@ function OraAiSection() {
           </button>
           <Link
             href="/trade/BSV-USDT"
-            className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-white border border-white/12 hover:bg-white/6 transition-all text-sm"
+            className="flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-foreground border border-border hover:bg-card transition-all text-sm"
           >
             View Trade Signals <ArrowRight className="w-4 h-4" />
           </Link>
@@ -290,6 +297,18 @@ export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [buyOpen, setBuyOpen] = useState(false);
   const [entered, setEntered] = useState(false);
+  const { theme, setTheme } = useThemeStore();
+
+  const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
+    ? (theme as LandTheme)
+    : "amoled";
+
+  const cycleTheme = () => {
+    const idx = LAND_THEME_CYCLE.indexOf(safeTheme);
+    setTheme(LAND_THEME_CYCLE[(idx + 1) % LAND_THEME_CYCLE.length]);
+  };
+
+  const ThemeIcon = LAND_THEME_ICONS[safeTheme];
 
   useEffect(() => {
     const t = setTimeout(() => setEntered(true), 80);
@@ -324,10 +343,7 @@ export function LandingPage() {
   };
 
   return (
-    <div
-      className="min-h-screen text-white overflow-x-hidden"
-      style={{ background: "#000000" }}
-    >
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 py-20">
         <GridBackground />
@@ -348,16 +364,25 @@ export function LandingPage() {
               <circle cx="50" cy="50" r="13" fill="#4ade80"
                 style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
             </svg>
-            <span><span className="text-white">Orah</span><span className="text-green-400">DEX</span></span>
+            <span><span className="text-foreground">Orah</span><span className="text-green-400">DEX</span></span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {bsvBlock > 0 && (
               <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-green-400 border border-green-500/30 px-2.5 py-1 rounded-full bg-green-500/8 uppercase tracking-widest">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
                 BSV #{bsvBlock.toLocaleString()}
               </span>
             )}
-            <Link href="/markets" className="text-sm font-semibold text-gray-400 hover:text-white transition-colors px-4 py-2 rounded-xl border border-white/10 hover:border-white/20 bg-white/5">
+            {/* Theme toggle */}
+            <button
+              onClick={cycleTheme}
+              title={`Switch theme — current: ${LAND_THEME_LABELS[safeTheme]}`}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-card/60 hover:bg-card text-muted-foreground hover:text-foreground text-xs font-bold transition-all"
+            >
+              <ThemeIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:block">{LAND_THEME_LABELS[safeTheme]}</span>
+            </button>
+            <Link href="/markets" className="text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors px-4 py-2 rounded-xl border border-border hover:border-border/80 bg-card/60">
               Markets
             </Link>
             <Link href="/trade/BSV-USDT" className="text-sm font-bold text-black px-4 py-2 rounded-xl bg-green-400 hover:bg-green-300 transition-all hover:scale-[1.02] shadow-lg shadow-green-500/20">
@@ -388,7 +413,7 @@ export function LandingPage() {
           <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
             style={{ transitionDelay: "300ms" }}>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight">
-              <span className="text-white">Trade means</span>
+              <span className="text-foreground">Trade means</span>
               <br />
               <span className="text-green-400">DEX.</span>
             </h1>
@@ -399,8 +424,8 @@ export function LandingPage() {
             style={{ transitionDelay: "400ms" }}>
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-0 text-sm font-semibold">
               {["Identity is the engine.", "Execution is a ritual.", "Every trade is a declaration."].map((s, i) => (
-                <span key={i} className="flex items-center text-gray-400">
-                  {i > 0 && <span className="hidden sm:block w-px h-4 bg-white/15 mx-6" />}
+                <span key={i} className="flex items-center text-muted-foreground">
+                  {i > 0 && <span className="hidden sm:block w-px h-4 bg-border mx-6" />}
                   {s}
                 </span>
               ))}
@@ -424,7 +449,7 @@ export function LandingPage() {
             >
               Buy Crypto
             </button>
-            <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-gray-300 border border-white/12 hover:border-white/25 hover:text-white bg-white/5 hover:bg-white/8 transition-all w-full sm:w-auto justify-center">
+            <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-muted-foreground border border-border hover:border-border/70 hover:text-foreground bg-card/60 hover:bg-card transition-all w-full sm:w-auto justify-center">
               View All Markets
               <span className="text-xs font-black text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full border border-green-500/25">
                 {marketCount.toLocaleString()}
@@ -452,10 +477,10 @@ export function LandingPage() {
             <span className="text-xs font-black text-amber-400 uppercase tracking-[0.3em] mb-3 block">
               Identity System
             </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
               The Keeper Protocol
             </h2>
-            <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+            <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
               OrahDEX runs on identity-aware execution. Keepers are sovereign participants
               who gain privileges, reduced fees, and priority routing in exchange for
               staking and contribution. Your identity is your engine.
@@ -495,7 +520,7 @@ export function LandingPage() {
 
           <div className="mt-8 p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 flex items-center gap-4">
             <Shield className="w-5 h-5 text-amber-400 shrink-0" />
-            <p className="text-sm text-gray-400 leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               <span className="text-amber-400 font-bold">Keeper Registry</span> — A permissionless on-chain registry
               tracks all Keeper tiers. Tier upgrades are automatic, based on volume, stake, and time-in-protocol.
               No whitelist. No gatekeepers. Sovereignty earned, not granted.
@@ -511,10 +536,10 @@ export function LandingPage() {
             <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.3em] mb-4" style={{ color: "#F5A623" }}>
               <Zap className="w-3.5 h-3.5" /> Genesis Liquidity Engine
             </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
               Every Coin. Always Tradeable.
             </h2>
-            <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+            <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
               OrahDEX's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
               A linear bonding curve provides instant price discovery and trade execution
               for 56+ major assets — embedded directly in the Market Hub.
@@ -558,8 +583,8 @@ export function LandingPage() {
                   <Icon className="w-5 h-5" style={{ color }} />
                 </div>
                 <div>
-                  <p className="font-black text-white text-sm mb-1">{title}</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">{desc}</p>
+                  <p className="font-black text-foreground text-sm mb-1">{title}</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
                 </div>
               </div>
             ))}
@@ -571,8 +596,8 @@ export function LandingPage() {
               <Zap className="w-6 h-6 text-amber-400" />
             </div>
             <div className="flex-1 text-center sm:text-left">
-              <p className="font-black text-white text-sm mb-1">Linear Bonding Curve — Virtual AMM Mathematics</p>
-              <p className="text-xs text-gray-400 leading-relaxed">
+              <p className="font-black text-foreground text-sm mb-1">Linear Bonding Curve — Virtual AMM Mathematics</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 Price(supply) = spotPrice + slope × supply, where slope = 0.01 × spotPrice² ÷ 8,500.
                 Every $8,500 of simulated buy pressure moves the curve price by ~1%. The virtual treasury
                 is pre-funded at 3× depth so sell orders always find a bid. Buying $100 of BTC at curve price
@@ -599,10 +624,10 @@ export function LandingPage() {
             <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-3 block">
               Hybrid Architecture
             </span>
-            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
+            <h2 className="text-3xl sm:text-4xl font-black text-foreground mb-4">
               Three Phases of Sovereignty
             </h2>
-            <p className="text-gray-400 max-w-xl mx-auto leading-relaxed">
+            <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
               OrahDEX is not a simple DEX. It is a progressive architecture — 
               starting with deep CEX-backed liquidity and Virtual AMM price discovery,
               evolving to full on-chain AMM pools, and culminating in a sovereign BSV↔EVM bridge.
@@ -634,7 +659,7 @@ export function LandingPage() {
           </div>
 
           {/* Architecture flow diagram */}
-          <div className="rounded-2xl border border-white/8 bg-white/3 p-6 overflow-x-auto">
+          <div className="rounded-2xl border border-border bg-card/40 p-6 overflow-x-auto">
             <div className="flex items-center justify-center gap-2 min-w-[480px] text-xs font-bold">
               {[
                 { label: "Your Wallet", sub: "EVM · TRON · BSV", color: "#4ade80" },
@@ -647,14 +672,14 @@ export function LandingPage() {
               ].map((item, i) =>
                 item === null ? (
                   <div key={i} className="flex-1 max-w-[60px] flex items-center">
-                    <div className="w-full h-px bg-white/10" />
-                    <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-4 border-l-white/20" />
+                    <div className="w-full h-px bg-border" />
+                    <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-4 border-l-border" />
                   </div>
                 ) : (
                   <div key={i} className="flex flex-col items-center gap-1 px-4 py-3 rounded-xl border min-w-[110px] text-center"
                     style={{ borderColor: `${item.color}30`, background: `${item.color}08` }}>
                     <span style={{ color: item.color }}>{item.label}</span>
-                    <span className="text-[10px] text-gray-500 font-normal">{item.sub}</span>
+                    <span className="text-[10px] text-muted-foreground/50 font-normal">{item.sub}</span>
                   </div>
                 )
               )}
@@ -673,12 +698,12 @@ export function LandingPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <p className="text-gray-500 text-sm uppercase tracking-[0.3em] font-bold">The Declaration</p>
-            <blockquote className="text-2xl sm:text-3xl font-black leading-snug text-white">
+            <p className="text-muted-foreground/60 text-sm uppercase tracking-[0.3em] font-bold">The Declaration</p>
+            <blockquote className="text-2xl sm:text-3xl font-black leading-snug text-foreground">
               "We do not build exchanges.<br />
               <span className="text-green-400">We build thresholds.</span>"
             </blockquote>
-            <p className="text-gray-400 max-w-lg mx-auto leading-relaxed mt-2">
+            <p className="text-muted-foreground max-w-lg mx-auto leading-relaxed mt-2">
               OrahDEX is a sovereign exchange where every participant is a Keeper,
               every trade is an act of financial sovereignty, and settlement lives
               permanently on Bitcoin SV.
@@ -694,18 +719,18 @@ export function LandingPage() {
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
 
-          <div className="flex items-center gap-6 text-xs text-gray-600 font-semibold">
-            <Link href="/markets" className="hover:text-gray-400 transition-colors">Markets</Link>
+          <div className="flex items-center gap-6 text-xs text-muted-foreground/50 font-semibold">
+            <Link href="/markets" className="hover:text-muted-foreground transition-colors">Markets</Link>
             <span>·</span>
-            <Link href="/whitepaper" className="hover:text-gray-400 transition-colors">Whitepaper</Link>
+            <Link href="/whitepaper" className="hover:text-muted-foreground transition-colors">Whitepaper</Link>
             <span>·</span>
-            <Link href="/p2p" className="hover:text-gray-400 transition-colors">P2P</Link>
+            <Link href="/p2p" className="hover:text-muted-foreground transition-colors">P2P</Link>
             <span>·</span>
-            <Link href="/bridge" className="hover:text-gray-400 transition-colors">Bridge</Link>
+            <Link href="/bridge" className="hover:text-muted-foreground transition-colors">Bridge</Link>
             <span>·</span>
-            <Link href="/terms" className="hover:text-gray-400 transition-colors">Terms</Link>
+            <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           </div>
-          <p className="text-[11px] text-gray-700">
+          <p className="text-[11px] text-muted-foreground/30">
             © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
           </p>
         </div>
