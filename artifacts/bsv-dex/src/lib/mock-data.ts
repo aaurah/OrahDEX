@@ -1142,13 +1142,18 @@ export const MOCK_PORTFOLIO: any = {
 };
 
 export const generateMockCandles = (basePrice: number): Candle[] => {
-  let currentPrice = basePrice;
+  // Use a safe starting price — never below a tiny threshold
+  let currentPrice = Math.max(basePrice, 1e-12);
   const now = Math.floor(Date.now() / 1000);
+  // Realistic ±1.5% random walk per candle, ±0.4% wick — all relative to current price
+  const volatility = 0.015;
+  const wickPct    = 0.004;
   return Array.from({ length: 100 }).map((_, i) => {
-    const open = currentPrice;
-    const close = currentPrice + (Math.random() - 0.5) * 2;
-    const high = Math.max(open, close) + Math.random();
-    const low = Math.min(open, close) - Math.random();
+    const open   = currentPrice;
+    const change = (Math.random() - 0.5) * 2 * volatility;
+    const close  = Math.max(open * (1 + change), open * 0.001);
+    const high   = Math.max(open, close) * (1 + Math.random() * wickPct);
+    const low    = Math.min(open, close) * (1 - Math.random() * wickPct);
     const volume = Math.random() * 1000;
     currentPrice = close;
     return { time: now - (100 - i) * 3600, open, high, low, close, volume };
