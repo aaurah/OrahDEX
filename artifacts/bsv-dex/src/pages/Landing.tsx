@@ -213,7 +213,7 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors 900+ markets in real-time,
+            Your AI co-pilot for every trade. Ora monitors 950+ markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
           </p>
@@ -334,7 +334,7 @@ export function LandingPage() {
     staleTime: 60_000,
   });
 
-  const marketCount = markets?.length ?? 933;
+  const marketCount = markets?.length ?? 950;
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 

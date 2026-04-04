@@ -378,7 +378,7 @@ function AiModelSettings() {
 
 Your personality: Calm, knowledgeable, and direct. You speak like an experienced market analyst.
 
-What you know: BSV settlement, Keeper Protocol tiers, 933+ markets across 20+ chains, Uniswap/PancakeSwap DEX pools, DeFi, Gaming, AI/DePIN, Meme, RWA, BRC-20 and more.`;
+What you know: BSV settlement, Keeper Protocol tiers, 950+ markets across 20+ chains, Uniswap/PancakeSwap DEX pools, DeFi, Gaming, AI/DePIN, Meme, RWA, BRC-20 and more.`;
 
   return (
     <div className="bg-card border border-border rounded-2xl p-5 space-y-4">

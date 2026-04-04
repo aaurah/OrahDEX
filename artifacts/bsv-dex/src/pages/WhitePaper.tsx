@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "3.0.0";
-const PUBLISH_DATE = "2 April 2026";
+const VERSION = "3.1.0";
+const PUBLISH_DATE = "4 April 2026";
 
 const TOC = [
   { id: "abstract",       label: "Abstract" },
@@ -183,7 +183,7 @@ export function WhitePaper() {
                 <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
               </div>
               <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed px-4">
-                A sovereign, multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, Genesis Liquidity Engine (Virtual AMM with bonding curves), perpetual futures, on-chain copy trading (CopyVault), TRON/TRC-20 wallet support, and AI-powered trading intelligence (Ora).
+                A sovereign, multi-chain, non-custodial decentralised exchange with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, Genesis Liquidity Engine (Virtual AMM with bonding curves), perpetual futures, on-chain copy trading (CopyVault), TRON/TRC-20 wallet support, AI-powered trading intelligence (Ora), Demo Account ($80,000 virtual paper trading), pair logos in the trading header, and a full 7-tab mobile experience including a dedicated Bridge tab.
               </p>
               <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
                 <span>Version {VERSION}</span>
@@ -193,10 +193,10 @@ export function WhitePaper() {
                 <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="934+" label="Trading Pairs" sub="Spot + Futures + VAMM" />
+                <Metric value="950+" label="Trading Pairs" sub="Spot + Futures + VAMM" />
                 <Metric value="200+" label="Networks" sub="EVM · TRON · BSV sovereign oracle" />
                 <Metric value="56+" label="VAMM Markets" sub="Genesis Liquidity Engine" />
-                <Metric value="BSV" label="Settlement Layer" sub="OP_RETURN on-chain proof" />
+                <Metric value="$80K" label="Demo Account" sub="Virtual paper trading" />
               </div>
             </div>
 
@@ -216,6 +216,9 @@ export function WhitePaper() {
               </p>
               <p>
                 <span className="text-foreground font-medium">Ora</span> — OrahDEX's integrated AI — provides real-time trading assistance, market analysis, and portfolio coaching powered by large language models, embedded directly in the trading interface.
+              </p>
+              <p>
+                Version {VERSION} introduces several major platform updates: a <span className="text-foreground font-medium">Demo Account</span> ($80,000 in virtual funds for paper trading without a wallet), a dedicated <span className="text-foreground font-medium">Bridge tab</span> in the mobile bottom navigation (completing the 7-tab mobile layout: Markets, Trade, Mkt Hub, P2P, Bridge, Portfolio, Settings), <span className="text-foreground font-medium">pair logos</span> displayed alongside the trading pair name in the spot header for instant visual recognition, and refreshed cross-chain bridge pricing across 30+ destination coins.
               </p>
               <p>
                 This white paper describes the technical architecture, economic model, security design, and strategic roadmap of OrahDEX as of version {VERSION}.
@@ -303,7 +306,7 @@ export function WhitePaper() {
                     layer: "Layer 5 — Interface",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED/System themes. WalletConnect/Reown for EVM (20+ chains). Native TRON wallet support (TronLink, TokenPocket, OKX, Bitget, Trust, imToken). Native BSV wallet integration. OrahChart for cross-pair visualisation.",
+                    desc: "React + Vite progressive web application. Fully responsive (mobile + desktop). Dark/Light/AMOLED/System themes. WalletConnect/Reown for EVM (20+ chains). Native TRON wallet support (TronLink, TokenPocket, OKX, Bitget, Trust, imToken). Native BSV wallet integration. OrahChart for cross-pair visualisation. 7-tab mobile navigation (Markets, Trade, Mkt Hub, P2P, Bridge, Portfolio, Settings). Pair logos in trading header. Demo Account with $80,000 virtual paper trading.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -317,7 +320,8 @@ export function WhitePaper() {
                 <p>Database: PostgreSQL 16 · EVM: Wagmi + Viem + Reown AppKit · AI: OpenAI-compatible LLM</p>
                 <p>BSV: WhatsOnChain API + native UTXO/OP_RETURN construction · Charts: Lightweight-charts v5</p>
                 <p>TRON: TronWeb + TronLink / TokenPocket / OKX / Bitget / Trust / imToken wallet adapters</p>
-                <p>VAMM: Genesis Liquidity Engine (linear bonding curve, 56+ assets, virtual treasury) · Markets: 934+ pairs</p>
+                <p>VAMM: Genesis Liquidity Engine (linear bonding curve, 56+ assets, virtual treasury) · Markets: 950+ pairs</p>
+                <p>Demo Account: $80,000 virtual paper trading · Mobile: 7-tab navigation with Bridge tab · Pair logos in trading header</p>
               </InfoBox>
             </Section>
 
@@ -500,7 +504,7 @@ Both are floored at 0 to prevent negative payouts.`}</Code>
             <Section id="trading" title="7. Trading Engine">
               <Sub title="7.1 Spot Trading">
                 <p>
-                  Spot trading is available for <strong>934+ pairs</strong> across 200+ blockchain networks — all priced by OrahDEX's sovereign oracle. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path.
+                  Spot trading is available for <strong>950+ pairs</strong> across 200+ blockchain networks — all priced by OrahDEX's sovereign oracle. Market orders are routed to the best available source — AMM pool, on-chain order book, or P2P matching — with smart order routing selecting the lowest slippage path.
                 </p>
                 <p>
                   Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until filled. On match, the platform produces a BSV OP_RETURN settlement transaction providing an immutable on-chain audit trail. OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BTC, etc.) with adaptive decimal precision (up to 10 decimal places for micro-priced assets).
@@ -638,7 +642,7 @@ For every mirrored trade:
               <Sub title="9.1 Capabilities">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    { title: "Market Analysis", desc: "Real-time commentary on price action, volume, trend direction, and support/resistance levels for any of 934+ trading pairs." },
+                    { title: "Market Analysis", desc: "Real-time commentary on price action, volume, trend direction, and support/resistance levels for any of 950+ trading pairs." },
                     { title: "Trade Assistance", desc: "Helps traders evaluate order sizing, leverage, stop-loss placement, and risk/reward ratios before entering a position." },
                     { title: "CopyVault Guidance", desc: "Analyses vault leaderboards, compares leader performance metrics, and helps followers select vaults aligned with their risk profile." },
                     { title: "Portfolio Coaching", desc: "Reviews open positions, calculates portfolio Greeks, identifies concentration risk, and suggests rebalancing strategies." },
@@ -742,7 +746,7 @@ For every mirrored trade:
                     date: "Q1–Q2 2026",
                     status: "complete",
                     items: [
-                      "Launch spot trading with 934+ pairs across 200+ networks (sovereign oracle)",
+                      "Launch spot trading with 950+ pairs across 200+ networks (sovereign oracle)",
                       "BSV HTLC settlement integration + OP_RETURN trade proofs",
                       "EVM wallet support via Reown/WalletConnect (20+ networks)",
                       "TRON network support — TRX + TRC-20 USDT (6 TRON wallets: TronLink, TokenPocket, OKX, Bitget, Trust, imToken)",
@@ -762,6 +766,11 @@ For every mirrored trade:
                       "Fiat on-ramp (MoonPay, Transak, Banxa, Simplex, Ramp)",
                       "OrahChart cross-pair chart engine (adaptive decimal precision)",
                       "4 theme modes: Dark, Light, AMOLED, System",
+                      "Demo Account — $80,000 virtual paper trading with no wallet required (Demo wallet via localStorage, full DEX simulation)",
+                      "7-tab mobile bottom navigation: Markets, Trade, Mkt Hub, P2P, Bridge, Portfolio, Settings",
+                      "Dedicated Bridge tab in mobile navigation (Cable icon, parity with desktop)",
+                      "Pair logos in spot trading header — overlapping base/quote coin icons for instant visual recognition",
+                      "Refreshed cross-chain bridge pricing (BSV $15, BTC $83K, ETH $1,800, BNB $580, SOL $130, 30+ coins updated)",
                     ],
                   },
                   {
@@ -853,7 +862,7 @@ For every mirrored trade:
                 The combination of HTLC atomic swaps, the Genesis Liquidity Engine (Virtual AMM with linear bonding curves), concentrated AMM liquidity, perpetual futures, P2P markets, cross-chain bridging, TRON/TRC-20 native support, and the world's first on-chain copy trading system (CopyVault) — all in a single, non-custodial interface guided by Ora AI — positions OrahDEX as the most comprehensive decentralised trading platform available.
               </p>
               <p>
-                With <strong>934+ trading pairs</strong>, <strong>56+ VAMM-guaranteed markets</strong>, access to <strong>200+ blockchain networks</strong> via OrahDEX's own sovereign oracle, five distinct trading instruments, native TRON wallet support, and a self-sovereign identity designed for the next generation of traders — OrahDEX is not a product iteration. It is a paradigm shift.
+                With <strong>950+ trading pairs</strong>, <strong>56+ VAMM-guaranteed markets</strong>, access to <strong>200+ blockchain networks</strong> via OrahDEX's own sovereign oracle, five distinct trading instruments, native TRON wallet support, and a self-sovereign identity designed for the next generation of traders — OrahDEX is not a product iteration. It is a paradigm shift.
               </p>
               <p>
                 We invite traders, liquidity providers, copy trading leaders, developers, and partners to join us in building the future of decentralised finance.
