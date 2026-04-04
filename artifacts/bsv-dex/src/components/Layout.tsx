@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -318,6 +318,20 @@ export function Layout({ children }: { children: ReactNode }) {
             <span className="hidden sm:inline">{THEME_LABELS[safeTheme]}</span>
           </button>
 
+          {/* Settings link */}
+          <Link
+            href="/settings"
+            className={cn(
+              "p-2 rounded-lg transition-colors",
+              location.startsWith("/settings")
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+            )}
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Link>
+
           {/* Notification bell */}
           <div className="relative" ref={notifRef}>
             <button
@@ -580,6 +594,17 @@ export function Layout({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
+            <Link
+              href="/settings"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl font-medium",
+                location.startsWith("/settings") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+              )}
+            >
+              <Settings className="w-5 h-5" />
+              Settings
+            </Link>
           </nav>
           {!address && (
             <div className="px-4 pb-4">
