@@ -231,6 +231,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const chartRef  = useRef<ReturnType<typeof createChart> | null>(null);
   const subChartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
+  /* Always-current candles ref so crosshair callback never goes stale */
+  const candlesRef = useRef<Candle[]>([]);
 
   /* series refs */
   const priceSeriesRef   = useRef<any>(null);
@@ -319,6 +321,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchCandles, fetchTicker]);
 
+  /* Keep candlesRef always current so crosshair callback is never stale */
+  useEffect(() => { candlesRef.current = candles; }, [candles]);
+
   /* ── Computed indicator data ────────────────────────────────────────── */
   const closes  = useMemo(() => candles.map(c => c.close), [candles]);
   const indicatorData = useMemo(() => {
@@ -391,12 +396,13 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     volSeriesRef.current = volSeries;
 
-    /* Crosshair subscription → OHLCV hover info */
+    /* Crosshair subscription → OHLCV hover info (uses ref to avoid stale closure) */
     chart.subscribeCrosshairMove(param => {
       if (!param.time || !param.point) { setHoverInfo(null); return; }
-      const idx = candles.findIndex(c => Number(c.time) === Number(param.time));
+      const live = candlesRef.current;
+      const idx = live.findIndex(c => Number(c.time) === Number(param.time));
       if (idx >= 0) {
-        const c = candles[idx];
+        const c = live[idx];
         setHoverInfo({ o: c.open, h: c.high, l: c.low, c: c.close, v: (c as any).volume ?? 0, t: Number(c.time) });
       }
     });
@@ -698,21 +704,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         </div>
       </div>
 
-      {/* ── OHLCV HOVER INFO ── */}
-      {hoverInfo && (
-        <div className="flex items-center gap-3 px-3 py-1 shrink-0 text-[10px] font-mono border-b" style={{ borderColor: col.grid, background: `${col.grid}80` }}>
-          <span>O <span className="font-bold" style={{ color: hoverInfo.c >= hoverInfo.o ? '#0ecb81' : '#f6465d' }}>{pPrefix}{fmtPrice(hoverInfo.o, lastP)}</span></span>
-          <span>H <span className="font-bold text-green-400">{pPrefix}{fmtPrice(hoverInfo.h, lastP)}</span></span>
-          <span>L <span className="font-bold text-red-400">{pPrefix}{fmtPrice(hoverInfo.l, lastP)}</span></span>
-          <span>C <span className="font-bold" style={{ color: hoverInfo.c >= hoverInfo.o ? '#0ecb81' : '#f6465d' }}>{pPrefix}{fmtPrice(hoverInfo.c, lastP)}</span></span>
-          {hoverInfo.v > 0 && <span>V <span className="font-bold text-blue-400">{hoverInfo.v > 1e6 ? `${(hoverInfo.v/1e6).toFixed(3)}M` : hoverInfo.v > 1e3 ? `${(hoverInfo.v/1e3).toFixed(3)}K` : hoverInfo.v.toFixed(4)}</span></span>}
-          {hoverInfo.c > hoverInfo.o
-            ? <span className="text-green-400 font-bold">▲ {(((hoverInfo.c - hoverInfo.o) / hoverInfo.o) * 100).toFixed(2)}%</span>
-            : <span className="text-red-400 font-bold">▼ {(((hoverInfo.o - hoverInfo.c) / hoverInfo.o) * 100).toFixed(2)}%</span>
-          }
-        </div>
-      )}
-
       {/* ── TOOLBAR ── */}
       <div className="flex items-center gap-0.5 px-1.5 py-1 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
 
@@ -852,6 +843,23 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
             >
               OrahDEX
             </span>
+          </div>
+        )}
+        {/* ── OHLCV HOVER INFO — absolute so it never shifts the chart layout ── */}
+        {hoverInfo && (
+          <div
+            className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 px-3 py-1 text-[10px] font-mono pointer-events-none"
+            style={{ background: `${col.bg}e8`, borderBottom: `1px solid ${col.grid}` }}
+          >
+            <span>O <span className="font-bold" style={{ color: hoverInfo.c >= hoverInfo.o ? '#0ecb81' : '#f6465d' }}>{pPrefix}{fmtPrice(hoverInfo.o, lastP)}</span></span>
+            <span>H <span className="font-bold text-green-400">{pPrefix}{fmtPrice(hoverInfo.h, lastP)}</span></span>
+            <span>L <span className="font-bold text-red-400">{pPrefix}{fmtPrice(hoverInfo.l, lastP)}</span></span>
+            <span>C <span className="font-bold" style={{ color: hoverInfo.c >= hoverInfo.o ? '#0ecb81' : '#f6465d' }}>{pPrefix}{fmtPrice(hoverInfo.c, lastP)}</span></span>
+            {hoverInfo.v > 0 && <span>V <span className="font-bold text-blue-400">{hoverInfo.v > 1e6 ? `${(hoverInfo.v/1e6).toFixed(3)}M` : hoverInfo.v > 1e3 ? `${(hoverInfo.v/1e3).toFixed(3)}K` : hoverInfo.v.toFixed(4)}</span></span>}
+            {hoverInfo.c > hoverInfo.o
+              ? <span className="text-green-400 font-bold">▲ {(((hoverInfo.c - hoverInfo.o) / hoverInfo.o) * 100).toFixed(2)}%</span>
+              : <span className="text-red-400 font-bold">▼ {(((hoverInfo.o - hoverInfo.c) / hoverInfo.o) * 100).toFixed(2)}%</span>
+            }
           </div>
         )}
       </div>
