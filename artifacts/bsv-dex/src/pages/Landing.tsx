@@ -655,6 +655,7 @@ export function LandingPage() {
               title="BSV↔EVM Bridge"
               desc="Native bridge between Bitcoin SV and EVM chains. All settlements finalize on BSV — fastest, cheapest, permanent."
               icon={Shield}
+              active
             />
           </div>
 
