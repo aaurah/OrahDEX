@@ -344,7 +344,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
 }) {
-  const { address, network, balance, chainId: walletChainId, isDemo } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, internalEvmAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill } = useExchangeBalanceStore();
@@ -426,7 +426,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   // Cross-chain derived values (must come after `base` is declared)
   const baseChain = getAssetNativeChain(base);
   const canReceive = walletCanReceive(network, baseChain);
-  const showCrossChainNotice = side === "buy" && !!address && !canReceive && !isDemo;
+  // EVM assets can be held by the internal EVM sub-wallet
+  const isEvmChain = baseChain === "evm";
+  const hasInternalEvm = !!internalEvmAddress && network === "bsv";
+  const evmHandled = isEvmChain && hasInternalEvm;
+  // Show amber cross-chain warning only for truly incompatible chains (not EVM when internal wallet exists)
+  const showCrossChainNotice = side === "buy" && !!address && !canReceive && !isDemo && !evmHandled;
+  // Show green EVM sub-wallet info box when a BSV user is buying an EVM asset
+  const showEvmWalletInfo = side === "buy" && !!address && network === "bsv" && isEvmChain && hasInternalEvm && !isDemo;
   const chainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const addrPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -1109,6 +1116,35 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               </button>
             ))}
           </div>
+
+          {/* ── EVM Sub-wallet (BSV users buying EVM assets) ─────────── */}
+          {showEvmWalletInfo && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-emerald-300 font-semibold leading-snug">
+                    Sent to your OrahDEX EVM wallet
+                  </p>
+                  <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
+                    As a BSV user you get a free custodial EVM address. Bought {base} lands there automatically — no extra steps needed.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between bg-black/20 border border-emerald-500/20 rounded-lg px-2.5 py-1.5">
+                <span className="text-[10px] text-emerald-400/70 font-medium shrink-0 mr-2">EVM addr</span>
+                <span className="text-[10px] font-mono text-emerald-300 truncate flex-1">{internalEvmAddress}</span>
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard?.writeText(internalEvmAddress!); }}
+                  className="ml-1.5 text-emerald-400/50 hover:text-emerald-400 transition-colors shrink-0"
+                  title="Copy EVM address"
+                >
+                  <Route className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Cross-chain receive address ────────────────────────────── */}
           {showCrossChainNotice && (

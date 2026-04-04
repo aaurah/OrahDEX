@@ -35,11 +35,15 @@ interface WalletState {
   isDemo: boolean;
   pendingTxs: PendingTx[];
 
+  /** Auto-provisioned EVM address for BSV-wallet users (custodial sub-account). */
+  internalEvmAddress: string | null;
+
   connect: (wallet: ConnectedWallet) => void;
   connectDemo: (address: string) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBalance: (balance: string | null) => void;
+  setInternalEvmAddress: (addr: string | null) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -79,6 +83,7 @@ export const useWalletStore = create<WalletState>()(
       isConnecting: false,
       isDemo: false,
       pendingTxs: [],
+      internalEvmAddress: null,
 
       connect: (wallet) =>
         set({
@@ -89,6 +94,7 @@ export const useWalletStore = create<WalletState>()(
           balance: wallet.balance ?? null,
           isConnecting: false,
           isDemo: false,
+          internalEvmAddress: null,
         }),
 
       connectDemo: (address) =>
@@ -100,6 +106,7 @@ export const useWalletStore = create<WalletState>()(
           balance: null,
           isConnecting: false,
           isDemo: true,
+          internalEvmAddress: null,
         }),
 
       disconnect: () =>
@@ -111,10 +118,12 @@ export const useWalletStore = create<WalletState>()(
           balance: null,
           isConnecting: false,
           isDemo: false,
+          internalEvmAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBalance: (balance) => set({ balance }),
+      setInternalEvmAddress: (internalEvmAddress) => set({ internalEvmAddress }),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),

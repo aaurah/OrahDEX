@@ -198,7 +198,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
@@ -356,7 +356,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [receiveAddress, setReceiveAddress] = useState("");
   const baseChain = getAssetNativeChain(base);
   const canReceiveBase = walletCanReceive(network, baseChain);
-  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase;
+  const isBaseEvmChain = baseChain === "evm";
+  const hasMobileInternalEvm = !!internalEvmAddress && network === "bsv";
+  const mobileEvmHandled = isBaseEvmChain && hasMobileInternalEvm;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled;
+  const showMobileEvmInfo = side === "buy" && !!address && network === "bsv" && isBaseEvmChain && hasMobileInternalEvm;
   const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -1117,6 +1121,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <span className="text-sm text-muted-foreground flex-1">Total ({quote})</span>
               <span className="text-sm font-semibold tabular-nums">{amtNum > 0 ? total : ""}</span>
             </div>
+
+            {/* ── EVM Sub-wallet info (BSV users buying EVM assets) ── */}
+            {showMobileEvmInfo && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-emerald-300 font-semibold">Sent to your OrahDEX EVM wallet</p>
+                    <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
+                      Your BSV account includes a free custodial EVM address. {base} lands there automatically.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-emerald-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-emerald-400/70 text-[10px] font-medium shrink-0">EVM</span>
+                  <span className="text-[10px] font-mono text-emerald-300 truncate flex-1">{internalEvmAddress}</span>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(internalEvmAddress ?? "")}
+                    className="shrink-0 text-emerald-400/50"
+                    title="Copy"
+                  >
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* ── Cross-chain receive notice ── */}
             {showCrossChainNotice && (
