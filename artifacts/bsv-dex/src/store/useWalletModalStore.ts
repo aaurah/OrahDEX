@@ -1,13 +1,17 @@
 import { create } from 'zustand';
 
+type ModalTab = 'real' | 'demo';
+
 interface WalletModalState {
   isOpen: boolean;
-  open: () => void;
+  initialTab: ModalTab;
+  open: (tab?: ModalTab) => void;
   close: () => void;
 }
 
 export const useWalletModalStore = create<WalletModalState>((set) => ({
   isOpen: false,
-  open: () => set({ isOpen: true }),
+  initialTab: 'real',
+  open: (tab = 'real') => set({ isOpen: true, initialTab: tab }),
   close: () => set({ isOpen: false }),
 }));

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown, FlaskConical, RotateCcw } from 'lucide-react';
+import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown, FlaskConical, RotateCcw, ArrowLeftRight, Loader2 } from 'lucide-react';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
 import { disconnectReown, openReownModal } from '@/lib/reown';
@@ -14,19 +14,18 @@ function shortenAddress(addr: string) {
 }
 
 interface Props {
-  /** If true renders the compact pill style (mobile header) */
   compact?: boolean;
 }
 
 export function WalletOptionsDropdown({ compact = false }: Props) {
-  const { address, provider, network, balance, isDemo, disconnect } = useWalletStore();
+  const { address, provider, network, balance, isDemo, disconnect, connectDemo } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
-  const [open, setOpen]       = useState(false);
-  const [copied, setCopied]   = useState(false);
+  const [open, setOpen]           = useState(false);
+  const [copied, setCopied]       = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [switchingDemo, setSwitchingDemo] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -52,13 +51,12 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
   const handleDisconnect = async () => {
     setOpen(false);
-    if (provider === 'reown') {
-      await disconnectReown();
-    }
+    if (provider === 'reown') await disconnectReown();
     disconnect();
   };
 
-  const handleSwitch = async () => {
+  /** Switch wallet (keeps same account type) */
+  const handleSwitchWallet = async () => {
     setOpen(false);
     if (provider === 'reown') {
       await disconnectReown();
@@ -66,8 +64,46 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
       setTimeout(() => openReownModal("Connect"), 500);
     } else {
       disconnect();
-      openWalletModal();
+      openWalletModal('real');
     }
+  };
+
+  /** Real → Demo: activate demo directly, no modal needed */
+  const handleSwitchToDemo = async () => {
+    setSwitchingDemo(true);
+    try {
+      // Disconnect current real wallet
+      if (provider === 'reown') await disconnectReown();
+      disconnect();
+
+      // Get or create stable demo address
+      let demoAddr = localStorage.getItem('orahdex_demo_address');
+      if (!demoAddr) {
+        const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
+        demoAddr = `DEMO_${uuid}`;
+        localStorage.setItem('orahdex_demo_address', demoAddr);
+      }
+
+      const res = await fetch(`${API_BASE}/demo/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: demoAddr }),
+      });
+      if (!res.ok) throw new Error('Demo activation failed');
+      connectDemo(demoAddr);
+      setOpen(false);
+    } catch {
+      // Silently ignore — user can retry
+    } finally {
+      setSwitchingDemo(false);
+    }
+  };
+
+  /** Demo → Real: open modal straight to Real Account tab */
+  const handleSwitchToReal = async () => {
+    setOpen(false);
+    disconnect();
+    openWalletModal('real');
   };
 
   const handleResetDemo = async () => {
@@ -75,14 +111,13 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     setResetting(true);
     try {
       await fetch(`${API_BASE}/demo/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address }),
       });
-      // Trigger a page refresh so balances reload
       window.location.reload();
     } catch {
-      // Silently ignore — user can retry
+      // Silently ignore
     } finally {
       setResetting(false);
       setOpen(false);
@@ -93,7 +128,6 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     <div ref={ref} className="relative">
       {/* Trigger button */}
       {compact ? (
-        /* Mobile compact pill */
         <button
           onClick={() => setOpen(v => !v)}
           className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[160px]"
@@ -110,7 +144,6 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <ChevronDown className={cn('w-3 h-3 text-muted-foreground shrink-0 transition-transform', open && 'rotate-180')} />
         </button>
       ) : (
-        /* Desktop pill */
         <button
           onClick={() => setOpen(v => !v)}
           className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-colors"
@@ -169,8 +202,46 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             )}
           </div>
 
-          {/* Change chain — only for EVM */}
-          {network === 'evm' && (
+          {/* Quick switch bar — always visible */}
+          <div className="px-3 py-2.5 border-b border-border bg-secondary/30">
+            <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Account Type</p>
+            <div className="flex gap-1.5">
+              <button
+                onClick={isDemo ? handleSwitchToReal : undefined}
+                disabled={!isDemo}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all",
+                  !isDemo
+                    ? "bg-primary/15 text-primary border border-primary/30"
+                    : "bg-white/5 text-muted-foreground hover:bg-white/8 hover:text-foreground border border-transparent"
+                )}
+              >
+                <Wallet className="w-3 h-3" />
+                Real Account
+                {!isDemo && <span className="w-1.5 h-1.5 rounded-full bg-green-400 ml-0.5" />}
+              </button>
+              <button
+                onClick={!isDemo ? handleSwitchToDemo : undefined}
+                disabled={isDemo || switchingDemo}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-bold transition-all",
+                  isDemo
+                    ? "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
+                    : "bg-white/5 text-muted-foreground hover:bg-yellow-500/10 hover:text-yellow-300 border border-transparent"
+                )}
+              >
+                {switchingDemo
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <FlaskConical className="w-3 h-3" />
+                }
+                Demo
+                {isDemo && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 ml-0.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Change chain — only for EVM real accounts */}
+          {network === 'evm' && !isDemo && (
             <div className="px-4 py-3 border-b border-border">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Change Chain</p>
               <ChainSwitcherDropdown inline />
@@ -181,17 +252,13 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="p-2 flex flex-col gap-1">
             {isDemo ? (
               <>
-                {/* Reset demo balance */}
                 <button
                   onClick={handleResetDemo}
                   disabled={resetting}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-yellow-500/10 transition-colors text-left group disabled:opacity-60"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-yellow-500/10 transition-colors text-left disabled:opacity-60"
                 >
                   <div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center shrink-0">
-                    {resetting
-                      ? <RotateCcw className="w-4 h-4 text-yellow-400 animate-spin" />
-                      : <RotateCcw className="w-4 h-4 text-yellow-400" />
-                    }
+                    <RotateCcw className={cn("w-4 h-4 text-yellow-400", resetting && "animate-spin")} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-yellow-400">Reset Balance</p>
@@ -199,52 +266,37 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                   </div>
                 </button>
 
-                {/* Connect real wallet */}
-                <button
-                  onClick={handleSwitch}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left group"
-                >
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <Wallet className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Connect Real Wallet</p>
-                    <p className="text-[11px] text-muted-foreground">Trade with your actual funds</p>
-                  </div>
-                </button>
-
-                {/* Exit demo */}
                 <button
                   onClick={handleDisconnect}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left group"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
                     <LogOut className="w-4 h-4 text-destructive" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-destructive">Exit Demo</p>
-                    <p className="text-[11px] text-muted-foreground">Leave demo mode</p>
+                    <p className="text-[11px] text-muted-foreground">Disconnect and leave demo mode</p>
                   </div>
                 </button>
               </>
             ) : (
               <>
                 <button
-                  onClick={handleSwitch}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left group"
+                  onClick={handleSwitchWallet}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <RefreshCw className="w-4 h-4 text-primary" />
+                    <ArrowLeftRight className="w-4 h-4 text-primary" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-foreground">Switch Wallet</p>
-                    <p className="text-[11px] text-muted-foreground">Connect a different account</p>
+                    <p className="text-[11px] text-muted-foreground">Connect a different real wallet</p>
                   </div>
                 </button>
 
                 <button
                   onClick={handleDisconnect}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left group"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
                     <LogOut className="w-4 h-4 text-destructive" />
