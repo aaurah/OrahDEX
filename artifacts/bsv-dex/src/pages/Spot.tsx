@@ -244,10 +244,15 @@ export function SpotTrading() {
           <div className="flex flex-col gap-0.5">
             <button
               onClick={() => { setPairDropOpen(v => !v); setDropSearch(""); }}
-              className="flex items-center gap-1.5 group"
+              className="flex items-center gap-2 group"
             >
+              {/* Overlapping base + quote logos */}
+              <div className="flex items-center shrink-0">
+                <CoinLogo symbol={base} size={26} ring />
+                <CoinLogo symbol={quote} size={20} ring className="-ml-2" />
+              </div>
               <h1 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">
-                {symbol.replace('-', '/')}
+                {base}/{quote}
               </h1>
               <ChevronDown className={cn(
                 "w-4 h-4 text-muted-foreground group-hover:text-primary transition-all",
