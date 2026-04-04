@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
 import { privateKeyToAccount } from "viem/accounts";
@@ -199,10 +200,19 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const connectDemo = useWalletStore((s) => s.connectDemo);
   const setBalance = useWalletStore((s) => s.setBalance);
   const walletState = useWalletStore();
+  const initialTab = useWalletModalStore((s) => s.initialTab);
 
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState<"real" | "demo">("real");
+
+  // Sync mainTab with initialTab whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setMainTab(initialTab);
+      setView("landing");
+    }
+  }, [isOpen, initialTab]);
 
   const handleDemoAccount = async () => {
     setDemoLoading(true);
