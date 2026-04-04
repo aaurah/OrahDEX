@@ -223,8 +223,8 @@ function fmtPrice(v: number, price: number): string {
 /* ══════════════════════════════════════════════════════════════════════════
    ORAHCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp }: {
-  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator;
+function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar }: {
+  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean;
 }) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -693,18 +693,25 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       {/* ── TOOLBAR ── */}
       <div className="flex items-center gap-0.5 px-1.5 py-1 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
 
-        {/* Intervals */}
-        <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto scrollbar-hide">
-          {INTERVALS.map(iv => (
-            <button key={iv.id} onClick={() => onIntervalChange?.(iv.id)}
-              className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
-                interval === iv.id
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/40'
-                  : isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-800' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
-              }`}
-            >{iv.label}</button>
-          ))}
-        </div>
+        {/* Intervals — hidden when parent provides its own interval UI */}
+        {!hideIntervalBar && (
+          <>
+            <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto scrollbar-hide">
+              {INTERVALS.map(iv => (
+                <button key={iv.id} onClick={() => onIntervalChange?.(iv.id)}
+                  className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    interval === iv.id
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                      : isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-800' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                  }`}
+                >{iv.label}</button>
+              ))}
+            </div>
+            <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
+          </>
+        )}
+
+        {hideIntervalBar && <div className="flex-1" />}
 
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 
@@ -868,6 +875,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 /* ══════════════════════════════════════════════════════════════════════════
    EXPORT
 ══════════════════════════════════════════════════════════════════════════ */
-export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator }: ChartProps) {
-  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} />;
+export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar }: ChartProps) {
+  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} />;
 }
