@@ -6,7 +6,7 @@ import {
   PlusCircle, Download, Link2, Copy, Check,
   Eye, AlertTriangle, RefreshCw, ArrowLeft,
   Layers, Key, Fingerprint, Loader2, Trash2,
-  Smartphone, Wifi, QrCode,
+  Smartphone, Wifi, QrCode, FlaskConical,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
@@ -196,8 +196,38 @@ const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
+  const connectDemo = useWalletStore((s) => s.connectDemo);
   const setBalance = useWalletStore((s) => s.setBalance);
   const walletState = useWalletStore();
+
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string | null>(null);
+
+  const handleDemoAccount = async () => {
+    setDemoLoading(true);
+    setDemoError(null);
+    try {
+      // Use a stable demo address stored in localStorage so sessions persist
+      let demoAddr = localStorage.getItem("orahdex_demo_address");
+      if (!demoAddr) {
+        const uuid = crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase();
+        demoAddr = `DEMO_${uuid}`;
+        localStorage.setItem("orahdex_demo_address", demoAddr);
+      }
+      const res = await fetch(`${API_BASE}/demo/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: demoAddr }),
+      });
+      if (!res.ok) throw new Error("Demo activation failed");
+      connectDemo(demoAddr);
+      onClose();
+    } catch (e: any) {
+      setDemoError(e?.message ?? "Could not start demo — try again");
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
@@ -1175,6 +1205,38 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-colors" />
                         </div>
                       </button>
+
+                      {/* ⑤ Demo Account — no wallet needed */}
+                      <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 via-yellow-500/5 to-transparent p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-11 h-11 rounded-xl bg-yellow-500/20 flex items-center justify-center shrink-0">
+                            <FlaskConical className="w-5 h-5 text-yellow-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-black text-[15px] text-foreground leading-tight">Demo Account</h3>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 tracking-wider uppercase">Free</span>
+                            </div>
+                            <p className="text-[11px] text-yellow-400/80 font-medium">No wallet needed · $80,000 paper money · learn to trade</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleDemoAccount}
+                          disabled={demoLoading}
+                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-yellow-950 font-black text-sm shadow-md shadow-yellow-500/20 active:scale-95 transition-all disabled:opacity-60"
+                        >
+                          {demoLoading
+                            ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up your demo…</>
+                            : <><FlaskConical className="w-4 h-4" /> Start Demo Trading</>
+                          }
+                        </button>
+                        {demoError && (
+                          <p className="text-[11px] text-red-400 text-center mt-2">{demoError}</p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground/50 text-center mt-2">
+                          Practice spot &amp; futures with virtual funds — no real money at risk
+                        </p>
+                      </div>
 
                       <div className="flex items-start gap-3 p-3 bg-primary/5 text-primary rounded-xl border border-primary/15">
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />

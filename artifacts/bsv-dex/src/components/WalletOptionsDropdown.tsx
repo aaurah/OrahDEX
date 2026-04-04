@@ -1,10 +1,11 @@
 import { useRef, useState, useEffect } from 'react';
-import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown } from 'lucide-react';
+import { LogOut, RefreshCw, Wallet, Copy, Check, ChevronDown, FlaskConical, RotateCcw } from 'lucide-react';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
 import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
 import { cn } from '@/lib/utils';
+import { API_BASE } from '@/lib/api';
 
 function shortenAddress(addr: string) {
   if (!addr) return '';
@@ -18,10 +19,11 @@ interface Props {
 }
 
 export function WalletOptionsDropdown({ compact = false }: Props) {
-  const { address, provider, network, balance, disconnect } = useWalletStore();
+  const { address, provider, network, balance, isDemo, disconnect } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
-  const [open, setOpen]     = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [open, setOpen]       = useState(false);
+  const [copied, setCopied]   = useState(false);
+  const [resetting, setResetting] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -65,6 +67,25 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     } else {
       disconnect();
       openWalletModal();
+    }
+  };
+
+  const handleResetDemo = async () => {
+    if (!address) return;
+    setResetting(true);
+    try {
+      await fetch(`${API_BASE}/demo/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      // Trigger a page refresh so balances reload
+      window.location.reload();
+    } catch {
+      // Silently ignore — user can retry
+    } finally {
+      setResetting(false);
+      setOpen(false);
     }
   };
 
@@ -119,9 +140,17 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           compact ? 'right-0 w-64' : 'right-0 w-72'
         )}>
           {/* Header */}
-          <div className="px-4 pt-4 pb-3 border-b border-border">
+          <div className={cn("px-4 pt-4 pb-3 border-b border-border", isDemo && "bg-yellow-500/5")}>
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-muted-foreground capitalize font-medium">{provider} · {network?.toUpperCase()}</span>
+              <div className="flex items-center gap-2">
+                {isDemo ? (
+                  <span className="flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 uppercase tracking-wider">
+                    <FlaskConical className="w-3 h-3" /> Demo Mode
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground capitalize font-medium">{provider} · {network?.toUpperCase()}</span>
+                )}
+              </div>
               <button
                 onClick={copyAddress}
                 className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
@@ -132,7 +161,10 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
               </button>
             </div>
             <p className="text-sm font-mono text-foreground break-all leading-snug">{address}</p>
-            {balanceLabel && (
+            {isDemo && (
+              <p className="text-[11px] text-yellow-400/80 font-semibold mt-1">$80,000 paper-trading funds · no real money</p>
+            )}
+            {!isDemo && balanceLabel && (
               <p className="text-xs text-green-400 font-semibold mt-1">{balanceLabel}</p>
             )}
           </div>
@@ -147,31 +179,83 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
           {/* Actions */}
           <div className="p-2 flex flex-col gap-1">
-            <button
-              onClick={handleSwitch}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <RefreshCw className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground">Switch Wallet</p>
-                <p className="text-[11px] text-muted-foreground">Connect a different account</p>
-              </div>
-            </button>
+            {isDemo ? (
+              <>
+                {/* Reset demo balance */}
+                <button
+                  onClick={handleResetDemo}
+                  disabled={resetting}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-yellow-500/10 transition-colors text-left group disabled:opacity-60"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center shrink-0">
+                    {resetting
+                      ? <RotateCcw className="w-4 h-4 text-yellow-400 animate-spin" />
+                      : <RotateCcw className="w-4 h-4 text-yellow-400" />
+                    }
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-yellow-400">Reset Balance</p>
+                    <p className="text-[11px] text-muted-foreground">Refill to $80,000 paper funds</p>
+                  </div>
+                </button>
 
-            <button
-              onClick={handleDisconnect}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
-                <LogOut className="w-4 h-4 text-destructive" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-destructive">Disconnect</p>
-                <p className="text-[11px] text-muted-foreground">Remove wallet from OrahDEX</p>
-              </div>
-            </button>
+                {/* Connect real wallet */}
+                <button
+                  onClick={handleSwitch}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <Wallet className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Connect Real Wallet</p>
+                    <p className="text-[11px] text-muted-foreground">Trade with your actual funds</p>
+                  </div>
+                </button>
+
+                {/* Exit demo */}
+                <button
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+                    <LogOut className="w-4 h-4 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-destructive">Exit Demo</p>
+                    <p className="text-[11px] text-muted-foreground">Leave demo mode</p>
+                  </div>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleSwitch}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                    <RefreshCw className="w-4 h-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Switch Wallet</p>
+                    <p className="text-[11px] text-muted-foreground">Connect a different account</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-destructive/10 transition-colors text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+                    <LogOut className="w-4 h-4 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-destructive">Disconnect</p>
+                    <p className="text-[11px] text-muted-foreground">Remove wallet from OrahDEX</p>
+                  </div>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

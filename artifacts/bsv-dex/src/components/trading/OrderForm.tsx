@@ -18,8 +18,9 @@ import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
-  XCircle, Info, Route, Timer,
+  XCircle, Info, Route, Timer, FlaskConical,
 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -27,6 +28,29 @@ type OrderType = "limit" | "market" | "stop";
 // ── Wallet prompt shown when no wallet is connected ───────────────────────────
 function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?: string }) {
   const openModal = useWalletModalStore((s) => s.open);
+  const connectDemo = useWalletStore((s) => s.connectDemo);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  const handleDemo = async () => {
+    setDemoLoading(true);
+    try {
+      let demoAddr = localStorage.getItem("orahdex_demo_address");
+      if (!demoAddr) {
+        const uuid = crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase();
+        demoAddr = `DEMO_${uuid}`;
+        localStorage.setItem("orahdex_demo_address", demoAddr);
+      }
+      const res = await fetch(`${API_BASE}/demo/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: demoAddr }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      connectDemo(demoAddr);
+    } catch { /* ignore */ }
+    finally { setDemoLoading(false); }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex opacity-30 pointer-events-none select-none">
@@ -53,6 +77,24 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
           <Wallet className="w-4 h-4" />
           Connect Wallet
         </button>
+        {/* Demo shortcut */}
+        <div className="w-full">
+          <div className="relative flex items-center gap-2 mb-3">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-[10px] text-muted-foreground/50 font-medium uppercase tracking-wider">or</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <button
+            onClick={handleDemo}
+            disabled={demoLoading}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-yellow-500/40 bg-yellow-500/8 text-yellow-400 font-bold text-sm hover:bg-yellow-500/15 transition-colors disabled:opacity-60"
+          >
+            {demoLoading
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up…</>
+              : <><FlaskConical className="w-4 h-4" /> Try Demo — $80,000 paper money</>
+            }
+          </button>
+        </div>
         <div className="w-full grid grid-cols-3 gap-2 pt-1">
           {[
             { icon: Shield, label: "Non-custodial" },

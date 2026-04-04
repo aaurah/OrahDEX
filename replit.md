@@ -235,6 +235,18 @@ Express 5 API server. Routes in `src/routes/`. Uses `@workspace/db` for DB and `
 - Shows "EXPLORE" label, live block height `#942,xxx`, "BSV Block" sub-label
 - Hover effect: green glow, scale, ExternalLink icon appears
 
+## Demo Account (Paper Trading)
+
+- **API endpoint**: `POST /api/demo/activate` — seeds/resets a wallet (prefix `DEMO_`) to exactly: 50,000 USDT, 0.1 BTC, 7 ETH, 8 BNB, 500 BSV, 50 SOL (~$80k virtual). Idempotent — calling again resets to exact amounts.
+- **Demo address**: `DEMO_<16-char-UUID>` format, stored in `localStorage` key `orahdex_demo_address`. API rejects non-`DEMO_`-prefixed addresses.
+- **WalletStore**: `isDemo: boolean` + `connectDemo(address)` action in `useWalletStore.ts`.
+- **Entry points**:
+  1. WalletConnectModal — yellow demo card CTA on the landing tab
+  2. OrderForm.tsx WalletPrompt — "Try Demo — $80,000 paper money" button below Connect Wallet (separated by OR divider)
+- **Demo banner**: Yellow sticky ribbon at top of Layout.tsx when `isDemo` is true (replaces amber maintenance banner). Shows "DEMO MODE — You are trading with $80,000 virtual paper money."
+- **WalletOptionsDropdown**: Demo-specific actions — "Reset Balance" (re-calls activate), "Connect Real Wallet" (opens modal + clears demo), "Exit Demo" (clears store + localStorage).
+- **BSV REAL PRICE note**: ~$14.76–$14.90 live from WhatsOnChain. FALLBACK_PRICES entry is $55 (not used when live price available).
+
 **Trading + Notifications — verified:**
 - Demo trade BSV/USDT → fills at market price, matched by liquidity bot, BSV settlement txid generated
 - Notifications push `order_placed` + `order_filled` (with txid) correctly via notifQueue

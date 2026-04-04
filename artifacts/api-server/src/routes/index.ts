@@ -22,7 +22,7 @@ import liquidityRouter from "./liquidity.js";
 import swapRouter from "./swap.js";
 import keeperRouter from "./keeper.js";
 import p2pIntentsRouter from "./p2pIntents.js";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -70,6 +70,59 @@ router.use(supportRouter);
 router.use(virtualAmmRouter);
 router.use(keeperRouter);
 router.use(p2pIntentsRouter);
+
+/* ── Demo Account — POST /api/demo/activate ─────────────────────────────────
+ * Creates or resets a demo wallet with $80,000 in paper-trading funds.
+ * The demo address has the prefix "DEMO_" so the API can distinguish it.
+ * Calling this multiple times with the same address simply refills the balance.
+ */
+
+router.post("/demo/activate", async (req, res) => {
+  try {
+    const { address } = req.body as { address?: string };
+
+    if (!address || typeof address !== "string" || !address.startsWith("DEMO_")) {
+      res.status(400).json({ error: "A valid demo address starting with DEMO_ is required" });
+      return;
+    }
+
+    // Sanitize
+    const demoAddr = address.trim().slice(0, 80);
+
+    // Seed $80,000 in paper-trading funds (a mix of major assets)
+    // Always SET to exact amounts (not additive), so repeated calls = clean reset.
+    const DEMO_BALANCES = [
+      { asset: "USDT", amount: "50000" },    // $50,000 stable
+      { asset: "BTC",  amount: "0.1"    },   // ~$8,300
+      { asset: "ETH",  amount: "7"      },   // ~$12,600
+      { asset: "BNB",  amount: "8"      },   // ~$4,640
+      { asset: "BSV",  amount: "500"    },   // ~$7,450
+      { asset: "SOL",  amount: "50"     },   // ~$7,500 bonus
+    ];
+
+    // Reset available balance for each asset (upsert to exact demo amount)
+    for (const b of DEMO_BALANCES) {
+      await pool.query(
+        `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+         VALUES ($1, $2, $3, '0', now())
+         ON CONFLICT (wallet_address, asset_symbol)
+         DO UPDATE SET available = $3, locked = '0', updated_at = now()`,
+        [demoAddr, b.asset, b.amount],
+      );
+    }
+
+    res.json({
+      success: true,
+      address: demoAddr,
+      balances: DEMO_BALANCES,
+      totalUSD: 90490,
+      message: "Demo account ready — $80,000+ in paper-trading funds",
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "Failed to activate demo account");
+    res.status(500).json({ error: err?.message ?? "Failed to activate demo account" });
+  }
+});
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
 router.get("/bsv/resolve-handle/:handle", async (req, res) => {
