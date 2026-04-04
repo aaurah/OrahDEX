@@ -6,7 +6,9 @@ import {
   PlusCircle, Download, Link2, Copy, Check,
   Eye, AlertTriangle, RefreshCw, ArrowLeft,
   Layers, Key, Fingerprint, Loader2, Trash2,
+  Smartphone, Wifi, QrCode,
 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/lib/seedPhrase";
@@ -181,7 +183,7 @@ function getEvmProvider(walletId: string): any {
   return eth;
 }
 
-type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey";
+type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr";
 type ConnectTab = "reown" | "bsv" | "tron";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
@@ -267,6 +269,46 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
+
+  /* Mobile QR session pairing */
+  const [mqrToken,   setMqrToken]   = useState<string | null>(null);
+  const [mqrExpires, setMqrExpires] = useState<number>(0);
+  const [mqrStatus,  setMqrStatus]  = useState<"pending" | "connected" | "expired" | "error">("pending");
+  const [mqrAddress, setMqrAddress] = useState<string | null>(null);
+  const mqrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopMqrPoll = () => { if (mqrPollRef.current) { clearInterval(mqrPollRef.current); mqrPollRef.current = null; } };
+
+  const startMobileQRSession = async () => {
+    stopMqrPoll();
+    setMqrToken(null);
+    setMqrStatus("pending");
+    setMqrAddress(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/connect-session`, { method: "POST" });
+      const data = await res.json() as { token: string; expiresAt: number };
+      setMqrToken(data.token);
+      setMqrExpires(data.expiresAt);
+      // Poll every 2 seconds
+      mqrPollRef.current = setInterval(async () => {
+        if (Date.now() > data.expiresAt) { setMqrStatus("expired"); stopMqrPoll(); return; }
+        try {
+          const poll = await fetch(`${API_BASE}/api/connect-session/${data.token}`);
+          if (!poll.ok) { stopMqrPoll(); return; }
+          const pollData = await poll.json() as { status: string; address?: string; chain?: string; walletType?: string };
+          if (pollData.status === "connected" && pollData.address) {
+            setMqrStatus("connected");
+            setMqrAddress(pollData.address);
+            stopMqrPoll();
+            connect({ address: pollData.address, provider: pollData.walletType ?? "mobile-qr", network: (pollData.chain?.toLowerCase() === "bsv" ? "bsv" : "evm") as WalletNetwork });
+            setTimeout(() => goToPrep(pollData.address!, (pollData.chain?.toLowerCase() === "bsv" ? "bsv" : "evm") as WalletNetwork, "mobile-qr"), 1500);
+          }
+        } catch { /* ignore */ }
+      }, 2000);
+    } catch {
+      setMqrStatus("error");
+    }
+  };
 
   const handlePasskeyRegister = async () => {
     setPasskeyStep("registering");
@@ -365,6 +407,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   }, [isOpen]);
 
   const handleClose = () => {
+    stopMqrPoll();
     onClose();
     setTimeout(() => {
       setView("landing");
@@ -969,6 +1012,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {view === "connect" && "Connect Wallet"}
                       {view === "prep" && "Wallet Setup"}
                       {view === "passkey" && <span className="flex items-center gap-2"><Fingerprint className="w-5 h-5 text-primary" /> Passkey Wallet</span>}
+                      {view === "mobileqr" && <span className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-white/70" /> Mobile QR Connect</span>}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5 italic">Trade means DEX ✦</p>
                   </div>
@@ -1114,6 +1158,23 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           ))}
                         </div>
                       </div>
+
+                      {/* ④ Connect via Mobile QR */}
+                      <button
+                        onClick={() => { setView("mobileqr"); startMobileQRSession(); }}
+                        className="w-full rounded-2xl border border-white/12 bg-white/3 hover:bg-white/6 hover:border-white/20 p-4 text-left transition-all group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-white/8 flex items-center justify-center shrink-0 group-hover:bg-white/12 transition-colors">
+                            <Smartphone className="w-5 h-5 text-white/60 group-hover:text-white transition-colors" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-foreground leading-tight">Connect via Mobile QR</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">Scan with your phone to link instantly</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-colors" />
+                        </div>
+                      </button>
 
                       <div className="flex items-start gap-3 p-3 bg-primary/5 text-primary rounded-xl border border-primary/15">
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
@@ -2268,6 +2329,120 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             A secure backup is kept on our server for cross-device recovery. OrahDEX can never see your key.
                           </div>
                         </div>
+                      )}
+
+                    </motion.div>
+                  )}
+
+                  {/* ── MOBILE QR CONNECT ── */}
+                  {view === "mobileqr" && (
+                    <motion.div key="mobileqr" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+                      className="p-6 flex flex-col items-center gap-6">
+
+                      {/* Status icon */}
+                      <div className={cn(
+                        "w-20 h-20 rounded-3xl flex items-center justify-center transition-all",
+                        mqrStatus === "connected"
+                          ? "bg-green-500/20 border-2 border-green-500/40"
+                          : mqrStatus === "expired" || mqrStatus === "error"
+                            ? "bg-red-500/12 border-2 border-red-500/25"
+                            : "bg-white/8 border-2 border-white/15"
+                      )}>
+                        {mqrStatus === "connected"
+                          ? <CheckCircle2 className="w-10 h-10 text-green-400" />
+                          : mqrStatus === "expired" || mqrStatus === "error"
+                            ? <AlertTriangle className="w-10 h-10 text-red-400" />
+                            : <Smartphone className="w-10 h-10 text-white/60" />
+                        }
+                      </div>
+
+                      {/* Title & subtitle */}
+                      <div className="text-center">
+                        {mqrStatus === "connected" && (
+                          <>
+                            <h3 className="text-xl font-bold text-green-400 mb-1">Wallet Connected!</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {mqrAddress ? `${mqrAddress.slice(0, 8)}…${mqrAddress.slice(-6)}` : ""} is now linked. Redirecting…
+                            </p>
+                          </>
+                        )}
+                        {(mqrStatus === "expired" || mqrStatus === "error") && (
+                          <>
+                            <h3 className="text-xl font-bold text-red-400 mb-1">{mqrStatus === "expired" ? "QR Expired" : "Error"}</h3>
+                            <p className="text-sm text-muted-foreground">Generate a new QR code and try again.</p>
+                          </>
+                        )}
+                        {mqrStatus === "pending" && (
+                          <>
+                            <h3 className="text-xl font-bold mb-1">Scan with your phone</h3>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              Open OrahDEX on mobile → tap the QR icon → point your camera here.
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      {/* QR code (only when pending + token available) */}
+                      {mqrStatus === "pending" && mqrToken && (
+                        <div className="flex flex-col items-center gap-3 w-full">
+                          <div className="p-4 bg-white rounded-2xl shadow-lg">
+                            <QRCodeSVG
+                              value={`orahdex://connect?token=${mqrToken}&expires=${mqrExpires}`}
+                              size={200}
+                              bgColor="#ffffff"
+                              fgColor="#000000"
+                              level="M"
+                              includeMargin={false}
+                            />
+                          </div>
+
+                          {/* Waiting indicator */}
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <div className="w-4 h-4 rounded-full border-2 border-primary/60 border-t-primary animate-spin" />
+                            Waiting for mobile scan…
+                          </div>
+
+                          {/* Expiry */}
+                          <p className="text-[11px] text-muted-foreground/50">
+                            Expires {new Date(mqrExpires).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Loading while creating session */}
+                      {mqrStatus === "pending" && !mqrToken && (
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="w-10 h-10 rounded-full border-2 border-primary/50 border-t-primary animate-spin" />
+                          <p className="text-sm text-muted-foreground">Generating QR code…</p>
+                        </div>
+                      )}
+
+                      {/* How-to steps */}
+                      {mqrStatus === "pending" && (
+                        <div className="w-full rounded-2xl border border-white/10 bg-white/3 p-4 space-y-3">
+                          <p className="text-[11px] uppercase tracking-widest text-muted-foreground font-bold">How to connect</p>
+                          {[
+                            { n: "1", text: "Open OrahDEX on your mobile device" },
+                            { n: "2", text: "Tap the QR icon in the top bar" },
+                            { n: "3", text: "Point your camera at this QR code" },
+                            { n: "4", text: "Tap \"Connect Wallet\" on your phone" },
+                          ].map(({ n, text }) => (
+                            <div key={n} className="flex items-start gap-3">
+                              <span className="w-5 h-5 rounded-full bg-white/10 text-white/60 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">{n}</span>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Refresh / retry buttons */}
+                      {(mqrStatus === "expired" || mqrStatus === "error") && (
+                        <button
+                          onClick={startMobileQRSession}
+                          className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 transition-all"
+                        >
+                          <RefreshCw className="w-4 h-4" /> Generate New QR
+                        </button>
                       )}
 
                     </motion.div>

@@ -572,5 +572,63 @@ router.delete("/notifications", (req, res) => {
   res.json({ success: true });
 });
 
+/* ── QR Connect Session ───────────────────────────────────────────────────
+ * Ephemeral in-memory store: desktop creates a session, mobile scans the
+ * QR and posts its wallet address; desktop polls until connected.
+ * Sessions expire after 5 minutes automatically.
+ * ─────────────────────────────────────────────────────────────────────── */
+interface ConnectSession {
+  token: string;
+  status: "pending" | "connected";
+  address?: string;
+  chain?: string;
+  walletType?: string;
+  createdAt: number;
+  expiresAt: number;
+}
+const connectSessions = new Map<string, ConnectSession>();
+const SESSION_TTL_MS = 5 * 60 * 1000;
+
+// Prune expired sessions every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, s] of connectSessions) {
+    if (s.expiresAt < now) connectSessions.delete(k);
+  }
+}, 60_000);
+
+/** POST /api/connect-session — desktop creates a pairing session */
+router.post("/connect-session", (_req, res) => {
+  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  const now = Date.now();
+  const session: ConnectSession = { token, status: "pending", createdAt: now, expiresAt: now + SESSION_TTL_MS };
+  connectSessions.set(token, session);
+  res.json({ token, expiresAt: session.expiresAt });
+});
+
+/** GET /api/connect-session/:token — desktop polls for connection */
+router.get("/connect-session/:token", (req, res) => {
+  const session = connectSessions.get(req.params.token);
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(404).json({ error: "Session not found or expired" });
+  }
+  res.json({ status: session.status, address: session.address, chain: session.chain, walletType: session.walletType });
+});
+
+/** PUT /api/connect-session/:token — mobile submits wallet address */
+router.put("/connect-session/:token", (req, res) => {
+  const session = connectSessions.get(req.params.token);
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(404).json({ error: "Session not found or expired" });
+  }
+  const { address, chain, walletType } = req.body as { address?: string; chain?: string; walletType?: string };
+  if (!address) return res.status(400).json({ error: "address is required" });
+  session.status = "connected";
+  session.address = address;
+  session.chain = chain ?? "BSV";
+  session.walletType = walletType ?? "unknown";
+  res.json({ success: true });
+});
+
 export default router;
 
