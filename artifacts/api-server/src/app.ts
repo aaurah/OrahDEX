@@ -102,14 +102,39 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+/* ── Request timeout — prevents hung external calls blocking a slot ────────── */
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  const ms = _req.method === "GET" ? 30_000 : 60_000;
+  const timer = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(503).json({ error: "Request timeout" });
+    }
+  }, ms);
+  const clear = () => clearTimeout(timer);
+  res.on("finish", clear);
+  res.on("close",  clear);
+  next();
+});
+
 app.use("/api", router);
 app.use("/v1", v1Router);
 
-startPriceUpdater();
-startLiquidityBot();
-startFuturesProfitEngine();
-startBsvChainMonitor();
-startRouteCache();
+/* ── Global Express error handler — catches any sync/async route throw ─────── */
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const msg  = err instanceof Error ? err.message : String(err);
+  const code = (err as any)?.status ?? (err as any)?.statusCode ?? 500;
+  logger.error({ err: msg, url: _req.url }, "Unhandled route error");
+  if (!res.headersSent) {
+    res.status(typeof code === "number" ? code : 500).json({ error: "Internal server error" });
+  }
+});
+
+/* ── Background services — each wrapped so one failure can't crash others ──── */
+try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
+try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
+try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
+try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
+try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
 
 /* ── Connectivity ping — returns 204 ─────────────────────────────────────── */
 app.get("/api/ping", (_req, res) => {
