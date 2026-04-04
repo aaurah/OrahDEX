@@ -202,6 +202,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
   const setInternalBchAddress = useWalletStore((s) => s.setInternalBchAddress);
   const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
+  const setInternalSolAddress = useWalletStore((s) => s.setInternalSolAddress);
   const walletState = useWalletStore();
   const initialTab = useWalletModalStore((s) => s.initialTab);
 
@@ -995,6 +996,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
+      setInternalSolAddress(addrs.sol);
       setCreateStep("done");
       setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
     } finally {
@@ -1016,6 +1018,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
+      setInternalSolAddress(addrs.sol);
       setImportStep("done");
       setTimeout(() => goToPrep(addrs.evm, "evm", "aura-wallet"), 2500);
     } finally {
@@ -1541,6 +1544,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="w-full space-y-2">
                             {[
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
+                              { label: "SOL", sub: "Solana · Phantom-compatible", addr: hdAddresses.sol, color: "violet" },
                               { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
                               { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
                               { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },
@@ -1705,6 +1709,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="w-full space-y-2">
                             {[
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue" },
+                              { label: "SOL", sub: "Solana · Phantom-compatible", addr: hdAddresses.sol, color: "violet" },
                               { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0", addr: hdAddresses.btc, color: "orange" },
                               { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: hdAddresses.bch, color: "green" },
                               { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0", addr: hdAddresses.bsv, color: "emerald" },

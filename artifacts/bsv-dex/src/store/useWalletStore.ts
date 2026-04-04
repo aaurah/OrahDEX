@@ -44,6 +44,8 @@ interface WalletState {
   internalBchAddress: string | null;
   /** BTC address for HD-wallet users (m/44'/0'/0'/0/0 — different from BSV path). */
   internalBtcAddress: string | null;
+  /** SOL address for HD-wallet users (SLIP-0010 ed25519 m/44'/501'/0'/0' — Phantom-compatible). */
+  internalSolAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
   connectDemo: (address: string) => void;
@@ -54,6 +56,7 @@ interface WalletState {
   setInternalBsvAddress: (addr: string | null) => void;
   setInternalBchAddress: (addr: string | null) => void;
   setInternalBtcAddress: (addr: string | null) => void;
+  setInternalSolAddress: (addr: string | null) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -97,6 +100,7 @@ export const useWalletStore = create<WalletState>()(
       internalBsvAddress: null,
       internalBchAddress: null,
       internalBtcAddress: null,
+      internalSolAddress: null,
 
       connect: (wallet) =>
         set({
@@ -111,6 +115,7 @@ export const useWalletStore = create<WalletState>()(
           internalBsvAddress: null,
           internalBchAddress: null,
           internalBtcAddress: null,
+          internalSolAddress: null,
         }),
 
       connectDemo: (address) =>
@@ -126,6 +131,7 @@ export const useWalletStore = create<WalletState>()(
           internalBsvAddress: null,
           internalBchAddress: null,
           internalBtcAddress: null,
+          internalSolAddress: null,
         }),
 
       disconnect: () =>
@@ -141,6 +147,7 @@ export const useWalletStore = create<WalletState>()(
           internalBsvAddress: null,
           internalBchAddress: null,
           internalBtcAddress: null,
+          internalSolAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
@@ -149,6 +156,7 @@ export const useWalletStore = create<WalletState>()(
       setInternalBsvAddress: (internalBsvAddress) => set({ internalBsvAddress }),
       setInternalBchAddress: (internalBchAddress) => set({ internalBchAddress }),
       setInternalBtcAddress: (internalBtcAddress) => set({ internalBtcAddress }),
+      setInternalSolAddress: (internalSolAddress) => set({ internalSolAddress }),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),
