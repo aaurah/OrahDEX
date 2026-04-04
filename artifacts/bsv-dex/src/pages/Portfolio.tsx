@@ -185,6 +185,23 @@ export function Portfolio() {
     network === "tron" ? address : null,
   );
 
+  // ── OrahDEX Exchange Balances (from API — reflects post-trade state) ───────
+  const { data: exchangeApiBalances, refetch: refetchExchangeBalances } = useQuery<
+    { asset: string; available: string; locked: string }[]
+  >({
+    queryKey: ["portfolio-exchange-balances", address],
+    queryFn: async () => {
+      if (!address) return [];
+      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : data.balances ?? [];
+    },
+    enabled: !!address,
+    refetchInterval: 15_000,
+    staleTime: 8_000,
+  });
+
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -350,11 +367,40 @@ export function Portfolio() {
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
 
-  // Build balance rows:
-  // EVM wallets → use ALL real on-chain token data from useEvmBalances
-  // BSV/SOL/BTC → native asset only from wallet store
+  // OrahDEX exchange balances from API (reflects actual post-trade state)
+  const hasExchangeBalances = (exchangeApiBalances?.length ?? 0) > 0 &&
+    exchangeApiBalances!.some(b => parseFloat(b.available) > 0 || parseFloat(b.locked) > 0);
+
   const stableSet = new Set(["USDT","USDC","DAI","BUSD","TUSD"]);
+
+  // Build balance rows.
+  // Priority order:
+  //  1. OrahDEX exchange balances (from API) — always reflects post-trade state
+  //  2. EVM on-chain balances (MetaMask / EVM wallet)
+  //  3. TRON on-chain balances
+  //  4. Native-only fallback (BSV/BTC/SOL)
   const balances = (() => {
+    if (hasExchangeBalances) {
+      // Use API exchange balances — these update after every trade
+      return exchangeApiBalances!
+        .map(b => {
+          const isStable = stableSet.has(b.asset);
+          const mkt      = prices?.[b.asset];
+          const price    = isStable ? 1 : (mkt?.lastPrice ?? 0);
+          const change   = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+          const avail    = parseFloat(b.available);
+          const locked   = parseFloat(b.locked);
+          const total    = avail + locked;
+          const valueUSD = total * price;
+          const pnl24h   = valueUSD * change / 100;
+          const color    = ASSET_COLORS[b.asset] ?? "#6B7280";
+          return { asset: b.asset, color, marketKey: b.asset,
+                   total, free: avail, locked, price,
+                   change24hPercent: change, valueUSD, pnl24h, isNative: false };
+        })
+        .filter(b => b.total > 0)
+        .sort((a, b) => b.valueUSD - a.valueUSD);
+    }
     if (network === "evm" && evmBalances.length > 0) {
       return evmBalances.map(b => {
         const isStable = stableSet.has(b.symbol);
@@ -448,7 +494,7 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
+              onClick={() => { refetch(); refetchExchangeBalances(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               title="Refresh prices & balance"
             >
@@ -576,8 +622,15 @@ export function Portfolio() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 text-muted-foreground mb-2">
-                <span className="font-medium">Wallet Balance</span>
-                <button onClick={() => setHideBalances(!hideBalances)} className="hover:text-foreground transition-colors">
+                <span className="font-medium">
+                  {hasExchangeBalances ? "OrahDEX Exchange Balance" : "Wallet Balance"}
+                </span>
+                {hasExchangeBalances && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/30 uppercase tracking-wider">
+                    Live · auto-updates
+                  </span>
+                )}
+                <button onClick={() => setHideBalances(!hideBalances)} className="hover:text-foreground transition-colors ml-auto">
                   {hideBalances ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
