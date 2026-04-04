@@ -597,8 +597,8 @@ export function Markets() {
       {/* Table */}
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4">
-          <div className="bg-card border border-border rounded-2xl shadow-lg overflow-hidden">
-            <table className="w-full text-left border-collapse">
+          <div className="bg-card border border-border rounded-2xl shadow-lg overflow-x-auto">
+            <table className="w-full min-w-[820px] text-left border-collapse">
               <thead>
                 <tr className="border-b border-border bg-secondary/40 text-muted-foreground text-xs font-semibold uppercase tracking-wide">
                   <th className="px-4 py-3 w-8"></th>
