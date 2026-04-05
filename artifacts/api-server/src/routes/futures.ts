@@ -115,7 +115,7 @@ router.post("/futures/positions", async (req, res) => {
 
     const fundingVerif = await verifyAndLockFunding({
       walletAddress: body.walletAddress,
-      orderType:     "FUTURES",
+      kind:          "FUTURES",   // routes to futures_margin_accounts bucket
       walletSource,
       asset:         "USDT",
       amount:        margin.toFixed(8),

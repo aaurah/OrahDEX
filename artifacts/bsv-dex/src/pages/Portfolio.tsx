@@ -15,6 +15,7 @@ import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useFuturesMargin } from "@/hooks/useFuturesMargin";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -201,6 +202,15 @@ export function Portfolio() {
     refetchInterval: 15_000,
     staleTime: 8_000,
   });
+
+  // ── Futures margin bucket (separate from spot user_balances) ────────────────
+  // Shows the three-number breakdown: free spot / locked spot / futures margin
+  const { margin: futuresMargin } = useFuturesMargin(address);
+
+  // USDT spot breakdown for the 3-number display
+  const usdtSpot = exchangeApiBalances?.find(b => b.asset === "USDT");
+  const usdtFreeSpot   = parseFloat(usdtSpot?.available ?? "0");
+  const usdtLockedSpot = parseFloat(usdtSpot?.locked    ?? "0");
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -670,6 +680,45 @@ export function Portfolio() {
               className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors">
               <ArrowDownToLine className="w-4 h-4" /> Deposit to Trade
             </button>
+          </div>
+        </div>
+
+        {/* ── Three-number balance breakdown (spot free / spot locked / futures margin) */}
+        <div className="bg-card border border-border rounded-2xl shadow-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">USDT Balance Breakdown</h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Spot and futures buckets are fully isolated</p>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20">LIVE</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {/* Free spot */}
+            <div className="bg-secondary/40 rounded-xl p-3 border border-border/60">
+              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1">Free Spot</div>
+              <div className="text-lg font-mono font-bold text-green-400">
+                {hideBalances ? "•••" : usdtFreeSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">Available to trade</div>
+            </div>
+            {/* Locked spot */}
+            <div className="bg-secondary/40 rounded-xl p-3 border border-border/60">
+              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1">Locked Spot</div>
+              <div className="text-lg font-mono font-bold text-amber-400">
+                {hideBalances ? "•••" : usdtLockedSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">Reserved in open orders</div>
+            </div>
+            {/* Futures margin */}
+            <div className="bg-secondary/40 rounded-xl p-3 border border-blue-500/20">
+              <div className="text-[10px] text-blue-400 font-semibold uppercase tracking-widest mb-1">Futures Margin</div>
+              <div className="text-lg font-mono font-bold text-blue-300">
+                {hideBalances ? "•••" : futuresMargin.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">
+                {futuresMargin.available.toFixed(2)} free · {futuresMargin.locked.toFixed(2)} in positions
+              </div>
+            </div>
           </div>
         </div>
 

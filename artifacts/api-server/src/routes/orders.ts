@@ -115,7 +115,7 @@ router.post("/orders", async (req, res) => {
     if (parseFloat(lockAmount) > 0 && lockAsset) {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
-        orderType:       (body.type?.toUpperCase() ?? "LIMIT") as "MARKET" | "LIMIT" | "FUTURES",
+        kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
         walletSource,
         asset:           lockAsset!,
         amount:          lockAmount,

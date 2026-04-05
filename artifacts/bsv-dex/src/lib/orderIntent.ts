@@ -36,7 +36,10 @@
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type OrderSide = "buy" | "sell";
-export type OrderType = "MARKET" | "LIMIT" | "FUTURES";
+/** SPOT for market/limit orders drawn from the spot balance bucket. FUTURES for perpetual positions drawn from the futures margin bucket. */
+export type OrderKind = "SPOT" | "FUTURES";
+/** The execution style within the kind. */
+export type OrderType = "MARKET" | "LIMIT";
 
 /**
  * Canonical OrderIntent — what the wallet produces and the server consumes.
@@ -47,13 +50,19 @@ export type OrderType = "MARKET" | "LIMIT" | "FUTURES";
 export interface OrderIntent {
   /** "BSV/USDT" — always BASE/QUOTE */
   pair:          string;
+  /** SPOT (market/limit, uses spot balance bucket) or FUTURES (uses futures margin bucket) */
+  kind:          OrderKind;
   side:          OrderSide;
+  /** MARKET or LIMIT — the execution style within the kind */
   type:          OrderType;
-  /** Required for LIMIT and FUTURES; omit for MARKET */
+  /** Required for LIMIT; omit for MARKET */
   price?:        string;
   /** Base-asset quantity as a positive decimal string */
   amount:        string;
-  /** Unix ms — server rejects intents received after this timestamp */
+  /**
+   * Unix SECONDS — server rejects intents received after this timestamp.
+   * Build with: Math.floor(Date.now() / 1000) + 300  (= 5 minutes)
+   */
   expiry:        number;
   /** UUID v4 one-time token — replay prevention */
   nonce:         string;
@@ -61,6 +70,7 @@ export interface OrderIntent {
   /**
    * Verifiable proof of committed funds.
    * Populated by the server after locking; wallet sends "" or omits.
+   * "ledger:..." → spot bucket | "margin:..." → futures bucket
    */
   fundingRef?:   string;
   /**
@@ -78,23 +88,26 @@ export interface OrderIntent {
  */
 export function buildOrderIntent(params: {
   pair:          string;
+  kind:          OrderKind;
   side:          OrderSide;
   type:          OrderType;
   price?:        string;
   amount:        string;
   walletAddress: string;
-  /** TTL in milliseconds (default: 5 minutes) */
-  ttlMs?:        number;
+  /** TTL in seconds (default: 300 = 5 minutes) */
+  ttlSec?:       number;
 }): Omit<OrderIntent, "fundingRef" | "signature"> {
-  const { pair, side, type, price, amount, walletAddress, ttlMs = 5 * 60 * 1000 } = params;
+  const { pair, kind, side, type, price, amount, walletAddress, ttlSec = 300 } = params;
   return {
     pair,
+    kind,
     side,
     type,
     price,
     amount,
     walletAddress: walletAddress.toLowerCase(),
-    expiry: Date.now() + ttlMs,
+    // expiry in unix SECONDS (not ms) — matches server contract
+    expiry: Math.floor(Date.now() / 1000) + ttlSec,
     nonce:  crypto.randomUUID(),
   };
 }
