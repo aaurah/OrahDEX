@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedDemoVaults } from "./lib/copyOrchestrator.js";
+import net from "node:net";
 
 const rawPort = process.env["PORT"];
 
@@ -47,15 +48,40 @@ function shutdown(signal: string) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT",  () => shutdown("SIGINT"));
 
-/* ── Start server ─────────────────────────────────────────────────────────── */
-server = app.listen(port, (err?: Error) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
+/* ── Wait until port is free, then start ─────────────────────────────────── */
+function isPortFree(p: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tester = net.createServer()
+      .once("error", () => resolve(false))
+      .once("listening", () => { tester.close(); resolve(true); })
+      .listen(p, "0.0.0.0");
+  });
+}
+
+async function startWithRetry(maxAttempts = 8, delayMs = 1000): Promise<void> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const free = await isPortFree(port);
+    if (free) break;
+    logger.warn({ port, attempt, maxAttempts }, `Port in use — waiting ${delayMs}ms before retry…`);
+    await new Promise(r => setTimeout(r, delayMs));
+    if (attempt === maxAttempts) {
+      logger.error({ port }, "Port still in use after all retries — exiting");
+      process.exit(1);
+    }
   }
-  logger.info({ port }, "Server listening");
-  seedDemoVaults().catch((e) => logger.error({ err: e?.message }, "seedDemoVaults failed"));
-});
+
+  server = app.listen(port, () => {
+    logger.info({ port }, "Server listening");
+    seedDemoVaults().catch((e) => logger.error({ err: e?.message }, "seedDemoVaults failed"));
+  });
+
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    logger.error({ err: err.message, code: err.code }, "Server error after start");
+    process.exit(1);
+  });
+}
+
+startWithRetry();
 
 /* Keep the event loop alive so that even if all timers and pending callbacks
    clear, the process stays up and keeps the HTTP server accepting connections. */

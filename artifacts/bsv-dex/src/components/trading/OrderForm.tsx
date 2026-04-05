@@ -1046,14 +1046,17 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         },
         onError: (err: any) => {
           // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, bad signature)
+          const data = err?.response?.data ?? err?.data ?? {};
           const serverMsg: string =
-            err?.response?.data?.detail ??
-            err?.response?.data?.error ??
+            data?.message ??
+            data?.detail ??
+            data?.error ??
             err?.message ??
             "Order rejected by the server.";
           const isInsufficient =
-            serverMsg.toLowerCase().includes("insufficient") ||
-            (err?.response?.data?.code === "INSUFFICIENT_FUNDS");
+            data?.error === "INSUFFICIENT_FUNDS" ||
+            data?.code  === "INSUFFICIENT_FUNDS" ||
+            serverMsg.toLowerCase().includes("insufficient");
           toast({
             title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
             description: serverMsg,

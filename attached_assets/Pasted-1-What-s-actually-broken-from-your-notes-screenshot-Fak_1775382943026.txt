@@ -1,0 +1,153 @@
+1. What’s actually broken (from your notes + screenshot)
+
+• Fake solvency for real wallets:• ensureSeedForAsset is auto-crediting any wallet when balance is insufficient.
+• seedInitialBalances is seeding real EVM wallets with demo balances on first order.
+
+• Ledger integrity breach:• A real wallet with 0.0058 ETH can place a 525 ETH sell order.
+• Portfolio still shows the tiny real balance, while the order book pretends the huge order is valid.
+
+• Error handling is sabotaged:• lockForOrder throws INSUFFICIENT_FUNDS, but the catch block logs and continues, so the order is still created.
+
+• Client is complicit:• No synchronous guard on the form.
+• No clear surfacing of server-side rejection.
+
+
+
+---
+
+2. Server-side fixes (must-do, non-negotiable)
+
+A. Kill auto-seeding for real wallets
+
+In ensureSeedForAsset:
+
+• Add wallet source awareness (e.g. walletSource: 'demo' | 'orah' | 'external').
+• Only allow auto-seed when:• walletSource === 'demo' (or whatever you call your sandbox wallet).
+
+• For external / real EVM wallets:• Do not create or top up balances.
+• If balance < required lock → throw INSUFFICIENT_FUNDS and let it bubble.
+
+
+
+Direct rule: Only demo wallets are ever seeded. Real wallets must reflect chain reality.
+
+B. Stop seeding real wallets on first order
+
+In seedInitialBalances:
+
+• Add the same walletSource check.
+• If walletSource !== 'demo', return immediately—no balances created, no credits.
+• Keep this function strictly for demo/sandbox flows.
+
+
+C. Fix `lockForOrder` and error propagation
+
+In the order placement flow (e.g. placeOrder / lockForOrder):
+
+• Remove any try/catch that swallows INSUFFICIENT_FUNDS.
+• If you must catch, then:• Re-throw for INSUFFICIENT_FUNDS (or return a typed error up the stack).
+• Only handle expected, non-fatal cases (logging, metrics) without continuing the order.
+
+• Ensure the order is not inserted into the DB if the lock fails.
+
+
+Contract: No lock, no order. Ever.
+
+---
+
+3. API contract changes
+
+Update the order placement endpoint to:
+
+• Require:• walletSource (e.g. 'demo' | 'orah' | 'external').
+• reportedBalance (client-side view of balance for that asset).
+
+• Use walletSource to:• Decide whether seeding is allowed.
+
+• Use reportedBalance only for:• Logging / sanity checks (never as the source of truth vs ledger).
+
+
+
+On error:
+
+• Return a clear, typed error, e.g.:
+
+
+{
+  "error": "INSUFFICIENT_FUNDS",
+  "message": "Order rejected: available balance 0.0058 ETH, required 525.0060 ETH."
+}
+
+
+---
+
+4. Client-side fixes (OrderForm)
+
+A. Synchronous balance guard in `handleSubmit`
+
+In OrderForm.tsx:
+
+• Compute required amount for the side:• Sell: required = orderSize of base asset.
+• Buy: required = price * size of quote asset.
+
+• Compare against selected wallet’s balance from store.
+• If required > balance:• Block submission.
+• Show inline error:
+“Insufficient balance: you have 0.0058 ETH, this order requires 525.0060 ETH.”
+
+
+
+B. Send `walletSource` + `reportedBalance` in payload
+
+Where you call placeOrder.mutate:
+
+• Add:
+
+
+walletSource,
+reportedBalance: currentBalanceForAsset,
+
+
+• Ensure walletSource is derived from your existing flags:• isDemo → 'demo'
+• isOrahWallet → 'orah'
+• external → 'external'
+
+
+
+C. Handle server rejection cleanly
+
+Add onError to placeOrder.mutate:
+
+• If error.response?.data?.error === 'INSUFFICIENT_FUNDS':• Show the server’s message in the form error area.
+
+• For other errors, show a generic “Order failed” toast + log.
+
+
+---
+
+5. EADDRINUSE / server restart
+
+In your API server restart script:
+
+• Increase the sleep delay between kill and restart (e.g. from 0.3s to 2–3s).
+• Or better: wait until the port is actually free before starting.
+• This is just to keep your dev loop sane while you iterate on these fixes.
+
+
+---
+
+6. Quick verification checklist
+
+Once you patch:
+
+1. Real external wallet, 0.0058 ETH:• Try to place 525 ETH SELL.
+• Expected:• Client blocks submission (sync guard).
+• If bypassed (e.g. via direct API), server returns INSUFFICIENT_FUNDS.
+• No order appears in “Orders”.
+
+
+2. Demo wallet:• Large order within demo limits should still work.
+• Seeding only happens for demo.
+
+3. Portfolio vs orders:• Balances never increase magically when placing orders.
+• Only locked amounts change internally; portfolio remains honest.
