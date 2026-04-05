@@ -331,7 +331,7 @@ interface Props {
 }
 
 export function ChainSwitcherDropdown({ inline = false }: Props) {
-  const { chainId, network, address, connect, provider, switchNetworkType } = useWalletStore();
+  const { chainId, network, address, connect, provider, switchNetworkType, switchChain } = useWalletStore();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState<number | null>(null);
@@ -348,7 +348,8 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
     if (provider === "reown") {
       try {
         await switchReownChain(chain.id);
-        connect({ address: address!, provider: "reown", network: "evm", chainId: chain.id });
+        // Use switchChain to update only the chainId — never wipes internal addresses
+        switchChain(chain.id);
         const bal = await fetchEvmBalance(address!, chain.id);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
@@ -371,11 +372,12 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
 
     /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
        No browser extension needed — we own the key, so just update the
-       store with the new chainId and fetch the balance via the target
-       chain's public RPC (bypasses window.ethereum entirely). */
+       chainId and fetch the balance via the target chain's public RPC.
+       Use switchChain() NOT connect() so internal addresses are preserved. */
     if (provider === "orah-wallet") {
       try {
-        connect({ address: address!, provider: "orah-wallet", network: "evm", chainId: chain.id });
+        // Only update the chainId — address stays the same, internals untouched
+        switchChain(chain.id);
         // Fetch balance directly from the target chain's public RPC
         const rpcUrl = CHAIN_RPC_URLS[chain.id] ?? chain.rpcUrl;
         let bal: string | null = null;
@@ -415,7 +417,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
 
     try {
       await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-      connect({ address: address!, provider: provider!, network: "evm", chainId: chain.id });
+      switchChain(chain.id);
       const bal = await fetchEvmBalance(address!, chain.id);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
       toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
@@ -435,7 +437,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
             }],
           });
           await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-          connect({ address: address!, provider: provider!, network: "evm", chainId: chain.id });
+          switchChain(chain.id);
           const bal = await fetchEvmBalance(address!, chain.id);
           if (bal !== null) useWalletStore.getState().setBalance(bal);
           toast({ title: `${chain.name} added & connected`, description: `${chain.badge} · ${chain.symbol} · Added to your wallet` });
