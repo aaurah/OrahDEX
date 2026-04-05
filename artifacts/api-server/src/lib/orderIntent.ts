@@ -52,7 +52,10 @@ import crypto from "node:crypto";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type OrderSide = "buy" | "sell";
-export type OrderType = "MARKET" | "LIMIT" | "FUTURES";
+/** SPOT covers MARKET and LIMIT orders; FUTURES covers perpetual positions. */
+export type OrderKind = "SPOT" | "FUTURES";
+/** MARKET executes at the best available price; LIMIT rests in the book. */
+export type OrderType = "MARKET" | "LIMIT";
 
 export type WalletSource = "external" | "demo" | "orah";
 
@@ -63,13 +66,19 @@ export type WalletSource = "external" | "demo" | "orah";
 export interface OrderIntent {
   /** Trading pair in BASE/QUOTE notation, e.g. "BSV/USDT" */
   pair:          string;
+  /** SPOT for market/limit orders; FUTURES for perpetual positions */
+  kind:          OrderKind;
   side:          OrderSide;
+  /** MARKET or LIMIT — the execution style within the kind */
   type:          OrderType;
-  /** Required for LIMIT and FUTURES; ignored for MARKET */
+  /** Required for LIMIT; ignored for MARKET */
   price?:        string;
   /** Base-asset quantity as a positive decimal string */
   amount:        string;
-  /** Unix milliseconds — the server rejects intents past this timestamp */
+  /**
+   * Unix SECONDS — the server rejects intents received after this time.
+   * Wallet should set: Math.floor(Date.now() / 1000) + 300  (5 min)
+   */
   expiry:        number;
   /** UUID v4 — stored on the order row; duplicate nonce = replay, rejected */
   nonce:         string;
@@ -125,11 +134,14 @@ export function validateOrderIntent(intent: Partial<OrderIntent>): IntentValidat
   if (!intent.pair || !intent.pair.includes("/")) {
     return { valid: false, error: "pair must be BASE/QUOTE (e.g. BSV/USDT)", code: "INVALID_PAIR" };
   }
+  if (!["SPOT", "FUTURES"].includes(intent.kind ?? "")) {
+    return { valid: false, error: "kind must be SPOT or FUTURES", code: "INVALID_KIND" };
+  }
   if (intent.side !== "buy" && intent.side !== "sell") {
     return { valid: false, error: "side must be 'buy' or 'sell'", code: "INVALID_SIDE" };
   }
-  if (!["MARKET", "LIMIT", "FUTURES"].includes(intent.type ?? "")) {
-    return { valid: false, error: "type must be MARKET | LIMIT | FUTURES", code: "INVALID_TYPE" };
+  if (!["MARKET", "LIMIT"].includes(intent.type ?? "")) {
+    return { valid: false, error: "type must be MARKET or LIMIT", code: "INVALID_TYPE" };
   }
   const amount = parseFloat(intent.amount ?? "0");
   if (!isFinite(amount) || amount <= 0) {
@@ -137,9 +149,6 @@ export function validateOrderIntent(intent: Partial<OrderIntent>): IntentValidat
   }
   if (intent.type === "LIMIT" && !intent.price) {
     return { valid: false, error: "price is required for LIMIT orders", code: "PRICE_REQUIRED" };
-  }
-  if (intent.type === "FUTURES" && !intent.price) {
-    return { valid: false, error: "price (entry price) is required for FUTURES orders", code: "PRICE_REQUIRED" };
   }
   if (intent.price !== undefined) {
     const p = parseFloat(intent.price);
@@ -153,7 +162,8 @@ export function validateOrderIntent(intent: Partial<OrderIntent>): IntentValidat
   if (!intent.nonce) {
     return { valid: false, error: "nonce is required", code: "MISSING_NONCE" };
   }
-  if (!intent.expiry || intent.expiry < Date.now()) {
+  // expiry is unix SECONDS — compare against current unix seconds
+  if (!intent.expiry || intent.expiry < Math.floor(Date.now() / 1000)) {
     return { valid: false, error: "intent has expired", code: "INTENT_EXPIRED" };
   }
   if (!intent.fundingRef) {

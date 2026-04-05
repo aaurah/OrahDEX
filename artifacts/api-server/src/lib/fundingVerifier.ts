@@ -65,7 +65,7 @@ import {
   evmSigFundingRef,
   utxoFundingRef,
   marginFundingRef,
-  type OrderType,
+  type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
 
@@ -80,7 +80,12 @@ export interface FundingVerificationResult {
 
 export interface VerifyFundingParams {
   walletAddress: string;
-  orderType:     OrderType;
+  /**
+   * `kind` determines the balance bucket:
+   *   SPOT    → user_balances (spot bucket)
+   *   FUTURES → futures_margin_accounts (futures bucket)
+   */
+  kind:          OrderKind;
   walletSource:  WalletSource;
   /** Asset to lock ("USDT" for buy-side / base asset for sell-side) */
   asset:         string;
@@ -214,21 +219,24 @@ async function verifyFuturesFunding(
 /**
  * Verify funding for an order intent and lock the required funds.
  *
- * For MARKET / LIMIT: locks funds in user_balances (spot bucket).
- * For FUTURES: checks futures_margin_accounts (spot bucket untouched; lock
- *              happens later in futuresSettlement.openFuturesPosition).
+ * Routes on `kind` — the canonical balance-bucket boundary:
+ *   kind === "SPOT"    → locks funds in user_balances (spot bucket)
+ *   kind === "FUTURES" → checks futures_margin_accounts (futures bucket only;
+ *                        the actual lock happens in futuresSettlement.openFuturesPosition)
  *
- * Returns a FundingVerificationResult with a fundingRef to store on the order.
+ * Returns a FundingVerificationResult with a fundingRef to store on the order row.
  * The fundingRef is the verifiable proof that funds are committed.
  */
 export async function verifyAndLockFunding(
   params: VerifyFundingParams,
 ): Promise<FundingVerificationResult> {
-  // Bucket routing — this is the isolation boundary
-  if (params.orderType === "FUTURES") {
+  // ── Balance-bucket isolation boundary ─────────────────────────────────────
+  // This is the only place that decides which table is touched.
+  // NEVER inline this routing in route handlers.
+  if (params.kind === "FUTURES") {
     return verifyFuturesFunding(params);
   }
-  // MARKET and LIMIT both draw from the spot bucket
+  // SPOT covers both MARKET and LIMIT — both draw from the spot bucket
   return verifySpotFunding(params);
 }
 

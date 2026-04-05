@@ -1,0 +1,133 @@
+1. Wallet: build a signed OrderIntent
+
+From the wallet, everything is one object:
+
+type OrderKind = 'SPOT' | 'FUTURES';
+type OrderType = 'MARKET' | 'LIMIT';
+
+type OrderIntent = {
+  kind: OrderKind;          // SPOT or FUTURES
+  type: OrderType;          // MARKET or LIMIT
+  pair: string;             // e.g. "BSV/USDT"
+  side: 'BUY' | 'SELL';
+  price?: string;           // required for LIMIT
+  amount: string;
+  expiry: number;           // unix seconds
+  nonce: string;            // random, unique
+  fundingRef: string;       // "ledger:..." or "margin:..." or UTXO id
+  walletAddress: string;
+  signature: string;
+};
+
+
+Wallet flow:
+
+export function buildOrderIntent(params, wallet) {
+  const nonce = crypto.randomUUID();
+  const expiry = Math.floor(Date.now() / 1000) + 60 * 5; // 5 min
+
+  const fundingRef = selectAndLockFunds(params, wallet); 
+  // SPOT → spot bucket / UTXO
+  // FUTURES → margin bucket
+
+  const payload = {
+    ...params,
+    nonce,
+    expiry,
+    fundingRef,
+    walletAddress: wallet.address,
+  };
+
+  const signature = wallet.sign(canonicalIntentPayload(payload));
+
+  return { ...payload, signature };
+}
+
+
+---
+
+2. API: verify + lock funding via a single fundingVerifier
+
+On the server, never inline this logic in routes again — always go through one place:
+
+export async function verifyAndLockFunding(intent: OrderIntent, db) {
+  verifySignature(intent);          // walletAddress + signature
+
+  if (intent.kind === 'SPOT') {
+    return lockSpotFunds(intent, db);      // touches user_balances
+  }
+
+  if (intent.kind === 'FUTURES') {
+    return lockFuturesMargin(intent, db);  // touches futures_margin_accounts
+  }
+
+  throw new Error('Unsupported order kind');
+}
+
+
+In orders.ts:
+
+const intent = validateOrderIntent(req.body);
+const funding = await verifyAndLockFunding(intent, db);
+
+const order = await db.insert(ordersTable).values({
+  // ...
+  fundingRef: intent.fundingRef,
+  nonce: intent.nonce,
+  expiry: intent.expiry,
+});
+
+
+---
+
+3. Settlement: split spot vs futures into separate modules
+
+Spot (market/limit):
+
+// spotSettlement.ts
+export async function settleSpotFill(fill, db) {
+  // 1. If cross-chain → build HTLC + OP_RETURN
+  // 2. Broadcast settlement tx
+  // 3. Update spot balances (user_balances)
+  // 4. Return settlement metadata for UI
+}
+
+
+Futures (margin / positions):
+
+// futuresSettlement.ts
+export async function openFuturesPosition(intent, db) {
+  // 1. Move margin from futures_margin_accounts.available → locked
+  // 2. Insert position row with entryPrice, size, side
+}
+
+export async function closeFuturesPosition(position, price, db) {
+  // 1. Compute PnL
+  // 2. Release locked margin + PnL back to futures_margin_accounts.available
+  // 3. Mark position closedAt
+}
+
+
+In futures.ts:
+
+router.post('/futures/open', async (req, res) => {
+  const intent = validateOrderIntent(req.body);
+  await verifyAndLockFunding(intent, db);          // FUTURES bucket
+  const position = await openFuturesPosition(intent, db);
+  res.json({ position });
+});
+
+
+---
+
+4. The invariants that mean “it’s fixed”
+
+If these are true, your system is logically sound:
+
+• Every order row has: funding_ref, nonce, expiry.
+• No order is accepted unless verifyAndLockFunding succeeds.
+• Spot settlement only touches user_balances.
+• Futures settlement only touches futures_margin_accounts.
+• Wallet always shows three numbers per asset:• free spot
+• locked spot
+• futures margin (available + locked)

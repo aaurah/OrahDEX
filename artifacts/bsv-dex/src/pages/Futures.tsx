@@ -12,6 +12,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE } from "@/lib/api";
+import { useFuturesMargin } from "@/hooks/useFuturesMargin";
 
 const LEVERAGE_OPTIONS = [2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 
@@ -232,15 +233,11 @@ export function FuturesTrading() {
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
   const nativeBal = balance ? parseFloat(balance) : 0;
 
-  // ── Orah Wallet & Demo: fetch USDT balance from API ledger ───────────────────
-  const [demoUsdtBal, setDemoUsdtBal] = useState(0);
-  useEffect(() => {
-    if (!usesApiBalance || !address) { setDemoUsdtBal(0); return; }
-    fetch(`${API_BASE}/balances/USDT?walletAddress=${address}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(j => j ? setDemoUsdtBal(parseFloat(j.available ?? "0") || 0) : null)
-      .catch(() => {});
-  }, [usesApiBalance, address]);
+  // ── Futures margin bucket (isolated from spot user_balances) ─────────────────
+  // Futures orders MUST draw from futures_margin_accounts, never from spot ledger.
+  const { margin: futuresMgn } = useFuturesMargin(usesApiBalance ? (address ?? undefined) : undefined);
+  // Available margin for futures orders; falls back to 0 for external wallets
+  const demoUsdtBal = futuresMgn.available; // compat alias used throughout this component
 
   // Canonical L2 chain awareness — BaseETH/ArbETH/OPETH all = ETH at 1:1
   const CHAIN_INFO_FUT: Record<number, { nativeSymbol: string; l2Label: string | null }> = {
@@ -711,33 +708,42 @@ export function FuturesTrading() {
             </div>
 
             <div className="p-3 flex flex-col gap-3">
-              {/* Available balance */}
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Available</span>
-                {address ? (
-                  <div className="flex items-center gap-1.5">
-                    {usesApiBalance ? (
-                      <>
-                        <span className="font-mono text-foreground">{demoUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        <span className="font-mono text-foreground">USDT</span>
-                        {isDemo && <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>}
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-mono text-foreground">{nativeBal.toFixed(4)}</span>
-                        <span className="font-mono text-foreground">{nativeSymbol}</span>
-                        {futChainInfo?.l2Label && (
-                          <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                            {futChainInfo.l2Label}
-                          </span>
-                        )}
-                      </>
-                    )}
+              {/* Futures margin balance — shows futures bucket, NOT spot ledger */}
+              <div className="flex flex-col gap-0.5">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="text-blue-400/80 font-medium">Margin Available</span>
+                  {address ? (
+                    <div className="flex items-center gap-1.5">
+                      {usesApiBalance ? (
+                        <>
+                          <span className="font-mono text-blue-300 font-semibold">{demoUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="font-mono text-muted-foreground">USDT</span>
+                          {isDemo && <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-mono text-foreground">{nativeBal.toFixed(4)}</span>
+                          <span className="font-mono text-foreground">{nativeSymbol}</span>
+                          {futChainInfo?.l2Label && (
+                            <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                              {futChainInfo.l2Label}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <button onClick={() => openModal()} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
+                      <Wallet className="w-3 h-3" /> Connect Wallet
+                    </button>
+                  )}
+                </div>
+                {/* Locked margin sub-row */}
+                {usesApiBalance && address && futuresMgn.locked > 0 && (
+                  <div className="flex justify-between text-[10px] text-muted-foreground/70">
+                    <span>In positions</span>
+                    <span className="font-mono text-amber-400/70">-{futuresMgn.locked.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT</span>
                   </div>
-                ) : (
-                  <button onClick={() => openModal()} className="text-primary text-xs font-semibold hover:underline flex items-center gap-1">
-                    <Wallet className="w-3 h-3" /> Connect Wallet
-                  </button>
                 )}
               </div>
 
