@@ -10,6 +10,7 @@ Key capabilities include:
 - Multi-chain support, including TRON and various EVM networks.
 - A demo account feature for paper trading with virtual funds.
 - A robust API infrastructure and an Admin AI Intelligence panel for managing AI features and insights.
+- Admin API Health Monitor at `/admin/api-monitor`: live polling every 5s, sparkline response-time chart, per-service status cards, incident log, crash detection after 3 failures, and soft-restart button.
 
 # User Preferences
 

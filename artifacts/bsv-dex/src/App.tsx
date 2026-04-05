@@ -80,6 +80,7 @@ const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").th
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
+const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -317,8 +318,9 @@ function Router() {
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
       <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
-      <Route path="/admin/logs">      <AdminRoute><AdminLogsPage /></AdminRoute></Route>
+      <Route path="/admin/logs">        <AdminRoute><AdminLogsPage /></AdminRoute></Route>
       <Route path="/admin/support">   <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
+      <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
 
       {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
       <Route path="/">

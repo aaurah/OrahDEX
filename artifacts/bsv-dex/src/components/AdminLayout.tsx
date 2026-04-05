@@ -96,6 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "System",
     items: [
       { href: "/admin/health",       label: "System Health",      icon: HeartPulse, badge: "LIVE" },
+      { href: "/admin/api-monitor",  label: "API Monitor",        icon: Activity,   badge: "NEW" },
       { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
       { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },
       { href: "/admin/logs",         label: "System Logs",        icon: Terminal },
