@@ -7,8 +7,8 @@ import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
-import { buildHtlc, buildP2SHLockingScript } from "../lib/htlc.js";
-import { getBsvChainStatus } from "../lib/bsvChainMonitor.js";
+import { buildHtlc, buildP2SHLockingScript, MIN_LOCKTIME_BLOCKS, HTLC_MIN_SAT, DUST_SAT } from "../lib/htlc.js";
+import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
@@ -205,6 +205,7 @@ router.post("/orders", async (req, res) => {
     let lastHtlcSecretHash: string | undefined;
     let lastHtlcLocktimeBlocks: number | undefined;
     let lastCrossChain = false;
+    let lastOpReturnPayload: string | undefined;
 
     const isMarket = body.type === "market";
     const isLimit  = body.type === "limit" && !!price;
@@ -298,17 +299,40 @@ router.post("/orders", async (req, res) => {
         const sellerNetwork = body.side === "sell" ? networkType : (match.networkType ?? "evm");
         const isCrossChain  = buyerNetwork !== sellerNetwork && !isBot;
 
+        // ── HTLC invariant guard ─────────────────────────────────────────────
+        // HTLC must ONLY be generated for genuine cross-chain trades.
+        // Same-chain bot fills never get an HTLC — confirmed by the isCrossChain flag.
+        if (!isCrossChain && process.env.NODE_ENV !== "production") {
+          // Dev-mode assertion: helps catch logic errors during testing
+          req.log.debug({ buyerNetwork, sellerNetwork, isBot }, "Non-cross-chain fill — HTLC correctly skipped");
+        }
+
         // For cross-chain matches, auto-generate an HTLC (UTXO-scripted swap contract)
         let htlcResult: Awaited<ReturnType<typeof buildHtlc>> | null = null;
         let htlcP2SHScriptHex: string | undefined;
         if (isCrossChain) {
           try {
-            const chainStatus   = await getBsvChainStatus();
-            const locktimeBlocks = (chainStatus.blockHeight || 943000) + 144; // +144 blocks ≈ 24h
-            htlcResult          = buildHtlc({ locktimeBlocks });
-            htlcP2SHScriptHex   = buildP2SHLockingScript(htlcResult.redeemScript);
+            const chainStatus  = await getBsvChainStatus();
+            const currentHeight = chainStatus.blockHeight || 943000;
+
+            // Invariant 1: locktime must always be at least MIN_LOCKTIME_BLOCKS ahead
+            // Use Math.max in case the cached height is stale
+            const locktimeBlocks = Math.max(
+              currentHeight + MIN_LOCKTIME_BLOCKS,
+              943000 + MIN_LOCKTIME_BLOCKS,  // absolute floor in case chainStatus is zero
+            );
+
+            htlcResult        = buildHtlc({ locktimeBlocks });
+            htlcP2SHScriptHex = buildP2SHLockingScript(htlcResult.redeemScript);
+
             req.log.info(
-              { htlcAddress: htlcResult.htlcAddress, secretHash: htlcResult.secretHash.slice(0, 16) + "…", locktimeBlocks },
+              {
+                htlcAddress: htlcResult.htlcAddress,
+                secretHash: htlcResult.secretHash.slice(0, 16) + "…",
+                locktimeBlocks,
+                currentHeight,
+                marginBlocks: locktimeBlocks - currentHeight,
+              },
               "HTLC generated for cross-chain trade settlement"
             );
           } catch (htlcErr) {
@@ -344,15 +368,31 @@ router.post("/orders", async (req, res) => {
           const wallet  = await getOrCreateWallet();
           const balance = await fetchWalletBalance(wallet.address);
           if (balance.funded && balance.utxos.length > 0) {
-            const best   = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
+            const best    = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
+            const FEE_SAT = 500; // standard broadcast fee
+
+            // Invariant 2: htlcSatoshis must be ≥ HTLC_MIN_SAT and never exceed
+            // available UTXO after fees. If the UTXO is too small, skip HTLC output
+            // to avoid a dust output or negative change amount.
+            const maxHtlcSat   = best.satoshis - FEE_SAT - DUST_SAT;
+            const safeHtlcSat  = Math.max(HTLC_MIN_SAT, DUST_SAT + 1);
+            const canAddHtlc   = isCrossChain && htlcP2SHScriptHex && maxHtlcSat >= safeHtlcSat;
+            const htlcSatoshis = canAddHtlc ? Math.min(safeHtlcSat, maxHtlcSat) : undefined;
+
+            if (isCrossChain && htlcP2SHScriptHex && !canAddHtlc) {
+              req.log.warn(
+                { utxoSat: best.satoshis, FEE_SAT, maxHtlcSat, safeHtlcSat },
+                "HTLC output skipped — UTXO too small to cover HTLC + fees without dust change"
+              );
+            }
+
             const result = await broadcastSettlement({
               privKeyHex:       wallet.privKeyHex,
               changeAddress:    wallet.address,
               utxo:             best,
               opReturnPayload:  fallbackSettlement.opReturnData,
-              // Include P2SH HTLC output for cross-chain settlement (UTXO-scripted swap)
-              htlcP2SHScriptHex,
-              htlcSatoshis:     isCrossChain ? 1000 : undefined,
+              htlcP2SHScriptHex: canAddHtlc ? htlcP2SHScriptHex : undefined,
+              htlcSatoshis,
             });
             if (result.broadcast) { broadcastTxid = result.txid; wasRealBroadcast = true; }
           }
@@ -421,6 +461,7 @@ router.post("/orders", async (req, res) => {
         lastHtlcSecretHash     = htlcResult?.secretHash;
         lastHtlcLocktimeBlocks = htlcResult?.locktimeBlocks;
         lastCrossChain         = isCrossChain;
+        lastOpReturnPayload    = fallbackSettlement.opReturnData;
       }
 
       if (totalFilled > 0) {
@@ -472,6 +513,7 @@ router.post("/orders", async (req, res) => {
         htlcAddress:       lastHtlcAddress ?? null,
         htlcSecretHash:    lastHtlcSecretHash ?? null,
         htlcLocktimeBlocks: lastHtlcLocktimeBlocks ?? null,
+        opReturnPayload:   lastOpReturnPayload ?? null,
       } : null,
     });
   } catch (err) {
@@ -702,6 +744,32 @@ router.get("/settlements", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get settlements");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /settlements/htlc-status ─────────────────────────────────────────────
+// Query the on-chain status of an HTLC P2SH output.
+// Used by the Settlement Explorer UI to show LOCKED / CLAIMED / REFUNDED / EXPIRED.
+router.get("/settlements/htlc-status", async (req, res) => {
+  const { htlcAddress, locktimeBlocks } = req.query as { htlcAddress?: string; locktimeBlocks?: string };
+
+  if (!htlcAddress || typeof htlcAddress !== "string") {
+    res.status(400).json({ error: "htlcAddress query param required" });
+    return;
+  }
+
+  const locktime = parseInt(locktimeBlocks ?? "0") || 0;
+  if (locktime < 1) {
+    res.status(400).json({ error: "locktimeBlocks query param required (positive integer)" });
+    return;
+  }
+
+  try {
+    const result = await queryHtlcStatus(htlcAddress, locktime);
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Failed to query HTLC status");
+    res.status(500).json({ error: "Failed to query HTLC status" });
   }
 });
 

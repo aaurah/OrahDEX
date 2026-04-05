@@ -164,6 +164,76 @@ export async function getBsvChainStatus(): Promise<BsvChainStatus> {
   };
 }
 
+// ── HTLC On-Chain Status Watcher ─────────────────────────────────────────────
+
+export type HtlcStatus = "LOCKED" | "CLAIMED" | "REFUNDED" | "EXPIRED" | "UNKNOWN";
+
+export interface HtlcStatusResult {
+  /** Current on-chain status of the HTLC output */
+  status:       HtlcStatus;
+  /** Spending txid — set when the output has been spent (CLAIMED or REFUNDED) */
+  spendTxid?:   string;
+  /** Current block height at time of check */
+  blockHeight:  number;
+  /** ISO timestamp of this check */
+  checkedAt:    string;
+}
+
+/**
+ * Query the on-chain status of an HTLC P2SH output via WhatsOnChain.
+ *
+ * Status logic:
+ *   LOCKED   — address has unspent UTXOs and locktime has not yet passed
+ *   EXPIRED  — address has unspent UTXOs but blockHeight ≥ locktimeBlocks
+ *   CLAIMED  — address UTXOs were spent before locktimeBlocks (relayer used secret)
+ *   REFUNDED — address UTXOs were spent at or after locktimeBlocks (user reclaimed)
+ *   UNKNOWN  — address has no transaction history (unfunded) or API unreachable
+ *
+ * @param htlcAddress    BSV P2SH address of the HTLC output
+ * @param locktimeBlocks Absolute block height of the HTLC refund locktime
+ */
+export async function queryHtlcStatus(
+  htlcAddress: string,
+  locktimeBlocks: number,
+): Promise<HtlcStatusResult> {
+  const checkedAt    = new Date().toISOString();
+  const blockHeight  = parseInt((await getSetting("bsv_block_height")) ?? "0") || 0;
+
+  try {
+    // Check unspent UTXOs at the P2SH address
+    const utxoData = await safeFetch(`${WOC_BASE}/address/${htlcAddress}/unspent`);
+    const hasUtxos = Array.isArray(utxoData) && utxoData.length > 0;
+
+    if (hasUtxos) {
+      // UTXO still exists — LOCKED or EXPIRED depending on block height
+      const status: HtlcStatus = blockHeight > 0 && blockHeight >= locktimeBlocks
+        ? "EXPIRED"
+        : "LOCKED";
+      return { status, blockHeight, checkedAt };
+    }
+
+    // No UTXOs — check transaction history to detect claim vs refund
+    const histData = await safeFetch(`${WOC_BASE}/address/${htlcAddress}/history`);
+    if (!Array.isArray(histData) || histData.length === 0) {
+      return { status: "UNKNOWN", blockHeight, checkedAt };
+    }
+
+    // Use the most recent transaction as the spend transaction
+    const lastTx      = histData[histData.length - 1] as Record<string, unknown>;
+    const spendTxid   = (lastTx["tx_hash"] as string) ?? undefined;
+    const spendHeight = (lastTx["height"]  as number) ?? 0;
+
+    // If the spending tx was confirmed before the locktime it's a claim (secret reveal).
+    // If at or after locktime it's a refund (CLTV expiry path).
+    const status: HtlcStatus =
+      spendHeight > 0 && spendHeight < locktimeBlocks ? "CLAIMED" : "REFUNDED";
+
+    return { status, spendTxid, blockHeight, checkedAt };
+  } catch {
+    return { status: "UNKNOWN", blockHeight, checkedAt };
+  }
+}
+
 export function startBsvChainMonitor(): void {
   logger.info("BSV chain monitor starting — polling WhatsOnChain every 60 s");
   let _busy = false;

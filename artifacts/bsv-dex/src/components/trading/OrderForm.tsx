@@ -14,6 +14,7 @@ import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfi
 import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
+import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
@@ -445,6 +446,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
     crossChain?: boolean; htlcAddress?: string | null; settlementType?: string | null;
+    htlcLocktimeBlocks?: number | null; opReturnPayload?: string | null;
   } | null>(null);
   const [slippage, setSlippage] = useState(0.5);
   const [slippageOpen, setSlippageOpen] = useState(false);
@@ -575,12 +577,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         const qty      = parseFloat(amount || "0");
         if (matched) {
           setSettlement({
-            matched:        true,
+            matched:            true,
             txid,
-            explorerUrl:    url,
-            crossChain:     data?.settlement?.crossChain ?? false,
-            htlcAddress:    data?.settlement?.htlcAddress ?? null,
-            settlementType: data?.settlement?.type ?? null,
+            explorerUrl:        url,
+            crossChain:         data?.settlement?.crossChain ?? false,
+            htlcAddress:        data?.settlement?.htlcAddress ?? null,
+            settlementType:     data?.settlement?.type ?? null,
+            htlcLocktimeBlocks: data?.settlement?.htlcLocktimeBlocks ?? null,
+            opReturnPayload:    data?.settlement?.opReturnPayload ?? null,
           });
 
           // Credit the exchange balance ledger so Portfolio reflects the trade
@@ -1074,17 +1078,31 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         </div>
       )}
 
-      {/* Settlement banner */}
+      {/* Settlement banner + Explorer */}
       {settlement && (
-        <SettlementBanner
-          matched={settlement.matched}
-          txid={settlement.txid}
-          explorerUrl={settlement.explorerUrl}
-          crossChain={settlement.crossChain}
-          htlcAddress={settlement.htlcAddress}
-          settlementType={settlement.settlementType}
-          onDismiss={() => setSettlement(null)}
-        />
+        <>
+          <SettlementBanner
+            matched={settlement.matched}
+            txid={settlement.txid}
+            explorerUrl={settlement.explorerUrl}
+            crossChain={settlement.crossChain}
+            htlcAddress={settlement.htlcAddress}
+            settlementType={settlement.settlementType}
+            onDismiss={() => setSettlement(null)}
+          />
+          {/* Settlement Explorer — shown for cross-chain HTLC settlements */}
+          {settlement.crossChain && settlement.txid && (
+            <div className="mx-4 mb-2">
+              <SettlementExplorer
+                settlementTxid={settlement.txid}
+                opReturnPayload={settlement.opReturnPayload ?? undefined}
+                htlcAddress={settlement.htlcAddress}
+                htlcLocktimeBlocks={settlement.htlcLocktimeBlocks}
+                compact={false}
+              />
+            </div>
+          )}
+        </>
       )}
 
       <div className="p-3 flex-1 flex flex-col gap-3 overflow-y-auto">
