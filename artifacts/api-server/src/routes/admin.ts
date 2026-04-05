@@ -7,6 +7,26 @@ import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, 
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
+import { updateMarketPrices } from "../lib/priceUpdater.js";
+
+/* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
+export const serviceState = {
+  priceEngineLastRunAt:  Date.now(),
+  priceEngineRuns:       0,
+  priceEngineErrors:     0,
+  botLastCycleAt:        Date.now(),
+  botCycles:             0,
+  bsvMonitorLastAt:      Date.now(),
+  bsvMonitorErrors:      0,
+  incidentLog:           [] as { ts: number; level: "info"|"warn"|"error"; service: string; msg: string }[],
+  restartCount:          0,
+  lastRestartAt:         0,
+};
+
+export function recordServiceEvent(service: string, level: "info"|"warn"|"error", msg: string) {
+  serviceState.incidentLog.unshift({ ts: Date.now(), level, service, msg });
+  if (serviceState.incidentLog.length > 100) serviceState.incidentLog.pop();
+}
 
 const router = Router();
 
@@ -1398,43 +1418,107 @@ router.post("/bsv-wallet/send", async (req, res) => {
 
 /* ─── SYSTEM HEALTH ─────────────────────────────────────────────────────── */
 router.get("/health", async (_req, res) => {
+  const reqStart = Date.now();
   try {
-    const start = Date.now();
+    const dbStart = Date.now();
     await db.execute(sql`SELECT 1`);
-    const dbLatency = Date.now() - start;
+    const dbLatency = Date.now() - dbStart;
 
-    const memUsage = process.memoryUsage();
-    const heapMB   = Math.round(memUsage.heapUsed / 1024 / 1024);
-    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
-    const rssMB    = Math.round(memUsage.rss / 1024 / 1024);
+    const memUsage   = process.memoryUsage();
+    const heapMB     = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB= Math.round(memUsage.heapTotal / 1024 / 1024);
+    const rssMB      = Math.round(memUsage.rss / 1024 / 1024);
+    const now        = Date.now();
 
-    // Count open orders as proxy for orderbook entries
     const [openCount] = await db.select({ cnt: sql<number>`count(*)::int` })
       .from(ordersTable).where(eq(ordersTable.status, "open"));
+    const allMarkets   = await db.select().from(marketsTable);
+    const activeMarkets= allMarkets.filter(m => m.status === "active").length;
 
-    // Count markets
-    const allMarkets = await db.select().from(marketsTable);
-    const activeMarkets = allMarkets.filter(m => m.status === "active").length;
+    // Determine degraded vs operational
+    const priceEngineStaleSec = (now - serviceState.priceEngineLastRunAt) / 1000;
+    const botStaleSec         = (now - serviceState.botLastCycleAt) / 1000;
+    const isStale             = priceEngineStaleSec > 300 || dbLatency > 500;
+    const status              = isStale ? "degraded" : "operational";
 
     res.json({
-      status:                "operational",
-      uptimeSeconds:         Math.floor(process.uptime()),
-      nodeHeapMB:            heapMB,
-      nodeHeapTotalMB:       heapTotalMB,
-      nodeRssMB:             rssMB,
-      dbLatencyMs:           dbLatency,
-      dbConnections:         10, // pool size estimate
-      openOrders:            openCount?.cnt ?? 0,
+      status,
+      uptimeSeconds:            Math.floor(process.uptime()),
+      responseTimeMs:           Date.now() - reqStart,
+      nodeHeapMB:               heapMB,
+      nodeHeapTotalMB:          heapTotalMB,
+      nodeRssMB:                rssMB,
+      dbLatencyMs:              dbLatency,
+      dbConnections:            10,
+      openOrders:               openCount?.cnt ?? 0,
       activeMarkets,
-      totalMarkets:          allMarkets.length,
-      avgOrderbookLatencyMs: dbLatency + 5,
-      avgTradesLatencyMs:    dbLatency + 8,
-      nodeVersion:           process.version,
-      platform:              process.platform,
-      timestamp:             new Date().toISOString(),
+      totalMarkets:             allMarkets.length,
+      avgOrderbookLatencyMs:    dbLatency + 5,
+      avgTradesLatencyMs:       dbLatency + 8,
+      nodeVersion:              process.version,
+      platform:                 process.platform,
+      timestamp:                new Date().toISOString(),
+      services: {
+        priceEngine: {
+          lastRunAt:   serviceState.priceEngineLastRunAt,
+          lastRunAgoSec: Math.floor(priceEngineStaleSec),
+          runs:        serviceState.priceEngineRuns,
+          errors:      serviceState.priceEngineErrors,
+          status:      priceEngineStaleSec < 180 ? "healthy" : "stale",
+        },
+        liquidityBot: {
+          lastCycleAt:   serviceState.botLastCycleAt,
+          lastCycleAgoSec: Math.floor(botStaleSec),
+          cycles:        serviceState.botCycles,
+          status:        botStaleSec < 300 ? "healthy" : "stale",
+        },
+        bsvMonitor: {
+          lastAt:    serviceState.bsvMonitorLastAt,
+          lastAgoSec: Math.floor((now - serviceState.bsvMonitorLastAt) / 1000),
+          errors:    serviceState.bsvMonitorErrors,
+          status:    (now - serviceState.bsvMonitorLastAt) < 180_000 ? "healthy" : "stale",
+        },
+        database: {
+          latencyMs: dbLatency,
+          status:    dbLatency < 200 ? "healthy" : dbLatency < 500 ? "slow" : "degraded",
+        },
+      },
+      incidents:    serviceState.incidentLog.slice(0, 50),
+      restartCount: serviceState.restartCount,
+      lastRestartAt:serviceState.lastRestartAt,
     });
   } catch (err: any) {
-    res.status(500).json({ status: "degraded", error: err?.message });
+    res.status(500).json({ status: "degraded", error: err?.message, timestamp: new Date().toISOString() });
+  }
+});
+
+/* ── POST /api/admin/restart-services — soft restart price engine + bot ──── */
+router.post("/restart-services", async (_req, res) => {
+  try {
+    recordServiceEvent("admin", "info", "Soft restart requested via admin panel");
+    serviceState.restartCount++;
+    serviceState.lastRestartAt = Date.now();
+
+    // Fire-and-forget — don't await so the response returns quickly
+    updateMarketPrices()
+      .then(() => {
+        serviceState.priceEngineLastRunAt = Date.now();
+        serviceState.priceEngineRuns++;
+        recordServiceEvent("priceEngine", "info", "Price engine re-run completed after soft restart");
+      })
+      .catch((e: any) => {
+        serviceState.priceEngineErrors++;
+        recordServiceEvent("priceEngine", "error", `Price engine error after restart: ${e?.message}`);
+      });
+
+    res.json({
+      ok: true,
+      message: "Soft restart initiated — price engine re-running, liquidity bot will cycle on next tick",
+      restartCount: serviceState.restartCount,
+      initiatedAt:  new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message });
   }
 });
 
