@@ -293,19 +293,32 @@ function SettlementBanner({
   matched,
   txid,
   explorerUrl,
+  crossChain,
+  htlcAddress,
+  settlementType,
   onDismiss,
 }: {
   matched: boolean;
   txid: string | null;
   explorerUrl: string | null;
+  crossChain?: boolean;
+  htlcAddress?: string | null;
+  settlementType?: string | null;
   onDismiss: () => void;
 }) {
   if (!matched) return null;
+  const isHtlc = settlementType === "utxo_htlc" || crossChain;
   return (
-    <div className="mx-4 mb-3 p-3 rounded-xl bg-green-500/10 border border-green-500/25 flex flex-col gap-1.5">
+    <div className={`mx-4 mb-3 p-3 rounded-xl flex flex-col gap-1.5 ${
+      isHtlc
+        ? "bg-blue-500/10 border border-blue-500/25"
+        : "bg-green-500/10 border border-green-500/25"
+    }`}>
       <div className="flex items-center gap-2">
-        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-        <span className="text-xs font-semibold text-green-400">Trade Matched & Settled On-Chain</span>
+        <CheckCircle2 className={`w-4 h-4 shrink-0 ${isHtlc ? "text-blue-400" : "text-green-400"}`} />
+        <span className={`text-xs font-semibold ${isHtlc ? "text-blue-400" : "text-green-400"}`}>
+          {isHtlc ? "Cross-Chain HTLC Settlement" : "Trade Matched & Settled On-Chain"}
+        </span>
       </div>
       {txid && (
         <div className="flex items-center gap-1.5">
@@ -323,6 +336,11 @@ function SettlementBanner({
               <ExternalLink className="w-3 h-3" />
             </a>
           )}
+        </div>
+      )}
+      {isHtlc && htlcAddress && (
+        <div className="text-[10px] text-muted-foreground font-mono break-all">
+          HTLC: {htlcAddress.slice(0, 18)}…{htlcAddress.slice(-6)}
         </div>
       )}
       <button onClick={onDismiss} className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground text-left">
@@ -426,6 +444,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const { isConnected: evmConnected } = useAccount();
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
+    crossChain?: boolean; htlcAddress?: string | null; settlementType?: string | null;
   } | null>(null);
   const [slippage, setSlippage] = useState(0.5);
   const [slippageOpen, setSlippageOpen] = useState(false);
@@ -555,7 +574,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         const fillPx   = data?.price ?? parseFloat(price || "0");
         const qty      = parseFloat(amount || "0");
         if (matched) {
-          setSettlement({ matched: true, txid, explorerUrl: url });
+          setSettlement({
+            matched:        true,
+            txid,
+            explorerUrl:    url,
+            crossChain:     data?.settlement?.crossChain ?? false,
+            htlcAddress:    data?.settlement?.htlcAddress ?? null,
+            settlementType: data?.settlement?.type ?? null,
+          });
 
           // Credit the exchange balance ledger so Portfolio reflects the trade
           if (address && qty > 0 && fillPx > 0) {
@@ -1054,6 +1080,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           matched={settlement.matched}
           txid={settlement.txid}
           explorerUrl={settlement.explorerUrl}
+          crossChain={settlement.crossChain}
+          htlcAddress={settlement.htlcAddress}
+          settlementType={settlement.settlementType}
           onDismiss={() => setSettlement(null)}
         />
       )}

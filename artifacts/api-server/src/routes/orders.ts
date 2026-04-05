@@ -7,6 +7,8 @@ import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
 import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
+import { buildHtlc, buildP2SHLockingScript } from "../lib/htlc.js";
+import { getBsvChainStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
@@ -198,6 +200,11 @@ router.post("/orders", async (req, res) => {
     // a background trigger loop will fire it when price crosses.
     let settlementTxid: string | null = null;
     let matchedOrderId: string | null = null;
+    let lastSettlementType: string | null = null;
+    let lastHtlcAddress: string | undefined;
+    let lastHtlcSecretHash: string | undefined;
+    let lastHtlcLocktimeBlocks: number | undefined;
+    let lastCrossChain = false;
 
     const isMarket = body.type === "market";
     const isLimit  = body.type === "limit" && !!price;
@@ -277,19 +284,39 @@ router.post("/orders", async (req, res) => {
         const fillTotal = fillValue.toFixed(8);
         const isBot     = match.walletAddress === BOT_ADDRESS;
 
-        // ── Settle this fill on BSV chain ─────────────────────────────────
-        const tradeId = crypto.randomUUID();
-        const opReturnPayload = [
-          "ORAH", "v1",
-          tradeId.replace(/-/g, "").slice(0, 16),
-          body.symbol,
-          (body.side === "buy" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
-          (body.side === "sell" ? body.walletAddress : match.walletAddress).slice(0, 20) + "…",
-          fillQty.toString(),
-          fillPrice.toString(),
-          Date.now().toString(),
-        ].join("|");
+        // ── BSV On-Chain Settlement ────────────────────────────────────────
+        // Architecture (per BSV Core DEX spec):
+        //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
+        //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN
+        //      for audit, and the P2SH output locks the trade commitment on-chain.
+        //   2. OP_RETURN audit record (v2): immutable on-chain record with full
+        //      trade data + HTLC commitment hash.
+        //   3. Real broadcast via settlement wallet UTXO (when funded).
 
+        const tradeId      = crypto.randomUUID();
+        const buyerNetwork  = body.side === "buy" ? networkType : (match.networkType ?? "evm");
+        const sellerNetwork = body.side === "sell" ? networkType : (match.networkType ?? "evm");
+        const isCrossChain  = buyerNetwork !== sellerNetwork && !isBot;
+
+        // For cross-chain matches, auto-generate an HTLC (UTXO-scripted swap contract)
+        let htlcResult: Awaited<ReturnType<typeof buildHtlc>> | null = null;
+        let htlcP2SHScriptHex: string | undefined;
+        if (isCrossChain) {
+          try {
+            const chainStatus   = await getBsvChainStatus();
+            const locktimeBlocks = (chainStatus.blockHeight || 943000) + 144; // +144 blocks ≈ 24h
+            htlcResult          = buildHtlc({ locktimeBlocks });
+            htlcP2SHScriptHex   = buildP2SHLockingScript(htlcResult.redeemScript);
+            req.log.info(
+              { htlcAddress: htlcResult.htlcAddress, secretHash: htlcResult.secretHash.slice(0, 16) + "…", locktimeBlocks },
+              "HTLC generated for cross-chain trade settlement"
+            );
+          } catch (htlcErr) {
+            req.log.warn({ htlcErr }, "HTLC generation failed — continuing with OP_RETURN only");
+          }
+        }
+
+        // Build the v2 settlement record (OP_RETURN payload with HTLC fields)
         const fallbackSettlement = buildSettlement({
           tradeId,
           pair:          body.symbol,
@@ -297,27 +324,35 @@ router.post("/orders", async (req, res) => {
           sellOrderId:   body.side === "sell" ? id : match.id,
           buyerAddress:  body.side === "buy" ? body.walletAddress : match.walletAddress,
           sellerAddress: body.side === "sell" ? body.walletAddress : match.walletAddress,
-          buyerNetwork:  body.side === "buy" ? networkType : (match.networkType ?? "evm"),
-          sellerNetwork: body.side === "sell" ? networkType : (match.networkType ?? "evm"),
+          buyerNetwork,
+          sellerNetwork,
           amount:        fillQty.toString(),
           price:         fillPrice.toString(),
           total:         fillTotal,
           timestamp:     Date.now(),
+          // HTLC fields (populated for cross-chain trades)
+          htlcSecretHash:     htlcResult?.secretHash,
+          htlcAddress:        htlcResult?.htlcAddress,
+          htlcRedeemScript:   htlcResult?.redeemScript,
+          htlcLocktimeBlocks: htlcResult?.locktimeBlocks,
         });
 
-        let broadcastTxid  = fallbackSettlement.txid;
+        let broadcastTxid    = fallbackSettlement.txid;
         let wasRealBroadcast = false;
 
         try {
           const wallet  = await getOrCreateWallet();
           const balance = await fetchWalletBalance(wallet.address);
           if (balance.funded && balance.utxos.length > 0) {
-            const best = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
+            const best   = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
             const result = await broadcastSettlement({
-              privKeyHex:      wallet.privKeyHex,
-              changeAddress:   wallet.address,
-              utxo:            best,
-              opReturnPayload,
+              privKeyHex:       wallet.privKeyHex,
+              changeAddress:    wallet.address,
+              utxo:             best,
+              opReturnPayload:  fallbackSettlement.opReturnData,
+              // Include P2SH HTLC output for cross-chain settlement (UTXO-scripted swap)
+              htlcP2SHScriptHex,
+              htlcSatoshis:     isCrossChain ? 1000 : undefined,
             });
             if (result.broadcast) { broadcastTxid = result.txid; wasRealBroadcast = true; }
           }
@@ -326,8 +361,15 @@ router.post("/orders", async (req, res) => {
         }
 
         req.log.info(
-          { txid: broadcastTxid, fillQty, fillPrice, isBot, realBroadcast: wasRealBroadcast },
-          wasRealBroadcast ? "BSV settlement BROADCAST to mainnet ✓" : "BSV settlement committed (deterministic txid)"
+          {
+            txid: broadcastTxid, fillQty, fillPrice, isBot,
+            realBroadcast: wasRealBroadcast,
+            settlementType: fallbackSettlement.settlementType,
+            crossChain: isCrossChain,
+          },
+          wasRealBroadcast
+            ? `BSV settlement BROADCAST to mainnet ✓ (${fallbackSettlement.settlementType})`
+            : `BSV settlement committed — deterministic txid (${fallbackSettlement.settlementType})`
         );
 
         // ── Settle balances in the ledger ─────────────────────────────────
@@ -373,6 +415,12 @@ router.post("/orders", async (req, res) => {
         lastMatchId     = match.id;
         settlementTxid  = broadcastTxid;
         matchedOrderId  = match.id;
+        // Track settlement metadata for API response
+        lastSettlementType     = fallbackSettlement.settlementType;
+        lastHtlcAddress        = htlcResult?.htlcAddress;
+        lastHtlcSecretHash     = htlcResult?.secretHash;
+        lastHtlcLocktimeBlocks = htlcResult?.locktimeBlocks;
+        lastCrossChain         = isCrossChain;
       }
 
       if (totalFilled > 0) {
@@ -414,9 +462,17 @@ router.post("/orders", async (req, res) => {
 
     res.status(201).json({
       ...serializeOrder(created),
-      matched:     !!settlementTxid,
+      matched:        !!settlementTxid,
       settlementTxid,
-      explorerUrl: settlementTxid ? `https://whatsonchain.com/tx/${settlementTxid}` : null,
+      explorerUrl:    settlementTxid ? `https://whatsonchain.com/tx/${settlementTxid}` : null,
+      // BSV Core DEX v2 settlement metadata
+      settlement: settlementTxid ? {
+        type:              lastSettlementType,
+        crossChain:        lastCrossChain,
+        htlcAddress:       lastHtlcAddress ?? null,
+        htlcSecretHash:    lastHtlcSecretHash ?? null,
+        htlcLocktimeBlocks: lastHtlcLocktimeBlocks ?? null,
+      } : null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to place order");
