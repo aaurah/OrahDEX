@@ -59,6 +59,11 @@ interface WalletState {
   setInternalSolAddress: (addr: string | null) => void;
   /** Switch the active network for multi-chain wallets (HD/passkey). */
   switchNetworkType: (network: WalletNetwork) => void;
+  /**
+   * Update ONLY the EVM chainId — used by ChainSwitcherDropdown so it never
+   * wipes internal addresses the way connect() does.
+   */
+  switchChain: (chainId: number) => void;
 
   addPendingTx: (tx: PendingTx) => void;
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
@@ -105,19 +110,27 @@ export const useWalletStore = create<WalletState>()(
       internalSolAddress: null,
 
       connect: (wallet) =>
-        set({
-          address: wallet.address,
-          provider: wallet.provider,
-          network: wallet.network,
-          chainId: wallet.chainId ?? null,
-          balance: wallet.balance ?? null,
-          isConnecting: false,
-          isDemo: false,
-          internalEvmAddress: null,
-          internalBsvAddress: null,
-          internalBchAddress: null,
-          internalBtcAddress: null,
-          internalSolAddress: null,
+        set((s) => {
+          // If reconnecting with the same provider and same primary address (e.g. chain
+          // switch via Reown), preserve all internal addresses so the provisioning hooks
+          // don't fire again and overwrite them with new custodial keypairs.
+          const sameProvider = s.provider === wallet.provider;
+          const sameAddress  = s.address  === wallet.address;
+          return {
+            address:   wallet.address,
+            provider:  wallet.provider,
+            network:   wallet.network,
+            chainId:   wallet.chainId ?? null,
+            balance:   wallet.balance ?? null,
+            isConnecting: false,
+            isDemo:    false,
+            // Preserve internals on same-provider reconnect (chain switch); reset on new wallet
+            internalEvmAddress: sameProvider && sameAddress ? s.internalEvmAddress : null,
+            internalBsvAddress: sameProvider && sameAddress ? s.internalBsvAddress : null,
+            internalBchAddress: sameProvider && sameAddress ? s.internalBchAddress : null,
+            internalBtcAddress: sameProvider && sameAddress ? s.internalBtcAddress : null,
+            internalSolAddress: sameProvider && sameAddress ? s.internalSolAddress : null,
+          };
         }),
 
       connectDemo: (address) =>
@@ -160,11 +173,19 @@ export const useWalletStore = create<WalletState>()(
       setInternalBtcAddress: (internalBtcAddress) => set({ internalBtcAddress }),
       setInternalSolAddress: (internalSolAddress) => set({ internalSolAddress }),
 
+      /**
+       * switchChain — update ONLY the EVM chainId.
+       * Does NOT touch address, provider, network, or any internal addresses.
+       * Use this for EVM chain switching to avoid triggering re-provisioning.
+       */
+      switchChain: (chainId) => set({ chainId, balance: null }),
+
       switchNetworkType: (network) =>
         set((s) => {
-          // When switching away from EVM, capture the EVM address so we can return to it later
+          // Capture the current EVM address before leaving it so we can return later.
+          // If we're currently on EVM, the main address IS the EVM address.
           const evmAddr = s.internalEvmAddress ?? (s.network === 'evm' ? s.address : null);
-          // Resolve the address for the requested network using stored internal addresses
+
           let newAddress: string | null = null;
           if (network === 'evm')  newAddress = evmAddr;
           if (network === 'bsv')  newAddress = s.internalBsvAddress;
@@ -177,7 +198,7 @@ export const useWalletStore = create<WalletState>()(
             address: newAddress,
             balance: null,
             chainId: null,
-            // Persist EVM address so we can switch back
+            // Always persist the EVM address so we can switch back to it
             internalEvmAddress: evmAddr,
           };
         }),
