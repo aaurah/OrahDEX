@@ -1,0 +1,119 @@
+What a “DEX Exchange On‑Chain on BSV Core” Actually Is
+
+A DEX on BSV Core means:
+
+⭐ A decentralized exchange where all trade logic, settlement, and state transitions happen directly on the BSV blockchain, using:
+
+• UTXO scripts
+• Native BSV transactions
+• No EVM, no Solidity, no virtual machine
+• No off‑chain order matching required (though optional)
+
+
+This is fundamentally different from EVM‑style DEXs (Uniswap, Sushi, etc.) because BSV is UTXO‑based, not account‑based.
+
+---
+
+🧩 Core Components of a True On‑Chain BSV DEX
+
+1. UTXO‑Scripted Trade Contracts
+
+These are Bitcoin Script programs that enforce:
+
+• swaps
+• escrows
+• atomic conditions
+• time‑locks
+• signature checks
+
+
+The most common primitive is the HTLC (Hashed Time‑Locked Contract).
+
+HTLC enables:
+
+• BSV↔BSV token swaps
+• BSV↔other‑chain atomic swaps
+• On‑chain settlement with no trusted party
+
+
+---
+
+2. Orderbook or AMM Logic Stored On‑Chain
+
+Because BSV has extremely low fees and high throughput, you can store:
+
+• limit orders
+• liquidity pool states
+• trade history
+• price curves
+
+
+directly on‑chain as UTXOs.
+
+This is something Ethereum cannot do cheaply.
+
+---
+
+3. Native BSV Settlement
+
+Every trade ends with:
+
+• a real BSV transaction
+• signed by the trader
+• validated by miners
+• permanently recorded on‑chain
+
+
+There is no “virtual balance” like in EVM AMMs.
+
+---
+
+🛠️ What “BSV Core” Means in This Context
+
+When you say BSV Core, you’re referring to:
+
+• the native BSV node implementation
+• the Bitcoin Script execution environment
+• the UTXO model
+• the native transaction format
+
+
+So a DEX “on BSV Core” means:
+
+The exchange logic is implemented using Bitcoin Script and UTXO flows, not EVM smart contracts.
+
+---
+
+🧨 What You Cannot Do on BSV Core
+
+Just to be clear:
+
+Feature	BSV Core	EVM	
+Solidity smart contracts	❌ Not supported	✔️ Yes	
+AMM logic in a single contract	❌ Not possible	✔️ Yes	
+UTXO‑scripted swaps	✔️ Native	❌ No	
+On‑chain orderbook	✔️ Cheap & scalable	❌ Too expensive	
+
+
+This is why BSV DEX architecture is fundamentally different from EVM DEX architecture.
+
+---
+
+🧬 The Essence of a BSV On‑Chain DEX
+
+A BSV DEX is built from:
+
+🔹 UTXO‑scripted swap contracts
+
+🔹 On‑chain order or liquidity state
+
+🔹 Wallets that sign BSV transactions
+
+🔹 A matching engine (optional)
+
+🔹 Pure on‑chain settlement
+
+No virtual machine.
+No Solidity.
+No gas model.
+Just Bitcoin Script + UTXO flows.
