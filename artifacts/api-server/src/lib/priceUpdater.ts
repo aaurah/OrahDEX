@@ -3,6 +3,7 @@ import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
+import { updateGenesisPrice } from "../routes/virtualAmm.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -986,6 +987,12 @@ export async function updateMarketPrices() {
         low24h:               (safePrice(low24h)  ? low24h  : lastPrice * 0.99).toFixed(8),
         marketCap:            data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
+    }
+
+    // Push live USD prices into Genesis VAMM so it tracks the real market
+    for (const [sym, data] of Object.entries(prices)) {
+      const usd = data?.usd;
+      if (usd && usd > 0) updateGenesisPrice(sym, usd);
     }
 
     // After prices update, check for any open stop orders that should trigger
