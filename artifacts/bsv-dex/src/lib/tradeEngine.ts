@@ -181,8 +181,14 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
             setCachedRoute(key, { priceImpactPct: priceImpactPct ?? 0, minReceived: minReceived ?? 0, route: route ?? [] }, currentPrice, tokenIn, tokenOut, amount);
           }
 
+          // Only propagate server errors that are NOT slippage-related for limit/stop orders.
+          // Limit orders execute at an exact price — slippage doesn't apply.
           if (data.errors?.length) {
-            for (const e of data.errors) errors.push(makeError(e.code, e.detail));
+            for (const e of data.errors) {
+              const isSlippageError = e.code === "SLIPPAGE_TOO_HIGH" || e.code === "PRICE_IMPACT_HIGH";
+              if (isSlippageError && (type === "limit" || type === "stop")) continue;
+              errors.push(makeError(e.code, e.detail));
+            }
           }
         }
       } catch {
@@ -190,25 +196,31 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
       }
     }
 
-    // Local price-impact estimate (linear AMM approximation: impact ≈ amount/liquidity)
+    // Local price-impact estimate when API is unreachable.
+    // Use the same pool TVL model as the server (500k for top-tier pairs).
     if (priceImpactPct === undefined) {
-      const liquidityUsd = orderValueUsd * 80; // rough assumption: order is ~1.25% of pool
-      priceImpactPct = Math.min((orderValueUsd / liquidityUsd) * 100, 50);
+      const isTopTier = HOT_PAIRS.has(symbol);
+      const poolTvlUsd = isTopTier ? 500_000 : 50_000;
+      priceImpactPct = Math.min((orderValueUsd / poolTvlUsd) * 100, 50);
     }
 
-    // Slippage + impact checks — use else-if so only one blocking error fires
+    // Slippage + impact checks:
+    // • Limit / stop orders have a guaranteed execution price — slippage doesn't apply.
+    //   Only block on truly extreme impact (>5%) that would move the market severely.
+    // • Market orders respect the user's slippage tolerance.
     const slippagePct = slippageBps / 100;
     if (priceImpactPct > 5) {
-      // Severe impact always wins — clearer message than generic slippage error
+      // Severe impact blocks any order type
       errors.push(makeError("PRICE_IMPACT_HIGH",
         `${priceImpactPct.toFixed(1)}% price impact — split into smaller orders`));
-    } else if (priceImpactPct > slippagePct) {
+    } else if (type === "market" && priceImpactPct > slippagePct) {
+      // Only apply slippage tolerance check for market orders
       errors.push(makeError("SLIPPAGE_TOO_HIGH",
         `Price impact ${priceImpactPct.toFixed(2)}% > slippage tolerance ${slippagePct.toFixed(2)}%`));
     }
 
     // Moderate impact warning (only when not already a blocking error)
-    if (priceImpactPct > 1 && priceImpactPct <= slippagePct) {
+    if (priceImpactPct > 1 && (type === "market" ? priceImpactPct <= slippagePct : true)) {
       warnings.push(makeWarning("PRICE_IMPACT_MODERATE"));
     }
   }

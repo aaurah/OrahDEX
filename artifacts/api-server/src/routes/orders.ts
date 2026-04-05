@@ -505,16 +505,16 @@ router.post("/orders/precheck", async (req, res) => {
     const impact     = ((execPrice * qty) / poolTvlUsd) * 100;
     const slipPct    = (slippageBps ?? 50) / 100;
 
-    if (impact > slipPct && impact > 0.1) {
-      // Impact exceeds tolerance — single consolidated error
-      errors.push({ code: "SLIPPAGE_TOO_HIGH",
-        detail: `Impact ${impact.toFixed(2)}% > tolerance ${slipPct.toFixed(2)}%` });
-    } else if (impact > 5) {
-      // Within tolerance but still high impact — show as error
+    // Limit/stop orders execute at an exact price — slippage tolerance doesn't apply.
+    // Only block truly extreme impact (>5%) that would severely move the market.
+    if (impact > 5) {
       errors.push({ code: "PRICE_IMPACT_HIGH",
         detail: `${impact.toFixed(1)}% impact — split into smaller orders` });
+    } else if (type === "market" && impact > slipPct && impact > 0.1) {
+      // Slippage tolerance check applies to market orders only
+      errors.push({ code: "SLIPPAGE_TOO_HIGH",
+        detail: `Impact ${impact.toFixed(2)}% > tolerance ${slipPct.toFixed(2)}%` });
     } else if (impact > 1) {
-      // Moderate impact within tolerance — just warn
       warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
     }
 
