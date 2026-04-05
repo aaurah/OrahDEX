@@ -3,17 +3,15 @@ import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc } from "drizzle-orm";
 import crypto from "node:crypto";
-import { buildSettlement } from "../lib/settlement.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
-import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
-import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
-import { buildHtlc, buildP2SHLockingScript, MIN_LOCKTIME_BLOCKS, HTLC_MIN_SAT, DUST_SAT } from "../lib/htlc.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
-import { registerHtlc } from "../lib/htlcWatcher.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
-import { lockForOrder, unlockFunds, settleTrade, seedInitialBalances, getBalances, ensureSeedForAsset } from "../lib/ledger.js";
+import { unlockFunds, getBalances } from "../lib/ledger.js";
+import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
+import { settleSpotFill }        from "../lib/spotSettlement.js";
+import type { WalletSource }     from "../lib/orderIntent.js";
 
 const router: IRouter = Router();
 
@@ -96,25 +94,11 @@ router.post("/orders", async (req, res) => {
 
     const isExternalWallet = walletSource === "external";
 
-    // For external EVM wallets, validate reported on-chain balance to prevent
-    // orders exceeding the user's real holdings.
-    if (isExternalWallet && body.reportedBalance != null) {
-      const reportedBal = parseFloat(body.reportedBalance);
-      if (body.side === "sell" && quantity > reportedBal * 1.01) {
-        res.status(400).json({
-          error:   "Insufficient balance",
-          code:    "INSUFFICIENT_FUNDS",
-          detail:  `Order quantity ${quantity} exceeds reported on-chain balance ${reportedBal}`,
-        });
-        return;
-      }
-    }
-
-    // ── Acquire ledger lock BEFORE inserting the order (No lock → No order) ──
-    // BUY → lock quote asset (e.g. USDT).  SELL → lock base asset.
-    // External EVM wallets: funds are on-chain — skip API-ledger lock entirely.
-    //   Balance is already validated against reportedBalance above.
-    // Demo / Orah wallets: use API ledger with auto-seeding for paper money.
+    // ── Acquire funding lock BEFORE inserting the order (No funding → No order) ──
+    // fundingVerifier enforces balance-bucket isolation:
+    //   MARKET / LIMIT  → spot bucket (user_balances)
+    //   FUTURES         → futures margin bucket (futures_margin_accounts)
+    // Returns a fundingRef that proves funds are committed.
     const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
     const lockAsset = body.side === "buy" ? quoteAsset : baseAsset;
 
@@ -127,33 +111,22 @@ router.post("/orders", async (req, res) => {
       ? (lockPrice ? (lockPrice * quantity).toString() : "0")
       : quantity.toString();
 
-    if (!isExternalWallet && parseFloat(lockAmount) > 0 && lockAsset) {
-      try {
-        // Seed on first order (demo / Orah only)
-        const existingBal = await getBalances(body.walletAddress);
-        if (existingBal.length === 0) {
-          await seedInitialBalances(body.walletAddress);
-        }
-        // Auto-credit if balance is missing or insufficient (paper money)
-        await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
-        // Lock funds — throws INSUFFICIENT_FUNDS:ASSET if balance is too low
-        await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
-      } catch (ledgerErr: any) {
-        const msg: string = ledgerErr?.message ?? "";
-        if (msg.startsWith("INSUFFICIENT_FUNDS")) {
-          const asset = msg.split(":")[1] ?? lockAsset;
-          res.status(400).json({
-            error:   "INSUFFICIENT_FUNDS",
-            message: `Order rejected: insufficient ${asset} balance to cover this order.`,
-            code:    "INSUFFICIENT_FUNDS",
-          });
-          return;
-        }
-        // Unexpected ledger error — log and fail safe (don't create a phantom order)
-        req.log.error({ ledgerErr }, "Unexpected ledger error — rejecting order");
-        res.status(500).json({ error: "Ledger error", message: "Could not lock funds. Please try again." });
+    let fundingRef = "";
+    if (parseFloat(lockAmount) > 0 && lockAsset) {
+      const fundingVerif = await verifyAndLockFunding({
+        walletAddress:   body.walletAddress,
+        orderType:       (body.type?.toUpperCase() ?? "LIMIT") as "MARKET" | "LIMIT" | "FUTURES",
+        walletSource,
+        asset:           lockAsset!,
+        amount:          lockAmount,
+        signature:       body.evmSignature ?? body.signedTx,
+        reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
+      });
+      if (!fundingVerif.valid) {
+        res.status(400).json({ error: fundingVerif.error, code: fundingVerif.code });
         return;
       }
+      fundingRef = fundingVerif.fundingRef;
     }
 
     // ── All checks passed — insert the order ──────────────────────────────────
@@ -178,6 +151,9 @@ router.post("/orders", async (req, res) => {
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
       signedTx:          body.evmSignature || body.signedTx || null,
       matchedOrderId:    null as string | null,
+      fundingRef:        fundingRef || null,
+      nonce:             body.nonce ?? id,   // use provided nonce or fall back to order id
+      expiry:            body.expiry ? String(body.expiry) : String(Date.now() + 5 * 60 * 1000),
     };
 
     await db.insert(ordersTable).values(newOrder);
@@ -298,129 +274,30 @@ router.post("/orders", async (req, res) => {
         const tradeId      = crypto.randomUUID();
         const buyerNetwork  = body.side === "buy" ? networkType : (match.networkType ?? "evm");
         const sellerNetwork = body.side === "sell" ? networkType : (match.networkType ?? "evm");
-        const isCrossChain  = buyerNetwork !== sellerNetwork && !isBot;
 
-        // ── HTLC invariant guard ─────────────────────────────────────────────
-        // HTLC must ONLY be generated for genuine cross-chain trades.
-        // Same-chain bot fills never get an HTLC — confirmed by the isCrossChain flag.
-        if (!isCrossChain && process.env.NODE_ENV !== "production") {
-          // Dev-mode assertion: helps catch logic errors during testing
-          req.log.debug({ buyerNetwork, sellerNetwork, isBot }, "Non-cross-chain fill — HTLC correctly skipped");
-        }
-
-        // For cross-chain matches, auto-generate an HTLC (UTXO-scripted swap contract)
-        let htlcResult: Awaited<ReturnType<typeof buildHtlc>> | null = null;
-        let htlcP2SHScriptHex: string | undefined;
-        if (isCrossChain) {
-          try {
-            const chainStatus  = await getBsvChainStatus();
-            const currentHeight = chainStatus.blockHeight || 943000;
-
-            // Invariant 1: locktime must always be at least MIN_LOCKTIME_BLOCKS ahead
-            // Use Math.max in case the cached height is stale
-            const locktimeBlocks = Math.max(
-              currentHeight + MIN_LOCKTIME_BLOCKS,
-              943000 + MIN_LOCKTIME_BLOCKS,  // absolute floor in case chainStatus is zero
-            );
-
-            htlcResult        = buildHtlc({ locktimeBlocks });
-            htlcP2SHScriptHex = buildP2SHLockingScript(htlcResult.redeemScript);
-
-            req.log.info(
-              {
-                htlcAddress: htlcResult.htlcAddress,
-                secretHash: htlcResult.secretHash.slice(0, 16) + "…",
-                locktimeBlocks,
-                currentHeight,
-                marginBlocks: locktimeBlocks - currentHeight,
-              },
-              "HTLC generated for cross-chain trade settlement"
-            );
-          } catch (htlcErr) {
-            req.log.warn({ htlcErr }, "HTLC generation failed — continuing with OP_RETURN only");
-          }
-        }
-
-        // Build the v2 settlement record (OP_RETURN payload with HTLC fields)
-        const fallbackSettlement = buildSettlement({
-          tradeId,
-          pair:          body.symbol,
-          buyOrderId:    body.side === "buy" ? id : match.id,
-          sellOrderId:   body.side === "sell" ? id : match.id,
-          buyerAddress:  body.side === "buy" ? body.walletAddress : match.walletAddress,
-          sellerAddress: body.side === "sell" ? body.walletAddress : match.walletAddress,
-          buyerNetwork,
-          sellerNetwork,
-          amount:        fillQty.toString(),
-          price:         fillPrice.toString(),
-          total:         fillTotal,
-          timestamp:     Date.now(),
-          // HTLC fields (populated for cross-chain trades)
-          htlcSecretHash:     htlcResult?.secretHash,
-          htlcAddress:        htlcResult?.htlcAddress,
-          htlcRedeemScript:   htlcResult?.redeemScript,
-          htlcLocktimeBlocks: htlcResult?.locktimeBlocks,
-        });
-
-        let broadcastTxid    = fallbackSettlement.txid;
-        let wasRealBroadcast = false;
-
-        try {
-          const wallet  = await getOrCreateWallet();
-          const balance = await fetchWalletBalance(wallet.address);
-          if (balance.funded && balance.utxos.length > 0) {
-            const best    = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
-            const FEE_SAT = 500; // standard broadcast fee
-
-            // Invariant 2: htlcSatoshis must be ≥ HTLC_MIN_SAT and never exceed
-            // available UTXO after fees. If the UTXO is too small, skip HTLC output
-            // to avoid a dust output or negative change amount.
-            const maxHtlcSat   = best.satoshis - FEE_SAT - DUST_SAT;
-            const safeHtlcSat  = Math.max(HTLC_MIN_SAT, DUST_SAT + 1);
-            const canAddHtlc   = isCrossChain && htlcP2SHScriptHex && maxHtlcSat >= safeHtlcSat;
-            const htlcSatoshis = canAddHtlc ? Math.min(safeHtlcSat, maxHtlcSat) : undefined;
-
-            if (isCrossChain && htlcP2SHScriptHex && !canAddHtlc) {
-              req.log.warn(
-                { utxoSat: best.satoshis, FEE_SAT, maxHtlcSat, safeHtlcSat },
-                "HTLC output skipped — UTXO too small to cover HTLC + fees without dust change"
-              );
-            }
-
-            const result = await broadcastSettlement({
-              privKeyHex:       wallet.privKeyHex,
-              changeAddress:    wallet.address,
-              utxo:             best,
-              opReturnPayload:  fallbackSettlement.opReturnData,
-              htlcP2SHScriptHex: canAddHtlc ? htlcP2SHScriptHex : undefined,
-              htlcSatoshis,
-            });
-            if (result.broadcast) { broadcastTxid = result.txid; wasRealBroadcast = true; }
-          }
-        } catch (broadcastErr) {
-          req.log.warn({ broadcastErr }, "BSV broadcast attempt failed — using deterministic txid");
-        }
-
-        req.log.info(
-          {
-            txid: broadcastTxid, fillQty, fillPrice, isBot,
-            realBroadcast: wasRealBroadcast,
-            settlementType: fallbackSettlement.settlementType,
-            crossChain: isCrossChain,
-          },
-          wasRealBroadcast
-            ? `BSV settlement BROADCAST to mainnet ✓ (${fallbackSettlement.settlementType})`
-            : `BSV settlement committed — deterministic txid (${fallbackSettlement.settlementType})`
-        );
-
-        // ── Settle balances in the ledger ─────────────────────────────────
+        // ── Settle this fill (HTLC + BSV broadcast + ledger) ──────────────
+        // spotSettlement handles the full pipeline:
+        //   cross-chain detection → HTLC generation → OP_RETURN build →
+        //   BSV broadcast (best-effort) → ledger balance update → HTLC watcher
         const buyerAddress  = body.side === "buy" ? body.walletAddress : match.walletAddress;
         const sellerAddress = body.side === "sell" ? body.walletAddress : match.walletAddress;
-        try {
-          await settleTrade({ buyerAddress, sellerAddress, baseAsset: baseAsset!, quoteAsset: quoteAsset!, amount: fillQty.toString(), price: fillPrice.toString() });
-        } catch (settleErr) {
-          req.log.warn({ settleErr }, "Ledger settlement failed");
-        }
+
+        const fillResult = await settleSpotFill({
+          tradeId,
+          newOrderId:    id,
+          matchOrder:    match,
+          pair:          body.symbol,
+          fillQty,
+          fillPrice,
+          buyerAddress,
+          sellerAddress,
+          buyerNetwork,
+          sellerNetwork,
+          isBot,
+          log:           req.log,
+        });
+
+        const broadcastTxid = fillResult.txid;
 
         // ── Update the counter-order (partial or full consume) ────────────
         const newMatchFilled    = (parseFloat(match.filledQuantity ?? "0") + fillQty);
@@ -456,27 +333,14 @@ router.post("/orders", async (req, res) => {
         lastMatchId     = match.id;
         settlementTxid  = broadcastTxid;
         matchedOrderId  = match.id;
-        // Track settlement metadata for API response
-        lastSettlementType     = fallbackSettlement.settlementType;
-        lastHtlcAddress        = htlcResult?.htlcAddress;
-        lastHtlcSecretHash     = htlcResult?.secretHash;
-        lastHtlcLocktimeBlocks = htlcResult?.locktimeBlocks;
-        lastCrossChain         = isCrossChain;
-        lastOpReturnPayload    = fallbackSettlement.opReturnData;
-
-        // Register cross-chain HTLCs with the watcher so Relayer Keepers
-        // are notified when the on-chain status transitions.
-        if (isCrossChain && htlcResult?.htlcAddress && broadcastTxid) {
-          registerHtlc({
-            tradeId:        id,
-            htlcAddress:    htlcResult.htlcAddress,
-            secretHash:     htlcResult.secretHash,
-            locktimeBlocks: htlcResult.locktimeBlocks,
-            settlementTxid: broadcastTxid,
-            pair:           body.symbol,
-            userAddress:    body.walletAddress,
-          }).catch(err => req.log.warn({ err }, "HTLC watcher: registerHtlc DB write failed"));
-        }
+        // Track settlement metadata for API response (from spotSettlement module)
+        lastSettlementType     = fillResult.settlementType;
+        lastHtlcAddress        = fillResult.htlcAddress;
+        lastHtlcSecretHash     = fillResult.htlcSecretHash;
+        lastHtlcLocktimeBlocks = fillResult.htlcLocktimeBlocks;
+        lastCrossChain         = fillResult.isCrossChain;
+        lastOpReturnPayload    = fillResult.opReturnPayload;
+        // Note: HTLC registration with watcher is handled inside settleSpotFill()
       }
 
       if (totalFilled > 0) {

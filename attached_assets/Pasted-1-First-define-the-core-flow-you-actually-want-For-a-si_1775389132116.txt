@@ -1,0 +1,145 @@
+1. First, define the core flow you actually want
+
+For a single chain/pair, a sane flow looks like:
+
+1. User in wallet chooses:• Market / Limit / (later) Perp/Futures
+• Side: Buy / Sell
+• Amount + price (for limit)
+
+2. Wallet computes and locks funds:• For spot buy: lock quote asset (e.g. USDT)
+• For spot sell: lock base asset (e.g. BSV)
+• For futures: lock margin only (collateral)
+
+3. Wallet signs an order intent:• pair, side, price, amount
+• expiry
+• nonce
+• walletAddress
+• Signature over all of the above
+
+4. Backend / matcher:• Verifies signature
+• Verifies locked amount ≥ required
+• Places order in orderbook
+• On match → builds settlement (spot or futures) and returns settlement payload
+
+5. Wallet confirms settlement tx:• For spot: UTXO/transfer settlement
+• For futures: position open/close/update in contract
+
+
+
+---
+
+2. You need three separate “contract systems”
+
+Don’t merge them in your head — model them separately:
+
+• Spot contract logic• Simple: transfer base/quote on match
+• Funds fully locked per order
+
+• Limit order logic• Same as spot, but:• Price condition
+• Partial fills
+• Cancel/replace
+
+
+• Futures / perps logic• Margin account per user
+• Position size, entry price, PnL
+• Liquidation rules
+• Funding (if perps)
+
+
+
+You can share wallet + signature + matching infrastructure, but settlement logic must be distinct.
+
+---
+
+3. How to “lock amount” correctly from the wallet
+
+You want deterministic locking, not “trust me, it’s reserved”.
+
+Pattern:
+
+• Account‑based chain (EVM, etc.):• Use an allowance + internal ledger:• User approves DEX contract to spend up to X
+• On order placement, you debit internal balance and mark it “locked”
+• On cancel/fill, you unlock or settle
+
+
+• UTXO‑based chain (like your BSV work):• Use HTLC / covenant / lock UTXO:• Wallet creates a UTXO locked to:• DEX script (for same‑chain)
+• HTLC (for cross‑chain)
+
+• Order references that UTXO as “funding source”
+• On match, settlement spends that UTXO
+
+
+
+
+The key: the wallet must produce a verifiable funding reference (UTXO or allowance) that the backend can’t fake.
+
+---
+
+4. A clean logical model in code
+
+At a high level, you want something like this:
+
+// Shared order intent
+type OrderIntent = {
+  pair: string;
+  side: 'BUY' | 'SELL';
+  type: 'MARKET' | 'LIMIT' | 'FUTURES';
+  price?: string;      // for LIMIT / FUTURES
+  amount: string;
+  expiry: number;
+  nonce: string;
+  walletAddress: string;
+  fundingRef: string;  // UTXO id or allowance id
+  signature: string;
+};
+
+
+On the wallet side:
+
+function buildOrderIntent(params): OrderIntent {
+  const fundingRef = selectAndLockFunds(params); // UTXO or allowance
+  const payload = { ...params, fundingRef, nonce, expiry, walletAddress };
+  const signature = sign(payload, walletPrivateKey);
+  return { ...payload, signature };
+}
+
+
+On the backend:
+
+function submitOrder(intent: OrderIntent) {
+  verifySignature(intent);
+  verifyFunding(intent.fundingRef, intent.amount, intent.type);
+
+  switch (intent.type) {
+    case 'MARKET':
+    case 'LIMIT':
+      return placeSpotOrder(intent);
+    case 'FUTURES':
+      return placeFuturesOrder(intent);
+  }
+}
+
+
+Then separate settlement modules:
+
+// spotSettlement.ts
+function settleSpotMatch(match) { /* transfer base/quote */ }
+
+// futuresSettlement.ts
+function settleFuturesMatch(match) { /* update positions, margin, PnL */ }
+
+
+---
+
+5. What “fix everything logically” really means
+
+You want to check these invariants:
+
+• No order exists without verifiable funding.
+• No match settles without consuming that funding.
+• Wallet always knows:• what’s free
+• what’s locked
+• what’s in positions (for futures)
+
+• Spot and futures never share the same “balance bucket” silently.
+
