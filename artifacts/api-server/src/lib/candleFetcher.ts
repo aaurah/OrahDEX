@@ -138,28 +138,71 @@ async function fetchBinanceCandles(
   }));
 }
 
-/* ── 3. Synthetic fallback ─────────────────────────────────────────────────────── */
+/* ── 3. Synthetic fallback — proper random walk ────────────────────────────────── */
+/**
+ * LCG seeded PRNG — deterministic per (symbol + time-bucket) so the series
+ * looks stable between requests that hit the same 60-second window.
+ */
+function makeRng(seed: number) {
+  let s = (seed | 0) >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Interval-scaled per-candle volatility (log-normal).
+ * Approximated from ~80% annualised vol → scaled by √(intervalSec / 1 year in sec).
+ */
+function intervalVol(sec: number): number {
+  const annualVol = 0.80;
+  const secsPerYear = 365 * 24 * 3600;
+  return annualVol * Math.sqrt(sec / secsPerYear);
+}
+
 function generateFallbackCandles(lastPrice: number, interval: string, limit: number): Candle[] {
-  const sec = INTERVAL_SECONDS[interval] || 3600;
-  const now = Math.floor(Date.now() / 1000);
-  let price = lastPrice * 0.95;
+  const sec   = INTERVAL_SECONDS[interval] || 3600;
+  const now   = Math.floor(Date.now() / 1000);
+  const vol = intervalVol(sec);
+
+  // Use a seeded RNG so repeated calls within the same 60s window return the same series.
+  // Seed = floor(now / 60) so it rotates each minute — "live" feel without chaos.
+  const timeBucket = Math.floor(now / 60);
+  const rng = makeRng(timeBucket ^ (lastPrice * 1000 | 0));
+
+  // Walk BACKWARD from lastPrice using pure GBM (no drift) — each backward step
+  // is just +/-noise in log-space.  The most-recent candle always closes at lastPrice
+  // with no snap, and the series looks like a genuine market without artificial trends.
+  const logCloses = new Array<number>(limit);
+  logCloses[limit - 1] = Math.log(Math.max(lastPrice, 1e-12));
+
+  for (let i = limit - 2; i >= 0; i--) {
+    const shock   = (rng() * 2 - 1) * vol; // uniform approximation of normal shock
+    logCloses[i]  = logCloses[i + 1] + shock; // go backward: add rather than subtract
+  }
+
   const candles: Candle[] = [];
   for (let i = 0; i < limit; i++) {
-    const open   = price;
-    const change = (Math.random() - 0.48) * lastPrice * 0.005;
-    const close  = Math.max(open + change, 0.00000001);
-    const wicks  = Math.abs(change) * 0.3;
-    candles.push({
-      time:   now - sec * (limit - i),
-      open,
-      high:   Math.max(open, close) + wicks,
-      low:    Math.min(open, close) - wicks,
-      close,
-      volume: Math.random() * 10000 + 500,
-    });
-    price = close;
+    const close = Math.exp(logCloses[i]);
+    const open  = i === 0
+      ? close * Math.exp((rng() - 0.5) * vol * 0.5)
+      : Math.exp(logCloses[i - 1]);
+
+    const body    = Math.abs(close - open);
+    const minWick = close * 0.0008; // at least 0.08% of price — always visible
+    const hiWick  = Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const loWick  = Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const high    = Math.max(open, close) + hiWick;
+    const low     = Math.min(open, close) - loWick;
+
+    // Log-normal volume: median scales linearly with interval so a 1d candle has
+    // ~24× the volume of a 1h candle, with ±60% spread.
+    const medianVol = 500 * (sec / 3600);
+    const volume    = Math.exp(Math.log(medianVol) + (rng() - 0.5) * 1.2);
+
+    candles.push({ time: now - sec * (limit - i), open, high, low, close, volume });
   }
-  if (candles.length) candles[candles.length - 1].close = lastPrice;
   return candles;
 }
 

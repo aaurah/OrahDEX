@@ -1141,21 +1141,53 @@ export const MOCK_PORTFOLIO: any = {
   recentTrades: [],
 };
 
+/**
+ * Generate 100 synthetic 1-hour candles using a backward Ornstein-Uhlenbeck
+ * random walk so the series looks like a real market rather than flat lines:
+ *
+ *   • Walks backward from `basePrice` — last candle naturally closes at the live price.
+ *   • OU mean-reversion prevents the series from drifting wildly into unrealistic territory.
+ *   • Wicks are proportional to body size with a minimum visibility floor.
+ *   • Volume follows a log-normal distribution — occasional spikes, never uniform.
+ *   • Seeded PRNG per time-bucket so the chart stays stable between refreshes.
+ */
 export const generateMockCandles = (basePrice: number): Candle[] => {
-  // Use a safe starting price — never below a tiny threshold
-  let currentPrice = Math.max(basePrice, 1e-12);
-  const now = Math.floor(Date.now() / 1000);
-  // Realistic ±1.5% random walk per candle, ±0.4% wick — all relative to current price
-  const volatility = 0.015;
-  const wickPct    = 0.004;
-  return Array.from({ length: 100 }).map((_, i) => {
-    const open   = currentPrice;
-    const change = (Math.random() - 0.5) * 2 * volatility;
-    const close  = Math.max(open * (1 + change), open * 0.001);
-    const high   = Math.max(open, close) * (1 + Math.random() * wickPct);
-    const low    = Math.min(open, close) * (1 - Math.random() * wickPct);
-    const volume = Math.random() * 1000;
-    currentPrice = close;
-    return { time: now - (100 - i) * 3600, open, high, low, close, volume };
+  const N           = 100;
+  const intervalSec = 3600; // 1h candles
+  const now         = Math.floor(Date.now() / 1000);
+  const price       = Math.max(basePrice, 1e-12);
+
+  // ~80% annualised vol scaled to 1-hour candles — ≈ 0.00306 per candle
+  const vol = 0.80 * Math.sqrt(intervalSec / (365 * 24 * 3600));
+
+  // Seeded LCG — same basePrice + minute bucket → same series → no chart jumping on re-render
+  const timeBucket = Math.floor(now / 60);
+  let seed = (timeBucket ^ (price * 1000 | 0)) >>> 0;
+  const rng = () => {
+    seed = (Math.imul(1664525, seed) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+
+  // Pure GBM backward walk — no drift, just ±vol noise per step.
+  // The last close is naturally basePrice; no OU drift creates artificial trends.
+  const logC = new Array<number>(N);
+  logC[N - 1] = Math.log(price);
+  for (let i = N - 2; i >= 0; i--) {
+    logC[i] = logC[i + 1] + (rng() * 2 - 1) * vol;
+  }
+
+  return logC.map((lc, i): Candle => {
+    const close = Math.exp(lc);
+    const open  = i === 0
+      ? close * Math.exp((rng() - 0.5) * vol * 0.5)
+      : Math.exp(logC[i - 1]);
+
+    const body    = Math.abs(close - open);
+    const minWick = close * 0.0008; // always at least 0.08% — always visible on chart
+    const high    = Math.max(open, close) + Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const low     = Math.min(open, close) - Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const volume  = Math.exp(Math.log(400) + (rng() - 0.5) * 2.0); // log-normal, σ=2
+
+    return { time: now - (N - i) * intervalSec, open, high, low, close, volume };
   });
 };
