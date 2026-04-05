@@ -412,6 +412,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     "idle" | "checking" | "needed" | "approving" | "approved"
   >("idle");
 
+  // ── Order confirmation modal ──────────────────────────────────────────────────
+  // For limit/stop orders we show a confirmation bottom-sheet instead of
+  // triggering a wallet signing popup (which is unreliable for Reown/WalletConnect
+  // on mobile).  The "confirmed" ref lets the second invocation of handleSubmit
+  // skip straight to the API call.
+  const [showConfirm, setShowConfirm] = useState(false);
+  const confirmRef = useRef(false);
+  const formRef    = useRef<HTMLFormElement | null>(null);
+
   // Wagmi sign — covers MetaMask (injected) AND Reown/WalletConnect wallets
   const { signMessageAsync } = useSignMessage();
   const { isConnected: evmConnected } = useAccount();
@@ -715,7 +724,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     // ── Step 1: ERC-20 Allowance check for EVM sells ──────────────────────
     // If the user is selling an ERC-20 token, verify the DEX router has
     // enough allowance via allowance(owner, router). If not, request approve().
-    if (isInjectedWallet && side === "sell") {
+    // Skip on the second call (after confirmation modal) — approval was already
+    // requested in the first call and re-checking avoids a duplicate prompt.
+    if (isInjectedWallet && side === "sell" && !confirmRef.current) {
       // Look up the token contract on the CURRENT chain (not hardcoded mainnet)
       const token = getChainToken(currentChainId, base);
       if (token?.address) {
@@ -870,112 +881,27 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
       }
     }
 
-    // ── Step 3: Sign the order intent ───────────────────────────────────────
-    // ALL EVM order types (market, limit, stop) require a wallet signature
-    // to prove ownership. Exceptions:
-    //   • Injected wallets that did an on-chain swap (Step 2) already signed
-    //     via eth_sendTransaction — no second prompt needed.
-    //   • Demo / Orah Wallet bypass signing entirely.
-    let evmSignature: string | undefined;
-    const needsEcdsaSign = isEvm && !isDemo && !isOrahWallet && !onChainTxHash;
-    if (needsEcdsaSign) {
-      setSigning(true);
-      try {
-        const message = buildOrderMessage();
-        let signed = false;
-
-        // Primary path: wagmi signMessageAsync handles BOTH injected wallets
-        // (MetaMask, Coinbase, Brave) AND WalletConnect/Reown sessions transparently.
-        if (evmConnected) {
-          try {
-            evmSignature = await signMessageAsync({ message });
-            signed = true;
-          } catch (wagmiErr: any) {
-            // Only hard-stop on explicit user rejection — never on a technical error
-            const isRejected =
-              wagmiErr?.code === 4001 ||
-              wagmiErr?.code === "ACTION_REJECTED" ||
-              wagmiErr?.name === "UserRejectedRequestError" ||
-              wagmiErr?.message?.toLowerCase().includes("user rejected") ||
-              wagmiErr?.message?.toLowerCase().includes("user denied");
-            if (isRejected) {
-              setSigning(false);
-              setApprovalStep("idle");
-              toast({
-                title: "Signing rejected",
-                description: "You cancelled the wallet prompt. The order was not placed.",
-                variant: "destructive",
-              });
-              return;
-            }
-            // Technical error — try Reown provider loop as fallback
-            console.warn("[OrahDEX] wagmi sign failed, trying Reown provider:", wagmiErr?.message);
-          }
-        }
-
-        // Fallback: iterate over Reown connectors (handles edge cases where
-        // wagmi reports disconnected but Reown session is still active)
-        if (!signed && provider === "reown") {
-          try {
-            const reownSig = await signMessageWithReownProvider(message, address!);
-            if (reownSig) { evmSignature = reownSig; signed = true; }
-          } catch { /* silently fall through */ }
-        }
-
-        // Last resort: raw injected provider (for non-wagmi wallets)
-        if (!signed && isInjectedWallet) {
-          try {
-            evmSignature = await (window as any).ethereum.request({
-              method: "personal_sign",
-              params: [message, address],
-            });
-            if (evmSignature) signed = true;
-          } catch (rawErr: any) {
-            const isRejected =
-              rawErr?.code === 4001 ||
-              rawErr?.message?.toLowerCase().includes("user rejected") ||
-              rawErr?.message?.toLowerCase().includes("user denied");
-            if (isRejected) {
-              setSigning(false);
-              setApprovalStep("idle");
-              toast({
-                title: "Signing rejected",
-                description: "You cancelled the wallet prompt. The order was not placed.",
-                variant: "destructive",
-              });
-              return;
-            }
-          }
-        }
-
-        if (!signed) {
-          // Could not sign — warn but proceed: order still goes through unsigned
-          console.warn("[OrahDEX] All signing paths failed; placing order without signature");
-          toast({
-            title: "Signing unavailable",
-            description: "Order placed without wallet signature. Reconnect your wallet to sign future orders.",
-          });
-        }
-      } catch (err: any) {
-        // Unexpected outer error — always proceed to API unless clearly rejected
-        const isRejected =
-          err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
-          err?.name === "UserRejectedRequestError";
-        setSigning(false);
-        setApprovalStep("idle");
-        if (isRejected) {
-          toast({
-            title: "Signing rejected",
-            description: "You cancelled the wallet prompt. The order was not placed.",
-            variant: "destructive",
-          });
-          return;
-        }
-        console.warn("[OrahDEX] Unexpected signing error:", err);
-      } finally {
-        setSigning(false);
-      }
+    // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
+    // Limit and stop orders don't execute on-chain immediately — they sit in the
+    // order book. Wallet signing is unreliable on mobile (especially Reown /
+    // WalletConnect) and unnecessary since balance is enforced server-side.
+    // Instead we show a clear confirmation modal that tells the user exactly what
+    // they're placing, then submit directly to the API.
+    //
+    // Market orders on INJECTED wallets (MetaMask / Brave / Coinbase) already
+    // received user consent via the on-chain swap in Step 2. Reown market orders
+    // also go directly to the API (no second prompt needed).
+    if (type !== "market" && !confirmRef.current) {
+      setShowConfirm(true);
+      return; // Wait for user to confirm in the modal
     }
+    confirmRef.current = false; // Reset for next submission
+
+    // For on-chain market orders (injected wallets), signing is embedded in the
+    // swap transaction itself. No extra personal_sign prompt is needed.
+    let evmSignature: string | undefined;
+    // (evmSignature stays undefined for all non-on-chain paths — walletSource
+    //  sent to the API is the source of truth for external wallet identity)
 
     setApprovalStep("idle");
 
@@ -1189,7 +1115,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form ref={formRef} onSubmit={handleSubmit} data-orderform className="flex flex-col gap-4">
 
           {/* Trigger price for stop orders */}
           {type === "stop" && (
@@ -1621,7 +1547,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               {approvalStep === "checking" && <><Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" /><span className="text-amber-300">Checking {base} allowance…</span></>}
               {approvalStep === "needed"   && <><AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" /><span className="text-amber-300">Approval required — confirm in wallet</span></>}
               {approvalStep === "approving" && <><Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" /><span className="text-amber-300">Waiting for approval tx…</span></>}
-              {approvalStep === "approved"  && <><ShieldCheck className="w-3.5 h-3.5 text-green-400 shrink-0" /><span className="text-green-300">Allowance confirmed — signing order</span></>}
+              {approvalStep === "approved"  && <><ShieldCheck className="w-3.5 h-3.5 text-green-400 shrink-0" /><span className="text-green-300">Allowance confirmed — submitting swap</span></>}
             </div>
           )}
 
@@ -1685,10 +1611,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               <><Loader2 className="w-4 h-4 animate-spin" /> Checking allowance…</>
             ) : approvalStep === "approving" ? (
               <><Lock className="w-4 h-4 animate-pulse" /> Approving {base}…</>
-            ) : signing ? (
-              <><PenLine className="w-4 h-4 animate-pulse" /> Sign in Wallet…</>
             ) : isPending ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
+            ) : type !== "market" ? (
+              `Review ${side === "buy" ? "Buy" : "Sell"} Order`
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
@@ -1751,6 +1677,120 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           </div>
         </div>
       </div>
+
+      {/* ── Order Confirmation Modal ─────────────────────────────────────────── */}
+      {showConfirm && (() => {
+        const qty    = parseFloat(amount) || 0;
+        const px     = parseFloat(price)  || currentPrice;
+        const total  = qty * px;
+        const fee    = total * 0.003;
+        const isBuy  = side === "buy";
+        const locked = isBuy ? total : qty;
+        return (
+          <div
+            className="fixed inset-0 z-[999] flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowConfirm(false)}
+          >
+            <div
+              className="w-full max-w-md bg-card border border-border rounded-t-2xl p-5 pb-8 shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "text-[10px] font-bold uppercase px-2 py-0.5 rounded",
+                    isBuy ? "bg-buy/20 text-buy" : "bg-sell/20 text-sell"
+                  )}>
+                    {side} {type}
+                  </span>
+                  <span className="font-bold text-foreground">{symbol}</span>
+                </div>
+                <button onClick={() => setShowConfirm(false)} className="text-muted-foreground text-lg leading-none">✕</button>
+              </div>
+
+              {/* Order details */}
+              <div className="space-y-2.5 text-sm mb-5">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-mono font-semibold">{qty.toLocaleString("en-US", { maximumFractionDigits: 8 })} {base}</span>
+                </div>
+                {type !== "market" && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Price</span>
+                    <span className="font-mono font-semibold">${px.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                  </div>
+                )}
+                {type === "stop" && stopPrice && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Trigger</span>
+                    <span className="font-mono font-semibold">${parseFloat(stopPrice).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Est. Total</span>
+                  <span className="font-mono font-semibold">{total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quote}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground/70">
+                  <span>Est. Fee (0.30%)</span>
+                  <span className="font-mono">{fee.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {quote}</span>
+                </div>
+                <div className="border-t border-border/50 pt-2 flex justify-between text-xs">
+                  <span className="text-muted-foreground">Available {isBuy ? quote : base}</span>
+                  <span className="font-mono">{availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Locked in order</span>
+                  <span className={cn("font-mono", availableAmt > 0 && locked > availableAmt ? "text-sell" : "text-amber-400")}>
+                    {locked.toLocaleString("en-US", { maximumFractionDigits: 6 })} {isBuy ? quote : base}
+                  </span>
+                </div>
+              </div>
+
+              {/* Insufficient balance warning */}
+              {!usesApiBalance && availableAmt > 0 && locked > availableAmt * 1.01 && (
+                <div className="mb-4 p-2.5 rounded-lg bg-sell/10 border border-sell/30 text-xs text-sell">
+                  Insufficient balance: you have {availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym} but this order requires {locked.toLocaleString("en-US", { maximumFractionDigits: 6 })}.
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 py-3 rounded-xl bg-secondary border border-border text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={(!usesApiBalance && availableAmt > 0 && locked > availableAmt * 1.01) || isPending}
+                  onClick={() => {
+                    setShowConfirm(false);
+                    confirmRef.current = true;
+                    // Re-submit via the form ref (triggers handleSubmit with confirmRef=true)
+                    if (formRef.current) {
+                      formRef.current.requestSubmit();
+                    } else {
+                      const syntheticEvent = new Event("submit", { bubbles: true, cancelable: true });
+                      handleSubmit(syntheticEvent as any);
+                    }
+                  }}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2",
+                    isBuy
+                      ? "bg-buy shadow-lg shadow-buy/20 hover:shadow-buy/40 disabled:opacity-60"
+                      : "bg-sell shadow-lg shadow-sell/20 hover:shadow-sell/40 disabled:opacity-60"
+                  )}
+                >
+                  {isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</> : `Confirm ${side === "buy" ? "Buy" : "Sell"}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
