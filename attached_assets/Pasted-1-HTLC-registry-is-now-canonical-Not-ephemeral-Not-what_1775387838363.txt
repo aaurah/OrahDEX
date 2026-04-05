@@ -1,0 +1,201 @@
+1. HTLC registry is now canonical
+
+Not ephemeral. Not “whatever the watcher remembers.”
+It’s a first‑class ledger table:
+
+• One row per HTLC
+• Upserted idempotently
+• Tracks:• status
+• spendTxid
+• locktimeBlocks
+• secretHash
+• pair
+• userAddress
+• timestamps
+
+
+
+This means:
+
+• A restart cannot lose state
+• A redeploy cannot lose state
+• A multi‑instance cluster cannot diverge
+
+
+This is the foundation of a sovereign DEX.
+
+---
+
+2. HTLC events are now append‑only truth
+
+Every transition is written to htlc_events:
+
+• fromStatus → toStatus
+• height
+• spendTxid
+• createdAt
+
+
+This gives you:
+
+• A full historical timeline
+• A replayable audit trail
+• A source for analytics, dashboards, and keeper scoring
+• A mythic “Book of Cross‑Chain Deeds”
+
+
+This is exactly how a Keeper‑driven system should behave.
+
+---
+
+3. The watcher is now a DB‑backed daemon
+
+On boot:
+
+• Loads all non‑terminal HTLCs
+• Rehydrates in‑memory cache
+• Starts polling
+• Emits events
+• Writes transitions atomically
+
+
+This is the correct architecture:
+
+DB = truth
+Memory = speed
+Watcher = orchestrator
+
+---
+
+4. The relayer endpoint now serves real history
+
+GET /api/keeper/relayer-events now returns:
+
+• Active HTLCs
+• Historical transitions
+• Fetched from DB, not RAM
+• Restart‑safe
+• Multi‑instance‑safe
+
+
+This is the backbone of a Keeper reputation system.
+
+---
+
+🧩 What’s left to make this subsystem perfect
+
+You’re 95% of the way to a fully sovereign, horizontally scalable, multi‑instance HTLC engine.
+Here are the last 3 refinements that would make it bulletproof:
+
+---
+
+1. Add a “terminalAt” timestamp to htlc_registry
+
+Right now, terminal states (CLAIMED, REFUNDED) are stored, but you don’t know when they became terminal unless you query events.
+
+Add:
+
+terminalAt TIMESTAMP NULL
+
+
+Set it when:
+
+• toStatus ∈ {CLAIMED, REFUNDED}
+
+
+This gives you:
+
+• Fast queries for “recently completed HTLCs”
+• Ability to purge old rows
+• Keeper scoring windows (“HTLCs resolved in last 30 days”)
+
+
+---
+
+2. Add a “nextCheckAt” field for scalable polling
+
+Right now the watcher polls all active HTLCs every 90 seconds.
+
+That’s fine for dozens.
+But when you have thousands, you’ll want:
+
+nextCheckAt TIMESTAMP NOT NULL DEFAULT NOW()
+
+
+Then:
+
+• When HTLC is far from locktime → check less often
+• When HTLC is near locktime → check more often
+• When HTLC is expired → check aggressively until resolved
+
+
+This gives you:
+
+• Adaptive load
+• Zero wasted polling
+• Natural sharding if you ever run multiple watchers
+
+
+---
+
+3. Add a “keeperActions” table for future scoring
+
+You already have:
+
+• HTLC registry
+• HTLC events
+• Relayer events endpoint
+• Keeper UI panel
+
+
+The missing piece is the Keeper action log:
+
+keeper_actions (
+  id SERIAL PRIMARY KEY,
+  keeperAddress TEXT NOT NULL,
+  htlcAddress TEXT NOT NULL,
+  action TEXT NOT NULL, -- e.g. "CLAIMED", "REFUNDED", "OBSERVED"
+  txid TEXT,
+  createdAt TIMESTAMP DEFAULT NOW()
+)
+
+
+This unlocks:
+
+• Keeper reputation
+• Keeper rewards
+• Keeper slashing
+• Keeper leaderboards
+• Keeper “lineage” (mythic narrative)
+
+
+This is where the ceremonial layer meets the technical layer.
+
+---
+
+🔮 If you want, I can help you build:
+
+A Keeper Reputation Engine
+
+• Score based on:• timeliness
+• accuracy
+• number of HTLCs handled
+• claim/refund correctness
+
+• Weighted by:• HTLC value
+• chain height proximity
+• relayer competition
+
+
+
+A Keeper Lineage Explorer
+
+• Visual timeline of all HTLCs a Keeper has resolved
+• Mythic badges (“Watcher of Dawn”, “Breaker of Locks”, etc.)
+• Reputation tiers
+
+
+A Settlement v2 formal spec (markdown or code-embedded)
+
+• Clean, canonical, versioned
+• Suitable for publishing or open-sourcing
