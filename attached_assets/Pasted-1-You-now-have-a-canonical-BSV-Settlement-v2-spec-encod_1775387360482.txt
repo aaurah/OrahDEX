@@ -1,0 +1,97 @@
+1. You now have a canonical BSV Settlement v2 spec — encoded as code
+
+• htlc.ts• Defines the covenant: constants, HTLC script, claim/refund builders, and stack traces.
+• This is the on-chain contract spec.
+
+• htlcVectors.ts• Defines the invariants: locktime floor, dust/fee rules, state machine semantics.
+• Because it’s executable, it’s not just documentation—it’s a living spec.
+
+• htlcWatcher.ts header comments• Defines the relayer/keeper role: who acts on LOCKED / CLAIMED / EXPIRED / REFUNDED, and why.
+• That’s the social layer of the protocol, embedded right where the behavior lives.
+
+
+
+You’ve effectively made “BSV Settlement v2” something that can’t drift silently—any future change has to walk through the spec and the vectors.
+
+---
+
+2. The HTLC lifecycle is now fully closed-loop
+
+You’ve wired the full arc:
+
+1. Creation• orders.ts:• Cross-chain detection.
+• Parameter invariants (locktime, dust, fees).
+• HTLC + OP_RETURN v2 + broadcast.
+• registerHtlc() call right after settlement metadata is known.
+
+
+2. Observation• htlcWatcher.ts:• In-memory registry of active HTLCs.
+• Polls every 90s.
+• Uses queryHtlcStatus() to track transitions.
+• Emits capped event log + push notifications.
+
+
+3. Introspection• GET /api/settlements/htlc-status:• Per-HTLC status for the Settlement Explorer.
+
+• GET /api/keeper/relayer-events:• Global relayer view: active HTLCs + transition events.
+
+
+4. Narrative & UX• Settlement Explorer:• Per-trade: OP_RETURN v2, HTLC address, status, links, lifecycle legend.
+
+• Keeper Registry → Relayer tab:• System-wide: active positions, transitions, and “what to do at each state”.
+
+
+
+
+So a cross-chain trade now leaves a trail:
+
+• On-chain (P2SH + OP_RETURN v2),
+• In the watcher,
+• In the relayer events feed,
+• In the Keeper UI.
+
+
+That’s exactly what a mythic, accountable DEX should feel like.
+
+---
+
+3. The only big lever I’d consider next
+
+You’ve nailed behavior and visibility. The next hardening layer I’d consider:
+
+Persistence + replay for HTLC watcher + relayer events
+
+Right now (from your description) it sounds like:
+
+• HTLC registry + events are in-memory.
+• On restart, you rely on:• New HTLCs being registered via orders.ts.
+• Chain status being re-derived from scratch.
+
+
+
+That’s fine functionally, but for a sovereign, mythic system you might want:
+
+• A tiny HTLC table:• htlcAddress
+• secretHash
+• locktimeBlocks
+• createdAt, lastStatus, lastStatusAt
+
+• An events table:• htlcAddress
+• fromStatus
+• toStatus
+• txid (if applicable)
+• height
+• createdAt
+
+
+
+Then:
+
+• htlcWatcher becomes:• Idempotent, restart-safe.
+• Able to rebuild in-memory state from DB.
+
+• relayer-events endpoint:• Can serve historical transitions, not just what happened since this process booted.
+
+
+
+You don’t have to do it now—but that’s the one structural upgrade that would turn this from “robust service” into “canonical ledger of cross-chain covenant behavior”.

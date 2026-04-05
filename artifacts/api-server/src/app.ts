@@ -135,7 +135,7 @@ try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startP
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
 try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
-try { startHtlcWatcher();         } catch (e) { logger.error({ err: e }, "startHtlcWatcher failed to init"); }
+startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
 
 /* ── Connectivity ping — returns 204 ─────────────────────────────────────── */

@@ -475,7 +475,7 @@ router.post("/orders", async (req, res) => {
             settlementTxid: broadcastTxid,
             pair:           body.symbol,
             userAddress:    body.walletAddress,
-          });
+          }).catch(err => req.log.warn({ err }, "HTLC watcher: registerHtlc DB write failed"));
         }
       }
 

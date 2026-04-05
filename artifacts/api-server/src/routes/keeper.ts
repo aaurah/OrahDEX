@@ -182,7 +182,7 @@ router.get("/keeper/relayer-events", async (req, res) => {
     }
 
     const active = getActiveHtlcs();
-    const events = getHtlcEvents(limit);
+    const events = await getHtlcEvents(limit);
 
     res.json({ activeCount: active.length, active, events, fetchedAt: new Date().toISOString() });
   } catch (err: any) {
