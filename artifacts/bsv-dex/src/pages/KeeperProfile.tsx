@@ -9,7 +9,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSEO } from "@/hooks/useSEO";
-import { RelayerEvents } from "@/components/keeper/RelayerEvents";
+import { RelayerEvents }   from "@/components/keeper/RelayerEvents";
+import { ReputationCard }  from "@/components/keeper/ReputationCard";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -82,7 +83,7 @@ export function KeeperProfile() {
   const { address: walletAddress } = useWalletStore();
   const [registerName, setRegisterName] = useState("");
   const [selectedRoles, setSelectedRoles] = useState<string[]>(["Trader"]);
-  const [activeTab, setActiveTab] = useState<"profile" | "registry" | "economics" | "relayer">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "registry" | "economics" | "relayer" | "reputation">("profile");
   const [copiedAddr, setCopiedAddr] = useState(false);
   const qc = useQueryClient();
 
@@ -218,6 +219,19 @@ export function KeeperProfile() {
         >
           <Globe className="w-3.5 h-3.5" />
           Relayer
+        </button>
+        {/* Reputation tab */}
+        <button
+          onClick={() => setActiveTab("reputation")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+            activeTab === "reputation"
+              ? "border-amber-400 text-amber-400"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <BadgeCheck className="w-3.5 h-3.5" />
+          Reputation
         </button>
       </div>
 
@@ -653,6 +667,23 @@ export function KeeperProfile() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Reputation Tab ─────────────────────────────────────────────────── */}
+      {activeTab === "reputation" && (
+        <div className="max-w-2xl space-y-2">
+          <div className="mb-4">
+            <h2 className="text-base font-semibold flex items-center gap-2">
+              <BadgeCheck className="w-4 h-4 text-amber-400" />
+              Keeper Reputation
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Score computed from on-chain HTLC actions — claims, refunds, timeliness, and consistency.
+              Forms the basis of Phase 3 Keeper reputation and advanced role eligibility.
+            </p>
+          </div>
+          <ReputationCard keeperAddress={walletAddress ?? undefined} />
         </div>
       )}
     </div>
