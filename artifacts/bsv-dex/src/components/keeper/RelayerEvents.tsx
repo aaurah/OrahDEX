@@ -52,11 +52,24 @@ interface HtlcEvent {
   timestamp:      string;
 }
 
+interface KeeperAction {
+  id:            string;
+  keeperAddress: string;
+  htlcAddress:   string;
+  tradeId:       string;
+  pair:          string;
+  action:        string;
+  txid?:         string;
+  blockHeight:   number;
+  createdAt:     string;
+}
+
 interface RelayerEventsResponse {
-  activeCount: number;
-  active:      HtlcEntry[];
-  events:      HtlcEvent[];
-  fetchedAt:   string;
+  activeCount:   number;
+  active:        HtlcEntry[];
+  events:        HtlcEvent[];
+  keeperActions: KeeperAction[];
+  fetchedAt:     string;
 }
 
 // ── Status display config ─────────────────────────────────────────────────────
@@ -287,6 +300,36 @@ export function RelayerEvents({ keeperAddress }: RelayerEventsProps) {
                 <span className="text-xs text-muted-foreground shrink-0">{fmtTime(event.timestamp)}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Keeper action log */}
+      {data && data.keeperActions && data.keeperActions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Keeper Action Log</p>
+          <div className="rounded-xl border border-border bg-card/30 divide-y divide-border">
+            {data.keeperActions.map((a) => {
+              const actionColor =
+                a.action === "CLAIMED"  ? "text-emerald-400" :
+                a.action === "REFUNDED" ? "text-red-400"     :
+                a.action === "EXPIRED"  ? "text-amber-400"   :
+                                          "text-muted-foreground";
+              return (
+                <div key={a.id} className="flex items-center gap-3 px-4 py-3">
+                  <span className={cn("text-xs font-bold shrink-0 w-20", actionColor)}>
+                    {a.action}
+                  </span>
+                  <div className="flex-1 min-w-0 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{a.pair}</span>
+                    {a.txid
+                      ? <>{" · "}<WocLink txid={a.txid} label={`tx ${shortHash(a.txid, 6)}`} /></>
+                      : a.blockHeight > 0 ? ` · block #${a.blockHeight.toLocaleString()}` : ""}
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">{fmtTime(a.createdAt)}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

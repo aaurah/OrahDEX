@@ -32,6 +32,7 @@ import { logger } from "../lib/logger.js";
 import {
   getActiveHtlcs,
   getHtlcEvents,
+  getKeeperActions,
   registerRelayerKeeper,
 } from "../lib/htlcWatcher.js";
 
@@ -181,10 +182,19 @@ router.get("/keeper/relayer-events", async (req, res) => {
       }
     }
 
-    const active = getActiveHtlcs();
-    const events = await getHtlcEvents(limit);
+    const active  = getActiveHtlcs();
+    const events  = await getHtlcEvents(limit);
+    const actions = await getKeeperActions(address, limit);
 
-    res.json({ activeCount: active.length, active, events, fetchedAt: new Date().toISOString() });
+    res.json({
+      activeCount:   active.length,
+      active,
+      events,
+      // keeperActions: actions for this specific keeper (if address supplied),
+      //                or all recent actions (if no address supplied)
+      keeperActions: actions,
+      fetchedAt:     new Date().toISOString(),
+    });
   } catch (err: any) {
     logger.error({ err }, "keeper/relayer-events: fetch failed");
     res.status(500).json({ error: err?.message ?? "Failed to fetch relayer events" });
@@ -368,6 +378,35 @@ router.get("/keeper/:address/earnings", async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to fetch earnings" });
+  }
+});
+
+// ── GET /api/keeper/:address/actions ─────────────────────────────────────────
+//   Per-keeper HTLC action history — foundation for Keeper reputation scoring.
+//   Returns OBSERVED / CLAIMED / REFUNDED entries for this keeper address,
+//   newest first. Query ?limit=N (max 200, default 50).
+//
+router.get("/keeper/:address/actions", async (req, res) => {
+  try {
+    const addr  = req.params.address?.toLowerCase();
+    const limit = Math.min(200, parseInt((req.query.limit as string) ?? "50", 10) || 50);
+    if (!addr) { res.status(400).json({ error: "address required" }); return; }
+
+    const actions = await getKeeperActions(addr, limit);
+
+    const summary = actions.reduce<Record<string, number>>((acc, a) => {
+      acc[a.action] = (acc[a.action] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({
+      walletAddress: addr,
+      totalActions:  actions.length,
+      summary,       // e.g. { OBSERVED: 14, CLAIMED: 3 }
+      actions,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch keeper actions" });
   }
 });
 
