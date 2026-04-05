@@ -42,16 +42,43 @@ const normSymbol = (raw: string): string => {
 
 /**
  * Build a realistic synthetic order book from a mid price.
- * Returns 20 bid and 20 ask levels with decaying quantity.
+ *
+ * Uses a seeded LCG PRNG keyed on (symbol + 30-second time bucket) so the
+ * book looks stable between requests rather than flickering on every poll.
+ * Quantities follow an exponential decay curve with small jitter — mimicking
+ * a realistic liquidity ladder without requiring a live order book.
  */
-function syntheticOrderBook(price: number, depth = 20) {
-  const spread = price * 0.0002; // 0.02% spread
+function lcgRng(seed: number) {
+  let s = (seed | 0) >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function syntheticOrderBook(price: number, depth = 20, symbol = "") {
+  // Reseed every 30 s so the book shifts slowly rather than on every HTTP request.
+  const timeBucket = Math.floor(Date.now() / 30_000);
+  let symHash = 0;
+  for (let i = 0; i < symbol.length; i++) symHash = ((symHash * 31) + symbol.charCodeAt(i)) | 0;
+  const rng = lcgRng(symHash ^ timeBucket);
+
+  // 0.03% spread for liquid pairs — looks realistic without being invisible.
+  const halfSpread = price * 0.00015;
+  const tickStep   = price * 0.0002; // average distance between levels
   const bids: [number, number][] = [];
   const asks: [number, number][] = [];
+
   for (let i = 0; i < depth; i++) {
-    const bidPx = parseFloat((price - spread / 2 - i * price * 0.00015).toFixed(8));
-    const askPx = parseFloat((price + spread / 2 + i * price * 0.00015).toFixed(8));
-    const qty   = parseFloat(((Math.random() * 2 + 0.1) * Math.exp(-i * 0.08)).toFixed(4));
+    // Add small random jitter to price steps so levels aren't perfectly uniform.
+    const bidPx = parseFloat((price - halfSpread - i * tickStep - rng() * tickStep * 0.3).toFixed(8));
+    const askPx = parseFloat((price + halfSpread + i * tickStep + rng() * tickStep * 0.3).toFixed(8));
+
+    // Exponential size decay: deep levels have less liquidity, with ±20% noise.
+    const base = (rng() * 4 + 0.5) * Math.exp(-i * 0.10);
+    const jitter = 1 + (rng() - 0.5) * 0.4;
+    const qty = parseFloat(Math.max(base * jitter, 0.001).toFixed(4));
+
     bids.push([bidPx, qty]);
     asks.push([askPx, qty]);
   }
@@ -316,7 +343,7 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     // If real orders are sparse, merge in synthetic levels to fill the depth.
     // Real orders always take priority — synthetic only fills the remaining slots.
     if (bids.length < depth / 2 || asks.length < depth / 2) {
-      const synth = syntheticOrderBook(lastPrice, depth);
+      const synth = syntheticOrderBook(lastPrice, depth, symbol);
       if (bids.length < depth / 2) {
         const realBidPrices = new Set(bids.map(([p]) => p));
         const fillBids = synth.bids

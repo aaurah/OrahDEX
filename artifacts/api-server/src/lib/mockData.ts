@@ -57,31 +57,50 @@ function intervalToSeconds(interval: string): number {
   return map[interval] || 3600;
 }
 
+/** LCG seeded PRNG — stable per (price+timeBucket) so charts don't jump on re-fetch. */
+function seededRng(seed: number) {
+  let s = (seed | 0) >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/** Per-candle log-return volatility scaled to ~80% annualised. */
+function candleVol(intervalSec: number): number {
+  return 0.80 * Math.sqrt(intervalSec / (365 * 24 * 3600));
+}
+
 export function generateCandles(lastPrice: number, interval: string, limit: number) {
   const intervalSec = intervalToSeconds(interval);
-  const now = Math.floor(Date.now() / 1000);
-  const startTime = now - intervalSec * limit;
+  const now         = Math.floor(Date.now() / 1000);
+  const vol = candleVol(intervalSec);
 
-  let price = lastPrice * (1 - randomBetween(0.02, 0.1));
-  const candles = [];
+  // Seed off time-bucket so the series is stable across re-renders in the same minute.
+  const rng = seededRng(Math.floor(now / 60) ^ (lastPrice * 1000 | 0));
 
-  for (let i = 0; i < limit; i++) {
-    const time = startTime + i * intervalSec;
-    const volatility = lastPrice * 0.005;
-
-    const open = price;
-    const change = (Math.random() - 0.48) * volatility;
-    const close = Math.max(price + change, 0.00000001);
-    const high = Math.max(open, close) + Math.abs(change) * randomBetween(0.1, 0.5);
-    const low = Math.min(open, close) - Math.abs(change) * randomBetween(0.1, 0.5);
-    const volume = randomBetween(100, 50000);
-
-    candles.push({ time, open, high, low, close, volume });
-    price = close;
+  // Pure GBM backward walk — no drift, just noise.  The last close is always
+  // exactly lastPrice with no snap, and the series looks genuinely random.
+  const logC = new Array<number>(limit);
+  logC[limit - 1] = Math.log(Math.max(lastPrice, 1e-12));
+  for (let i = limit - 2; i >= 0; i--) {
+    logC[i] = logC[i + 1] + (rng() * 2 - 1) * vol;
   }
 
-  candles[candles.length - 1].close = lastPrice;
-  return candles;
+  return logC.map((lc, i) => {
+    const close = Math.exp(lc);
+    const open  = i === 0
+      ? close * Math.exp((rng() - 0.5) * vol * 0.5)
+      : Math.exp(logC[i - 1]);
+
+    const body    = Math.abs(close - open);
+    const minWick = close * 0.0008;
+    const high    = Math.max(open, close) + Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const low     = Math.min(open, close) - Math.max(body * (0.4 + rng() * 1.2), minWick);
+    const volume  = Math.exp(Math.log(500 * (intervalSec / 3600)) + (rng() - 0.5) * 1.2);
+
+    return { time: now - intervalSec * (limit - i), open, high, low, close, volume };
+  });
 }
 
 export function generateOrderBook(symbol: string, lastPrice: number, depth: number) {
