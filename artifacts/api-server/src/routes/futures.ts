@@ -3,6 +3,14 @@ import { db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
+import {
+  openFuturesPosition,
+  closeFuturesPosition,
+  depositToFuturesMargin,
+  getFuturesMarginBalance,
+  computeLiquidationPrice,
+} from "../lib/futuresSettlement.js";
+import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
@@ -89,63 +97,75 @@ router.post("/futures/positions", async (req, res) => {
     const symbol = (body.symbol as string).replace(/^([A-Z0-9]+)-([A-Z0-9]+)(-PERP)?$/, "$1/$2$3");
     const baseMarketSymbol = symbol.replace("-PERP", "");
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, baseMarketSymbol));
-    // Use body price → live market price → fail loudly (no magic fallback)
+
     const rawEntry = body.price || (market ? parseFloat(market.lastPrice) : null);
     if (!rawEntry || rawEntry <= 0) {
       res.status(400).json({ error: `No market price available for ${symbol}. Please retry.` });
       return;
     }
-    const entryPrice: number = rawEntry;
-    const leverage = parseFloat(body.leverage);
-    const quantity = parseFloat(body.quantity);
-    const margin = (entryPrice * quantity) / leverage;
+    const entryPrice: number = parseFloat(rawEntry);
+    const leverage  = parseFloat(body.leverage);
+    const quantity  = parseFloat(body.quantity);
+    const margin    = (entryPrice * quantity) / leverage;
 
-    const liquidationPrice =
-      body.side === "long"
-        ? entryPrice * (1 - 1 / leverage + 0.004)
-        : entryPrice * (1 + 1 / leverage - 0.004);
+    // ── Verify futures margin from the futures bucket (NOT spot bucket) ────
+    // walletSource "demo" auto-seeds futures_margin_accounts
+    const walletSource = body.walletSource === "external" ? "external"
+      : body.walletSource === "orah" ? "orah" : "demo";
 
-    const id = crypto.randomUUID();
-    const newPosition = {
-      id,
+    const fundingVerif = await verifyAndLockFunding({
+      walletAddress: body.walletAddress,
+      orderType:     "FUTURES",
+      walletSource,
+      asset:         "USDT",
+      amount:        margin.toFixed(8),
+    });
+    if (!fundingVerif.valid) {
+      res.status(400).json({ error: fundingVerif.error, code: fundingVerif.code });
+      return;
+    }
+
+    // ── Open position via futuresSettlement (locks margin + inserts row) ──
+    const result = await openFuturesPosition({
       walletAddress: body.walletAddress,
       symbol,
-      side: body.side,
-      leverage: leverage.toString(),
-      entryPrice: entryPrice.toString(),
-      markPrice: entryPrice.toString(),
-      liquidationPrice: liquidationPrice.toString(),
-      quantity: quantity.toString(),
-      margin: margin.toString(),
-      unrealizedPnl: "0",
-      unrealizedPnlPercent: "0",
-      realizedPnl: "0",
-      fundingFee: "0",
-      marginMode: (body.marginMode as string) ?? "cross",
-      status: "open",
-      txid: body.signedTx ? crypto.randomBytes(32).toString("hex") : null,
-    };
-
-    await db.insert(futuresPositionsTable).values(newPosition);
+      side:          body.side as "long" | "short",
+      leverage,
+      margin,
+      quantity,
+      entryPrice,
+      fundingRef:    fundingVerif.fundingRef,
+    });
 
     res.status(201).json({
-      ...newPosition,
+      id:               result.positionId,
+      walletAddress:    body.walletAddress,
+      symbol,
+      side:             body.side,
       leverage,
       entryPrice,
-      markPrice: entryPrice,
-      liquidationPrice,
+      markPrice:        entryPrice,
+      liquidationPrice: result.liquidationPrice,
       quantity,
       margin,
-      unrealizedPnl: 0,
+      notionalValue:    result.notionalValue,
+      openingFee:       result.openingFee,
+      unrealizedPnl:    0,
       unrealizedPnlPercent: 0,
-      realizedPnl: 0,
-      fundingFee: 0,
-      openedAt: new Date().toISOString(),
-      closedAt: undefined,
+      realizedPnl:      0,
+      fundingFee:       0,
+      status:           "open",
+      fundingRef:       fundingVerif.fundingRef,
+      openedAt:         new Date().toISOString(),
+      closedAt:         undefined,
     });
-  } catch (err) {
+  } catch (err: any) {
     req.log.error({ err }, "Failed to open futures position");
-    res.status(500).json({ error: "Internal server error" });
+    if (err?.message?.startsWith("INSUFFICIENT_FUTURES_MARGIN")) {
+      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUTURES_MARGIN" });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
 });
 
@@ -157,44 +177,107 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
       return;
     }
 
-    const [position] = await db
-      .update(futuresPositionsTable)
-      .set({ status: "closed", closedAt: new Date() })
+    // Verify the position belongs to this wallet before closing
+    const [pos] = await db
+      .select()
+      .from(futuresPositionsTable)
       .where(
         and(
           eq(futuresPositionsTable.id, req.params.positionId),
           eq(futuresPositionsTable.walletAddress, body.walletAddress)
         )
-      )
-      .returning();
+      );
 
-    if (!position) {
+    if (!pos) {
       res.status(404).json({ error: "Position not found" });
       return;
     }
+    if (pos.status !== "open") {
+      res.status(400).json({ error: `Position is already ${pos.status}`, code: "POSITION_NOT_OPEN" });
+      return;
+    }
+
+    // Close using current mark price (from request or live market)
+    const markPrice = body.markPrice
+      ? parseFloat(body.markPrice)
+      : parseFloat(pos.markPrice);
+
+    // closeFuturesPosition: computes PnL, releases margin ± PnL, marks row closed
+    const closeResult = await closeFuturesPosition({
+      positionId: req.params.positionId,
+      markPrice,
+    });
+
+    // Re-read the updated position for the response
+    const [closed] = await db
+      .select()
+      .from(futuresPositionsTable)
+      .where(eq(futuresPositionsTable.id, req.params.positionId));
 
     res.json({
-      id: position.id,
-      walletAddress: position.walletAddress,
-      symbol: position.symbol,
-      side: position.side,
-      leverage: parseFloat(position.leverage),
-      entryPrice: parseFloat(position.entryPrice),
-      markPrice: parseFloat(position.markPrice),
-      liquidationPrice: parseFloat(position.liquidationPrice),
-      quantity: parseFloat(position.quantity),
-      margin: parseFloat(position.margin),
-      unrealizedPnl: parseFloat(position.unrealizedPnl),
-      unrealizedPnlPercent: parseFloat(position.unrealizedPnlPercent),
-      realizedPnl: parseFloat(position.realizedPnl),
-      fundingFee: parseFloat(position.fundingFee),
-      status: position.status,
-      txid: position.txid,
-      openedAt: position.openedAt.toISOString(),
-      closedAt: position.closedAt?.toISOString(),
+      id:               closed!.id,
+      walletAddress:    closed!.walletAddress,
+      symbol:           closed!.symbol,
+      side:             closed!.side,
+      leverage:         parseFloat(closed!.leverage),
+      entryPrice:       parseFloat(closed!.entryPrice),
+      markPrice:        parseFloat(closed!.markPrice),
+      liquidationPrice: parseFloat(closed!.liquidationPrice),
+      quantity:         parseFloat(closed!.quantity),
+      margin:           parseFloat(closed!.margin),
+      unrealizedPnl:    parseFloat(closed!.unrealizedPnl),
+      unrealizedPnlPercent: parseFloat(closed!.unrealizedPnlPercent),
+      realizedPnl:      closeResult.realizedPnl,
+      returnedMargin:   closeResult.returnedMargin,
+      closingFee:       closeResult.closingFee,
+      fundingFee:       parseFloat(closed!.fundingFee),
+      status:           closed!.status,
+      txid:             closed!.txid,
+      openedAt:         closed!.openedAt.toISOString(),
+      closedAt:         closed!.closedAt?.toISOString(),
     });
-  } catch (err) {
+  } catch (err: any) {
     req.log.error({ err }, "Failed to close futures position");
+    if (err?.message?.startsWith("POSITION_NOT")) {
+      res.status(400).json({ error: err.message });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+});
+
+// ── POST /futures/margin/deposit ─────────────────────────────────────────────
+// Transfer USDT from the spot wallet into the futures margin account.
+// This is the ONLY authorised cross-bucket pathway.
+router.post("/futures/margin/deposit", async (req, res) => {
+  try {
+    const { walletAddress, amount } = req.body;
+    if (!walletAddress || !amount) {
+      res.status(400).json({ error: "walletAddress and amount are required" });
+      return;
+    }
+    const amt = parseFloat(amount);
+    if (!isFinite(amt) || amt <= 0) {
+      res.status(400).json({ error: "amount must be a positive number" });
+      return;
+    }
+    await depositToFuturesMargin(walletAddress, amt);
+    const balance = await getFuturesMarginBalance(walletAddress);
+    res.json({ success: true, walletAddress, deposited: amt, balance });
+  } catch (err) {
+    req.log.error({ err }, "Failed to deposit futures margin");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /futures/margin/:walletAddress ───────────────────────────────────────
+// Returns the futures margin account balance (separate from spot user_balances).
+router.get("/futures/margin/:walletAddress", async (req, res) => {
+  try {
+    const balance = await getFuturesMarginBalance(req.params.walletAddress);
+    res.json({ walletAddress: req.params.walletAddress, asset: "USDT", ...balance });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get futures margin");
     res.status(500).json({ error: "Internal server error" });
   }
 });

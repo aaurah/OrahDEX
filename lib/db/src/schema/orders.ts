@@ -26,6 +26,17 @@ export const ordersTable = pgTable("orders", {
   signedTx: text("signed_tx"),
   // Which order this was matched against
   matchedOrderId: text("matched_order_id"),
+  /**
+   * Verifiable proof that funds are committed before this order was accepted.
+   * Format: "ledger:{addr}:{asset}:{amount}" | "evm-sig:{hash}" |
+   *         "utxo:{txid}:{vout}" | "margin:{addr}:{asset}:{amount}"
+   * See fundingVerifier.ts for semantics.
+   */
+  fundingRef: text("funding_ref"),
+  /** UUID v4 one-time token — replay-attack prevention. Unique index enforced. */
+  nonce: text("nonce"),
+  /** Unix ms — the server rejected this intent if expiry < Date.now() at receipt time */
+  expiry: text("expiry"),  // stored as string to avoid bigint serialization issues
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

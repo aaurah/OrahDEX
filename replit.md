@@ -66,6 +66,17 @@ The project is structured as a pnpm monorepo using TypeScript. It includes:
 - **Validation**: API rejects non-`DEMO_`-prefixed addresses for real trading.
 - **UI**: Demo banner, specific wallet options for resetting balance, connecting real wallet, or exiting demo mode.
 
+### OrderIntent Settlement Layer (BSV Core DEX v2)
+- **Canonical OrderIntent type**: `artifacts/api-server/src/lib/orderIntent.ts` — shared contract for wallet + server. Fields: `pair`, `side`, `type`, `price`, `amount`, `expiry` (unix ms TTL), `nonce` (UUID v4 replay guard), `walletAddress`, `fundingRef`, `signature`.
+- **`fundingRef` semantics**: `"ledger:{addr}:{asset}:{amount}"` (API ledger), `"evm-sig:{hash}"` (EVM personal_sign), `"utxo:{txid}:{vout}"` (BSV UTXO), `"margin:{addr}:{asset}:{amount}"` (futures margin bucket). No order is accepted without a valid fundingRef.
+- **Balance bucket isolation invariant**: Spot orders draw exclusively from `user_balances` (available/locked). Futures orders draw exclusively from `futures_margin_accounts`. These tables NEVER cross-contaminate. `depositToFuturesMargin()` is the only authorized cross-bucket pathway.
+- **`fundingVerifier.ts`**: Central invariant enforcement — `verifyAndLockFunding()` routes MARKET/LIMIT to spot bucket and FUTURES to futures margin bucket. Returns a `fundingRef` string. External EVM wallets validated via signature/reportedBalance; demo/orah wallets auto-seeded.
+- **`spotSettlement.ts`**: Extracted spot fill module — HTLC generation → OP_RETURN build → BSV broadcast → ledger settle → HTLC watcher registration. Called once per fill from `orders.ts`.
+- **`futuresSettlement.ts`**: Futures position lifecycle — `openFuturesPosition()` (locks futures margin, inserts row), `closeFuturesPosition()` (computes PnL, releases margin ± PnL), `liquidateFuturesPosition()` (confiscates margin). Liquidation price formula: LONG `entry × (1 - 1/lev + 0.005)`, SHORT `entry × (1 + 1/lev - 0.005)`.
+- **DB schema**: `orders` table has `funding_ref`, `nonce` (unique index), `expiry` columns. `futures_margin_accounts` table (wallet_address + asset PK, available/locked).
+- **New API endpoints**: `POST /futures/margin/deposit` (cross-bucket deposit), `GET /futures/margin/:walletAddress` (bucket balance check).
+- **Frontend wallet utility**: `artifacts/bsv-dex/src/lib/orderIntent.ts` — `buildOrderIntent()`, `canonicalIntentPayload()`, `validateOrderIntentClient()`, `balanceBucketFor()` helpers.
+
 ### P2P + Atomic Swap
 - **Features**: Dedicated P2P and Atomic Swap tabs, with an HTLC form, protocol visualizer, and BSV settlement.
 
