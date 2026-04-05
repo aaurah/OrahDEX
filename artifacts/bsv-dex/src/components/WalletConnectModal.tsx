@@ -1207,42 +1207,67 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       </div>
 
                       {/* ① OrahDEX Native Wallet — all-chains HD wallet */}
-                      <div className="rounded-2xl border border-primary/40 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
+                      {/* ① Orah Wallet + Bitcoin SV — unified multi-chain wallet */}
+                      <div className="rounded-2xl border border-primary/40 bg-gradient-to-br from-primary/10 via-green-500/5 to-transparent p-4">
+                        {/* Header */}
                         <div className="flex items-center gap-3 mb-3">
-                          <div className="w-11 h-11 rounded-xl bg-primary/20 flex items-center justify-center shrink-0">
+                          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/30 to-green-500/20 flex items-center justify-center shrink-0">
                             <Layers className="w-6 h-6 text-primary" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <h3 className="font-black text-[15px] text-foreground leading-tight">Orah Wallet</h3>
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">All Chains</span>
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 tracking-wider uppercase">⚡ BSV Settlement</span>
                             </div>
-                            <p className="text-[11px] text-primary/80 font-semibold">EVM · SOL · BTC · BCH · BSV — one seed phrase</p>
+                            <p className="text-[11px] text-primary/80 font-semibold mt-0.5">EVM · SOL · BTC · BCH · BSV — one seed phrase</p>
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 mb-3">
+
+                        {/* Primary actions: Create / Import / Connect */}
+                        <div className="grid grid-cols-3 gap-2 mb-3">
                           <button
                             onClick={() => startCreate("evm")}
-                            className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-xs hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
                           >
                             <PlusCircle className="w-4 h-4" />
                             Create New
                           </button>
                           <button
                             onClick={() => { setImportMode("seed"); setImportError(null); setView("import"); }}
-                            className="flex items-center justify-center gap-2 py-3 rounded-xl border border-primary/40 text-primary font-bold text-sm hover:bg-primary/10 transition-colors"
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-primary/40 text-primary font-bold text-xs hover:bg-primary/10 transition-colors"
                           >
                             <Download className="w-4 h-4" />
                             Import Phrase
                           </button>
+                          <button
+                            onClick={() => { setConnectTab("bsv"); setView("connect"); }}
+                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-green-500/40 text-green-300 font-bold text-xs hover:bg-green-500/10 transition-colors"
+                          >
+                            <Link2 className="w-4 h-4" />
+                            Connect BSV
+                          </button>
                         </div>
-                        <div className="flex flex-wrap gap-1">
-                          {["🔵 ETH/EVM", "🟣 Solana", "🟠 Bitcoin", "🟢 BCH", "⚡ BSV"].map(c => (
+
+                        {/* Divider */}
+                        <div className="border-t border-white/5 my-2.5" />
+
+                        {/* Chain coverage */}
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {["🔵 ETH/EVM","🟣 Solana","🟠 Bitcoin","🟢 BCH","⚡ Bitcoin SV","🔗 Metanet","📜 OP_RETURN","⛓ UTXO-native"].map(c => (
                             <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-primary/10 text-primary/80 border border-primary/15 rounded">{c}</span>
                           ))}
                         </div>
+
+                        {/* Compatible wallets */}
+                        <div className="flex flex-wrap gap-1">
+                          {["🦊 MetaMask","👻 Phantom","🛡️ Trust","🔒 Ledger","✋ HandCash","⚡ RelayX","🐼 Panda","🔷 Sensilet","💛 Yours"].map(w => (
+                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-white/8 rounded">{w}</span>
+                          ))}
+                        </div>
+
                         <p className="text-[10px] text-muted-foreground/60 mt-2">
-                          BIP39 · non-custodial · compatible with MetaMask, Phantom, Trust Wallet &amp; Ledger
+                          BIP39 · non-custodial · sub-cent BSV settlement · compatible with MetaMask, Phantom, Trust Wallet &amp; Ledger
                         </p>
                       </div>
 
@@ -1255,7 +1280,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <p className="text-[11px] text-blue-300/80 font-semibold">MetaMask · Coinbase · Trust · all EVM chains</p>
                           </div>
                         </div>
-                        {/* Three actions: Create / Import / Connect */}
                         <div className="grid grid-cols-3 gap-2 mb-2">
                           <button
                             onClick={() => startCreate("evm")}
@@ -1286,50 +1310,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {["🦊 MetaMask","🔵 Coinbase","🛡️ Trust","⭕ OKX","🌈 Rainbow","🔒 Ledger"].map(w => (
-                            <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-white/8 rounded">{w}</span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* ② BSV — settlement layer */}
-                      <div className="rounded-2xl border border-green-500/35 bg-gradient-to-br from-green-500/8 via-transparent to-transparent p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="w-11 h-11 rounded-xl bg-green-500/20 flex items-center justify-center text-xl shrink-0">⚡</div>
-                          <div>
-                            <h3 className="font-black text-[15px] text-foreground leading-tight">Bitcoin SV Wallet</h3>
-                            <p className="text-[11px] text-green-400 font-semibold">Settlement layer · sub-cent fees · instant finality</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 mb-2">
-                          <button
-                            onClick={() => startCreate("bsv")}
-                            className="flex flex-col items-center gap-1 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-xs shadow-md shadow-primary/20 active:scale-95 transition-all"
-                          >
-                            <PlusCircle className="w-4 h-4" />
-                            Create New
-                          </button>
-                          <button
-                            onClick={() => { setImportNetwork("bsv"); setImportMode("seed"); setView("import"); }}
-                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-green-500/40 text-green-300 font-bold text-xs hover:bg-green-500/10 transition-colors"
-                          >
-                            <Download className="w-4 h-4" />
-                            Import
-                          </button>
-                          <button
-                            onClick={() => { setConnectTab("bsv"); setView("connect"); }}
-                            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-border text-muted-foreground font-bold text-xs hover:border-green-500/30 hover:text-foreground transition-all"
-                          >
-                            <Link2 className="w-4 h-4" />
-                            Connect
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {["⚡ Bitcoin SV","🔗 Metanet","📜 OP_RETURN scripts","⛓ UTXO-native"].map(c => (
-                            <span key={c} className="text-[9px] font-semibold px-1.5 py-0.5 bg-green-500/10 text-green-300/80 border border-green-500/15 rounded">{c}</span>
-                          ))}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {["✋ HandCash","⚡ RelayX","🐼 Panda","🔷 Sensilet","💛 Yours"].map(w => (
                             <span key={w} className="text-[9px] font-semibold px-1.5 py-0.5 bg-white/5 text-muted-foreground border border-white/8 rounded">{w}</span>
                           ))}
                         </div>
