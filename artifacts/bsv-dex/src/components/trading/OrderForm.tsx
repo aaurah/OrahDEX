@@ -645,6 +645,31 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
+    // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
+    // For external EVM wallets (Reown / MetaMask), block immediately if the
+    // on-chain balance we've already loaded is clearly too low.
+    // We skip this for demo/Orah wallets because they use the API ledger.
+    if (!usesApiBalance && availableAmt > 0) {
+      const required = parseFloat(amount);
+      const total    = price ? parseFloat(price) * required : 0;
+      if (side === "sell" && required > availableAmt * 1.01) {
+        toast({
+          title:       "Insufficient Balance",
+          description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
+          variant:     "destructive",
+        });
+        return;
+      }
+      if (side === "buy" && total > 0 && total > availableAmt * 1.01) {
+        toast({
+          title:       "Insufficient Balance",
+          description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
+          variant:     "destructive",
+        });
+        return;
+      }
+    }
+
     // ── Golden path: run precheck (or use cached result) before anything ──
     const timer = new TradeTimer();
     timer.mark("precheck");
@@ -970,6 +995,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           // record it and generate the corresponding BSV settlement tx.
           signedTx:       onChainTxHash ?? evmSignature,
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
+          // Wallet source — tells server whether to apply demo/Orah auto-seeding
+          // or enforce real on-chain balance for external EVM wallets.
+          walletSource:   isDemo ? "demo" : isOrahWallet ? "orah" : "external",
+          // Reported on-chain balance for server-side sanity check (external wallets only).
+          // Server rejects sell orders where quantity > reportedBalance.
+          reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           // Optional cross-chain receive address (e.g. Cardano addr when BSV wallet buys ADA)
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
@@ -1012,6 +1043,22 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               }
             } catch { /* non-critical */ }
           }
+        },
+        onError: (err: any) => {
+          // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, bad signature)
+          const serverMsg: string =
+            err?.response?.data?.detail ??
+            err?.response?.data?.error ??
+            err?.message ??
+            "Order rejected by the server.";
+          const isInsufficient =
+            serverMsg.toLowerCase().includes("insufficient") ||
+            (err?.response?.data?.code === "INSUFFICIENT_FUNDS");
+          toast({
+            title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
+            description: serverMsg,
+            variant:     "destructive",
+          });
         },
       }
     );

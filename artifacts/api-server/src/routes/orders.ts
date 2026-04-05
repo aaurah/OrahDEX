@@ -79,6 +79,34 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * 0.001;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
+    // walletSource distinguishes real external wallets from demo/Orah API-ledger wallets.
+    // "external" = MetaMask / Reown / injected (real on-chain funds, no auto-seeding)
+    // "demo"     = $80k paper-money demo account
+    // "orah"     = OrahDEX HD wallet (API ledger, real deposited funds)
+    // Fallback: if walletAddress has a signature treat it as external, otherwise as orah/demo
+    const walletSource: "external" | "demo" | "orah" =
+      body.walletSource === "external" ? "external"
+      : body.walletSource === "demo"   ? "demo"
+      : body.walletSource === "orah"   ? "orah"
+      : (body.evmSignature || body.signedTx) ? "external"
+      : "orah";
+
+    const isExternalWallet = walletSource === "external";
+
+    // For external EVM wallets, validate reported on-chain balance to prevent
+    // orders exceeding the user's real holdings.
+    if (isExternalWallet && body.reportedBalance != null) {
+      const reportedBal = parseFloat(body.reportedBalance);
+      if (body.side === "sell" && quantity > reportedBal * 1.01) {
+        res.status(400).json({
+          error:   "Insufficient balance",
+          code:    "INSUFFICIENT_FUNDS",
+          detail:  `Order quantity ${quantity} exceeds reported on-chain balance ${reportedBal}`,
+        });
+        return;
+      }
+    }
+
     const newOrder = {
       id,
       symbol:            body.symbol,
@@ -107,7 +135,8 @@ router.post("/orders", async (req, res) => {
 
     // ── Lock balance for this order ──────────────────────────────────────────
     // BUY → lock quote asset (e.g. USDT).  SELL → lock base asset.
-    // If user has no balance rows yet, seed demo balances first.
+    // Demo / Orah wallets: auto-seed if balance is missing (virtual ledger).
+    // External EVM wallets: NEVER auto-seed — they have real on-chain funds.
     try {
       const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
       const lockAsset  = body.side === "buy" ? quoteAsset : baseAsset;
@@ -123,18 +152,33 @@ router.post("/orders", async (req, res) => {
         : quantity.toString();
 
       if (parseFloat(lockAmount) > 0 && lockAsset) {
-        let existingBal = await getBalances(body.walletAddress);
-        // First-time user: seed all common assets
-        if (existingBal.length === 0) {
-          await seedInitialBalances(body.walletAddress);
-          existingBal = await getBalances(body.walletAddress);
+        if (!isExternalWallet) {
+          // Demo / Orah wallets: seed if this is their first order
+          let existingBal = await getBalances(body.walletAddress);
+          if (existingBal.length === 0) {
+            await seedInitialBalances(body.walletAddress);
+          }
+          // Auto-credit if balance is missing or insufficient (paper money)
+          await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
         }
-        // Ensure the specific lock asset has enough available (auto-credit if missing/low)
-        await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
+        // Lock funds — throws INSUFFICIENT_FUNDS if balance is truly too low
         await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
       }
     } catch (ledgerErr: any) {
-      // Other ledger errors: log but don't block the order (graceful fallback)
+      const msg: string = ledgerErr?.message ?? "";
+      if (msg.startsWith("INSUFFICIENT_FUNDS")) {
+        // Real balance enforcement — reject the order rather than silently proceeding
+        const asset = msg.split(":")[1] ?? "asset";
+        // Roll back the DB insert so no phantom order appears
+        await db.delete(ordersTable).where(eq(ordersTable.id, id));
+        res.status(400).json({
+          error:  "Insufficient balance",
+          code:   "INSUFFICIENT_FUNDS",
+          detail: `Not enough ${asset} available to cover this order`,
+        });
+        return;
+      }
+      // Non-funds errors (DB connectivity, etc.) — log but don't block
       req.log.warn({ ledgerErr }, "Ledger lock failed — order placed without lock");
     }
 
