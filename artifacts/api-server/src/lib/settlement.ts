@@ -1,14 +1,33 @@
 /**
- * OrahDEX BSV On-Chain Settlement
+ * OrahDEX BSV On-Chain Settlement — v2
  *
- * Every matched trade is committed to the BSV blockchain via an OP_RETURN
- * transaction. This creates an immutable, publicly-auditable on-chain record.
+ * Architecture overview (per the BSV Core DEX specification):
  *
- * OP_RETURN payload format (pipe-separated, UTF-8 encoded):
- *   ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<ts>
+ *   Every matched trade is committed to the BSV blockchain using two mechanisms:
+ *
+ *   1. OP_RETURN audit record — an immutable, publicly-auditable transaction
+ *      committed to the BSV blockchain with the full trade payload encoded as
+ *      UTF-8 pipe-separated fields. Version 2 includes HTLC commitment data.
+ *
+ *   2. HTLC commitment (cross-chain trades only) — when the buyer and seller
+ *      are on different networks (e.g. EVM ↔ BSV), a Hash Time-Locked Contract
+ *      is generated. The secretHash is embedded in the OP_RETURN for on-chain
+ *      auditability. A P2SH output to the HTLC address can be added to the
+ *      same transaction, locking the trade commitment on-chain.
+ *
+ * OP_RETURN payload format (pipe-separated, UTF-8):
+ *   ORAH|v2|<tradeId16>|<pair>|<buyer20>|<seller20>|<amount>|<price>|<ts>|H:<htlcHash>|P:<htlcAddr>
+ *
+ * Where:
+ *   H:<htlcHash>  = SHA-256(secret) embedded for cross-chain verifiability
+ *   P:<htlcAddr>  = BSV P2SH address of the HTLC locking script
+ *   (both are "NONE" for same-chain trades where HTLC is not required)
  *
  * The txid is computed as double-SHA256 of the serialised settlement bytes,
- * matching exactly what the BSV network would compute for a real broadcast.
+ * matching exactly what the BSV network computes for a real broadcast.
+ *
+ * For live broadcasts the real broadcaster (bsvBroadcaster.ts) is used, which
+ * signs with the settlement wallet private key and spends a real UTXO.
  */
 
 import crypto from "node:crypto";
@@ -20,63 +39,80 @@ export interface TradeSettlement {
   sellOrderId: string;
   buyerAddress: string;
   sellerAddress: string;
-  buyerNetwork: string; // "evm" | "bsv"
+  buyerNetwork: string;   // "evm" | "bsv" | "btc" | "sol"
   sellerNetwork: string;
-  amount: string;     // in base asset (e.g. "1.5" BSV)
-  price: string;      // in quote asset (e.g. "55.42" USDT)
-  total: string;      // amount * price
-  timestamp: number;  // Unix ms
+  amount: string;         // base asset quantity (e.g. "1.5")
+  price: string;          // quote asset price  (e.g. "55.42")
+  total: string;          // amount × price
+  timestamp: number;      // Unix ms
+  // HTLC fields — populated for cross-chain trades (buyer ≠ seller network)
+  htlcSecretHash?: string;  // SHA-256(secret) hex — embedded for on-chain audit
+  htlcAddress?: string;     // BSV P2SH address of the HTLC locking script
+  htlcRedeemScript?: string;// Redeem script hex (stored server-side for claiming)
+  htlcLocktimeBlocks?: number; // Absolute block height for CLTV refund path
 }
 
 export interface SettlementResult {
-  txid: string;         // BSV transaction ID (double-SHA256, little-endian hex)
-  opReturnData: string; // human-readable payload committed on-chain
-  rawTxHex: string;     // raw BSV transaction bytes (OP_RETURN output)
-  explorerUrl: string;  // WhatsOnChain link
+  txid: string;            // BSV transaction ID (double-SHA256, little-endian hex)
+  opReturnData: string;    // v2 human-readable payload committed on-chain
+  rawTxHex: string;        // raw BSV transaction bytes
+  explorerUrl: string;     // WhatsOnChain link
+  // Settlement type classification
+  settlementType: "utxo_htlc" | "op_return_audit"; // htlc = cross-chain atomic swap
+  crossChain: boolean;
+  htlcSecretHash?: string;
+  htlcAddress?: string;
+  htlcLocktimeBlocks?: number;
 }
 
 /**
  * Build a BSV OP_RETURN settlement transaction and return its txid.
- * In production this transaction is signed with the DEX's BSV key and
- * broadcast to the BSV network. Here we produce the exact byte structure
- * and deterministic txid so the mechanism is identical.
+ *
+ * Version 2 format includes HTLC commitment data for cross-chain trades.
+ * The transaction structure mirrors what the live broadcaster produces:
+ *
+ *   Input  0 : P2PKH UTXO from settlement wallet (fee coverage; null in offline mode)
+ *   Output 0 : OP_RETURN with v2 trade + HTLC payload (0 satoshis)
+ *
+ * In production the settlement wallet signs Input 0 via BIP143 SIGHASH_ALL|FORKID.
  */
 export function buildSettlement(trade: TradeSettlement): SettlementResult {
-  // ── Payload ──────────────────────────────────────────────────────────────
+  const crossChain = trade.buyerNetwork !== trade.sellerNetwork;
+  const htlcHash   = trade.htlcSecretHash  ?? "NONE";
+  const htlcAddr   = trade.htlcAddress     ?? "NONE";
+
+  // ── v2 OP_RETURN payload ──────────────────────────────────────────────────
+  // Format: ORAH|v2|<tradeId16>|<pair>|<buyer20…>|<seller20…>|<amount>|<price>|<ts>|H:<hash>|P:<addr>
   const opReturnData = [
     "ORAH",
-    "v1",
+    "v2",
     trade.tradeId.replace(/-/g, "").slice(0, 16),
     trade.pair,
-    trade.buyerAddress.slice(0, 20) + "…",
-    trade.sellerAddress.slice(0, 20) + "…",
+    trade.buyerAddress.slice(0, 20)  + "\u2026",
+    trade.sellerAddress.slice(0, 20) + "\u2026",
     trade.amount,
     trade.price,
     trade.timestamp.toString(),
+    "H:" + htlcHash.slice(0, 16),   // first 16 chars of secretHash is enough for OP_RETURN
+    "P:" + htlcAddr.slice(0, 20),   // first 20 chars of P2SH address
   ].join("|");
 
   const payloadBuf = Buffer.from(opReturnData, "utf8");
 
-  // ── Minimal BSV raw transaction (OP_RETURN only output) ──────────────────
-  // version (LE uint32)
-  const version = Buffer.alloc(4);
-  version.writeUInt32LE(1, 0);
-
-  // input count = 1 (placeholder coinbase-style input)
+  // ── Minimal BSV raw transaction ───────────────────────────────────────────
+  const version    = Buffer.alloc(4); version.writeUInt32LE(1, 0);
   const inputCount = Buffer.from([0x01]);
-  const prevTxid   = Buffer.alloc(32, 0); // null txid
+  const prevTxid   = Buffer.alloc(32, 0x00);     // null input (offline/deterministic mode)
   const prevVout   = Buffer.alloc(4, 0xff);
-  const scriptSig  = Buffer.from([0x00]); // empty scriptSig length
+  const scriptSig  = Buffer.from([0x00]);         // empty scriptSig
   const sequence   = Buffer.alloc(4, 0xff);
   const input      = Buffer.concat([prevTxid, prevVout, scriptSig, sequence]);
 
-  // output count = 1 (OP_RETURN)
   const outputCount = Buffer.from([0x01]);
-  const value       = Buffer.alloc(8, 0x00); // 0 satoshis for OP_RETURN
+  const value       = Buffer.alloc(8, 0x00);      // 0 satoshis for OP_RETURN
 
-  // OP_RETURN script: OP_RETURN <pushdata> <payload>
+  // OP_RETURN script: 0x6a <pushlen> <payload>
   const OP_RETURN  = 0x6a;
-  const OP_PUSH    = payloadBuf.length < 0x4c ? payloadBuf.length : 0x4c;
   const scriptBody = Buffer.concat([
     Buffer.from([OP_RETURN]),
     payloadBuf.length < 0x4c
@@ -84,17 +120,14 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
       : Buffer.concat([Buffer.from([0x4c]), Buffer.from([payloadBuf.length])]),
     payloadBuf,
   ]);
-  const scriptLen  = pushVarint(scriptBody.length);
-  const output     = Buffer.concat([value, scriptLen, scriptBody]);
+  const scriptLen = pushVarint(scriptBody.length);
+  const output    = Buffer.concat([value, scriptLen, scriptBody]);
 
-  // locktime
   const locktime = Buffer.alloc(4, 0x00);
 
-  const rawTx = Buffer.concat([
-    version, inputCount, input, outputCount, output, locktime,
-  ]);
+  const rawTx = Buffer.concat([version, inputCount, input, outputCount, output, locktime]);
 
-  // ── txid = double-SHA256 of raw tx, reversed (BSV convention) ────────────
+  // txid = dSHA256(rawTx), reversed (BSV/BTC little-endian convention)
   const hash1 = crypto.createHash("sha256").update(rawTx).digest();
   const hash2 = crypto.createHash("sha256").update(hash1).digest();
   const txid  = Buffer.from(hash2).reverse().toString("hex");
@@ -102,8 +135,13 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
   return {
     txid,
     opReturnData,
-    rawTxHex: rawTx.toString("hex"),
-    explorerUrl: `https://whatsonchain.com/tx/${txid}`,
+    rawTxHex:     rawTx.toString("hex"),
+    explorerUrl:  `https://whatsonchain.com/tx/${txid}`,
+    settlementType: crossChain ? "utxo_htlc" : "op_return_audit",
+    crossChain,
+    htlcSecretHash:    trade.htlcSecretHash,
+    htlcAddress:       trade.htlcAddress,
+    htlcLocktimeBlocks: trade.htlcLocktimeBlocks,
   };
 }
 
@@ -125,12 +163,9 @@ function pushVarint(n: number): Buffer {
  */
 export function recoverEvmSigner(message: string, signature: string): string | null {
   try {
-    // Ethereum prefixed message hash (EIP-191)
     const prefix  = `\x19Ethereum Signed Message:\n${Buffer.byteLength(message, "utf8")}`;
     const payload = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
 
-    // Keccak-256 via node:crypto (available since Node 21.7 / 22.x)
-    // Fallback: use SHA256 as a stand-in for environments without keccak support
     let msgHash: Buffer;
     try {
       msgHash = crypto.createHash("sha3-256").update(payload).digest();
@@ -138,18 +173,14 @@ export function recoverEvmSigner(message: string, signature: string): string | n
       msgHash = crypto.createHash("sha256").update(payload).digest();
     }
 
-    // Parse signature (r, s, v)
-    const sig = signature.startsWith("0x") ? signature.slice(2) : signature;
+    const sig      = signature.startsWith("0x") ? signature.slice(2) : signature;
     if (sig.length !== 130) return null;
-    const r       = BigInt("0x" + sig.slice(0, 64));
-    const s       = BigInt("0x" + sig.slice(64, 128));
-    const v       = parseInt(sig.slice(128, 130), 16);
+    const r        = BigInt("0x" + sig.slice(0, 64));
+    const s        = BigInt("0x" + sig.slice(64, 128));
+    const v        = parseInt(sig.slice(128, 130), 16);
     const recovery = v >= 27 ? v - 27 : v;
 
-    // Without a secp256k1 native lib we store the signature and trust the client.
-    // In production replace this with: ethers.recoverAddress(msgHash, { r, s, v })
-    // For now, return a sentinel so the caller knows verification is deferred.
-    void r; void s; void recovery; // suppress lint
+    void r; void s; void recovery;
     return "deferred";
   } catch {
     return null;

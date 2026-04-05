@@ -9,6 +9,30 @@
  *   5. confirm   — wait for finality, update UI
  *
  * Latency is tracked at every stage and stored for instrumentation.
+ *
+ * ── BSV UTXO Lifecycle (on-chain settlement) ────────────────────────────────
+ *
+ * For BSV-native (same-chain) trades:
+ *   LOCK → MATCH → OP_RETURN audit → confirmed (v2 format: ORAH|v2|...)
+ *
+ * For cross-chain trades (EVM ↔ BSV):
+ *   LOCK → MATCH → HTLC generation → P2SH output + OP_RETURN broadcast
+ *       → Relayer detects secretHash on-chain
+ *       → Relayer claims HTLC by revealing secret (Path A: OP_SHA256 verify)
+ *       → OR user reclaims after locktimeBlocks via CLTV (Path B: refund)
+ *
+ * Settlement transaction output layout (cross-chain):
+ *   Output 0: OP_RETURN — ORAH|v2|...|H:<secretHash>|P:<htlcAddress>
+ *   Output 1: P2SH      — OP_HASH160 <scriptHash> OP_EQUAL  (HTLC lock)
+ *   Output N: P2PKH      — change back to settlement wallet
+ *
+ * HTLC redeem script (locking logic):
+ *   OP_IF
+ *     OP_SHA256 <secretHash32> OP_EQUAL        ← Path A: relayer reveals secret
+ *   OP_ELSE
+ *     <locktimeBlocks> OP_CHECKLOCKTIMEVERIFY  ← Path B: user reclaims after ~24h
+ *     OP_2DROP OP_1
+ *   OP_ENDIF
  */
 
 import { makeError, makeWarning, type TradeError, type TradeWarning } from "./tradeErrors";
@@ -50,12 +74,25 @@ export interface PhaseTimings {
 }
 
 export interface TradeResult {
-  success:    boolean;
-  txid?:      string;
+  success:      boolean;
+  txid?:        string;
   explorerUrl?: string;
-  matched?:   boolean;
-  error?:     TradeError;
-  timings:    PhaseTimings;
+  matched?:     boolean;
+  error?:       TradeError;
+  timings:      PhaseTimings;
+  /** BSV Core DEX v2 settlement metadata — populated when a fill occurs */
+  settlement?: {
+    /** "utxo_htlc" for cross-chain (EVM↔BSV), "op_return_audit" for same-chain */
+    type:              string | null;
+    /** True when buyer and seller are on different chains */
+    crossChain:        boolean;
+    /** P2SH address of the HTLC output (cross-chain only) */
+    htlcAddress:       string | null;
+    /** SHA-256 secret hash embedded in the HTLC redeem script */
+    htlcSecretHash:    string | null;
+    /** Absolute BSV block height after which the HTLC can be refunded */
+    htlcLocktimeBlocks: number | null;
+  } | null;
 }
 
 // ── Hot route cache for top pairs ─────────────────────────────────────────────

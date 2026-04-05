@@ -141,7 +141,11 @@ export interface BroadcastParams {
   privKeyHex:      string;    // 32-byte private key as hex
   changeAddress:   string;    // settlement wallet address (change recipient)
   utxo:            Utxo;      // UTXO to spend
-  opReturnPayload: string;    // UTF-8 trade payload
+  opReturnPayload: string;    // UTF-8 v2 trade payload (includes HTLC fields)
+  // Cross-chain HTLC output — when present, a P2SH output is added to lock the
+  // trade commitment on-chain (in addition to the OP_RETURN audit record).
+  htlcP2SHScriptHex?: string; // 23-byte P2SH locking script (OP_HASH160 <20b> OP_EQUAL)
+  htlcSatoshis?:    number;   // nominal satoshis locked in the HTLC (default: 1000 = dust+)
 }
 
 export interface BroadcastResult {
@@ -153,22 +157,33 @@ export interface BroadcastResult {
 }
 
 export async function broadcastSettlement(params: BroadcastParams): Promise<BroadcastResult> {
-  const { privKeyHex, utxo, opReturnPayload } = params;
+  const { privKeyHex, utxo, opReturnPayload, htlcP2SHScriptHex, htlcSatoshis } = params;
 
   const privKey = Buffer.from(privKeyHex, "hex");
-  const pubKey  = Buffer.from(secp.getPublicKey(privKey, true));         // 33 bytes compressed
+  const pubKey  = Buffer.from(secp.getPublicKey(privKey, true));  // 33-byte compressed
   const h160    = hash160(pubKey);
-  const lockScript = p2pkhScript(h160);   // P2PKH locking script for the input
+  const lockScript = p2pkhScript(h160);  // P2PKH locking script for the input UTXO
 
   // ── Build outputs ────────────────────────────────────────────────────────
-  const payload = Buffer.from(opReturnPayload, "utf8");
+  const payload     = Buffer.from(opReturnPayload, "utf8");
   const opRetScript = opReturnScript(payload);
 
   const outputs: Array<{ satoshis: number; script: Buffer }> = [
-    { satoshis: 0, script: opRetScript },  // OP_RETURN (data carrier)
+    { satoshis: 0, script: opRetScript },  // Output 0: OP_RETURN audit record (data carrier)
   ];
 
-  const changeSat = utxo.satoshis - FEE_SAT;
+  // Output 1 (optional): P2SH HTLC locking script for cross-chain trade commitment
+  // This locks the nominal trade amount in the HTLC, providing UTXO-scripted settlement.
+  // Structure: OP_HASH160 <20-byte script hash> OP_EQUAL
+  if (htlcP2SHScriptHex) {
+    const htlcScript  = Buffer.from(htlcP2SHScriptHex, "hex");
+    const htlcLockSat = htlcSatoshis ?? 1000;  // 1000 sat minimum (well above dust)
+    outputs.push({ satoshis: htlcLockSat, script: htlcScript });
+  }
+
+  // Output N (change): remainder back to settlement wallet (if above dust)
+  const htlcDeduct = htlcP2SHScriptHex ? (htlcSatoshis ?? 1000) : 0;
+  const changeSat  = utxo.satoshis - FEE_SAT - htlcDeduct;
   if (changeSat > DUST_SAT) {
     outputs.push({ satoshis: changeSat, script: p2pkhScript(h160) });
   }
