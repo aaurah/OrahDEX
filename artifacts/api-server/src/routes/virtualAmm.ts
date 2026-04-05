@@ -48,20 +48,20 @@ interface VammMarket {
   lastUpdated: number;
 }
 
-/* ── Seed prices (USDT per 1 base unit) ──────────────────────────────────── */
+/* ── Seed prices (USDT per 1 base unit) — updated Apr 2026 ───────────────── */
 const SEED_PRICES: Record<string, number> = {
-  BTC: 71_000, ETH: 2_160, SOL: 92,   BSV: 14,   BNB: 640,
-  XRP: 1.42,   ADA: 0.264, DOGE: 0.094, DOT: 1.39, LINK: 14.2,
-  AVAX: 38,    MATIC: 0.82, LTC: 87,  BCH: 490,  UNI: 8.4,
-  AAVE: 165,   MKR: 2_800, COMP: 48,  CRV: 0.48, SNX: 1.82,
-  SUSHI: 1.1,  ZRX: 0.33,  BAT: 0.20, ENJ: 0.25, MANA: 0.35,
-  SAND: 0.40,  AXS: 5.8,   GALA: 0.027, CHZ: 0.088, FLOW: 0.61,
-  NEAR: 5.4,   ALGO: 0.17, ATOM: 6.1, FTM: 0.51, ONE: 0.013,
-  ROSE: 0.072, BAND: 1.24, REN: 0.052, OMG: 0.49, TRX: 0.115,
-  BTT: 0.00000095, WIN: 0.000070, JST: 0.028, "1INCH": 0.31,
-  IMX: 1.64,   INJ: 24,    APT: 8.2,  ARB: 1.18, OP: 2.41,
-  SEI: 0.45,   SUI: 1.02,  PEPE: 0.0000094, SHIB: 0.0000094,
-  FLOKI: 0.000195, WIF: 2.65, BONK: 0.0000278,
+  BTC: 83_000, ETH: 1_800, SOL: 130,  BSV: 17,   BNB: 580,
+  XRP: 2.20,   ADA: 0.60,  DOGE: 0.17, DOT: 5.5,  LINK: 13,
+  AVAX: 20,    MATIC: 0.30, LTC: 90,  BCH: 380,  UNI: 6.5,
+  AAVE: 140,   MKR: 1_700, COMP: 40,  CRV: 0.42, SNX: 1.50,
+  SUSHI: 0.90, ZRX: 0.28,  BAT: 0.17, ENJ: 0.20, MANA: 0.28,
+  SAND: 0.32,  AXS: 4.2,   GALA: 0.020, CHZ: 0.065, FLOW: 0.48,
+  NEAR: 4.0,   ALGO: 0.14, ATOM: 5.0, FTM: 0.38, ONE: 0.010,
+  ROSE: 0.055, BAND: 0.95, REN: 0.040, OMG: 0.38, TRX: 0.11,
+  BTT: 0.00000085, WIN: 0.000055, JST: 0.022, "1INCH": 0.24,
+  IMX: 1.30,   INJ: 18,    APT: 6.8,  ARB: 0.90, OP: 1.80,
+  SEI: 0.32,   SUI: 2.10,  PEPE: 0.0000075, SHIB: 0.0000110,
+  FLOKI: 0.000145, WIF: 1.80, BONK: 0.0000185,
 };
 
 /* ── Calibrate curve for a given spot price ─────────────────────────────── */
@@ -301,13 +301,30 @@ router.post("/genesis/swap", (req, res) => {
 export function updateGenesisPrice(symbol: string, newSpotPrice: number): void {
   const m = markets.get(symbol.toUpperCase());
   if (!m || newSpotPrice <= 0) return;
-  // Softly recalibrate basePrice, preserving current supply
-  const targetBase = newSpotPrice - m.slope * m.supply;
-  if (targetBase > 0) {
-    // Blend towards new price slowly (10% weight) to avoid jumps
-    m.basePrice = m.basePrice * 0.9 + targetBase * 0.1;
+
+  const currentP = currentPrice(m);
+  const diverge  = Math.abs(currentP - newSpotPrice) / newSpotPrice;
+
+  // Recalibrate basePrice preserving current supply so on-chain holdings stay valid
+  const targetBase = newSpotPrice - m.slope * newSpotPrice / m.seedPrice * m.supply;
+  if (targetBase <= 0) {
+    // Full hard reset when curve can't represent the price — rare edge case
+    const cal = calibrate(newSpotPrice);
+    m.basePrice = cal.basePrice;
+    m.slope     = cal.slope;
+    m.seedPrice = newSpotPrice;
+    m.lastUpdated = Date.now();
+    return;
   }
-  m.lastUpdated = Date.now();
+
+  // If divergence > 2% snap immediately; otherwise blend 50% each tick
+  const weight = diverge > 0.02 ? 1.0 : 0.5;
+  m.basePrice  = m.basePrice * (1 - weight) + targetBase * weight;
+  // Also recalibrate slope proportionally to new price so depth stays ~$8500
+  const newSlope = (0.01 * newSpotPrice * newSpotPrice) / GENESIS_DEPTH_USD;
+  m.slope        = m.slope * (1 - weight) + newSlope * weight;
+  m.seedPrice    = newSpotPrice;
+  m.lastUpdated  = Date.now();
 }
 
 export function getGenesisMarket(symbol: string): VammMarket | undefined {
