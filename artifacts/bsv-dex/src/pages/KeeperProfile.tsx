@@ -672,17 +672,40 @@ export function KeeperProfile() {
 
       {/* ── Reputation Tab ─────────────────────────────────────────────────── */}
       {activeTab === "reputation" && (
-        <div className="max-w-2xl space-y-2">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold flex items-center gap-2">
-              <BadgeCheck className="w-4 h-4 text-amber-400" />
-              Keeper Reputation
+        <div className="max-w-2xl space-y-4">
+          {/* ── Covenant card ───────────────────────────────────────────────── */}
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 space-y-3">
+            <h2 className="text-sm font-semibold flex items-center gap-2 text-amber-300">
+              <BadgeCheck className="w-4 h-4 shrink-0" />
+              How reputation works
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Score computed from on-chain HTLC actions — claims, refunds, timeliness, and consistency.
-              Forms the basis of Phase 3 Keeper reputation and advanced role eligibility.
-            </p>
+            <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                <span className="text-foreground font-medium">Reputation is earned, never declared.</span>{" "}
+                Every point comes from a concrete action recorded against an on-chain HTLC —
+                claiming a swap, assisting a refund, or being present to observe a transition.
+                There are no admin grants, no manual overrides.
+              </p>
+              <p>
+                <span className="text-foreground font-medium">Timing is part of the craft.</span>{" "}
+                Acting within six blocks of a locktime expiry earns a larger timeliness bonus than
+                acting with hours to spare. The protocol rewards Keepers who show up when it matters
+                most — not just when it's convenient.
+              </p>
+              <p>
+                <span className="text-foreground font-medium">Consistency compounds.</span>{" "}
+                Sustained observation — staying online, watching the watcher — accumulates a
+                consistency bonus over time. A Keeper who never misses an event is recognised even
+                before they close their first swap.
+              </p>
+              <p>
+                <span className="text-foreground font-medium">Tiers tell a story.</span>{" "}
+                Dormant → Watcher → Dawn Relayer → Relayer → Locksmith → Grandmaster Relayer.
+                Each step is a threshold you cross through behavior, not through application.
+              </p>
+            </div>
           </div>
+
           <ReputationCard keeperAddress={walletAddress ?? undefined} />
         </div>
       )}
