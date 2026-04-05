@@ -35,6 +35,7 @@ import {
   getKeeperActions,
   registerRelayerKeeper,
 } from "../lib/htlcWatcher.js";
+import { computeKeeperReputation } from "../lib/keeperReputation.js";
 
 const router = Router();
 
@@ -378,6 +379,24 @@ router.get("/keeper/:address/earnings", async (req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to fetch earnings" });
+  }
+});
+
+// ── GET /api/keeper/:address/reputation ──────────────────────────────────────
+//   Deterministic reputation score for a Keeper address.
+//   Scoring model and badge definitions are documented in keeperReputation.ts.
+//   Computable for any address — score 0 if no keeper_actions rows exist.
+//
+router.get("/keeper/:address/reputation", async (req, res) => {
+  try {
+    const addr = req.params.address?.toLowerCase();
+    if (!addr) { res.status(400).json({ error: "address required" }); return; }
+
+    const reputation = await computeKeeperReputation(addr);
+    res.json(reputation);
+  } catch (err: any) {
+    logger.error({ err }, "keeper/reputation: computation failed");
+    res.status(500).json({ error: err?.message ?? "Failed to compute reputation" });
   }
 });
 
