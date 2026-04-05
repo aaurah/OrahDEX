@@ -107,6 +107,53 @@ router.post("/orders", async (req, res) => {
       }
     }
 
+    // ── Acquire ledger lock BEFORE inserting the order (No lock → No order) ──
+    // BUY → lock quote asset (e.g. USDT).  SELL → lock base asset.
+    // External EVM wallets: funds are on-chain — skip API-ledger lock entirely.
+    //   Balance is already validated against reportedBalance above.
+    // Demo / Orah wallets: use API ledger with auto-seeding for paper money.
+    const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+    const lockAsset = body.side === "buy" ? quoteAsset : baseAsset;
+
+    let lockPrice = price;
+    if (!lockPrice && body.side === "buy") {
+      const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
+      lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
+    }
+    const lockAmount = body.side === "buy"
+      ? (lockPrice ? (lockPrice * quantity).toString() : "0")
+      : quantity.toString();
+
+    if (!isExternalWallet && parseFloat(lockAmount) > 0 && lockAsset) {
+      try {
+        // Seed on first order (demo / Orah only)
+        const existingBal = await getBalances(body.walletAddress);
+        if (existingBal.length === 0) {
+          await seedInitialBalances(body.walletAddress);
+        }
+        // Auto-credit if balance is missing or insufficient (paper money)
+        await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
+        // Lock funds — throws INSUFFICIENT_FUNDS:ASSET if balance is too low
+        await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
+      } catch (ledgerErr: any) {
+        const msg: string = ledgerErr?.message ?? "";
+        if (msg.startsWith("INSUFFICIENT_FUNDS")) {
+          const asset = msg.split(":")[1] ?? lockAsset;
+          res.status(400).json({
+            error:   "INSUFFICIENT_FUNDS",
+            message: `Order rejected: insufficient ${asset} balance to cover this order.`,
+            code:    "INSUFFICIENT_FUNDS",
+          });
+          return;
+        }
+        // Unexpected ledger error — log and fail safe (don't create a phantom order)
+        req.log.error({ ledgerErr }, "Unexpected ledger error — rejecting order");
+        res.status(500).json({ error: "Ledger error", message: "Could not lock funds. Please try again." });
+        return;
+      }
+    }
+
+    // ── All checks passed — insert the order ──────────────────────────────────
     const newOrder = {
       id,
       symbol:            body.symbol,
@@ -131,56 +178,7 @@ router.post("/orders", async (req, res) => {
     };
 
     await db.insert(ordersTable).values(newOrder);
-    req.log.info({ orderId: id, side: body.side, networkType }, "Order placed");
-
-    // ── Lock balance for this order ──────────────────────────────────────────
-    // BUY → lock quote asset (e.g. USDT).  SELL → lock base asset.
-    // Demo / Orah wallets: auto-seed if balance is missing (virtual ledger).
-    // External EVM wallets: NEVER auto-seed — they have real on-chain funds.
-    try {
-      const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
-      const lockAsset  = body.side === "buy" ? quoteAsset : baseAsset;
-      // For market buy orders we don't yet know the fill price —
-      // use the current market price as the lock estimate.
-      let lockPrice = price;
-      if (!lockPrice && body.side === "buy") {
-        const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
-        lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
-      }
-      const lockAmount = body.side === "buy"
-        ? (lockPrice ? (lockPrice * quantity).toString() : "0")
-        : quantity.toString();
-
-      if (parseFloat(lockAmount) > 0 && lockAsset) {
-        if (!isExternalWallet) {
-          // Demo / Orah wallets: seed if this is their first order
-          let existingBal = await getBalances(body.walletAddress);
-          if (existingBal.length === 0) {
-            await seedInitialBalances(body.walletAddress);
-          }
-          // Auto-credit if balance is missing or insufficient (paper money)
-          await ensureSeedForAsset(body.walletAddress, lockAsset, lockAmount);
-        }
-        // Lock funds — throws INSUFFICIENT_FUNDS if balance is truly too low
-        await lockForOrder({ walletAddress: body.walletAddress, asset: lockAsset, amount: lockAmount });
-      }
-    } catch (ledgerErr: any) {
-      const msg: string = ledgerErr?.message ?? "";
-      if (msg.startsWith("INSUFFICIENT_FUNDS")) {
-        // Real balance enforcement — reject the order rather than silently proceeding
-        const asset = msg.split(":")[1] ?? "asset";
-        // Roll back the DB insert so no phantom order appears
-        await db.delete(ordersTable).where(eq(ordersTable.id, id));
-        res.status(400).json({
-          error:  "Insufficient balance",
-          code:   "INSUFFICIENT_FUNDS",
-          detail: `Not enough ${asset} available to cover this order`,
-        });
-        return;
-      }
-      // Non-funds errors (DB connectivity, etc.) — log but don't block
-      req.log.warn({ ledgerErr }, "Ledger lock failed — order placed without lock");
-    }
+    req.log.info({ orderId: id, side: body.side, networkType, walletSource }, "Order placed");
 
     /* Push order-placed notification to the user */
     const orderPair = body.symbol;
