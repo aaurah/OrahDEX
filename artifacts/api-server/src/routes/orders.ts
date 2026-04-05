@@ -10,6 +10,7 @@ import { broadcastSettlement } from "../lib/bsvBroadcaster.js";
 import { buildHtlc, buildP2SHLockingScript, MIN_LOCKTIME_BLOCKS, HTLC_MIN_SAT, DUST_SAT } from "../lib/htlc.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
+import { registerHtlc } from "../lib/htlcWatcher.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
 import { getCachedQuote } from "../lib/routeCache.js";
 import { lockForOrder, unlockFunds, settleTrade, seedInitialBalances, getBalances, ensureSeedForAsset } from "../lib/ledger.js";
@@ -462,6 +463,20 @@ router.post("/orders", async (req, res) => {
         lastHtlcLocktimeBlocks = htlcResult?.locktimeBlocks;
         lastCrossChain         = isCrossChain;
         lastOpReturnPayload    = fallbackSettlement.opReturnData;
+
+        // Register cross-chain HTLCs with the watcher so Relayer Keepers
+        // are notified when the on-chain status transitions.
+        if (isCrossChain && htlcResult?.htlcAddress && broadcastTxid) {
+          registerHtlc({
+            tradeId:        id,
+            htlcAddress:    htlcResult.htlcAddress,
+            secretHash:     htlcResult.secretHash,
+            locktimeBlocks: htlcResult.locktimeBlocks,
+            settlementTxid: broadcastTxid,
+            pair:           body.symbol,
+            userAddress:    body.walletAddress,
+          });
+        }
       }
 
       if (totalFilled > 0) {

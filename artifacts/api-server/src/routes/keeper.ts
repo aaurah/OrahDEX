@@ -29,6 +29,11 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, sum, count, sql as drizzleSql, desc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import {
+  getActiveHtlcs,
+  getHtlcEvents,
+  registerRelayerKeeper,
+} from "../lib/htlcWatcher.js";
 
 const router = Router();
 
@@ -145,6 +150,44 @@ router.post("/keeper/register", async (req, res) => {
   } catch (err: any) {
     logger.error({ err: err?.message }, "POST /keeper/register failed");
     res.status(500).json({ error: err?.message ?? "Registration failed" });
+  }
+});
+
+// ── GET /api/keeper/relayer-events ────────────────────────────────────────────
+// MUST be registered before /keeper/:address to avoid /:address catching it.
+//
+// Returns active HTLC positions and recent status-transition events so
+// Relayer Keepers know which cross-chain settlements need action.
+//
+// Query params:
+//   address (optional) — auto-register caller as Relayer Keeper for notifications
+//   limit   (optional) — max events to return (default 50, max 200)
+//
+router.get("/keeper/relayer-events", async (req, res) => {
+  try {
+    const address = (req.query.address as string | undefined)?.toLowerCase();
+    const limit   = Math.min(200, parseInt((req.query.limit as string) ?? "50", 10) || 50);
+
+    // Auto-register confirmed Relayer keepers for push notifications
+    if (address) {
+      try {
+        const [row] = await db.select({ roles: keepersTable.roles })
+          .from(keepersTable)
+          .where(eq(keepersTable.walletAddress, address));
+        const roles: string[] = Array.isArray(row?.roles) ? (row.roles as string[]) : [];
+        if (roles.includes("Relayer")) registerRelayerKeeper(address);
+      } catch {
+        // non-fatal
+      }
+    }
+
+    const active = getActiveHtlcs();
+    const events = getHtlcEvents(limit);
+
+    res.json({ activeCount: active.length, active, events, fetchedAt: new Date().toISOString() });
+  } catch (err: any) {
+    logger.error({ err }, "keeper/relayer-events: fetch failed");
+    res.status(500).json({ error: err?.message ?? "Failed to fetch relayer events" });
   }
 });
 
