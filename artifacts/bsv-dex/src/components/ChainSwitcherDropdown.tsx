@@ -317,7 +317,7 @@ const OTHER_CHAINS = [
   { key: "bsv", name: "Bitcoin SV",   symbol: "BSV", icon: "₿",  color: "text-green-400",  network: "bsv" as const },
   { key: "sol", name: "Solana",       symbol: "SOL", icon: "◎",  color: "text-purple-400", network: "sol" as const },
   { key: "btc", name: "Bitcoin",      symbol: "BTC", icon: "₿",  color: "text-orange-400", network: "btc" as const },
-  { key: "bch", name: "Bitcoin Cash", symbol: "BCH", icon: "🟢", color: "text-emerald-400", network: "bch" as const },
+  { key: "bch", name: "Bitcoin Cash", symbol: "BCH", icon: "฿", color: "text-emerald-400", network: "bch" as const },
 ];
 
 const BADGE_COLORS: Record<string, string> = {

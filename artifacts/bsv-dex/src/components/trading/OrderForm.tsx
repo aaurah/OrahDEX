@@ -1696,7 +1696,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                     : network === 'bch' ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10"
                     : "text-green-400 border-green-500/30 bg-green-500/10"
             )}>
-              {isEvm ? "⬡ EVM" : network === 'btc' ? "₿ BTC" : network === 'sol' ? "◎ SOL" : network === 'bch' ? "🟢 BCH" : "₿ BSV"}
+              {isEvm ? "⬡ EVM" : network === 'btc' ? "₿ BTC" : network === 'sol' ? "◎ SOL" : network === 'bch' ? "฿ BCH" : "₿ BSV"}
             </span>
           </div>
         </div>
