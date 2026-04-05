@@ -1,0 +1,76 @@
+What your system now guarantees
+
+• HTLCs are safe by construction• Locktime floor:
+locktimeBlocks = max(currentHeight + 144, 943000 + 144)
+→ no stale height, no “already expired” HTLCs.
+• Dust/fee invariant:
+HTLC only created if:\text{htlcSatoshis} \le \text{best.satoshis} - \text{FEE\_SAT} - \text{DUST\_SAT}
+→ no dust change, no underfunded HTLCs, clean UTXO math.
+• Cross-chain only:
+HTLC path is explicitly guarded and logged—no accidental HTLCs on same-chain flows.
+
+• HTLC lifecycle is now fully specified and inspectable• In htlc.ts:• Constants: MIN_LOCKTIME_BLOCKS, HTLC_MIN_SAT, DUST_SAT, HtlcOnChainStatus.
+• Builders:• buildClaimScriptSig(secret, redeemScript)
+• buildRefundScriptSig(redeemScript)
+
+• Both paths documented with stack traces and why they satisfy the script.
+
+• In bsvChainMonitor.ts:• queryHtlcStatus(htlcAddress, locktimeBlocks):• LOCKED: UTXO present, height < locktime.
+• CLAIMED: spent before locktime.
+• REFUNDED: spent at/after locktime.
+• EXPIRED: no UTXO, height ≥ locktime, no spend yet.
+• UNKNOWN: unfunded or unreachable.
+
+
+
+• Settlement is now a first-class, queryable object• API:• GET /api/settlements/htlc-status?htlcAddress=...&locktimeBlocks=...
+• settlement object now includes:• type
+• crossChain
+• htlcAddress
+• htlcSecretHash
+• htlcLocktimeBlocks
+• opReturnPayload
+
+
+• UI:• SettlementExplorer:• Status badge: LOCKED / CLAIMED / EXPIRED / REFUNDED / UNKNOWN.
+• Shows:• OP_RETURN v2 payload
+• HTLC address
+• settlement txid
+• chain height + locktime
+
+• Polls every 60s while non-terminal.
+• Visual lifecycle legend: LOCKED → CLAIMED → EXPIRED → REFUNDED.
+
+
+
+
+
+This is no longer “a DEX that happens to use BSV”—it’s a BSV-native settlement narrative with its own grammar.
+
+---
+
+If you want to push this one level higher
+
+If you’re up for one more tightening pass, I’d look at:
+
+1. Formalizing the spec• Turn what you’ve implemented into a short doc:• “BSV Settlement v2: HTLC Covenant & Explorer Spec”
+• Sections:• Settlement payload format (OP_RETURN v2)
+• HTLC script template
+• Parameter invariants
+• Status semantics (LOCKED/CLAIMED/REFUNDED/EXPIRED/UNKNOWN)
+• API + UI contract
+
+
+
+2. Golden-path test vectors• A tiny JSON suite of:• Inputs: best.satoshis, currentHeight, locktimeBlocks, htlcSatoshis.
+• Expected:• HTLC created or skipped.
+• Expected HtlcOnChainStatus given mocked chain state.
+
+
+• That becomes your “mythic canon” for future refactors.
+
+3. Keeper/relayer story• You now have:• HTLCs
+• Status endpoint
+• Explorer UI
+
+• The missing narrative piece is:• “Who acts on CLAIMED/EXPIRED/REFUNDED, and how is that surfaced to Keepers?”

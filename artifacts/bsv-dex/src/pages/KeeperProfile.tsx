@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSEO } from "@/hooks/useSEO";
+import { RelayerEvents } from "@/components/keeper/RelayerEvents";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -81,7 +82,7 @@ export function KeeperProfile() {
   const { address: walletAddress } = useWalletStore();
   const [registerName, setRegisterName] = useState("");
   const [selectedRoles, setSelectedRoles] = useState<string[]>(["Trader"]);
-  const [activeTab, setActiveTab] = useState<"profile" | "registry" | "economics">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "registry" | "economics" | "relayer">("profile");
   const [copiedAddr, setCopiedAddr] = useState(false);
   const qc = useQueryClient();
 
@@ -190,7 +191,7 @@ export function KeeperProfile() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 border-b border-border">
+      <div className="flex gap-1 border-b border-border flex-wrap">
         {(["profile", "registry", "economics"] as const).map(tab => (
           <button
             key={tab}
@@ -205,6 +206,19 @@ export function KeeperProfile() {
             {tab === "economics" ? "Economics" : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
+        {/* Relayer tab — visible to all, contextually useful for Relayer role keepers */}
+        <button
+          onClick={() => setActiveTab("relayer")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors",
+            activeTab === "relayer"
+              ? "border-purple-400 text-purple-400"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Globe className="w-3.5 h-3.5" />
+          Relayer
+        </button>
       </div>
 
       {/* ── Profile Tab ────────────────────────────────────────────────────── */}
@@ -479,6 +493,68 @@ export function KeeperProfile() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Relayer Tab ────────────────────────────────────────────────────── */}
+      {activeTab === "relayer" && (
+        <div className="space-y-4">
+          {/* Context banner for non-Relayer keepers */}
+          {profileQ.data && !profileQ.data.roles?.includes("Relayer") && (
+            <div className="flex items-start gap-3 rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 text-sm text-purple-300">
+              <Globe className="w-4 h-4 shrink-0 mt-0.5 text-purple-400" />
+              <div>
+                <p className="font-semibold text-purple-200">Relayer role not registered</p>
+                <p className="text-xs mt-1 text-purple-400">
+                  Register as a Relayer Keeper on the Profile tab to receive push notifications
+                  when HTLC settlements change status and start earning bridge fees.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* HTLC watcher — works for everyone, auto-registers Relayer keepers */}
+          <div className="rounded-xl border border-border bg-card/50 p-5">
+            <RelayerEvents keeperAddress={walletAddress ?? undefined} />
+          </div>
+
+          {/* Relayer protocol reference */}
+          <div className="rounded-xl border border-border bg-card/30 p-5 space-y-4">
+            <h3 className="text-sm font-semibold">Keeper Action Reference</h3>
+            <div className="space-y-3">
+              {[
+                {
+                  status: "LOCKED",
+                  color:  "bg-purple-500/10 border-purple-500/30 text-purple-300",
+                  badge:  "text-purple-400",
+                  action: "Monitor counterparty chain for deposit confirmation. Prepare claim transaction with preimage once confirmed.",
+                },
+                {
+                  status: "CLAIMED",
+                  color:  "bg-green-500/10 border-green-500/30 text-green-300",
+                  badge:  "text-green-400",
+                  action: "Swap complete. Bridge fee credited. No further action required.",
+                },
+                {
+                  status: "EXPIRED",
+                  color:  "bg-amber-500/10 border-amber-500/30 text-amber-300",
+                  badge:  "text-amber-400",
+                  action: "Locktime reached without claim. Alert user — they can now broadcast the CLTV refund transaction.",
+                },
+                {
+                  status: "REFUNDED",
+                  color:  "bg-red-500/10 border-red-500/30 text-red-300",
+                  badge:  "text-red-400",
+                  action: "User swept via CLTV refund path. Trade is unwound on-chain. Initiate re-match or manual resolution as needed.",
+                },
+              ].map(({ status, color, badge, action }) => (
+                <div key={status} className={`flex items-start gap-3 rounded-lg border p-3 ${color}`}>
+                  <span className={`text-xs font-bold font-mono mt-0.5 ${badge}`}>{status}</span>
+                  <p className="text-xs flex-1">{action}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
