@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
+import { CoinLogo } from "@/components/CoinLogo";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
@@ -316,6 +317,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
                       size={12}
                       className={favorites.has(m.symbol) ? "fill-green-400 text-green-400" : "text-muted-foreground/30"}
                     />
+                  </button>
+
+                  {/* Coin logo */}
+                  <button onClick={() => pick(m)} className="mr-2.5 shrink-0">
+                    <CoinLogo symbol={m.base} size={28} />
                   </button>
 
                   {/* Pair */}

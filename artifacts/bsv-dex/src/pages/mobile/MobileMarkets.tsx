@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, X, Star, ChevronUp, ChevronDown, Wallet } from "lucide-react";
 import { useLocation } from "wouter";
+import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
@@ -456,6 +457,10 @@ function MexcRow({
     <div className="flex items-center px-4 py-[9px] active:bg-secondary/30 transition-colors">
       <button onClick={onFav} className="mr-2.5 shrink-0 self-start mt-1">
         <Star size={13} className={isFav ? "fill-green-400 text-green-400" : "text-muted-foreground/30"} />
+      </button>
+
+      <button onClick={onTrade} className="mr-3 shrink-0">
+        <CoinLogo symbol={m.base} size={32} />
       </button>
 
       <div className="flex-1 text-left min-w-0 flex flex-col gap-[2px]">
