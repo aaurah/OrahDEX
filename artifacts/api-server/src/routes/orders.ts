@@ -153,7 +153,7 @@ router.post("/orders", async (req, res) => {
       matchedOrderId:    null as string | null,
       fundingRef:        fundingRef || null,
       nonce:             body.nonce ?? id,   // use provided nonce or fall back to order id
-      expiry:            body.expiry ? String(body.expiry) : String(Date.now() + 5 * 60 * 1000),
+      expiry:            body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
     };
 
     await db.insert(ordersTable).values(newOrder);
