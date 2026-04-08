@@ -10,10 +10,10 @@
  *
  *   pair          "BSV/USDT" — always BASE/QUOTE
  *   side          "buy" | "sell"
- *   type          "MARKET" | "LIMIT" | "FUTURES"
+ *   type          "MARKET" | "LIMIT"  (FUTURES is a kind, not a type)
  *   price         required for LIMIT; optional for MARKET (ignored); required for FUTURES (entry)
  *   amount        base-asset quantity (positive decimal string)
- *   expiry        unix-millisecond timestamp — reject intent after this time
+ *   expiry        unix-seconds timestamp — reject intent after this time
  *   nonce         UUID v4 — one-time token, stored on order to prevent replay
  *   walletAddress lowercase hex (EVM) or BSV address
  *   fundingRef    verifiable proof of committed funds (see FundingRef semantics below)
@@ -108,6 +108,7 @@ export function canonicalIntentPayload(
   const fields: Record<string, string | number | undefined> = {
     amount:        intent.amount,
     expiry:        intent.expiry,
+    kind:          intent.kind,
     nonce:         intent.nonce,
     pair:          intent.pair,
     price:         intent.price,

@@ -125,6 +125,7 @@ export function canonicalIntentPayload(
   const fields: Record<string, string | number | undefined> = {
     amount:        intent.amount,
     expiry:        intent.expiry,
+    kind:          intent.kind,
     nonce:         intent.nonce,
     pair:          intent.pair,
     price:         intent.price,
@@ -151,13 +152,13 @@ export function validateOrderIntentClient(intent: Partial<OrderIntent>): ClientV
 
   if (!intent.pair || !intent.pair.includes("/")) errors.push("pair must be BASE/QUOTE");
   if (intent.side !== "buy" && intent.side !== "sell") errors.push("side must be buy or sell");
-  if (!["MARKET", "LIMIT", "FUTURES"].includes(intent.type ?? "")) errors.push("type must be MARKET, LIMIT, or FUTURES");
+  // type must be MARKET or LIMIT — FUTURES is a kind, not a type
+  if (!["MARKET", "LIMIT"].includes(intent.type ?? "")) errors.push("type must be MARKET or LIMIT");
 
   const amount = parseFloat(intent.amount ?? "0");
   if (!isFinite(amount) || amount <= 0) errors.push("amount must be a positive number");
 
   if (intent.type === "LIMIT" && !intent.price) errors.push("price is required for LIMIT orders");
-  if (intent.type === "FUTURES" && !intent.price) errors.push("price (entry) is required for FUTURES orders");
   if (intent.price !== undefined) {
     const p = parseFloat(intent.price);
     if (!isFinite(p) || p <= 0) errors.push("price must be a positive number");
@@ -165,7 +166,8 @@ export function validateOrderIntentClient(intent: Partial<OrderIntent>): ClientV
 
   if (!intent.walletAddress) errors.push("walletAddress is required");
   if (!intent.nonce)         errors.push("nonce is required");
-  if (intent.expiry && intent.expiry < Date.now()) errors.push("intent has expired — build a new one");
+  // expiry is unix SECONDS — compare against current unix seconds (not milliseconds)
+  if (intent.expiry && intent.expiry <= Math.floor(Date.now() / 1000)) errors.push("intent has expired — build a new one");
 
   return { valid: errors.length === 0, errors };
 }
@@ -175,11 +177,12 @@ export function validateOrderIntentClient(intent: Partial<OrderIntent>): ClientV
 export type BalanceBucket = "spot" | "futures-margin";
 
 /**
- * Returns which balance bucket an order type draws from.
+ * Returns which balance bucket an order draws from.
+ * Keyed on `kind` (SPOT | FUTURES) — not `type` (MARKET | LIMIT).
  * Use this in UI to show the correct "available" balance to the user.
  */
-export function balanceBucketFor(type: OrderType): BalanceBucket {
-  return type === "FUTURES" ? "futures-margin" : "spot";
+export function balanceBucketFor(kind: OrderKind): BalanceBucket {
+  return kind === "FUTURES" ? "futures-margin" : "spot";
 }
 
 /**

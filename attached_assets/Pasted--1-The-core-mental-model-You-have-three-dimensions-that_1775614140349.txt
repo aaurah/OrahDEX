@@ -1,0 +1,382 @@
+
+1. The core mental model
+
+You have three dimensions that must never blur:
+
+1. Kind — what balance bucket this touches• SPOT → spot balances
+• FUTURES → futures margin
+
+2. Type — how the order behaves in the book• MARKET → execute now at best price
+• LIMIT → rest in the book until price is hit
+
+3. Side — which asset is being locked• BUY → lock quote asset (e.g. USDT)
+• SELL → lock base asset (e.g. ETH)
+
+
+
+If you get those three right, everything else is just implementation.
+
+---
+
+2. Shared types (one source of truth)
+
+// orderIntent.ts (shared shape between frontend + backend)
+
+export type OrderKind = 'SPOT' | 'FUTURES';
+export type OrderType = 'MARKET' | 'LIMIT';
+export type OrderSide = 'BUY' | 'SELL';
+
+export type OrderIntent = {
+  kind: OrderKind;          // SPOT or FUTURES
+  type: OrderType;          // MARKET or LIMIT
+  pair: string;             // "ETH/USDT"
+  side: OrderSide;          // BUY or SELL
+  price?: string;           // required for LIMIT
+  amount: string;           // base asset amount
+  expiry: number;           // unix seconds
+  nonce: string;            // unique per intent
+  fundingRef: string;       // "spot:...", "margin:...", or UTXO id
+  walletAddress: string;
+  signature: string;
+};
+
+
+---
+
+3. Frontend: build + validate OrderIntent
+
+// frontend/lib/orderIntent.ts
+
+import { OrderIntent, OrderKind, OrderType, OrderSide } from './types';
+
+export function canonicalIntentPayload(intent: Omit<OrderIntent, 'signature'>): string {
+  // Deterministic string for signing
+  return JSON.stringify({
+    kind: intent.kind,
+    type: intent.type,
+    pair: intent.pair,
+    side: intent.side,
+    price: intent.price ?? null,
+    amount: intent.amount,
+    expiry: intent.expiry,
+    nonce: intent.nonce,
+    fundingRef: intent.fundingRef,
+    walletAddress: intent.walletAddress,
+  });
+}
+
+export function buildOrderIntent(params: {
+  kind: OrderKind;
+  type: OrderType;
+  pair: string;
+  side: OrderSide;
+  price?: string;
+  amount: string;
+}, wallet: { address: string; sign: (msg: string) => string }): OrderIntent {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expiry = nowSec + 60 * 5; // 5 minutes
+  const nonce = crypto.randomUUID();
+
+  // Decide which bucket to lock from (spot vs futures)
+  const fundingRef = params.kind === 'SPOT'
+    ? `spot:${params.pair}:${nonce}`
+    : `margin:${params.pair}:${nonce}`;
+
+  const base: Omit<OrderIntent, 'signature'> = {
+    kind: params.kind,
+    type: params.type,
+    pair: params.pair,
+    side: params.side,
+    price: params.price,
+    amount: params.amount,
+    expiry,
+    nonce,
+    fundingRef,
+    walletAddress: wallet.address,
+  };
+
+  const signature = wallet.sign(canonicalIntentPayload(base));
+
+  return { ...base, signature };
+}
+
+export function validateOrderIntentClient(intent: OrderIntent): string | null {
+  if (intent.expiry <= Math.floor(Date.now() / 1000)) {
+    return 'Order expired';
+  }
+  if (!intent.amount || Number(intent.amount) <= 0) {
+    return 'Amount must be positive';
+  }
+  if (intent.type === 'LIMIT' && (!intent.price || Number(intent.price) <= 0)) {
+    return 'Limit price must be positive';
+  }
+  if (intent.kind !== 'SPOT' && intent.kind !== 'FUTURES') {
+    return 'Invalid order kind';
+  }
+  return null;
+}
+
+
+---
+
+4. Backend: verify + lock funding (the critical invariant)
+
+// server/fundingVerifier.ts
+
+import { OrderIntent } from './orderIntent';
+import { db } from './db';
+import { getSpotBalance, lockSpotBalance } from './ledgerSpot';
+import { getMarginAccount, lockMargin } from './ledgerFutures';
+import { verifySignature } from './crypto';
+
+function splitPair(pair: string): { base: string; quote: string } {
+  const [base, quote] = pair.split('/');
+  return { base, quote };
+}
+
+export async function verifyAndLockFunding(intent: OrderIntent) {
+  // 1. Signature check
+  verifySignature(intent.walletAddress, canonicalIntentPayload(intent), intent.signature);
+
+  // 2. Expiry check (seconds)
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (intent.expiry <= nowSec) {
+    throw new Error('Order intent expired');
+  }
+
+  if (intent.kind === 'SPOT') {
+    return lockSpotFunds(intent);
+  }
+
+  if (intent.kind === 'FUTURES') {
+    return lockFuturesFunds(intent);
+  }
+
+  throw new Error('Unsupported order kind');
+}
+
+async function lockSpotFunds(intent: OrderIntent) {
+  const { base, quote } = splitPair(intent.pair);
+  const amount = Number(intent.amount);
+  if (amount <= 0) throw new Error('Invalid amount');
+
+  if (intent.side === 'BUY') {
+    // Lock quote asset (e.g. USDT)
+    if (!intent.price && intent.type === 'LIMIT') throw new Error('Missing price for limit BUY');
+    const price = intent.type === 'MARKET'
+      ? await getBestAskPrice(intent.pair)
+      : Number(intent.price);
+    const notional = price * amount;
+
+    const bal = await getSpotBalance(intent.walletAddress, quote);
+    if (bal.available < notional) {
+      throw new Error('Insufficient quote asset for BUY order');
+    }
+    await lockSpotBalance(intent.walletAddress, quote, notional, intent.fundingRef);
+    return { asset: quote, locked: notional };
+  }
+
+  if (intent.side === 'SELL') {
+    // Lock base asset (e.g. ETH) — THIS WAS YOUR BUG
+    const bal = await getSpotBalance(intent.walletAddress, base);
+    if (bal.available < amount) {
+      throw new Error('Insufficient base asset for SELL order');
+    }
+    await lockSpotBalance(intent.walletAddress, base, amount, intent.fundingRef);
+    return { asset: base, locked: amount };
+  }
+
+  throw new Error('Unsupported side');
+}
+
+async function lockFuturesFunds(intent: OrderIntent) {
+  const amount = Number(intent.amount);
+  if (amount <= 0) throw new Error('Invalid amount');
+  if (!intent.price) throw new Error('Futures order requires price');
+
+  const marginRequired = await computeInitialMargin(intent); // depends on leverage, pair, etc.
+  const acct = await getMarginAccount(intent.walletAddress);
+  if (acct.available < marginRequired) {
+    throw new Error('Insufficient futures margin');
+  }
+  await lockMargin(intent.walletAddress, marginRequired, intent.fundingRef);
+  return { asset: acct.settleAsset, locked: marginRequired };
+}
+
+
+---
+
+5. Backend: orders route (spot only)
+
+// server/routes/orders.ts
+
+import { verifyAndLockFunding } from '../fundingVerifier';
+import { settleSpotFill } from '../spotSettlement';
+import { validateOrderIntent } from '../orderIntent';
+import { db, ordersTable } from '../db';
+
+router.post('/api/orders', async (req, res) => {
+  try {
+    const intent = validateOrderIntent(req.body); // server-side validation
+    if (intent.kind !== 'SPOT') {
+      return res.status(400).json({ error: 'Use futures endpoint for FUTURES orders' });
+    }
+
+    const funding = await verifyAndLockFunding(intent);
+
+    const [order] = await db.insert(ordersTable).values({
+      pair: intent.pair,
+      side: intent.side,
+      type: intent.type,
+      amount: intent.amount,
+      price: intent.price ?? null,
+      walletAddress: intent.walletAddress,
+      fundingRef: intent.fundingRef,
+      nonce: intent.nonce,
+      expiry: new Date(intent.expiry * 1000),
+      status: 'OPEN',
+    }).returning();
+
+    // Matching engine runs, produces fills
+    const fills = await matchOrder(order);
+
+    const settlementResults = [];
+    for (const fill of fills) {
+      const result = await settleSpotFill(fill);
+      settlementResults.push(result);
+    }
+
+    res.json({ order, funding, settlements: settlementResults });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message ?? 'Order failed' });
+  }
+});
+
+
+---
+
+6. Backend: futures route (margin only)
+
+// server/routes/futures.ts
+
+import { verifyAndLockFunding } from '../fundingVerifier';
+import { openFuturesPosition, closeFuturesPosition } from '../futuresSettlement';
+import { validateOrderIntent } from '../orderIntent';
+
+router.post('/api/futures/open', async (req, res) => {
+  try:
+    const intent = validateOrderIntent(req.body);
+    if (intent.kind !== 'FUTURES') {
+      return res.status(400).json({ error: 'FUTURES kind required' });
+    }
+
+    await verifyAndLockFunding(intent); // locks futures margin
+
+    const position = await openFuturesPosition(intent);
+    res.json({ position });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message ?? 'Open position failed' });
+  }
+});
+
+router.post('/api/futures/close', async (req, res) => {
+  try {
+    const { positionId, closePrice } = req.body;
+    const result = await closeFuturesPosition(positionId, Number(closePrice));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message ?? 'Close position failed' });
+  }
+});
+
+
+---
+
+7. Frontend: balance display (three numbers per asset)
+
+// frontend/Portfolio.tsx (simplified)
+
+const Portfolio: React.FC = () => {
+  const { walletAddress } = useWallet();
+  const { spotFree, spotLocked } = useSpotBalances(walletAddress); // from /api/balances/spot
+  const { marginAvailable, marginLocked } = useFuturesMargin(walletAddress); // from /api/futures/margin
+
+  return (
+    <div>
+      <h2>Portfolio</h2>
+
+      <section>
+        <h3>USDT Balance</h3>
+        <div>Free Spot: {spotFree.USDT}</div>
+        <div>Locked Spot: {spotLocked.USDT}</div>
+        <div>Futures Margin: {marginAvailable.USDT + marginLocked.USDT}</div>
+      </section>
+
+      {/* asset table, orders, etc. */}
+    </div>
+  );
+};
+
+
+---
+
+8. Frontend: prevent impossible SELL orders
+
+// frontend/OrderForm.tsx (spot)
+
+const OrderForm: React.FC<{ pair: string }> = ({ pair }) => {
+  const { walletAddress } = useWallet();
+  const [side, setSide] = useState<OrderSide>('BUY');
+  const [type, setType] = useState<OrderType>('LIMIT');
+  const [price, setPrice] = useState('');
+  const [amount, setAmount] = useState('');
+  const { spotFree } = useSpotBalances(walletAddress);
+
+  const { base, quote } = splitPair(pair);
+  const maxSell = spotFree[base] ?? 0;
+
+  const onSubmit = async () => {
+    const intent = buildOrderIntent(
+      { kind: 'SPOT', type, pair, side, price, amount },
+      wallet,
+    );
+    const err = validateOrderIntentClient(intent);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    if (side === 'SELL' && Number(amount) > maxSell) {
+      toast.error('Insufficient base asset for SELL');
+      return;
+    }
+    await api.post('/api/orders', intent);
+  };
+
+  return (
+    <form onSubmit={e => { e.preventDefault(); onSubmit(); }}>
+      {/* side/type/price/amount inputs */}
+      <div>
+        {side === 'SELL' && (
+          <span>Max Sell: {maxSell.toFixed(6)} {base}</span>
+        )}
+      </div>
+      <button type="submit">Place Order</button>
+    </form>
+  );
+};
+
+
+---
+
+9. The core invariants you must keep
+
+If you wire your code to match this structure, these will hold:
+
+• No SELL order can exceed base asset balance.
+• No BUY order can exceed quote asset balance.
+• SPOT orders only touch spot balances.
+• FUTURES orders only touch futures margin.
+• Every order has a kind, type, side, fundingRef, nonce, expiry (seconds).
+• Wallet always shows:• free spot
+• locked spot
+• futures margin
