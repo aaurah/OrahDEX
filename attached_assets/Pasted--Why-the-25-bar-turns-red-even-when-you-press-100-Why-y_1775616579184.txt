@@ -1,0 +1,149 @@
+• Why the 25% bar turns red even when you press 100%
+• Why your balance still shows after placing a limit order instead of going to 0
+
+
+These two symptoms come from two different bugs, one UI‑side and one ledger‑side.
+
+Let’s break them cleanly.
+
+---
+
+✅ 1. Why the 25% bar turns red even when you press 100%
+
+This is a UI math bug, not a balance bug.
+
+What’s happening:
+
+Your amount is:
+
+0.005841 ETH
+
+
+Your available balance is:
+
+0.0058 ETH
+
+
+So when you press 100%, the form sets:
+
+amount = availableBalance * 1.008 or 1.01 (rounding drift)
+
+
+This makes the amount slightly larger than the real available balance.
+
+Example:
+
+available = 0.005800
+100% button sets = 0.005841
+
+
+That’s 0.7% more than your real balance.
+
+Why the bar turns red:
+
+Your UI logic does:
+
+if (amount > availableBalance) highlight red
+
+
+So even though you pressed 100%, the amount is not actually 100%, it’s 100% + rounding error.
+
+The fix:
+
+In the UI:
+
+amount = availableBalance.toFixed(6)
+
+
+NOT:
+
+amount = availableBalance * 1.0 (float math)
+
+
+This removes the floating‑point drift and the red bar disappears.
+
+---
+
+✅ 2. Why your balance still shows after placing a limit order (not locked)
+
+This is the real bug — and the screenshot proves it.
+
+What you expect:
+
+After placing a SELL limit order for 0.005841 ETH, your available ETH should become:
+
+0.000000 ETH
+
+
+What you see:
+
+Available: 0.0058 ETH
+
+
+Why?
+
+Because the UI is showing wallet balance, not DEX ledger balance.
+
+Your backend does lock the ETH internally, but the frontend is still reading:
+
+wallet.getBalance()  // raw on-chain balance
+
+
+instead of:
+
+spotFree[base]  // ledger free balance after locking
+
+
+The correct behavior:
+
+After placing a SELL order:
+
+• spotLocked[ETH] = 0.005841
+• spotFree[ETH] = 0.000000
+
+
+But your UI is still showing:
+
+spotFree = walletBalance = 0.0058
+
+
+So the balance never changes, even though the order is locked.
+
+---
+
+🔧 The exact fix (frontend)
+
+Replace:
+
+Available = reportedBalanceFromWallet
+
+
+With:
+
+Available = spotFree[base]   // from /api/balances/spot
+
+
+And compute:
+
+Max Sell = spotFree[base]
+
+
+NOT:
+
+Max Sell = maxBuy   // this was your old bug
+
+
+---
+
+🔧 The exact fix (backend)
+
+Expose proper buckets:
+
+GET /api/balances/spot
+{
+  ETH: { free: 0.0000, locked: 0.005841 },
+  USDT: { free: ..., locked: ... }
+}
+
+
+Then the frontend uses free, not wallet balance.
