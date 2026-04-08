@@ -490,7 +490,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const availableSym = side === "sell" ? base        : quote;
 
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
-  const maxBuy = maxBuyNum > 0 ? maxBuyNum.toFixed(6) : "0";
+  const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
+  const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
 
   // Click available → fill max amount
   const handleFillMax = () => {
@@ -521,6 +522,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+
+    // ── SELL guard: block impossible sell orders before the network round-trip ──
+    if (side === "sell" && amtNum > sellBalance) {
+      toast({
+        title:       "Insufficient balance",
+        description: `You only have ${maxSell} ${base} available to sell`,
+        variant:     "destructive",
+      });
+      return;
+    }
+
     const apiType = (orderType === "stop-limit" || orderType === "stop-market")
       ? "stop"
       : orderType === "post-only"
@@ -552,6 +564,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
       receiveAddress: receiveAddress.trim() || undefined,
+      // reportedBalance lets the backend enforce the balance check for external wallets.
+      // For SELL orders this is the base asset balance; for BUY it is the quote asset balance.
+      reportedBalance: available,
     } as any);
   }
 
@@ -1334,7 +1349,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
-                <span className="text-xs font-semibold text-foreground tabular-nums">{maxBuy}</span>
+                <span className="text-xs font-semibold text-foreground tabular-nums">
+                  {side === "buy" ? maxBuy : maxSell}
+                </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Est. Trading Fee</span>

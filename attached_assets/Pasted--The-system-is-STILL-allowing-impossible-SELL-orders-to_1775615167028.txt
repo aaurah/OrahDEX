@@ -1,0 +1,150 @@
+✅ The system is STILL allowing impossible SELL orders to be created client‑side.
+
+Even after all the backend invariants were fixed, the frontend is still letting you:
+
+• Enter 525 ETH
+• With a wallet balance of 0.0058 ETH
+• And still shows:
+“Sell Order Placed — 525 ETH @ $1,800.54 · open in order book”
+
+
+This means:
+
+❌ The frontend validation is not blocking SELL orders above available base balance
+
+❌ The backend is still accepting the order (meaning the SELL funding guard is not firing)
+
+❌ The orderbook is still being polluted with impossible liquidity
+
+❌ The UI is still showing “Sell Order Open” even though the order should be rejected instantly
+
+This is the last remaining critical bug in the entire trading engine.
+
+---
+
+🔥 Why this is happening (the real root cause)
+
+There are two places where SELL orders must be blocked:
+
+1. Frontend
+
+Before sending the intent:
+
+if (side === 'SELL' && Number(amount) > maxSell) {
+    toast.error('Insufficient base asset for SELL');
+    return;
+}
+
+
+But your screenshot proves:
+
+• maxSell = 0.0058
+• You entered 525
+• The form still submitted
+
+
+Meaning:
+
+❌ maxSell is not being computed correctly
+
+or
+
+❌ the SELL guard is not running
+
+or
+
+❌ the SELL guard is running but amount is a string and not parsed
+
+---
+
+2. Backend
+
+Inside lockSpotFunds(intent):
+
+if (intent.side === 'SELL') {
+    const bal = await getSpotBalance(intent.walletAddress, base);
+    if (bal.available < amount) {
+        throw new Error('Insufficient base asset for SELL order');
+    }
+    await lockSpotBalance(...);
+}
+
+
+But your screenshot shows:
+
+• The order was accepted
+• It was inserted into the orderbook
+• It was displayed as “Sell Order Open”
+
+
+Meaning:
+
+❌ The SELL branch is not being executed
+
+or
+
+❌ The SELL branch is being skipped because `kind` or `side` is wrong
+
+or
+
+❌ The SELL branch is running but `bal.available` is returning 0 or undefined
+
+or
+
+❌ The fundingRef path is bypassing the spot bucket entirely
+
+---
+
+🧩 The exact error based on your screenshot
+
+Your screenshot shows:
+
+Sell Order Placed — 525 ETH @ $1,800.54
+
+
+But your wallet shows:
+
+Available: 0.0058 ETH
+
+
+This means:
+
+The frontend is not using the correct base asset balance for SELL orders.
+
+It is likely using:
+
+• The quote balance (USDC/USDT)
+• Or the wrong asset key
+• Or the wrong bucket
+• Or the wrong hook (spot vs futures)
+
+
+This is why the SELL guard never fires.
+
+---
+
+🛠️ The fix (the exact code you need)
+
+Here is the correct SELL guard for the frontend:
+
+const { base, quote } = splitPair(pair);
+const maxSell = spotFree[base] ?? 0;
+
+if (side === 'SELL' && Number(amount) > maxSell) {
+    toast.error(`Insufficient ${base} balance`);
+    return;
+}
+
+
+And here is the correct SELL guard for the backend:
+
+if (intent.side === 'SELL') {
+    const bal = await getSpotBalance(intent.walletAddress, base);
+    if (!bal || bal.available < amount) {
+        throw new Error('Insufficient base asset for SELL order');
+    }
+    await lockSpotBalance(intent.walletAddress, base, amount, intent.fundingRef);
+}
+
+
+If either of these is missing or miswired, you get exactly the bug you’re seeing.
