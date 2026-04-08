@@ -507,14 +507,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
   const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
 
-  // Click available → fill max amount
+  // Click available → fill max amount (exact balance — no shave factor)
   const handleFillMax = () => {
-    if (!address || available <= 0 || effectivePrice <= 0) return;
+    if (!address || available <= 0) return;
     if (side === "buy") {
-      const maxBase = (buyBalance * 0.999) / effectivePrice;
-      setAmount(maxBase.toFixed(6));
+      if (effectivePrice <= 0) return;
+      setAmount((buyBalance / effectivePrice).toFixed(6));
     } else {
-      setAmount((sellBalance * 0.999).toFixed(6));
+      setAmount(sellBalance.toFixed(6));
     }
   };
 
@@ -538,7 +538,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address || !amount || amtNum <= 0) return;
 
     // ── SELL guard: block impossible sell orders before the network round-trip ──
-    if (side === "sell" && amtNum > sellBalance) {
+    // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
+    // never falsely blocked by floating-point arithmetic.
+    if (side === "sell" && amtNum > sellBalance + 1e-9) {
       toast({
         title:       "Insufficient balance",
         description: `You only have ${maxSell} ${base} available to sell`,
@@ -578,9 +580,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
       receiveAddress: receiveAddress.trim() || undefined,
-      // reportedBalance lets the backend enforce the balance check for external wallets.
-      // For SELL orders this is the base asset balance; for BUY it is the quote asset balance.
-      reportedBalance: available,
+      // reportedBalance: gross on-chain wallet balance (NOT net of open orders).
+      // The backend uses this to verify the user actually holds the funds in their
+      // external wallet.  The "net of locked orders" deduction is UI-only.
+      reportedBalance: side === "sell" ? grossSellBalance : grossBuyBalance,
     } as any);
   }
 
@@ -1140,10 +1143,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     key={p}
                     onClick={() => {
                       if (side === "buy" && buyBalance > 0 && effectivePrice > 0) {
-                        const maxBase = (buyBalance * 0.999) / effectivePrice;
-                        setAmount((maxBase * p / 100).toFixed(6));
+                        setAmount(((buyBalance / effectivePrice) * p / 100).toFixed(6));
                       } else if (side === "sell" && sellBalance > 0) {
-                        setAmount((sellBalance * 0.999 * p / 100).toFixed(6));
+                        setAmount((sellBalance * p / 100).toFixed(6));
                       }
                     }}
                     className="text-[10px] text-muted-foreground font-semibold"
