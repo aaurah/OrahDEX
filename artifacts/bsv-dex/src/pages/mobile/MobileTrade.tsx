@@ -229,6 +229,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const openOrders = myOrders.filter(o => o.status === "open");
   const historyOrders = myOrders.filter(o => o.status !== "open");
 
+  // ── Compute amounts locked in open orders for THIS market ──────────────────
+  // External wallets hold funds on-chain; the exchange cannot debit them until
+  // an order fills. We subtract open-order amounts client-side so the UI shows
+  // the real "available to place new orders" figure.
+  const lockedSellQty = openOrders
+    .filter((o: any) => o.side === "sell" && o.symbol === symbol)
+    .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0"), 0);
+  const lockedBuySpend = openOrders
+    .filter((o: any) => o.side === "buy" && o.symbol === symbol)
+    .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
+
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const cancelMutation = useMutation({
@@ -482,9 +493,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
   const isNativeQuote = nativeSymbol === quote;
 
-  // Effective balances per side
-  const sellBalance = isNativeBase  ? walletBal          : erc20BaseBalance;   // what the user can sell
-  const buyBalance  = isNativeQuote ? walletBal          : erc20QuoteBalance;  // what the user can spend to buy
+  // Effective balances per side — net of amounts locked in open orders for this
+  // market, so the "Available" figure accurately reflects what can still be traded.
+  const grossSellBalance = isNativeBase  ? walletBal : erc20BaseBalance;
+  const grossBuyBalance  = isNativeQuote ? walletBal : erc20QuoteBalance;
+  const sellBalance = Math.max(0, grossSellBalance - lockedSellQty);
+  const buyBalance  = Math.max(0, grossBuyBalance  - lockedBuySpend);
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
@@ -1139,7 +1153,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="h-[2px] bg-border rounded-full mx-1">
                 <div
                   className="h-full bg-primary rounded-full transition-all"
-                  style={{ width: `${Math.min(100, (amtNum / 0.1) * 100)}%` }}
+                  style={{
+                    width: (() => {
+                      const barMax = side === "sell"
+                        ? (sellBalance > 0 ? sellBalance : grossSellBalance > 0 ? grossSellBalance : 1)
+                        : (maxBuyNum  > 0 ? maxBuyNum   : grossBuyBalance  > 0 ? grossBuyBalance  : 1);
+                      return `${Math.min(100, (amtNum / barMax) * 100)}%`;
+                    })(),
+                  }}
                 />
               </div>
             </div>
