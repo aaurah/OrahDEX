@@ -1,0 +1,66 @@
+1. Time: expiry is now a real guard, not a decoration
+
+• Before:• Frontend: intent.expiry < Date.now() → seconds vs ms → intents never expired.
+• Backend fallback: Date.now() + 5*60*1000 (ms) → then interpreted as seconds → effectively immortal orders.
+
+• Now:• Frontend:intent.expiry <= Math.floor(Date.now() / 1000)
+
+• Backend fallback:const expiry = Math.floor(Date.now() / 1000) + 5 * 60;
+
+
+• Result:
+Every intent has a real 5‑minute TTL in seconds, enforced on both sides. No zombie orders.
+
+
+---
+
+2. Shape: kind vs type is now cleanly separated
+
+• Before:• type sometimes treated as if it could be "FUTURES".
+• Validator allowed "FUTURES" as a type → malformed intents could slip through.
+
+• Now:• kind: "SPOT" | "FUTURES"
+• type: "MARKET" | "LIMIT"
+• Frontend validator only accepts "MARKET" | "LIMIT" for type.
+
+• Result:
+The three axes are clean:• kind → which bucket (spot vs futures)
+• type → order behavior (market vs limit)
+• side → which asset is locked (base vs quote)
+
+
+
+---
+
+3. Identity: signatures now bind to kind (no cross‑bucket replay)
+
+• Before:• canonicalIntentPayload omitted kind on both frontend and backend.
+• A signed SPOT intent and a signed FUTURES intent with same pair/amount/price/nonce produced identical signatures.
+• That meant: a captured SPOT signature could be replayed as a FUTURES order.
+
+• Now:• canonicalIntentPayload includes kind on both sides, in the same field order.
+
+• Result:
+A SPOT intent and a FUTURES intent are cryptographically distinct.
+No cross‑bucket replay with the same signature.
+
+
+---
+
+4. Buckets: balanceBucketFor + UI now reflect reality
+
+• Before:• balanceBucketFor keyed on type instead of kind.
+• Semantically wrong: futures vs spot is a kind decision, not a type decision.
+
+• Now:• balanceBucketFor(kind):• SPOT → spot balances
+• FUTURES → futures margin
+
+• Portfolio + OrderForm + Futures screens:• Show three numbers per asset:• free spot
+• locked spot
+• futures margin
+
+
+
+• Result:
+The UI and the engine now agree on which bucket an order touches.
+
