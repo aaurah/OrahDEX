@@ -87,6 +87,8 @@ export interface VerifyFundingParams {
    */
   kind:          OrderKind;
   walletSource:  WalletSource;
+  /** Order side — used to apply the correct conservative default when reportedBalance is absent */
+  side?:         "buy" | "sell";
   /** Asset to lock ("USDT" for buy-side / base asset for sell-side) */
   asset:         string;
   /** Amount to lock as a decimal string */
@@ -119,11 +121,16 @@ async function verifySpotFunding(
       };
     }
     const needed = parseFloat(amount);
-    if (reportedBalance != null && needed > reportedBalance * 1.01) {
+    // For SELL orders: if the frontend didn't send reportedBalance, conservatively
+    // assume 0 — an unverified SELL cannot be accepted (no base asset proof).
+    // For BUY orders: if reportedBalance is absent we allow the trade to proceed
+    // (quote asset check is optional; the ledger lock is the primary guard).
+    const effectiveBalance = reportedBalance ?? (params.side === "sell" ? 0 : Infinity);
+    if (needed > effectiveBalance * 1.01) {
       return {
         valid:      false,
         fundingRef: "",
-        error:      `Insufficient on-chain balance: need ${needed}, reported ${reportedBalance}`,
+        error:      `Insufficient on-chain balance: need ${needed} ${params.asset}, have ${reportedBalance ?? 0}`,
         code:       "INSUFFICIENT_FUNDS",
       };
     }

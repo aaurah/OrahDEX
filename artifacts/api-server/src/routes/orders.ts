@@ -116,6 +116,7 @@ router.post("/orders", async (req, res) => {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
         kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
+        side:            body.side as "buy" | "sell",
         walletSource,
         asset:           lockAsset!,
         amount:          lockAmount,
