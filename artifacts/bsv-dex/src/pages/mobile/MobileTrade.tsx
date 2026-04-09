@@ -1471,15 +1471,39 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 );
               })()}
 
-              {/* Low / zero balance hint — only when total available (wallet + DEX) is zero */}
-              {address && available === 0 && (
-                <div className="text-[10px] text-amber-400 leading-tight px-0.5">
-                  {side === "buy"
-                    ? `No ${quote} balance found. Deposit ${quote} or complete a sell trade first.`
-                    : `No ${base} balance found. Deposit ${base} or complete a buy trade first.`
-                  }
-                </div>
-              )}
+              {/* Zero OrahDEX balance — show wallet balance as context + deposit CTA */}
+              {address && available === 0 && (() => {
+                const tradeTok = side === "sell" ? base : quote;
+                const walletAmt = side === "sell"
+                  ? (isNativeBase ? walletBal : erc20BaseBalance)
+                  : (isNativeQuote ? walletBal : erc20QuoteBalance);
+                const walletFmt = walletAmt > 0
+                  ? walletAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
+                  : "0";
+                return (
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 space-y-2 -mx-1 mt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">Your wallet {tradeTok}</span>
+                      <span className={cn(
+                        "text-xs font-bold tabular-nums",
+                        walletAmt > 0 ? "text-foreground" : "text-muted-foreground/50"
+                      )}>
+                        {walletFmt} {tradeTok}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-amber-300/80 leading-relaxed">
+                      OrahDEX trades from your <strong className="text-amber-300">internal exchange balance</strong>, not directly from your wallet. Deposit {tradeTok} to start trading.
+                    </p>
+                    <button
+                      onClick={() => setFundingSheetOpen(true)}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary/15 border border-primary/30 active:bg-primary/25 transition-colors"
+                    >
+                      <Download size={12} className="text-primary" />
+                      <span className="text-xs font-bold text-primary">Deposit {tradeTok} to Trade</span>
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
                 <span className="text-xs font-semibold text-foreground tabular-nums">
