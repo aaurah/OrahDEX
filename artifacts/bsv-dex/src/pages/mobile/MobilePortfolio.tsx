@@ -13,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
 import { cn, getProviderLabel } from "@/lib/utils";
-import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
+import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
@@ -423,7 +423,7 @@ export function MobilePortfolio() {
                   </div>
                   <span className="text-muted-foreground/40 text-xs">·</span>
                   <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
-                    {pnlUsd >= 0 ? "+" : "−"}${Math.abs(pnlUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} today
+                    {pnlUsd >= 0 ? "+" : "−"}{formatQuoteAmount(Math.abs(pnlUsd), quoteCurrency)} today
                   </span>
                 </div>
               );
@@ -450,7 +450,7 @@ export function MobilePortfolio() {
                   <span>OrahDEX Balance</span>
                 </div>
                 <span className="text-[11px] font-semibold text-amber-400">
-                  +${exchangeTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  +{formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
                 </span>
               </div>
             )}
@@ -653,7 +653,7 @@ export function MobilePortfolio() {
                       })}
                     </div>
                     <div className="text-[10px] text-amber-400/70 text-right">
-                      Total ≈ ${exchangeTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      Total ≈ {formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
                     </div>
                   </div>
                 )}
