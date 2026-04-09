@@ -501,7 +501,9 @@ Swap output (A → B):
   Δy = (Δx × (1 − fee) × y) / (x + Δx × (1 − fee))
 
 Invariant update after swap:
-  k_new = (x + Δx·(1−fee)) · (y − Δy)
+  x_new = x + Δx·(1−fee)      [only post-fee input enters reserve]
+  y_new = y − Δy              [output is deducted from reserve]
+  k_new = x_new · y_new       [new product — always ≥ k_old]
   Note: only (1−fee) of Δx enters the pool. The fee portion is
   extracted before the invariant is applied; k_new ≥ k_old always.
 
@@ -512,6 +514,10 @@ Effective rate:
   effective_P = Δy / Δx      [average execution price — NOT the spot price]
                                (spot price is y/x; effective_P diverges from
                                 spot by the price-impact fraction)
+
+Slippage vs spot:
+  slippage = |effective_P − spot| / spot × 100%   [always non-negative]
+           = |(Δy/Δx) − (y/x)| / (y/x) × 100%
 
 Impermanent loss (for LP):
   IL = 1 − 2√r/(1+r)         (loss magnitude, always ≥ 0)   where r = price_now / price_entry
@@ -530,10 +536,23 @@ Concentrated liquidity (Uniswap V3 model):
                   <p>5/6 (≈ 83.3%) → Liquidity Providers (proportional to pool share at time of swap)</p>
                   <p>1/6 (≈ 16.7%) → OrahDEX Protocol Treasury</p>
                   <p>Additional 0.05% → Impermanent Loss Insurance Fund (accumulated per pool)</p>
+                  <p className="mt-2 font-mono text-xs text-muted-foreground">
+                    fee_LP &nbsp;&nbsp;= 0.30% × 5/6 = 0.25% of swap amount (LP routing)<br/>
+                    fee_proto = 0.30% × 1/6 = 0.05% of swap amount (protocol treasury)<br/>
+                    fee_IL &nbsp;&nbsp;= 0.05% of swap amount (IL insurance fund — additive, not from the 0.30%)<br/>
+                    LP_fee &nbsp;&nbsp;= swapAmount × 0.0030 × (5/6) &nbsp;[per-LP share = LP_fee × poolShare]
+                  </p>
                 </InfoBox>
               </Sub>
               <Sub title="5.3 AMM Swap Simulator">
                 <p>OrahDEX includes a built-in AMM simulator showing real-time price impact, slippage vs spot, fee breakdown, k constant, and effective exchange rate before any swap commitment. LP share is 5/6 of fee; Protocol share is 1/6. Available on both desktop and mobile at <code className="text-green-400 text-[10px]">/liquidity</code>.</p>
+                <Code>{`Simulator key values displayed:
+  k &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= x · y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[before swap]
+  k_new &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= x_new · y_new &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[after swap — verified ≥ k]
+  slippage &nbsp;&nbsp;= |effective_P − spot| / spot × 100%
+  impact &nbsp;&nbsp;&nbsp;&nbsp;= |Δx / (x + Δx)| × 100%
+  fee_total &nbsp;= Δx × 0.0030
+  fee_LP &nbsp;&nbsp;&nbsp;&nbsp;= fee_total × 5/6`}</Code>
               </Sub>
               <Sub title="5.3.1 Virtual AMM Portfolio Accounting">
                 <p>
@@ -543,23 +562,53 @@ Concentrated liquidity (Uniswap V3 model):
                   <p><strong>Real AMM (Uniswap, Sushi, Pancake):</strong> ETH leaves wallet → LP tokens enter wallet → wallet ETH balance decreases → LP tokens represent pool share.</p>
                   <p><strong>OrahDEX vAMM (Genesis Engine):</strong> Wallet ETH stays untouched → LP position is synthetic exposure → wallet balance unchanged → LP value = separate, virtual earning position.</p>
                 </InfoBox>
+                <div className="overflow-x-auto mt-3">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        {["Property", "Real AMM (x·y=k)", "VAMM (Genesis Engine)"].map(h => (
+                          <th key={h} className="text-left py-2 pr-4 font-semibold text-foreground">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ["Liquidity source", "Real tokens locked in pool", "Virtual — synthetic only"],
+                        ["Wallet impact on LP", "Tokens leave wallet", "Wallet unchanged"],
+                        ["Price invariant", "x·y = k (constant product)", "P(s) = base + slope·s (linear curve)"],
+                        ["Fees", "Real — paid in output token", "Synthetic — adjust virtual treasury"],
+                        ["Slippage", "Real price impact on reserves", "Simulated curve slippage"],
+                        ["Gas / signatures", "Required per swap", "None — off-chain simulation"],
+                        ["Cold-start problem", "Requires bootstrapping capital", "Solved — instant liquidity"],
+                      ].map(([prop, amm, vamm]) => (
+                        <tr key={prop} className="border-b border-border/40">
+                          <td className="py-1.5 pr-4 text-muted-foreground">{prop}</td>
+                          <td className="py-1.5 pr-4">{amm}</td>
+                          <td className="py-1.5 text-primary/80">{vamm}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 <p>
                   This design mirrors leading vAMM and perpetuals protocols — GMX v2, Drift Protocol, Hyperliquid, dYdX v4 — where the underlying asset stays in the user's self-custodied wallet while the protocol tracks synthetic position size, fees earned, and mark-to-market value.
                 </p>
                 <p>
                   The OrahDEX Portfolio page reflects this correctly: the <strong>Total Balance</strong> shows only on-chain wallet value (ETH, ERC-20s, native tokens). LP positions appear in the <strong>DeFi tab</strong> as a separate synthetic allocation — shown as "<em>$X.XX allocated</em>" to make clear the amount is already within the wallet balance, not additive to it. Double-counting is architecturally prevented.
                 </p>
-                <Code>{`Portfolio accounting model (v4.1.0):
+                <Code>{`Portfolio accounting model (v4.2.0):
 
-  total_balance  = Σ wallet_token_values + exchange_settled_balance
-                   (LP NOT added — already reflected in wallet)
-  exchange_settled_balance = realised PnL from AMM swaps + VAMM trades + closed futures positions
-                             (unsettled / open-position unrealised PnL is NOT included)
+  totalBalance   = walletValue + realisedPnL
+    walletValue  = Σ (tokenBalance_i × price_i)  [on-chain tokens only]
+    realisedPnL  = exchange_settled_balance       [AMM swaps + VAMM trades + closed futures]
+                   (open-position unrealised PnL NOT included)
 
-  defi_display   = LP_position_value  [informational, "allocated" label]
+  LP display (informational only — never added to totalBalance):
+    defiDisplay  = LP_value                [shown as "allocated", not additive]
+    LP_value     = positionSize × currentPrice   [mark-to-market of synthetic position]
 
   NOT:  total = wallet + LP  ← this would double-count
-  YES:  total = wallet       ← LP is synthetic, wallet ETH untouched`}</Code>
+  YES:  total = wallet + realisedPnL       ← LP is synthetic, wallet tokens untouched`}</Code>
               </Sub>
             </Section>
 
@@ -591,7 +640,7 @@ Buy cost integral (s₀ → s₀+n):
 Sell payout integral (s₀-n → s₀):
   payout(n, s₀) = ∫[s₀-n to s₀] P(s) ds
                = n × basePrice + slope × ((s₀−n)×n + n²/2)
-  Floored at 0 to prevent negative payouts on extreme sells.
+  payout_final  = max(0, payout(n, s₀))   ← floored at zero; negative payouts impossible
 
 Slippage from spot:
   slippage(n) = |cost(n,0)/n − basePrice| / basePrice × 100%
@@ -611,8 +660,14 @@ Example (BTC at $71,000):
 
 This means:
   • Sells of up to ~0.3592 BTC are always absorbed by the virtual treasury
+  • 3× depth ensures the curve absorbs moderate sell pressure without approaching zero slope
   • Buy pressure past this point raises curve price, signalling real demand
-  • Treasury recalibrates with each oracle price update`}</Code>
+  • Treasury recalibrates with each oracle price update (virtualSupply = treasuryDepth / basePrice_new)
+
+Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
+  It uses a linear bonding curve P(s) = basePrice + slope × s.
+  VAMM fees are synthetic — they adjust virtual treasury state only.
+  No wallet signature is required; no tokens leave the user's wallet.`}</Code>
               </Sub>
 
               <Sub title="5.4.3 Execution & Settlement">
@@ -679,7 +734,7 @@ This means:
                   Market orders are routed through OrahDEX's smart order router — selecting the lowest slippage path across AMM pool, on-chain order book, VAMM, and P2P matching. Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
                 </p>
                 <p>
-                  OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
+                  OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Decimal places are computed as: <code className="text-green-400 text-[10px]">precision = max(2, ⌊log₁₀(price)⌋ × −1)</code> — so a price of $0.00042 renders to 5dp, $71,000 to 2dp. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
                 </p>
               </Sub>
               <Sub title="7.2 Perpetual Futures — Up to 100x Leverage">

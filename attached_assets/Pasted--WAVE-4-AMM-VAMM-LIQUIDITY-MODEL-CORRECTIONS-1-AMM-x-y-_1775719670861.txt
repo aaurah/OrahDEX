@@ -1,0 +1,336 @@
+✅ WAVE 4 — AMM, VAMM & LIQUIDITY MODEL CORRECTIONS
+
+---
+
+1. AMM (x·y = k) — Missing Invariant Update Rule
+
+Your white paper gives the swap output formula but never states how k updates.
+
+This is a required correction.
+
+❌ Missing
+
+You never define how the invariant changes after a swap.
+
+✅ Correct
+
+Only the post-fee amount enters the pool:
+
+x_{new} = x + \Delta x \cdot (1 - fee)
+
+
+y_{new} = y - \Delta y
+
+
+k_{new} = x_{new} \cdot y_{new}
+
+
+Required addition:
+
+The AMM invariant updates only with the post-fee input amount. The fee portion does not contribute to k.
+
+---
+
+2. AMM Fee Split — Needs Explicit Formula
+
+You wrote:
+
+5/6 to LPs, 1/6 to protocol, 0.05% to IL fund
+
+But the math is not shown.
+
+Correct fee routing:
+
+Let fee = 0.30%.
+
+fee_{LP} = 0.30\% \times \frac{5}{6} = 0.25\%
+
+
+fee_{protocol} = 0.30\% \times \frac{1}{6} = 0.05\%
+
+
+Then add:
+
+fee_{IL} = 0.05\%
+
+
+Required correction:
+
+Your text must explicitly show the math.
+
+---
+
+3. Price Impact Formula — Needs Absolute Value
+
+You wrote:
+
+impact = Δx / (x + Δx)
+
+Correct:
+
+impact = \left|\frac{\Delta x}{x + \Delta x}\right|
+
+
+Impact is always positive.
+
+---
+
+4. Slippage Formula — Missing Absolute Value
+
+You wrote:
+
+slippage = (effective − spot)/spot × 100%
+
+Correct:
+
+slippage = \left|\frac{effective - spot}{spot}\right| \times 100\%
+
+
+---
+
+5. Concentrated Liquidity — Missing Liquidity Definition
+
+You wrote:
+
+x_v = L / √P_b
+y_v = L × √P_a
+
+Correct, but L is never defined.
+
+Required definition:
+
+L = \frac{\Delta x \cdot \sqrt{P_a P_b}}{P_b - P_a}
+
+
+Or equivalently:
+
+L = \frac{\Delta y}{\sqrt{P_b} - \sqrt{P_a}}
+
+
+Without this, the formulas are incomplete.
+
+---
+
+6. Impermanent Loss — Standard Formula Missing
+
+You wrote:
+
+IL = 2√r/(1+r) − 1
+
+This gives a negative number.
+
+Standard IL formula expresses loss as a positive value:
+
+IL = 1 - \frac{2\sqrt{r}}{1+r}
+
+
+Required correction:
+
+Use the standard form or explicitly state IL is negative.
+
+---
+
+7. VAMM Slope Formula — Needs Dimensional Explanation
+
+You wrote:
+
+slope = 0.01 × basePrice² / 8500
+
+This is correct but must include:
+
+• units
+• calibration constant explanation
+
+
+Required addition:
+
+8500 is the calibration constant ensuring that $8,500 of buy pressure moves price by exactly 1% for any asset.
+
+---
+
+8. VAMM Buy Cost Integral — Needs Units
+
+You wrote:
+
+cost(n, s_0) = n \cdot basePrice + slope \cdot (s_0 n + n^2/2)
+
+
+Correct, but missing:
+
+cost is denominated in USDT; n is units of virtual supply.
+
+---
+
+9. VAMM Sell Payout — Missing Floor Definition
+
+You wrote:
+
+Floored at 0 to prevent negative payouts.
+
+You must explicitly define:
+
+payout = \max(0, integral)
+
+
+---
+
+10. VAMM Virtual Treasury — Missing Recalibration Formula
+
+You wrote:
+
+Treasury recalibrates with each oracle price update.
+
+But you never define how.
+
+Required formula:
+
+virtualSupply = \frac{treasuryDepth}{basePrice}
+
+
+This is essential.
+
+---
+
+11. VAMM Depth — Missing Explanation of 3× Rule
+
+You wrote:
+
+treasuryDepth = 3 × $8,500
+
+You must explain:
+
+3× depth ensures that the bonding curve can absorb moderate sells without hitting zero slope.
+
+---
+
+12. VAMM Execution — Missing Invariant Explanation
+
+You must explicitly state:
+
+The VAMM does not maintain a constant product invariant; it uses a linear bonding curve.
+
+This prevents confusion with AMM math.
+
+---
+
+13. VAMM Fee — Missing Routing Logic
+
+You wrote:
+
+0.30% simulation fee
+
+But you must define:
+
+• where the fee goes
+• how it is accounted
+
+
+Required addition:
+
+VAMM fees are synthetic and do not affect wallet balances; they adjust virtual treasury state only.
+
+---
+
+14. Portfolio Accounting — Needs Explicit Formula
+
+You wrote:
+
+total_balance = Σ wallet_token_values + exchange_settled_balance
+
+But you must add:
+
+LP positions are synthetic and do not modify wallet balances.
+
+Required explicit formula:
+
+totalBalance = walletValue + realisedPnL
+
+
+defiDisplay = LP\_value
+
+
+---
+
+15. LP Value — Missing Mark-to-Market Formula
+
+You must define:
+
+LP\_value = positionSize \times currentPrice
+
+
+---
+
+16. LP Share of Fees — Missing Formula
+
+You wrote:
+
+LPs receive 5/6 of swap fees.
+
+But you must define:
+
+LP\_fee = swapAmount \times 0.30\% \times \frac{5}{6}
+
+
+---
+
+17. AMM Simulator — Missing k Calculation
+
+You wrote:
+
+simulator shows k constant
+
+But you must define:
+
+k = x \cdot y
+
+
+And:
+
+k_{new} = (x + \Delta x (1 - fee)) \cdot (y - \Delta y)
+
+
+---
+
+18. Cross-Pair Charting — Missing Decimal Precision Rule
+
+You wrote:
+
+adaptive decimal precision up to 10dp
+
+You must define:
+
+precision = max(2, floor(log10(price)) × -1)
+
+---
+
+19. AMM vs VAMM — Missing Comparison Table
+
+You should add a table showing:
+
+Property	AMM	VAMM	
+Liquidity	real	virtual	
+Wallet impact	tokens leave wallet	no wallet impact	
+Invariant	x·y=k	linear curve	
+Fees	real	synthetic	
+Slippage	real	simulated	
+
+
+This clarifies the distinction.
+
+---
+
+🎯 Wave 4 Summary
+
+You now have:
+
+• corrected AMM invariant math
+• corrected fee routing
+• corrected concentrated liquidity formulas
+• corrected VAMM slope, integrals, and treasury logic
+• corrected LP accounting
+• corrected slippage and impact formulas
+• corrected portfolio model
+• clarified AMM vs VAMM distinctions
+
+
+Your liquidity model is now mathematically complete and internally consistent.
