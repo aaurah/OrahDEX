@@ -1,0 +1,237 @@
+High‑level feature map
+
+Area	Features	
+Identity & access	Wallet-based identity, roles, permissions, anon modes	
+Context awareness	Pair-aware, position-aware, vault-aware, bridge-aware, risk-aware	
+Channels	Global, pair, vault, support, system, bot/AI	
+Intelligence	AI assistant, smart replies, inline actions, explanations	
+Safety & trust	AI moderation, anti-scam, no PII, rate limits, reputation	
+UX & ergonomics	Widget + full view, mentions, threads, search, notifications	
+Protocol hooks	Trade receipts, txid parsing, OP_RETURN lookup, alerts, webhooks	
+Ops & scaling	WebSockets, SSE, sharding, logging, observability	
+
+
+---
+
+1. Identity & access model
+
+• Wallet-based identity only:• Label: Identity
+• Wallet address = user ID; no email, no username required.
+
+• Roles:• Label: Roles
+• Trader, CopyVault leader, follower, support, protocol operator (for system messages only).
+
+• Permissions:• Label: Permissions
+• Post in global/pair chats, read-only for some channels, write in vault chat if follower/leader.
+
+• Optional pseudonyms:• Label: Pseudonyms
+• User can set a display name, but everything still anchored to wallet.
+
+
+
+---
+
+2. Context-aware intelligence
+
+• Pair-aware:• Label: Market context
+• Chat knows current pair (e.g., BTC/USDT) and can show:• live price
+• 24h change
+• depth snapshot
+
+
+• Position-aware:• Label: Position context
+• For connected wallet:• open positions
+• size, entry, liq price
+• unrealised PnL
+
+
+• Vault-aware:• Label: Vault context
+• If user is in a CopyVault:• vault share price
+• TVL
+• last trades
+
+
+• Bridge-aware:• Label: Bridge context
+• Show status of in-flight HTLCs, time to expiry, claim/refund hints.
+
+• Risk-aware:• Label: Risk hints
+• “You’re within 5% of liquidation on this position.”
+
+
+
+---
+
+3. Channel design
+
+• Global chat:• Label: Global
+• Whole-exchange conversation; heavily moderated by AI.
+
+• Pair channels:• Label: Pair chat
+• One room per market: BTC/USDT, BSV/USDT, etc.
+
+• Vault channels:• Label: Vault chat
+• One room per CopyVault:• leader announcements
+• follower questions
+• auto-posted trade summaries.
+
+
+• Support channel:• Label: Support
+• AI first-line, optional human escalation.
+
+• System channel:• Label: System
+• Read-only feed of:• maintenance
+• incident updates
+• protocol changes.
+
+
+• Bot/AI channel:• Label: Ora channel
+• Dedicated space for Ora-style queries, away from noise.
+
+
+
+---
+
+4. Intelligence & automation
+
+• AI assistant (like Ora) inside chat:• Label: AI core
+• Explain:• AMM math
+• HTLCs
+• liquidation
+• funding
+• vault performance.
+
+
+• Smart replies:• Label: Quick actions
+• When user types:• “Close my position” → show “Close now” button.
+• “Bridge BSV to ETH” → open bridge modal.
+
+
+• Inline explanations:• Label: Explain mode
+• Hover or click on:• “liq price”
+• “mark price”
+• “IL”
+• “HTLC”
+
+
+• Scenario helpers:• Label: Playbooks
+• “I’m stuck in a bridge” → step-by-step guidance.
+• “My order failed” → parse error, show likely cause.
+
+
+
+---
+
+5. Safety, moderation & trust
+
+• AI moderation:• Label: Filters
+• Block:• phishing links
+• seed phrase requests
+• obvious scams
+• spam floods.
+
+
+• No PII:• Label: PII guard
+• Detect and warn if user tries to post:• email
+• phone
+• address
+• ID photos.
+
+
+• Rate limiting:• Label: Anti-spam
+• Per-wallet message limits, burst control.
+
+• Reputation:• Label: Reputation
+• Soft scoring:• age of wallet
+• volume traded
+• prior reports.
+
+
+• Report & mute:• Label: Controls
+• Users can:• mute others
+• report messages
+• hide channels.
+
+
+
+
+---
+
+6. UX & ergonomics
+
+• Widget + full-screen:• Label: Layout
+• Small docked widget + full-page chat view.
+
+• Threads & mentions:• Label: Structure
+• @wallet, @leader, @support.
+
+• Search:• Label: History
+• Search by:• pair
+• txid
+• vault
+• keyword.
+
+
+• Notifications:• Label: Alerts
+• In-app + optional push:• “Your vault leader posted an update.”
+• “Your bridge just completed.”
+
+
+• Localization:• Label: Language
+• Auto-translate messages; show original on hover.
+
+
+
+---
+
+7. Protocol hooks & deep integration
+
+• Txid parsing:• Label: Tx introspection
+• When someone posts a txid:• auto-fetch from explorer
+• show:• pair
+• side
+• size
+• price
+• OP_RETURN payload.
+
+
+
+• Trade receipts:• Label: Receipts
+• Bot posts:• “Trade filled: 0.5 BTC @ 71,200 USDT”
+• with link to BSV proof.
+
+
+• Vault events:• Label: Vault feed
+• Auto messages:• “Leader opened long on BTC.”
+• “Vault share price +3.2% today.”
+
+
+• Bridge events:• Label: Bridge feed
+• “HTLC locked on BSV, waiting for ETH leg.”
+
+• Webhooks / events:• Label: Integrations
+• Allow external bots (read-only) to subscribe to:• fills
+• vault updates
+• bridge events.
+
+
+
+
+---
+
+8. Backend & scaling
+
+• Transport:• Label: Transport
+• WebSockets for chat, SSE for AI streaming.
+
+• Storage:• Label: Storage
+• Encrypted messages in DB, retention policy (e.g., 30–90 days).
+
+• Sharding:• Label: Scale
+• Channel-based sharding (global vs pair vs vault).
+
+• Observability:• Label: Metrics
+• Track:• message volume
+• latency
+• moderation hits
+• AI usage.
+
