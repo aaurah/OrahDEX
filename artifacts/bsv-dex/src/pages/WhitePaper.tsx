@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.0.0";
-const PUBLISH_DATE = "4 April 2026";
+const VERSION = "4.1.0";
+const PUBLISH_DATE = "9 April 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -224,7 +224,7 @@ export function WhitePaper() {
                 The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 950+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
               </p>
               <p>
-                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. EVM chains (Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos) are natively supported via Reown/WalletConnect. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
+                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
               </p>
               <p>
                 The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
@@ -330,7 +330,7 @@ export function WhitePaper() {
                     layer: "Layer 5 — Sovereign Interface (React + Vite)",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit (20+ EVM chains). Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. Demo Account ($80,000 virtual paper trading). 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp.",
+                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. Demo Account ($80,000 virtual paper trading). 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -342,12 +342,14 @@ export function WhitePaper() {
               <InfoBox title="Full Technology Stack" color="blue">
                 <p><strong>Frontend:</strong> React 19 + Vite 7 + TailwindCSS v4 · TypeScript 5.7</p>
                 <p><strong>Backend:</strong> Node.js 24 + Express 5 + Drizzle ORM + PostgreSQL 16</p>
-                <p><strong>EVM:</strong> Wagmi v2 + Viem v2 + Reown AppKit (WalletConnect v3)</p>
+                <p><strong>EVM:</strong> Wagmi v2 + Viem v2 + Reown AppKit (WalletConnect v3) — 10 chains · 43 ERC-20 tokens</p>
+                <p><strong>Token Registry:</strong> Ethereum · Base · Arbitrum · Optimism · Polygon · BSC · Avalanche · Linea · Scroll · Mantle — live on-chain balanceOf() calls, no backend dependency</p>
                 <p><strong>TRON:</strong> TronWeb 6 + multi-adapter wallet support (6 wallets)</p>
                 <p><strong>BSV:</strong> WhatsOnChain API + native UTXO/OP_RETURN construction + HTLC Script</p>
                 <p><strong>AI:</strong> OpenAI-compatible LLM · streaming SSE · 8,192 max tokens</p>
                 <p><strong>Charts:</strong> Lightweight-charts v5 + OrahChart cross-pair renderer</p>
-                <p><strong>VAMM:</strong> Genesis Liquidity Engine — linear bonding curve, 56+ assets, virtual treasury</p>
+                <p><strong>VAMM:</strong> Genesis Liquidity Engine — linear bonding curve, 56 assets, virtual treasury</p>
+                <p><strong>Keeper Engine:</strong> On-chain reputation scoring · tier-based fee schedule · autonomous settlement monitoring</p>
               </InfoBox>
             </Section>
 
@@ -486,6 +488,30 @@ Concentrated liquidity (Uniswap V3 model):
               </Sub>
               <Sub title="5.3 AMM Swap Simulator">
                 <p>OrahDEX includes a built-in AMM simulator showing real-time price impact, slippage vs spot, fee breakdown, k constant, and effective exchange rate before any swap commitment. LP share is 5/6 of fee; Protocol share is 1/6. Available on both desktop and mobile at <code className="text-green-400 text-[10px]">/liquidity</code>.</p>
+              </Sub>
+              <Sub title="5.3.1 Virtual AMM Portfolio Accounting">
+                <p>
+                  OrahDEX's Genesis Liquidity Engine is a <span className="text-foreground font-medium">Virtual AMM (vAMM)</span> — a synthetic liquidity layer that does not require users to lock or transfer tokens. When a user "adds liquidity," they are opening a <em>synthetic LP position</em>. Their wallet assets remain on-chain, unencumbered, and fully self-custodied at all times.
+                </p>
+                <InfoBox title="Virtual vs Real AMM — Key Distinction" color="blue">
+                  <p><strong>Real AMM (Uniswap, Sushi, Pancake):</strong> ETH leaves wallet → LP tokens enter wallet → wallet ETH balance decreases → LP tokens represent pool share.</p>
+                  <p><strong>OrahDEX vAMM (Genesis Engine):</strong> Wallet ETH stays untouched → LP position is synthetic exposure → wallet balance unchanged → LP value = separate, virtual earning position.</p>
+                </InfoBox>
+                <p>
+                  This design mirrors leading vAMM and perpetuals protocols — GMX v2, Drift Protocol, Hyperliquid, dYdX v4 — where the underlying asset stays in the user's self-custodied wallet while the protocol tracks synthetic position size, fees earned, and mark-to-market value.
+                </p>
+                <p>
+                  The OrahDEX Portfolio page reflects this correctly: the <strong>Total Balance</strong> shows only on-chain wallet value (ETH, ERC-20s, native tokens). LP positions appear in the <strong>DeFi tab</strong> as a separate synthetic allocation — shown as "<em>$X.XX allocated</em>" to make clear the amount is already within the wallet balance, not additive to it. Double-counting is architecturally prevented.
+                </p>
+                <Code>{`Portfolio accounting model (v4.1.0):
+
+  total_balance  = Σ wallet_token_values + exchange_settled_balance
+                   (LP NOT added — already reflected in wallet)
+
+  defi_display   = LP_position_value  [informational, "allocated" label]
+
+  NOT:  total = wallet + LP  ← this would double-count
+  YES:  total = wallet       ← LP is synthetic, wallet ETH untouched`}</Code>
               </Sub>
             </Section>
 
@@ -1469,6 +1495,28 @@ If any authority requests user identity data:
 
             {/* ── 19. ROADMAP ── */}
             <Section id="roadmap" title="19. Roadmap">
+
+              {/* v4.1.0 Changelog */}
+              <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.1.0 · 9 April 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "ERC-20 token registry expanded to 10 EVM chains — Avalanche (AVAX), Linea (ETH), Scroll (ETH), Mantle (MNT) added with full USDT/USDC/DAI/WBTC support (43 tokens total).",
+                    "Native token price coverage extended: AVAX (avalanche-2 CoinGecko feed) and MNT (mantle feed) added to the sovereign price engine alongside ETH, BNB, and POL.",
+                    "Virtual AMM portfolio accounting corrected — LP positions are synthetic exposure, not locked assets. Portfolio total now shows wallet-only balance; LP value displayed as informational allocation.",
+                    "Balance display precision fixed — pool share helper auto-scales to 7 decimal places for tiny stakes; ultra-small positions show '< 0.0000005%' instead of 0.0000% truncation.",
+                    "Impossible SELL order guard hardened — conservative backend default (missing reportedBalance → 0 for SELL), client-side guard in OrderForm, and 1e-9 float tolerance for dust.",
+                    "Locked balance UI — open orders for current market are deducted from displayed Available balance every 5 s; gross on-chain balance preserved separately for backend validation.",
+                    "Founder attribution — Parminder Singh (Aura · Orah · Aaurah) credited on cover, metadata row, conclusion signature, and copyright footer.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               <div className="space-y-3">
                 {[
                   {
@@ -1479,7 +1527,7 @@ If any authority requests user identity data:
                       "950+ spot trading pairs with sovereign oracle pricing",
                       "BSV OP_RETURN settlement proof on every matched trade",
                       "HTLC atomic swap bridge (BSV ↔ EVM + TRON)",
-                      "Genesis Liquidity Engine (56+ VAMM assets, linear bonding curve)",
+                      "Genesis Liquidity Engine (56 VAMM assets, linear bonding curve)",
                       "CopyVault on-chain copy trading (ERC4626, BSV proof chain)",
                       "Ora AI integration (682+ market insights, streaming context)",
                       "Perpetual futures up to 100x leverage with 8h funding",
@@ -1489,6 +1537,7 @@ If any authority requests user identity data:
                       "7-tab mobile navigation (Markets, Trade, Hub, P2P, Bridge, Portfolio, Settings)",
                       "TRON native support (TRX + TRC-20 USDT, 6 TRON wallets)",
                       "Keeper tier system (Initiate → Sentinel → Archon → Sovereign)",
+                      "10-chain EVM token registry: 43 ERC-20 tokens, live on-chain balanceOf() reads, no API key required",
                     ],
                   },
                   {
@@ -1557,7 +1606,7 @@ If any authority requests user identity data:
                 The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. OrahDEX makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
               </p>
               <p>
-                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56+ VAMM-guaranteed liquidity markets</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, the world's first <strong>on-chain copy trading system</strong> with cryptographic proof chains, institutional-grade <strong>perpetual futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
+                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, the world's first <strong>on-chain copy trading system</strong> with cryptographic proof chains, institutional-grade <strong>perpetual futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
               </p>
               <p>
                 The protocol is indestructible by design. Every adversarial scenario — regulatory, competitive, technical — resolves in the protocol's favour through the asymmetric resilience documented in Section 15. The game theory is unambiguous: for rational agents with access to transparent information, self-custody with DEX access is the dominant strategy. The network effects compound. The flywheels spin faster with every trade.
