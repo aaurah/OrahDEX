@@ -52,16 +52,44 @@ const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; address
     { symbol: "cbBTC", name: "Coinbase BTC",     address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf", decimals: 8,  color: "#F97316" },
     { symbol: "cbETH", name: "Coinbase ETH",     address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", decimals: 18, color: "#8B5CF6" },
   ],
+  43114: [ // Avalanche C-Chain
+    { symbol: "USDT",  name: "Tether USD",       address: "0xde3A24028580884448a5397872046a019649b084", decimals: 6,  color: "#22C55E" },
+    { symbol: "USDC",  name: "USD Coin",          address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", decimals: 6,  color: "#3B82F6" },
+    { symbol: "DAI",   name: "Dai Stablecoin",    address: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70", decimals: 18, color: "#EAB308" },
+    { symbol: "WBTC",  name: "Wrapped BTC",       address: "0x50b7545627a5162F82A992c33b87aDc75187B218", decimals: 8,  color: "#F97316" },
+  ],
+  59144: [ // Linea
+    { symbol: "USDT",  name: "Tether USD",        address: "0xA219439258ca9da29E9Cc4cE5596924745e12B93", decimals: 6,  color: "#22C55E" },
+    { symbol: "USDC",  name: "USD Coin",           address: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff", decimals: 6,  color: "#3B82F6" },
+    { symbol: "DAI",   name: "Dai Stablecoin",     address: "0x4AF15ec2A0BD43Db75dd04E62FAA3B8EF36b00d8", decimals: 18, color: "#EAB308" },
+    { symbol: "WBTC",  name: "Wrapped BTC",        address: "0x3aAB2285ddcDdaD8edf438C1bAB47e1a9D05a9b4", decimals: 8,  color: "#F97316" },
+  ],
+  534352: [ // Scroll
+    { symbol: "USDC",  name: "USD Coin",           address: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4", decimals: 6,  color: "#3B82F6" },
+    { symbol: "USDT",  name: "Tether USD",         address: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df", decimals: 6,  color: "#22C55E" },
+    { symbol: "DAI",   name: "Dai Stablecoin",     address: "0xcA77eB3fEFe3725Dc33bccB54eDEFc3D9f764f97", decimals: 18, color: "#EAB308" },
+    { symbol: "WBTC",  name: "Wrapped BTC",        address: "0x3C1BCa5a656e69edCD0D4E36BEbb3FcDAcA60Cf1", decimals: 8,  color: "#F97316" },
+  ],
+  5000: [ // Mantle
+    { symbol: "USDT",  name: "Tether USD",         address: "0x3c7b464376db7c9927930cf50eefdea2eff3a66a", decimals: 6,  color: "#22C55E" },
+    { symbol: "USDC",  name: "USD Coin",            address: "0x4c9edd5852cd905f086c759e8383e09bff1e68b3", decimals: 6,  color: "#3B82F6" },
+    { symbol: "DAI",   name: "Dai Stablecoin",      address: "0xab4a6613e7f0da8bdd88dcdd958dfb47d93c0e15", decimals: 18, color: "#EAB308" },
+    { symbol: "WBTC",  name: "Wrapped BTC",         address: "0xb5c8D0d6073b59A41E7e5cE00fB8bD2C1DcE2C8", decimals: 8,  color: "#F97316" },
+  ],
 };
 
 const NATIVE_TOKENS: Record<number, { symbol: string; name: string; color: string; cgId: string }> = {
-  1:     { symbol: "ETH",   name: "Ethereum",    color: "#8B5CF6", cgId: "ethereum" },
-  56:    { symbol: "BNB",   name: "BNB",         color: "#EAB308", cgId: "binancecoin" },
-  137:   { symbol: "POL",   name: "Polygon",      color: "#7C3AED", cgId: "matic-network" },
-  42161: { symbol: "ETH",   name: "Ethereum",    color: "#8B5CF6", cgId: "ethereum" },
-  10:    { symbol: "ETH",   name: "Ethereum",    color: "#8B5CF6", cgId: "ethereum" },
-  8453:  { symbol: "ETH",   name: "Ethereum",    color: "#8B5CF6", cgId: "ethereum" },
-  324:   { symbol: "ETH",   name: "Ethereum",    color: "#8B5CF6", cgId: "ethereum" },
+  1:      { symbol: "ETH",  name: "Ethereum",      color: "#8B5CF6", cgId: "ethereum" },
+  56:     { symbol: "BNB",  name: "BNB",            color: "#EAB308", cgId: "binancecoin" },
+  137:    { symbol: "POL",  name: "Polygon",         color: "#7C3AED", cgId: "matic-network" },
+  42161:  { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  10:     { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  8453:   { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  324:    { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  43114:  { symbol: "AVAX", name: "Avalanche",      color: "#E84142", cgId: "avalanche-2" },
+  59144:  { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  534352: { symbol: "ETH",  name: "Ethereum",       color: "#8B5CF6", cgId: "ethereum" },
+  5000:   { symbol: "MNT",  name: "Mantle",         color: "#00A3FF", cgId: "mantle" },
 };
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -136,11 +164,13 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
       // Build price map including native token by cgId
       const cgPriceMap: Record<string, { usd: number; change24h: number }> = {
-        ethereum:    { usd: priceData.ETH?.usd   ?? 3200, change24h: priceData.ETH?.change24h   ?? 0 },
-        binancecoin: { usd: priceData.BNB?.usd   ?? 600,  change24h: priceData.BNB?.change24h   ?? 0 },
-        "matic-network": { usd: priceData.POL?.usd ?? 0.9, change24h: priceData.POL?.change24h  ?? 0 },
+        ethereum:        { usd: priceData.ETH?.usd   ?? 3200, change24h: priceData.ETH?.change24h  ?? 0 },
+        binancecoin:     { usd: priceData.BNB?.usd   ?? 600,  change24h: priceData.BNB?.change24h  ?? 0 },
+        "matic-network": { usd: priceData.POL?.usd   ?? 0.9,  change24h: priceData.POL?.change24h  ?? 0 },
+        "avalanche-2":   { usd: priceData.AVAX?.usd  ?? 35,   change24h: priceData.AVAX?.change24h ?? 0 },
+        mantle:          { usd: priceData.MNT?.usd   ?? 0.8,  change24h: priceData.MNT?.change24h  ?? 0 },
       };
-      const stablePrices: Record<string, number> = { USDT: 1, USDC: 1, DAI: 1, BUSD: 1 };
+      const stablePrices: Record<string, number> = { USDT: 1, USDC: 1, USDbC: 1, DAI: 1, BUSD: 1 };
 
       const nativePrice = cgPriceMap[nativeDef.cgId] ?? { usd: 0, change24h: 0 };
 
