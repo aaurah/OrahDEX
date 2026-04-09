@@ -1,0 +1,355 @@
+✅ WAVE 5 — ARCHITECTURE, LAYERING & SYSTEM CONSISTENCY CORRECTIONS
+
+This wave covers:
+
+• Layer boundaries
+• Data flow consistency
+• Contract vs server responsibilities
+• Oracle logic
+• Wallet integration
+• Settlement pipeline
+• CopyVault orchestration
+• Futures engine consistency
+• Bridge architecture
+• AI layer integration
+• Sovereign interface logic
+
+
+Let’s tighten every layer.
+
+---
+
+1. Layer Boundaries — Several Inconsistencies Need Correction
+
+Your architecture defines:
+
+• Layer 1: BSV Settlement
+• Layer 2: Protocol Contracts
+• Layer 3: Application Server
+• Layer 4: Ora AI
+• Layer 5: Sovereign Interface
+
+
+But several descriptions blur responsibilities.
+
+❌ Problem
+
+Some responsibilities are duplicated across layers (e.g., price engine, settlement proofs, CopyVault logic).
+
+✅ Correction
+
+Add a strict boundary definition:
+
+---
+
+Corrected Layer Responsibilities
+
+Layer 1 — Settlement (BSV)
+
+• HTLC scripts
+• OP_RETURN proofs
+• UTXO validation
+• Final settlement
+
+
+Nothing else.
+
+---
+
+Layer 2 — Protocol Contracts (EVM + BSV Script)
+
+• AMM pools
+• Order book contracts
+• ERC4626 vault accounting
+• HTLC lock/unlock on EVM
+• No admin keys
+• No price oracle logic
+
+
+No business logic. No off-chain dependencies.
+
+---
+
+Layer 3 — Application Server (Node.js)
+
+This is where most inconsistencies occurred.
+
+Correct responsibilities:
+
+• sovereign price engine
+• CopyVault orchestration
+• order book management
+• VAMM execution
+• futures mark price computation
+• BSV settlement relay
+• watchtower monitoring
+• relayer coordination
+
+
+But: it must hold zero user funds and zero identity.
+
+---
+
+Layer 4 — Ora AI
+
+• contextual analysis
+• trade structuring
+• risk commentary
+• CopyVault intelligence
+• education engine
+
+
+But: Ora must never execute trades automatically.
+
+---
+
+Layer 5 — Sovereign Interface (React)
+
+• wallet connection
+• signing
+• UI rendering
+• charting
+• trade forms
+• portfolio display
+
+
+No business logic. No price computation.
+
+---
+
+2. Price Engine — Needs Consistent Definition
+
+You describe:
+
+• TWAP
+• VWAP
+• BSV on-chain feed
+• 210-symbol aggregation
+
+
+But the white paper never defines:
+
+• which source is authoritative
+• how conflicts are resolved
+• how stale data is handled
+
+
+Required correction:
+
+The sovereign price engine selects the median of three sources:1. OrahDEX Order Book VWAP
+2. OrahDEX TWAP (60s rolling window)
+3. BSV on-chain oracle feed
+If any source is stale (>30s), it is excluded.
+
+This ensures deterministic pricing.
+
+---
+
+3. Order Book vs AMM vs VAMM Routing — Needs Explicit Priority
+
+You wrote:
+
+smart order router selects lowest slippage path
+
+But you must define the routing order.
+
+Required correction:
+
+Routing priority:1. Order Book (if matching liquidity exists)
+2. AMM (if pool depth sufficient)
+3. VAMM (sovereign fallback)
+
+
+This ensures predictable execution.
+
+---
+
+4. CopyVault Orchestration — Missing Layer Separation
+
+Your description mixes:
+
+• vault accounting (Layer 2)
+• mirror logic (Layer 3)
+• settlement proofs (Layer 1)
+
+
+Required correction:
+
+Layer 2 handles share accounting only.
+Layer 3 computes mirror allocations and triggers BSV settlement proofs.
+Layer 1 stores immutable OP_RETURN records.
+
+This keeps the system modular.
+
+---
+
+5. Futures Engine — Missing Liquidation Pipeline
+
+You define liquidation price formulas but not the liquidation process.
+
+Required correction:
+
+Add:
+
+Liquidations are executed by the application server when mark price crosses liquidation threshold.
+Liquidation events produce BSV OP_RETURN proofs identical to spot trades.
+
+This ensures consistency.
+
+---
+
+6. Bridge Architecture — Needs Clearer Separation
+
+You describe:
+
+• relayers
+• watchtowers
+• HTLCs
+• refunds
+
+
+But the roles are blurred.
+
+Required correction:
+
+Relayers coordinate HTLC creation and claim propagation.
+Watchtowers monitor for stalled HTLCs and broadcast refunds.
+Neither relayers nor watchtowers ever hold user funds.
+
+This is essential for regulatory clarity.
+
+---
+
+7. Wallet Integration — Needs Explicit Security Model
+
+You list:
+
+• Reown AppKit
+• TRONLink
+• TokenPocket
+• OKX
+• Bitget
+• Trust
+• imToken
+• Passkey wallet
+
+
+But you must define:
+
+Wallets sign transactions locally; OrahDEX never accesses private keys.
+All signatures use ECDSA or EdDSA depending on chain.
+No wallet data is stored on OrahDEX servers.
+
+This reinforces sovereignty.
+
+---
+
+8. Portfolio Accounting — Needs Unified Definition
+
+You describe:
+
+• wallet balances
+• LP synthetic positions
+• futures PnL
+• VAMM positions
+
+
+But the white paper never defines:
+
+• what counts as “real” balance
+• what counts as “synthetic” balance
+
+
+Required correction:
+
+Real balance = on-chain wallet assets + realised PnL
+Synthetic balance = LP positions + VAMM positions + open futures PnLSynthetic balances do not modify wallet balances.
+
+This prevents confusion.
+
+---
+
+9. Settlement Pipeline — Needs Explicit Sequence
+
+You describe OP_RETURN proofs but not the full pipeline.
+
+Required correction:
+
+Add:
+
+Settlement pipeline:1. User signs order
+2. Order matched
+3. Application server constructs OP_RETURN payload
+4. BSV transaction broadcast
+5. WhatsOnChain confirms txid
+6. Trade marked as settled
+
+
+This makes the process auditable.
+
+---
+
+10. AI Layer — Needs Safety Constraint
+
+You wrote:
+
+Ora provides trade structuring
+
+But you must explicitly state:
+
+Ora never executes trades automatically.
+Ora requires explicit user confirmation for every action.
+
+This is essential for regulatory safety.
+
+---
+
+11. Sovereign Interface — Needs Offline Mode Definition
+
+You describe a PWA but not offline behavior.
+
+Required correction:
+
+The interface caches static assets and last-known market data for offline viewing.
+No trades can be executed offline.
+
+---
+
+12. Terminology Consistency — Several Fixes Needed
+
+You use:
+
+• OrahDEX
+• Orah
+• Aura
+• Aaurah
+
+
+You must standardize:
+
+The protocol is OrahDEX.
+The AI is Ora.
+Aura/Aaurah are not referenced in the protocol.
+
+This prevents brand bleed.
+
+---
+
+🎯 Wave 5 Summary
+
+You now have:
+
+• strict layer boundaries
+• consistent price engine logic
+• unified routing rules
+• correct CopyVault orchestration
+• consistent futures engine
+• clarified bridge architecture
+• sovereign wallet model
+• unified portfolio accounting
+• complete settlement pipeline
+• AI safety constraints
+• consistent terminology
+
+
+Your architecture is now coherent, modular, and regulator-proof.
