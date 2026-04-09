@@ -17,7 +17,7 @@ import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
-import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
+
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -84,7 +84,6 @@ export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
-  const { getBalances: getExchangeBalances, getBalance: getExchangeBalance } = useExchangeBalanceStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
@@ -180,40 +179,12 @@ export function MobilePortfolio() {
     return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: 0, change: 0, value: 0, isNative: true }];
   })();
 
-  // tokensTotal is recomputed below from adjustedRows (after OrahDEX consumed amounts removed)
   // eslint-disable-next-line prefer-const
   let tokensTotal = rows.reduce((s, r) => s + r.value, 0);
   const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
 
-  // ── BUCKET 3: OrahDEX exchange balance (matched trade credits) ────────────
-  const exchangeBalances = address ? getExchangeBalances(address) : {};
-  // Only show POSITIVE exchange balances in the OrahDEX Balance card.
-  // Negative values mean the token was "consumed from wallet" via OrahDEX fills.
-  const exchangeTokens = Object.entries(exchangeBalances).filter(([, amt]) => amt > 0);
-  const exchangeTotalValue = exchangeTokens.reduce((s, [token, amt]) => {
-    const stables = ["USDT", "USDC", "DAI", "BUSD"];
-    if (stables.includes(token)) return s + amt;
-    const p = prices?.[token]?.lastPrice ?? 0;
-    return s + amt * p;
-  }, 0);
-
-  // ── Model A accounting: adjust wallet rows for OrahDEX-consumed amounts ───
-  // When a sell fills, the exchange balance for the base asset goes negative
-  // (because the user is spending wallet tokens via OrahDEX without a prior
-  // deposit). We subtract that consumed amount from the wallet display so the
-  // wallet balance visibly decreases, keeping accounting consistent.
-  const adjustedRows = rows.map(r => {
-    if (!address) return r;
-    const dexBal = getExchangeBalance(address, r.asset);
-    if (dexBal >= 0) return r; // positive or zero = no wallet deduction
-    // negative dexBal = tokens consumed from wallet
-    const consumed = Math.abs(dexBal);
-    const adjustedAmount = Math.max(0, r.amount - consumed);
-    const adjustedValue  = adjustedAmount * (r.price > 0 ? r.price : 0);
-    return { ...r, amount: adjustedAmount, value: adjustedValue };
-  });
-  // Recompute wallet total using adjusted amounts
-  tokensTotal = adjustedRows.reduce((s, r) => s + r.value, 0);
+  // Non-custodial: wallet rows are shown as-is — no OrahDEX ledger adjustments.
+  // Trades settle directly wallet-to-wallet; no internal balance tracking needed.
 
   // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
   // For SELL orders: base asset is reserved (e.g. 0.003 ETH locked for a sell)
@@ -251,7 +222,7 @@ export function MobilePortfolio() {
 
   // ── BUCKET 1: Wallet balance (real on-chain, minus OrahDEX-consumed amounts) ──
   const total = tokensTotal;
-  const nonZero = adjustedRows.filter(r => r.amount > 0);
+  const nonZero = rows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
     ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
     : 0;
@@ -443,29 +414,7 @@ export function MobilePortfolio() {
         </div>
 
         <div className="px-4 space-y-4">
-          {/* ── BUCKET 1: Wallet Balance (on-chain, minus OrahDEX-consumed amounts) ─ */}
-          {(() => {
-            // Compute total consumed across all assets (negative exchange balances)
-            const consumedEntries = address
-              ? Object.entries(getExchangeBalances(address)).filter(([, amt]) => amt < 0)
-              : [];
-            const consumedNote = consumedEntries.map(([token, amt]) => {
-              const v = Math.abs(amt);
-              return `${v < 0.001 ? v.toFixed(6) : v.toFixed(4)} ${token}`;
-            }).join(", ");
-            return (
-              <>
-                {consumedNote && (
-                  <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-3 py-2 mb-2 flex items-start gap-2">
-                    <svg className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
-                    <p className="text-[10px] text-yellow-300/90 leading-relaxed">
-                      <span className="font-semibold">{consumedNote} was traded via OrahDEX</span> — wallet balance adjusted to reflect those fills. To trade going forward, use <span className="text-yellow-200 font-semibold">Deposit</span> below to add funds to your OrahDEX balance first.
-                    </p>
-                  </div>
-                )}
-              </>
-            );
-          })()}
+          {/* ── BUCKET 1: Wallet Balance (on-chain) ─────────────────────────────── */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
@@ -608,53 +557,6 @@ export function MobilePortfolio() {
             <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
           </button>
 
-          {/* ── BUCKET 3: OrahDEX Exchange Balance (trade credits, NOT wallet) ── */}
-          <div className="bg-amber-500/5 border border-amber-500/25 rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <Zap size={14} className="text-amber-400" />
-                <span className="text-sm font-bold text-amber-300">OrahDEX Balance</span>
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wide">Exchange</span>
-              </div>
-              <span className="text-base font-bold text-amber-300">
-                {exchangeTotalValue > 0 ? formatQuoteAmount(exchangeTotalValue, quoteCurrency) : "—"}
-              </span>
-            </div>
-            <p className="text-[10px] text-muted-foreground mb-3">
-              Your internal trading balance on OrahDEX. Deposit ETH to start trading — not held in your wallet.
-            </p>
-            {exchangeTokens.length > 0 ? (
-              <>
-                <div className="space-y-2">
-                  {exchangeTokens.map(([token, amt]) => {
-                    const isStable = ["USDT","USDC","DAI","BUSD"].includes(token);
-                    const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
-                    const val = amt * p;
-                    return (
-                      <div key={token} className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-foreground">{token}</span>
-                        <div className="text-right">
-                          <span className="text-xs font-mono text-foreground">{amt.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                          {val > 0 && <span className="text-[10px] text-muted-foreground ml-2">≈ {formatQuoteAmount(val, quoteCurrency)}</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="text-[10px] text-amber-400/70 text-right mt-2 pt-2 border-t border-amber-500/15">
-                  Total ≈ {formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
-                </div>
-              </>
-            ) : (
-              <button
-                onClick={() => setDepositOpen(true)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
-              >
-                <ArrowDownToLine size={13} className="text-amber-400" />
-                <span className="text-xs font-semibold text-amber-300">Deposit to start trading</span>
-              </button>
-            )}
-          </div>
 
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
@@ -709,10 +611,10 @@ export function MobilePortfolio() {
               )}
 
               <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-                {adjustedRows.map((r, i) => (
+                {rows.map((r, i) => (
                   <div
                     key={r.asset}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < adjustedRows.length - 1 ? "border-b border-border" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"

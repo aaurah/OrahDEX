@@ -572,16 +572,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
   const isNativeQuote = nativeSymbol === quote;
 
-  // OrahDEX internal balance — Model A: ONLY this is tradeable, never raw wallet balance.
-  // Users must deposit into OrahDEX before trading. Negative values (from prior fills
-  // without a deposit) are clamped to 0 here so they can't trade a phantom balance.
-  const dexBaseBalance  = Math.max(0, getDexBalance(address || "", base));
-  const dexQuoteBalance = Math.max(0, getDexBalance(address || "", quote));
+  // Non-custodial: trade directly from on-chain wallet balance — no deposit required.
+  // Base asset (e.g. ETH): use native balance if it's the native token, else ERC-20.
+  // Quote asset (e.g. USDT): use ERC-20 balance.
+  const walletBaseBalance  = isNativeBase  ? walletBal : erc20BaseBalance;
+  const walletQuoteBalance = isNativeQuote ? walletBal : erc20QuoteBalance;
 
-  // Model A: effective balances come entirely from the OrahDEX internal ledger,
+  // Non-custodial: effective balances come directly from the on-chain wallet,
   // then net of amounts locked in open orders for this market.
-  const grossSellBalance = dexBaseBalance;
-  const grossBuyBalance  = dexQuoteBalance;
+  const grossSellBalance = walletBaseBalance;
+  const grossBuyBalance  = walletQuoteBalance;
   const sellBalance = Math.max(0, grossSellBalance - lockedSellQty);
   const buyBalance  = Math.max(0, grossBuyBalance  - lockedBuySpend);
 
@@ -1450,60 +1450,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
-              {/* OrahDEX exchange balance breakdown row — shown when user has filled trades */}
-              {address && (() => {
-                const dexTok = side === "sell" ? base : quote;
-                const dexBal = getDexBalance(address || "", dexTok);
-                if (dexBal <= 0) return null;
-                const fmt = (n: number) =>
-                  n < 0.0001 ? n.toExponential(2)
-                  : dexTok === "USDT" || dexTok === "USDC" ? n.toFixed(2)
-                  : n.toFixed(6);
-                return (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-amber-400/80 border-b border-dashed border-amber-400/30">
-                      incl. OrahDEX balance
-                    </span>
-                    <span className="text-[10px] font-semibold text-amber-400 tabular-nums">
-                      {fmt(dexBal)}&nbsp;{dexTok}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* Zero OrahDEX balance — show wallet balance as context + deposit CTA */}
-              {address && available === 0 && (() => {
-                const tradeTok = side === "sell" ? base : quote;
-                const walletAmt = side === "sell"
-                  ? (isNativeBase ? walletBal : erc20BaseBalance)
-                  : (isNativeQuote ? walletBal : erc20QuoteBalance);
-                const walletFmt = walletAmt > 0
-                  ? walletAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
-                  : "0";
-                return (
-                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 space-y-2 -mx-1 mt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground">Your wallet {tradeTok}</span>
-                      <span className={cn(
-                        "text-xs font-bold tabular-nums",
-                        walletAmt > 0 ? "text-foreground" : "text-muted-foreground/50"
-                      )}>
-                        {walletFmt} {tradeTok}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-amber-300/80 leading-relaxed">
-                      OrahDEX trades from your <strong className="text-amber-300">internal exchange balance</strong>, not directly from your wallet. Deposit {tradeTok} to start trading.
-                    </p>
-                    <button
-                      onClick={() => setFundingSheetOpen(true)}
-                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-primary/15 border border-primary/30 active:bg-primary/25 transition-colors"
-                    >
-                      <Download size={12} className="text-primary" />
-                      <span className="text-xs font-bold text-primary">Deposit {tradeTok} to Trade</span>
-                    </button>
-                  </div>
-                );
-              })()}
+              {/* Low balance hint — shown when wallet balance is zero */}
+              {address && available === 0 && (
+                <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
+                  {side === "buy"
+                    ? `No ${quote} in wallet. Buy or bridge ${quote} to trade.`
+                    : `No ${base} in wallet. Buy or bridge ${base} to trade.`
+                  }
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
                 <span className="text-xs font-semibold text-foreground tabular-nums">

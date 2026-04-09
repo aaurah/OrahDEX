@@ -496,23 +496,24 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
 
-  // OrahDEX internal balance — Model A: only this is tradeable, never raw wallet balance.
-  // Positive = deposited/earned. Zero or negative = need to deposit first.
-  const dexBase  = Math.max(0, getDexBalance(address || "", base));
-  const dexQuote = Math.max(0, getDexBalance(address || "", quote));
+  // Non-custodial: trade directly from on-chain wallet balance — no deposit required.
+  // Base (e.g. ETH) comes from native balance if it's the native token, else ERC-20.
+  // Quote (e.g. USDT) comes from the ERC-20 token balance.
+  const walletBase  = isNativeBase
+    ? nativeBal
+    : (baseBalEntry?.amount ?? 0);
+  const walletQuote = quoteBalEntry?.amount ?? 0;
 
-  // Model A rule: EVM wallets trade ONLY from OrahDEX internal balance (deposit first).
-  // Demo/Orah Wallet users use the API ledger balance (they have virtual funding).
+  // Non-custodial: EVM wallets trade directly from wallet.
+  // Demo/Orah Wallet users use the API ledger balance (virtual funding).
   const baseAvailable  = usesApiBalance
     ? (demoBalances[base] ?? 0)
-    : dexBase;
+    : walletBase;
   const quoteAvailable = usesApiBalance
     ? (demoBalances[quote] ?? 0)
-    : dexQuote;
+    : walletQuote;
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
-  // Whether the user needs to deposit before they can trade
-  const needsDeposit = !usesApiBalance && availableAmt <= 0;
 
   // ── API-locked balance for external EVM wallets ───────────────────────────
   // External EVM wallets (Reown, MetaMask, Coinbase) use on-chain balances for
@@ -846,7 +847,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const isPending = placeOrder.isPending;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
-  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid && !needsDeposit;
+  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -937,11 +938,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           ))}
         </div>
 
-        {/* OrahDEX balance row — Model A: only internal balance is tradeable */}
+        {/* Wallet balance row — non-custodial: wallet balance is directly tradeable */}
         <div className="flex items-center justify-between text-xs px-0.5">
-          <span className="text-muted-foreground">
-            {usesApiBalance ? "Available" : "OrahDEX Balance"}
-          </span>
+          <span className="text-muted-foreground">Available</span>
           <div className="flex items-center gap-1">
             {balancesLoading && isEvm ? (
               <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
@@ -958,16 +957,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           </div>
         </div>
 
-        {/* Deposit CTA — shown only when user has no OrahDEX balance to trade */}
-        {needsDeposit && (
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs -mt-0.5">
-            <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
-              <span className="text-primary text-[10px] font-black">↓</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-foreground font-semibold">Deposit {availableSym} first</p>
-              <p className="text-muted-foreground mt-0.5">OrahDEX trades from your exchange balance — go to <span className="text-primary font-medium">Portfolio → Deposit</span>.</p>
-            </div>
+        {/* Low balance hint — shown when wallet balance is zero */}
+        {!usesApiBalance && availableAmt <= 0 && (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs -mt-0.5">
+            <span className="text-amber-400/80">
+              No {availableSym} in wallet. Buy or bridge {availableSym} to start trading.
+            </span>
           </div>
         )}
 
