@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 const VERSION = "4.0.0";
 const PUBLISH_DATE = "4 April 2026";
+const FOUNDER = "Parminder Singh";
+const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
 const TOC = [
   { id: "abstract",         label: "Abstract" },
@@ -185,6 +187,11 @@ export function WhitePaper() {
               <div>
                 <h1 className="text-3xl font-black tracking-tight">OrahDEX White Paper</h1>
                 <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  By <span className="text-foreground font-semibold">{FOUNDER}</span>
+                  <span className="text-muted-foreground/60 mx-1.5">·</span>
+                  <span className="text-primary/80 text-xs font-medium">{FOUNDER_ALIASES}</span>
+                </p>
               </div>
               <p className="text-sm text-muted-foreground max-w-lg mx-auto leading-relaxed px-4">
                 A sovereign, permissionless, multi-chain trading protocol with native Bitcoin SV on-chain settlement, cross-chain atomic swaps, Genesis Liquidity Engine (Virtual AMM), perpetual futures, on-chain CopyVault copy trading, AI intelligence (Ora), and zero PII collection — built to outlast any regulatory regime or competitive incumbent.
@@ -193,6 +200,8 @@ export function WhitePaper() {
                 <span>Version {VERSION}</span>
                 <span>·</span>
                 <span>{PUBLISH_DATE}</span>
+                <span>·</span>
+                <span className="font-semibold text-foreground/70">{FOUNDER}</span>
                 <span>·</span>
                 <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
                 <span>·</span>
@@ -1564,6 +1573,11 @@ If any authority requests user identity data:
               </div>
               <p className="text-center text-primary font-semibold">Trade means DEX.</p>
               <p className="text-center text-xs text-muted-foreground">Mathematics does not negotiate. It computes.</p>
+              <div className="flex flex-col items-center gap-1 pt-2">
+                <p className="text-xs text-muted-foreground/60">Conceived &amp; built by</p>
+                <p className="text-sm font-bold text-foreground">{FOUNDER}</p>
+                <p className="text-xs text-primary/70 font-medium">{FOUNDER_ALIASES}</p>
+              </div>
             </Section>
 
             {/* ── DISCLAIMER ── */}
@@ -1611,7 +1625,7 @@ If any authority requests user identity data:
                 </div>
 
                 <p className="font-semibold text-amber-300 border-t border-amber-400/20 pt-3">
-                  © {new Date().getFullYear()} OrahDEX. All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orahdex.org" className="underline">orahdex.org</a> · <a href="https://orahdex.com" className="underline">orahdex.com</a>
+                  © {new Date().getFullYear()} OrahDEX · {FOUNDER} ({FOUNDER_ALIASES}). All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orahdex.org" className="underline">orahdex.org</a> · <a href="https://orahdex.com" className="underline">orahdex.com</a>
                 </p>
               </div>
             </Section>
