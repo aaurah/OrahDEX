@@ -107,7 +107,6 @@ async function deploy() {
   console.log(`   RPC:     ${RPC_URL}`);
 
   const account = privateKeyToAccount(PRIVATE_KEY);
-  console.log(`   Wallet:  ${account.address}\n`);
 
   const client = createWalletClient({
     account,
