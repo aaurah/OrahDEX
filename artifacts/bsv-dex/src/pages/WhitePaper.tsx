@@ -416,6 +416,8 @@ export function WhitePaper() {
                   <p><strong>Maker refund:</strong> If Taker never locks their leg → Maker's HTLC refunds automatically at T₁. No action required.</p>
                   <p><strong>Taker refund:</strong> If Maker never reveals R → Taker's HTLC refunds automatically at T₂.</p>
                   <p className="mt-1 text-muted-foreground">Refunds are enforced by Bitcoin Script and EVM time-locks. No relayer, no admin key, and no off-chain actor can prevent or delay refund execution. The cryptographic guarantee is absolute.</p>
+                  <p className="mt-1 text-muted-foreground"><strong>R propagation:</strong> Relayers propagate the preimage R across chains within seconds of its on-chain appearance. Because T₂ {"< T₁"}, the taker always has sufficient time to claim after R is revealed — even if no relayer acts, the taker can observe R directly from the chain and broadcast the claim themselves.</p>
+                  <p className="mt-1 text-muted-foreground"><strong>Censorship resistance:</strong> No relayer can censor settlement. Users can broadcast claim and refund transactions directly to both chains without any relayer coordination. The relayer network accelerates the process; it is not required for fund safety.</p>
                 </InfoBox>
                 <Code>{`BSV HTLC Locking Script:
 OP_IF
@@ -976,16 +978,33 @@ High-Water Mark:
 
             {/* ── 11. SECURITY ── */}
             <Section id="security" title="11. Security Model">
+              <InfoBox title="Threat Model — Adversaries OrahDEX Is Designed to Resist" color="red">
+                <p className="text-xs text-muted-foreground">The protocol assumes all of the following adversaries may be active simultaneously:</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 text-xs text-muted-foreground">
+                  {["Nation-state regulators seeking seizure", "Malicious relayers on bridge legs", "Malicious liquidity providers (AMM wash)", "Oracle price manipulators", "MEV bots (sandwich / front-run / back-run)", "Compromised user wallets", "Malicious CopyVault leaders", "Abusive futures traders targeting liquidations", "Network-level attackers (DDoS, BGP hijack)", "UI spoofers and phishing actors", "Chain reorganisation attacks on BSV", "Malicious watchtower operators"].map(a => (
+                    <p key={a} className="flex items-start gap-1"><span className="text-red-400 shrink-0">•</span>{a}</p>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs">The protocol is designed to remain sovereign, non-custodial, and operational under all of the above conditions simultaneously.</p>
+              </InfoBox>
               <Sub title="11.1 Threat Surface Analysis">
                 <p>OrahDEX's non-custodial architecture eliminates the most dangerous class of attacks — those targeting a centralised fund custodian. The residual threat surface is:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { threat: "Smart Contract Exploits", mitigation: "Independent audits by top-3 security firms. Formal verification of HTLC scripts. Immutable time-lock refund mechanisms ensure worst-case is fund delay, not loss." },
-                    { threat: "Oracle Manipulation", mitigation: "Sovereign price engine aggregates own order-book VWAP + on-chain TWAP + 210-symbol external feed. Single-source manipulation cannot move mark price." },
-                    { threat: "Front-Running", mitigation: "Commit-reveal scheme for large orders. HTLC preimage committed before broadcasting. MEV resistance via BSV's UTXO parallelism." },
+                    { threat: "Oracle Manipulation", mitigation: "Sovereign price engine uses median-of-three sources (VWAP + TWAP + BSV on-chain). No single oracle source can influence mark price. Manipulation requires compromising two of three independent sources simultaneously — economically infeasible." },
+                    { threat: "MEV / Front-Running / Sandwich", mitigation: "Orders are matched off-chain before any transaction is broadcast to the mempool. No transaction is visible on-chain until after the match is finalised and signed. BSV's UTXO parallelism eliminates sequential ordering dependency used in EVM sandwich attacks." },
+                    { threat: "HTLC Griefing Attack", mitigation: "Malicious actor locks funds on one chain but never completes the second leg. Mitigation: time-locks enforce automatic refund at T₁/T₂ — no funds can be stolen. Only time is lost (maximum: T₁ duration, typically 24h)." },
+                    { threat: "AMM Price Manipulation", mitigation: "Whale manipulates AMM price to influence futures mark price. Mitigation: mark price uses median of three independent sources — AMM alone cannot move it. TWAP smooths short-term manipulation. BSV oracle feed anchors external price truth." },
+                    { threat: "VAMM Curve Manipulation", mitigation: "Trader buys/sells large VAMM amounts to move curve price. Mitigation: VAMM is simulation-only — no real liquidity is affected. VAMM prices do NOT influence mark price, AMM pools, or futures. VAMM cannot be used to trigger liquidations or manipulate CopyVault." },
+                    { threat: "Malicious CopyVault Leader", mitigation: "Leader opens extremely large positions to force followers into liquidation. Mitigation: allocationRatio = min(1, vaultTVL / leaderTradeNotional) prevents overexposure. Vault capacity limits prevent concentration. High-water mark prevents fee extraction during drawdowns. Leaders cannot force followers into disproportionate risk." },
+                    { threat: "CopyVault Withdrawal Timing", mitigation: "Follower withdraws immediately after profitable trade. This is permitted — it is not an attack. Vault share accounting (ERC4626) is resistant to withdrawal timing games by design; all share values and TVL are updated atomically per trade." },
                     { threat: "Sybil Attack (P2P)", mitigation: "BSV wallet staking requirement for P2P liquidity providers. On-chain reputation score based on settlement history. Arbitration panel with supermajority threshold." },
-                    { threat: "API Server Compromise", mitigation: "API server holds zero funds and zero private keys. Compromise affects order book state only — all settlement is on-chain and unaffected. State is reconstructible from BSV chain." },
-                    { threat: "DDoS on Application Layer", mitigation: "CDN + rate limiting + circuit breakers. BSV settlement layer is independent and continues operating during application downtime. Orders already on-chain self-execute." },
+                    { threat: "UI Spoofing / Phishing", mitigation: "Wallet addresses are displayed directly from the connected wallet provider — no address substitution is possible at the OrahDEX layer. OrahDEX never requests seed phrases, private keys, or recovery words. Any interface that asks for these is fraudulent." },
+                    { threat: "API Server Compromise", mitigation: "A compromised server cannot steal funds: (1) all trades require user signatures; (2) server holds no private keys; (3) server holds no user assets; (4) server holds no identity; (5) settlement occurs on BSV, not the server. Compromise affects order book state only — state is fully reconstructible from BSV chain." },
+                    { threat: "Database Compromise", mitigation: "Database compromise cannot alter or fabricate trade records because settlement proofs are stored on-chain (BSV OP_RETURN) and are immutable. The on-chain record is the authoritative truth; the database is an indexed cache." },
+                    { threat: "Bridge Censorship", mitigation: "No relayer can censor settlement because users can broadcast claim and refund transactions directly to both chains — no relayer coordination is required for the on-chain enforcement path. Censorship by relayers delays, but cannot block, fund recovery." },
+                    { threat: "DDoS on Application Layer", mitigation: "Stateless servers with horizontal scaling — no single server is a point of failure. CDN + rate limiting + circuit breakers. BSV settlement layer is independent and continues operating during application downtime." },
                   ].map(({ threat, mitigation }) => (
                     <div key={threat} className="p-3 bg-secondary/40 border border-border rounded-xl space-y-1">
                       <p className="text-xs font-bold text-foreground">{threat}</p>
@@ -1016,6 +1035,26 @@ OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
                   <li>On-chain settlement records publicly verifiable by any third party at any time</li>
                   <li>Open-source protocol code — no security through obscurity</li>
                 </ul>
+              </Sub>
+              <Sub title="11.4 Protocol-Level Attack Mitigations">
+                <p className="font-semibold text-sm mb-2">Futures Liquidation — 3-Sample Confirmation Window</p>
+                <p>The liquidation engine uses a 3-sample confirmation window to prevent single-tick mark-price manipulation from triggering liquidations. A position is only liquidated when the mark price crosses the liquidation threshold for three consecutive 1-second samples. A single manipulated tick cannot trigger liquidation.</p>
+
+                <p className="font-semibold text-sm mt-4 mb-2">Chain Reorganisation — Automatic Rebroadcast</p>
+                <p>OrahDEX monitors BSV confirmation depth for all active settlement proofs. If a BSV reorg invalidates a settlement proof (depth falls below 6 confirmations), the system automatically rebroadcasts the OP_RETURN transaction until the required 6-confirmation finality is re-achieved. Reorgs deeper than 6 blocks are treated as economically infeasible under normal network conditions.</p>
+
+                <p className="font-semibold text-sm mt-4 mb-2">Denial-of-Service Resilience</p>
+                <p>OrahDEX application servers are stateless and horizontally scalable — no single server is a point of failure. The BSV settlement layer operates independently of the application layer; even total application-layer outage does not affect on-chain settlement, HTLC time-locks, or fund safety.</p>
+
+                <InfoBox title="Regulatory Seizure Immunity" color="green">
+                  <p>OrahDEX cannot be seized because it holds:</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 text-xs text-muted-foreground">
+                    {["No user assets (non-custodial)", "No private keys", "No user identity (zero PII)", "No admin keys over protocol", "No custody of any funds", "No single point of shutdown"].map(p => (
+                      <p key={p} className="flex items-start gap-1"><span className="text-green-400 shrink-0">✓</span>{p}</p>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs">The protocol is a set of open-source cryptographic rules deployed on a public blockchain, not a company with seizable assets. A seizure order against OrahDEX is structurally equivalent to a seizure order against the rules of mathematics.</p>
+                </InfoBox>
               </Sub>
             </Section>
 
