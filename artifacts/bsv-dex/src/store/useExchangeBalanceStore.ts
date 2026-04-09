@@ -100,6 +100,6 @@ export const useExchangeBalanceStore = create<ExchangeBalanceState>()(
           return { balances: next };
         }),
     }),
-    { name: "orahdex-exchange-balances-v1" }
+    { name: "orahdex-exchange-balances-v2" }
   )
 );
