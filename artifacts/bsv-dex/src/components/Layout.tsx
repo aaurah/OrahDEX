@@ -298,10 +298,6 @@ export function Layout({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [notifOpen]);
 
-  const [bannerDismissed, setBannerDismissed] = useState(() => sessionStorage.getItem("maintenance_banner") === "1");
-  const dismissBanner = () => { sessionStorage.setItem("maintenance_banner", "1"); setBannerDismissed(true); };
-
-
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
       {/* ── Demo mode ribbon ── */}
@@ -312,14 +308,6 @@ export function Layout({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      {/* ── Maintenance / testing ribbon ── */}
-      {!isDemo && !bannerDismissed && (
-        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 text-emerald-400 text-xs font-medium z-50">
-          <span className="text-emerald-400">⚡</span>
-          <span>OrahDEX is <strong>live</strong> — 958 markets, 10 chains, BSV-settled. Early access. Some features rolling out soon.</span>
-          <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400/60 hover:text-emerald-300 transition-colors text-base leading-none">✕</button>
-        </div>
-      )}
       <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">
         <div className="flex items-center gap-2">
           {/* Hamburger — left side */}
