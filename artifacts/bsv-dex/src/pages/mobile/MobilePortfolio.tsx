@@ -177,7 +177,10 @@ export function MobilePortfolio() {
     return s + amt * p;
   }, 0);
 
-  const total = tokensTotal + lpTotalValue + exchangeTotalValue;
+  // LP positions are virtual (ETH stays on-chain) so their value is already
+  // captured in tokensTotal via evmBalances. Only add exchangeTotalValue which
+  // represents settled OrahDEX balances not reflected in the wallet.
+  const total = tokensTotal + exchangeTotalValue;
   const nonZero = rows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
     ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
@@ -410,7 +413,7 @@ export function MobilePortfolio() {
               );
             })()}
 
-            {/* LP value breakdown — shown when user has liquidity positions */}
+            {/* LP value breakdown — informational only (assets stay on-chain, already in token total) */}
             {lpTotalValue > 0 && (
               <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border/50">
                 <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -418,7 +421,7 @@ export function MobilePortfolio() {
                   <span>DeFi (LP positions)</span>
                 </div>
                 <span className="text-[11px] font-semibold text-primary">
-                  +${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ${lpTotalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} allocated
                 </span>
               </div>
             )}
