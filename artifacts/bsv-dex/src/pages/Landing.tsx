@@ -175,18 +175,49 @@ function OraAiSection() {
   const [insights, setInsights] = useState<{ id: number; content: string; sentiment?: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Static fallback shown immediately if the AI call takes too long or fails
+  const FALLBACK_INSIGHTS = [
+    { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
+    { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+  ];
+
   useEffect(() => {
     let cancelled = false;
-    fetch(`${BASE}/api/ai/insights`)
+
+    // 8-second timeout — show fallback if AI is too slow
+    const timer = setTimeout(() => {
+      if (!cancelled) { setInsights(FALLBACK_INSIGHTS); setLoading(false); }
+    }, 8000);
+
+    const controller = new AbortController();
+    fetch(`${BASE}/api/ai/insights`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (!cancelled && Array.isArray(data?.insights)) {
-          setInsights(data.insights.slice(0, 3));
+        if (cancelled) return;
+        clearTimeout(timer);
+        const raw: unknown[] = Array.isArray(data?.insights) ? data.insights : [];
+        if (raw.length > 0) {
+          const mapped = raw.slice(0, 3).map((item, i) => {
+            // API may return strings or {id, content, sentiment} objects
+            if (typeof item === "string") {
+              const lower = item.toLowerCase();
+              const sentiment = lower.includes("bullish") ? "bullish" : lower.includes("bearish") ? "bearish" : "neutral";
+              return { id: i + 1, content: item, sentiment };
+            }
+            return { id: i + 1, content: String((item as any).content ?? item), sentiment: (item as any).sentiment };
+          });
+          setInsights(mapped);
+        } else {
+          setInsights(FALLBACK_INSIGHTS);
         }
+        setLoading(false);
       })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) { clearTimeout(timer); setInsights(FALLBACK_INSIGHTS); setLoading(false); }
+      });
+
+    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
   }, []);
 
   const sentimentIcon = (s?: string) => {
