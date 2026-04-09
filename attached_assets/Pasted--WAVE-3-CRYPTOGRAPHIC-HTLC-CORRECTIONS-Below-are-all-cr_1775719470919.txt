@@ -1,0 +1,293 @@
+✅ WAVE 3 — CRYPTOGRAPHIC & HTLC CORRECTIONS
+
+Below are all cryptographic issues, missing constraints, and required corrections.
+
+---
+
+1. HTLC Script — Missing OP_SIZE Check (Critical)
+
+Your script:
+
+OP_IF
+  OP_SHA256 <H> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ELSE
+  <LockTime_T1> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  OP_DUP OP_HASH160 <MakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ENDIF
+
+
+❌ Problem
+
+This script does not enforce preimage length.
+A malicious actor could supply a preimage of any size that hashes to H.
+
+✅ Fix
+
+Add:
+
+OP_SIZE 32 OP_EQUALVERIFY
+
+
+This ensures R is exactly 32 bytes.
+
+Corrected Script:
+
+OP_IF
+  OP_SIZE 32 OP_EQUALVERIFY
+  OP_SHA256 <H> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ELSE
+  <LockTime_T1> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  OP_DUP OP_HASH160 <MakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ENDIF
+
+
+This is the canonical BSV HTLC script.
+
+---
+
+2. HTLC Time-Lock Relationship — Needs Explicit Safety Margin
+
+You wrote:
+
+T₂ < T₁
+
+Correct but incomplete.
+
+Required correction:
+
+T_2 = T_1 - \Delta T
+
+
+Where:
+
+• ΔT is the safety margin
+• typically 1–6 hours depending on chain finality
+
+
+Why this matters
+
+If T₂ is too close to T₁, the taker may not have enough time to claim funds after R is revealed.
+
+---
+
+3. HTLC Refund Logic — Needs Explicit Branch Explanation
+
+Your paper implies the refund logic but does not formally state:
+
+Correct refund conditions:
+
+• Maker refund:
+If taker never locks their leg → Maker’s HTLC refunds at T₁.
+• Taker refund:
+If maker never reveals R → Taker’s HTLC refunds at T₂.
+
+
+Required addition:
+
+Refunds are enforced by Bitcoin Script and EVM time-locks; no relayer, admin key, or off-chain actor can prevent refund execution.
+
+This is a major selling point — make it explicit.
+
+---
+
+4. HTLC Preimage Entropy — Notation Correction
+
+You wrote:
+
+R ∈ {0,1}²⁵⁶
+
+Correct notation:
+
+R \in \{0,1\}^{256}
+
+
+---
+
+5. HTLC Secret Reveal — Missing Cross-Chain Propagation Rule
+
+You wrote:
+
+Maker claims Taker’s funds by publishing R on-chain, simultaneously revealing R to Taker.
+
+Correct, but missing the explicit rule:
+
+The first chain to publish R becomes the source of truth; the other chain must observe R before expiry.
+
+This is important for relayer logic.
+
+---
+
+6. HTLC Atomicity — Missing Explicit Guarantee Statement
+
+You must explicitly state:
+
+Atomicity is guaranteed because both chains enforce the same preimage R and complementary time-locks. Either both legs settle or both refund.
+
+This is the core cryptographic guarantee.
+
+---
+
+7. OP_RETURN Payload — Missing Hash Commitment Option
+
+Your payload:
+
+ORAH|v1|tradeId|pair|buyer|seller|amount|price|timestamp
+
+
+This is fine, but you should add:
+
+Optional: include a SHA256 hash of the full trade JSON for tamper-evident off-chain auditability.
+
+Example:
+
+ORAH|v1|tradeId|pair|buyer|seller|amount|price|timestamp|hash
+
+
+This allows:
+
+• off-chain trade metadata
+• on-chain verification
+• zero bloat
+
+
+---
+
+8. OP_RETURN Byte Size — Missing Fee Calculation
+
+You must add:
+
+Typical OP_RETURN settlement proof is 120–200 bytes.
+At 1 sat/byte, cost ≈ $0.0001.
+
+This makes your fee claim mathematically grounded.
+
+---
+
+9. OP_RETURN Double-SHA256 — Needs Clarification
+
+You wrote:
+
+txid = SHA256(SHA256(raw_tx_bytes))
+
+Correct, but you should add:
+
+This matches the Bitcoin/BSV consensus rule for transaction ID computation.
+
+This prevents confusion with SegWit txid/wtxid differences on BTC.
+
+---
+
+10. Relayer “Slashing” — Cryptographically Incorrect
+
+You wrote:
+
+malicious relayers are automatically slashed by time-lock expiry mechanics.
+
+This is not slashing.
+
+Correct version:
+
+Malicious relayers cannot steal funds; the HTLC simply refunds automatically.
+No slashing is required because no relayer ever holds user funds.
+
+This is a major correction.
+
+---
+
+11. Cross-Chain HTLC on EVM — Missing Solidity Pseudocode
+
+You describe the EVM HTLC but do not show the structure.
+
+You should add:
+
+bytes32 public hashlock;
+uint256 public timelock;
+address public sender;
+address public receiver;
+
+function claim(bytes32 _preimage) external {
+    require(sha256(_preimage) == hashlock);
+    require(msg.sender == receiver);
+    selfdestruct(receiver);
+}
+
+function refund() external {
+    require(block.timestamp >= timelock);
+    require(msg.sender == sender);
+    selfdestruct(sender);
+}
+
+
+This makes the architecture transparent and auditable.
+
+---
+
+12. Cross-Chain HTLC — Missing Replay Protection
+
+You must explicitly state:
+
+Each HTLC includes a unique tradeId to prevent replay attacks across chains.
+
+This is essential.
+
+---
+
+13. Watchtower Logic — Missing Trigger Condition
+
+You wrote:
+
+watchtower nodes detect stalled HTLCs and trigger automated refund broadcasts
+
+Correct, but incomplete.
+
+Required addition:
+
+A stalled HTLC is one where no claim transaction is detected before T₂ − safetyMargin.
+
+---
+
+14. BSV Finality — Needs Clarification
+
+You wrote:
+
+Finality ~10 min (probabilistic)
+
+Correct, but you should add:
+
+OrahDEX treats 6 confirmations as final for settlement proofs.
+
+This is standard practice.
+
+---
+
+15. Hash Function — Missing SHA256d Clarification
+
+You wrote:
+
+SHA-256d PoW anchored
+
+You should explicitly define:
+
+SHA-256d = SHA256(SHA256(data))
+
+This avoids confusion with single-SHA256 used in some protocols.
+
+---
+
+🎯 Wave 3 Summary
+
+You now have:
+
+• fully corrected HTLC scripts
+• correct time-lock relationships
+• correct refund logic
+• correct preimage constraints
+• correct OP_RETURN structure
+• correct relayer security model
+• correct cross-chain atomicity guarantees
+• correct cryptographic notation
+
+
+This makes the cryptographic layer sound, auditable, and regulator-proof.

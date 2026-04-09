@@ -380,7 +380,7 @@ export function WhitePaper() {
                         ["Avg. tx fee", "$0.0001–0.001", "$1–200 (varies)", "$0.00025"],
                         ["Tx throughput", ">50,000 TPS (stress-test peak)", "~15 TPS", "~3,000 TPS (with degradation)"],
                         ["UTXO model", "Yes — parallel, stateless", "No — account-based", "No — account-based"],
-                        ["Finality", "~10 min (probabilistic)", "~12s (PoS)", "~0.4s (single-slot)"],
+                        ["Finality", "~10 min (probabilistic) · OrahDEX treats 6 confirmations as final for settlement proofs", "~12s (PoS)", "~0.4s (single-slot)"],
                         ["Script programmability", "Full Bitcoin Script", "EVM (Turing-complete)", "Programs (LLVM)"],
                         ["Immutability guarantee", "SHA-256d PoW anchored", "PoS (can be forked)", "PoS (validator dependent)"],
                       ].map(([prop, bsv, eth, sol]) => (
@@ -404,9 +404,14 @@ export function WhitePaper() {
                   <li>Maker generates cryptographic secret preimage <span className="font-mono text-green-400">R ∈ {"\\{0,1\\}^{256}"}</span> (256 bits of entropy — 32-byte random nonce) and computes commitment <span className="font-mono text-green-400">H = SHA256(R)</span>.</li>
                   <li>Maker broadcasts BSV HTLC locking script committing to H with a time lock T₁ (e.g., 144 blocks ≈ 24 hours).</li>
                   <li>Taker verifies H on BSV chain and broadcasts a reciprocal locking transaction on the destination chain (EVM / TRON) with time lock T₂ {"< T₁"} — specifically T₂ = T₁ − ΔT where ΔT is the safety margin (typically 1–6 h, configurable per asset). This ensures Maker can always claim before T₂ expires.</li>
-                  <li>Maker claims Taker's funds by publishing R on-chain, simultaneously revealing R to Taker.</li>
-                  <li>Taker uses revealed R to claim Maker's BSV HTLC output. Both legs settle atomically — either both complete or both refund automatically.</li>
+                  <li>Maker claims Taker's funds by publishing R on-chain. The first chain to record R becomes the source of truth — the other chain's relayer and watchtower observe R from on-chain data before T₂ expires, enabling Taker to claim without any off-chain communication.</li>
+                  <li>Taker uses revealed R to claim Maker's BSV HTLC output. Both legs settle atomically — either both complete or both refund automatically. Atomicity is guaranteed because both chains enforce the same preimage R and complementary time-locks; no partial settlement is possible.</li>
                 </ol>
+                <InfoBox title="HTLC Refund Conditions — Cryptographically Enforced" color="amber">
+                  <p><strong>Maker refund:</strong> If Taker never locks their leg → Maker's HTLC refunds automatically at T₁. No action required.</p>
+                  <p><strong>Taker refund:</strong> If Maker never reveals R → Taker's HTLC refunds automatically at T₂.</p>
+                  <p className="mt-1 text-muted-foreground">Refunds are enforced by Bitcoin Script and EVM time-locks. No relayer, no admin key, and no off-chain actor can prevent or delay refund execution. The cryptographic guarantee is absolute.</p>
+                </InfoBox>
                 <Code>{`BSV HTLC Locking Script:
 OP_IF
   OP_SIZE 32 OP_EQUALVERIFY          ← rejects malformed preimages (not exactly 32 bytes)
@@ -421,20 +426,47 @@ Security properties:
   • R is never broadcast until Taker's leg is locked
   • If Taker fails to lock within T2: Maker's HTLC refunds at T1
   • If Maker fails to reveal R: Taker's leg refunds at T2 < T1
-  • No custodian. No escrow. No trust. Pure cryptographic enforcement.`}</Code>
+  • No custodian. No escrow. No trust. Pure cryptographic enforcement.
+  • Each HTLC includes a unique tradeId — prevents replay attacks across chains
+    (same R cannot be reused: H is committed per-trade and tradeId is part of the on-chain record)
+
+EVM HTLC Contract Structure (Solidity pseudocode):
+bytes32 public hashlock;    // H = SHA256(R)
+uint256 public timelock;    // T₂ block timestamp
+address public sender;      // Maker
+address public receiver;    // Taker
+
+function claim(bytes32 _preimage) external {
+    require(sha256(abi.encode(_preimage)) == hashlock);
+    require(msg.sender == receiver);
+    payable(receiver).transfer(address(this).balance);
+}
+
+function refund() external {
+    require(block.timestamp >= timelock);   // only after T₂ expires
+    require(msg.sender == sender);
+    payable(sender).transfer(address(this).balance);
+}`}</Code>
               </Sub>
 
               <Sub title="4.3 OP_RETURN Settlement Proofs">
                 <p>Every matched trade — including copy-traded vault orders — produces a BSV OP_RETURN transaction. The payload is pipe-delimited and permanently recorded on-chain:</p>
                 <Code>{`OP_RETURN payload format:
-ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>
+ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>[|<hash>]
+  (tradeId is globally unique per trade — prevents replay attacks)
 
-Example:
+Example (base):
 ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000
   (Typical OP_RETURN payload size: 80–200 bytes — within both protocol and practical miner limits)
 
+Optional hash commitment (tamper-evident audit):
+ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000|SHA256(full_trade_JSON)
+  Including SHA256(full_trade_JSON) allows off-chain metadata to be verified against the on-chain
+  commitment without bloating the payload — zero-bloat auditability.
+
 Txid computation:
-  txid = SHA256(SHA256(raw_tx_bytes))   [standard double-SHA256]
+  txid = SHA256(SHA256(raw_tx_bytes))   [double-SHA256 — matches Bitcoin/BSV consensus rule for txid]
+  This is distinct from BTC SegWit's wtxid; BSV has no SegWit — all txids are computed identically.
   This matches exactly what WhatsOnChain and all BSV explorers compute.
 
 Properties:
@@ -932,8 +964,13 @@ Security: breaking ECDSA requires solving discrete log on secp256k1
               </Sub>
 
               <Sub title="12.2 SHA-256d — Transaction ID Computation">
-                <Code>{`BSV transaction ID:
-  txid = SHA256(SHA256(raw_tx_bytes))   [double-SHA256]
+                <Code>{`Definition:
+  SHA-256d(data) = SHA256(SHA256(data))   [double application of SHA-256]
+  Used for: BSV transaction IDs, block header hashes, Merkle tree nodes.
+  Distinct from single SHA-256 used in some other protocols.
+
+BSV transaction ID:
+  txid = SHA256(SHA256(raw_tx_bytes))   [double-SHA256 = SHA-256d]
 
 SHA-256 properties:
   • Pre-image resistance:     given H, cannot find M such that SHA256(M)=H
