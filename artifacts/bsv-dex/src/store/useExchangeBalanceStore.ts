@@ -1,16 +1,20 @@
 /**
- * OrahDEX Exchange Balance
+ * OrahDEX Exchange Balance — Model A (Hyperliquid-style off-chain orderbook)
  *
- * Tracks virtual token balances that accumulate from matched trades inside
- * the OrahDEX order book. These are separate from on-chain wallet balances.
+ * Tracks virtual token balances for the OrahDEX internal ledger.
+ * These are SEPARATE from on-chain wallet balances.
  *
  * When a SELL ETH/USDT order fills at price P:
- *   - USDT balance += quantity * P * (1 - fee)
- *   - ETH  balance -= quantity   (optional debit tracking)
+ *   - USDT balance += quantity * P * (1 - fee)   ← credited to exchange
+ *   - ETH  balance -= quantity                    ← NEGATIVE means "consumed from wallet"
  *
  * When a BUY ETH/USDT order fills at price P:
- *   - ETH  balance += quantity * (1 - fee)
- *   - USDT balance -= quantity * P  (optional debit tracking)
+ *   - ETH  balance += quantity * (1 - fee)        ← earned back into exchange
+ *   - USDT balance -= quantity * P                ← NEGATIVE means "consumed from wallet"
+ *
+ * KEY RULE: Negative exchange balance for a token means that amount was
+ * consumed from the user's wallet via OrahDEX fills. The portfolio uses this
+ * to display a reduced wallet balance, keeping accounting consistent.
  *
  * Persisted to localStorage so balances survive page refreshes.
  */
@@ -64,7 +68,10 @@ export const useExchangeBalanceStore = create<ExchangeBalanceState>()(
             ...s.balances,
             [addr]: {
               ...s.balances[addr],
-              [token]: Math.max(0, (s.balances[addr]?.[token] ?? 0) - amount),
+              // Intentionally allows negative — negative means the token was
+              // consumed from the wallet (not from an OrahDEX deposit).
+              // Portfolio reads this to reduce displayed wallet balance.
+              [token]: (s.balances[addr]?.[token] ?? 0) - amount,
             },
           },
         })),

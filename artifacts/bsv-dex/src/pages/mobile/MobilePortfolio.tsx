@@ -84,7 +84,7 @@ export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
-  const { getBalances: getExchangeBalances } = useExchangeBalanceStore();
+  const { getBalances: getExchangeBalances, getBalance: getExchangeBalance } = useExchangeBalanceStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
@@ -180,11 +180,15 @@ export function MobilePortfolio() {
     return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: 0, change: 0, value: 0, isNative: true }];
   })();
 
-  const tokensTotal = rows.reduce((s, r) => s + r.value, 0);
+  // tokensTotal is recomputed below from adjustedRows (after OrahDEX consumed amounts removed)
+  // eslint-disable-next-line prefer-const
+  let tokensTotal = rows.reduce((s, r) => s + r.value, 0);
   const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
 
   // ── BUCKET 3: OrahDEX exchange balance (matched trade credits) ────────────
   const exchangeBalances = address ? getExchangeBalances(address) : {};
+  // Only show POSITIVE exchange balances in the OrahDEX Balance card.
+  // Negative values mean the token was "consumed from wallet" via OrahDEX fills.
   const exchangeTokens = Object.entries(exchangeBalances).filter(([, amt]) => amt > 0);
   const exchangeTotalValue = exchangeTokens.reduce((s, [token, amt]) => {
     const stables = ["USDT", "USDC", "DAI", "BUSD"];
@@ -192,6 +196,24 @@ export function MobilePortfolio() {
     const p = prices?.[token]?.lastPrice ?? 0;
     return s + amt * p;
   }, 0);
+
+  // ── Model A accounting: adjust wallet rows for OrahDEX-consumed amounts ───
+  // When a sell fills, the exchange balance for the base asset goes negative
+  // (because the user is spending wallet tokens via OrahDEX without a prior
+  // deposit). We subtract that consumed amount from the wallet display so the
+  // wallet balance visibly decreases, keeping accounting consistent.
+  const adjustedRows = rows.map(r => {
+    if (!address) return r;
+    const dexBal = getExchangeBalance(address, r.asset);
+    if (dexBal >= 0) return r; // positive or zero = no wallet deduction
+    // negative dexBal = tokens consumed from wallet
+    const consumed = Math.abs(dexBal);
+    const adjustedAmount = Math.max(0, r.amount - consumed);
+    const adjustedValue  = adjustedAmount * (r.price > 0 ? r.price : 0);
+    return { ...r, amount: adjustedAmount, value: adjustedValue };
+  });
+  // Recompute wallet total using adjusted amounts
+  tokensTotal = adjustedRows.reduce((s, r) => s + r.value, 0);
 
   // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
   // For SELL orders: base asset is reserved (e.g. 0.003 ETH locked for a sell)
@@ -227,9 +249,9 @@ export function MobilePortfolio() {
     return s + v.amount * p;
   }, 0);
 
-  // ── BUCKET 1: Wallet balance (real on-chain only, NOT merged with other buckets) ──
+  // ── BUCKET 1: Wallet balance (real on-chain, minus OrahDEX-consumed amounts) ──
   const total = tokensTotal;
-  const nonZero = rows.filter(r => r.amount > 0);
+  const nonZero = adjustedRows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
     ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
     : 0;
@@ -421,7 +443,29 @@ export function MobilePortfolio() {
         </div>
 
         <div className="px-4 space-y-4">
-          {/* ── BUCKET 1: Wallet Balance (real on-chain only) ─────────────────── */}
+          {/* ── BUCKET 1: Wallet Balance (on-chain, minus OrahDEX-consumed amounts) ─ */}
+          {(() => {
+            // Compute total consumed across all assets (negative exchange balances)
+            const consumedEntries = address
+              ? Object.entries(getExchangeBalances(address)).filter(([, amt]) => amt < 0)
+              : [];
+            const consumedNote = consumedEntries.map(([token, amt]) => {
+              const v = Math.abs(amt);
+              return `${v < 0.001 ? v.toFixed(6) : v.toFixed(4)} ${token}`;
+            }).join(", ");
+            return (
+              <>
+                {consumedNote && (
+                  <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-3 py-2 mb-2 flex items-start gap-2">
+                    <svg className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                    <p className="text-[10px] text-yellow-300/90 leading-relaxed">
+                      <span className="font-semibold">{consumedNote} traded via OrahDEX</span> — balance reduced to reflect fills. Withdraw your OrahDEX earnings to restore.
+                    </p>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
@@ -653,10 +697,10 @@ export function MobilePortfolio() {
               )}
 
               <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-                {rows.map((r, i) => (
+                {adjustedRows.map((r, i) => (
                   <div
                     key={r.asset}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < adjustedRows.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"

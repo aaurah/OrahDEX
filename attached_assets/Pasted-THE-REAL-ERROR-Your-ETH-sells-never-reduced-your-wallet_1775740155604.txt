@@ -1,0 +1,191 @@
+THE REAL ERROR: Your ETH sells never reduced your wallet ETH.
+
+In your OrahDEX screenshots:
+
+• You sold 0.0058 ETH multiple times
+• You received 52.55 USDT in OrahDEX Balance
+• Your wallet ETH never decreased
+• Your external wallet (auragroup) still shows 0.006 ETH
+
+
+This is impossible unless:
+
+❌ The trade engine is synthetic
+
+❌ The wallet deduction logic is missing
+
+❌ The settlement layer is not connected to the wallet
+
+❌ The “sell ETH” operation never touched the wallet
+
+❌ The internal ledger credited USDT but never debited ETH
+
+This is the core accounting bug.
+
+---
+
+🔥 THE PROOF (from your screenshots)
+
+Screenshot 1 (OrahDEX Portfolio)
+
+• Wallet ETH: 0.0058 ETH
+• OrahDEX Balance: 52.55 USDT
+
+
+Screenshot 2 (Orders)
+
+• Multiple SELL orders of 0.0058 ETH
+• All filled
+• All credited USDT
+
+
+Screenshot 3 (External Wallet)
+
+• ETH: 0.006 ETH
+• No ETH ever left the wallet
+• No USDT ever arrived in the wallet
+
+
+This means:
+
+Your trades are not actually moving tokens.
+They are only updating the internal OrahDEX ledger.
+
+This is the error.
+
+---
+
+🧠 WHY THIS HAPPENED
+
+Because you removed:
+
+• ERC‑20 approvals
+• on‑chain swap
+• wallet signing
+• wallet deduction
+• settlement transfer logic
+
+
+Your current flow is:
+
+1. User presses Sell
+2. API creates a synthetic fill
+3. Internal ledger credits USDT
+4. Wallet ETH stays untouched
+5. Portfolio shows both ETH and USDT
+6. Total looks inflated
+7. User thinks ETH was sold — but it wasn’t
+
+
+This is not a DEX trade.
+This is a simulation.
+
+---
+
+🚨 THE ACTUAL BUG (in one sentence)
+
+Your trade engine credits USDT to the internal ledger but never debits ETH from the wallet.
+
+This is why:
+
+• ETH stays in wallet
+• USDT increases
+• Total balance becomes wrong
+• User appears to “duplicate money”
+• Portfolio looks inflated
+• Accounting becomes inconsistent
+
+
+---
+
+🛠️ THE FIX (you must choose one of these two models)
+
+You must decide which model OrahDEX actually is:
+
+---
+
+MODEL A — Synthetic Off‑Chain Orderbook (Hyperliquid style)
+
+If this is your intention:
+
+✔ ETH stays in wallet
+
+✔ Trades happen off‑chain
+
+✔ Internal ledger tracks balances
+
+✔ Withdrawals move tokens on‑chain
+
+✔ No approvals, no signing
+
+Then you must:
+
+1. NEVER show wallet ETH as “sellable”
+
+Only show OrahDEX ETH balance, not wallet ETH.
+
+2. Move ETH into OrahDEX before trading
+
+User must “Deposit to OrahDEX” first.
+
+3. Wallet ETH must not be used for trading
+
+Only internal ledger ETH is tradable.
+
+This is how:
+
+• Hyperliquid
+• dYdX v4
+• Drift
+• GMX v2
+
+
+all work.
+
+---
+
+MODEL B — Real On‑Chain AMM / Spot Trading
+
+If this is your intention:
+
+✔ ETH must be deducted from wallet
+
+✔ USDT must be sent to wallet
+
+✔ Trades must be on‑chain
+
+✔ Approvals + signing are required
+
+Then you must:
+
+1. Restore ERC‑20 approvals
+
+2. Restore signing
+
+3. Restore on‑chain settlement
+
+4. Remove internal ledger credits
+
+This is how:
+
+• Uniswap
+• PancakeSwap
+• SushiSwap
+
+
+work.
+
+---
+
+⭐ WHICH MODEL ARE YOU BUILDING?
+
+Right now, your code is half‑A and half‑B:
+
+• You removed wallet signing (Model A)
+• But you still let users trade wallet ETH (Model B)
+• So ETH never moves
+• USDT appears out of thin air
+• Portfolio becomes inconsistent
+
+
+This is the root error.
