@@ -609,40 +609,52 @@ export function MobilePortfolio() {
           </button>
 
           {/* ── BUCKET 3: OrahDEX Exchange Balance (trade credits, NOT wallet) ── */}
-          {exchangeTotalValue > 0 && (
-            <div className="bg-amber-500/5 border border-amber-500/25 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <Zap size={14} className="text-amber-400" />
-                  <span className="text-sm font-bold text-amber-300">OrahDEX Balance</span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wide">Exchange</span>
-                </div>
-                <span className="text-base font-bold text-amber-300">{formatQuoteAmount(exchangeTotalValue, quoteCurrency)}</span>
+          <div className="bg-amber-500/5 border border-amber-500/25 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className="text-amber-400" />
+                <span className="text-sm font-bold text-amber-300">OrahDEX Balance</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wide">Exchange</span>
               </div>
-              <p className="text-[10px] text-muted-foreground mb-3">
-                Tokens earned from filled trades on the OrahDEX order book. Not in your wallet — withdraw to claim.
-              </p>
-              <div className="space-y-2">
-                {exchangeTokens.map(([token, amt]) => {
-                  const isStable = ["USDT","USDC","DAI","BUSD"].includes(token);
-                  const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
-                  const val = amt * p;
-                  return (
-                    <div key={token} className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground">{token}</span>
-                      <div className="text-right">
-                        <span className="text-xs font-mono text-foreground">{amt.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                        {val > 0 && <span className="text-[10px] text-muted-foreground ml-2">≈ {formatQuoteAmount(val, quoteCurrency)}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="text-[10px] text-amber-400/70 text-right mt-2 pt-2 border-t border-amber-500/15">
-                Total ≈ {formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
-              </div>
+              <span className="text-base font-bold text-amber-300">
+                {exchangeTotalValue > 0 ? formatQuoteAmount(exchangeTotalValue, quoteCurrency) : "—"}
+              </span>
             </div>
-          )}
+            <p className="text-[10px] text-muted-foreground mb-3">
+              Your internal trading balance on OrahDEX. Deposit ETH to start trading — not held in your wallet.
+            </p>
+            {exchangeTokens.length > 0 ? (
+              <>
+                <div className="space-y-2">
+                  {exchangeTokens.map(([token, amt]) => {
+                    const isStable = ["USDT","USDC","DAI","BUSD"].includes(token);
+                    const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
+                    const val = amt * p;
+                    return (
+                      <div key={token} className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-foreground">{token}</span>
+                        <div className="text-right">
+                          <span className="text-xs font-mono text-foreground">{amt.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                          {val > 0 && <span className="text-[10px] text-muted-foreground ml-2">≈ {formatQuoteAmount(val, quoteCurrency)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="text-[10px] text-amber-400/70 text-right mt-2 pt-2 border-t border-amber-500/15">
+                  Total ≈ {formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => setDepositOpen(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
+              >
+                <ArrowDownToLine size={13} className="text-amber-400" />
+                <span className="text-xs font-semibold text-amber-300">Deposit to start trading</span>
+              </button>
+            )}
+          </div>
 
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
