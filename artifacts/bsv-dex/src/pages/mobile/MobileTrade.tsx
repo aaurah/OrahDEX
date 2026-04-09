@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
@@ -282,7 +282,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [orderResult, setOrderResult] = useState<{ matched: boolean; txid?: string; side: string; base: string; amount: string; price: string } | null>(null);
+  // Dedup guard — prevents double toasts when the same fill event fires twice
+  const lastProcessedTradeIdRef = useRef<string | null>(null);
+
+  const [orderResult, setOrderResult] = useState<{
+    matched: boolean; txid?: string; side: string; base: string;
+    avgFillPrice: number; filledQty: number; fee: number;
+  } | null>(null);
 
   const orderMutation = useMutation({
     mutationFn: async (body: object) => {
@@ -297,30 +303,49 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onSuccess: (data, variables: any) => {
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
-      const fillPx   = data?.price ?? parseFloat(variables?.price ?? "0");
+      const tradeId  = data?.id ?? data?.txid ?? null;
       const ordSide  = variables?.side ?? side;
-      const ordAmt   = parseFloat(variables?.quantity ?? amount ?? "0");
       const ordBase  = base;
-      const ordPrice = variables?.price?.toString() ?? "";
 
-      setOrderResult({ matched, txid, side: ordSide, base: ordBase, amount: ordAmt.toString(), price: ordPrice });
+      // ── Fill data: use API response fields, never wallet/balance diff ────────
+      // data.filledQuantity — actual qty filled (base asset)
+      // data.price          — avgFillPrice (set by server after match, always present for market orders)
+      // data.total          — filledQty × fillPrice (quote currency gross)
+      // data.fee            — 0.1% of gross in quote currency
+      const filledQty    = data?.filledQuantity ?? parseFloat(variables?.quantity ?? amount ?? "0");
+      const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : 0);
+      const fee          = data?.fee ?? 0;
+
+      setOrderResult({ matched, txid, side: ordSide, base: ordBase, avgFillPrice, filledQty, fee });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {
-        // Credit the received token to the exchange balance ledger
-        applyFill(address, ordSide as "buy" | "sell", ordBase, quote, ordAmt, fillPx);
+        // Dedup: skip if we already toasted this trade fill
+        if (tradeId && tradeId === lastProcessedTradeIdRef.current) return;
+        if (tradeId) lastProcessedTradeIdRef.current = tradeId;
 
-        const receivedQty  = ordSide === "sell"
-          ? (ordAmt * fillPx * 0.999).toFixed(2)
-          : (ordAmt * 0.999).toFixed(6);
-        const receivedTok  = ordSide === "sell" ? quote : ordBase;
+        // Credit the exchange balance ledger
+        applyFill(address, ordSide as "buy" | "sell", ordBase, quote, filledQty, avgFillPrice);
+
+        // Compute credited amount from fill payload — no wallet/balance diff
+        let receivedQty: string;
+        let receivedTok: string;
+        if (ordSide === "sell") {
+          const gross = filledQty * avgFillPrice;
+          const net   = gross - fee;
+          receivedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
+          receivedTok = quote;
+        } else {
+          receivedQty = filledQty > 0 ? filledQty.toFixed(6) : "0";
+          receivedTok = ordBase;
+        }
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `${receivedQty} ${receivedTok} credited to your OrahDEX balance · view in Portfolio → DeFi`,
+          description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · view in Portfolio → DeFi`,
         });
         addNotification({
           type: "order_filled",
@@ -1426,15 +1451,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {orderResult.matched
                     ? (() => {
-                        const receivedQty  = orderResult.side === "sell"
-                          ? (parseFloat(orderResult.amount) * parseFloat(orderResult.price || "0") * 0.999).toFixed(2)
-                          : (parseFloat(orderResult.amount) * 0.999).toFixed(6);
-                        const receivedTok  = orderResult.side === "sell" ? quote : orderResult.base;
+                        // Compute credited amount directly from fill payload — no wallet diff
+                        let receivedQty: string;
+                        let receivedTok: string;
+                        if (orderResult.side === "sell") {
+                          const gross = orderResult.filledQty * orderResult.avgFillPrice;
+                          const net   = gross - orderResult.fee;
+                          receivedQty = (net > 0 ? net : gross).toFixed(2);
+                          receivedTok = quote;
+                        } else {
+                          receivedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
+                          receivedTok = orderResult.base;
+                        }
                         return `+${receivedQty} ${receivedTok} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
                       })()
-                    : orderResult.price
-                      ? `${orderResult.amount} ${orderResult.base} @ $${parseFloat(orderResult.price).toLocaleString()} · visible in order book. It will fill when the market reaches your price.`
-                      : `${orderResult.amount} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
+                    : `${orderResult.filledQty || ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
                   }
                 </p>
               </div>
