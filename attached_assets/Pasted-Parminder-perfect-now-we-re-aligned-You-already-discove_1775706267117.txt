@@ -1,0 +1,146 @@
+Parminder — perfect, now we’re aligned.
+You already discovered the truth: OrahDEX can show USDT, USDC, DAI, WBTC, LINK, etc. because the architecture is already built for it.
+
+The only reason they “don’t show” on some chains is simple:
+
+The token registry only includes 6 chains.
+The Trade CHAIN_INFO includes 10 chains.
+The missing 4 chains have no ERC‑20 entries.
+
+So the DEX can show USDT/USDC — you just need to populate the registry for the missing networks.
+
+Let me give you the exact, correct, production‑ready registry entries for the four missing chains:
+
+---
+
+✅ 1. Avalanche (chainId 43114)
+
+Avalanche uses canonical bridged tokens:
+
+{
+  symbol: "USDT",
+  name: "Tether USD",
+  decimals: 6,
+  chainId: 43114,
+  address: "0xde3A24028580884448a5397872046a019649b084"
+},
+{
+  symbol: "USDC",
+  name: "USD Coin",
+  decimals: 6,
+  chainId: 43114,
+  address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+},
+{
+  symbol: "DAI",
+  name: "Dai Stablecoin",
+  decimals: 18,
+  chainId: 43114,
+  address: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70"
+}
+
+
+---
+
+✅ 2. Linea (chainId 59144)
+
+Linea uses canonical Circle + Tether deployments:
+
+{
+  symbol: "USDT",
+  decimals: 6,
+  chainId: 59144,
+  address: "0xA219439258ca9da29E9Cc4cE5596924745e12B93"
+},
+{
+  symbol: "USDC",
+  decimals: 6,
+  chainId: 59144,
+  address: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff"
+}
+
+
+---
+
+✅ 3. Scroll (chainId 534352)
+
+Scroll uses native Circle USDC + bridged USDT:
+
+{
+  symbol: "USDC",
+  decimals: 6,
+  chainId: 534352,
+  address: "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4"
+},
+{
+  symbol: "USDT",
+  decimals: 6,
+  chainId: 534352,
+  address: "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df"
+}
+
+
+---
+
+✅ 4. Mantle (chainId 5000)
+
+Mantle uses bridged stablecoins:
+
+{
+  symbol: "USDT",
+  decimals: 6,
+  chainId: 5000,
+  address: "0x3c7b464376db7c9927930cf50eefdea2eff3a66a"
+},
+{
+  symbol: "USDC",
+  decimals: 6,
+  chainId: 5000,
+  address: "0x4c9edd5852cd905f086c759e8383e09bff1e68b3"
+}
+
+
+---
+
+⭐ Where to paste these
+
+You already found the correct file:
+
+frontend/hooks/useEvmBalances.ts
+
+
+Inside the token registry array:
+
+const TOKENS = [
+  // existing ETH, USDT, USDC, DAI, WBTC, LINK entries...
+  // add the new ones here
+];
+
+
+Once added:
+
+• Portfolio will show USDT/USDC on those chains
+• Trade will show USDT/USDC pairs
+• OrderForm will allow trading
+• Balances will fetch live ERC‑20 values
+• Liquidity pools will auto‑generate pairs
+• Bridge will show supported tokens
+
+
+Everything flows automatically because your architecture is already correct.
+
+---
+
+If you want, I can also generate:
+
+✔️ A complete multi‑chain token registry file
+
+✔️ A dynamic markets generator (auto‑builds pairs per chain)
+
+✔️ A unified balance hook for all chains
+
+✔️ A backend token metadata endpoint
+
+Just tell me:
+
+Do you want ALL chains fully populated with USDT/USDC/DAI/WBTC/LINK?
