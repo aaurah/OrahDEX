@@ -426,6 +426,14 @@ interface CoinGeckoPrice {
 }
 
 /**
+ * Last-known-good BSV price from WhatsOnChain.
+ * Persists across fetchSovereignPrices() calls so a WOC timeout uses the
+ * most recent successful rate rather than the stale hardcoded fallback.
+ * Initialized to the same value as FALLBACK_PRICES["BSV"] (16).
+ */
+let _lastKnownBsvUsd = 16;
+
+/**
  * ── Sovereign Price Engine ──────────────────────────────────────────────────
  * Fetches USD prices from:
  *   1. Binance public 24h-ticker REST API (no key required)
@@ -477,6 +485,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
       const bsvData = await bsvRes.json() as { rate?: number; currency?: string };
       const rate = bsvData?.rate;
       if (rate && rate > 0) {
+        _lastKnownBsvUsd = rate; // persist across calls
         out["BSV"] = {
           usd:            rate,
           usd_24h_change: out["BSV"]?.usd_24h_change ?? 0,
@@ -487,7 +496,18 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
       }
     }
   } catch (err) {
-    logger.warn({ err }, "WhatsOnChain BSV rate fetch failed");
+    logger.warn({ err }, "WhatsOnChain BSV rate fetch failed — using last known price");
+  }
+
+  // ── 2b. BSV fallback — use last known good price if WOC failed ────────────
+  if (!out["BSV"]) {
+    out["BSV"] = {
+      usd:            _lastKnownBsvUsd,
+      usd_24h_change: 0,
+      usd_24h_vol:    _lastKnownBsvUsd * 100_000,
+      usd_market_cap: 0,
+    };
+    logger.debug({ bsvUsd: _lastKnownBsvUsd }, "BSV price: using last-known-good");
   }
 
   // ── 3. Own last-trade volume overlay (DO NOT override prices from Binance) ──
@@ -606,7 +626,7 @@ function simulateDailyChange(symbol: string): number {
 // Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:14,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  BSV:16,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
   DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
   LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
   SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
@@ -953,7 +973,7 @@ export async function updateMarketPrices() {
 
       // BSV quote — compute cross rate
       if (market.quoteAsset === "BSV") {
-        quoteUSD  = getQuoteUSD("BSV", 14);
+        quoteUSD  = getQuoteUSD("BSV", _lastKnownBsvUsd);
         lastPrice = baseUSD / quoteUSD;
         vol       = vol / quoteUSD;
       }
