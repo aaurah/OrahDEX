@@ -74,6 +74,18 @@ const SPOT: Record<string, number> = {
   TRX: 0.24, BTT: 0.0000009, WIN: 0.00006, JST: 0.025,
 };
 
+// Pool share formatted with enough decimal places to show the first significant
+// digit — toFixed(4) silently truncates tiny-but-real stakes to "0.0000%".
+function fmtPoolShare(userLp: number, tvl: number): string {
+  const LP_PRICE = 12.5;
+  if (userLp <= 0 || tvl <= 0) return "0.0000%";
+  const share = (userLp * LP_PRICE / tvl) * 100;
+  if (share <= 0) return "0.0000%";
+  if (share >= 0.00005)   return share.toFixed(4) + "%";
+  if (share >= 0.0000005) return share.toFixed(7) + "%";
+  return "< 0.0000005%";
+}
+
 // Pool APR derived from AMM fee revenue: vol24 * fee% / tvl * 365
 function poolApr(p: typeof POOLS[0]) {
   return (p.vol24 * (p.fee / 100) / p.tvl) * 365 * 100;
@@ -610,7 +622,11 @@ function LiquidityModal({
                 ["Fee APR (from trading volume)", `${poolApr(pool).toFixed(1)}%`],
                 ["Farm APR (LP staking rewards)", `+${pool.farmApr.toFixed(1)}%`],
                 ["Combined APR", `${totalApr.toFixed(1)}%`],
-                ["Your est. pool share", shareOfPool > 0 ? `${shareOfPool.toFixed(4)}%` : "—"],
+                ["Your est. pool share", shareOfPool > 0
+                  ? (shareOfPool >= 0.00005   ? shareOfPool.toFixed(4) + "%"
+                   : shareOfPool >= 0.0000005 ? shareOfPool.toFixed(7) + "%"
+                   : "< 0.0000005%")
+                  : "—"],
                 ["You receive", "LP tokens (redeemable anytime)"],
               ].map(([l, v]) => (
                 <div key={l} className="flex justify-between text-sm">
@@ -1110,14 +1126,14 @@ export function Liquidity() {
                 </div>
                 {myPools.map(pool => {
                   const lpValue    = pool.userLp * 12.5;
-                  const poolShare  = (lpValue / pool.tvl) * 100;
-                  const feesEarned = pool.vol24 * (pool.fee / 100) * (poolShare / 100);
+                  const shareRatio = pool.tvl > 0 ? (lpValue / pool.tvl) : 0;
+                  const feesEarned = pool.vol24 * (pool.fee / 100) * shareRatio;
                   return (
                     <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0">
                       <TokenPair base={pool.base} quote={pool.quote} />
                       <span className="text-right text-sm font-semibold">{pool.userLp.toFixed(4)}</span>
                       <span className="text-right text-sm">{fmtTvl(lpValue)}</span>
-                      <span className="text-right text-sm text-muted-foreground">{poolShare.toFixed(4)}%</span>
+                      <span className="text-right text-sm text-muted-foreground">{fmtPoolShare(pool.userLp, pool.tvl)}</span>
                       <span className="text-right text-sm text-green-500 font-semibold">${feesEarned.toFixed(2)}</span>
                       <div className="flex items-center gap-1.5 justify-end">
                         <button onClick={() => openAdd(pool)} className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-colors">Add</button>

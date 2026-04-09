@@ -61,6 +61,19 @@ function poolApr(p: typeof POOLS[0]) {
 
 // FARM_POOLS is now computed inside the main component from the real LP store
 
+// Pool share with enough precision to show the first significant digit.
+// toFixed(4) hides any share < 0.00005%, which is common for small positions
+// in large simulated pools.  We auto-scale decimal places instead.
+function fmtPoolShare(userLp: number, tvl: number): string {
+  const LP_PRICE = 12.5;
+  if (userLp <= 0 || tvl <= 0) return "0.0000%";
+  const share = (userLp * LP_PRICE / tvl) * 100;
+  if (share <= 0) return "0.0000%";
+  if (share >= 0.00005)  return share.toFixed(4) + "%";    // e.g. 0.0001%
+  if (share >= 0.0000005) return share.toFixed(7) + "%";   // e.g. 0.0000112%
+  return "< 0.0000005%";
+}
+
 function fmtTvl(n: number) {
   if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
   if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
@@ -783,8 +796,8 @@ function MyPositions({ myPools, onAdd, onRemove }: {
               {[
                 ["LP Tokens", `${pool.userLp.toFixed(4)}`],
                 ["Est. Value", `$${(pool.userLp * 12.5).toLocaleString()}`],
-                ["Pool Share", `${((pool.userLp * 12.5) / pool.tvl * 100).toFixed(4)}%`],
-                ["Fees Earned (24h)", `$${(pool.vol24 * (pool.fee / 100) * ((pool.userLp * 12.5) / pool.tvl)).toFixed(2)}`],
+                ["Pool Share", fmtPoolShare(pool.userLp, pool.tvl)],
+                ["Fees Earned (24h)", `$${(pool.vol24 * (pool.fee / 100) * (pool.userLp * 12.5 / pool.tvl)).toFixed(2)}`],
               ].map(([l, v]) => (
                 <div key={l} className="bg-secondary/40 rounded-lg p-2">
                   <div className="text-[10px] text-muted-foreground">{l}</div>
