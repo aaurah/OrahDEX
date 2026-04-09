@@ -314,10 +314,10 @@ export function Layout({ children }: { children: ReactNode }) {
 
       {/* ── Maintenance / testing ribbon ── */}
       {!isDemo && !bannerDismissed && (
-        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-xs font-medium z-50">
-          <span className="text-amber-400">⚠</span>
-          <span>OrahDEX is currently <strong>under active testing</strong> — some features may be incomplete or change without notice.</span>
-          <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-400/60 hover:text-amber-300 transition-colors text-base leading-none">✕</button>
+        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 text-emerald-400 text-xs font-medium z-50">
+          <span className="text-emerald-400">⚡</span>
+          <span>OrahDEX is <strong>live</strong> — 958 markets, 10 chains, BSV-settled. Early access. Some features rolling out soon.</span>
+          <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400/60 hover:text-emerald-300 transition-colors text-base leading-none">✕</button>
         </div>
       )}
       <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">

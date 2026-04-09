@@ -360,7 +360,9 @@ export function FuturesTrading() {
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="font-mono text-primary">Funding {countdown}</span>
-                <span>· Rate: <span className="text-green-400 font-mono">+0.0100%</span></span>
+                <span>· Rate: <span className={cn("font-mono", ((ticker as any).fundingRatePct ?? 0.01) >= 0 ? "text-green-400" : "text-red-400")}>
+                  {((ticker as any).fundingRatePct ?? 0.0100) >= 0 ? "+" : ""}{((ticker as any).fundingRatePct ?? 0.0100).toFixed(4)}%
+                </span></span>
               </div>
             </button>
 
@@ -443,12 +445,12 @@ export function FuturesTrading() {
           </div>
 
           {[
-            { label: "Mark Price", val: formatPrice(ticker.lastPrice + 0.05) },
-            { label: "Index Price", val: formatPrice(ticker.lastPrice - 0.02) },
+            { label: "Mark Price", val: formatPrice((ticker as any).markPrice ?? ticker.lastPrice) },
+            { label: "Index Price", val: formatPrice((ticker as any).indexPrice ?? ticker.lastPrice) },
             { label: "24h High", val: formatPrice((ticker as any).high24h ?? ticker.highPrice ?? ticker.lastPrice * 1.02) },
             { label: "24h Low", val: formatPrice((ticker as any).low24h ?? ticker.lowPrice ?? ticker.lastPrice * 0.98) },
             { label: "24h Volume", val: (() => { const v = (ticker as any).volume24h ?? ticker.volume; return v ? `${(v / 1e6).toFixed(1)}M` : "—"; })() },
-            { label: "Open Interest", val: formatPrice(ticker.lastPrice * 4200) },
+            { label: "Open Interest", val: (() => { const oi = (ticker as any).openInterest; return oi ? `$${(oi / 1e6).toFixed(1)}M` : `$${(ticker.lastPrice * 4200 / 1e6).toFixed(1)}M`; })() },
           ].map((s) => (
             <div key={s.label} className="flex flex-col shrink-0">
               <span className="text-[10px] text-muted-foreground">{s.label}</span>

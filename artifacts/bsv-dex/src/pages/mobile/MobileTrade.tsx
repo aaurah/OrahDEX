@@ -209,13 +209,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
-  const BSV_USD_RATE = crossPrices.BSV.usd || 14;
+  const BSV_USD_RATE = crossPrices.BSV.usd || 16;
   const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
-    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
-    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
+    BNB: crossPrices.BNB?.usd || 580,
+    BCH: crossPrices.BCH?.usd || 320,
+    SOL: crossPrices.SOL?.usd || 130,
+    MATIC: crossPrices.MATIC?.usd || 0.32,
+    AVAX: crossPrices.AVAX?.usd || 18,
+    ARB: crossPrices.ARB?.usd || 0.42,
+    OP: crossPrices.OP?.usd || 0.70,
+    FTM: crossPrices.FTM?.usd || 0.51,
+    MNT: crossPrices.MNT?.usd || 0.70,
   };
 
   const { data: myOrdersData } = useQuery({
@@ -1181,7 +1188,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] text-emerald-300 font-semibold">Sent to your OrahDEX EVM wallet</p>
                     <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
-                      One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — ETH, BSC, Polygon, Arbitrum, Base and more.
+                      One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — ETH, BSC, Polygon, Arbitrum, Base, Avalanche, Linea, Scroll, Mantle and more.
                     </p>
                   </div>
                 </div>

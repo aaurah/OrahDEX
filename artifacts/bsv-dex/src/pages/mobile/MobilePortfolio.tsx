@@ -227,7 +227,7 @@ export function MobilePortfolio() {
               <p className="text-sm font-bold text-foreground">EVM Wallets</p>
               <p className="text-xs text-muted-foreground mt-0.5">MetaMask · Coinbase · Trust · Ledger + all L2s</p>
               <div className="flex gap-1 mt-1.5">
-                {["ETH","BNB","MATIC","ARB","BASE"].map(s => (
+                {["ETH","BNB","MATIC","ARB","BASE","AVAX","MNT"].map(s => (
                   <span key={s} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{s}</span>
                 ))}
               </div>
@@ -498,7 +498,7 @@ export function MobilePortfolio() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">Deposit via QR Code</p>
-              <p className="text-xs text-muted-foreground truncate">ETH · BNB · MATIC · BSV · ARB · BASE · all EVM networks</p>
+              <p className="text-xs text-muted-foreground truncate">ETH · BNB · MATIC · ARB · BASE · AVAX · Linea · Scroll · Mantle · all EVM</p>
             </div>
             <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
           </button>
