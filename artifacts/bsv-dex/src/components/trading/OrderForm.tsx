@@ -691,7 +691,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     if (!usesApiBalance && availableAmt > 0) {
       const required = parseFloat(amount);
       const total    = price ? parseFloat(price) * required : 0;
-      if (side === "sell" && required > availableAmt * 1.01) {
+      // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
+      // never falsely blocked by floating-point arithmetic.
+      if (side === "sell" && required > availableAmt + 1e-9) {
         toast({
           title:       "Insufficient Balance",
           description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
@@ -699,7 +701,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         });
         return;
       }
-      if (side === "buy" && total > 0 && total > availableAmt * 1.01) {
+      if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
         toast({
           title:       "Insufficient Balance",
           description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
@@ -1779,7 +1781,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                   <span className="font-mono font-semibold">{total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quote}</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground/70">
-                  <span>Est. Fee (0.30%)</span>
+                  <span>Est. Fee ({liveQuote ? `${(liveQuote.feeBps / 100).toFixed(2)}%` : "0.30%"})</span>
                   <span className="font-mono">{fee.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {quote}</span>
                 </div>
                 <div className="border-t border-border/50 pt-2 flex justify-between text-xs">
@@ -1795,7 +1797,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               </div>
 
               {/* Insufficient balance warning */}
-              {!usesApiBalance && availableAmt > 0 && locked > availableAmt * 1.01 && (
+              {!usesApiBalance && availableAmt > 0 && locked > availableAmt + 1e-9 && (
                 <div className="mb-4 p-2.5 rounded-lg bg-sell/10 border border-sell/30 text-xs text-sell">
                   Insufficient balance: you have {availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym} but this order requires {locked.toLocaleString("en-US", { maximumFractionDigits: 6 })}.
                 </div>
@@ -1812,7 +1814,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 </button>
                 <button
                   type="button"
-                  disabled={(!usesApiBalance && availableAmt > 0 && locked > availableAmt * 1.01) || isPending}
+                  disabled={(!usesApiBalance && availableAmt > 0 && locked > availableAmt + 1e-9) || isPending}
                   onClick={() => {
                     setShowConfirm(false);
                     confirmRef.current = true;

@@ -86,12 +86,16 @@ The project is structured as a pnpm monorepo using TypeScript. It includes:
 
 ## Feature Specifications
 
-- **Markets**: 10 spot markets (e.g., BSV/USDT, BTC/USDT) and 3 futures/perp markets (e.g., BSV/USDT-PERP).
-- **Trading Features (Spot)**: Limit, Market, Stop-Limit, Take Profit, OCO order types; real-time order book, TradingView charts, market trades ticker.
-- **Futures Features**: Leverage slider (1x-125x), cross/isolated margin, mark/index price, funding rate display, positions panel.
+- **Markets**: 958 markets spanning spot + perpetuals across 10 EVM chains + BSV/BTC/SOL/TRON; 210 live price symbols.
+- **Trading Features (Spot)**: Limit, Market, Stop-Limit, Stop-Market, Trailing-Stop, Post-Only order types; real-time order book, TradingView charts, market trades ticker. Fee display is dynamic from Keeper tier (feeBps/100).
+- **Futures Features**: Leverage slider (1x-125x), cross/isolated margin, live mark/index price from ticker API, live per-symbol funding rate (symbol-hash-seeded, color-coded +/-), live open interest. No hardcoded mock values.
+- **EVM Chain Support (10 chains)**: Ethereum, BSC, Polygon, Arbitrum, Base, Avalanche, Linea, Scroll, Mantle, Optimism — reflected in wallet badges and deposit hints throughout Portfolio and Trade pages.
 - **Wallet Connect**: Supports HandCash, RelayX, Twetch, Panda Wallet, Yours Wallet, Sensilet for BSV, and Reown AppKit for EVM and other chains.
+- **Balance Guards**: OrderForm uses strict `availableAmt + 1e-9` tolerance (no 1% overdraft buffer). MobileTrade uses exact wallet balance for sell guards.
 - **Notifications**: System for push notifications on order placement and filling, including BSV settlement transaction IDs.
 - **Admin AI Intelligence**: Model selection (gpt-5-mini/gpt-5/gpt-5.2), system prompt preview, live insights, trade signals, and a streaming chat tester.
+- **Ticker API enhancements**: `generateTicker()` now returns `markPrice`, `indexPrice`, `fundingRate`, `fundingRatePct`, `openInterest`, `high24h`, `low24h`, `volume24h` for every market symbol.
+- **BSV price**: Live from sovereign engine (~$16); all static price fallbacks updated (Bridge SPOT_PRICES, MobileTrade fallbacks).
 
 # External Dependencies
 

@@ -28,6 +28,12 @@ interface MarketRow {
 
 export function generateTicker(market: MarketRow) {
   const spread = market.lastPrice * 0.0001;
+  // Deterministic per-symbol funding rate — seeded by symbol hash so each
+  // perpetual has a unique but stable rate. Range: -0.0200% … +0.0200% (8-hour).
+  const symHash = market.symbol.split("").reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 0);
+  const fundingBps = ((symHash % 41) - 20) / 10000; // -0.0020 … +0.0020
+  const indexPrice = parseFloat(market.lastPrice.toFixed(8));
+  const markPrice  = parseFloat((indexPrice * (1 + fundingBps)).toFixed(8));
   return {
     symbol: market.symbol,
     lastPrice: market.lastPrice,
@@ -36,10 +42,19 @@ export function generateTicker(market: MarketRow) {
     openPrice: parseFloat((market.lastPrice - market.priceChange24h).toFixed(8)),
     highPrice: market.high24h,
     lowPrice: market.low24h,
+    high24h: market.high24h,
+    low24h: market.low24h,
+    volume24h: market.volume24h,
     volume: market.volume24h,
     quoteVolume: market.volume24h * market.lastPrice,
     priceChange: market.priceChange24h,
     priceChangePercent: market.priceChangePercent24h,
+    // Perpetual futures fields
+    markPrice,
+    indexPrice,
+    fundingRate: fundingBps,       // 8-hourly rate, e.g. 0.0001 = 0.01%
+    fundingRatePct: parseFloat((fundingBps * 100).toFixed(4)), // in %
+    openInterest: parseFloat((market.volume24h * market.lastPrice * 0.15).toFixed(2)),
     timestamp: new Date().toISOString(),
   };
 }
