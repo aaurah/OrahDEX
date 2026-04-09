@@ -230,7 +230,7 @@ export function WhitePaper() {
                 The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
               </p>
               <p>
-                The <span className="text-foreground font-medium">CopyVault system</span> is the world's first on-chain copy trading protocol — followers deposit USDT into leader-managed vaults, automatically mirror proportional trades, and receive BSV OP_RETURN proofs for every mirrored execution — immutable, publicly auditable, trustless.
+                The <span className="text-foreground font-medium">CopyVault system</span> is an on-chain copy trading protocol — followers deposit USDT into leader-managed vaults, automatically mirror proportional trades, and receive BSV OP_RETURN proofs for every mirrored execution — immutable, publicly auditable, trustless.
               </p>
               <p>
                 This document presents the technical architecture, economic model, cryptographic foundations, security design, disruption analysis, adversarial resilience model, and strategic roadmap of OrahDEX as of version {VERSION}. It is written for regulators, engineers, institutional participants, and sovereign individuals equally — because OrahDEX is relevant to all of them, whether they wish it or not.
@@ -311,7 +311,7 @@ export function WhitePaper() {
                     layer: "Layer 1 — Settlement (Bitcoin SV)",
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
-                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including OrahDEX itself. Strict boundary: HTLC scripts · OP_RETURN proofs · UTXO validation · final settlement. Nothing else enters this layer.",
+                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including OrahDEX itself. Strict boundary: HTLC scripts · OP_RETURN Settlement Proofs · UTXO validation · final settlement. Nothing else enters this layer.",
                   },
                   {
                     layer: "Layer 2 — Protocol Contracts (EVM + BSV Script)",
@@ -606,7 +606,7 @@ Concentrated liquidity (Uniswap V3 model):
                   </table>
                 </div>
                 <p>
-                  This design mirrors leading vAMM and perpetuals protocols — GMX v2, Drift Protocol, Hyperliquid, dYdX v4 — where the underlying asset stays in the user's self-custodied wallet while the protocol tracks synthetic position size, fees earned, and mark-to-market value.
+                  This design mirrors leading VAMM and Perpetual Futures protocols — GMX v2, Drift Protocol, Hyperliquid, dYdX v4 — where the underlying asset stays in the user's self-custodied wallet while the protocol tracks synthetic position size, fees earned, and mark-to-market value.
                 </p>
                 <p>
                   The OrahDEX Portfolio page reflects this correctly: the <strong>Total Balance</strong> shows only on-chain wallet value (ETH, ERC-20s, native tokens). LP positions appear in the <strong>DeFi tab</strong> as a separate synthetic allocation — shown as "<em>$X.XX allocated</em>" to make clear the amount is already within the wallet balance, not additive to it. Double-counting is architecturally prevented.
@@ -638,7 +638,7 @@ Unified balance classification:
                 The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> solves the cold-start liquidity problem permanently: every newly listed asset is instantly tradeable via a linear bonding curve, even before any real liquidity provider participates. The VAMM is not a temporary scaffold — it is a permanent sovereign liquidity layer that operates in parallel with real AMM pools.
               </p>
               <InfoBox title="Design Mandate" color="amber">
-                <p>No asset on OrahDEX should ever display "No liquidity available." The Genesis engine acts as a sovereign liquidity backstop — always present, always priceable, always executable — for all 56+ listed VAMM assets.</p>
+                <p>No asset on OrahDEX should ever display "No liquidity available." The Genesis Liquidity Engine acts as a sovereign liquidity backstop — always present, always priceable, always executable — for all 56+ listed VAMM assets.</p>
               </InfoBox>
 
               <Sub title="5.4.1 Linear Bonding Curve Mathematics">
@@ -646,7 +646,7 @@ Unified balance classification:
   P(s) = basePrice + slope × s
 
 Where:
-  basePrice = current spot price of asset (USDT, updated from sovereign oracle)
+  basePrice = current spot price of asset (USDT, updated from Sovereign Price Engine)
   slope     = 0.01 × basePrice² / 8500
             = calibrated so $8,500 of buy volume moves price by exactly 1%
 
@@ -759,7 +759,7 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
                 </p>
               </Sub>
               <Sub title="7.2 Perpetual Futures — Up to 100x Leverage">
-                <p>OrahDEX perpetual futures are settled against mark prices computed from the sovereign oracle:</p>
+                <p>OrahDEX perpetual futures are settled against mark prices computed from the Sovereign Price Engine:</p>
                 <Code>{`Price oracle definitions:
   VWAP  = Σ(price_i × volume_i) / Σ(volume_i)
           (Volume-Weighted Average Price across all order-book fills in the sampling window)
@@ -779,7 +779,7 @@ Stale source rule:
 Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
 
 Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
-             paid every 8 hours (3 periods per day), longs pay shorts when perp > index
+             paid every 8 hours (3 periods per day), longs pay shorts when perpetual > index
 
 Position PnL  = (Exit Price − Entry Price) × Size × Direction
               (Direction: +1 for long, -1 for short)
@@ -840,7 +840,7 @@ Liquidation Penalty:
             {/* ── 8. COPYVAULT ── */}
             <Section id="copy-vault" title="8. CopyVault — On-Chain Copy Trading Protocol">
               <p>
-                CopyVault is the world's first on-chain copy trading protocol that combines ERC4626-style vault share accounting with BSV OP_RETURN settlement proofs for every mirrored trade. Every copy trade is cryptographically provable, publicly auditable on BSV, and economically transparent. Followers cannot be deceived about what trades were executed on their behalf.
+                CopyVault is an on-chain copy trading protocol that combines ERC4626-style vault share accounting with BSV OP_RETURN Settlement Proofs for every mirrored trade. Every copy trade is cryptographically provable, publicly auditable on BSV, and economically transparent. Followers cannot be deceived about what trades were executed on their behalf.
               </p>
 
               <Sub title="8.1 Vault Mathematics (ERC4626 Model)">
@@ -1119,7 +1119,7 @@ OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
                   <li>Independent smart contract audits before every major protocol release</li>
                   <li>Continuous bug bounty programme (critical: up to $500,000 USD equivalent)</li>
                   <li>Public disclosure of all found vulnerabilities post-patch (90-day embargo)</li>
-                  <li>On-chain settlement records publicly verifiable by any third party at any time</li>
+                  <li>OP_RETURN Settlement Proofs publicly verifiable by any third party at any time</li>
                   <li>Open-source protocol code — no security through obscurity</li>
                 </ul>
               </Sub>
@@ -1337,7 +1337,7 @@ It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Co
                         ["Trading Fees",        "Maker/taker spread on every trade",                 "$30–45B",  "Direct competition: OrahDEX 0.00–0.20% vs CEX avg 0.20–0.50%"],
                         ["Withdrawal Fees",     "Flat fee on every withdrawal, often $5–25",         "$8–12B",   "Eliminated: BSV settlement costs $0.0001 per tx"],
                         ["Interest on Custody", "CEX earns yield on user deposits they control",     "$15–25B",  "Eliminated: users hold their own keys, earn their own yield"],
-                        ["Spread Capture",      "Market making on own platform with information edge","$20–40B",  "Eliminated: sovereign oracle removes CEX information advantage"],
+                        ["Spread Capture",      "Market making on own platform with information edge","$20–40B",  "Eliminated: Sovereign Price Engine removes CEX information advantage"],
                         ["Data Monetisation",   "Selling user PII, trading patterns, order flow",    "$3–8B",    "Eliminated: OrahDEX collects zero PII and zero order flow"],
                       ].map(([source, mechanism, est, impact]) => (
                         <tr key={source as string} className="border-b border-border/40">
@@ -1374,12 +1374,12 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
 
               <Sub title="14.3 The Information Asymmetry Elimination">
                 <p>
-                  CEXs maintain a structural information advantage through two mechanisms: (1) they see every user's order before it hits the market (order flow data), and (2) they aggregate user trading patterns to front-run positions. OrahDEX's sovereign oracle and on-chain settlement eliminate both:
+                  CEXs maintain a structural information advantage through two mechanisms: (1) they see every user's order before it hits the market (order flow data), and (2) they aggregate user trading patterns to front-run positions. OrahDEX's Sovereign Price Engine and on-chain settlement eliminate both:
                 </p>
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
                   <li><span className="font-medium text-foreground">No centrally visible order flow:</span> Limit orders are signed locally and broadcast directly. The OrahDEX API server sees signed messages, not private order intent before signing.</li>
                   <li><span className="font-medium text-foreground">No user pattern aggregation:</span> Zero PII collection means zero trading pattern linkage to real identity. Order history is linked only to a wallet address chosen by the user.</li>
-                  <li><span className="font-medium text-foreground">On-chain price discovery:</span> The sovereign oracle price cannot be privately manipulated — it is derived from on-chain transactions that are publicly visible to every participant simultaneously.</li>
+                  <li><span className="font-medium text-foreground">On-chain price discovery:</span> The Sovereign Price Engine cannot be privately manipulated — it is derived from on-chain transactions that are publicly visible to every participant simultaneously.</li>
                 </ul>
               </Sub>
 
@@ -1589,7 +1589,7 @@ CopyVault network effect (additional layer):
                     { name: "Liquidity Flywheel", desc: "More LPs → deeper books → lower slippage → more traders → more fees → more LP incentive → more LPs. This flywheel accelerates once the platform crosses the liquidity threshold where slippage is competitive with CEX spread." },
                     { name: "CopyVault Flywheel", desc: "More followers → more leader capital → better execution → higher PnL → more followers. Every successful vault is a growth engine that recruits its own new users via performance." },
                     { name: "Pair Coverage Flywheel", desc: "More trading pairs → more market opportunities → more traders → more fee revenue → ability to VAMM-seed more pairs → more pairs. OrahDEX already seeds 950+ pairs; each new pair is free marginal distribution." },
-                    { name: "Data Sovereignty Flywheel", desc: "More trades → richer sovereign oracle → better price discovery → more accurate mark prices → more fair futures settlement → more institutional traders → more trades." },
+                    { name: "Data Sovereignty Flywheel", desc: "More trades → richer Sovereign Price Engine data → better price discovery → more accurate mark prices → more fair futures settlement → more institutional traders → more trades." },
                   ].map(({ name, desc }) => (
                     <div key={name} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
                       <p className="font-bold text-sm text-foreground">{name}</p>
@@ -1830,7 +1830,7 @@ If any authority requests user identity data:
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
                     items: [
-                      "950+ spot trading pairs with sovereign oracle pricing",
+                      "950+ spot trading pairs with Sovereign Price Engine pricing",
                       "BSV OP_RETURN settlement proof on every matched trade",
                       "HTLC atomic swap bridge (BSV ↔ EVM + TRON)",
                       "Genesis Liquidity Engine (56 VAMM assets, linear bonding curve)",
@@ -1868,7 +1868,7 @@ If any authority requests user identity data:
                     items: [
                       "Full on-chain governance (Keeper-weighted voting, time-locked execution)",
                       "OrahDEX DAO treasury management (on-chain multi-sig, community grants)",
-                      "Cross-chain perpetuals (settle on any chain, BSV OP_RETURN proof)",
+                      "Cross-chain Perpetual Futures (settle on any chain, BSV OP_RETURN proof)",
                       "Watchtower network decentralisation (community-operated HTLC monitoring)",
                       "AUSTRAC maintenance automation (where jurisdictionally required)",
                       "OrahDEX Protocol SDK (open-source, permissive licence, third-party integrations)",
@@ -1912,7 +1912,7 @@ If any authority requests user identity data:
                 The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. OrahDEX makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
               </p>
               <p>
-                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, the world's first <strong>on-chain copy trading system</strong> with cryptographic proof chains, institutional-grade <strong>perpetual futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
+                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
               </p>
               <p>
                 The protocol is indestructible by design. Every adversarial scenario — regulatory, competitive, technical — resolves in the protocol's favour through the asymmetric resilience documented in Section 15. The game theory is unambiguous: for rational agents with access to transparent information, self-custody with DEX access is the dominant strategy. The network effects compound. The flywheels spin faster with every trade.
@@ -1968,7 +1968,7 @@ If any authority requests user identity data:
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">Risk Warning</p>
                   <p>
-                    Cryptocurrency trading involves substantial risk of loss, including the potential loss of all invested capital. Markets are highly volatile and may move against your position at any time. Past performance of any trading pair, VAMM asset, futures contract, or CopyVault is not indicative of future results. CopyVault leaderboard returns are historical and do not guarantee future performance. Copy trading involves the risk of capital loss even when following leaders with strong historical records. Users should independently assess their own risk tolerance, financial situation, and investment objectives before trading. OrahDEX provides tools, not advice. All trading decisions are made solely by the user.
+                    Cryptocurrency trading involves substantial risk of loss, including the potential loss of all invested capital. Markets are highly volatile and may move against your position at any time. Past performance of any trading pair, VAMM asset, futures contract, or CopyVault is not indicative of future results. CopyVault leaderboard returns are historical and do not guarantee future performance. Copy trading involves the risk of capital loss even when following leaders with strong historical records. All participants are responsible for independently assessing their own risk tolerance, financial situation, and investment objectives before trading. OrahDEX provides tools, not advice. All trading decisions are made solely by the user.
                   </p>
                 </div>
 
