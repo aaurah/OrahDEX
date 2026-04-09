@@ -1398,29 +1398,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
-              {/* OrahDEX exchange balance row */}
+              {/* OrahDEX exchange balance breakdown row — shown when user has filled trades */}
               {address && (() => {
                 const dexTok = side === "sell" ? base : quote;
-                const dexBal = getDexBalance(address, dexTok);
+                const dexBal = getDexBalance(address || "", dexTok);
                 if (dexBal <= 0) return null;
+                const fmt = (n: number) =>
+                  n < 0.0001 ? n.toExponential(2)
+                  : dexTok === "USDT" || dexTok === "USDC" ? n.toFixed(2)
+                  : n.toFixed(6);
                 return (
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-amber-400/80 border-b border-dashed border-amber-400/30">
-                      OrahDEX Bal
+                      incl. OrahDEX balance
                     </span>
                     <span className="text-[10px] font-semibold text-amber-400 tabular-nums">
-                      {dexBal < 0.0001 ? dexBal.toExponential(2) : dexTok === "USDT" || dexTok === "USDC" ? dexBal.toFixed(2) : dexBal.toFixed(6)}&nbsp;{dexTok}
+                      {fmt(dexBal)}&nbsp;{dexTok}
                     </span>
                   </div>
                 );
               })()}
 
-              {/* Low / zero balance hint */}
+              {/* Low / zero balance hint — only when total available (wallet + DEX) is zero */}
               {address && available === 0 && (
                 <div className="text-[10px] text-amber-400 leading-tight px-0.5">
                   {side === "buy"
-                    ? `No ${quote} balance found. Deposit ${quote} to place a buy order.`
-                    : `No ${base} balance found. Deposit ${base} to place a sell order.`
+                    ? `No ${quote} balance found. Deposit ${quote} or complete a sell trade first.`
+                    : `No ${base} balance found. Deposit ${base} or complete a buy trade first.`
                   }
                 </div>
               )}

@@ -367,7 +367,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const { address, network, balance, chainId: walletChainId, isDemo, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { applyFill } = useExchangeBalanceStore();
+  const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
   // Orah HD Wallet users (any network) have their trading balance tracked in the API ledger.
   // Demo users also use the API ledger. External EVM wallets (MetaMask, WalletConnect) use on-chain balances.
@@ -504,13 +504,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const quoteBalEntry = tokenBalances.find(t => t.symbol.toUpperCase() === quote.toUpperCase());
   // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
-  // Orah Wallet & demo: use balances fetched from the API ledger; external EVM wallets use on-chain values
+
+  // OrahDEX exchange balance — tokens credited from filled trades (persisted per wallet).
+  // Always merge into available-to-trade so users can re-trade without withdrawing first.
+  const dexBase  = getDexBalance(address || "", base);
+  const dexQuote = getDexBalance(address || "", quote);
+
+  // Orah Wallet & demo: use balances fetched from the API ledger; external EVM wallets
+  // use on-chain values PLUS any OrahDEX exchange balance they have accumulated.
   const baseAvailable  = usesApiBalance
     ? (demoBalances[base] ?? 0)
-    : (isNativeBase ? nativeBal : (baseBalEntry?.amount ?? 0));
+    : (isNativeBase ? nativeBal : (baseBalEntry?.amount ?? 0)) + dexBase;
   const quoteAvailable = usesApiBalance
     ? (demoBalances[quote] ?? 0)
-    : (quoteBalEntry?.amount ?? 0);
+    : (quoteBalEntry?.amount ?? 0) + dexQuote;
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
