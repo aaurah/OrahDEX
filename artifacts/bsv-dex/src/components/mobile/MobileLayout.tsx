@@ -181,20 +181,9 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   };
 
   const { icon: ThemeIcon, label: themeLabel } = THEME_META[theme];
-  const [bannerDismissed, setBannerDismissed] = useState(() => sessionStorage.getItem("maintenance_banner") === "1");
-  const dismissBanner = () => { sessionStorage.setItem("maintenance_banner", "1"); setBannerDismissed(true); };
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-
-      {/* ── Maintenance / testing ribbon ── */}
-      {!bannerDismissed && (
-        <div className="relative flex items-center justify-center gap-1.5 px-6 py-1.5 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-[11px] font-medium shrink-0">
-          <span>⚠</span>
-          <span><strong>Under active testing</strong> — some features may be incomplete.</span>
-          <button onClick={dismissBanner} aria-label="Dismiss" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-amber-400/60 active:text-amber-300 text-sm leading-none">✕</button>
-        </div>
-      )}
 
       {/* ── Global brand header ── */}
       <div className="shrink-0 border-b border-border/40 z-50 bg-card/95 backdrop-blur-sm">
