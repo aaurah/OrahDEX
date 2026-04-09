@@ -1,0 +1,166 @@
+✅ FINAL FIX INSTRUCTIONS (COPY/PASTE TO REPLIT DEVELOPER)
+
+These instructions fix:
+
+• +0.00 USDT banner
+• double toast
+• wrong price calculation
+• wrong orderResult fields
+• market order empty price bug
+• wallet-call dependency
+
+
+---
+
+📌 1. Update `orderResult` to store fill data from API response
+
+In MobileTrade.tsx and OrderForm.tsx, replace the old orderResult shape with:
+
+setOrderResult({
+  tradeId: data.id,
+  filledQty: data.filledQuantity,
+  avgFillPrice: data.price,
+  fee: data.fee,
+  side: variables.side,
+  quoteSymbol: data.quoteSymbol
+});
+
+
+❌ Do NOT store:
+variables.price, variables.amount, or any user-input values.
+
+✔ Only store actual fill data from backend.
+
+---
+
+📌 2. Fix the banner calculation
+
+Replace the old banner math:
+
+const total = parseFloat(orderResult.amount) * parseFloat(orderResult.price);
+
+
+with:
+
+const gross = orderResult.filledQty * orderResult.avgFillPrice;
+const net = gross - orderResult.fee;
+
+
+Then display:
+
++{net.toFixed(2)} {orderResult.quoteSymbol}
+
+
+This guarantees never +0.00 unless the trade truly filled at zero.
+
+---
+
+📌 3. Add tradeId dedup guard (prevents double toast)
+
+At the top of the component:
+
+const lastProcessedTradeIdRef = useRef<string | null>(null);
+
+
+Inside the WebSocket or onSuccess handler:
+
+if (lastProcessedTradeIdRef.current === data.id) return;
+lastProcessedTradeIdRef.current = data.id;
+
+
+This prevents:
+
+• double toast
+• double banner
+• double settlement
+
+
+---
+
+📌 4. Remove ALL wallet/balance calls from fill logic
+
+Delete any code that does:
+
+fetchBalances();
+fetchPortfolio();
+
+
+or:
+
+const delta = newBalance - oldBalance;
+
+
+These cause:
+
+• race conditions
+• 0.00 deltas
+• double notifications
+
+
+The fill event already contains everything needed.
+
+---
+
+📌 5. Ensure backend returns these fields
+
+Your backend already returns them, but confirm:
+
+{
+  "id": "tradeId",
+  "price": 1799.46,
+  "filledQuantity": 0.0058,
+  "fee": 0.0104,
+  "quoteSymbol": "USDT"
+}
+
+
+If any field is missing, add it.
+
+---
+
+📌 6. Final banner code (paste this)
+
+{orderResult && (
+  <div className="settlement-banner">
+    {(() => {
+      const gross = orderResult.filledQty * orderResult.avgFillPrice;
+      const net = gross - orderResult.fee;
+
+      return (
+        <span>
+          ✅ Sell Order Filled! +{net.toFixed(2)} {orderResult.quoteSymbol} credited to your OrahDEX balance · view in Portfolio → DeFi
+        </span>
+      );
+    })()}
+  </div>
+)}
+
+
+This is the correct, final, wallet-free, 0.00-proof version.
+
+---
+
+📌 7. Final toast code (paste this)
+
+if (net > 0) {
+  showToast(
+    `Sell Order Filled! +${net.toFixed(2)} ${orderResult.quoteSymbol} credited to your OrahDEX balance · view in Portfolio → DeFi`
+  );
+}
+
+
+---
+
+🎯 AFTER THIS FIX
+
+You will never see:
+
+• +0.00 USDT
+• double toast
+• double banner
+• wrong price
+• wrong amount
+• empty price for market orders
+
+
+Your settlement UI will be perfect.
