@@ -70,6 +70,9 @@ const STATIC_EXCHANGES = [
   { id:"bithumb",       name:"Bithumb",           url:"https://www.bithumb.com",         image: favicon("bithumb.com"),              chain:null,        type:"cex", rank:15, trustScore:7, vol24hUsd:350_000_000 },
 ];
 
+/* ── Last-known-good price cache for WOC-sourced assets ───────────────────── */
+let _lastKnownBsvUsd = 16;
+
 /* ── Fetch BTC price from Binance (public) ─────────────────────────────────── */
 async function fetchBtcUsd(): Promise<number> {
   try {
@@ -107,12 +110,16 @@ async function fetchKeyPrices() {
     }
     if (bsvRes.status === "fulfilled" && bsvRes.value.ok) {
       const d = await bsvRes.value.json() as { rate?: number };
-      if (d.rate && d.rate > 0) results["BSV"] = { usd: d.rate, change24h: 0 };
+      if (d.rate && d.rate > 0) {
+        _lastKnownBsvUsd = d.rate; // persist for next call
+        results["BSV"] = { usd: d.rate, change24h: 0 };
+      }
     }
   } catch {}
   if (!results["BTC"]) results["BTC"] = { usd: FALLBACK_PRICES["BTC"] ?? 70000, change24h: 0 };
   if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
-  if (!results["BSV"]) results["BSV"] = { usd: FALLBACK_PRICES["BSV"] ?? 14,    change24h: 0 };
+  // Use last-known-good BSV price rather than hardcoded fallback when WOC is unreachable
+  if (!results["BSV"]) results["BSV"] = { usd: _lastKnownBsvUsd, change24h: 0 };
   return results;
 }
 
