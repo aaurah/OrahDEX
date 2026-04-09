@@ -743,7 +743,8 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
               </Sub>
               <InfoBox title="Supported Bridge Pairs — Phase 1" color="blue">
                 <p>BSV ↔ ETH · BSV ↔ BNB · BSV ↔ MATIC · BSV ↔ USDT (BSV native) ↔ USDT (ERC-20/TRC-20)</p>
-                <p>Additional pairs added by community governance. Bridge fee: 0.20% of transfer amount (fee = amount × 0.002), split between relayers and protocol treasury.</p>
+                <p>Additional pairs added by community governance.</p>
+                <p className="font-mono text-xs mt-1 text-muted-foreground">fee_bridge = amount × 0.002 &nbsp;(0.20% of transfer amount)<br/>Split: 70% → relayer network · 30% → protocol treasury</p>
               </InfoBox>
             </Section>
 
@@ -794,7 +795,12 @@ Liquidation pipeline:
   2. When mark price crosses a position's L_price threshold, liquidation is triggered.
   3. Position is forcibly closed at mark price; remaining margin is distributed.
   4. A BSV OP_RETURN proof is broadcast for the liquidation event — identical format to spot trades.
-  5. User is notified; position is removed from the order book.`}</Code>
+  5. User is notified; position is removed from the order book.
+
+Liquidation Penalty:
+  penalty = positionSize × penaltyRate   (penaltyRate = 0.50% of notional, default)
+  Penalty is paid to the liquidation executor (Keeper), incentivising timely execution.`}</Code>
+                <p className="text-xs text-muted-foreground mt-2"><strong>Funding rate — economic rationale:</strong> The funding rate mechanism ensures perpetual futures prices converge to the underlying index price. When the perpetual price trades above index, longs pay shorts — incentivising shorts and disincentivising longs until prices revert. When perpetual trades below index, shorts pay longs — the reverse. The rate (1/3 coefficient, paid every 8 hours) is sized to create real economic pressure without being punitive to directional traders.</p>
               </Sub>
               <Sub title="7.3 P2P Trading — Fiat ↔ Crypto with HTLC Escrow">
                 <p>Direct peer-to-peer trading with custom payment methods (bank transfer, mobile money, local fiat). Trades are secured by BSV HTLC escrow: funds are locked on-chain before the seller releases, and the HTLC self-refunds if the buyer fails to confirm within the time lock. OrahDEX's decentralised arbitration panel resolves disputes based on on-chain evidence.</p>
@@ -954,7 +960,7 @@ High-Water Mark:
                       ["Futures — Taker",             "0.06%",    "Protocol treasury"],
                       ["AMM Swap",                    "0.30%",    "83.3% LP providers · 16.7% treasury"],
                       ["VAMM Swap (Genesis)",         "0.30%",    "100% protocol treasury (virtual simulation)"],
-                      ["Bridge Transfer",             "0.20%",    "Relayer network + protocol"],
+                      ["Bridge Transfer",             "0.20%",    "70% relayer network · 30% treasury"],
                       ["P2P Trade",                   "0.50%",    "Protocol treasury + arbitrators"],
                       ["CopyVault Performance",       "5–15%",    "On realised profit at withdrawal only, never on TVL"],
                       ["BSV Settlement Tx",           "< $0.001", "Miner fees (pass-through, no OrahDEX markup)"],
@@ -968,12 +974,93 @@ High-Water Mark:
                   </tbody>
                 </table>
               </div>
-              <InfoBox title="Protocol Treasury Allocation" color="green">
-                <p>40% → Platform engineering, infrastructure, and development</p>
-                <p>25% → Independent security audits, bug bounties, and formal verification</p>
-                <p>20% → Community liquidity incentives and ecosystem grants</p>
-                <p>15% → Legal, compliance research, and regulatory engagement</p>
-              </InfoBox>
+              <Sub title="10.1 Maker / Taker Determination &amp; Volume Calculation">
+                <p>Fee tier is determined by 30-day rolling notional volume, summed across all three trading surfaces:</p>
+                <Code>{`30d_volume = Σ notional_traded (spot + futures + VAMM)
+  notional  = executed_qty × execution_price
+
+Maker = order that adds liquidity to the order book (resting limit order)
+Taker = order that removes liquidity from the order book (market or matched limit)
+
+Fees apply to notional value of each trade.
+Tier is recalculated every 24 hours at 00:00 UTC.
+No rebates — maker fees are discounted, not negative.`}</Code>
+              </Sub>
+
+              <Sub title="10.2 Explicit Fee Formulas — All Surfaces">
+                <Code>{`AMM Swap:
+  fee_total  = swapAmount × 0.0030          (0.30%)
+  fee_LP     = fee_total × 5/6 = swapAmount × 0.0025   (0.25% → LPs)
+  fee_proto  = fee_total × 1/6 = swapAmount × 0.0005   (0.05% → treasury)
+  fee_IL     = swapAmount × 0.0005          (0.05% → IL insurance, additive)
+
+Bridge Transfer:
+  fee_bridge = amount × 0.0020             (0.20%)
+  fee_relayer = fee_bridge × 0.70          (70% → relayer network)
+  fee_protocol = fee_bridge × 0.30         (30% → treasury)
+
+BSV Settlement:
+  fee_BSV = bytes × satoshiPerByte
+    bytes          ≈ 150  (standard OP_RETURN settlement proof)
+    satoshiPerByte = 1
+    fee_BSV        ≈ 150 satoshis ≈ $0.0001  (pass-through; no OrahDEX markup)
+
+Futures Liquidation Penalty:
+  penalty = positionSize × 0.005           (0.50% of notional)
+  penalty → liquidation executor (Keeper); incentivises timely liquidation`}</Code>
+              </Sub>
+
+              <Sub title="10.3 Relayer &amp; Watchtower Incentive Model">
+                <div className="space-y-3">
+                  <div className="p-3 bg-secondary/40 border border-border rounded-xl space-y-1">
+                    <p className="text-xs font-bold text-foreground">Relayer Incentive</p>
+                    <p className="text-xs text-muted-foreground">Relayers earn 70% of bridge fees proportional to their bridge volume. Relayers with higher on-time claim/refund relay rates receive higher routing priority — the system self-optimises toward reliable relayers without any central authority. Malicious relayers (those who attempt censorship or delay) lose routing priority but cannot steal funds; the HTLC time-lock enforces the refund path independently of any relayer action.</p>
+                  </div>
+                  <div className="p-3 bg-secondary/40 border border-border rounded-xl space-y-1">
+                    <p className="text-xs font-bold text-foreground">Watchtower Incentive</p>
+                    <p className="text-xs text-muted-foreground">Watchtowers receive a fixed fee of 0.01% of the HTLC amount for each successful refund transaction broadcast. This ensures there is always an economic incentive to monitor for stalled HTLCs and execute refunds — even when the relayer network is unresponsive. Watchtowers hold zero funds; they can only broadcast a refund already authorised by the HTLC script.</p>
+                  </div>
+                </div>
+              </Sub>
+
+              <Sub title="10.4 CopyVault Economic Constraints">
+                <p className="text-xs text-muted-foreground"><strong>Leader anti-abuse:</strong> Leaders cannot extract performance fees during drawdowns or volatility spikes. The high-water mark is personal to each follower (depositSharePrice_follower) — a leader can only receive a performance fee from a follower when that follower's share value exceeds their personal entry share price. Volatile round-trips that end below the high-water mark generate zero fees.</p>
+                <p className="mt-2 text-xs text-muted-foreground"><strong>Follower withdrawal rights:</strong> Followers may withdraw at any time. There are no lock-up periods. Withdrawal does not harm other followers: ERC4626 share accounting is proportional — a withdrawal reduces totalShares and TVL in equal proportion, leaving sharePrice unchanged for remaining followers. Bank-run dynamics are architecturally prevented.</p>
+              </Sub>
+
+              <Sub title="10.5 Oracle Cost Model">
+                <p>Oracle updates (mark price computation, VWAP/TWAP aggregation, 210-symbol feed refresh) are funded entirely by the protocol treasury. No user pays a direct oracle fee. The cost is embedded in the protocol treasury share of AMM and bridge fees. This ensures price discovery is always available regardless of individual trade volume.</p>
+              </Sub>
+
+              <Sub title="10.6 Protocol Treasury — Revenue Sources">
+                <InfoBox title="Treasury Revenue Breakdown" color="green">
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {[
+                      ["AMM Swap fees", "1/6 of 0.30% per swap (0.05% per swap)"],
+                      ["Bridge fees", "30% of 0.20% per transfer (0.06% per transfer)"],
+                      ["VAMM synthetic fees", "100% of 0.30% simulation fee (virtual — adjusts treasury state)"],
+                      ["Futures fees", "0.02% maker / 0.06% taker per trade"],
+                      ["Liquidation penalties", "0.50% of liquidated position notional"],
+                      ["P2P trade fees", "0.50% per P2P trade"],
+                    ].map(([source, detail]) => (
+                      <p key={source as string}><span className="text-foreground font-medium">{source}</span> — {detail}</p>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-xs font-semibold text-foreground">Treasury allocation:</p>
+                  <p>40% → Platform engineering, infrastructure, and development</p>
+                  <p>25% → Independent security audits, bug bounties, and formal verification</p>
+                  <p>20% → Community liquidity incentives and ecosystem grants</p>
+                  <p>15% → Legal, compliance research, and regulatory engagement</p>
+                </InfoBox>
+              </Sub>
+
+              <Sub title="10.7 Protocol Sustainability &amp; No-Token Design">
+                <InfoBox title="OrahDEX Is Economically Self-Sustaining Without a Token" color="amber">
+                  <p>OrahDEX does not issue a governance token, utility token, or any platform token — because tokens introduce custodial risk, regulatory exposure, and misaligned incentives (short-term speculation vs long-term protocol health).</p>
+                  <p className="mt-2">The protocol is economically self-sustaining through transaction fees alone — no token issuance, no inflation, no governance token required. Every dollar of treasury revenue is generated by real trading activity. The protocol earns by providing genuine value, not by minting new supply.</p>
+                  <p className="mt-2">This is a deliberate design choice, not a roadmap gap. It is a major differentiator from every DeFi protocol that bootstrapped liquidity through token incentives and subsequently faced token inflation, regulatory action, or incentive collapse.</p>
+                </InfoBox>
+              </Sub>
             </Section>
 
             {/* ── 11. SECURITY ── */}
