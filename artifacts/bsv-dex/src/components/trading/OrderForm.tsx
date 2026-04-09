@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSignMessage, useAccount } from "wagmi";
+import { useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -7,11 +7,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { cn, formatPrice } from "@/lib/utils";
-import { getTxExplorerUrl } from "@/store/useWalletStore";
-import { checkAllowance, approveToken, fetchEvmBalance, signMessageWithReownProvider } from "@/lib/reown";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
-import { getChainToken, getChainRouter, getNativeSymbol } from "@/lib/chainConfig";
-import { evmTrade, getAmountsOut, WRAPPED_NATIVE } from "@/lib/dex-trade";
+import { getNativeSymbol } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
@@ -426,10 +423,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     return () => clearTimeout(t);
   }, [externalFill?.ts]);
 
-  const [signing, setSigning]       = useState(false);
-  const [approvalStep, setApprovalStep] = useState<
-    "idle" | "checking" | "needed" | "approving" | "approved"
-  >("idle");
 
   // ── Order confirmation modal ──────────────────────────────────────────────────
   // For limit/stop orders we show a confirmation bottom-sheet instead of
@@ -440,8 +433,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const confirmRef = useRef(false);
   const formRef    = useRef<HTMLFormElement | null>(null);
 
-  // Wagmi sign — covers MetaMask (injected) AND Reown/WalletConnect wallets
-  const { signMessageAsync } = useSignMessage();
   const { isConnected: evmConnected } = useAccount();
   const [settlement, setSettlement] = useState<{
     matched: boolean; txid: string | null; explorerUrl: string | null;
@@ -692,13 +683,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     enabled:       !!amount && parseFloat(amount) > 0,
   });
 
-  /**
-   * Sign the order intent with MetaMask (EVM) before submitting.
-   * For BSV wallets, no signing step is needed (BSV tx is built server-side).
-   */
-  const buildOrderMessage = () =>
-    `OrahDEX Order\nPair: ${symbol}\nSide: ${side.toUpperCase()}\nType: ${type.toUpperCase()}\nAmount: ${amount} ${base}${type !== "market" ? `\nPrice: $${price}` : ""}${type === "stop" ? `\nTrigger: $${stopPrice}` : ""}\nWallet: ${address}\nTimestamp: ${Date.now()}`;
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
@@ -760,177 +744,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
       return;
     }
 
-    const currentChainId = useWalletStore.getState().chainId ?? 1;
     const addTx   = useWalletStore.getState().addPendingTx;
-    const setbal  = useWalletStore.getState().setBalance;
-
-    // Per-chain router + token registry — correct addresses for every network
-    const routerAddr = getChainRouter(currentChainId);
-
-    // Only use window.ethereum for INJECTED wallets (MetaMask, Coinbase Wallet, etc.)
-    // Reown/WalletConnect wallets connect via the WalletConnect session — using
-    // window.ethereum with them would send requests to a different (injected) wallet.
-    const isInjectedWallet = isEvm && provider !== "reown" && !!(window as any).ethereum;
-
-    // ── Step 1: ERC-20 Allowance check for EVM sells ──────────────────────
-    // If the user is selling an ERC-20 token, verify the DEX router has
-    // enough allowance via allowance(owner, router). If not, request approve().
-    // Skip on the second call (after confirmation modal) — approval was already
-    // requested in the first call and re-checking avoids a duplicate prompt.
-    if (isInjectedWallet && side === "sell" && !confirmRef.current) {
-      // Look up the token contract on the CURRENT chain (not hardcoded mainnet)
-      const token = getChainToken(currentChainId, base);
-      if (token?.address) {
-        try {
-          setApprovalStep("checking");
-          const amtUnits = BigInt(Math.floor(parseFloat(amount) * 10 ** token.decimals));
-          const allowed  = await checkAllowance(token.address, address, routerAddr, currentChainId);
-
-          if (allowed < amtUnits) {
-            setApprovalStep("needed");
-            toast({
-              title: "Token Approval Required",
-              description: `Allow OrahDEX to spend your ${base} — you'll see a wallet prompt.`,
-            });
-
-            setApprovalStep("approving");
-            // Request max approval (0xfff...fff = unlimited)
-            const maxHex = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-            const approveTxHash = await approveToken(token.address, routerAddr, maxHex, address);
-
-            if (!approveTxHash) {
-              setApprovalStep("idle");
-              toast({ title: "Approval cancelled", description: "You rejected the approval request.", variant: "destructive" });
-              return;
-            }
-
-            // Track the approve tx
-            addTx({
-              hash:                 approveTxHash,
-              chainId,
-              label:                `Approve ${base} for OrahDEX`,
-              status:               "pending",
-              confirmations:        0,
-              requiredConfirmations: 1,
-              timestamp:            Date.now(),
-              explorerUrl:          getTxExplorerUrl(approveTxHash, chainId),
-            });
-
-            setApprovalStep("approved");
-            toast({
-              title: "Approval submitted",
-              description: `${base} approval tx sent — proceeding to sign order.`,
-            });
-          } else {
-            setApprovalStep("approved");
-          }
-        } catch {
-          setApprovalStep("idle");
-        }
-      }
-    }
-
-    // ── Step 2: EVM market orders — execute on-chain router swap ──────────
-    // Only runs for INJECTED wallets (MetaMask etc.) — Reown/WalletConnect
-    // wallets route through the API directly; no window.ethereum needed.
-    let onChainTxHash: string | undefined;
-    if (isInjectedWallet && type === "market") {
-      try {
-        setSigning(true);
-
-        const wNative   = WRAPPED_NATIVE[currentChainId];
-        const baseToken  = getChainToken(currentChainId, base);
-        const quoteToken = getChainToken(currentChainId, quote);
-
-        // Resolve token addresses; native coin uses its wrapped address in paths
-        const isNativeBase  = !baseToken  && !!wNative;
-        const isNativeQuote = !quoteToken && !!wNative;
-        const baseAddr  = baseToken?.address  ?? wNative ?? "";
-        const quoteAddr = quoteToken?.address ?? wNative ?? "";
-
-        if (baseAddr && quoteAddr) {
-          const amtFloat = parseFloat(amount);
-          let amountInUnits: bigint;
-          let isNativeIn  = false;
-          let isNativeOut = false;
-          let tokenPath: string[];
-
-          if (side === "sell") {
-            // Selling base asset → quote asset
-            // e.g. ETH → USDT: ETH(native) → USDT
-            const decimals   = baseToken?.decimals ?? 18;
-            amountInUnits    = BigInt(Math.floor(amtFloat * 10 ** decimals));
-            isNativeIn       = isNativeBase;
-            isNativeOut      = isNativeQuote;
-            tokenPath        = [baseAddr, quoteAddr];
-          } else {
-            // Buying base asset with quote asset
-            // e.g. USDT → ETH: USDT → ETH(native)
-            const total      = amtFloat * (parseFloat(price || "0") || currentPrice);
-            const decimals   = quoteToken?.decimals ?? 6;
-            amountInUnits    = BigInt(Math.floor(total * 10 ** decimals));
-            isNativeIn       = isNativeQuote;
-            isNativeOut      = isNativeBase;
-            tokenPath        = [quoteAddr, baseAddr];
-          }
-
-          if (amountInUnits > 0n) {
-            // Quote the expected output from the router
-            const quoted      = await getAmountsOut(routerAddr, amountInUnits, tokenPath, currentChainId);
-            const amountOutMin = quoted ?? 0n;
-
-            toast({
-              title: "Confirm Swap",
-              description: `Approve the on-chain swap in your wallet — ${amount} ${base}`,
-            });
-
-            try {
-              onChainTxHash = await evmTrade({
-                chainId:        currentChainId,
-                routerAddress:  routerAddr,
-                amountIn:       amountInUnits,
-                amountOutMin,
-                path:           tokenPath,
-                to:             address,
-                slippageBps:    Math.round(slippage * 100),
-                isNativeIn,
-                isNativeOut,
-              }) ?? undefined;
-
-              if (onChainTxHash) {
-                addTx({
-                  hash:                 onChainTxHash,
-                  chainId:              currentChainId,
-                  label:                `Swap ${amount} ${base} on ${side === "buy" ? "Buy" : "Sell"}`,
-                  status:               "pending",
-                  confirmations:        0,
-                  requiredConfirmations: 1,
-                  timestamp:            Date.now(),
-                  explorerUrl:          getTxExplorerUrl(onChainTxHash, currentChainId),
-                });
-                toast({
-                  title: "Swap Submitted ✓",
-                  description: `On-chain swap sent · ${onChainTxHash.slice(0, 14)}…`,
-                });
-              }
-            } catch (swapErr: any) {
-              setSigning(false);
-              setApprovalStep("idle");
-              if (swapErr?.code === "USER_REJECTED") {
-                toast({ title: "Swap cancelled", description: "You rejected the swap transaction.", variant: "destructive" });
-                return;
-              }
-              // Non-rejection error: fall through to API submission without on-chain hash
-              console.warn("[OrahDEX] EVM swap failed, falling back to API:", swapErr);
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn("[OrahDEX] EVM market swap error:", err);
-      } finally {
-        setSigning(false);
-      }
-    }
 
     // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
     // Limit and stop orders don't execute on-chain immediately — they sit in the
@@ -938,25 +752,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     // WalletConnect) and unnecessary since balance is enforced server-side.
     // Instead we show a clear confirmation modal that tells the user exactly what
     // they're placing, then submit directly to the API.
-    //
-    // Market orders on INJECTED wallets (MetaMask / Brave / Coinbase) already
-    // received user consent via the on-chain swap in Step 2. Reown market orders
-    // also go directly to the API (no second prompt needed).
     if (type !== "market" && !confirmRef.current) {
       setShowConfirm(true);
       return; // Wait for user to confirm in the modal
     }
     confirmRef.current = false; // Reset for next submission
 
-    // For on-chain market orders (injected wallets), signing is embedded in the
-    // swap transaction itself. No extra personal_sign prompt is needed.
-    let evmSignature: string | undefined;
-    // (evmSignature stays undefined for all non-on-chain paths — walletSource
-    //  sent to the API is the source of truth for external wallet identity)
-
-    setApprovalStep("idle");
-
-    // ── Step 4: Record the order — on success, track settlement tx ─────────
+    // ── Place the order — no wallet signing required ───────────────────────
+    // OrahDEX is an order-book DEX: orders are matched server-side and settled
+    // on BSV chain. No ERC-20 approval or wallet transaction is ever needed.
     placeOrder.mutate(
       {
         data: {
@@ -967,18 +771,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           price:          type !== "market" ? parseFloat(price) : undefined,
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
-          evmSignature,
-          // Attach the on-chain swap txHash for market orders so the API can
-          // record it and generate the corresponding BSV settlement tx.
-          signedTx:       onChainTxHash ?? evmSignature,
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
-          // Wallet source — tells server whether to apply demo/Orah auto-seeding
-          // or enforce real on-chain balance for external EVM wallets.
           walletSource:   isDemo ? "demo" : isOrahWallet ? "orah" : "external",
-          // Reported on-chain balance for server-side sanity check (external wallets only).
-          // Server rejects sell orders where quantity > reportedBalance.
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
-          // Optional cross-chain receive address (e.g. Cardano addr when BSV wallet buys ADA)
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
         } as any,
@@ -1046,8 +841,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
-  const isApproving = approvalStep === "checking" || approvalStep === "needed" || approvalStep === "approving";
-  const isPending = placeOrder.isPending || signing || isApproving;
+  const isPending = placeOrder.isPending;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
@@ -1609,16 +1403,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             </div>
           )}
 
-          {/* EVM approval step indicator */}
-          {approvalStep !== "idle" && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs">
-              {approvalStep === "checking" && <><Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" /><span className="text-amber-300">Checking {base} allowance…</span></>}
-              {approvalStep === "needed"   && <><AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" /><span className="text-amber-300">Approval required — confirm in wallet</span></>}
-              {approvalStep === "approving" && <><Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" /><span className="text-amber-300">Waiting for approval tx…</span></>}
-              {approvalStep === "approved"  && <><ShieldCheck className="w-3.5 h-3.5 text-green-400 shrink-0" /><span className="text-green-300">Allowance confirmed — submitting swap</span></>}
-            </div>
-          )}
-
           {/* ── Precheck panel: errors + warnings ─────────────────────────── */}
           {amount && parseFloat(amount) > 0 && (
             <div className="flex flex-col gap-1.5">
@@ -1675,11 +1459,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               (!canSubmit || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
-            {approvalStep === "checking" || approvalStep === "needed" ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Checking allowance…</>
-            ) : approvalStep === "approving" ? (
-              <><Lock className="w-4 h-4 animate-pulse" /> Approving {base}…</>
-            ) : isPending ? (
+            {isPending ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`
