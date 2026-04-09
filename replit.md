@@ -77,6 +77,23 @@ The project is structured as a pnpm monorepo using TypeScript. It includes:
 - **New API endpoints**: `POST /futures/margin/deposit` (cross-bucket deposit), `GET /futures/margin/:walletAddress` (bucket balance check).
 - **Frontend wallet utility**: `artifacts/bsv-dex/src/lib/orderIntent.ts` — `buildOrderIntent()`, `canonicalIntentPayload()`, `validateOrderIntentClient()`, `balanceBucketFor()` helpers.
 
+### EVM HTLC Atomic Settlement (v4.2.0)
+- **Contract**: `contracts/OrahDEXHTLC.sol` — Solidity HTLC supporting native ETH and any ERC-20 token. Functions: `lockETH()`, `lockToken()`, `reveal(secret)`, `refund()`, `getLock()`, `isLocked()`. Uses `keccak256(abi.encodePacked(secret)) == secretHash` for verification. Re-entrancy safe (state mutated before transfers). Tested on Ethereum, Polygon, BSC.
+- **Deployment script**: `contracts/deploy.ts` — viem-based deployment with gas estimation, explorer link, and env variable hint.
+- **DB table**: `evm_htlc_sessions` — tracks both sides of an atomic swap: sellerLockId / buyerLockId (derived as `keccak256(tradeId+"_seller/buyer")`), secret, secretHash, status, lock txids, reveal txids.
+- **Service**: `artifacts/api-server/src/lib/evmHtlc.ts` — `initiateEvmHtlcSession()` generates secret/hash pair, derives lock IDs, builds pre-encoded calldata for MetaMask, persists session; `confirmLockTx()` records frontend-reported lock txids; `startEvmHtlcWatcher()` polls `isLocked()` on-chain every 30 s, calls `reveal()` via relayer wallet when both sides locked. Supports Ethereum (chainId=1), Polygon (137), BSC (56).
+- **API endpoints**: `GET /api/settlement/evm/chains`, `POST /api/settlement/evm/session`, `GET /api/settlement/evm/session/:id`, `GET /api/settlement/evm/trade/:tradeId`, `POST /api/settlement/evm/confirm-lock`.
+- **Frontend hook**: `artifacts/bsv-dex/src/hooks/useEvmHtlcSession.ts` — polls session every 10 s, stops on terminal status, provides `confirmLock()`, `buildEthLockTxParams()`, `buildTokenLockTxParams()`, `buildErc20ApproveTxParams()` helpers.
+- **Frontend card**: `artifacts/bsv-dex/src/components/trading/HTLCSettlementCard.tsx` — shows step progress (Awaiting locks → Locking → Both locked → Settling → Complete), per-side lock panels with MetaMask action buttons (approve + lock), explorer tx links, timelock countdown, graceful expired/refunded states.
+- **Timelock design**: Seller 30 min (outer), Buyer 15 min (inner) — asymmetric so buyer's lock expires first, protecting the seller.
+- **Env vars for deployment**: `EVM_HTLC_CONTRACT_ETH`, `EVM_HTLC_CONTRACT_POLYGON`, `EVM_HTLC_CONTRACT_BSC`, `EVM_RELAYER_KEY` (for auto-reveal), `ETH_RPC_URL`, `POLYGON_RPC_URL`, `BSC_RPC_URL`.
+
+### BSV HTLC Atomic Settlement (pre-existing)
+- **Builder**: `artifacts/api-server/src/lib/htlc.ts` — P2SH HTLC script builder with `buildHtlc()`, `buildClaimScriptSig()`, `buildRefundScriptSig()`. Uses SHA-256 preimage, CLTV timelock.
+- **Watcher**: `artifacts/api-server/src/lib/htlcWatcher.ts` — DB-backed adaptive polling, keeper action log, terminal state tracking.
+- **Settlement**: `artifacts/api-server/src/lib/spotSettlement.ts` — full pipeline: HTLC generation → OP_RETURN → BSV broadcast → ledger settle → watcher registration.
+- **API**: `/api/bridge` — HTLC create, status poll, cancel.
+
 ### P2P + Atomic Swap
 - **Features**: Dedicated P2P and Atomic Swap tabs, with an HTLC form, protocol visualizer, and BSV settlement.
 

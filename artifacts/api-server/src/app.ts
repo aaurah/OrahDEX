@@ -11,6 +11,7 @@ import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
 import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.js";
 import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
+import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 
 const app: Express = express();
 
@@ -136,6 +137,7 @@ try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startL
 try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
 try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
+startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
 
 /* ── Connectivity ping — returns 204 ─────────────────────────────────────── */
