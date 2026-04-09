@@ -299,6 +299,11 @@ export function WhitePaper() {
 
             {/* ── 3. ARCHITECTURE ── */}
             <Section id="architecture" title="3. Technical Architecture">
+              <InfoBox title="Protocol Naming Convention" color="amber">
+                <p><strong>OrahDEX</strong> — the trading protocol, DEX, and all on-chain components described in this paper.</p>
+                <p><strong>Ora</strong> — the embedded AI trading intelligence layer (Section 9).</p>
+                <p><strong>Aura · Aaurah</strong> — creative aliases of the founder Parminder Singh; they are personal pen names, not protocol components or product names.</p>
+              </InfoBox>
               <p>OrahDEX is composed of five primary layers, each independently operable and cryptographically verifiable:</p>
               <div className="space-y-3">
                 {[
@@ -306,19 +311,19 @@ export function WhitePaper() {
                     layer: "Layer 1 — Settlement (Bitcoin SV)",
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
-                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including OrahDEX itself.",
+                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including OrahDEX itself. Strict boundary: HTLC scripts · OP_RETURN proofs · UTXO validation · final settlement. Nothing else enters this layer.",
                   },
                   {
                     layer: "Layer 2 — Protocol Contracts (EVM + BSV Script)",
                     color: "text-blue-400",
                     bg: "bg-blue-400/5 border-blue-400/15",
-                    desc: "Uniswap V3-style concentrated AMM contracts for EVM chains. Custom on-chain order book contracts for limit order matching. ERC4626-style CopyVault contracts for share-accounting. HTLC locking scripts on BSV. All protocol contracts are deterministic, publicly auditable, and require no admin keys to operate.",
+                    desc: "Uniswap V3-style concentrated AMM contracts for EVM chains. Custom on-chain order book contracts for limit order matching. ERC4626-style CopyVault contracts for share-accounting. HTLC locking scripts on BSV. All protocol contracts are deterministic, publicly auditable, and require no admin keys to operate. Strict boundary: AMM pools · order book contracts · ERC4626 vault share accounting · HTLC lock/unlock. No price oracle logic and no business logic lives in this layer.",
                   },
                   {
                     layer: "Layer 3 — Application Server (Node.js / Express)",
                     color: "text-violet-400",
                     bg: "bg-violet-400/5 border-violet-400/15",
-                    desc: "Stateless order book management, sovereign price engine (own trade data + on-chain TWAP feeds + 210-symbol market aggregation), CopyVault orchestration, Ora AI chat relay, BSV WhatsOnChain integration, WebSocket real-time price feeds, and the Genesis Liquidity Engine execution layer. This layer holds zero user funds and zero user identity.",
+                    desc: "Stateless order book management, sovereign price engine (own trade data + on-chain TWAP feeds + 210-symbol market aggregation), CopyVault orchestration (mirror allocation computation + BSV settlement relay), Ora AI chat relay, BSV WhatsOnChain integration, WebSocket real-time price feeds, Genesis Liquidity Engine (VAMM) execution, futures mark price computation, and watchtower/relayer coordination. This layer holds zero user funds and zero user identity.",
                   },
                   {
                     layer: "Layer 4 — Intelligence (Ora AI)",
@@ -330,7 +335,7 @@ export function WhitePaper() {
                     layer: "Layer 5 — Sovereign Interface (React + Vite)",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. Demo Account ($80,000 virtual paper trading). 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody.",
+                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. Demo Account ($80,000 virtual paper trading). 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody. Strict boundary: wallet connection · local signing (ECDSA/EdDSA) · UI rendering · charting · trade forms. No price computation and no business logic lives in this layer. Private keys never leave the user's device; OrahDEX servers see only signed messages.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -468,6 +473,14 @@ Txid computation:
   txid = SHA256(SHA256(raw_tx_bytes))   [double-SHA256 — matches Bitcoin/BSV consensus rule for txid]
   This is distinct from BTC SegWit's wtxid; BSV has no SegWit — all txids are computed identically.
   This matches exactly what WhatsOnChain and all BSV explorers compute.
+
+Settlement pipeline (every matched trade):
+  1. User signs order locally (ECDSA personal_sign — private key never leaves device)
+  2. Signed order submitted to application server; order matched in order book
+  3. Application server constructs OP_RETURN payload with trade data + tradeId
+  4. BSV transaction broadcast to the network
+  5. WhatsOnChain confirms txid (6-confirmation finality for large settlements)
+  6. Trade status updated to "settled"; txid stored immutably in trade record
 
 Properties:
   • Permanent — OP_RETURN outputs cannot be spent; data persists forever
@@ -608,7 +621,12 @@ Concentrated liquidity (Uniswap V3 model):
     LP_value     = positionSize × currentPrice   [mark-to-market of synthetic position]
 
   NOT:  total = wallet + LP  ← this would double-count
-  YES:  total = wallet + realisedPnL       ← LP is synthetic, wallet tokens untouched`}</Code>
+  YES:  total = wallet + realisedPnL       ← LP is synthetic, wallet tokens untouched
+
+Unified balance classification:
+  REAL balance    = on-chain wallet assets + realisedPnL from closed positions
+  SYNTHETIC balance = open LP positions + VAMM positions + unrealised futures PnL
+  Synthetic balances do NOT modify wallet balances; they are informational overlays only.`}</Code>
               </Sub>
             </Section>
 
@@ -712,9 +730,9 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
               <Sub title="6.1 Architecture & Security Model">
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
                   <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX moves native assets atomically — no de-peg risk, no synthetic counterparty exposure. All supported bridge pairs use native assets only; unsupported assets cannot be bridged.</li>
-                  <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Permissionless relayers coordinate HTLC handshakes between chains. Relayers earn fees proportional to bridge volume; malicious relayers cannot steal funds — the HTLC simply refunds automatically after time-lock expiry. No staked collateral is required; the cryptographic time-lock is the enforcement mechanism.</li>
+                  <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Relayers coordinate HTLC creation and claim propagation — they monitor both chains for the preimage reveal and route it to the other leg. Relayers earn fees proportional to bridge volume; malicious relayers cannot steal funds — the HTLC simply refunds automatically after time-lock expiry. No staked collateral is required; the cryptographic time-lock is the enforcement mechanism. Neither relayers nor watchtowers ever hold user funds.</li>
                   <li><span className="font-medium text-foreground">Time-Lock Safety:</span> All HTLCs have configurable time locks (minimum 24h for large amounts). No action by any party within the time lock results in automatic on-chain refund — no human intervention required.</li>
-                  <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> OrahDEX operates independent watchtower nodes that detect stalled HTLCs and trigger automated refund broadcasts on behalf of users. A stalled HTLC is defined as one where no claim transaction is detected on-chain before T₂ − safetyMargin — at which point the watchtower broadcasts the refund preemptively, giving the user on-chain recovery without any manual action.</li>
+                  <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> Watchtowers monitor for stalled HTLCs and broadcast refunds when no claim is detected before T₂ − safetyMargin. Watchtowers act on behalf of users but hold zero funds — they can only trigger a refund transaction already authorised by the HTLC script. The cryptographic time-lock is the enforcement mechanism; watchtowers merely accelerate the process.</li>
                   <li><span className="font-medium text-foreground">Multi-Network Support:</span> Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos + BSV (settlement anchor).</li>
                 </ul>
               </Sub>
@@ -731,7 +749,7 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
             <Section id="trading" title="7. Trading Engine">
               <Sub title="7.1 Spot Trading — 950+ Pairs">
                 <p>
-                  Market orders are routed through OrahDEX's smart order router — selecting the lowest slippage path across AMM pool, on-chain order book, VAMM, and P2P matching. Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
+                  Market orders are routed through OrahDEX's smart order router using strict priority routing: (1) on-chain order book — matched first if matching liquidity exists; (2) AMM pool — used if pool depth is sufficient for the order size; (3) VAMM (Genesis Engine) — sovereign fallback, always available. This priority is deterministic and ensures best execution. Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
                 </p>
                 <p>
                   OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Decimal places are computed as: <code className="text-green-400 text-[10px]">precision = max(2, ⌊log₁₀(price)⌋ × −1)</code> — so a price of $0.00042 renders to 5dp, $71,000 to 2dp. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
@@ -750,6 +768,11 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
   median(a, b, c) = the middle value when a, b, c are sorted;
                     no single feed can move mark price without corrupting two of three.
 
+Stale source rule:
+  Any source not updated within the last 30 seconds is excluded before taking the median.
+  If only one source is live: mark price = that source (with stale-data warning flag).
+  If zero sources are live: mark price is frozen at last known value; new positions blocked.
+
 Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
 
 Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
@@ -762,7 +785,14 @@ Liquidation Price (long):          [MaintenanceMargin = 0.005 = 0.5% of notional
   L_price = Entry Price × (1 − 1/Leverage + MaintenanceMargin)
 
 Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional, default]
-  L_price = Entry Price × (1 + 1/Leverage − MaintenanceMargin)`}</Code>
+  L_price = Entry Price × (1 + 1/Leverage − MaintenanceMargin)
+
+Liquidation pipeline:
+  1. Application server monitors mark price every 1 second for all open positions.
+  2. When mark price crosses a position's L_price threshold, liquidation is triggered.
+  3. Position is forcibly closed at mark price; remaining margin is distributed.
+  4. A BSV OP_RETURN proof is broadcast for the liquidation event — identical format to spot trades.
+  5. User is notified; position is removed from the order book.`}</Code>
               </Sub>
               <Sub title="7.3 P2P Trading — Fiat ↔ Crypto with HTLC Escrow">
                 <p>Direct peer-to-peer trading with custom payment methods (bank transfer, mobile money, local fiat). Trades are secured by BSV HTLC escrow: funds are locked on-chain before the seller releases, and the HTLC self-refunds if the buyer fails to confirm within the time lock. OrahDEX's decentralised arbitration panel resolves disputes based on on-chain evidence.</p>
@@ -839,6 +869,7 @@ High-Water Mark:
               </Sub>
 
               <Sub title="8.2 BSV Proof Chain for Every Mirror Trade">
+                <p>CopyVault responsibility is split across three layers: <strong>Layer 2</strong> handles vault share accounting (ERC4626 maths, deposit/withdraw); <strong>Layer 3</strong> (application server) computes mirror allocations and triggers BSV settlement relay; <strong>Layer 1</strong> (BSV blockchain) stores the immutable OP_RETURN records. No layer's boundary is crossed: accounting logic lives on-chain, orchestration logic lives server-side, and proof records live on BSV — permanently.</p>
                 <p>For every trade the leader executes, OrahDEX's orchestrator computes and records:</p>
                 <ol className="list-decimal list-inside space-y-1.5 ml-1">
                   <li>Leader trade recorded in <code className="text-green-400 text-[10px]">orders</code> table with BSV txid</li>
@@ -1262,7 +1293,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "App Store Removal (iOS / Android)",
                       cost: "Low (platform policy)",
                       impact: "Low",
-                      response: "OrahDEX is a Progressive Web App (PWA) — installable from any browser without an app store. Mobile web access requires no app store approval or distribution agreement.",
+                      response: "OrahDEX is a Progressive Web App (PWA) — installable from any browser without an app store. Mobile web access requires no app store approval or distribution agreement. Offline behaviour: the interface caches static assets and last-known market data for offline viewing; no trades can be executed offline — all order submission, signing, and settlement require a live connection.",
                       color: "text-green-400",
                       bg: "bg-green-400/5 border-green-400/10",
                     },
