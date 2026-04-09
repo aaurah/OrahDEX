@@ -418,6 +418,9 @@ export function LandingPage() {
               <br />
               <span className="text-green-400">DEX.</span>
             </h1>
+            <p className="mt-4 text-lg sm:text-xl font-semibold text-muted-foreground">
+              Trade as a <span className="text-amber-400 font-bold">Keeper</span>, not a customer.
+            </p>
           </div>
 
           {/* Ritual taglines */}
@@ -467,6 +470,75 @@ export function LandingPage() {
             <BsvBlockPill blockHeight={bsvBlock} blockHash={bsvBlockHash} />
           </div>
 
+        </div>
+      </section>
+
+      {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
+      <section className="relative px-6 lg:px-10 pb-6 -mt-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="rounded-2xl border border-border/60 overflow-hidden"
+            style={{ background: "radial-gradient(circle at top left, rgba(24,27,43,0.9) 0%, rgba(5,6,10,0.95) 60%)" }}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
+              <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Protocol Snapshot</span>
+              <div className="flex items-center gap-1.5 text-[10px] font-black text-green-400 uppercase tracking-widest">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                Online
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-border/40">
+              {[
+                { label: "Settlement", value: "BSV + OP_RETURN" },
+                { label: "Liquidity", value: "AMM + VAMM + OB" },
+                { label: "Bridge", value: "HTLC, no custody" },
+                { label: "Copy trading", value: "CopyVault ERC4626" },
+                { label: "AI layer", value: "Ora (context‑aware)" },
+                { label: "Identity", value: "Wallet‑only, no KYC" },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex flex-col gap-1 px-4 py-3.5">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest">{label}</span>
+                  <span className="text-xs font-bold text-foreground">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
+      <section className="relative px-6 lg:px-10 py-12">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            {
+              label: "Settlement",
+              pill: "BSV proofs",
+              pillColor: "#4ade80",
+              desc: "Every trade, vault rebalance, and bridge event is anchored to BSV as an OP_RETURN settlement proof — immutable, verifiable, and independent of any intermediary.",
+            },
+            {
+              label: "Liquidity",
+              pill: "Genesis engine",
+              pillColor: "#F5A623",
+              desc: "A hybrid of constant-product AMM, virtual AMM, and orderbook routing ensures every listed asset is tradeable — even with few users and no external market makers.",
+            },
+            {
+              label: "CopyVault",
+              pill: "Leaders & followers",
+              pillColor: "#c084fc",
+              desc: "ERC4626-style vaults mirror leader trades on-chain, with BSV proof chains and high-water-mark performance fees — no pooled custody, no opaque risk.",
+            },
+          ].map(({ label, pill, pillColor, desc }) => (
+            <div key={label}
+              className="rounded-2xl border border-border bg-card/40 p-5 flex flex-col gap-3 hover:bg-card/60 transition-colors">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-foreground">{label}</span>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full border uppercase tracking-wider"
+                  style={{ color: pillColor, borderColor: `${pillColor}30`, background: `${pillColor}10` }}>
+                  {pill}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+            </div>
+          ))}
         </div>
       </section>
 
