@@ -200,15 +200,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Support chat button */}
-          <button
-            onClick={() => setChatOpen(true)}
-            title="Live Support"
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/60 text-muted-foreground active:bg-secondary transition-colors shrink-0 mr-1.5"
-          >
-            <MessageCircle size={17} className="text-foreground/80" />
-          </button>
-
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
@@ -288,6 +279,17 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
       </Suspense>
+      {/* Floating chat button — bottom right */}
+      {!chatOpen && (
+        <button
+          onClick={() => setChatOpen(true)}
+          title="Live Support"
+          className="fixed bottom-20 right-4 z-50 w-13 h-13 rounded-full shadow-2xl bg-gradient-to-br from-primary/90 to-primary flex items-center justify-center active:scale-95 transition-transform"
+          style={{ width: 52, height: 52 }}
+        >
+          <MessageCircle size={22} className="text-white" />
+        </button>
+      )}
       <MobileChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
