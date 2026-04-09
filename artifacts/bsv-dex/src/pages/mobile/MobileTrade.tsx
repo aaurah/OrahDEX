@@ -282,12 +282,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  // Dedup guard — prevents double toasts when the same fill event fires twice
+  // Dedup guard — prevents double banner/toast when the same fill event fires twice
   const lastProcessedTradeIdRef = useRef<string | null>(null);
 
   const [orderResult, setOrderResult] = useState<{
-    matched: boolean; txid?: string; side: string; base: string;
-    avgFillPrice: number; filledQty: number; fee: number;
+    tradeId: string | null;
+    matched: boolean;
+    txid?: string;
+    side: string;
+    base: string;
+    quoteSymbol: string;
+    avgFillPrice: number;
+    filledQty: number;
+    fee: number;
   } | null>(null);
 
   const orderMutation = useMutation({
@@ -303,41 +310,46 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onSuccess: (data, variables: any) => {
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
-      const tradeId  = data?.id ?? data?.txid ?? null;
+      const tradeId  = data?.id ?? null;
       const ordSide  = variables?.side ?? side;
-      const ordBase  = base;
+      const ordBase  = data?.symbol?.split("/")[0] ?? base;
+      const ordQuote = data?.quoteSymbol ?? quote;
 
-      // ── Fill data: use API response fields, never wallet/balance diff ────────
-      // data.filledQuantity — actual qty filled (base asset)
-      // data.price          — avgFillPrice (set by server after match, always present for market orders)
-      // data.total          — filledQty × fillPrice (quote currency gross)
+      // ── Dedup guard: must run BEFORE any state update or toast ───────────────
+      if (matched && tradeId && tradeId === lastProcessedTradeIdRef.current) return;
+      if (matched && tradeId) lastProcessedTradeIdRef.current = tradeId;
+
+      // ── Fill data: all sourced from API response, never from user inputs ──────
+      // data.filledQuantity — actual qty filled (base asset, set by matcher)
+      // data.price          — avgFillPrice (always set for matched orders)
+      // data.total          — filledQty × price (gross quote, set by matcher)
       // data.fee            — 0.1% of gross in quote currency
-      const filledQty    = data?.filledQuantity ?? parseFloat(variables?.quantity ?? amount ?? "0");
+      const filledQty    = data?.filledQuantity ?? 0;
       const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : 0);
       const fee          = data?.fee ?? 0;
 
-      setOrderResult({ matched, txid, side: ordSide, base: ordBase, avgFillPrice, filledQty, fee });
+      // Limit/stop order display fields for unmatched orders
+      const ordQtyDisplay   = data?.quantity ?? variables?.quantity ?? "";
+      const ordPriceDisplay = data?.price && !matched ? String(data.price) : (variables?.price ?? "");
+
+      setOrderResult({ tradeId, matched, txid, side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {
-        // Dedup: skip if we already toasted this trade fill
-        if (tradeId && tradeId === lastProcessedTradeIdRef.current) return;
-        if (tradeId) lastProcessedTradeIdRef.current = tradeId;
+        // Credit the OrahDEX exchange balance ledger so Portfolio reflects the fill
+        applyFill(address, ordSide as "buy" | "sell", ordBase, ordQuote, filledQty, avgFillPrice);
 
-        // Credit the exchange balance ledger
-        applyFill(address, ordSide as "buy" | "sell", ordBase, quote, filledQty, avgFillPrice);
-
-        // Compute credited amount from fill payload — no wallet/balance diff
+        // Compute credited amount from fill payload — never from wallet diff
         let receivedQty: string;
         let receivedTok: string;
         if (ordSide === "sell") {
           const gross = filledQty * avgFillPrice;
           const net   = gross - fee;
           receivedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-          receivedTok = quote;
+          receivedTok = ordQuote;
         } else {
           receivedQty = filledQty > 0 ? filledQty.toFixed(6) : "0";
           receivedTok = ordBase;
@@ -356,18 +368,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           txid: txid ?? undefined,
         });
       } else {
+        // Unmatched: use quantity and price from the API-confirmed order record
+        const qtyStr = ordQtyDisplay ? String(ordQtyDisplay) : amount;
         toast({
           title: `📋 ${ordSide === "sell" ? "Sell" : "Buy"} Order Placed`,
-          description: ordPrice
-            ? `${ordAmt} ${ordBase} @ $${parseFloat(ordPrice).toLocaleString()} · open in order book, waiting for match`
-            : `${ordAmt} ${ordBase} open — waiting for a matching ${ordSide === "sell" ? "buyer" : "seller"}`,
+          description: ordPriceDisplay
+            ? `${qtyStr} ${ordBase} @ $${parseFloat(ordPriceDisplay).toLocaleString()} · open in order book, waiting for match`
+            : `${qtyStr} ${ordBase} open — waiting for a matching ${ordSide === "sell" ? "buyer" : "seller"}`,
         });
         addNotification({
           type: "order_placed",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Open`,
-          body: ordPrice
-            ? `${ordAmt} ${ordBase} @ $${parseFloat(ordPrice).toLocaleString()} · waiting for match`
-            : `${ordAmt} ${ordBase} in order book`,
+          body: ordPriceDisplay
+            ? `${qtyStr} ${ordBase} @ $${parseFloat(ordPriceDisplay).toLocaleString()} · waiting for match`
+            : `${qtyStr} ${ordBase} in order book`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
         });
@@ -1460,21 +1474,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {orderResult.matched
                     ? (() => {
-                        // Compute credited amount directly from fill payload — no wallet diff
-                        let receivedQty: string;
-                        let receivedTok: string;
+                        // All values from API fill payload — no wallet diff, no user-input price
+                        const gross = orderResult.filledQty * orderResult.avgFillPrice;
+                        const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
-                          const gross = orderResult.filledQty * orderResult.avgFillPrice;
-                          const net   = gross - orderResult.fee;
-                          receivedQty = (net > 0 ? net : gross).toFixed(2);
-                          receivedTok = quote;
+                          const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
+                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
                         } else {
-                          receivedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          receivedTok = orderResult.base;
+                          const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
+                          return `+${creditedQty} ${orderResult.base} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
                         }
-                        return `+${receivedQty} ${receivedTok} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
                       })()
-                    : `${orderResult.filledQty || ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
+                    : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
                   }
                 </p>
               </div>

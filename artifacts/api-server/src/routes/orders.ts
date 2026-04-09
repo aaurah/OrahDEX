@@ -381,10 +381,16 @@ router.post("/orders", async (req, res) => {
     // Return the created order (re-read for updated status if matched)
     const [created] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
 
+    // Derive quoteSymbol from the order symbol so the client never has to
+    // parse it — required for fill notification display on all order types.
+    const symbolParts = (created.symbol ?? "").split("/");
+    const quoteSymbol = symbolParts[1]?.replace("-PERP", "") ?? "USDT";
+
     res.status(201).json({
       ...serializeOrder(created),
       matched:        !!settlementTxid,
       settlementTxid,
+      quoteSymbol,
       explorerUrl:    settlementTxid ? `https://whatsonchain.com/tx/${settlementTxid}` : null,
       // BSV Core DEX v2 settlement metadata
       settlement: settlementTxid ? {
