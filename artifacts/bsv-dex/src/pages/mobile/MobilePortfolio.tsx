@@ -459,7 +459,7 @@ export function MobilePortfolio() {
                   <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl px-3 py-2 mb-2 flex items-start gap-2">
                     <svg className="w-3.5 h-3.5 text-yellow-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
                     <p className="text-[10px] text-yellow-300/90 leading-relaxed">
-                      <span className="font-semibold">{consumedNote} traded via OrahDEX</span> — balance reduced to reflect fills. Withdraw your OrahDEX earnings to restore.
+                      <span className="font-semibold">{consumedNote} was traded via OrahDEX</span> — wallet balance adjusted to reflect those fills. To trade going forward, use <span className="text-yellow-200 font-semibold">Deposit</span> below to add funds to your OrahDEX balance first.
                     </p>
                   </div>
                 )}
