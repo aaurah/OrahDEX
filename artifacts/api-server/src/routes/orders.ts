@@ -11,6 +11,7 @@ import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
+import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 
 const router: IRouter = Router();
@@ -184,6 +185,8 @@ router.post("/orders", async (req, res) => {
     let lastHtlcLocktimeBlocks: number | undefined;
     let lastCrossChain = false;
     let lastOpReturnPayload: string | undefined;
+    // EVM HTLC session — set when both parties are external EVM wallets
+    let lastEvmHtlcSession: Awaited<ReturnType<typeof initiateEvmHtlcSession>> | null = null;
 
     const isMarket = body.type === "market";
     const isLimit  = body.type === "limit" && !!price;
@@ -342,6 +345,63 @@ router.post("/orders", async (req, res) => {
         lastCrossChain         = fillResult.isCrossChain;
         lastOpReturnPayload    = fillResult.opReturnPayload;
         // Note: HTLC registration with watcher is handled inside settleSpotFill()
+
+        // ── EVM HTLC atomic settlement (non-custodial wallet-to-wallet) ───────
+        // When both parties are external EVM wallets, create an EVM HTLC session
+        // so they can lock funds on-chain and settle atomically without OrahDEX
+        // ever holding their assets.
+        // A wallet is "truly external EVM" if:
+        //   - fundingRef starts with "evm-sig:" or "evm-balance:" (set by fundingVerifier for external wallets)
+        //   - OR walletAddress is 0x-prefixed AND networkType is evm (heuristic for legacy orders)
+        // Bot fills always use the internal ledger — never create HTLC sessions for bots.
+        const incomingIsEvmExternal = walletSource === "external" && networkType === "evm";
+        const matchFundingRef = match.fundingRef ?? "";
+        const matchIsEvmExternal = !isBot && (
+          matchFundingRef.startsWith("evm-sig:") ||
+          matchFundingRef.startsWith("evm-balance:") ||
+          (match.walletAddress.startsWith("0x") && (match.networkType ?? "evm") === "evm" && !matchFundingRef.startsWith("ledger:") && !matchFundingRef.startsWith("margin:"))
+        );
+        const bothEvm = incomingIsEvmExternal && matchIsEvmExternal;
+
+        if (bothEvm && !lastEvmHtlcSession) {
+          try {
+            // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum)
+            const chainId = body.chainId ? Number(body.chainId) : 1;
+            const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
+
+            // Resolve token addresses from pair
+            const [base, quot] = body.symbol.split("/");
+            const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
+            const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
+
+            // Amounts in smallest on-chain units
+            const ETH_DECIMALS  = 18;
+            const USDT_DECIMALS = 6;
+            const fillWei       = BigInt(Math.round(fillQty   * 10 ** ETH_DECIMALS));
+            const fillUsdt      = BigInt(Math.round(fillValue * 10 ** USDT_DECIMALS));
+
+            lastEvmHtlcSession = await initiateEvmHtlcSession({
+              tradeId:       tradeId,
+              pair:          body.symbol,
+              chainId,
+              sellerAddress: sellerAddress as `0x${string}`,
+              buyerAddress:  buyerAddress  as `0x${string}`,
+              sellerAsset:   baseIsNative ? chainConfig.nativeSymbol : (base ?? "ETH"),
+              sellerAmount:  fillWei.toString(),
+              sellerToken:   baseIsNative ? null : (chainConfig.usdtAddress ?? null),
+              buyerAsset:    quoteIsUsdt ? "USDT" : (quot ?? "USDT"),
+              buyerAmount:   fillUsdt.toString(),
+              buyerToken:    quoteIsUsdt ? (chainConfig.usdtAddress ?? null) : null,
+            });
+
+            req.log.info(
+              { sessionId: lastEvmHtlcSession.id, tradeId, sellerAddress, buyerAddress, chainId },
+              "orders: EVM HTLC session created for non-custodial settlement"
+            );
+          } catch (evmErr) {
+            req.log.warn({ err: evmErr, tradeId }, "orders: EVM HTLC session creation failed — trade still recorded");
+          }
+        }
       }
 
       if (totalFilled > 0) {
@@ -400,6 +460,37 @@ router.post("/orders", async (req, res) => {
         htlcSecretHash:    lastHtlcSecretHash ?? null,
         htlcLocktimeBlocks: lastHtlcLocktimeBlocks ?? null,
         opReturnPayload:   lastOpReturnPayload ?? null,
+      } : null,
+      // EVM HTLC non-custodial settlement session (present when both parties are external EVM wallets)
+      // The frontend should prompt both parties to lock their funds on-chain to complete the trade.
+      evmHtlcSession: lastEvmHtlcSession ? {
+        id:              lastEvmHtlcSession.id,
+        tradeId:         lastEvmHtlcSession.tradeId,
+        chainId:         lastEvmHtlcSession.chainId,
+        contractAddress: lastEvmHtlcSession.contractAddress,
+        secretHash:      lastEvmHtlcSession.secretHash,
+        status:          lastEvmHtlcSession.status,
+        sellerLock: {
+          lockId:          lastEvmHtlcSession.sellerLock.lockId,
+          contractAddress: lastEvmHtlcSession.sellerLock.contractAddress,
+          asset:           lastEvmHtlcSession.sellerLock.asset,
+          amount:          lastEvmHtlcSession.sellerLock.amount,
+          tokenAddress:    lastEvmHtlcSession.sellerLock.tokenAddress,
+          timelockUnix:    lastEvmHtlcSession.sellerLock.timelockUnix,
+          calldata:        lastEvmHtlcSession.sellerLock.calldata,
+          instructions:    lastEvmHtlcSession.sellerLock.instructions,
+        },
+        buyerLock: {
+          lockId:          lastEvmHtlcSession.buyerLock.lockId,
+          contractAddress: lastEvmHtlcSession.buyerLock.contractAddress,
+          asset:           lastEvmHtlcSession.buyerLock.asset,
+          amount:          lastEvmHtlcSession.buyerLock.amount,
+          tokenAddress:    lastEvmHtlcSession.buyerLock.tokenAddress,
+          timelockUnix:    lastEvmHtlcSession.buyerLock.timelockUnix,
+          calldata:        lastEvmHtlcSession.buyerLock.calldata,
+          instructions:    lastEvmHtlcSession.buyerLock.instructions,
+        },
+        expiresAt: lastEvmHtlcSession.expiresAt,
       } : null,
     });
   } catch (err) {
