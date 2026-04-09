@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Users, ArrowRightLeft, TrendingUp, DollarSign,
   Cpu, Key, Activity, ShieldCheck, AlertTriangle,
-  RefreshCw, TrendingDown, Flame,
+  RefreshCw, Flame, MessageCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchStats    = () => fetch(`${BASE}/api/admin/stats`).then(r => r.json());
 const fetchActivity = () => fetch(`${BASE}/api/admin/activity?limit=12`).then(r => r.json());
 const fetchApiKeys  = () => fetch(`${BASE}/api/admin/api-settings`).then(r => r.json());
+const fetchChatChannels = () => fetch(`${BASE}/api/chat/channels`).then(r => r.json()).catch(() => []);
 
 function StatCard({ icon: Icon, label, value, sub, color = "primary", live = false }: {
   icon: any; label: string; value: string; sub?: string; color?: string; live?: boolean;
@@ -79,6 +80,12 @@ export function AdminDashboard() {
     refetchInterval: 30_000,
   });
 
+  const { data: chatChannels } = useQuery({
+    queryKey: ["admin-chat-channels"],
+    queryFn: fetchChatChannels,
+    refetchInterval: 15_000,
+  });
+
   const activity: typeof FALLBACK_ACTIVITY = Array.isArray(activityRaw) && activityRaw.length > 0
     ? activityRaw
     : FALLBACK_ACTIVITY;
@@ -86,6 +93,10 @@ export function AdminDashboard() {
   const apiKeys   = Array.isArray(apiKeysRaw) ? apiKeysRaw : [];
   const activeKeys = apiKeys.filter((k: any) => k.status === "active").length;
   const totalKeys  = apiKeys.length;
+
+  const channels = Array.isArray(chatChannels) ? chatChannels : [];
+  const totalChatMessages = channels.reduce((s: number, c: any) => s + (c.messageCount ?? 0), 0);
+  const totalChatSubs     = channels.reduce((s: number, c: any) => s + (c.activeSubscribers ?? 0), 0);
 
   const lastUpdated = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -143,6 +154,9 @@ export function AdminDashboard() {
         <StatCard live icon={DollarSign} label="TVL"
           value={isLoading ? "…" : `$${((stats?.tvl ?? 0) / 1e6).toFixed(0)}M`}
           sub="total value locked" color="green" />
+        <StatCard live icon={MessageCircle} label="Live Chat"
+          value={`${channels.length || "—"} channels`}
+          sub={`${totalChatMessages} msgs · ${totalChatSubs} live`} color="blue" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -231,6 +245,15 @@ export function AdminDashboard() {
                 <div className="flex-1">
                   <p className="text-foreground">Ora AI — {stats.aiConversations} sessions, {stats.aiMessages} messages</p>
                   <p className="text-xs text-muted-foreground mt-0.5">all AI services operational</p>
+                </div>
+              </div>
+            )}
+            {channels.length > 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-xl border text-sm bg-blue-400/5 border-blue-400/20">
+                <MessageCircle className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-foreground">Chat — {channels.length} channels · {totalChatMessages} messages · {totalChatSubs} live subscriber{totalChatSubs !== 1 ? "s" : ""}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">native SSE chat system operational</p>
                 </div>
               </div>
             )}
