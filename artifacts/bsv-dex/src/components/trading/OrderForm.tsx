@@ -573,8 +573,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         const matched  = data?.matched ?? false;
         const txid     = data?.settlementTxid ?? data?.txid ?? null;
         const url      = data?.explorerUrl ?? null;
-        const fillPx   = data?.price ?? parseFloat(price || "0");
-        const qty      = parseFloat(amount || "0");
+
+        // ── Fill data: use API response fields, never wallet/balance diff ──────
+        const filledQty    = data?.filledQuantity ?? parseFloat(amount || "0");
+        const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : parseFloat(price || "0"));
+        const fillFee      = data?.fee ?? 0;
+
         if (matched) {
           setSettlement({
             matched:            true,
@@ -588,14 +592,22 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           });
 
           // Credit the exchange balance ledger so Portfolio reflects the trade
-          if (address && qty > 0 && fillPx > 0) {
-            applyFill(address, side as "buy" | "sell", base, quote, qty, fillPx);
+          if (address && filledQty > 0 && avgFillPrice > 0) {
+            applyFill(address, side as "buy" | "sell", base, quote, filledQty, avgFillPrice);
           }
 
-          const receivedQty = side === "sell"
-            ? (qty * fillPx * 0.999).toFixed(2)
-            : (qty * 0.999).toFixed(6);
-          const receivedTok = side === "sell" ? quote : base;
+          // Compute credited amount from fill payload — no wallet diff
+          let receivedQty: string;
+          let receivedTok: string;
+          if (side === "sell") {
+            const gross = filledQty * avgFillPrice;
+            const net   = gross - fillFee;
+            receivedQty = (net > 0 ? net : gross).toFixed(2);
+            receivedTok = quote;
+          } else {
+            receivedQty = filledQty > 0 ? filledQty.toFixed(6) : "0";
+            receivedTok = base;
+          }
 
           const isCrossChainFill = side === "buy" && !walletCanReceive(network, getAssetNativeChain(receivedTok));
           const fillChainName = CHAIN_DISPLAY[getAssetNativeChain(receivedTok)] ?? receivedTok;
