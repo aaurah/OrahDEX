@@ -229,7 +229,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     queryKey: ["orders", address],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
     enabled: !!address,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   });
 
   const myOrders: any[] = Array.isArray(myOrdersData) ? myOrdersData : [];
@@ -259,10 +259,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
-    onMutate: (orderId) => setCancellingId(orderId),
+    onMutate: async (orderId) => {
+      setCancellingId(orderId);
+      await queryClient.cancelQueries({ queryKey: ["orders", address] });
+      const prev = queryClient.getQueryData(["orders", address]);
+      queryClient.setQueryData(["orders", address], (old: any) =>
+        Array.isArray(old)
+          ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
+          : old
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context: any) => {
+      if (context?.prev !== undefined) {
+        queryClient.setQueryData(["orders", address], context.prev);
+      }
+    },
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
     },
   });
 
@@ -290,6 +306,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setOrderResult({ matched, txid, side: ordSide, base: ordBase, amount: ordAmt.toString(), price: ordPrice });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {

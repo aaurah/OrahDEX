@@ -111,7 +111,7 @@ export function MobilePortfolio() {
     queryKey: ["portfolio-orders", address],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
     enabled: !!address,
-    refetchInterval: 5000,
+    refetchInterval: 2000,
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
 
@@ -125,10 +125,26 @@ export function MobilePortfolio() {
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
-    onMutate: (id) => setCancellingId(id),
+    onMutate: async (orderId) => {
+      setCancellingId(orderId);
+      await queryClient.cancelQueries({ queryKey: ["portfolio-orders", address] });
+      const prev = queryClient.getQueryData(["portfolio-orders", address]);
+      queryClient.setQueryData(["portfolio-orders", address], (old: any) =>
+        Array.isArray(old)
+          ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
+          : old
+      );
+      return { prev };
+    },
+    onError: (_err, _id, context: any) => {
+      if (context?.prev !== undefined) {
+        queryClient.setQueryData(["portfolio-orders", address], context.prev);
+      }
+    },
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["orders", address] });
     },
   });
 
