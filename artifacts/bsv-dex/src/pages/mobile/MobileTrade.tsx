@@ -282,6 +282,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
+  // ── Submission lock — prevents any multi-submit path ─────────────────────────
+  // useRef is synchronous (unlike useState) so it blocks double-taps that happen
+  // within the same React render cycle before isPending propagates.
+  const isSubmittingRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Content fingerprint: same symbol+side+amount within 2 seconds = duplicate
+  const lastOrderFingerprintRef = useRef<string | null>(null);
+
   // Dedup guard — prevents double banner/toast when the same fill event fires twice
   const lastProcessedTradeIdRef = useRef<string | null>(null);
 
@@ -331,6 +339,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // Limit/stop order display fields for unmatched orders
       const ordQtyDisplay   = data?.quantity ?? variables?.quantity ?? "";
       const ordPriceDisplay = data?.price && !matched ? String(data.price) : (variables?.price ?? "");
+
+      // ── Release submission lock so next order can be placed ──────────────────
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
 
       setOrderResult({ tradeId, matched, txid, side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee });
       setAmount("");
@@ -388,6 +400,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       }
     },
     onError: () => {
+      // Release lock on error so the user can try again
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
       toast({
         title: "Order Failed",
         description: "Could not place order — check your balance and try again.",
@@ -605,6 +621,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
 
+    // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
+    // isSubmittingRef is a ref (synchronous) — it blocks double-taps that arrive
+    // in the same render cycle before isPending propagates.  isSubmitting state
+    // mirrors it for button disabled/label rendering.
+    if (isSubmittingRef.current) return;
+
+    // ── CONTENT FINGERPRINT DEDUP (2-second window) ───────────────────────────
+    // Prevents identical orders fired from multiple code paths (form button +
+    // sticky bar button) within the same user interaction.
+    const fingerprint = `${symbol}:${side}:${amtNum.toFixed(8)}:${Math.floor(Date.now() / 2000)}`;
+    if (lastOrderFingerprintRef.current === fingerprint) return;
+    lastOrderFingerprintRef.current = fingerprint;
+
+    // ── Lock acquired ─────────────────────────────────────────────────────────
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
     // ── SELL guard: block impossible sell orders before the network round-trip ──
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
@@ -614,6 +647,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         description: `You only have ${maxSell} ${base} available to sell`,
         variant:     "destructive",
       });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
       return;
     }
 
@@ -638,6 +674,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       : (orderType === "stop-limit" || orderType === "stop-market")
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
+
     orderMutation.mutate({
       symbol,
       walletAddress: address,
@@ -1502,17 +1539,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Confirm / Place Order button */}
             <button
               onClick={handlePlaceOrder}
-              disabled={!address || !amount || amtNum <= 0 || orderMutation.isPending}
+              disabled={!address || !amount || amtNum <= 0 || isSubmitting}
               className={cn(
                 "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                 side === "sell"
                   ? "bg-red-600 shadow-lg shadow-red-500/20"
                   : "bg-green-600 shadow-lg shadow-green-500/20",
-                (!address || !amount || amtNum <= 0 || orderMutation.isPending)
+                (!address || !amount || amtNum <= 0 || isSubmitting)
                   && "opacity-50 cursor-not-allowed"
               )}
             >
-              {orderMutation.isPending ? (
+              {isSubmitting ? (
                 <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
               ) : (
                 `${side === "sell" ? "Sell" : "Buy"} ${base}`
@@ -1559,16 +1596,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   setShowOrderForm(true);
                 }
               }}
-              disabled={orderMutation.isPending}
+              disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
-                side === "buy" && showOrderForm && amtNum > 0
+                isSubmitting ? "opacity-50 cursor-not-allowed"
+                  : side === "buy" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#16a34a" }}
             >
-              {orderMutation.isPending && side === "buy"
+              {isSubmitting && side === "buy"
                 ? "Placing…"
                 : side === "buy" && showOrderForm && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
@@ -1585,16 +1623,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   setShowOrderForm(true);
                 }
               }}
-              disabled={orderMutation.isPending}
+              disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
-                side === "sell" && showOrderForm && amtNum > 0
+                isSubmitting ? "opacity-50 cursor-not-allowed"
+                  : side === "sell" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#dc2626" }}
             >
-              {orderMutation.isPending && side === "sell"
+              {isSubmitting && side === "sell"
                 ? "Placing…"
                 : side === "sell" && showOrderForm && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
