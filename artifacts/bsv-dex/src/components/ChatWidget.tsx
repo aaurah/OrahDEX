@@ -72,12 +72,13 @@ async function streamOraReply(
   convId: number | null,
   setConvId: (id: number) => void,
   onChunk: (chunk: string) => void,
-  onDone: () => void,
+  onDone: (error?: string) => void,
 ) {
   try {
     let cid = convId;
     if (!cid) {
       const r = await fetch(`${BASE}/api/ai/conversations`, { method: "POST" });
+      if (!r.ok) throw new Error("Failed to start conversation");
       const data = await r.json();
       cid = data.id;
       setConvId(cid!);
@@ -87,10 +88,12 @@ async function streamOraReply(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: text }),
     });
+    if (!r.ok) throw new Error("Ora is unavailable. Please try again.");
     const reader = r.body?.getReader();
     const dec = new TextDecoder();
     let buf = "";
-    while (reader) {
+    let gotDone = false;
+    while (reader && !gotDone) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
@@ -100,12 +103,18 @@ async function streamOraReply(
         if (!line.startsWith("data: ")) continue;
         try {
           const ev = JSON.parse(line.slice(6));
+          if (ev.error) throw new Error(ev.error);
           if (ev.content) onChunk(ev.content);
-          if (ev.done) break;
-        } catch { /* */ }
+          if (ev.done) { gotDone = true; break; }
+        } catch (innerErr: any) {
+          if (innerErr.message) throw innerErr;
+        }
       }
     }
-  } catch { /* */ }
+  } catch (err: any) {
+    onDone(err?.message ?? "Ora encountered an error. Please try again.");
+    return;
+  }
   onDone();
 }
 
@@ -275,6 +284,8 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const evtSourceRef = useRef<EventSource | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelayRef = useRef(2000);
 
   const activeChannel = channels[activeChannelIdx]!;
   const msgs = messagesByChannel[activeChannel.channelKey] ?? [];
@@ -282,11 +293,20 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
   /* Derived display name */
   const displayName = pseudonym || (address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "anon");
 
-  /* ── SSE subscription ─────────────────────────────────────────────────── */
+  /* ── SSE subscription with reconnection ──────────────────────────────── */
   const subscribeToChannel = useCallback((channelKey: string) => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     evtSourceRef.current?.close();
+
     const es = new EventSource(`${BASE}/api/chat/channels/${encodeURIComponent(channelKey)}/stream`);
     evtSourceRef.current = es;
+
+    es.onopen = () => {
+      reconnectDelayRef.current = 2000; // reset backoff on successful connect
+    };
 
     es.onmessage = (e) => {
       try {
@@ -294,7 +314,6 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
         if (data.type === "backfill") {
           setMessagesByChannel(prev => ({ ...prev, [channelKey]: data.messages ?? [] }));
         } else {
-          /* Single new message */
           setMessagesByChannel(prev => {
             const existing = prev[channelKey] ?? [];
             if (existing.find((m: ChatMessage) => m.id === data.id)) return prev;
@@ -307,15 +326,23 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
 
     es.onerror = () => {
       es.close();
+      // Reconnect with exponential backoff (max 30s)
+      const delay = Math.min(reconnectDelayRef.current, 30_000);
+      reconnectDelayRef.current = delay * 1.5;
+      reconnectTimerRef.current = setTimeout(() => subscribeToChannel(channelKey), delay);
     };
   }, []);
 
-  /* Subscribe when channel changes */
+  /* Subscribe when channel changes or chat opens */
   useEffect(() => {
     if (!open) return;
+    reconnectDelayRef.current = 2000;
     subscribeToChannel(activeChannel.channelKey);
     setUnreadByChannel(prev => ({ ...prev, [activeChannel.channelKey]: 0 }));
-    return () => { evtSourceRef.current?.close(); };
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      evtSourceRef.current?.close();
+    };
   }, [open, activeChannel.channelKey, subscribeToChannel]);
 
   /* Auto-scroll */
@@ -377,12 +404,39 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
             return { ...prev, ora: list };
           });
         },
-        () => setOraStreaming(false),
+        (errMsg) => {
+          setOraStreaming(false);
+          if (errMsg) {
+            setMessagesByChannel(prev => {
+              const list = [...(prev["ora"] ?? [])];
+              const last = list[list.length - 1];
+              if (last && last.role === "ora" && last.text === "") {
+                list[list.length - 1] = { ...last, text: errMsg };
+              }
+              return { ...prev, ora: list };
+            });
+          }
+        },
       );
       return;
     }
 
-    /* Regular channel */
+    /* Regular channel — optimistic insert so user sees their message immediately */
+    const optimisticId = `local-${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id: optimisticId,
+      channel: activeChannel.channelKey,
+      wallet: address || "anonymous",
+      displayName,
+      role: "trader",
+      text,
+      ts: Date.now(),
+    };
+    setMessagesByChannel(prev => ({
+      ...prev,
+      [activeChannel.channelKey]: [...(prev[activeChannel.channelKey] ?? []), optimisticMsg],
+    }));
+
     setSending(true);
     try {
       const res = await fetch(`${BASE}/api/chat/channels/${encodeURIComponent(activeChannel.channelKey)}/messages`, {
@@ -398,9 +452,18 @@ export function ChatWidget({ open, onClose }: { open: boolean; onClose: () => vo
       if (!res.ok) {
         const err = await res.json();
         setError(err.error ?? "Failed to send message.");
+        // Remove optimistic message on failure
+        setMessagesByChannel(prev => ({
+          ...prev,
+          [activeChannel.channelKey]: (prev[activeChannel.channelKey] ?? []).filter(m => m.id !== optimisticId),
+        }));
       }
     } catch {
       setError("Connection error. Please try again.");
+      setMessagesByChannel(prev => ({
+        ...prev,
+        [activeChannel.channelKey]: (prev[activeChannel.channelKey] ?? []).filter(m => m.id !== optimisticId),
+      }));
     } finally {
       setSending(false);
     }
