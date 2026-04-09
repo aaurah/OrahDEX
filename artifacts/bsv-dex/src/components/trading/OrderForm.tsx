@@ -12,6 +12,7 @@ import { getNativeSymbol } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
+import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
 import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
@@ -439,6 +440,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     crossChain?: boolean; htlcAddress?: string | null; settlementType?: string | null;
     htlcLocktimeBlocks?: number | null; opReturnPayload?: string | null;
   } | null>(null);
+  // EVM HTLC session ID — set when a matched fill requires on-chain atomic lock
+  const [evmHtlcSessionId, setEvmHtlcSessionId] = useState<string | null>(null);
   const [slippage, setSlippage] = useState(0.5);
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
@@ -592,6 +595,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             opReturnPayload:    data?.settlement?.opReturnPayload ?? null,
           });
 
+          // EVM HTLC non-custodial settlement — show lock prompt to the user
+          if (data?.evmHtlcSession?.id) {
+            setEvmHtlcSessionId(data.evmHtlcSession.id);
+          }
+
           // Credit the exchange balance ledger so Portfolio reflects the trade
           if (address && filledQty > 0 && avgFillPrice > 0) {
             applyFill(address, side as "buy" | "sell", base, quote, filledQty, avgFillPrice);
@@ -610,20 +618,25 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             receivedTok = base;
           }
 
+          const hasEvmHtlc = !!data?.evmHtlcSession?.id;
           const isCrossChainFill = side === "buy" && !walletCanReceive(network, getAssetNativeChain(receivedTok));
           const fillChainName = CHAIN_DISPLAY[getAssetNativeChain(receivedTok)] ?? receivedTok;
           toast({
-            title: "Order Filled ✓",
-            description: isCrossChainFill
-              ? `+${receivedQty} ${receivedTok} → OrahDEX balance. To withdraw to ${fillChainName}, go to Portfolio → Withdraw.`
-              : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+            title: hasEvmHtlc ? "Order Matched — Lock Funds to Settle" : "Order Filled ✓",
+            description: hasEvmHtlc
+              ? `Your order matched! Lock ${receivedQty} ${receivedTok} in the HTLC contract below to complete the P2P atomic swap.`
+              : isCrossChainFill
+                ? `+${receivedQty} ${receivedTok} → OrahDEX balance. To withdraw to ${fillChainName}, go to Portfolio → Withdraw.`
+                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
           });
           addNotification({
             type: "order_filled",
             title: `${side.toUpperCase()} Order Filled ✓`,
-            body: isCrossChainFill
-              ? `+${receivedQty} ${receivedTok} in OrahDEX balance · withdraw to ${fillChainName} via Portfolio`
-              : `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
+            body: hasEvmHtlc
+              ? `Lock ${receivedQty} ${receivedTok} on-chain to complete atomic swap — see settlement card`
+              : isCrossChainFill
+                ? `+${receivedQty} ${receivedTok} in OrahDEX balance · withdraw to ${fillChainName} via Portfolio`
+                : `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -893,6 +906,17 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         <div className="mx-3 mt-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/30 flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
           <PenLine className="w-3 h-3 text-primary shrink-0" />
           <span className="text-[11px] text-primary font-semibold">Price & amount filled from order book</span>
+        </div>
+      )}
+
+      {/* EVM HTLC non-custodial settlement card — shown when both parties are external EVM wallets */}
+      {evmHtlcSessionId && (
+        <div className="mx-3 mt-2">
+          <HTLCSettlementCard
+            sessionId={evmHtlcSessionId}
+            userAddress={address ?? ""}
+            onDismiss={() => setEvmHtlcSessionId(null)}
+          />
         </div>
       )}
 
