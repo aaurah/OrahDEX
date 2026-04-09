@@ -401,9 +401,9 @@ export function WhitePaper() {
 
               <Sub title="4.2 HTLC Atomic Swap Protocol">
                 <ol className="list-decimal list-inside space-y-2 ml-1">
-                  <li>Maker generates cryptographic secret preimage <span className="font-mono text-green-400">R ∈ {"{0,1}²⁵⁶"}</span> (256 bits of entropy) and computes commitment <span className="font-mono text-green-400">H = SHA256(R)</span>.</li>
+                  <li>Maker generates cryptographic secret preimage <span className="font-mono text-green-400">R ∈ {"\\{0,1\\}^{256}"}</span> (256 bits of entropy — 32-byte random nonce) and computes commitment <span className="font-mono text-green-400">H = SHA256(R)</span>.</li>
                   <li>Maker broadcasts BSV HTLC locking script committing to H with a time lock T₁ (e.g., 144 blocks ≈ 24 hours).</li>
-                  <li>Taker verifies H on BSV chain and broadcasts a reciprocal locking transaction on the destination chain (EVM / TRON) with time lock T₂ {"< T₁"}.</li>
+                  <li>Taker verifies H on BSV chain and broadcasts a reciprocal locking transaction on the destination chain (EVM / TRON) with time lock T₂ {"< T₁"} — specifically T₂ = T₁ − ΔT where ΔT is the safety margin (typically 1–6 h, configurable per asset). This ensures Maker can always claim before T₂ expires.</li>
                   <li>Maker claims Taker's funds by publishing R on-chain, simultaneously revealing R to Taker.</li>
                   <li>Taker uses revealed R to claim Maker's BSV HTLC output. Both legs settle atomically — either both complete or both refund automatically.</li>
                 </ol>
@@ -431,6 +431,7 @@ ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>
 
 Example:
 ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000
+  (Typical OP_RETURN payload size: 80–200 bytes — within both protocol and practical miner limits)
 
 Txid computation:
   txid = SHA256(SHA256(raw_tx_bytes))   [standard double-SHA256]
@@ -440,7 +441,8 @@ Properties:
   • Permanent — OP_RETURN outputs cannot be spent; data persists forever
   • Public — any party can verify the record against WhatsOnChain
   • Tamper-evident — modification would invalidate the TXID
-  • Cheap — ~$0.0001 per settlement proof at current BSV fee rates`}</Code>
+  • Cheap — ~$0.0001 per settlement proof at current BSV fee rates
+             (at ~1 sat/byte; typical OP_RETURN payload 80–200 bytes; fee ≈ 100–200 sats)`}</Code>
               </Sub>
 
               <Sub title="4.4 Live BSV Chain Statistics">
@@ -466,17 +468,28 @@ Spot price of A:   P_A = y / x
 Swap output (A → B):
   Δy = (Δx × (1 − fee) × y) / (x + Δx × (1 − fee))
 
+Invariant update after swap:
+  k_new = (x + Δx·(1−fee)) · (y − Δy)
+  Note: only (1−fee) of Δx enters the pool. The fee portion is
+  extracted before the invariant is applied; k_new ≥ k_old always.
+
 Price impact:
-  impact = Δx / (x + Δx)     [fraction of reserve consumed]
+  impact = |Δx / (x + Δx)|   [always positive; fraction of reserve consumed]
 
 Effective rate:
-  effective_P = Δy / Δx      [average price paid vs spot]
+  effective_P = Δy / Δx      [average execution price — NOT the spot price]
+                               (spot price is y/x; effective_P diverges from
+                                spot by the price-impact fraction)
 
 Impermanent loss (for LP):
   IL = 1 − 2√r/(1+r)         (loss magnitude, always ≥ 0)   where r = price_now / price_entry
 
 Concentrated liquidity (Uniswap V3 model):
   Virtual reserves:  x_v = L / √P_b,  y_v = L × √P_a
+  Liquidity L definition:
+    L = Δx · √(P_a · P_b) / (√P_b − √P_a)
+      = Δy / (√P_b − √P_a)        [equivalent forms]
+    [P_a = lower bound, P_b = upper bound of the concentrated range]
   Capital efficiency: up to 4000× vs v2 for tight ranges`}</Code>
               </Sub>
               <Sub title="5.2 Fee Distribution">
@@ -508,6 +521,8 @@ Concentrated liquidity (Uniswap V3 model):
 
   total_balance  = Σ wallet_token_values + exchange_settled_balance
                    (LP NOT added — already reflected in wallet)
+  exchange_settled_balance = realised PnL from AMM swaps + VAMM trades + closed futures positions
+                             (unsettled / open-position unrealised PnL is NOT included)
 
   defi_display   = LP_position_value  [informational, "allocated" label]
 
@@ -538,6 +553,8 @@ Buy cost integral (s₀ → s₀+n):
   cost(n, s₀) = ∫[s₀ to s₀+n] P(s) ds
              = n × basePrice + slope × (s₀ × n + n²/2)
   (trapezoidal rule — exact for linear curves)
+  Units: n = virtual supply units; cost denominated in USDT.
+  All VAMM integrals are denominated in USDT.
 
 Sell payout integral (s₀-n → s₀):
   payout(n, s₀) = ∫[s₀-n to s₀] P(s) ds
@@ -545,7 +562,8 @@ Sell payout integral (s₀-n → s₀):
   Floored at 0 to prevent negative payouts on extreme sells.
 
 Slippage from spot:
-  slippage(n) = (cost(n,0)/n − basePrice) / basePrice × 100%
+  slippage(n) = |cost(n,0)/n − basePrice| / basePrice × 100%
+  (absolute value — slippage is always a non-negative quantity)
   Example: $1,000 buy of BTC at $71,000 → slippage ≈ 0.059%`}</Code>
               </Sub>
 
@@ -609,7 +627,7 @@ This means:
                   <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX moves native assets atomically — no de-peg risk, no synthetic counterparty exposure. All supported bridge pairs use native assets only; unsupported assets cannot be bridged.</li>
                   <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Permissionless relayers coordinate HTLC handshakes between chains. Relayers earn fees proportional to bridge volume; malicious relayers cannot steal funds — the HTLC simply refunds automatically after time-lock expiry. No staked collateral is required; the cryptographic time-lock is the enforcement mechanism.</li>
                   <li><span className="font-medium text-foreground">Time-Lock Safety:</span> All HTLCs have configurable time locks (minimum 24h for large amounts). No action by any party within the time lock results in automatic on-chain refund — no human intervention required.</li>
-                  <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> OrahDEX operates independent watchtower nodes that detect stalled HTLCs and trigger automated refund broadcasts on behalf of users.</li>
+                  <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> OrahDEX operates independent watchtower nodes that detect stalled HTLCs and trigger automated refund broadcasts on behalf of users. A stalled HTLC is defined as one where no claim transaction is detected on-chain before T₂ − safetyMargin — at which point the watchtower broadcasts the refund preemptively, giving the user on-chain recovery without any manual action.</li>
                   <li><span className="font-medium text-foreground">Multi-Network Support:</span> Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos + BSV (settlement anchor).</li>
                 </ul>
               </Sub>
@@ -618,7 +636,7 @@ This means:
               </Sub>
               <InfoBox title="Supported Bridge Pairs — Phase 1" color="blue">
                 <p>BSV ↔ ETH · BSV ↔ BNB · BSV ↔ MATIC · BSV ↔ USDT (BSV native) ↔ USDT (ERC-20/TRC-20)</p>
-                <p>Additional pairs added by community governance. Bridge fee: 0.20% split between relayers and protocol.</p>
+                <p>Additional pairs added by community governance. Bridge fee: 0.20% of transfer amount (fee = amount × 0.002), split between relayers and protocol treasury.</p>
               </InfoBox>
             </Section>
 
@@ -634,7 +652,18 @@ This means:
               </Sub>
               <Sub title="7.2 Perpetual Futures — Up to 100x Leverage">
                 <p>OrahDEX perpetual futures are settled against mark prices computed from the sovereign oracle:</p>
-                <Code>{`Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
+                <Code>{`Price oracle definitions:
+  VWAP  = Σ(price_i × volume_i) / Σ(volume_i)
+          (Volume-Weighted Average Price across all order-book fills in the sampling window)
+
+  TWAP  = (1/N) × Σ(price_t)
+          Rolling 60-second window, sampled every 1 second (N = 60 samples).
+          Resistant to single-block price spikes.
+
+  median(a, b, c) = the middle value when a, b, c are sorted;
+                    no single feed can move mark price without corrupting two of three.
+
+Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
 
 Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
              paid every 8 hours (3 periods per day), longs pay shorts when perp > index
@@ -661,7 +690,7 @@ Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional
                       <tr className="border-b border-border">
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Tier</th>
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Maker/Taker</th>
-                        <th className="text-left py-2 font-semibold text-foreground">30d Volume Threshold</th>
+                        <th className="text-left py-2 font-semibold text-foreground">30d Volume Threshold <span className="font-normal text-muted-foreground">(spot + futures + VAMM notional combined)</span></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -692,6 +721,7 @@ Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional
               <Sub title="8.1 Vault Mathematics (ERC4626 Model)">
                 <Code>{`Share Price Initialisation:
   sharePrice₀ = 1.00 USDT per share
+  totalShares₀ = TVL₀ / sharePrice₀    (e.g. $10,000 seed → 10,000 shares at launch)
 
 On Deposit (follower deposits D USDT):
   sharesIssued = D / sharePrice_current
@@ -705,8 +735,9 @@ Trade Mirror Allocation:
   copyQty         = leaderQty × allocationRatio
   copyNotional    = copyQty × executionPrice
 
-On Trade PnL (vault trade settles +/- δ USDT):
-  TVL_new      = TVL_old ± δ
+On Trade PnL (vault trade settles δ USDT):
+  TVL_new      = TVL_old + direction × δ
+                 (direction = +1 for profit, −1 for loss; δ always ≥ 0)
   sharePrice   = TVL_new / totalShares    (rises on profit, falls on loss)
 
 On Withdrawal (follower redeems S shares):
