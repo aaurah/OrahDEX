@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.1.0";
+const VERSION = "4.2.0";
 const PUBLISH_DATE = "9 April 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
@@ -376,9 +376,9 @@ export function WhitePaper() {
                     <tbody>
                       {[
                         ["Block size cap", "None (unbounded)", "~1.8 MB (gas limit)", "~48 MB (with limitations)"],
-                        ["OP_RETURN data limit", "No limit (protocol)", "Not applicable", "Not applicable"],
+                        ["OP_RETURN data limit", "Large payload (multi-MB, miner policy)", "Not applicable", "Not applicable"],
                         ["Avg. tx fee", "$0.0001–0.001", "$1–200 (varies)", "$0.00025"],
-                        ["Tx throughput", "50,000+ TPS (tested)", "~15 TPS", "~3,000 TPS (with degradation)"],
+                        ["Tx throughput", ">50,000 TPS (stress-test peak)", "~15 TPS", "~3,000 TPS (with degradation)"],
                         ["UTXO model", "Yes — parallel, stateless", "No — account-based", "No — account-based"],
                         ["Finality", "~10 min (probabilistic)", "~12s (PoS)", "~0.4s (single-slot)"],
                         ["Script programmability", "Full Bitcoin Script", "EVM (Turing-complete)", "Programs (LLVM)"],
@@ -409,6 +409,7 @@ export function WhitePaper() {
                 </ol>
                 <Code>{`BSV HTLC Locking Script:
 OP_IF
+  OP_SIZE 32 OP_EQUALVERIFY          ← rejects malformed preimages (not exactly 32 bytes)
   OP_SHA256 <H> OP_EQUALVERIFY
   OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
 OP_ELSE
@@ -472,7 +473,7 @@ Effective rate:
   effective_P = Δy / Δx      [average price paid vs spot]
 
 Impermanent loss (for LP):
-  IL = 2√r/(1+r) − 1         where r = price_now / price_entry
+  IL = 1 − 2√r/(1+r)         (loss magnitude, always ≥ 0)   where r = price_now / price_entry
 
 Concentrated liquidity (Uniswap V3 model):
   Virtual reserves:  x_v = L / √P_b,  y_v = L × √P_a
@@ -605,8 +606,8 @@ This means:
               </p>
               <Sub title="6.1 Architecture & Security Model">
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
-                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX moves native assets atomically — no de-peg risk, no synthetic counterparty exposure.</li>
-                  <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Permissionless relayers coordinate HTLC handshakes between chains. Relayers earn fees proportional to bridge volume; malicious relayers are automatically slashed by time-lock expiry mechanics.</li>
+                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX moves native assets atomically — no de-peg risk, no synthetic counterparty exposure. All supported bridge pairs use native assets only; unsupported assets cannot be bridged.</li>
+                  <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Permissionless relayers coordinate HTLC handshakes between chains. Relayers earn fees proportional to bridge volume; malicious relayers cannot steal funds — the HTLC simply refunds automatically after time-lock expiry. No staked collateral is required; the cryptographic time-lock is the enforcement mechanism.</li>
                   <li><span className="font-medium text-foreground">Time-Lock Safety:</span> All HTLCs have configurable time locks (minimum 24h for large amounts). No action by any party within the time lock results in automatic on-chain refund — no human intervention required.</li>
                   <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> OrahDEX operates independent watchtower nodes that detect stalled HTLCs and trigger automated refund broadcasts on behalf of users.</li>
                   <li><span className="font-medium text-foreground">Multi-Network Support:</span> Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, zkSync, Scroll, Linea, Mantle, Cronos + BSV (settlement anchor).</li>
@@ -635,16 +636,16 @@ This means:
                 <p>OrahDEX perpetual futures are settled against mark prices computed from the sovereign oracle:</p>
                 <Code>{`Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
 
-Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/24)
-             paid every 8 hours, longs pay shorts when perp > index
+Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
+             paid every 8 hours (3 periods per day), longs pay shorts when perp > index
 
 Position PnL  = (Exit Price − Entry Price) × Size × Direction
               (Direction: +1 for long, -1 for short)
 
-Liquidation Price (long):
+Liquidation Price (long):          [MaintenanceMargin = 0.005 = 0.5% of notional, default]
   L_price = Entry Price × (1 − 1/Leverage + MaintenanceMargin)
 
-Liquidation Price (short):
+Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional, default]
   L_price = Entry Price × (1 + 1/Leverage − MaintenanceMargin)`}</Code>
               </Sub>
               <Sub title="7.3 P2P Trading — Fiat ↔ Crypto with HTLC Escrow">
@@ -698,7 +699,9 @@ On Deposit (follower deposits D USDT):
   sharePrice   = TVL_new / totalShares    (unchanged by deposit)
 
 Trade Mirror Allocation:
-  allocationRatio = min(1, vaultTVL / leaderPortfolioValue)
+  allocationRatio = min(1, vaultTVL / leaderTradeNotional)
+    (leaderTradeNotional = capital used in this specific trade, not total portfolio value;
+     using total portfolio value would under-allocate when leaders trade partial capital)
   copyQty         = leaderQty × allocationRatio
   copyNotional    = copyQty × executionPrice
 
@@ -1496,9 +1499,32 @@ If any authority requests user identity data:
             {/* ── 19. ROADMAP ── */}
             <Section id="roadmap" title="19. Roadmap">
 
-              {/* v4.1.0 Changelog */}
+              {/* v4.2.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.1.0 · 9 April 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.2.0 · 9 April 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "HTLC script hardened — OP_SIZE 32 OP_EQUALVERIFY added before OP_SHA256 to reject malformed preimages that are not exactly 32 bytes.",
+                    "OP_RETURN data limit corrected — now described as 'large payload (multi-MB, miner policy)' rather than 'No limit (protocol)'; reflects practical miner-enforced constraints.",
+                    "BSV throughput claim qualified — '>50,000 TPS (stress-test peak)' replaces '50,000+ TPS (tested)' to distinguish stress-test peaks from sustained real-world throughput.",
+                    "Funding rate formula corrected — multiplier updated to 1/3 (three 8-hour periods per day) from the incorrect 1/24.",
+                    "Impermanent loss formula corrected — now expressed as IL = 1 − 2√r/(1+r), the standard positive-magnitude form used in academic literature.",
+                    "Liquidation price formulas annotated — MaintenanceMargin explicitly defined as 0.005 (0.5% of notional) to eliminate formula ambiguity.",
+                    "CopyVault allocation ratio corrected — denominator is leaderTradeNotional (capital used per trade) not leaderPortfolioValue; note added for partial-capital trading.",
+                    "Bridge slashing claim corrected — replaced with accurate description: malicious relayers cannot steal funds; HTLC refunds automatically on time-lock expiry, no staked collateral required.",
+                    "No Wrapped Tokens claim qualified — clarification added that all supported pairs use native assets only; unsupported assets cannot be bridged.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.1.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.1.0 · 9 April 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
                     "ERC-20 token registry expanded to 10 EVM chains — Avalanche (AVAX), Linea (ETH), Scroll (ETH), Mantle (MNT) added with full USDT/USDC/DAI/WBTC support (43 tokens total).",

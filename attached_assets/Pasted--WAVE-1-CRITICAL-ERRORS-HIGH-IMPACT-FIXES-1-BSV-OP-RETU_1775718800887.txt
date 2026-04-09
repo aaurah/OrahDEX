@@ -1,0 +1,183 @@
+✅ WAVE 1 — CRITICAL ERRORS & HIGH‑IMPACT FIXES
+
+1. BSV OP_RETURN “No Limit” Claim — Needs Correction
+
+Your document states:
+
+“OP_RETURN data limit — No limit (protocol)”
+
+This is not technically correct.
+
+Correct version:
+
+• BSV protocol allows large OP_RETURN outputs (up to multi‑MB),
+• but miners enforce practical limits, and
+• the standardness rules still apply.
+
+
+Fix:
+
+OP_RETURN on BSV supports large payloads (multi‑MB range), constrained only by miner policy rather than a fixed protocol limit.
+
+---
+
+2. BSV Throughput Claim (“50,000+ TPS tested”) — Needs Qualification
+
+The document states:
+
+“Tx throughput — 50,000+ TPS (tested)”
+
+This is not a sustained real‑world throughput, but a stress‑test peak.
+
+Fix:
+
+BSV has demonstrated >50,000 TPS in controlled stress tests, with real‑world throughput dependent on miner policy and network conditions.
+
+---
+
+3. HTLC Script — Missing OP_DROP After OP_SHA256
+
+Your HTLC script:
+
+OP_IF
+  OP_SHA256 <H> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ELSE
+  <LockTime_T1> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  OP_DUP OP_HASH160 <MakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ENDIF
+
+
+Issue:
+Bitcoin Script requires <H> to be pushed onto the stack before OP_SHA256.
+Your script is correct structurally, but missing OP_SIZE check for preimage length.
+
+Fix (recommended):
+
+OP_IF
+  OP_SIZE 32 OP_EQUALVERIFY
+  OP_SHA256 <H> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <TakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ELSE
+  <LockTime_T1> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  OP_DUP OP_HASH160 <MakerPubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+OP_ENDIF
+
+
+This prevents malformed preimages.
+
+---
+
+4. VAMM Slope Formula — Needs Dimensional Clarification
+
+You wrote:
+
+slope = 0.01 × basePrice² / 8500
+
+This is mathematically valid but dimensionally unclear.
+
+If basePrice is in USDT, slope becomes USDT per token, which is fine —
+but the constant 8500 is unexplained.
+
+Fix: Add:
+
+8500 is the calibration constant ensuring that $8,500 of buy pressure moves price by exactly 1% across all assets.
+
+---
+
+5. AMM Impermanent Loss Formula — Missing Absolute Value
+
+You wrote:
+
+IL = 2√r/(1+r) − 1
+
+Correct formula is:
+
+IL = \frac{2\sqrt{r}}{1+r} - 1
+
+
+But IL is always negative, so most papers express it as absolute loss:
+
+IL = 1 - \frac{2\sqrt{r}}{1+r}
+
+
+Fix: Use the standard form or explicitly state that IL is negative.
+
+---
+
+6. CopyVault Allocation Ratio — Needs Clarification
+
+You wrote:
+
+allocationRatio = min(1, vaultTVL / leaderPortfolioValue)
+
+This is correct only if the leader trades with 100% of their portfolio.
+
+If the leader uses partial capital, the ratio becomes inaccurate.
+
+Fix: Add:
+
+If leader uses partial capital per trade, allocationRatio must be computed relative to the leader’s trade-specific notional, not total portfolio.
+
+---
+
+7. Funding Rate Formula — Missing Time Scaling
+
+You wrote:
+
+Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/24)
+
+This implies funding every hour.
+But you state funding is every 8 hours.
+
+Fix: Use:
+
+FundingRate = \frac{Perp - Index}{Index} \times \frac{1}{3}
+
+
+Because 1/3 = 8 hours per 24‑hour period.
+
+---
+
+8. Liquidation Price Formula — Missing Maintenance Margin Definition
+
+You wrote:
+
+L_price = Entry Price × (1 − 1/Leverage + MaintenanceMargin)
+
+This is correct only if maintenance margin is expressed as a fraction of notional.
+
+You must define:
+
+MaintenanceMargin = 0.005 (0.5%) by default
+
+Otherwise the formula is ambiguous.
+
+---
+
+9. Bridge Security Model — “Slashing” Is Not Possible on BSV
+
+You wrote:
+
+malicious relayers are automatically slashed by time-lock expiry mechanics.
+
+This is not technically slashing.
+Slashing requires staked collateral — which your bridge does not have.
+
+Fix: Replace with:
+
+Malicious relayers cannot steal funds; the HTLC simply refunds automatically.
+
+---
+
+10. “No Wrapped Tokens” Claim — Needs Qualification
+
+You wrote:
+
+No wrapped tokens. No bridge treasury.
+
+This is true for HTLC swaps, but not true for EVM‑to‑EVM bridging, unless you explicitly support native assets only.
+
+Fix: Add:
+
+All supported bridge pairs use native assets only; unsupported assets cannot be bridged.
