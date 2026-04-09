@@ -1,0 +1,408 @@
+Replace `package.json`
+
+Open package.json and replace its contents with this:
+
+{
+  "name": "orahdex-landing",
+  "version": "1.0.0",
+  "description": "Sovereign OrahDEX landing page shell",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
+
+
+Replit will auto‑install dependencies when you hit Run.
+
+---
+
+3. Replace `index.js`
+
+Open index.js and replace everything with this:
+
+const express = require("express");
+const path = require("path");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Serve static files from /public
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "orahdex-landing",
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`OrahDEX landing running on port ${PORT}`);
+});
+
+
+---
+
+4. Create the `public` folder and `index.html`
+
+1. In Replit’s file tree, create a new folder: public
+2. Inside public, create a file: index.html
+3. Paste this into public/index.html:
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>OrahDEX — Sovereign Trading Protocol</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #05060a;
+      --fg: #f5f5f7;
+      --accent: #f5b544;
+      --accent-soft: rgba(245, 181, 68, 0.12);
+      --muted: #8b8fa3;
+      --border: #1a1c26;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        sans-serif;
+      background: radial-gradient(circle at top, #15182a 0, #05060a 55%);
+      color: var(--fg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sigil {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent);
+      box-shadow: 0 0 18px rgba(245, 181, 68, 0.35);
+    }
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .brand-text span:first-child {
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .brand-text span:last-child {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    nav {
+      display: flex;
+      gap: 16px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    nav a {
+      text-decoration: none;
+      color: inherit;
+      padding: 4px 0;
+      border-bottom: 1px solid transparent;
+    }
+    nav a:hover {
+      color: var(--fg);
+      border-bottom-color: var(--accent);
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 2.5fr);
+      gap: 32px;
+      align-items: center;
+    }
+    @media (max-width: 840px) {
+      .hero {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .hero-title {
+      font-size: clamp(32px, 4vw, 44px);
+      line-height: 1.1;
+      font-weight: 650;
+    }
+    .hero-title span {
+      color: var(--accent);
+    }
+    .hero-sub {
+      margin-top: 14px;
+      font-size: 15px;
+      color: var(--muted);
+      max-width: 460px;
+    }
+    .hero-badges {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(5, 6, 10, 0.8);
+      color: var(--muted);
+    }
+    .badge strong {
+      color: var(--fg);
+      font-weight: 500;
+    }
+    .hero-actions {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn-primary {
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: none;
+      background: var(--accent);
+      color: #111;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(245, 181, 68, 0.4);
+    }
+    .btn-ghost {
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(5, 6, 10, 0.9);
+      color: var(--muted);
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-ghost span {
+      color: var(--accent);
+    }
+    .panel {
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: radial-gradient(circle at top left, #181b2b 0, #05060a 55%);
+      padding: 16px 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .pill {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(5, 6, 10, 0.9);
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .pill span {
+      color: var(--accent);
+    }
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .kv strong {
+      color: var(--fg);
+      font-weight: 500;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    footer {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="sigil">O</div>
+        <div class="brand-text">
+          <span>Sovereign Protocol</span>
+          <span>OrahDEX</span>
+        </div>
+      </div>
+      <nav>
+        <a href="#">Trade</a>
+        <a href="#">Bridge</a>
+        <a href="#">CopyVault</a>
+        <a href="#">Docs</a>
+      </nav>
+    </header>
+
+    <main class="hero">
+      <section>
+        <h1 class="hero-title">
+          Trade as a <span>Keeper</span>, not a customer.
+        </h1>
+        <p class="hero-sub">
+          OrahDEX is a sovereign, non‑custodial trading protocol. No accounts, no
+          identity, no treasury—only cryptographic rules, BSV settlement, and
+          deterministic execution.
+        </p>
+        <div class="hero-badges">
+          <div class="badge"><strong>950+</strong>&nbsp;pairs</div>
+          <div class="badge"><strong>200+</strong>&nbsp;networks</div>
+          <div class="badge">BSV‑settled</div>
+          <div class="badge">No wrapped tokens</div>
+        </div>
+        <div class="hero-actions">
+          <button class="btn-primary">Enter Exchange</button>
+          <button class="btn-ghost">
+            View Protocol <span>→</span>
+          </button>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-header">
+          <span>Protocol snapshot</span>
+          <div class="pill">
+            Status: <span>Online</span>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="kv">
+            <span>Settlement layer</span>
+            <strong>BSV + OP_RETURN</strong>
+          </div>
+          <div class="kv">
+            <span>Liquidity model</span>
+            <strong>AMM + VAMM + Orderbook</strong>
+          </div>
+          <div class="kv">
+            <span>Bridge</span>
+            <strong>HTLC, no custody</strong>
+          </div>
+          <div class="kv">
+            <span>Copy trading</span>
+            <strong>CopyVault (ERC4626)</strong>
+          </div>
+          <div class="kv">
+            <span>AI layer</span>
+            <strong>Ora (context‑aware)</strong>
+          </div>
+          <div class="kv">
+            <span>Identity</span>
+            <strong>Wallet‑only, no KYC</strong>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <span>Settlement</span>
+          <div class="pill">BSV proofs</div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted);">
+          Every trade, vault rebalance, and bridge event can be anchored to BSV
+          as an OP_RETURN settlement proof—immutable, verifiable, and
+          independent of any intermediary.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Liquidity</span>
+          <div class="pill">Genesis engine</div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted);">
+          A hybrid of constant‑product AMM, virtual AMM, and orderbook routing
+          ensures that any listed asset is tradeable—even with few users and no
+          external market makers.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span>CopyVault</span>
+          <div class="pill">Leaders &amp; followers</div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted);">
+          ERC4626‑style vaults mirror leader trades on‑chain, with BSV proof
+          chains and high‑water‑mark performance fees—no pooled custody, no
+          opaque risk.
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      <span>OrahDEX is not a company or custodian. It is a set of open‑source, cryptographically enforced rules.</span>
+      <span>v0.1 — Replit landing shell</span>
+    </footer>
+  </div>
+</body>
+</html>
+
+
+---
+
+5. Run it
+
+• Click Run in Replit.
+• It should start the Express server and serve public/index.html.
+• Open the webview → you’ll see your new sovereign OrahDEX landing shell.
