@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Mail, MessageCircle, Inbox, HelpCircle, Save, Plus,
   Trash2, Edit3, Check, X, ChevronDown, ChevronUp,
   Eye, EyeOff, RefreshCw, Send, Clock, AlertCircle,
   CheckCircle2, Circle, Reply, Filter, Bell, Zap,
   Smartphone, Monitor, Globe, ExternalLink, Copy,
+  Hash, Users, Shield, Radio, Megaphone, Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -170,98 +171,325 @@ function EmailSetupTab() {
   );
 }
 
+/* ── CHANNEL ICONS ──────────────────────────────────────────────────────────── */
+const CHANNEL_META: Record<string, { icon: any; label: string; color: string; desc: string }> = {
+  global:  { icon: Globe,      label: "Global",   color: "text-blue-400",   desc: "Open channel for all wallets" },
+  support: { icon: Shield,     label: "Support",  color: "text-orange-400", desc: "User support & moderation" },
+  system:  { icon: Radio,      label: "System",   color: "text-green-400",  desc: "Read-only admin announcements" },
+  ora:     { icon: Bot,        label: "Ora AI",   color: "text-violet-400", desc: "AI assistant channel" },
+};
+const channelIcon = (name: string) => {
+  if (name.startsWith("pair:")) return { icon: Hash, label: `#${name.slice(5)}`, color: "text-primary", desc: "Pair-specific channel" };
+  return CHANNEL_META[name] ?? { icon: MessageCircle, label: name, color: "text-muted-foreground", desc: "" };
+};
+
 /* ── LIVE CHAT TAB ──────────────────────────────────────────────────────────── */
 function LiveChatTab() {
   const { toast } = useToast();
-  const [settings, setSettings] = useState({
-    support_chat_enabled: "true",
-    support_chat_welcome: "Hi! Welcome to OrahDEX Support. How can I help you today?",
-    support_chat_offline_msg: "We're currently offline. Leave your message and we'll get back to you within 24 hours.",
-    support_telegram_url: "",
-    support_discord_url: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+
+  /* channel list */
+  const [channels, setChannels] = useState<any[]>([]);
+  const [chLoading, setChLoading] = useState(true);
+
+  /* system announcement */
+  const [announcement, setAnnouncement] = useState("");
+  const [adminKey, setAdminKey] = useState("");
+  const [sending, setSending] = useState(false);
+
+  /* selected channel messages */
+  const [selectedCh, setSelectedCh] = useState<string | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [msgLoading, setMsgLoading] = useState(false);
+
+  /* community links */
+  const [telegramUrl, setTelegramUrl] = useState("");
+  const [discordUrl, setDiscordUrl]   = useState("");
+  const [savingLinks, setSavingLinks] = useState(false);
+  const [linksLoaded, setLinksLoaded] = useState(false);
+
+  /* refs to avoid stale closures in polling */
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadChannels = async () => {
+    try {
+      const r = await fetch(`${BASE}/api/chat/channels`);
+      const data = await r.json();
+      if (Array.isArray(data)) setChannels(data);
+    } catch { /* silent */ }
+    finally { setChLoading(false); }
+  };
+
+  const loadMessages = async (ch: string) => {
+    setMsgLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/chat/channels/${encodeURIComponent(ch)}/messages?limit=30`);
+      const data = await r.json();
+      if (Array.isArray(data)) setMessages(data);
+    } catch { /* silent */ }
+    finally { setMsgLoading(false); }
+  };
 
   useEffect(() => {
+    loadChannels();
     fetch(`${BASE}/api/admin/support/settings`)
       .then(r => r.json())
-      .then(data => { setSettings(s => ({ ...s, ...data })); setLoaded(true); })
-      .catch(() => setLoaded(true));
+      .then(d => {
+        if (d.support_telegram_url) setTelegramUrl(d.support_telegram_url);
+        if (d.support_discord_url)  setDiscordUrl(d.support_discord_url);
+        setLinksLoaded(true);
+      })
+      .catch(() => setLinksLoaded(true));
+    const id = setInterval(loadChannels, 15_000);
+    return () => clearInterval(id);
   }, []);
 
-  const save = async () => {
-    setSaving(true);
+  useEffect(() => {
+    if (!selectedCh) return;
+    loadMessages(selectedCh);
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => loadMessages(selectedCh), 10_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [selectedCh]);
+
+  const sendAnnouncement = async () => {
+    if (!announcement.trim()) return;
+    setSending(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/settings`, {
+      const r = await fetch(`${BASE}/api/chat/system`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ message: announcement.trim(), adminKey }),
       });
-      if (!r.ok) throw new Error("Save failed");
-      toast({ title: "Chat settings saved" });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${r.status}`);
+      }
+      toast({ title: "Announcement posted to System channel" });
+      setAnnouncement("");
+      await loadChannels();
+      if (selectedCh === "system") await loadMessages("system");
     } catch (err: any) {
-      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+      toast({ title: "Failed to post announcement", description: err.message, variant: "destructive" });
     } finally {
-      setSaving(false);
+      setSending(false);
     }
   };
 
-  const chatEnabled = settings.support_chat_enabled !== "false";
+  const saveLinks = async () => {
+    setSavingLinks(true);
+    try {
+      await fetch(`${BASE}/api/admin/support/settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ support_telegram_url: telegramUrl, support_discord_url: discordUrl }),
+      });
+      toast({ title: "Community links saved" });
+    } catch {
+      toast({ title: "Failed to save links", variant: "destructive" });
+    } finally {
+      setSavingLinks(false);
+    }
+  };
+
+  const totalMessages = channels.reduce((s, c) => s + (c.messageCount ?? 0), 0);
+  const totalSubs     = channels.reduce((s, c) => s + (c.activeSubscribers ?? 0), 0);
 
   return (
     <div className="space-y-6">
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-semibold text-sm">Live Chat Widget</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">The floating chat button on the Support page</p>
-          </div>
-          <button
-            onClick={() => setSettings(s => ({ ...s, support_chat_enabled: chatEnabled ? "false" : "true" }))}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all",
-              chatEnabled
-                ? "bg-green-500/10 border-green-500/20 text-green-400"
-                : "bg-muted/20 border-border text-muted-foreground"
-            )}
-          >
-            <div className={cn("w-1.5 h-1.5 rounded-full", chatEnabled ? "bg-green-400 animate-pulse" : "bg-muted-foreground")} />
-            {chatEnabled ? "Enabled" : "Disabled"}
-          </button>
-        </div>
 
-        <div className="space-y-4">
+      {/* ── Status banner ── */}
+      <div className="flex items-center gap-3 p-4 bg-blue-400/5 border border-blue-400/20 rounded-2xl">
+        <MessageCircle className="w-5 h-5 text-blue-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-blue-400">Native OrahDEX Chat — Online</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Built-in multi-channel SSE system · {channels.length} channels · {totalMessages} messages · {totalSubs} live subscriber{totalSubs !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <button onClick={loadChannels} className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground transition-colors">
+          <RefreshCw className={cn("w-3.5 h-3.5", chLoading && "animate-spin")} />
+        </button>
+      </div>
+
+      {/* ── Channel Stats ── */}
+      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-border bg-secondary/20 flex items-center gap-2">
+          <Radio className="w-4 h-4 text-primary" />
+          <h3 className="text-sm font-bold">Channel Overview</h3>
+          <span className="ml-auto text-xs text-muted-foreground">{channels.length} active channels</span>
+        </div>
+        {chLoading ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+            <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-2" />
+            Loading channels…
+          </div>
+        ) : channels.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">No channels returned — chat API may be initialising</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {channels.map((ch: any) => {
+              const meta = channelIcon(ch.name);
+              const Icon = meta.icon;
+              const isSelected = selectedCh === ch.name;
+              return (
+                <button
+                  key={ch.name}
+                  onClick={() => setSelectedCh(isSelected ? null : ch.name)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-muted/20",
+                    isSelected && "bg-primary/5 border-l-2 border-primary"
+                  )}
+                >
+                  <Icon className={cn("w-4 h-4 shrink-0", meta.color)} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{meta.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{meta.desc}</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-right shrink-0">
+                    <div>
+                      <p className="text-sm font-mono font-semibold">{ch.messageCount ?? 0}</p>
+                      <p className="text-[10px] text-muted-foreground">msgs</p>
+                    </div>
+                    <div>
+                      <p className={cn("text-sm font-mono font-semibold", (ch.activeSubscribers ?? 0) > 0 ? "text-green-400" : "text-muted-foreground")}>
+                        {ch.activeSubscribers ?? 0}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">live</p>
+                    </div>
+                    <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", isSelected && "rotate-180")} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Message preview for selected channel ── */}
+        {selectedCh && (
+          <div className="border-t border-border bg-background/50">
+            <div className="px-5 py-2.5 flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Recent messages — {channelIcon(selectedCh).label}
+              </p>
+              {msgLoading && <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground" />}
+            </div>
+            <div className="px-5 pb-4 space-y-2 max-h-64 overflow-y-auto">
+              {messages.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-4 text-center">No messages yet in this channel</p>
+              ) : [...messages].reverse().map((msg: any) => (
+                <div key={msg.id} className="flex items-start gap-2 text-xs">
+                  <span className="text-muted-foreground font-mono shrink-0 w-16 text-right">
+                    {new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className={cn(
+                    "text-[9px] font-black px-1.5 py-0.5 rounded uppercase shrink-0 mt-0.5",
+                    msg.role === "system"  ? "bg-green-400/10 text-green-400" :
+                    msg.role === "support" ? "bg-orange-400/10 text-orange-400" :
+                    msg.role === "ora"     ? "bg-violet-400/10 text-violet-400" :
+                    "bg-muted/30 text-muted-foreground"
+                  )}>
+                    {msg.role ?? "user"}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{msg.pseudonym ?? msg.wallet?.slice(0,8) ?? "anon"}</span>
+                  <span className="text-foreground leading-relaxed flex-1 min-w-0 break-words">{msg.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── System Announcement ── */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Megaphone className="w-4 h-4 text-orange-400" />
+          <h3 className="font-semibold text-sm">Post System Announcement</h3>
+          <span className="ml-auto text-[10px] font-black px-2 py-0.5 rounded bg-green-400/10 text-green-400 border border-green-400/20">System Channel</span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Broadcasts to the read-only System channel — visible to all connected users in their chat widget. Requires the admin key set in your server environment.
+        </p>
+        <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Welcome Message</label>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Announcement Text</label>
             <textarea
-              value={settings.support_chat_welcome}
-              onChange={e => setSettings(s => ({ ...s, support_chat_welcome: e.target.value }))}
-              rows={2}
+              value={announcement}
+              onChange={e => setAnnouncement(e.target.value)}
+              rows={3}
+              placeholder="e.g. Scheduled maintenance in 30 minutes — all open orders will be preserved."
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors resize-none"
             />
-            <p className="text-[11px] text-muted-foreground mt-1">Shown as the first message when a user opens the chat</p>
           </div>
           <div>
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Offline Message</label>
-            <textarea
-              value={settings.support_chat_offline_msg}
-              onChange={e => setSettings(s => ({ ...s, support_chat_offline_msg: e.target.value }))}
-              rows={2}
-              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors resize-none"
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Admin Key</label>
+            <input
+              type="password"
+              value={adminKey}
+              onChange={e => setAdminKey(e.target.value)}
+              placeholder="ADMIN_KEY from server environment"
+              className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
             />
+            <p className="text-[11px] text-muted-foreground mt-1">Set <code className="bg-muted/40 px-1 rounded">ADMIN_KEY</code> in your API server environment variables to authorise announcements.</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={sendAnnouncement}
+              disabled={sending || !announcement.trim()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-50"
+            >
+              {sending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
+              {sending ? "Sending…" : "Broadcast Announcement"}
+            </button>
           </div>
         </div>
       </div>
 
+      {/* ── Moderation Info ── */}
       <div className="bg-card border border-border rounded-2xl p-5">
-        <h3 className="font-semibold text-sm mb-4">Community Channels</h3>
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="w-4 h-4 text-violet-400" />
+          <h3 className="font-semibold text-sm">AI Moderation Rules</h3>
+          <span className="ml-auto text-[10px] font-black px-2 py-0.5 rounded bg-violet-400/10 text-violet-400 border border-violet-400/20">Active</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { rule: "Seed phrase / private key leak", action: "Blocked" },
+            { rule: "Doubling / airdrop scams", action: "Blocked" },
+            { rule: "Suspicious off-platform DMs", action: "Blocked" },
+            { rule: "Phishing domains (.xyz / t.me links)", action: "Blocked" },
+            { rule: "Email / phone PII patterns", action: "Blocked" },
+            { rule: "Txid detection (64-char hex)", action: "Enriched" },
+          ].map(({ rule, action }) => (
+            <div key={rule} className="flex items-center gap-2 p-2.5 rounded-xl bg-muted/10 border border-border text-xs">
+              <span className={cn(
+                "text-[9px] font-black px-1.5 py-0.5 rounded shrink-0",
+                action === "Blocked"  ? "bg-red-400/10 text-red-400" : "bg-blue-400/10 text-blue-400"
+              )}>{action}</span>
+              <span className="text-foreground">{rule}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 p-3 rounded-xl bg-muted/10 border border-border">
+          <p className="text-xs text-muted-foreground">
+            Rate limiting: <span className="text-foreground font-semibold">10 messages per wallet per 15 seconds</span>.
+            In-memory store capped at <span className="text-foreground font-semibold">100 messages per channel</span>.
+            SSE connections are kept alive with 25s keepalive pings.
+          </p>
+        </div>
+      </div>
+
+      {/* ── Community Links ── */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+          <Users className="w-4 h-4 text-muted-foreground" /> Community Channel Links
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">External links shown in the Support channel quick-prompts and help pages.</p>
         <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Telegram URL</label>
             <input
-              value={settings.support_telegram_url}
-              onChange={e => setSettings(s => ({ ...s, support_telegram_url: e.target.value }))}
+              value={telegramUrl}
+              onChange={e => setTelegramUrl(e.target.value)}
               placeholder="https://t.me/orahdex"
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
             />
@@ -269,24 +497,23 @@ function LiveChatTab() {
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Discord URL</label>
             <input
-              value={settings.support_discord_url}
-              onChange={e => setSettings(s => ({ ...s, support_discord_url: e.target.value }))}
+              value={discordUrl}
+              onChange={e => setDiscordUrl(e.target.value)}
               placeholder="https://discord.gg/orahdex"
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
         </div>
-      </div>
-
-      <div className="flex justify-end">
-        <button
-          onClick={save}
-          disabled={saving || !loaded}
-          className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-50"
-        >
-          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save Chat Settings
-        </button>
+        <div className="flex justify-end mt-4">
+          <button
+            onClick={saveLinks}
+            disabled={savingLinks || !linksLoaded}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl font-semibold text-sm hover:brightness-110 transition-all disabled:opacity-50"
+          >
+            {savingLinks ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save Links
+          </button>
+        </div>
       </div>
     </div>
   );
