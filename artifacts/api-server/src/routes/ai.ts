@@ -176,7 +176,11 @@ const INSIGHTS_TTL = 10 * 60 * 1000;
 
 router.get("/ai/insights", async (_req, res) => {
   if (insightsCache.content && Date.now() - insightsCache.ts < INSIGHTS_TTL) {
-    res.json({ insights: insightsCache.content, cached: true });
+    try {
+      res.json({ insights: JSON.parse(insightsCache.content), cached: true });
+    } catch {
+      res.json({ insights: [insightsCache.content], cached: true });
+    }
     return;
   }
 
@@ -204,7 +208,7 @@ router.get("/ai/insights", async (_req, res) => {
     const content = JSON.stringify(parsed);
     insightsCache.content = content;
     insightsCache.ts = Date.now();
-    res.json({ insights: content, cached: false });
+    res.json({ insights: parsed, cached: false });
   } catch (err: any) {
     logger.error({ err: err?.message }, "AI insights error");
     res.status(500).json({ error: err?.message ?? "Insights failed" });
