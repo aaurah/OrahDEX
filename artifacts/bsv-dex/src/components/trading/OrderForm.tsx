@@ -496,21 +496,23 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   // If base is the native token (ETH, BNB, etc.), fall back to native balance from store
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
 
-  // OrahDEX exchange balance — tokens credited from filled trades (persisted per wallet).
-  // Always merge into available-to-trade so users can re-trade without withdrawing first.
-  const dexBase  = getDexBalance(address || "", base);
-  const dexQuote = getDexBalance(address || "", quote);
+  // OrahDEX internal balance — Model A: only this is tradeable, never raw wallet balance.
+  // Positive = deposited/earned. Zero or negative = need to deposit first.
+  const dexBase  = Math.max(0, getDexBalance(address || "", base));
+  const dexQuote = Math.max(0, getDexBalance(address || "", quote));
 
-  // Orah Wallet & demo: use balances fetched from the API ledger; external EVM wallets
-  // use on-chain values PLUS any OrahDEX exchange balance they have accumulated.
+  // Model A rule: EVM wallets trade ONLY from OrahDEX internal balance (deposit first).
+  // Demo/Orah Wallet users use the API ledger balance (they have virtual funding).
   const baseAvailable  = usesApiBalance
     ? (demoBalances[base] ?? 0)
-    : (isNativeBase ? nativeBal : (baseBalEntry?.amount ?? 0)) + dexBase;
+    : dexBase;
   const quoteAvailable = usesApiBalance
     ? (demoBalances[quote] ?? 0)
-    : (quoteBalEntry?.amount ?? 0) + dexQuote;
+    : dexQuote;
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
+  // Whether the user needs to deposit before they can trade
+  const needsDeposit = !usesApiBalance && availableAmt <= 0;
 
   // ── API-locked balance for external EVM wallets ───────────────────────────
   // External EVM wallets (Reown, MetaMask, Coinbase) use on-chain balances for
@@ -844,7 +846,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const isPending = placeOrder.isPending;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
-  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
+  const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid && !needsDeposit;
 
   return (
     <div className="flex flex-col h-full bg-card border-l border-border">
@@ -935,26 +937,40 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           ))}
         </div>
 
-        {/* Available balance row */}
+        {/* OrahDEX balance row — Model A: only internal balance is tradeable */}
         <div className="flex items-center justify-between text-xs px-0.5">
-          <span className="text-muted-foreground">Available</span>
+          <span className="text-muted-foreground">
+            {usesApiBalance ? "Available" : "OrahDEX Balance"}
+          </span>
           <div className="flex items-center gap-1">
             {balancesLoading && isEvm ? (
               <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
             ) : (
-              <span className="font-mono font-semibold text-foreground">
+              <span className={cn(
+                "font-mono font-semibold",
+                availableAmt > 0 ? "text-foreground" : "text-muted-foreground/60"
+              )}>
                 {availableAmt > 0
                   ? availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })
                   : "0.0000"}{" "}{availableSym}
               </span>
             )}
-            {!balancesLoading && isEvm && (
-              <button type="button" onClick={refreshBalances} className="text-muted-foreground/30 hover:text-primary transition-colors">
-                <RefreshCw className="w-3 h-3" />
-              </button>
-            )}
           </div>
         </div>
+
+        {/* Deposit CTA — shown only when user has no OrahDEX balance to trade */}
+        {needsDeposit && (
+          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-primary/5 border border-primary/20 text-xs -mt-0.5">
+            <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+              <span className="text-primary text-[10px] font-black">↓</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-foreground font-semibold">Deposit {availableSym} first</p>
+              <p className="text-muted-foreground mt-0.5">OrahDEX trades from your exchange balance — go to <span className="text-primary font-medium">Portfolio → Deposit</span>.</p>
+            </div>
+          </div>
+        )}
+
         {/* Locked-in-orders row (external EVM wallets only) */}
         {!usesApiBalance && apiLockedAmt > 0 && (
           <div className="flex items-center justify-between text-xs px-0.5 -mt-1.5">

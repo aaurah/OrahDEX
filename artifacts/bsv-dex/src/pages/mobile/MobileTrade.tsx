@@ -572,15 +572,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
   const isNativeQuote = nativeSymbol === quote;
 
-  // OrahDEX exchange balance — tokens credited from filled trades (persisted per wallet)
-  // These are separate from on-chain holdings and must be included in available-to-trade.
-  const dexBaseBalance  = getDexBalance(address || "", base);
-  const dexQuoteBalance = getDexBalance(address || "", quote);
+  // OrahDEX internal balance — Model A: ONLY this is tradeable, never raw wallet balance.
+  // Users must deposit into OrahDEX before trading. Negative values (from prior fills
+  // without a deposit) are clamped to 0 here so they can't trade a phantom balance.
+  const dexBaseBalance  = Math.max(0, getDexBalance(address || "", base));
+  const dexQuoteBalance = Math.max(0, getDexBalance(address || "", quote));
 
-  // Effective balances per side — on-chain wallet PLUS OrahDEX exchange balance,
+  // Model A: effective balances come entirely from the OrahDEX internal ledger,
   // then net of amounts locked in open orders for this market.
-  const grossSellBalance = (isNativeBase  ? walletBal : erc20BaseBalance) + dexBaseBalance;
-  const grossBuyBalance  = (isNativeQuote ? walletBal : erc20QuoteBalance) + dexQuoteBalance;
+  const grossSellBalance = dexBaseBalance;
+  const grossBuyBalance  = dexQuoteBalance;
   const sellBalance = Math.max(0, grossSellBalance - lockedSellQty);
   const buyBalance  = Math.max(0, grossBuyBalance  - lockedBuySpend);
 
