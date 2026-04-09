@@ -1,0 +1,184 @@
+THE CORRECT PORTFOLIO MODEL (4 BUCKETS)
+
+Your portfolio must show four separate balances, never merged:
+
+---
+
+1. Wallet Balance (REAL on‑chain funds)
+
+This is what the user actually owns in their wallet.
+
+Example from your screenshot:
+
+• 0.005847 ETH ≈ A$16.16
+
+
+This must never include:
+
+• OrahDEX credits
+• LP positions
+• pending orders
+• internal ledger balances
+
+
+This is the true wallet.
+
+---
+
+2. In‑Trade / Locked Balance (funds reserved for open orders)
+
+When a user places:
+
+• a limit order
+• a stop order
+• a post‑only order
+
+
+You must deduct the amount from the wallet balance and show it here:
+
+“Busy in Trade”
+
+Example:
+
+If user has 0.005847 ETH
+and places a limit sell for 0.003 ETH:
+
+• Wallet shows: 0.002847 ETH
+• Busy in Trade shows: 0.003 ETH
+
+
+This prevents double‑spending and makes the UI feel real.
+
+---
+
+3. OrahDEX Exchange Balance (internal credits from matched trades)
+
+This is the USDT (or other quote tokens) earned from:
+
+• matched order‑book trades
+• synthetic VAMM trades
+• internal settlement
+
+
+This is not in the wallet.
+This is not in DeFi.
+This is not LP.
+
+This is your internal ledger, and it must be shown as:
+
+“OrahDEX Balance (Exchange Credits)”
+
+Example from your screenshot:
+
+• USDT: 42.04 ≈ A$80.67
+
+
+This must never be added to wallet balance.
+
+---
+
+4. DeFi / Liquidity Positions (LP tokens, Uniswap, etc.)
+
+This is:
+
+• AMM liquidity
+• LP tokens
+• staking
+• farming
+• vault deposits
+
+
+This must be shown as:
+
+“DeFi / Liquidity”
+
+Separate from wallet
+Separate from OrahDEX credits
+Separate from busy-in-trade
+
+---
+
+🎯 THE FIX YOU WANT (exactly as you described)
+
+You said:
+
+“Show 16.16 dollars in busy in trade if limit order spot order starrway cut from wallet and exchaged usdt in wallet if liquidity show in liquidity and defi show as uniswap or meta mask money in liquidity defi side”
+
+Here is the exact implementation:
+
+---
+
+✅ FINAL PORTFOLIO LAYOUT (copy/paste into your UI)
+
+---
+
+1. Wallet Balance (REAL on‑chain)
+
+Shows ONLY:
+
+• ETH
+• BNB
+• MATIC
+• AVAX
+• etc.
+
+
+Never includes:
+
+• OrahDEX credits
+• LP
+• busy-in-trade
+• internal balances
+
+
+---
+
+2. Busy in Trade (locked for open orders)
+
+Shows:
+
+• ETH locked in open sell orders
+• USDT locked in open buy orders
+
+
+Example:
+
+Busy in Trade
+ETH: 0.003 (limit sell)
+USDT: 25.00 (limit buy)
+
+
+---
+
+3. OrahDEX Balance (Exchange Credits)
+
+Shows:
+
+• USDT earned from filled trades
+• Any internal ledger tokens
+• Settled on BSV chain
+
+
+Example:
+
+OrahDEX Balance
+USDT: 42.04
+
+
+---
+
+4. DeFi / Liquidity
+
+Shows:
+
+• LP tokens
+• Uniswap positions
+• AMM liquidity
+• Vault deposits
+
+
+Example:
+
+DeFi / Liquidity
+ETH/USDT LP: $21.05
+

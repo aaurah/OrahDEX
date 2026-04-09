@@ -183,7 +183,7 @@ export function MobilePortfolio() {
   const tokensTotal = rows.reduce((s, r) => s + r.value, 0);
   const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
 
-  // OrahDEX exchange balance (accumulated from matched trades)
+  // ── BUCKET 3: OrahDEX exchange balance (matched trade credits) ────────────
   const exchangeBalances = address ? getExchangeBalances(address) : {};
   const exchangeTokens = Object.entries(exchangeBalances).filter(([, amt]) => amt > 0);
   const exchangeTotalValue = exchangeTokens.reduce((s, [token, amt]) => {
@@ -193,8 +193,41 @@ export function MobilePortfolio() {
     return s + amt * p;
   }, 0);
 
-  // Total = only real on-chain wallet balance. OrahDEX exchange balance and
-  // DeFi LP positions are shown as separate cards — they are NOT added here.
+  // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
+  // For SELL orders: base asset is reserved (e.g. 0.003 ETH locked for a sell)
+  // For BUY  orders: quote asset is reserved (price × qty USDT)
+  const openOrders = myOrders.filter(o => o.status === "open" || o.status === "pending");
+  const lockedByAsset: Record<string, { amount: number; orders: { id: string; symbol: string; side: string; qty: number; price: number; type: string }[] }> = {};
+  for (const order of openOrders) {
+    const parts = (order.symbol ?? "").split("/");
+    const base  = parts[0] ?? "";
+    const quote = parts[1] ?? "USDT";
+    if (order.side === "sell") {
+      const qty = parseFloat(order.quantity) || parseFloat(order.qty) || 0;
+      if (qty > 0 && base) {
+        if (!lockedByAsset[base]) lockedByAsset[base] = { amount: 0, orders: [] };
+        lockedByAsset[base].amount += qty;
+        lockedByAsset[base].orders.push({ id: order.id, symbol: order.symbol, side: "sell", qty, price: parseFloat(order.price) || 0, type: order.type ?? "limit" });
+      }
+    } else {
+      const qty   = parseFloat(order.quantity) || parseFloat(order.qty) || 0;
+      const price = parseFloat(order.price) || 0;
+      const cost  = price > 0 ? price * qty : 0;
+      if (cost > 0 && quote) {
+        if (!lockedByAsset[quote]) lockedByAsset[quote] = { amount: 0, orders: [] };
+        lockedByAsset[quote].amount += cost;
+        lockedByAsset[quote].orders.push({ id: order.id, symbol: order.symbol, side: "buy", qty, price, type: order.type ?? "limit" });
+      }
+    }
+  }
+  const lockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
+  const lockedTotalUsd = lockedEntries.reduce((s, [token, v]) => {
+    const isStable = ["USDT", "USDC", "DAI", "BUSD"].includes(token);
+    const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
+    return s + v.amount * p;
+  }, 0);
+
+  // ── BUCKET 1: Wallet balance (real on-chain only, NOT merged with other buckets) ──
   const total = tokensTotal;
   const nonZero = rows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
@@ -388,10 +421,10 @@ export function MobilePortfolio() {
         </div>
 
         <div className="px-4 space-y-4">
-          {/* Total value card */}
+          {/* ── BUCKET 1: Wallet Balance (real on-chain only) ─────────────────── */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground">Wallet Balance</p>
+              <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
               <span className={cn(
                 "text-[10px] font-bold px-2 py-0.5 rounded-full border",
                 network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
@@ -413,12 +446,10 @@ export function MobilePortfolio() {
             {total > 0 && (() => {
               const pnlUsd = total * totalChange / 100;
               return (
-                <div className="flex items-center gap-3 mt-2">
+                <div className="flex items-center gap-3 mt-1.5">
                   <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
-                    {totalChange >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                    <span className="text-sm font-bold">
-                      {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%
-                    </span>
+                    {totalChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    <span className="text-sm font-bold">{totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%</span>
                   </div>
                   <span className="text-muted-foreground/40 text-xs">·</span>
                   <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
@@ -428,16 +459,26 @@ export function MobilePortfolio() {
               );
             })()}
 
-            {/* Allocation bar — only show if there's a real balance */}
-            {total > 0 && (
+            {/* Available vs Locked breakdown */}
+            {lockedTotalUsd > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">Available</p>
+                  <p className="text-sm font-bold text-green-400">{formatQuoteAmount(Math.max(0, total - lockedTotalUsd), quoteCurrency)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
+                  <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Allocation bar */}
+            {total > 0 && nonZero.length > 0 && (
               <>
                 <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
                   {nonZero.map(r => (
-                    <div
-                      key={r.asset}
-                      className="h-full rounded-full"
-                      style={{ flex: r.value / total, backgroundColor: r.color }}
-                    />
+                    <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
                   ))}
                 </div>
                 <div className="flex gap-3 mt-2 flex-wrap">
@@ -452,36 +493,67 @@ export function MobilePortfolio() {
             )}
           </div>
 
+          {/* ── BUCKET 2: Busy in Trade (locked in open limit/stop orders) ───── */}
+          {lockedEntries.length > 0 && (
+            <div className="bg-orange-500/5 border border-orange-500/25 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <svg className="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <span className="text-sm font-bold text-orange-300">Busy in Trade</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wide">Reserved</span>
+                </div>
+                <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-3">
+                Reserved for your open limit/stop orders. Released back when orders are filled or cancelled.
+              </p>
+              <div className="space-y-2">
+                {lockedEntries.map(([token, v]) => {
+                  const isStable = ["USDT","USDC","DAI","BUSD"].includes(token);
+                  const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
+                  const usdVal = v.amount * p;
+                  return (
+                    <div key={token} className="flex items-start justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-foreground">{token}</span>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {v.orders.map(o => (
+                            <span key={o.id} className="mr-2">
+                              {o.type.toUpperCase()} {o.side.toUpperCase()} {o.qty.toLocaleString(undefined, { maximumFractionDigits: 6 })} {o.symbol?.split("/")[0]}
+                              {o.price > 0 ? ` @ $${o.price.toLocaleString()}` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        <div className="text-xs font-mono text-foreground">{v.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+                        {usdVal > 0 && <div className="text-[10px] text-muted-foreground">≈ {formatQuoteAmount(usdVal, quoteCurrency)}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Deposit / Withdraw / Bridge */}
           <div className="grid grid-cols-3 gap-2">
-            <button
-              onClick={() => setDepositOpen(true)}
-              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90"
-            >
+            <button onClick={() => setDepositOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
               Deposit
             </button>
-            <button
-              onClick={() => setWithdrawOpen(true)}
-              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-card border border-border text-foreground font-semibold text-xs active:opacity-80"
-            >
+            <button onClick={() => setWithdrawOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-card border border-border text-foreground font-semibold text-xs active:opacity-80">
               <ArrowUpFromLine size={15} />
               Withdraw
             </button>
-            <button
-              onClick={() => navigate("/deposit-bsv")}
-              className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors"
-            >
+            <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors">
               <ArrowLeftRight size={15} />
               Bridge
             </button>
           </div>
 
           {/* Deposit CTA */}
-          <button
-            onClick={() => setDepositOpen(true)}
-            className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left"
-          >
+          <button onClick={() => setDepositOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
             <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
               <ArrowDownToLine size={16} className="text-primary" />
             </div>
@@ -492,7 +564,7 @@ export function MobilePortfolio() {
             <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
           </button>
 
-          {/* OrahDEX Exchange Balance — separate card, NOT part of wallet balance */}
+          {/* ── BUCKET 3: OrahDEX Exchange Balance (trade credits, NOT wallet) ── */}
           {exchangeTotalValue > 0 && (
             <div className="bg-amber-500/5 border border-amber-500/25 rounded-2xl p-4">
               <div className="flex items-center justify-between mb-1">
@@ -503,43 +575,44 @@ export function MobilePortfolio() {
                 </div>
                 <span className="text-base font-bold text-amber-300">{formatQuoteAmount(exchangeTotalValue, quoteCurrency)}</span>
               </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Tokens accumulated from matched order-book trades. Settled on BSV chain.
+              <p className="text-[10px] text-muted-foreground mb-3">
+                Tokens earned from filled trades on the OrahDEX order book. Not in your wallet — withdraw to claim.
               </p>
-              <div className="mt-3 space-y-1.5">
+              <div className="space-y-2">
                 {exchangeTokens.map(([token, amt]) => {
                   const isStable = ["USDT","USDC","DAI","BUSD"].includes(token);
                   const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
                   const val = amt * p;
                   return (
                     <div key={token} className="flex items-center justify-between">
-                      <span className="text-xs text-foreground font-semibold">{token}</span>
+                      <span className="text-xs font-bold text-foreground">{token}</span>
                       <div className="text-right">
                         <span className="text-xs font-mono text-foreground">{amt.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                        {val > 0 && <span className="text-[10px] text-muted-foreground ml-1.5">≈ {formatQuoteAmount(val, quoteCurrency)}</span>}
+                        {val > 0 && <span className="text-[10px] text-muted-foreground ml-2">≈ {formatQuoteAmount(val, quoteCurrency)}</span>}
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div className="text-[10px] text-amber-400/70 text-right mt-2">
+              <div className="text-[10px] text-amber-400/70 text-right mt-2 pt-2 border-t border-amber-500/15">
                 Total ≈ {formatQuoteAmount(exchangeTotalValue, quoteCurrency)}
               </div>
             </div>
           )}
 
-          {/* DeFi LP — separate card */}
+          {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
             <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Droplets size={14} className="text-primary" />
-                  <span className="text-sm font-bold text-foreground">DeFi (LP Positions)</span>
+                  <span className="text-sm font-bold text-foreground">DeFi / Liquidity</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 uppercase tracking-wide">LP</span>
                 </div>
                 <span className="text-base font-bold text-primary">{formatQuoteAmount(lpTotalValue, quoteCurrency)}</span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Liquidity you have deposited into DeFi protocols (Uniswap, etc.). Underlying tokens stay in your wallet.
+              <p className="text-[10px] text-muted-foreground">
+                Liquidity deposited into AMM pools (Uniswap, etc.). Underlying tokens stay in your wallet — value shown here is your LP position.
               </p>
             </div>
           )}
