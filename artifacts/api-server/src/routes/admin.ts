@@ -438,6 +438,116 @@ router.get("/stats", async (_req, res) => {
   });
 });
 
+router.get("/trade-analytics", async (_req, res) => {
+  try {
+    const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "open"));
+    const [filledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "filled"));
+    const [cancelledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "cancelled"));
+    const [totalOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
+
+    const [openVolumeRow] = await db.select({
+      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
+    }).from(ordersTable).where(eq(ordersTable.status, "open"));
+
+    const [filledVolumeRow] = await db.select({
+      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
+    }).from(ordersTable).where(eq(ordersTable.status, "filled"));
+
+    const allOrders = await db.select().from(ordersTable)
+      .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(300);
+
+    const allTrades = await db.select().from(tradesTable)
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(300);
+
+    const allMarkets = await db.select().from(marketsTable);
+
+    const orderSummaries = allOrders.map(o => ({
+      id: o.id,
+      walletAddress: o.walletAddress,
+      symbol: o.symbol,
+      side: o.side,
+      type: o.type,
+      status: o.status,
+      price: o.price,
+      quantity: o.quantity,
+      total: o.total,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+      txid: o.txid,
+      matchedOrderId: o.matchedOrderId,
+      stopPrice: (o as any).stopPrice ?? null,
+      leverage: (o as any).leverage ?? null,
+      orderKind: o.type === "limit" ? "limit" : o.type === "market" ? "market" : o.type === "stop" ? "stop" : o.type,
+    }));
+
+    const pairStats = Object.values(
+      allOrders.reduce((acc, o) => {
+        const key = o.symbol ?? "UNKNOWN";
+        acc[key] ??= { symbol: key, total: 0, open: 0, filled: 0, cancelled: 0, buy: 0, sell: 0, volume: 0 };
+        const bucket = acc[key];
+        bucket.total += 1;
+        bucket.volume += Number(o.total ?? 0);
+        if (o.status === "open") bucket.open += 1;
+        if (o.status === "filled") bucket.filled += 1;
+        if (o.status === "cancelled") bucket.cancelled += 1;
+        if (o.side === "buy") bucket.buy += 1;
+        if (o.side === "sell") bucket.sell += 1;
+        return acc;
+      }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
+    ).sort((a, b) => b.volume - a.volume).slice(0, 20);
+
+    const limitBreakdown = allOrders.reduce((acc, o) => {
+      const key = o.type ?? "unknown";
+      acc[key] ??= { type: key, count: 0, volume: 0 };
+      acc[key].count += 1;
+      acc[key].volume += Number(o.total ?? 0);
+      return acc;
+    }, {} as Record<string, { type: string; count: number; volume: number }>);
+
+    const liquidityOrders = allOrders.filter(o => String(o.walletAddress ?? "").toUpperCase().includes("BOT") || String(o.walletAddress ?? "").toUpperCase().includes("LIQUIDITY"));
+    const liquidityDepth = allMarkets.map(m => ({
+      symbol: m.symbol,
+      lastPrice: m.lastPrice,
+      status: m.status,
+      liquidityOrders: liquidityOrders.filter(o => o.symbol === m.symbol).length,
+    }));
+
+    res.json({
+      summary: {
+        totalOrders: totalOrdersRow?.cnt ?? 0,
+        openOrders: openOrdersRow?.cnt ?? 0,
+        filledOrders: filledOrdersRow?.cnt ?? 0,
+        cancelledOrders: cancelledOrdersRow?.cnt ?? 0,
+        openVolume: Number(openVolumeRow?.vol ?? 0),
+        filledVolume: Number(filledVolumeRow?.vol ?? 0),
+        totalTrades: allTrades.length,
+        activePairs: allMarkets.filter(m => m.status === "active").length,
+      },
+      orders: orderSummaries,
+      trades: allTrades.map(t => ({
+        id: t.id,
+        walletAddress: t.walletAddress,
+        symbol: t.symbol,
+        side: t.side,
+        price: t.price,
+        quantity: t.quantity,
+        total: t.total,
+        fee: t.fee,
+        txid: t.txid,
+        timestamp: t.timestamp,
+      })),
+      pairStats,
+      limitBreakdown: Object.values(limitBreakdown).sort((a, b) => b.volume - a.volume),
+      liquidityDepth,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to build trade analytics" });
+  }
+});
+
 /* ─── RECENT ACTIVITY (live feed for admin dashboard) ─── */
 router.get("/activity", async (_req, res) => {
   try {
