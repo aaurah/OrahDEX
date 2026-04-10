@@ -6,14 +6,10 @@
  *  1. FUNDING RATE INCOME  (runs every 8 hours)
  *     Real open positions pay funding fees to counterparties every 8 h.
  *     OrahDEX retains 10 % of every funding payment as platform income.
- *     Synthetic baseline (estimated open-interest × funding rate) is added
- *     to represent market-wide activity beyond connected wallets.
  *
  *  2. LIQUIDATION INCOME  (runs every 60 seconds)
  *     Positions whose mark-price crosses their liquidation price are closed
  *     and charged a 0.5 % liquidation fee that goes to the platform.
- *     A synthetic baseline from estimated market-wide liquidations is also
- *     accumulated each minute.
  */
 
 import { db } from "@workspace/db";

@@ -51,3 +51,25 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Charting**: lightweight-charts v5
 - **Wallet Connectivity**: `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1`, `@reown/appkit`, `@reown/appkit-adapter-wagmi`, Nodemailer.
 - **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark.
+
+# Trade Logic Audit (2026-04-10)
+
+## Spot Trading (Market + Limit)
+- **Order flow**: `POST /orders` → `fundingVerifier.verifyAndLockFunding()` (locks balance) → insert order → matching loop (multi-fill, price-priority sorted) → `settleSpotFill()` per fill → ledger update → BSV broadcast (best-effort)
+- **Balance bucket**: Spot orders use `user_balances` table (available/locked). FOR UPDATE row locks prevent double-spend.
+- **Fee**: 0.1% (0.001) on both buyer and seller sides
+- **Stop orders**: Trigger checked against current market price; converted to market order when triggered
+- **Cross-chain**: HTLC generated for EVM↔BSV trades; EVM HTLC session for EVM↔EVM external wallets
+
+## Futures Trading (Perpetuals)
+- **Order flow**: `POST /futures/positions` → fundingVerifier (FUTURES kind → `futures_margin_accounts`) → `openFuturesPosition()` (locks margin, inserts position)
+- **Margin**: `margin = (entryPrice × quantity) / leverage`. Isolated margin mode.
+- **Liquidation price**: Long = `entry × (1 - 1/lev + 0.005)`, Short = `entry × (1 + 1/lev - 0.005)`. MMR = 0.5%
+- **Close**: Atomic transaction — position locked FOR UPDATE, margin deducted from locked, returnedMargin (margin + PnL - fee) credited to available, position marked closed
+- **Liquidation engine**: Runs every 60s, checks all open positions against live mark prices
+- **Funding engine**: Runs every 8h, real positions only (no synthetic), platform retains 10% of funding payments
+
+## Bug Fixed: Futures Close PnL Cap
+- `closeFuturesPosition()` previously used `releaseFuturesMargin()` which capped credit at locked amount via `LEAST(locked, amount)` — profitable trades lost PnL above margin
+- Fixed: now uses atomic transaction with raw SQL that deducts original margin from locked and credits full returnedMargin (including profit) to available
+- Also fixed: position read + status check + margin update + position close all run on the same DB client inside one transaction (prevents double-close and ensures atomicity)
