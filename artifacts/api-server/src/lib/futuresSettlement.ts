@@ -276,37 +276,61 @@ export async function closeFuturesPosition(
 ): Promise<FuturesCloseResult> {
   const { positionId, markPrice } = params;
 
-  const [pos] = await db
-    .select()
-    .from(futuresPositionsTable)
-    .where(eq(futuresPositionsTable.id, positionId));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (!pos) throw new Error(`POSITION_NOT_FOUND:${positionId}`);
-  if (pos.status !== "open") throw new Error(`POSITION_NOT_OPEN:${positionId}:${pos.status}`);
+    const { rows: posRows } = await client.query<{
+      id: string; wallet_address: string; side: string;
+      entry_price: string; quantity: string; margin: string; status: string;
+    }>(
+      `SELECT id, wallet_address, side, entry_price, quantity, margin, status
+       FROM futures_positions WHERE id = $1 FOR UPDATE`,
+      [positionId],
+    );
 
-  const entryPrice = parseFloat(pos.entryPrice);
-  const quantity   = parseFloat(pos.quantity);
-  const margin     = parseFloat(pos.margin);
+    const pos = posRows[0];
+    if (!pos) throw new Error(`POSITION_NOT_FOUND:${positionId}`);
+    if (pos.status !== "open") throw new Error(`POSITION_NOT_OPEN:${positionId}:${pos.status}`);
 
-  const priceDiff     = markPrice - entryPrice;
-  const dirMult       = pos.side === "long" ? 1 : -1;
-  const realizedPnl   = dirMult * priceDiff * quantity;
-  const closingFee    = markPrice * quantity * TAKER_FEE_RATE;
-  const returnedMargin = Math.max(0, margin + realizedPnl - closingFee);
+    const entryPrice = parseFloat(pos.entry_price);
+    const quantity   = parseFloat(pos.quantity);
+    const margin     = parseFloat(pos.margin);
 
-  // Return margin ± PnL to futures bucket
-  await releaseFuturesMargin(pos.walletAddress, returnedMargin);
+    const priceDiff     = markPrice - entryPrice;
+    const dirMult       = pos.side === "long" ? 1 : -1;
+    const realizedPnl   = dirMult * priceDiff * quantity;
+    const closingFee    = markPrice * quantity * TAKER_FEE_RATE;
+    const returnedMargin = Math.max(0, margin + realizedPnl - closingFee);
 
-  await db.update(futuresPositionsTable)
-    .set({
-      status:      "closed",
-      markPrice:   markPrice.toFixed(8),
-      realizedPnl: realizedPnl.toFixed(8),
-      closedAt:    new Date(),
-    })
-    .where(eq(futuresPositionsTable.id, positionId));
+    const { rowCount: marginRows } = await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = GREATEST(locked - $1, 0),
+           available  = available + $2,
+           updated_at = now()
+       WHERE wallet_address = $3 AND asset = 'USDT'`,
+      [margin.toFixed(8), returnedMargin.toFixed(8), pos.wallet_address],
+    );
+    if (!marginRows) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
 
-  return { realizedPnl, returnedMargin, closingFee };
+    await client.query(
+      `UPDATE futures_positions
+       SET status       = 'closed',
+           mark_price   = $1,
+           realized_pnl = $2,
+           closed_at    = now()
+       WHERE id = $3 AND status = 'open'`,
+      [markPrice.toFixed(8), realizedPnl.toFixed(8), positionId],
+    );
+
+    await client.query("COMMIT");
+    return { realizedPnl, returnedMargin, closingFee };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Liquidation ───────────────────────────────────────────────────────────────
