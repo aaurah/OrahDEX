@@ -364,7 +364,8 @@ function CreatorProfileSheet({
   return (
     <Portal>
     <div className="w-full h-full flex flex-col" style={{ background: "hsl(var(--background))" }}>
-      {/* ── Top nav (in normal flow, no absolute) ── */}
+
+      {/* ── Top nav ── */}
       <div className="flex items-center justify-between px-3 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
         <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "var(--color-surface)" }}>
           <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
@@ -385,123 +386,128 @@ function CreatorProfileSheet({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* Cover */}
-        <div className="relative h-32 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
-          {!imgErr && profile.cover_url && (
-            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.6 }} onError={() => setImgErr(true)} />
-          )}
-        </div>
+        <div className="px-4 pt-4 pb-4">
 
-        {/* Profile header */}
-        <div className="px-4 pb-4">
-          {/* Avatar row */}
-          <div className="flex items-end justify-between -mt-9 mb-3">
-            <Avatar src={profile.avatar_url} name={profile.username} size={72} ring />
-            <div className="flex gap-2 pb-1">
-              {!isSelf && (
-                <button onClick={toggleFollow}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs transition-all"
-                  style={{ background: isFollowing ? "var(--color-surface)" : "var(--color-accent)", color: isFollowing ? "var(--color-text)" : "#000" }}>
-                  {isFollowing ? <><UserCheck size={12} />Following</> : <><UserPlus size={12} />Follow</>}
-                </button>
-              )}
+          {/* ── Avatar + Stats row (Instagram-style) ── */}
+          <div className="flex items-center gap-4 mb-3">
+            <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+            <div className="flex-1 grid grid-cols-3 text-center">
+              {[
+                { label: "Posts",   value: fmtNum(Math.max(profile.post_count, posts.length)) },
+                { label: "Holders", value: fmtNum(profile.holder_count ?? 0) },
+                { label: "Holding", value: fmtNum(profile.trade_count ?? 0) },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{value}</div>
+                  <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Username + social links */}
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg font-black" style={{ color: "var(--color-text)" }}>{profile.username}</span>
-            {profile.is_verified && <BadgeCheck size={16} style={{ color: "var(--color-accent)" }} />}
-          </div>
-
-          {/* Social row */}
-          <div className="flex items-center gap-3 mb-2">
-            {profile.instagram && <a href="#" className="active:opacity-60"><Camera size={14} style={{ color: "var(--color-text-secondary)" }} /></a>}
-            {profile.twitter && <a href="#" className="active:opacity-60"><AtSign size={14} style={{ color: "var(--color-text-secondary)" }} /></a>}
-            {profile.website && (
-              <div className="flex items-center gap-0.5">
-                <Globe size={12} style={{ color: "var(--color-accent)" }} />
-                <span className="text-xs" style={{ color: "var(--color-accent)" }}>{profile.website}</span>
-              </div>
+          {/* ── Username + social icons ── */}
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className="text-base font-black" style={{ color: "var(--color-text)" }}>{profile.username}</span>
+            {profile.is_verified && <BadgeCheck size={15} style={{ color: "var(--color-accent)" }} />}
+            {profile.follower_count > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "var(--color-surface)", color: "var(--color-text-secondary)" }}>
+                {fmtNum(profile.follower_count)}
+              </span>
             )}
-            <Copy size={12} style={{ color: "var(--color-text-secondary)" }} onClick={() => navigator.clipboard.writeText(profile.address).catch(() => {})} />
+            {profile.instagram && <a href="#" className="active:opacity-60"><Camera size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
+            {profile.twitter && <a href="#" className="active:opacity-60"><AtSign size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
+            <button onClick={() => navigator.clipboard.writeText(profile.address).catch(() => {})}>
+              <Copy size={12} style={{ color: "var(--color-text-secondary)" }} />
+            </button>
           </div>
 
-          {/* Bio */}
-          {profile.bio && <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--color-text-secondary)" }}>{profile.bio}</p>}
+          {/* ── Bio ── */}
+          {profile.bio && (
+            <p className="text-xs leading-relaxed mb-1.5" style={{ color: "var(--color-text-secondary)" }}>{profile.bio}</p>
+          )}
 
-          {/* Followers */}
+          {/* ── Website ── */}
+          {profile.website && (
+            <div className="flex items-center gap-1 mb-2">
+              <Globe size={11} style={{ color: "var(--color-accent)" }} />
+              <span className="text-xs font-medium" style={{ color: "var(--color-accent)" }}>{profile.website}</span>
+            </div>
+          )}
+
+          {/* ── Followers / Following ── */}
           <div className="flex items-center gap-3 mb-4 text-xs">
-            <span><strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.follower_count)}</strong> <span style={{ color: "var(--color-text-secondary)" }}>Followers</span></span>
-            <span><strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.following_count)}</strong> <span style={{ color: "var(--color-text-secondary)" }}>Following</span></span>
+            <span>
+              <strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.follower_count)}</strong>{" "}
+              <span style={{ color: "var(--color-text-secondary)" }}>Followers</span>
+            </span>
+            <span>
+              <strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.following_count)}</strong>{" "}
+              <span style={{ color: "var(--color-text-secondary)" }}>Following</span>
+            </span>
           </div>
 
-          {/* Stats: Posts | Holders | Holding */}
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            {[
-              { label: "Posts", value: fmtNum(Math.max(profile.post_count, posts.length)) },
-              { label: "Holders", value: fmtNum(profile.holder_count ?? 0) },
-              { label: "Trades", value: fmtNum(profile.trade_count ?? 0) },
-            ].map(({ label, value }) => (
-              <div key={label} className="rounded-xl p-2.5 text-center" style={{ background: "var(--color-surface)" }}>
-                <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>{value}</div>
-                <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Market cap card */}
-          <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)" }}>
-            <div className="flex items-start justify-between mb-3">
-              <div>
+          {/* ── Market cap + Top holders (side by side) ── */}
+          <div className="rounded-2xl p-3.5 mb-3" style={{ background: "var(--color-surface)" }}>
+            <div className="flex items-start gap-4 mb-3">
+              <div className="flex-1">
                 <div className="text-[10px] font-medium mb-0.5" style={{ color: "var(--color-text-secondary)" }}>Market cap</div>
-                <div className="text-2xl font-black" style={{ color: "var(--color-accent)" }}>{fmtUsd(profile.market_cap_usd ?? 0)}</div>
+                <div className="text-xl font-black" style={{ color: "var(--color-accent)" }}>{fmtUsd(profile.market_cap_usd ?? 0)}</div>
                 <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
                   {fmtUsd(profile.price_usd ?? 0)} / {profile.symbol}
                 </div>
               </div>
-              {topHolders.length > 0 && (
-                <div>
-                  <div className="text-[10px] font-medium mb-1 text-right" style={{ color: "var(--color-text-secondary)" }}>Top holders</div>
-                  <div className="flex -space-x-1">
-                    {topHolders.slice(0, 3).map((h, i) => (
-                      <div key={i} className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2" style={{ background: "linear-gradient(135deg,#00ff88,#00aaff)", color: "#000", borderColor: "var(--color-surface)" }}>
+              <div className="flex-1 text-right">
+                <div className="text-[10px] font-medium mb-1" style={{ color: "var(--color-text-secondary)" }}>Top holders</div>
+                {topHolders.length > 0 ? (
+                  <div className="flex -space-x-1.5 justify-end">
+                    {topHolders.slice(0, 5).map((h, i) => (
+                      <div key={i} className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2" style={{ background: "linear-gradient(135deg,#00ff88,#00aaff)", color: "#000", borderColor: "var(--color-surface)", zIndex: 5 - i }}>
                         {shortAddr(h.holder)[0]}
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>No holders yet</span>
+                )}
+              </div>
             </div>
 
             {/* ATH bar */}
-            <div className="mb-3">
-              <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--color-text-secondary)" }}>
-                <span>ATH {fmtUsd(profile.ath_usd ?? 0)}</span>
-                <span>{athPct.toFixed(0)}% of ATH</span>
+            <div className="mb-3.5">
+              <div className="h-2 rounded-full overflow-hidden mb-1" style={{ background: "rgba(255,255,255,0.08)" }}>
+                <div className="h-full rounded-full" style={{ width: `${athPct}%`, background: "var(--color-accent)" }} />
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${athPct}%`, background: "var(--color-accent)" }} />
+              <div className="flex justify-between text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                <span>{athPct.toFixed(0)}% of ATH</span>
+                <span>ATH {fmtUsd(profile.ath_usd ?? 0)}</span>
               </div>
             </div>
 
-            {/* Trade / Share */}
-            {!isSelf && (
-              <div className="flex gap-2">
-                <button onClick={() => setShowTrade(true)}
+            {/* Trade + Edit Profile / Follow buttons — always visible */}
+            <div className="flex gap-2">
+              <button onClick={() => setShowTrade(true)}
+                className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
+                style={{ background: "var(--color-accent)", color: "#000" }}>
+                <BarChart2 size={14} /> Trade
+              </button>
+              {isSelf ? (
+                <button onClick={() => setShowEdit(true)}
                   className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
-                  style={{ background: "var(--color-accent)", color: "#000" }}>
-                  <BarChart2 size={14} /> Trade {profile.symbol}
+                  style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                  <Edit3 size={14} /> Edit profile
                 </button>
-                <button className="px-4 py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-border)", color: "var(--color-text)" }}>
-                  Share
+              ) : (
+                <button onClick={toggleFollow}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
+                  style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                  {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Chain badges */}
-          <div className="flex gap-2 mb-4">
+          {/* ── Chain badges ── */}
+          <div className="flex gap-1.5 flex-wrap mb-4">
             {CHAINS.map(c => (
               <div key={c} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold" style={{ background: `${CHAIN_COLOR[c]}18`, color: CHAIN_COLOR[c] }}>
                 <div className="w-1.5 h-1.5 rounded-full" style={{ background: CHAIN_COLOR[c] }} /> {c}
@@ -509,12 +515,12 @@ function CreatorProfileSheet({
             ))}
           </div>
 
-          {/* Grid tabs */}
+          {/* ── Grid tabs ── */}
           <div className="flex items-center gap-1 mb-3 p-1 rounded-xl" style={{ background: "var(--color-surface)" }}>
             {([
-              { key: "posts", icon: Grid3X3 },
+              { key: "posts",     icon: Grid3X3 },
               { key: "collected", icon: ShoppingBag },
-              { key: "activity", icon: Activity },
+              { key: "activity",  icon: Activity },
             ] as const).map(({ key, icon: Icon }) => (
               <button key={key} onClick={() => setGridTab(key)}
                 className="flex-1 py-2 rounded-lg flex items-center justify-center"
@@ -524,15 +530,24 @@ function CreatorProfileSheet({
             ))}
           </div>
 
-          {/* Posts grid */}
+          {/* ── Posts grid — Trade overlay instead of mint count ── */}
           {gridTab === "posts" && (
             <div className="grid grid-cols-3 gap-0.5">
-              {posts.length === 0 && <div className="col-span-3 text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No posts yet</div>}
+              {posts.length === 0 && (
+                <div className="col-span-3 text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No posts yet</div>
+              )}
               {posts.map(p => (
-                <button key={p.id} onClick={() => onOpenPost(p)} className="relative active:opacity-80" style={{ aspectRatio: "1/1", overflow: "hidden" }}>
+                <button key={p.id} onClick={() => onOpenPost(p)}
+                  className="relative group active:opacity-80"
+                  style={{ aspectRatio: "1/1", overflow: "hidden" }}>
                   <img src={p.image_url} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  <div className="absolute bottom-0 left-0 right-0 p-1" style={{ background: "linear-gradient(transparent,rgba(0,0,0,0.7))" }}>
-                    <div className="text-[9px] text-white/80 font-mono">{p.mint_count} mints</div>
+                  {/* Trade overlay on tap/hover */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-active:opacity-100 transition-opacity"
+                    style={{ background: "rgba(0,0,0,0.5)" }}>
+                    <div className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-black"
+                      style={{ background: "var(--color-accent)", color: "#000" }}>
+                      <BarChart2 size={12} /> Trade
+                    </div>
                   </div>
                 </button>
               ))}
@@ -545,14 +560,21 @@ function CreatorProfileSheet({
 
           {gridTab === "activity" && (
             <div className="space-y-2">
+              {posts.length === 0 && (
+                <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No activity yet</div>
+              )}
               {posts.slice(0, 10).map(p => (
                 <div key={p.id} className="flex items-center gap-2.5 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
-                  <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold truncate" style={{ color: "var(--color-text)" }}>Minted "{p.title}"</p>
-                    <p className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{p.mint_count} collectors · {timeAgo(p.created_at)}</p>
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--color-text)" }}>"{p.title}"</p>
+                    <p className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(p.created_at)}</p>
                   </div>
-                  <div className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{p.mint_price} {p.mint_currency}</div>
+                  <button onClick={() => setShowTrade(true)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold"
+                    style={{ background: "var(--color-accent)", color: "#000" }}>
+                    Trade
+                  </button>
                 </div>
               ))}
             </div>
