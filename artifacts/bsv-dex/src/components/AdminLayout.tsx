@@ -132,3 +132,356 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
 ];
+
+function AdminWalletWidget() {
+  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
+  const walletStore = useWalletStore();
+  const { address: evmAddress, isConnected: evmConnected } = useAccount();
+  const chainId = useChainId();
+  const { data: evmBalance, isLoading: balanceLoading } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
+  const { disconnect: evmDisconnect } = useDisconnect();
+  const appKit = useAppKit();
+  const [copied, setCopied] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const isConnected = evmConnected || !!walletStore.address;
+  const displayAddress = evmConnected && evmAddress
+    ? evmAddress
+    : walletStore.address ?? null;
+  const network = evmConnected ? "evm" : walletStore.network;
+
+  const chainInfo = evmConnected && chainId ? CHAIN_NAMES[chainId] : null;
+  const networkStyle = network === "evm"
+    ? (chainInfo ? { color: chainInfo.color, label: chainInfo.short } : { color: "text-blue-400 bg-blue-400/10 border-blue-400/20", label: "EVM" })
+    : network ? NETWORK_STYLES[network] ?? { color: "text-muted-foreground bg-muted/10 border-border", label: network.toUpperCase() }
+    : null;
+
+  const evmBalanceNum = evmBalance
+    ? Number(evmBalance.value) / 10 ** evmBalance.decimals
+    : NaN;
+  const balance = evmConnected && evmBalance
+    ? `${isNaN(evmBalanceNum) ? "0.0000" : evmBalanceNum.toFixed(4)} ${evmBalance.symbol}`
+    : walletStore.balance ?? null;
+
+  const copyAddress = () => {
+    if (!displayAddress) return;
+    navigator.clipboard.writeText(displayAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const truncate = (addr: string) => `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+
+  if (!isConnected) {
+    return (
+      <>
+        <button
+          onClick={() => openWallet()}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-all"
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          <span className="hidden sm:block">Connect Wallet</span>
+        </button>
+        <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="relative">
+        <button
+          onClick={() => setDropdownOpen(d => !d)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-card border border-border hover:border-primary/30 transition-all"
+        >
+          {networkStyle && (
+            <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-md border", networkStyle.color)}>
+              {networkStyle.label}
+            </span>
+          )}
+          {displayAddress && (
+            <span className="text-xs font-mono text-foreground hidden sm:block">
+              {truncate(displayAddress)}
+            </span>
+          )}
+          <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+          <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", dropdownOpen && "rotate-180")} />
+        </button>
+
+        {dropdownOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+            <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-2xl shadow-2xl shadow-black/40 z-50 overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">Connected Wallet</span>
+                  {networkStyle && (
+                    <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-md border", networkStyle.color)}>
+                      {chainInfo?.name ?? networkStyle.label}
+                    </span>
+                  )}
+                </div>
+                {displayAddress && (
+                  <div className="flex items-center gap-2 bg-secondary/60 rounded-xl px-3 py-2">
+                    <code className="text-xs font-mono text-foreground flex-1 truncate">{displayAddress}</code>
+                    <button onClick={copyAddress} className="text-muted-foreground hover:text-green-400 transition-colors shrink-0">
+                      {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                    {evmConnected && chainId && (
+                      <a
+                        href={`https://etherscan.io/address/${displayAddress}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-blue-400 transition-colors shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {(evmConnected || walletStore.balance) && (
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Balance</p>
+                  {balanceLoading
+                    ? <p className="text-sm font-mono text-muted-foreground animate-pulse">Fetching…</p>
+                    : <p className="text-sm font-mono font-bold text-foreground">{balance ?? "—"}</p>
+                  }
+                </div>
+              )}
+
+              <div className="p-2 space-y-0.5">
+                <button
+                  onClick={() => { setDropdownOpen(false); appKit.open(); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all"
+                >
+                  <Layers className="w-4 h-4 shrink-0" />
+                  <span>Switch Network / Wallet</span>
+                </button>
+                <div className="mx-3 h-px bg-border/60" />
+                <button
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    if (evmConnected) evmDisconnect();
+                    walletStore.disconnect();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all"
+                >
+                  <LogOut className="w-4 h-4 shrink-0" />
+                  <span>Disconnect</span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
+    </>
+  );
+}
+
+export function AdminLayout({ children }: { children: ReactNode }) {
+  const [location, navigate] = useLocation();
+  const { email, logout } = useAdminAuthStore();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const isActive = (item: NavItem) =>
+    item.exact ? location === item.href : location.startsWith(item.href);
+
+  const toggleGroup = (title: string) =>
+    setCollapsed(c => ({ ...c, [title]: !c[title] }));
+
+  const allItems = NAV_GROUPS.flatMap(g => g.items.map(item => ({ ...item, group: g.title })));
+  const searchResults = searchQuery.trim()
+    ? allItems.filter(item =>
+        item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.group.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : [];
+
+  const handleSearchKey = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && searchResults.length > 0) {
+      navigate(searchResults[0].href);
+      setSearchQuery("");
+      setSidebarOpen(false);
+    }
+    if (e.key === "Escape") setSearchQuery("");
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex text-foreground">
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed top-0 left-0 h-full z-50 w-60 bg-card border-r border-border flex flex-col transition-transform duration-200",
+          "md:relative md:translate-x-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        )}
+      >
+        {/* Brand */}
+        <div className="h-14 flex items-center justify-between px-4 border-b border-border shrink-0">
+          <Link href="/" className="flex items-center gap-2 group">
+            <BrandLogo textSize="text-sm" />
+            <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20">Admin</span>
+          </Link>
+          <button className="md:hidden text-muted-foreground p-1" onClick={() => setSidebarOpen(false)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-3 pt-3 pb-1 shrink-0 relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKey}
+              placeholder="Search admin…"
+              className="w-full bg-background border border-border rounded-xl pl-8 pr-3 py-2 text-xs placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <div className="absolute left-3 right-3 top-full mt-1 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+              {searchResults.length === 0 ? (
+                <div className="px-3 py-2.5 text-xs text-muted-foreground">No results for "{searchQuery}"</div>
+              ) : (
+                searchResults.map(item => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => { setSearchQuery(""); setSidebarOpen(false); }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-white/5 transition-colors group"
+                  >
+                    <item.icon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{item.label}</p>
+                      <p className="text-[10px] text-muted-foreground capitalize">{item.group}</p>
+                    </div>
+                    {item.badge && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/25">{item.badge}</span>
+                    )}
+                  </Link>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+          {NAV_GROUPS.map(group => {
+            const isCollapsed = collapsed[group.title];
+            const hasActive = group.items.some(isActive);
+            return (
+              <div key={group.title}>
+                <button
+                  onClick={() => toggleGroup(group.title)}
+                  className="w-full flex items-center justify-between px-3 py-1 mb-1 group"
+                >
+                  <span className={cn("text-[10px] uppercase tracking-widest font-bold transition-colors", hasActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}>
+                    {group.title}
+                  </span>
+                  <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", isCollapsed ? "-rotate-90" : "")} />
+                </button>
+                {!isCollapsed && (
+                  <div className="space-y-0.5">
+                    {group.items.map(item => {
+                      const active = isActive(item);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setSidebarOpen(false)}
+                          className={cn(
+                            "flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all group",
+                            active
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <item.icon className={cn("w-3.5 h-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          {active && <ChevronRight className="w-3 h-3 shrink-0" />}
+                          {item.badge && (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">{item.badge}</span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <div className="p-2 border-t border-border space-y-1">
+          {email && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/3 border border-white/5 mb-1">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                A
+              </div>
+              <span className="text-xs text-muted-foreground truncate flex-1">{email}</span>
+            </div>
+          )}
+          <Link href="/" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all">
+            <ArrowRightLeft className="w-3.5 h-3.5" />
+            Back to Exchange
+          </Link>
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-xl hover:bg-destructive/5 transition-all"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+        {/* Top bar */}
+        <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 lg:px-6 shrink-0">
+          <div className="flex items-center gap-3">
+            <button className="md:hidden p-2 text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(true)}>
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-sm font-bold text-foreground">
+                {NAV_GROUPS.flatMap(g => g.items).find(isActive)?.label ?? "Admin Panel"}
+              </h1>
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><OrahInline className="text-xs" /> Platform Management</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs text-green-400 font-medium hidden sm:block">System Operational</span>
+            </div>
+            <AdminWalletWidget />
+          </div>
+        </header>
+
+        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

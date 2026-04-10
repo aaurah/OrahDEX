@@ -1,40 +1,465 @@
-import { ReactNode, Suspense, lazy, useEffect, useState } from "react";
-import { Route, Switch } from "wouter";
-import { AdminDashboard } from "@/pages/admin/Dashboard";
-import { AdminTradeAnalytics } from "@/pages/admin/TradeAnalytics";
-import { AdminLogin } from "@/pages/admin/Login";
-import { AdminSetupGuide } from "@/pages/admin/SetupGuide";
-import { AdminUsers } from "@/pages/admin/Users";
-import { AdminAdmins } from "@/pages/admin/Admins";
-import { AdminTradePairs } from "@/pages/admin/TradePairs";
-import { AdminApiSettings } from "@/pages/admin/ApiSettings";
-import { AdminContractBuilder } from "@/pages/admin/ContractBuilder";
-import { AdminThemes } from "@/pages/admin/Themes";
-import { AdminTransactions } from "@/pages/admin/Transactions";
-import { AdminFeeWallet } from "@/pages/admin/FeeWallet";
-import { AdminIntegrations } from "@/pages/admin/Integrations";
-import { AdminBotProfit } from "@/pages/admin/BotProfit";
-import { AdminSiteSettings } from "@/pages/admin/SiteSettings";
-import { AdminHomeBuilder } from "@/pages/admin/HomeBuilder";
-import { AdminFeatureFlags } from "@/pages/admin/FeatureFlags";
-import { AdminSecuritySettings } from "@/pages/admin/SecuritySettings";
-import { AdminFeeConfig } from "@/pages/admin/FeeConfig";
-import { AdminAnnouncements } from "@/pages/admin/Announcements";
-import { AdminEmailInbox } from "@/pages/admin/EmailInbox";
-import { AdminCexConnections } from "@/pages/admin/CexConnections";
-import { AdminAiIntelligence } from "@/pages/admin/AiIntelligence";
-import { AdminSystemHealth } from "@/pages/admin/SystemHealth";
-import { AdminLiquidityBot } from "@/pages/admin/LiquidityBot";
-import { AdminCopyVault } from "@/pages/admin/CopyVaultAdmin";
-import { AdminTradingView } from "@/pages/admin/TradingViewAdmin";
-import { AdminLogsPage } from "@/pages/admin/AdminLogs";
-import { AdminSupportSettings } from "@/pages/admin/SupportSettings";
-export default function App() {
+import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+import { Layout } from "@/components/Layout";
+import { BiometricLockScreen } from "@/components/BiometricLockScreen";
+import { useBiometricStore } from "@/store/useBiometricStore";
+import { AdminLayout } from "@/components/AdminLayout";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { applyStoredTheme } from "@/store/useThemeStore";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { useBsvBalance } from "@/hooks/useBsvBalance";
+import { useTxTracker } from "@/hooks/useTxTracker";
+import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
+import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
+import { MobileLayout } from "@/components/mobile/MobileLayout";
+
+/* ─── Lazy page imports — each becomes its own JS chunk ─── */
+const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
+const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
+const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
+const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
+const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
+const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
+const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
+const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
+const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
+const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
+const NotFound     = lazy(() => import("@/pages/not-found"));
+
+/* Legal / Info — standalone full-screen pages (no Layout wrapper) */
+const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
+const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ default: m.PrivacyPolicy })));
+const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
+const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
+const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
+
+/* Mobile */
+const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
+const UserApiKeys     = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
+const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
+const MobileLiquidity = lazy(() => import("@/pages/mobile/MobileLiquidity").then(m => ({ default: m.MobileLiquidity })));
+const GenesisLiquidity = lazy(() => import("@/pages/GenesisLiquidity"));
+const MobileGenesis    = lazy(() => import("@/pages/mobile/MobileGenesis"));
+const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
+const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
+const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
+const MobileNFT        = lazy(() => import("@/pages/mobile/MobileNFT").then(m => ({ default: m.MobileNFT })));
+
+/* Admin — single chunk group for the whole admin section */
+const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
+const AdminDashboard      = lazy(() => import("@/pages/admin/Dashboard").then(m => ({ default: m.AdminDashboard })));
+const AdminSetupGuide     = lazy(() => import("@/pages/admin/SetupGuide").then(m => ({ default: m.AdminSetupGuide })));
+const AdminUsers          = lazy(() => import("@/pages/admin/Users").then(m => ({ default: m.AdminUsers })));
+const AdminAdmins         = lazy(() => import("@/pages/admin/Admins").then(m => ({ default: m.AdminAdmins })));
+const AdminTradePairs     = lazy(() => import("@/pages/admin/TradePairs").then(m => ({ default: m.AdminTradePairs })));
+const AdminApiSettings    = lazy(() => import("@/pages/admin/ApiSettings").then(m => ({ default: m.AdminApiSettings })));
+const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").then(m => ({ default: m.AdminContractBuilder })));
+const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
+const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
+const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
+const AdminIntegrations   = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
+const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
+const AdminSiteSettings   = lazy(() => import("@/pages/admin/SiteSettings").then(m => ({ default: m.AdminSiteSettings })));
+const AdminHomeBuilder    = lazy(() => import("@/pages/admin/HomeBuilder").then(m => ({ default: m.AdminHomeBuilder })));
+const AdminFeatureFlags   = lazy(() => import("@/pages/admin/FeatureFlags").then(m => ({ default: m.AdminFeatureFlags })));
+const AdminSecuritySettings = lazy(() => import("@/pages/admin/SecuritySettings").then(m => ({ default: m.AdminSecuritySettings })));
+const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m => ({ default: m.AdminFeeConfig })));
+const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
+const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
+const AdminCexConnections = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
+const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
+const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
+const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
+const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
+const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
+const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
+const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
+const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
+const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
+
+/* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: { componentStack: string }) {
+    console.error("[OrahDEX] Render error:", error, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-8">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">⚠️</span>
+            </div>
+            <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
+            <p className="text-muted-foreground text-sm mb-6">
+              {this.state.error?.message ?? "An unexpected error occurred."}
+            </p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+              className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:brightness-110 transition-all"
+            >
+              Reload Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* ─── QueryClient — aggressive caching so API is hit far less often ─── */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      retryDelay: 1000,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,       // 30 s — data considered fresh; no re-fetch during this window
+      gcTime: 5 * 60_000,      // 5 min — keep unused data in memory cache
+    },
+  },
+});
+
+/* ─── Lightweight skeleton shown while a lazy chunk is downloading ─── */
+function PageSkeleton() {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <span className="text-xs text-muted-foreground">Loading…</span>
+      </div>
+    </div>
+  );
+}
+
+function RequireAdminAuth({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAdminAuthStore();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/admin/login");
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated) return null;
+  return <>{children}</>;
+}
+
+function RedirectTo({ href }: { href: string }) {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate(href, { replace: true }); }, []);
+  return null;
+}
+
+/* Tiny helper to keep route definitions DRY */
+function AdminRoute({ children }: { children: ReactNode }) {
+  return (
+    <RequireAdminAuth>
+      <AdminLayout>
+        <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
+      </AdminLayout>
+    </RequireAdminAuth>
+  );
+}
+
+function Router() {
+  const isMobile = useIsMobile();
+
+  useBsvBalance();
+  useTxTracker();
+
+  useEffect(() => {
+    applyStoredTheme();
+
+    const eth = (window as any).ethereum;
+
+    const { network, address, disconnect, provider: storedProvider, isDemo } = useWalletStore.getState();
+    // Demo wallets survive page refresh via Zustand persist — never try to validate them against MetaMask
+    if (network === "evm" && storedProvider !== "reown" && !isDemo) {
+      if (!eth) {
+        disconnect();
+      } else {
+        eth.request({ method: "eth_accounts" })
+          .then(async (accounts: string[]) => {
+            if (!accounts?.length) {
+              disconnect();
+            } else if (accounts[0] && accounts[0].toLowerCase() !== address?.toLowerCase()) {
+              // Always sync — even if we have an old stored address from a different account
+              const chainHex: string = await eth.request({ method: "eth_chainId" });
+              useWalletStore.getState().connect({
+                address: accounts[0], provider: "metamask", network: "evm",
+                chainId: parseInt(chainHex, 16),
+              });
+            }
+          })
+          .catch(() => disconnect());
+      }
+    }
+
+    const onAccountsChanged = async (accounts: string[]) => {
+      const { provider: p, isDemo: demoActive } = useWalletStore.getState();
+      if (p === "reown" || demoActive) return;
+      if (!accounts.length) {
+        useWalletStore.getState().disconnect();
+      } else {
+        const chainHex: string = await eth.request({ method: "eth_chainId" }).catch(() => "0x1");
+        const chainId = parseInt(chainHex, 16);
+        useWalletStore.getState().connect({ address: accounts[0], provider: p ?? "metamask", network: "evm", chainId });
+        const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
+        const bal = await fetchEvmBalance(accounts[0], chainId);
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+      }
+    };
+
+    const onChainChanged = async (chainHex: string) => {
+      const { address: addr, provider: p, isDemo: demoActive } = useWalletStore.getState();
+      if (p === "reown" || demoActive || !addr) return;
+      const chainId = parseInt(chainHex, 16);
+      useWalletStore.getState().setBalance(null);
+      useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
+      const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
+      const bal = await fetchEvmBalance(addr, chainId);
+      if (bal !== null) useWalletStore.getState().setBalance(bal);
+    };
+
+    if (eth) {
+      eth.on?.("accountsChanged", onAccountsChanged);
+      eth.on?.("chainChanged", onChainChanged);
+    }
+
+    let reownUnsub: (() => void) | null = null;
+    let pollTries = 0;
+    const pollReown = setInterval(async () => {
+      /* Lazily import reown — it's a heavy SDK, load it only after first render */
+      const reown = await import("@/lib/reown").catch(() => null);
+      if (!reown) { clearInterval(pollReown); return; }
+      const { isReownReady, subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting } = reown;
+      if (isReownReady()) {
+        clearInterval(pollReown);
+        reownUnsub = subscribeReownAccount(async (state) => {
+          const { provider: current } = useWalletStore.getState();
+          if (state.isConnected && state.address) {
+            if (isUserDisconnecting()) return;
+            const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
+            useWalletStore.getState().connect({
+              address: state.address,
+              provider: "reown",
+              network: "evm",
+              chainId,
+            });
+            const bal = await fetchEvmBalance(state.address, chainId);
+            if (bal !== null) {
+              useWalletStore.getState().setBalance(bal);
+            }
+          } else if (current === "reown") {
+            useWalletStore.getState().disconnect();
+            setUserDisconnecting(false);
+          }
+        });
+      }
+      if (++pollTries > 100) clearInterval(pollReown);
+    }, 300);
+
+    return () => {
+      clearInterval(pollReown);
+      reownUnsub?.();
+      if (eth) {
+        eth.removeListener?.("accountsChanged", onAccountsChanged);
+        eth.removeListener?.("chainChanged", onChainChanged);
+      }
+    };
+  }, []);
+
   return (
     <Switch>
-      <Route path="/admin/login"><AdminLogin /></Route>
-      <Route path="/admin"><AdminDashboard /></Route>
-      <Route path="/admin/trade-analytics"><AdminTradeAnalytics /></Route>
+      {/* ── Admin login ── */}
+      <Route path="/admin/login">
+        <Suspense fallback={<PageSkeleton />}><AdminLogin /></Suspense>
+      </Route>
+
+      {/* ── Admin panel routes ── */}
+      <Route path="/admin">         <AdminRoute><AdminDashboard /></AdminRoute></Route>
+      <Route path="/admin/setup">   <AdminRoute><AdminSetupGuide /></AdminRoute></Route>
+      <Route path="/admin/users">   <AdminRoute><AdminUsers /></AdminRoute></Route>
+      <Route path="/admin/admins">  <AdminRoute><AdminAdmins /></AdminRoute></Route>
+      <Route path="/admin/pairs">   <AdminRoute><AdminTradePairs /></AdminRoute></Route>
+      <Route path="/admin/api">     <AdminRoute><AdminApiSettings /></AdminRoute></Route>
+      <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
+      <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
+      <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
+      <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>
+      <Route path="/admin/integrations"><AdminRoute><AdminIntegrations /></AdminRoute></Route>
+      <Route path="/admin/bot-profit"><AdminRoute><AdminBotProfit /></AdminRoute></Route>
+      <Route path="/admin/site">    <AdminRoute><AdminSiteSettings /></AdminRoute></Route>
+      <Route path="/admin/home">    <AdminRoute><AdminHomeBuilder /></AdminRoute></Route>
+      <Route path="/admin/features"><AdminRoute><AdminFeatureFlags /></AdminRoute></Route>
+      <Route path="/admin/security"><AdminRoute><AdminSecuritySettings /></AdminRoute></Route>
+      <Route path="/admin/fees">    <AdminRoute><AdminFeeConfig /></AdminRoute></Route>
+      <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
+      <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
+      <Route path="/admin/cex">       <AdminRoute><AdminCexConnections /></AdminRoute></Route>
+      <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
+      <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
+      <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
+      <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
+      <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
+      <Route path="/admin/logs">        <AdminRoute><AdminLogsPage /></AdminRoute></Route>
+      <Route path="/admin/support">   <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
+      <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
+      <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
+
+      {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
+      <Route path="/">
+        <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+      </Route>
+
+      {/* ── Redirects ── */}
+      <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
+      <Route path="/trade"><RedirectTo href="/trade/BSV-USDT" /></Route>
+      <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
+
+      {/* ── Standalone legal / info pages (no nav wrapper) ── */}
+      <Route path="/terms">
+        <Suspense fallback={<PageSkeleton />}><TermsOfService /></Suspense>
+      </Route>
+      <Route path="/privacy">
+        <Suspense fallback={<PageSkeleton />}><PrivacyPolicy /></Suspense>
+      </Route>
+      <Route path="/whitepaper">
+        <Suspense fallback={<PageSkeleton />}><WhitePaper /></Suspense>
+      </Route>
+      <Route path="/support">
+        <Suspense fallback={<PageSkeleton />}><SupportPage /></Suspense>
+      </Route>
+
+      {/* ── Mobile layout ── */}
+      {isMobile && (
+        <Route>
+          <MobileLayout>
+            <Suspense fallback={<PageSkeleton />}>
+              <Switch>
+                <Route path="/"          component={MobileMarkets} />
+                <Route path="/markets"   component={MobileMarkets} />
+                <Route path="/trade/:symbol">
+                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+                </Route>
+                <Route path="/futures/:symbol">
+                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
+                </Route>
+                <Route path="/dex"        component={DexHub} />
+                <Route path="/liquidity"  component={MobileLiquidity} />
+                <Route path="/genesis"    component={MobileGenesis} />
+                <Route path="/p2p"        component={P2P} />
+                <Route path="/bridge"     component={BridgePage} />
+                <Route path="/copy"       component={CopyTrading} />
+                <Route path="/keeper"     component={KeeperProfile} />
+                <Route path="/portfolio"  component={MobilePortfolio} />
+                <Route path="/settings"           component={MobileSettings} />
+                <Route path="/settings/api-keys" component={UserApiKeys} />
+                <Route path="/deposit-bsv" component={MobileHandCashBridge} />
+                <Route path="/nft"        component={MobileNFT} />
+                <Route path="/qr-scan"    component={MobileQRScanner} />
+                <Route component={MobileMarkets} />
+              </Switch>
+            </Suspense>
+          </MobileLayout>
+        </Route>
+      )}
+
+      {/* ── Desktop layout ── */}
+      {!isMobile && (
+        <Route>
+          <Layout>
+            <Suspense fallback={<PageSkeleton />}>
+              <Switch>
+                <Route path="/"               component={Markets} />
+                <Route path="/markets"        component={Markets} />
+                <Route path="/trade/:symbol"  component={SpotTrading} />
+                <Route path="/futures/:symbol" component={FuturesTrading} />
+                <Route path="/dex"            component={DexHub} />
+                <Route path="/liquidity"      component={Liquidity} />
+                <Route path="/genesis"        component={GenesisLiquidity} />
+                <Route path="/p2p"            component={P2P} />
+                <Route path="/bridge"         component={BridgePage} />
+                <Route path="/copy"           component={CopyTrading} />
+                <Route path="/keeper"         component={KeeperProfile} />
+                <Route path="/portfolio"      component={Portfolio} />
+                <Route path="/settings"           component={WebSettings} />
+                <Route path="/settings/api-keys" component={UserApiKeys} />
+                <Route component={NotFound} />
+              </Switch>
+            </Suspense>
+          </Layout>
+        </Route>
+      )}
     </Switch>
   );
 }
+
+const AUTO_LOCK_MS = 30_000;
+
+function AppContent() {
+  const { isEnabled, isLocked, lock } = useBiometricStore();
+  useInternalEvmWallet();
+  useInternalBsvWallet();
+  const hiddenAt = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isEnabled) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt.current = Date.now();
+      } else if (document.visibilityState === "visible") {
+        if (hiddenAt.current !== null && Date.now() - hiddenAt.current >= AUTO_LOCK_MS) {
+          lock();
+        }
+        hiddenAt.current = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [isEnabled, lock]);
+
+  return (
+    <>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router />
+      </WouterRouter>
+      <Toaster />
+      {isEnabled && isLocked && <BiometricLockScreen />}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AppContent />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AppErrorBoundary>
+  );
+}
+
+export default App;
