@@ -31,6 +31,17 @@
   --color-sell-muted: hsl(var(--sell-muted));
 }
 
+/* ───── NFT UI color aliases (used by MobileNFT inline styles) ───── */
+:root {
+  --color-bg: hsl(var(--background));
+  --color-surface: hsl(var(--card));
+  --color-surface-2: hsl(var(--popover));
+  --color-accent: hsl(var(--primary));
+  --color-text: hsl(var(--foreground));
+  --color-text-secondary: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+}
+
 /* ───── DARK (default) ───── */
 :root {
   --background: 216 20% 5%;

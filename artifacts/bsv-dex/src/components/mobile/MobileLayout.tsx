@@ -61,7 +61,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
       {/* ── Global brand header ── */}
-      <div className="shrink-0 border-b border-border/40 z-50 bg-card/95 backdrop-blur-sm">
+      <div className="shrink-0 border-b border-border/40 bg-card">
         <div className="flex items-center h-12">
 
           {/* Brand — hard left corner, no left padding */}
@@ -138,7 +138,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Bottom tab bar — 7 tabs */}
-      <div className="shrink-0 flex items-stretch border-t border-border bg-background/95 backdrop-blur"
+      <div className="shrink-0 flex items-stretch border-t border-border bg-background"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         {TABS.map(tab => {
