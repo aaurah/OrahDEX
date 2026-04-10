@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -6,7 +6,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useLocation } from "wouter";
@@ -322,6 +322,7 @@ function CreatorProfileSheet({
   const [gridTab, setGridTab] = useState<"posts" | "collected" | "activity">("posts");
   const [isFollowing, setIsFollowing] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [imgErr, setImgErr] = useState(false);
 
   useEffect(() => {
@@ -363,40 +364,64 @@ function CreatorProfileSheet({
   return (
     <Portal>
     <div className="w-full h-full flex flex-col" style={{ background: "hsl(var(--background))" }}>
-      {/* Top nav */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0 absolute top-0 left-0 right-0 z-10">
-        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
-          <ChevronLeft size={18} style={{ color: "#fff" }} />
+      {/* ── Top nav (in normal flow, no absolute) ── */}
+      <div className="flex items-center justify-between px-3 py-2.5 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
+        <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "var(--color-surface)" }}>
+          <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
         </button>
+        <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
+          {profile.username || shortAddr(creatorAddress)}
+        </span>
         <div className="flex gap-2">
-          <button className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
-            <Share2 size={14} style={{ color: "#fff" }} />
+          <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
+            <Share2 size={14} style={{ color: "var(--color-text)" }} />
           </button>
-          <button className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
-            <Settings size={14} style={{ color: "#fff" }} />
-          </button>
+          {isSelf && (
+            <button onClick={() => setShowEdit(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
+              <Settings size={14} style={{ color: "var(--color-text)" }} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {/* Cover */}
-        <div className="relative h-36 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
+        <div className="relative h-32 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
           {!imgErr && profile.cover_url && (
-            <img src={profile.cover_url} alt="" className="w-full h-full object-cover opacity-40" onError={() => setImgErr(true)} />
+            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.6 }} onError={() => setImgErr(true)} />
+          )}
+          {isSelf && (
+            <button onClick={() => setShowEdit(true)} className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>
+              <Edit3 size={10} /> Edit cover
+            </button>
           )}
         </div>
 
         {/* Profile header */}
-        <div className="px-4 -mt-10 pb-4">
+        <div className="px-4 pb-4">
           {/* Avatar row */}
-          <div className="flex items-end justify-between mb-3">
-            <Avatar src={profile.avatar_url} name={profile.username} size={72} ring />
+          <div className="flex items-end justify-between -mt-9 mb-3">
+            <div className="relative">
+              <Avatar src={profile.avatar_url} name={profile.username} size={72} ring />
+              {isSelf && (
+                <button onClick={() => setShowEdit(true)} className="absolute bottom-0 right-0 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--color-accent)" }}>
+                  <Edit3 size={10} style={{ color: "#000" }} />
+                </button>
+              )}
+            </div>
             <div className="flex gap-2 pb-1">
               {!isSelf && (
                 <button onClick={toggleFollow}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs transition-all"
                   style={{ background: isFollowing ? "var(--color-surface)" : "var(--color-accent)", color: isFollowing ? "var(--color-text)" : "#000" }}>
                   {isFollowing ? <><UserCheck size={12} />Following</> : <><UserPlus size={12} />Follow</>}
+                </button>
+              )}
+              {isSelf && (
+                <button onClick={() => setShowEdit(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs"
+                  style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                  <Edit3 size={12} /> Edit Profile
                 </button>
               )}
             </div>
@@ -481,8 +506,8 @@ function CreatorProfileSheet({
 
             {/* Trade / Edit */}
             {isSelf ? (
-              <button className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-border)", color: "var(--color-text)" }}>
-                Edit Profile
+              <button onClick={() => setShowEdit(true)} className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2" style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                <Edit3 size={14} /> Edit Profile
               </button>
             ) : (
               <div className="flex gap-2">
@@ -561,6 +586,207 @@ function CreatorProfileSheet({
       </div>
 
       {showTrade && <TradeSheet creator={profile} onClose={() => setShowTrade(false)} />}
+      {showEdit && (
+        <EditProfileSheet
+          address={creatorAddress}
+          profile={profile}
+          onClose={() => setShowEdit(false)}
+          onSave={(updated) => {
+            setData(d => d ? { ...d, profile: { ...d.profile, ...updated } } : d);
+            setShowEdit(false);
+          }}
+        />
+      )}
+    </div>
+    </Portal>
+  );
+}
+
+/* ─── EDIT PROFILE SHEET ─────────────────────────────────────────────────────── */
+function EditProfileSheet({ address, profile, onClose, onSave }: {
+  address: string;
+  profile: Creator;
+  onClose: () => void;
+  onSave: (updated: Partial<Creator>) => void;
+}) {
+  const [form, setForm] = useState({
+    username: profile.username || "",
+    bio: profile.bio || "",
+    avatar_url: profile.avatar_url || "",
+    cover_url: profile.cover_url || "",
+    website: profile.website || "",
+    twitter: profile.twitter || "",
+    instagram: profile.instagram || "",
+  });
+  const [avatarMode, setAvatarMode] = useState<"url" | "file">("url");
+  const [coverMode, setCoverMode] = useState<"url" | "file">("url");
+  const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url || "");
+  const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }));
+
+  function handleFileChange(field: "avatar" | "cover") {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target?.result as string;
+        if (field === "avatar") {
+          setAvatarPreview(dataUrl);
+          setForm(f => ({ ...f, avatar_url: dataUrl }));
+        } else {
+          setCoverPreview(dataUrl);
+          setForm(f => ({ ...f, cover_url: dataUrl }));
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+
+  async function save() {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${API}/social/creators/${address}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw new Error("Failed to save profile");
+      onSave(form as any);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const inp: React.CSSProperties = {
+    background: "var(--color-surface)", color: "var(--color-text)",
+    border: "1px solid var(--color-border)", borderRadius: 12,
+    padding: "10px 12px", fontSize: 14, width: "100%", outline: "none",
+    boxSizing: "border-box",
+  };
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
+    background: active ? "var(--color-accent)" : "transparent",
+    color: active ? "#000" : "var(--color-text-secondary)",
+    border: "none", cursor: "pointer",
+  });
+
+  return (
+    <Portal>
+    <div className="w-full h-full flex flex-col" style={{ background: "hsl(var(--background))" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
+        <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
+          <X size={16} style={{ color: "var(--color-text)" }} />
+        </button>
+        <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>Edit Profile</span>
+        <button onClick={save} disabled={loading}
+          className="px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-1.5"
+          style={{ background: "var(--color-accent)", color: "#000", opacity: loading ? 0.6 : 1 }}>
+          {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> : "Save"}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
+
+        {/* Cover photo */}
+        <div>
+          <label className="text-xs font-bold block mb-2" style={{ color: "var(--color-text-secondary)" }}>COVER PHOTO</label>
+          {coverPreview && (
+            <div className="rounded-2xl overflow-hidden mb-3" style={{ height: 120 }}>
+              <img src={coverPreview} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
+            </div>
+          )}
+          <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
+            <button style={tabBtn(coverMode === "url")} onClick={() => setCoverMode("url")}><Link size={11} className="inline mr-1" />URL</button>
+            <button style={tabBtn(coverMode === "file")} onClick={() => setCoverMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+          </div>
+          {coverMode === "url" ? (
+            <input style={inp} placeholder="https://… cover image URL" value={form.cover_url}
+              onChange={e => { set("cover_url")(e); setCoverPreview(e.target.value); }} />
+          ) : (
+            <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
+              style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
+              <ImageIcon size={24} style={{ color: "var(--color-text-secondary)" }} />
+              <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Tap to select image</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handleFileChange("cover")} />
+            </label>
+          )}
+        </div>
+
+        {/* Avatar */}
+        <div>
+          <label className="text-xs font-bold block mb-2" style={{ color: "var(--color-text-secondary)" }}>PROFILE PICTURE</label>
+          {avatarPreview && (
+            <div className="mb-3 flex justify-center">
+              <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "3px solid var(--color-accent)" }}>
+                <img src={avatarPreview} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
+              </div>
+            </div>
+          )}
+          <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
+            <button style={tabBtn(avatarMode === "url")} onClick={() => setAvatarMode("url")}><Link size={11} className="inline mr-1" />URL</button>
+            <button style={tabBtn(avatarMode === "file")} onClick={() => setAvatarMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+          </div>
+          {avatarMode === "url" ? (
+            <input style={inp} placeholder="https://… avatar URL" value={form.avatar_url}
+              onChange={e => { set("avatar_url")(e); setAvatarPreview(e.target.value); }} />
+          ) : (
+            <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
+              style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
+              <ImageIcon size={24} style={{ color: "var(--color-text-secondary)" }} />
+              <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Tap to select image</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handleFileChange("avatar")} />
+            </label>
+          )}
+        </div>
+
+        {/* Display name */}
+        <div>
+          <label className="text-xs font-bold block mb-1.5" style={{ color: "var(--color-text-secondary)" }}>DISPLAY NAME</label>
+          <input style={inp} placeholder="Your creator name" value={form.username} onChange={set("username")} maxLength={40} />
+        </div>
+
+        {/* Bio */}
+        <div>
+          <label className="text-xs font-bold block mb-1.5" style={{ color: "var(--color-text-secondary)" }}>BIO</label>
+          <textarea style={{ ...inp, resize: "none" } as React.CSSProperties} rows={3}
+            placeholder="Tell the world about your art and why you create on BSV…"
+            value={form.bio} onChange={set("bio")} maxLength={300} />
+          <div className="text-right text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{form.bio.length}/300</div>
+        </div>
+
+        {/* Social links */}
+        <div>
+          <label className="text-xs font-bold block mb-1.5" style={{ color: "var(--color-text-secondary)" }}>SOCIAL LINKS</label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Globe size={14} style={{ color: "var(--color-text-secondary)", flexShrink: 0 }} />
+              <input style={inp} placeholder="Website URL" value={form.website} onChange={set("website")} />
+            </div>
+            <div className="flex items-center gap-2">
+              <AtSign size={14} style={{ color: "var(--color-text-secondary)", flexShrink: 0 }} />
+              <input style={inp} placeholder="Twitter / X handle" value={form.twitter} onChange={set("twitter")} />
+            </div>
+            <div className="flex items-center gap-2">
+              <Camera size={14} style={{ color: "var(--color-text-secondary)", flexShrink: 0 }} />
+              <input style={inp} placeholder="Instagram handle" value={form.instagram} onChange={set("instagram")} />
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>
+        )}
+
+        <div className="h-8" />
+      </div>
     </div>
     </Portal>
   );
@@ -1036,28 +1262,76 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 /* ─── CREATE TAB ─────────────────────────────────────────────────────────────── */
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const { address } = useWalletStore();
-  const [form, setForm] = useState({ title: "", description: "", imageUrl: "", mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "", chain: "BSV" });
+  const [form, setForm] = useState({
+    title: "", description: "", imageUrl: "", ticker: "",
+    mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "",
+  });
+  const [mediaMode, setMediaMode] = useState<"url" | "file">("url");
+  const [filePreview, setFilePreview] = useState("");
+  const [fileData, setFileData] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
-  const inp: React.CSSProperties = { background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)", borderRadius: 12, padding: "10px 12px", fontSize: 14, width: "100%", outline: "none" };
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const inp: React.CSSProperties = {
+    background: "var(--color-surface)", color: "var(--color-text)",
+    border: "1px solid var(--color-border)", borderRadius: 12,
+    padding: "10px 12px", fontSize: 14, width: "100%", outline: "none",
+    boxSizing: "border-box",
+  };
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 700,
+    background: active ? "var(--color-accent)" : "transparent",
+    color: active ? "#000" : "var(--color-text-secondary)",
+    border: "none", cursor: "pointer",
+  });
+
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const preview = URL.createObjectURL(file);
+    setFilePreview(preview);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const data = ev.target?.result as string;
+      setFileData(data);
+      setForm(f => ({ ...f, imageUrl: "" }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  const effectiveImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const canSubmit = form.title && (mediaMode === "url" ? !!form.imageUrl : !!fileData);
 
   async function submit() {
     if (!address) { setError("Connect your wallet first"); return; }
-    if (!form.title || !form.imageUrl) { setError("Title and image URL are required"); return; }
+    if (!canSubmit) { setError("Title and media are required"); return; }
     setLoading(true); setError("");
     try {
+      const image_url = mediaMode === "url" ? form.imageUrl : fileData;
       const res = await fetch(`${API}/social/posts`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ creator: address, creator_name: shortAddr(address), title: form.title, description: form.description, image_url: form.imageUrl, mint_price: parseFloat(form.mintPrice) || 0.01, mint_currency: form.mintCurrency, category: form.category, max_supply: form.maxSupply ? parseInt(form.maxSupply, 10) : null }),
+        body: JSON.stringify({
+          creator: address,
+          creator_name: shortAddr(address),
+          title: form.title,
+          description: form.description,
+          image_url,
+          ticker: form.ticker || undefined,
+          mint_price: parseFloat(form.mintPrice) || 0.01,
+          mint_currency: form.mintCurrency,
+          category: form.category,
+          max_supply: form.maxSupply ? parseInt(form.maxSupply, 10) : null,
+        }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed");
-      // ensure creator profile + coin
-      await fetch(`${API}/social/creators/${address}`, { method: "GET" }).catch(() => {});
+      await fetch(`${API}/social/creators/${address}`).catch(() => {});
       setSuccess(true);
-      setTimeout(() => { setSuccess(false); onSuccess(); }, 2000);
+      setTimeout(() => { setSuccess(false); onSuccess(); }, 2200);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }
@@ -1066,36 +1340,116 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     <div className="flex flex-col items-center justify-center h-full py-20">
       <div className="text-6xl mb-4">✨</div>
       <h3 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Inscribed on BSV!</h3>
-      <p className="text-sm text-center px-6" style={{ color: "var(--color-text-secondary)" }}>Your post is permanently on the BSV blockchain. Your creator coin was auto-created.</p>
+      <p className="text-sm text-center px-6" style={{ color: "var(--color-text-secondary)" }}>
+        Your post is permanently on the BSV blockchain. Your creator coin was auto-created.
+      </p>
     </div>
   );
 
   return (
     <div className="p-4 pb-32 overflow-y-auto h-full">
       <h2 className="text-lg font-bold mb-1" style={{ color: "var(--color-text)" }}>Create Post</h2>
-      <p className="text-xs mb-4" style={{ color: "var(--color-text-secondary)" }}>Every post = NFT inscription on BSV + tradeable creator coin. Multichain support via OrahBridge.</p>
+      <p className="text-xs mb-4" style={{ color: "var(--color-text-secondary)" }}>
+        Every post = NFT inscription on BSV + tradeable creator coin. Multichain via OrahBridge.
+      </p>
 
-      {form.imageUrl && <div className="rounded-2xl overflow-hidden mb-4" style={{ aspectRatio: "1/1" }}><img src={form.imageUrl} alt="" className="w-full h-full object-cover" onError={() => setForm(f => ({ ...f, imageUrl: "" }))} /></div>}
-      {!form.imageUrl && (
-        <div className="rounded-2xl flex flex-col items-center justify-center gap-2 mb-4" style={{ aspectRatio: "1/1", background: "var(--color-surface)", border: "2px dashed var(--color-border)" }}>
-          <Upload size={32} style={{ color: "var(--color-text-secondary)" }} />
-          <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Paste image URL below</span>
+      {/* Media preview */}
+      {effectiveImage ? (
+        <div className="rounded-2xl overflow-hidden mb-3 relative group" style={{ aspectRatio: "1/1" }}>
+          <img src={effectiveImage} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
+          <button onClick={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }}
+            className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+            style={{ background: "rgba(0,0,0,0.6)" }}>
+            <X size={12} style={{ color: "#fff" }} />
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-2xl flex flex-col items-center justify-center gap-2 mb-3" style={{ aspectRatio: "1/1", background: "var(--color-surface)", border: "2px dashed var(--color-border)" }}>
+          <ImageIcon size={32} style={{ color: "var(--color-text-secondary)" }} />
+          <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
+            {mediaMode === "url" ? "Paste an image URL below" : "Tap to pick a file"}
+          </span>
+          {mediaMode === "file" && (
+            <label className="px-4 py-2 rounded-xl text-xs font-bold cursor-pointer" style={{ background: "var(--color-accent)", color: "#000" }}>
+              Choose File <input type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleFile} />
+            </label>
+          )}
         </div>
       )}
 
+      {/* Media mode toggle */}
+      <div className="flex mb-4 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
+        <button style={tabBtn(mediaMode === "url")} onClick={() => setMediaMode("url")}><Link size={11} className="inline mr-1" />URL</button>
+        <button style={tabBtn(mediaMode === "file")} onClick={() => setMediaMode("file")}><Upload size={11} className="inline mr-1" />Upload File</button>
+      </div>
+
       <div className="flex flex-col gap-3">
-        <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Image URL *</label><input style={inp} placeholder="https://…" value={form.imageUrl} onChange={set("imageUrl")} /></div>
-        <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Title *</label><input style={inp} placeholder="Name your creation" value={form.title} onChange={set("title")} maxLength={100} /></div>
-        <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Description</label><textarea style={{ ...inp, resize: "none" } as React.CSSProperties} rows={3} placeholder="What is this about?" value={form.description} onChange={set("description")} maxLength={500} /></div>
+        {/* URL input */}
+        {mediaMode === "url" && (
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Media URL *</label>
+            <input style={inp} placeholder="https://… image, video, audio" value={form.imageUrl} onChange={set("imageUrl")} />
+          </div>
+        )}
+
+        {/* File picker inline */}
+        {mediaMode === "file" && !fileData && (
+          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: "var(--color-surface)", border: "1px dashed var(--color-border)" }}>
+            <Upload size={16} style={{ color: "var(--color-text-secondary)" }} />
+            <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Select image / video / audio</span>
+            <input type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleFile} />
+          </label>
+        )}
+        {mediaMode === "file" && fileData && (
+          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+            <Camera size={16} style={{ color: "var(--color-accent)" }} />
+            <span className="text-sm flex-1" style={{ color: "var(--color-text)" }}>File selected — tap to replace</span>
+            <input type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={handleFile} />
+          </label>
+        )}
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Title *</label>
+          <input style={inp} placeholder="Name your creation" value={form.title} onChange={set("title")} maxLength={100} />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Ticker / Symbol <span style={{ opacity: 0.5 }}>(optional)</span></label>
+          <input style={inp} placeholder="e.g. ORDI, ART, MUSIC — auto-generated if blank" value={form.ticker}
+            onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) }))} maxLength={8} />
+          <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>This becomes your creator coin ticker on BSV</div>
+        </div>
+
+        <div>
+          <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Description</label>
+          <textarea style={{ ...inp, resize: "none" } as React.CSSProperties} rows={3}
+            placeholder="Tell collectors about this work…" value={form.description} onChange={set("description")} maxLength={500} />
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</label><input style={inp} type="number" min="0" step="0.001" value={form.mintPrice} onChange={set("mintPrice")} /></div>
-          <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Currency</label>
-            <select style={inp} value={form.mintCurrency} onChange={set("mintCurrency")}>{CHAINS.map(c => <option key={c}>{c}</option>)}</select>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</label>
+            <input style={inp} type="number" min="0" step="0.001" value={form.mintPrice} onChange={set("mintPrice")} />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Currency</label>
+            <select style={inp} value={form.mintCurrency} onChange={set("mintCurrency")}>
+              {CHAINS.map(c => <option key={c}>{c}</option>)}
+            </select>
           </div>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Category</label><select style={inp} value={form.category} onChange={set("category")}>{CATEGORIES.filter(c => c !== "all").map(c => <option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}</select></div>
-          <div><label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Max Supply</label><input style={inp} type="number" min="1" placeholder="Open edition" value={form.maxSupply} onChange={set("maxSupply")} /></div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Category</label>
+            <select style={inp} value={form.category} onChange={set("category")}>
+              {CATEGORIES.filter(c => c !== "all").map(c => <option key={c} value={c}>{CAT_ICONS[c]} {c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Max Supply</label>
+            <input style={inp} type="number" min="1" placeholder="Open edition" value={form.maxSupply} onChange={set("maxSupply")} />
+          </div>
         </div>
 
         {/* Multichain info */}
@@ -1104,14 +1458,20 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <div className="flex flex-wrap gap-1.5">
             {CHAINS.map(c => <span key={c} className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: `${CHAIN_COLOR[c]}20`, color: CHAIN_COLOR[c] }}>{c}</span>)}
           </div>
-          <p className="text-[11px] mt-2" style={{ color: "var(--color-text-secondary)" }}>Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahBridge · Creator coin auto-created on first post</p>
+          <p className="text-[11px] mt-2" style={{ color: "var(--color-text-secondary)" }}>
+            Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahBridge · Creator coin auto-created on first post
+          </p>
         </div>
 
         {error && <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-        <button onClick={submit} disabled={loading || !form.title || !form.imageUrl}
+
+        <button onClick={submit} disabled={loading || !canSubmit}
           className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
-          {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> : <><Zap size={15} /> Inscribe on BSV</>}
+          {loading
+            ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
+            : <><Zap size={15} /> Inscribe on BSV</>
+          }
         </button>
       </div>
     </div>
