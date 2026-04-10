@@ -14,6 +14,11 @@ import { useLocation } from "wouter";
 const API = "/api";
 
 function Portal({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
   return createPortal(children, document.body);
 }
 
@@ -44,21 +49,28 @@ interface Holding { coin_creator: string; holder: string; amount: number; userna
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
-function fmtNum(n: number) {
-  if (!n) return "0";
+function fmtNum(raw: unknown) {
+  const n = Number(raw);
+  if (!n || !isFinite(n)) return "0";
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return Number(n).toLocaleString();
+  return n.toLocaleString();
 }
-function fmtUsd(n: number) {
-  if (!n) return "$0";
+function fmtUsd(raw: unknown) {
+  const n = Number(raw);
+  if (!n || !isFinite(n)) return "$0";
   if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
   if (n < 0.001) return `$${n.toFixed(8)}`;
   if (n < 1) return `$${n.toFixed(4)}`;
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
+function safePrice(v: unknown, decimals = 4) {
+  const n = Number(v);
+  return isFinite(n) ? n.toFixed(decimals) : "0.0000";
+}
+
 function timeAgo(iso: string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s / 60)}m`;
@@ -180,7 +192,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             </p>
             <div className="rounded-xl p-3 mb-4" style={{ background: "var(--color-surface)" }}>
               <div className="text-xs" style={{ color: "var(--color-text-secondary)" }}>New market cap</div>
-              <div className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmtUsd(parseFloat(success.newMarketCap))}</div>
+              <div className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmtUsd(success.newMarketCap)}</div>
             </div>
             <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>Done</button>
           </div>
@@ -334,7 +346,7 @@ function CreatorProfileSheet({
 
   if (!profile) return null;
 
-  const athPct = profile.ath_usd ? Math.min((profile.market_cap_usd / profile.ath_usd) * 100, 100) : 0;
+  const athPct = (() => { const m = Number(profile.market_cap_usd), a = Number(profile.ath_usd); return a > 0 ? Math.min((m / a) * 100, 100) : 0; })();
   const isSelf = currentUserAddress === creatorAddress;
 
   return (
@@ -605,7 +617,7 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
         <button onClick={() => !soldOut && onMint(post)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs active:scale-95 transition-all"
           style={{ background: soldOut ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: soldOut ? "var(--color-text-secondary)" : "#000", opacity: soldOut ? 0.5 : 1 }}>
           <Zap size={12} />
-          {soldOut ? "Sold Out" : `Collect · ${parseFloat(post.mint_price).toFixed(4)} ${post.mint_currency}`}
+          {soldOut ? "Sold Out" : `Collect · ${safePrice(post.mint_price)} ${post.mint_currency}`}
         </button>
       </div>
 
@@ -711,7 +723,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
         <button onClick={() => !soldOut && onMint(post)} disabled={soldOut}
           className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 mb-3 active:opacity-80 transition-all"
           style={{ background: soldOut ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: soldOut ? "var(--color-text-secondary)" : "#000", opacity: soldOut ? 0.4 : 1 }}>
-          <Zap size={16} />{soldOut ? "Sold Out" : `Collect for ${parseFloat(post.mint_price).toFixed(4)} ${post.mint_currency}`}
+          <Zap size={16} />{soldOut ? "Sold Out" : `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`}
         </button>
         <div className="flex items-center gap-2">
           <button onClick={() => onLike(post.id)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl justify-center active:scale-90 transition-all shrink-0"
@@ -779,7 +791,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
               </div>
               <button onClick={onClose}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
             </div>
-            {[["Chain", "BSV (on-chain inscription)"], ["Price", `${parseFloat(post.mint_price).toFixed(4)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
+            {[["Chain", "BSV (on-chain inscription)"], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
               <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
                 <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
                 <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
@@ -791,7 +803,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
             <button onClick={doMint} disabled={loading}
               className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
               style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
-              {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> : <><Zap size={16} />{address ? `Collect for ${parseFloat(post.mint_price).toFixed(4)} ${post.mint_currency}` : "Connect Wallet"}</>}
+              {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> : <><Zap size={16} />{address ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
             </button>
           </>
         )}
