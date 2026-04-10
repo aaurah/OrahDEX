@@ -1560,7 +1560,7 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
 
 /* ─── ROOT ───────────────────────────────────────────────────────────────────── */
 export function MobileNFT() {
-  const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "profile">("feed");
+  const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "profile">("profile");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [mintPost, setMintPost] = useState<Post | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
