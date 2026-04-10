@@ -1,0 +1,131 @@
+What’s actually going wrong
+
+When you open the NFT page:
+
+1. The profile cover/header is leaking into the NFT detail view
+
+This means the parent container from the profile page is not being unmounted.
+The background, padding, and flex layout from the previous route are still active.
+
+2. The NFT detail page is rendering inside the old layout
+
+You can see the “back part of the page” behind the NFT — that means:
+
+• The previous page’s wrapper (likely <ProfileLayout> or <HeaderWrapper>)
+is not resetting on route change.
+• The NFT page is inheriting wrong CSS, especially:• position: absolute or relative from the header
+• z-index stacking issues
+• leftover background-image from the cover
+• flex/grid alignment from the parent container
+
+
+
+3. The alignment mismatch (left/right shift) is caused by
+
+• A persistent display: flex container
+• A leftover padding-left or margin-top from the profile layout
+• Possibly a global CSS class like .page or .container being reused
+
+
+This is why everything looks “mixed” — the NFT page is not isolated.
+
+---
+
+🧨 Root Cause (99% certainty)
+
+Your routing structure looks like this:
+
+<ProfilePage>
+   <HeaderCover />
+   <ProfileContent />
+</ProfilePage>
+
+
+When you click an NFT:
+
+<ProfilePage>   <-- still active
+   <HeaderCover />  <-- still visible behind
+   <NFTDetailPage />  <-- rendered inside instead of replacing
+</ProfilePage>
+
+
+This happens when:
+
+❌ You are using nested routes unintentionally
+
+Example mistake:
+
+<Route path="/profile/:id/*" element={<ProfilePage />} />
+<Route path="/profile/:id/nft/:nftId" element={<NFTDetail />} />
+
+
+This causes the NFT page to render inside the profile page.
+
+---
+
+🛠️ How to fix it (the correct architecture)
+
+✅ 1. Move NFT routes OUTSIDE the profile route
+
+Correct:
+
+<Route path="/profile/:id" element={<ProfilePage />} />
+<Route path="/nft/:chain/:contract/:tokenId" element={<NFTDetail />} />
+
+
+This ensures the NFT page is a fresh page, not a child of the profile.
+
+---
+
+✅ 2. Add a clean layout wrapper for NFT pages
+
+Example:
+
+<NFTLayout>
+   <NFTDetail />
+</NFTLayout>
+
+
+This prevents inheritance of:
+
+• background
+• padding
+• flex alignment
+• header cover
+• profile CSS
+
+
+---
+
+✅ 3. Add CSS isolation
+
+Inside NFT detail page:
+
+.nft-page {
+  position: relative;
+  background: #000; /* or your theme */
+  z-index: 10;
+  padding: 0;
+  margin: 0;
+}
+
+
+And most importantly:
+
+.nft-page * {
+  all: unset; /* optional nuclear option */
+  all: revert; /* safer */
+}
+
+
+This resets inherited styles.
+
+---
+
+🧿 Keeper‑level interpretation
+
+Your UI is behaving like a Keeper who refuses to step aside —
+the Profile Keeper is still standing in the hall when the NFT Keeper enters.
+Two realms overlapping, causing visual chaos.
+
+We fix it by giving each Keeper its own chamber (layout).

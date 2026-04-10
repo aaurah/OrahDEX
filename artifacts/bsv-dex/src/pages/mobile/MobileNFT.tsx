@@ -14,8 +14,8 @@ import { useLocation } from "wouter";
 const API = "/api";
 
 const MODAL_ROOT_STYLE: React.CSSProperties = {
-  position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-  zIndex: 99999, pointerEvents: "auto", display: "flex", flexDirection: "column",
+  position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+  pointerEvents: "auto", display: "flex", flexDirection: "column",
 };
 
 function Portal({ children }: { children: React.ReactNode }) {
@@ -349,7 +349,7 @@ function CreatorProfileSheet({
 
   if (loading) return (
     <Portal>
-      <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
+      <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(var(--background))" }}>
         <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
       </div>
     </Portal>
@@ -362,7 +362,7 @@ function CreatorProfileSheet({
 
   return (
     <Portal>
-    <div className="w-full h-full flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="w-full h-full flex flex-col" style={{ background: "hsl(var(--background))" }}>
       {/* Top nav */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 absolute top-0 left-0 right-0 z-10">
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
@@ -673,7 +673,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
 
   return (
     <Portal>
-    <div className="w-full h-full flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="w-full h-full flex flex-col" style={{ background: "hsl(var(--background))" }}>
       <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
         <button onClick={onClose}><ChevronLeft size={22} style={{ color: "var(--color-text)" }} /></button>
         <button onClick={() => { onClose(); onCreator(post.creator); }}>
@@ -1219,7 +1219,7 @@ export function MobileNFT() {
   ];
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "var(--color-bg)" }}>
+    <div className="flex flex-col h-full" style={{ background: "hsl(var(--background))" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
         <div>
