@@ -69,6 +69,12 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Liquidation engine**: Runs every 60s, checks all open positions against live mark prices
 - **Funding engine**: Runs every 8h, real positions only (no synthetic), platform retains 10% of funding payments
 
+## Liquidity Provider-Awareness Fix
+- Internal wallets (orah-wallet, demo, passkey, mobile-qr) don't have wagmi connectors and cannot sign via `@wagmi/core`
+- `getLiquidityMode()` now accepts optional `provider` param — internal providers fall back to "simulated" mode instead of "live"/"on_chain"
+- Both desktop `Liquidity.tsx` and mobile `MobileLiquidity.tsx` pass `walletProvider` to all `getLiquidityMode` calls
+- External wallets (metamask, reown, trust, okx, coinbase, etc.) continue to use live/on-chain modes as before
+
 ## Bug Fixed: Futures Close PnL Cap
 - `closeFuturesPosition()` previously used `releaseFuturesMargin()` which capped credit at locked amount via `LEAST(locked, amount)` — profitable trades lost PnL above margin
 - Fixed: now uses atomic transaction with raw SQL that deducts original margin from locked and credits full returnedMargin (including profit) to available

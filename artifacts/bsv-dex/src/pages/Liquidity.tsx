@@ -307,7 +307,7 @@ function LiquidityModal({
   const [txStatus, setTxStatus] = useState<LiquidityTxStatus>({ step: "idle" });
   const { toast } = useToast();
 
-  const { address, network, chainId: walletChainId } = useWalletStore();
+  const { address, network, chainId: walletChainId, provider: walletProvider } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
@@ -359,7 +359,7 @@ function LiquidityModal({
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
-    const mode = getLiquidityMode(targetChainId, pool.base, pool.quote);
+    const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
 
     // ── Real on-chain Uniswap V3 deposit ────────────────────────────────────
     if (mode === "on_chain") {
@@ -424,7 +424,7 @@ function LiquidityModal({
       description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, isEvm, balances, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, isEvm, balances, walletProvider, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
@@ -496,7 +496,7 @@ function LiquidityModal({
 
         {/* Chain mode notice */}
         {(() => {
-          const mode = pool ? getLiquidityMode(targetChainId, pool.base, pool.quote) : "simulated";
+          const mode = pool ? getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider) : "simulated";
           if (mode === "on_chain") return (
             <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
               <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
@@ -733,7 +733,7 @@ function LiquidityModal({
               className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {(() => {
-                const mode = getLiquidityMode(targetChainId, pool.base, pool.quote);
+                const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
