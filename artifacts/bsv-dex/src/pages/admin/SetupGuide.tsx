@@ -98,13 +98,6 @@ const STEPS: Step[] = [
     checkIntegrations: ["sumsub_api_key"],
   },
   {
-    id: "fiat",         step: 8,  label: "H",
-    title: "Fiat On-Ramp (Buy Crypto)",
-    description: "MoonPay, Transak, or Banxa — let users buy crypto with their bank card.",
-    href: "/admin/integrations", icon: Zap, priority: "optional",
-    checkIntegrations: ["moonpay_api_key", "transak_api_key"],
-  },
-  {
     id: "bsv-node",     step: 10, label: "J",
     title: "BSV Node / RPC Endpoint",
     description: "Dedicated BSV RPC endpoint for on-chain settlement and HTLC execution. Default WhatsOnChain is rate-limited.",

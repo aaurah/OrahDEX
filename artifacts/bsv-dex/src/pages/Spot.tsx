@@ -13,7 +13,6 @@ import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
@@ -101,7 +100,6 @@ export function SpotTrading() {
   const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
   const [candleInterval, setCandleInterval] = useState("1h");
   const [marketSearch, setMarketSearch] = useState("");
-  const [buyOpen, setBuyOpen] = useState(false);
   const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
@@ -773,7 +771,6 @@ export function SpotTrading() {
         </div>
       </div>
 
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin={base} />
     </div>
   );
 }

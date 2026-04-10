@@ -1668,12 +1668,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 desc: "Multiple fiats, zero fees, and the best prices",
                 href: "/p2p",
               },
-              {
-                icon: <CreditCard size={20} />,
-                label: "Buy Crypto",
-                desc: "Simplex, Mercuryo, Banxa",
-                href: "/dex",
-              },
             ] as const).map(({ icon, label, desc, href }) => (
               <button
                 key={label}
