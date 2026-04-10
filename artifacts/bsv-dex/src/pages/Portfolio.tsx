@@ -3,12 +3,13 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity } from "lucide-react";
+import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity, CreditCard } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
@@ -215,6 +216,7 @@ export function Portfolio() {
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState("USDT");
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
@@ -357,6 +359,7 @@ export function Portfolio() {
             <div className="space-y-2.5">
               {[
                 { icon: "📊", text: "View live portfolio balance & P&L" },
+                { icon: "💳", text: "Buy crypto with fiat (Apple Pay, Card, Bank)" },
                 { icon: "💸", text: "Deposit & withdraw instantly" },
                 { icon: "⚡", text: "Trade spot & futures markets" },
                 { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
@@ -462,6 +465,7 @@ export function Portfolio() {
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
       <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} defaultAsset={withdrawAsset} />
+      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
         {/* Page header */}
@@ -509,6 +513,12 @@ export function Portfolio() {
               title="Refresh prices & balance"
             >
               <RefreshCw className={`w-4 h-4 ${isFetching || bsvBalFetching ? "animate-spin" : ""}`} />
+            </button>
+            <button
+              onClick={() => setBuyCryptoOpen(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:opacity-90 px-5 py-2.5 rounded-xl transition-all font-semibold text-sm shadow-lg shadow-green-600/20"
+            >
+              <CreditCard className="w-4 h-4" /> Buy Crypto
             </button>
             <button
               onClick={() => setDepositOpen(true)}
@@ -609,21 +619,38 @@ export function Portfolio() {
           </div>
         )}
 
-        {/* Deposit notice */}
-        <div
-          onClick={() => setDepositOpen(true)}
-          className="mb-6 p-4 rounded-2xl border border-primary/20 bg-primary/5 flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
-            <ArrowDownToLine className="w-4.5 h-4.5 text-primary" />
+        {/* Fund your account CTAs */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+          <div
+            onClick={() => setBuyCryptoOpen(true)}
+            className="p-4 rounded-2xl border border-green-500/20 bg-green-500/5 flex items-center gap-4 cursor-pointer hover:border-green-500/40 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0 group-hover:bg-green-500/25 transition-colors">
+              <CreditCard className="w-4.5 h-4.5 text-green-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">Buy Crypto with Fiat</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Apple Pay, Google Pay, Card, or Bank Transfer — instant delivery
+              </p>
+            </div>
+            <span className="text-green-400 text-sm font-medium shrink-0">Buy →</span>
           </div>
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-foreground">Deposit Funds to Trade</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Tap to deposit — supports ETH, BNB, MATIC, BSV, and all EVM L1/L2/L3 networks
-            </p>
+          <div
+            onClick={() => setDepositOpen(true)}
+            className="p-4 rounded-2xl border border-primary/20 bg-primary/5 flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
+              <ArrowDownToLine className="w-4.5 h-4.5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-foreground">Deposit Crypto</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Send ETH, BNB, MATIC, BSV, and all EVM L1/L2/L3 via QR code
+              </p>
+            </div>
+            <span className="text-primary text-sm font-medium shrink-0">View QR →</span>
           </div>
-          <span className="text-primary text-sm font-medium shrink-0">View QR →</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">

@@ -2,7 +2,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine, ArrowUpFromLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight,
+  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
@@ -12,6 +12,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
 import { WithdrawModal } from "@/components/WithdrawModal";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -90,6 +91,7 @@ export function MobilePortfolio() {
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -343,6 +345,7 @@ export function MobilePortfolio() {
           <div className="space-y-2">
             {[
               { icon: "📊", text: "View live portfolio balance & P&L" },
+              { icon: "💳", text: "Buy crypto with fiat (Apple Pay, Card, Bank)" },
               { icon: "💸", text: "Deposit & withdraw instantly" },
               { icon: "⚡", text: "Trade spot & futures markets" },
               { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
@@ -362,6 +365,7 @@ export function MobilePortfolio() {
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
       <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
+      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
         {/* Header */}
@@ -529,8 +533,12 @@ export function MobilePortfolio() {
             </div>
           )}
 
-          {/* Deposit / Withdraw / Bridge */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* Buy / Deposit / Withdraw / Bridge */}
+          <div className="grid grid-cols-4 gap-2">
+            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
+              <CreditCard size={15} />
+              Buy
+            </button>
             <button onClick={() => setDepositOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
               Deposit
@@ -545,7 +553,17 @@ export function MobilePortfolio() {
             </button>
           </div>
 
-          {/* Deposit CTA */}
+          {/* Fund CTAs */}
+          <button onClick={() => setBuyCryptoOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-green-500/5 border border-green-500/20 hover:border-green-500/40 transition-colors text-left">
+            <div className="w-9 h-9 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
+              <CreditCard size={16} className="text-green-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">Buy Crypto with Fiat</p>
+              <p className="text-xs text-muted-foreground truncate">Apple Pay · Google Pay · Card · Bank Transfer — instant</p>
+            </div>
+            <span className="text-green-400 text-xs font-medium shrink-0">Buy →</span>
+          </button>
           <button onClick={() => setDepositOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
             <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
               <ArrowDownToLine size={16} className="text-primary" />
