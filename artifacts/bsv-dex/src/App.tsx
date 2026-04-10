@@ -29,8 +29,6 @@ import { AdminCopyVault } from "@/pages/admin/CopyVaultAdmin";
 import { AdminTradingView } from "@/pages/admin/TradingViewAdmin";
 import { AdminLogsPage } from "@/pages/admin/AdminLogs";
 import { AdminSupportSettings } from "@/pages/admin/SupportSettings";
-import { ApiMonitor } from "@/pages/admin/ApiMonitor";
-
 export default function App() {
   return (
     <Switch>
