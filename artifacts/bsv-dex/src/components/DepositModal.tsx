@@ -100,7 +100,6 @@ export function DepositModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       return;
     }
     if (!address) return;
-    // Credit the OrahDEX internal ledger — this is the moment ETH enters the exchange
     credit(address, currentNet.symbol, n);
     setCreditedAmt(n);
     setStep("done");
@@ -312,8 +311,12 @@ export function DepositModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
               {/* Step 2: Confirm amount sent */}
               {step === "confirm" && (
                 <div className="p-6 space-y-5">
+                  <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-xs text-amber-300/90 leading-relaxed">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                    <span><strong className="text-amber-300">Automatic blockchain monitoring is not yet active.</strong> Enter the exact amount you sent — this will be manually verified. Blockchain-confirmed auto-crediting is coming soon.</span>
+                  </div>
                   <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-                    Enter the exact amount of <span className="text-primary font-semibold">{currentNet.symbol}</span> you sent. This credits your OrahDEX trading balance immediately.
+                    Enter the exact amount of <span className="text-primary font-semibold">{currentNet.symbol}</span> you sent. This credits your OrahDEX trading balance for testing purposes.
                   </div>
 
                   <div>
