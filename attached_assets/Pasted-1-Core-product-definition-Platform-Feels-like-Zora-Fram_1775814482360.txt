@@ -1,0 +1,440 @@
+1. Core product definition
+
+Platform:
+
+• Feels like Zora/Frames: feed of posts.
+• But every post = a tradable on‑chain asset (coin/NFT).
+• No mint UI. You only reference existing on‑chain assets.
+
+
+Chains:
+
+• BSV (UTXO, inscriptions, tokens)
+• EVM family (ETH, Base, etc.)
+• Extendable to others via adapters.
+
+
+Key rules:
+
+• No synthetic balances. All trades map to real chain txs.
+• No custodial vault. User always signs with their wallet.
+• Hybrid: off‑chain orderbook + on‑chain settlement.
+
+
+---
+
+2. Data model (conceptual)
+
+Post (every post is a coin/asset):
+
+• id
+• authorAddress
+• chain ("bsv" | "eth" | "base" | ...)
+• assetType ("fungible" | "nft")
+• assetRef• For EVM: { contract, tokenId? }
+• For BSV: { txid, vout, protocol }
+
+• title, body, mediaUrl
+• createdAt
+
+
+Market
+
+• id
+• postId
+• baseAsset (e.g. BSV, ETH, USDC)
+• quoteAsset (the post’s coin/NFT)
+• ammType ("vAMM" | "orderbook")
+• feeBps
+• createdAt
+
+
+Order / SwapIntent
+
+• id
+• marketId
+• side ("buy" | "sell")
+• amountIn
+• minAmountOut
+• traderAddress
+• chain
+• status ("pending" | "settling" | "settled" | "failed")
+
+
+---
+
+3. Core flows
+
+3.1 Create post (attach coin)
+
+1. User pastes an on‑chain asset reference:• EVM: contract + (optional) tokenId
+• BSV: txid + vout (or inscription ID)
+
+2. Backend:• Validates asset exists on that chain via adapter.
+• Creates Post + Market if not already present.
+
+3. UI:• Shows post in feed with “Trade” button.
+
+
+
+No minting. You only index what already exists.
+
+---
+
+3.2 Trade from a post
+
+1. User taps “Trade” on a post.
+2. Frontend calls backend: POST /swap-intent.
+3. Backend:• Looks up Market for that postId.
+• Computes quote via AMM or orderbook.
+• Returns unsigned transaction payload (per chain).
+
+4. User signs in wallet (BSV or EVM).
+5. Backend:• Watches chain for tx confirmation via adapter.
+• On success → marks SwapIntent as settled, updates analytics.
+
+
+
+---
+
+3.3 Multi‑chain abstraction
+
+Define a ChainAdapter interface:
+
+• getAssetMetadata(ref)
+• buildSwapTx(intent, market)
+• watchTx(txid, cb)
+• getBalance(address, assetRef)
+
+
+Implement:
+
+• BsvAdapter
+• EvmAdapter (configurable for ETH/Base/etc.)
+
+
+---
+
+4. One-file backbone (TypeScript, Node, ready to extend)
+
+This is a single code spine you can drop into a Node service and grow.
+It’s not a full app, but it’s the correct skeleton for everything you described.
+
+// app.ts
+import express from "express";
+import bodyParser from "body-parser";
+
+/* ---------- Types ---------- */
+
+type ChainId = "bsv" | "eth" | "base";
+
+type AssetType = "fungible" | "nft";
+
+interface EvmAssetRef {
+  chain: Exclude<ChainId, "bsv">;
+  contract: string;
+  tokenId?: string;
+}
+
+interface BsvAssetRef {
+  chain: "bsv";
+  txid: string;
+  vout: number;
+  protocol: "inscription" | "token";
+}
+
+type AssetRef = EvmAssetRef | BsvAssetRef;
+
+interface Post {
+  id: string;
+  authorAddress: string;
+  chain: ChainId;
+  assetType: AssetType;
+  assetRef: AssetRef;
+  title: string;
+  body?: string;
+  mediaUrl?: string;
+  createdAt: number;
+}
+
+interface Market {
+  id: string;
+  postId: string;
+  baseAsset: AssetRef;   // e.g. BSV, ETH, USDC
+  quoteAsset: AssetRef;  // the post’s coin/NFT
+  ammType: "vAMM" | "orderbook";
+  feeBps: number;
+  createdAt: number;
+}
+
+type SwapSide = "buy" | "sell";
+
+interface SwapIntent {
+  id: string;
+  marketId: string;
+  side: SwapSide;
+  amountIn: string;
+  minAmountOut: string;
+  traderAddress: string;
+  chain: ChainId;
+  status: "pending" | "settling" | "settled" | "failed";
+  createdAt: number;
+  txid?: string;
+}
+
+/* ---------- Chain Adapters ---------- */
+
+interface ChainAdapter {
+  readonly chain: ChainId;
+  validateAsset(ref: AssetRef): Promise<void>;
+  getAssetMetadata(ref: AssetRef): Promise<any>;
+  buildSwapTx(intent: SwapIntent, market: Market): Promise<{
+    unsignedTx: string;
+    txMeta: any;
+  }>;
+  watchTx(txid: string, onDone: (ok: boolean) => void): void;
+}
+
+class BsvAdapter implements ChainAdapter {
+  readonly chain: ChainId = "bsv";
+
+  async validateAsset(ref: AssetRef): Promise<void> {
+    if (ref.chain !== "bsv") throw new Error("Not BSV asset");
+    // TODO: call BSV node/indexer to confirm txid/vout exists and matches protocol
+  }
+
+  async getAssetMetadata(ref: AssetRef): Promise<any> {
+    // TODO: fetch inscription/token metadata from BSV indexer
+    return { name: "BSV Asset", ref };
+  }
+
+  async buildSwapTx(intent: SwapIntent, market: Market) {
+    // TODO: construct BSV transaction for swap (vAMM or direct P2P)
+    return {
+      unsignedTx: "01000000...", // placeholder
+      txMeta: { chain: "bsv" }
+    };
+  }
+
+  watchTx(txid: string, onDone: (ok: boolean) => void): void {
+    // TODO: subscribe to BSV node/indexer and call onDone(true/false)
+  }
+}
+
+class EvmAdapter implements ChainAdapter {
+  readonly chain: ChainId;
+
+  constructor(chain: ChainId) {
+    if (chain === "bsv") throw new Error("EVM adapter cannot be BSV");
+    this.chain = chain;
+  }
+
+  async validateAsset(ref: AssetRef): Promise<void> {
+    if (ref.chain !== this.chain) throw new Error("Wrong chain");
+    // TODO: call RPC/JSON-RPC to check contract/token existence
+  }
+
+  async getAssetMetadata(ref: AssetRef): Promise<any> {
+    // TODO: call contract (ERC-20/721/1155) for name/symbol/uri
+    return { name: "EVM Asset", ref };
+  }
+
+  async buildSwapTx(intent: SwapIntent, market: Market) {
+    // TODO: build calldata for router/AMM or direct transfer
+    return {
+      unsignedTx: "0xdeadbeef", // placeholder
+      txMeta: { chain: this.chain }
+    };
+  }
+
+  watchTx(txid: string, onDone: (ok: boolean) => void): void {
+    // TODO: poll RPC or use websocket to confirm tx
+  }
+}
+
+/* ---------- Adapter registry ---------- */
+
+const adapters: Record<ChainId, ChainAdapter> = {
+  bsv: new BsvAdapter(),
+  eth: new EvmAdapter("eth"),
+  base: new EvmAdapter("base")
+};
+
+/* ---------- In-memory stores (replace with DB) ---------- */
+
+const posts = new Map<string, Post>();
+const markets = new Map<string, Market>();
+const swaps = new Map<string, SwapIntent>();
+
+const genId = () => Math.random().toString(36).slice(2);
+
+/* ---------- Core logic ---------- */
+
+async function ensureMarketForPost(post: Post): Promise<Market> {
+  for (const m of markets.values()) {
+    if (m.postId === post.id) return m;
+  }
+  const baseAsset: AssetRef =
+    post.chain === "bsv"
+      ? { chain: "bsv", txid: "BSV_NATIVE", vout: 0, protocol: "token" }
+      : { chain: post.chain, contract: "NATIVE", tokenId: undefined };
+
+  const market: Market = {
+    id: genId(),
+    postId: post.id,
+    baseAsset,
+    quoteAsset: post.assetRef,
+    ammType: "vAMM",
+    feeBps: 100, // 1%
+    createdAt: Date.now()
+  };
+  markets.set(market.id, market);
+  return market;
+}
+
+/* ---------- HTTP API ---------- */
+
+const app = express();
+app.use(bodyParser.json());
+
+/**
+ * Create a post that references an existing on-chain asset.
+ * No minting, just indexing.
+ */
+app.post("/posts", async (req, res) => {
+  try {
+    const {
+      authorAddress,
+      chain,
+      assetType,
+      assetRef,
+      title,
+      body,
+      mediaUrl
+    } = req.body as {
+      authorAddress: string;
+      chain: ChainId;
+      assetType: AssetType;
+      assetRef: AssetRef;
+      title: string;
+      body?: string;
+      mediaUrl?: string;
+    };
+
+    const adapter = adapters[chain];
+    if (!adapter) throw new Error("Unsupported chain");
+
+    await adapter.validateAsset(assetRef);
+
+    const post: Post = {
+      id: genId(),
+      authorAddress,
+      chain,
+      assetType,
+      assetRef,
+      title,
+      body,
+      mediaUrl,
+      createdAt: Date.now()
+    };
+
+    posts.set(post.id, post);
+    const market = await ensureMarketForPost(post);
+
+    res.json({ post, market });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/**
+ * Get feed of posts (for Zora-like UI).
+ */
+app.get("/posts", (req, res) => {
+  res.json(Array.from(posts.values()).sort((a, b) => b.createdAt - a.createdAt));
+});
+
+/**
+ * Create a swap intent from a post (trade button).
+ */
+app.post("/posts/:postId/swap", async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { side, amountIn, minAmountOut, traderAddress, chain } = req.body as {
+      side: SwapSide;
+      amountIn: string;
+      minAmountOut: string;
+      traderAddress: string;
+      chain: ChainId;
+    };
+
+    const post = posts.get(postId);
+    if (!post) throw new Error("Post not found");
+
+    const market = await ensureMarketForPost(post);
+    const adapter = adapters[chain];
+    if (!adapter) throw new Error("Unsupported chain");
+
+    const intent: SwapIntent = {
+      id: genId(),
+      marketId: market.id,
+      side,
+      amountIn,
+      minAmountOut,
+      traderAddress,
+      chain,
+      status: "pending",
+      createdAt: Date.now()
+    };
+    swaps.set(intent.id, intent);
+
+    const { unsignedTx, txMeta } = await adapter.buildSwapTx(intent, market);
+
+    res.json({
+      intentId: intent.id,
+      unsignedTx,
+      txMeta
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/**
+ * Callback to mark swap as settled after wallet broadcasts tx.
+ * (Or you can auto-detect via watchTx.)
+ */
+app.post("/swaps/:id/confirm", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { txid, ok } = req.body as { txid: string; ok: boolean };
+
+    const intent = swaps.get(id);
+    if (!intent) throw new Error("Swap not found");
+
+    intent.txid = txid;
+    intent.status = ok ? "settled" : "failed";
+    swaps.set(id, intent);
+
+    res.json({ intent });
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+/**
+ * Simple health/status.
+ */
+app.get("/status", (req, res) => {
+  res.json({
+    posts: posts.size,
+    markets: markets.size,
+    swaps: swaps.size,
+    chains: Object.keys(adapters)
+  });
+});
+
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => {
+  console.log(`Hybrid post-as-coin DEX running on :${PORT}`);
+});
