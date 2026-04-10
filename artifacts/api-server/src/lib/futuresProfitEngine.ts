@@ -75,13 +75,7 @@ async function runFundingCycle(): Promise<void> {
       realIncome += payment * PLATFORM_CUT;
     }
 
-    /* --- synthetic baseline from total futures OI --- */
-    const futuresMarkets = markets.filter(m => m.type === "futures" && m.status === "active");
-    const totalFuturesVol = futuresMarkets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
-    const estimatedOI     = totalFuturesVol * OI_TO_VOL_RATIO;
-    const syntheticIncome = estimatedOI * DEFAULT_FUNDING * PLATFORM_CUT;
-
-    const cycleIncome = realIncome + syntheticIncome;
+    const cycleIncome = realIncome;
 
     const prev    = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
     const newTotal = prev + cycleIncome;
@@ -147,15 +141,7 @@ async function runLiquidationCycle(): Promise<void> {
       }
     }
 
-    /* --- synthetic baseline: small fraction of futures OI liquidated per minute --- */
-    const futuresMarkets = markets.filter(m => m.type === "futures" && m.status === "active");
-    const totalFuturesVol = futuresMarkets.reduce((s, m) => s + (parseFloat(m.volume24h ?? "0") || 0), 0);
-    const estimatedOI     = totalFuturesVol * OI_TO_VOL_RATIO;
-    // ~0.3 % of OI is liquidated per 24 h → per minute → 0.003 / 1440
-    const syntheticLiqPerMin = estimatedOI * 0.003 / 1440;
-    const syntheticFee       = syntheticLiqPerMin * LIQUIDATION_FEE;
-
-    const cycleIncome = realLiqFees + syntheticFee;
+    const cycleIncome = realLiqFees;
 
     const prev    = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
     const newTotal = prev + cycleIncome;

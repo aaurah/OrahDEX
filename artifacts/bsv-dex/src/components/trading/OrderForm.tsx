@@ -1503,6 +1503,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             )}
           </button>
 
+          {/* Demo mode notice */}
+          {isDemo && (
+            <div className="flex items-center justify-center gap-1.5 text-[10px] font-semibold text-yellow-400/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg py-1.5">
+              <FlaskConical className="w-3 h-3 shrink-0" />
+              Demo — this trade uses virtual paper money, not real funds
+            </div>
+          )}
+
           {/* Fee info & Keeper tier */}
           <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
             {liveQuote ? (
