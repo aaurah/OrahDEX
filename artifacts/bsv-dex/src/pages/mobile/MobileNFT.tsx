@@ -390,38 +390,19 @@ function CreatorProfileSheet({
           {!imgErr && profile.cover_url && (
             <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.6 }} onError={() => setImgErr(true)} />
           )}
-          {isSelf && (
-            <button onClick={() => setShowEdit(true)} className="absolute bottom-2 right-2 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold" style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}>
-              <Edit3 size={10} /> Edit cover
-            </button>
-          )}
         </div>
 
         {/* Profile header */}
         <div className="px-4 pb-4">
           {/* Avatar row */}
           <div className="flex items-end justify-between -mt-9 mb-3">
-            <div className="relative">
-              <Avatar src={profile.avatar_url} name={profile.username} size={72} ring />
-              {isSelf && (
-                <button onClick={() => setShowEdit(true)} className="absolute bottom-0 right-0 w-6 h-6 rounded-full flex items-center justify-center" style={{ background: "var(--color-accent)" }}>
-                  <Edit3 size={10} style={{ color: "#000" }} />
-                </button>
-              )}
-            </div>
+            <Avatar src={profile.avatar_url} name={profile.username} size={72} ring />
             <div className="flex gap-2 pb-1">
               {!isSelf && (
                 <button onClick={toggleFollow}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs transition-all"
                   style={{ background: isFollowing ? "var(--color-surface)" : "var(--color-accent)", color: isFollowing ? "var(--color-text)" : "#000" }}>
                   {isFollowing ? <><UserCheck size={12} />Following</> : <><UserPlus size={12} />Follow</>}
-                </button>
-              )}
-              {isSelf && (
-                <button onClick={() => setShowEdit(true)}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs"
-                  style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                  <Edit3 size={12} /> Edit Profile
                 </button>
               )}
             </div>
@@ -458,7 +439,7 @@ function CreatorProfileSheet({
           {/* Stats: Posts | Holders | Holding */}
           <div className="grid grid-cols-3 gap-2 mb-4">
             {[
-              { label: "Posts", value: fmtNum(profile.post_count) },
+              { label: "Posts", value: fmtNum(Math.max(profile.post_count, posts.length)) },
               { label: "Holders", value: fmtNum(profile.holder_count ?? 0) },
               { label: "Trades", value: fmtNum(profile.trade_count ?? 0) },
             ].map(({ label, value }) => (
@@ -504,12 +485,8 @@ function CreatorProfileSheet({
               </div>
             </div>
 
-            {/* Trade / Edit */}
-            {isSelf ? (
-              <button onClick={() => setShowEdit(true)} className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2" style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                <Edit3 size={14} /> Edit Profile
-              </button>
-            ) : (
+            {/* Trade / Share */}
+            {!isSelf && (
               <div className="flex gap-2">
                 <button onClick={() => setShowTrade(true)}
                   className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
