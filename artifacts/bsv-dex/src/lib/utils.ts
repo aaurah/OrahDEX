@@ -53,7 +53,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "walletconnect": "WalletConnect",
   "tronlink":      "TronLink",
   "phantom":       "Phantom",
-  "reown":         "Reown",
+  "reown":         "Orah Wallet",
 };
 
 export function getProviderLabel(provider: string | null | undefined): string {
