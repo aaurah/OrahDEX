@@ -100,12 +100,23 @@ export const CHAIN_NAMES: Record<number, string> = {
 
 export type LiquidityMode = "on_chain" | "live" | "simulated";
 
+const INTERNAL_PROVIDERS = new Set([
+  "orah-wallet", "demo", "passkey", "mobile-qr",
+]);
+
+export function hasExternalConnector(provider: string | null): boolean {
+  if (!provider) return false;
+  return !INTERNAL_PROVIDERS.has(provider);
+}
+
 export function getLiquidityMode(
   chainId: number | null,
   base: string,
   quote: string,
+  provider?: string | null,
 ): LiquidityMode {
   if (!chainId || !EVM_CHAIN_IDS.has(chainId)) return "simulated";
+  if (provider !== undefined && !hasExternalConnector(provider)) return "simulated";
   const pairKey = `${base.toUpperCase()}/${quote.toUpperCase()}`;
   const supported = SUPPORTED_V3_PAIRS[chainId];
   if (supported?.has(pairKey)) return "on_chain";
