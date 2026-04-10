@@ -15,9 +15,8 @@ import {
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { Search, Star, ArrowRightLeft, CreditCard, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { AiInsightsBar } from "@/components/AiInsightsBar";
@@ -122,8 +121,6 @@ export function Markets() {
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
-  const [buyOpen, setBuyOpen] = useState(false);
-  const [buyCoin, setBuyCoin] = useState("BSV");
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
@@ -172,11 +169,6 @@ export function Markets() {
   const { tab: walletTab, label: walletChainLabel, isAutoSelected: isWalletTab } = getWalletMarketTab(address, network, chainId);
   /* Show banner only when the visible tab is the wallet's auto-selected tab */
   const showWalletBanner = isWalletTab && !walletBannerDismissed && tab === walletTab;
-
-  const handleBuy = (coin: string) => {
-    setBuyCoin(coin);
-    setBuyOpen(true);
-  };
 
   const [, navigate] = useLocation();
 
@@ -667,12 +659,6 @@ export function Markets() {
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
-                            onClick={() => handleBuy(base)}
-                            className="inline-flex items-center gap-0.5 bg-white/5 text-muted-foreground border border-border px-2 py-1 rounded-md font-semibold text-[10px] hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <CreditCard className="w-2.5 h-2.5" /> Buy
-                          </button>
-                          <button
                             onClick={() => handleTrade(tradeHref)}
                             className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1 rounded-md font-bold text-[11px] hover:brightness-110 transition-all active:scale-95"
                           >
@@ -699,7 +685,6 @@ export function Markets() {
         </div>
       </div>
 
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin={buyCoin} />
     </div>
   );
 }

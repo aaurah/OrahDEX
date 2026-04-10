@@ -420,7 +420,7 @@ export function AdminIntegrations() {
       <Section
         icon={<Zap className="w-4 h-4" />}
         title="Fiat On-Ramp Providers"
-        description="API keys for card/bank-to-crypto purchase widgets shown in the Buy Crypto flow. All providers work in sandbox mode without a key — add keys to go live."
+        description="API keys for fiat on-ramp provider widgets. All providers work in sandbox mode without a key — add keys to go live."
         badge="Optional"
         badgeColor="bg-secondary text-muted-foreground border-border"
         configuredCount={countSet("moonpay_api_key", "transak_api_key", "banxa_api_key", "simplex_api_key", "ramp_api_key")}

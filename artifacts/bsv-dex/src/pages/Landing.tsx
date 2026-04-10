@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
 
@@ -327,7 +326,6 @@ function OraAiSection() {
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [buyOpen, setBuyOpen] = useState(false);
   const [entered, setEntered] = useState(false);
   const { theme, setTheme } = useThemeStore();
 
@@ -478,12 +476,6 @@ export function LandingPage() {
               Enter the Exchange
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <button
-              onClick={() => setBuyOpen(true)}
-              className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-green-300 border border-green-500/30 hover:border-green-400/60 hover:text-green-200 bg-green-500/8 hover:bg-green-500/15 transition-all w-full sm:w-auto justify-center"
-            >
-              Buy Crypto
-            </button>
             <Link href="/markets" className="flex items-center gap-2 px-7 py-4 rounded-2xl font-bold text-sm text-muted-foreground border border-border hover:border-border/70 hover:text-foreground bg-card/60 hover:bg-card transition-all w-full sm:w-auto justify-center">
               View All Markets
               <span className="text-xs font-black text-green-400 bg-green-500/15 px-2 py-0.5 rounded-full border border-green-500/25">
@@ -841,7 +833,6 @@ export function LandingPage() {
           </p>
         </div>
       </section>
-      <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin="BSV" />
     </div>
   );
 }

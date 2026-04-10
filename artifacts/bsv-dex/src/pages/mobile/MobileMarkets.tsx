@@ -9,7 +9,6 @@ import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } 
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { MobileBaseMarket } from "@/components/mobile/MobileBaseMarket";
 import { MobileNetworksExplorer } from "@/components/mobile/MobileNetworksExplorer";
@@ -155,14 +154,8 @@ export function MobileMarkets() {
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [buyOpen, setBuyOpen]     = useState(false);
-  const [buyCoin, setBuyCoin]     = useState("BSV");
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const prevAddressRef = useRef<string | null>(null);
-  const handleBuy = (coin: string) => {
-    setBuyCoin(coin);
-    setBuyOpen(true);
-  };
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -404,7 +397,6 @@ export function MobileMarkets() {
                   isFav={favorites.has(m.symbol)}
                   onFav={() => toggleFav(m.symbol)}
                   onTrade={() => goTrade(m)}
-                  onBuy={() => handleBuy(m.base)}
                 />
               ))}
             </div>
@@ -414,7 +406,6 @@ export function MobileMarkets() {
     </div>
 
     {walletSheetOpen && <MobileWalletSheet onClose={() => setWalletSheetOpen(false)} />}
-    <BuyCryptoModal open={buyOpen} onClose={() => setBuyOpen(false)} defaultCoin={buyCoin} />
     </>
   );
 }
