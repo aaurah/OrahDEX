@@ -3,7 +3,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import {
   X, Search, ChevronRight, ExternalLink, CheckCircle,
   Wallet, CreditCard, Building2, Zap, Star, Shield, RefreshCw,
-  AlertTriangle, ArrowLeftRight, Check, Smartphone,
+  AlertTriangle, ArrowLeftRight, Check, Smartphone, Copy, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -208,6 +208,65 @@ const PROVIDERS: ProviderDef[] = [
     baseUrl:"https://paybis.com/buy-cryptocurrency",
     params:(coin,fiat,amt)=>({ from:fiat, to:coin, amount:amt }),
   },
+  {
+    id:"coinbase", name:"Coinbase", badge:"🔵", color:"text-blue-400", fee:"1.49–3.99%", minUSD:2, maxUSD:50000, rating:4.8, kycLevel:"full",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
+    baseUrl:"https://pay.coinbase.com/buy/select-asset",
+    params:(coin,fiat,amt,_m,addr)=>({
+      defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat,
+      ...(addr?{destinationAddresses:JSON.stringify({[coin]:addr})}:{}),
+    }),
+  },
+  {
+    id:"cryptocom", name:"Crypto.com", badge:"🔷", color:"text-blue-300", fee:"0–2.99%", minUSD:1, maxUSD:250000, rating:4.5, kycLevel:"full",
+    methods:["card","apple","google","bank","crypto"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","BCH","UNI","NEAR","ARB","OP","SUI","INJ"],
+    baseUrl:"https://crypto.com/exchange/buy",
+    params:(coin,fiat,amt,_m,addr)=>({ toCurrency:coin, fromCurrency:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
+  },
+  {
+    id:"coinspot", name:"CoinSpot", badge:"🟡", color:"text-yellow-400", fee:"0.1–1%", minUSD:20, maxUSD:100000, rating:4.3, kycLevel:"full",
+    methods:["card","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","BSV"],
+    baseUrl:"https://www.coinspot.com.au/buy",
+    params:(coin)=>({ crypto:coin }),
+  },
+  {
+    id:"bybit", name:"Bybit", badge:"🟠", color:"text-orange-400", fee:"1–3%", minUSD:10, maxUSD:20000, rating:4.4, kycLevel:"light",
+    methods:["card","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
+    baseUrl:"https://www.bybit.com/fiat/trade/otc",
+    params:(coin,fiat,amt,_m,addr)=>({ tokenId:coin, fiatId:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
+  },
+  {
+    id:"bitget", name:"Bitget", badge:"⚫", color:"text-gray-300", fee:"1–4%", minUSD:10, maxUSD:20000, rating:4.3, kycLevel:"light",
+    methods:["card","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
+    baseUrl:"https://www.bitget.com/fiat/buy",
+    params:(coin,fiat,amt)=>({ cryptoCurrency:coin, fiatCurrency:fiat, amount:amt }),
+  },
+  {
+    id:"guardarian", name:"Guardarian", badge:"🛡", color:"text-indigo-400", fee:"0–3.5%", minUSD:10, maxUSD:30000, rating:4.4, kycLevel:"light",
+    methods:["card","bank","apple","google"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
+    baseUrl:"https://guardarian.com/calculator/v1",
+    params:(coin,fiat,amt,_m,addr)=>({ from_currency:fiat, to_currency:coin, amount:amt, ...(addr?{to_wallet_address:addr}:{}) }),
+  },
+  {
+    id:"utorg", name:"UTORG", badge:"🔸", color:"text-amber-400", fee:"1.5–3.5%", minUSD:20, maxUSD:15000, rating:4.2, kycLevel:"light",
+    methods:["card","apple","google"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","BCH","NEAR"],
+    baseUrl:"https://app.utorg.pro",
+    params:(coin,fiat,amt,_m,addr)=>({ currency:coin, fiatCurrency:fiat, amount:amt, ...(addr?{paymentAddress:addr}:{}) }),
+  },
+  {
+    id:"onramper", name:"Onramper", badge:"🔁", color:"text-teal-400", fee:"0.5–2.5%", minUSD:30, maxUSD:50000, rating:4.6, kycLevel:"light",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","INJ"],
+    baseUrl:"https://buy.onramper.com",
+    params:(coin,fiat,amt,_m,addr)=>({ defaultCrypto:coin, defaultFiat:fiat, defaultAmount:amt, ...(addr?{wallets:`${coin}:${addr}`}:{}) }),
+  },
 ];
 
 // ── Coin catalogue ─────────────────────────────────────────────────────────────
@@ -276,6 +335,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
   const [switchingChain, setSwitchingChain] = useState(false);
   const [switchErr, setSwitchErr]         = useState<string|null>(null);
   const [switchedChainId, setSwitchedChainId] = useState<number|null>(null);
+  const [copied, setCopied]               = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -953,7 +1013,14 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                         <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-1.5">Receiving address</p>
                         <div className="flex items-center gap-2 p-2.5 bg-green-500/10 border border-green-500/20 rounded-lg">
                           <Wallet className="w-3.5 h-3.5 text-green-400 shrink-0"/>
-                          <span className="font-mono text-[10px] text-muted-foreground truncate">{address}</span>
+                          <span className="font-mono text-[10px] text-muted-foreground truncate flex-1 select-all">{address}</span>
+                          {address && (
+                            <button onClick={() => { navigator.clipboard.writeText(address!).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>{}); }}
+                              className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold"
+                              style={{ background: copied?"rgba(34,197,94,0.2)":"rgba(255,255,255,0.08)", color: copied?"#4ade80":"#9ca3af" }}>
+                              {copied?<><ClipboardCheck className="w-3 h-3"/>Copied</>:<><Copy className="w-3 h-3"/>Copy</>}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </>
@@ -968,10 +1035,26 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
                       </div>
                       <div>
                         <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Your {coin} address</label>
-                        <input type="text" value={nativeAddr} onChange={e=>{setNativeAddr(e.target.value);setAddrErr(null);}}
-                          placeholder={coinNet.addressHint}
-                          className={cn("w-full mt-1.5 bg-background border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none transition-colors",
-                            addrErr?"border-red-500 focus:border-red-400":"border-border focus:border-primary")}/>
+                        <div className="relative mt-1.5">
+                          <input type="text" value={nativeAddr} onChange={e=>{setNativeAddr(e.target.value);setAddrErr(null);}}
+                            placeholder={coinNet.addressHint}
+                            className={cn("w-full pr-20 bg-background border rounded-xl px-4 py-3 text-sm font-mono focus:outline-none transition-colors",
+                              addrErr?"border-red-500 focus:border-red-400":"border-border focus:border-primary")}/>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const text = await navigator.clipboard.readText();
+                                if (text) { setNativeAddr(text.trim()); setAddrErr(null); }
+                              } catch {
+                                // browser blocked clipboard read — user can paste manually
+                              }
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold"
+                            style={{ background: "rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                            <Copy className="w-3 h-3"/> Paste
+                          </button>
+                        </div>
                         {addrErr && <p className="text-[11px] text-red-400 mt-1">⚠ {addrErr}</p>}
                         {nativeAddr.length>20 && !addrErr && (
                           <p className="text-[11px] text-green-400 mt-1 flex items-center gap-1"><Check className="w-3 h-3"/>Address looks valid</p>
@@ -1095,13 +1178,42 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
 
               {/* Destination address */}
               <div className="p-4 bg-green-500/10 border border-green-500/25 rounded-xl">
-                <div className="flex items-center gap-2 mb-2">
-                  <Wallet className="w-4 h-4 text-green-400 shrink-0"/>
-                  <span className="text-sm font-bold text-green-400">Receiving — {coinNet.name}</span>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-green-400 shrink-0"/>
+                    <span className="text-sm font-bold text-green-400">Receiving — {coinNet.name}</span>
+                  </div>
+                  {effectiveAddr && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(effectiveAddr).then(() => {
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }).catch(() => {
+                          // Fallback for older browsers
+                          const el = document.createElement("textarea");
+                          el.value = effectiveAddr;
+                          el.style.position = "fixed"; el.style.opacity = "0";
+                          document.body.appendChild(el);
+                          el.select();
+                          document.execCommand("copy");
+                          document.body.removeChild(el);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all"
+                      style={{ background: copied ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.1)", color: copied ? "#4ade80" : "#9ca3af" }}>
+                      {copied ? <><ClipboardCheck className="w-3.5 h-3.5"/> Copied!</> : <><Copy className="w-3.5 h-3.5"/> Copy</>}
+                    </button>
+                  )}
                 </div>
-                <div className="font-mono text-[11px] text-muted-foreground break-all bg-black/20 rounded-lg p-2">
-                  {effectiveAddr || <span className="text-muted-foreground/50 italic">No address set</span>}
+                <div className="font-mono text-[11px] text-muted-foreground break-all bg-black/20 rounded-lg p-2 select-all cursor-text">
+                  {effectiveAddr || <span className="text-muted-foreground/50 italic">No address set — go back to step 4</span>}
                 </div>
+                {effectiveAddr && (
+                  <p className="text-[10px] text-green-400/60 mt-1.5">Tap the address to select all · use Copy button or paste directly into the provider</p>
+                )}
               </div>
 
               {/* Payment method selector (compact, in checkout for last-minute switch) */}
