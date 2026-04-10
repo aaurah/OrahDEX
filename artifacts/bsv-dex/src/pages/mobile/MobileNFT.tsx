@@ -338,6 +338,7 @@ function CreatorProfileSheet({
   const isSelf = currentUserAddress === creatorAddress;
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
       {/* Top nav */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 absolute top-0 left-0 right-0 z-10">
@@ -538,6 +539,7 @@ function CreatorProfileSheet({
 
       {showTrade && <TradeSheet creator={profile} onClose={() => setShowTrade(false)} />}
     </div>
+    </Portal>
   );
 }
 
@@ -647,6 +649,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
       <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
         <button onClick={onClose}><ChevronLeft size={22} style={{ color: "var(--color-text)" }} /></button>
@@ -730,6 +733,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -754,6 +758,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {minted ? (
@@ -792,6 +797,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
         )}
       </div>
     </div>
+    </Portal>
   );
 }
 
