@@ -825,7 +825,7 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
         <div className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>BSV</div>
       </div>
 
-      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onOpen(post)}>
+      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onCreator(post.creator)}>
         {!imgErr
           ? <img src={post.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-5xl">🖼️</div>
@@ -835,9 +835,6 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
         </div>
         <div className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(0,0,0,0.65)", color: "var(--color-accent)", backdropFilter: "blur(4px)" }}>
           {CAT_ICONS[post.category]} {post.category}
-        </div>
-        <div className="absolute bottom-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: "rgba(0,0,0,0.65)", color: "#fff", backdropFilter: "blur(4px)" }}>
-          <Sparkles size={9} />{fmtNum(post.mint_count)} minted
         </div>
       </div>
 
