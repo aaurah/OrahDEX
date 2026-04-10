@@ -82,7 +82,7 @@ export function AdminTradeAnalytics() {
             <select value={status} onChange={e => setStatus(e.target.value)} className="px-3 py-2 rounded-xl bg-secondary/40 border border-border text-sm"><option value="all">All Status</option><option value="open">Open</option><option value="filled">Filled</option><option value="cancelled">Cancelled</option></select>
             <select value={side} onChange={e => setSide(e.target.value)} className="px-3 py-2 rounded-xl bg-secondary/40 border border-border text-sm"><option value="all">All Sides</option><option value="buy">Buy</option><option value="sell">Sell</option></select>
             <select value={type} onChange={e => setType(e.target.value)} className="px-3 py-2 rounded-xl bg-secondary/40 border border-border text-sm"><option value="all">All Types</option><option value="market">Market</option><option value="limit">Limit</option><option value="stop">Stop</option></select>
-            <select value={symbol} onChange={e => setSymbol(e.target.value)} className="px-3 py-2 rounded-xl bg-secondary/40 border border-border text-sm md:col-span-5"><option value="all">All Symbols</option>{symbols.slice(1).map(s => <option key={s} value={s}>{s}</option>)}</select>
+            <select value={symbol} onChange={e => setSymbol(e.target.value)} className="px-3 py-2 rounded-xl bg-secondary/40 border border-border text-sm md:col-span-5"><option value="all">All Symbols</option>{symbols.slice(1).map((s: string) => <option key={s} value={s}>{s}</option>)}</select>
           </div>
           <div className="overflow-auto max-h-[640px]">
             <table className="w-full text-sm">
