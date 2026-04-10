@@ -107,26 +107,13 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* ── Demo mode ribbon (shown when in demo, replaces construction banner) ── */}
-      {isDemo ? (
+      {/* ── Demo mode ribbon ── */}
+      {isDemo && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-3 py-[5px] text-[10px] font-bold tracking-wide overflow-hidden"
           style={{ background: "rgba(234,179,8,0.18)", borderBottom: "1px solid rgba(234,179,8,0.4)", color: "#facc15" }}>
           <FlaskConical size={10} className="shrink-0" />
           <span className="truncate">DEMO MODE — Trades are simulated · No real funds</span>
           <FlaskConical size={10} className="shrink-0" />
-        </div>
-      ) : (
-        <div
-          className="shrink-0 flex items-center justify-center gap-2 px-3 py-[5px] text-[10px] font-bold tracking-wide overflow-hidden"
-          style={{
-            background: "repeating-linear-gradient(90deg,rgba(245,158,11,0.15) 0px,rgba(239,68,68,0.1) 60px,rgba(139,92,246,0.1) 120px,rgba(245,158,11,0.15) 180px)",
-            borderBottom: "1px solid rgba(245,158,11,0.35)",
-            color: "#fbbf24",
-          }}
-        >
-          <FlaskConical size={10} className="shrink-0 opacity-80" />
-          <span className="truncate">🚧 UNDER CONSTRUCTION · ACTIVE TESTING · NOT FOR PRODUCTION USE</span>
-          <FlaskConical size={10} className="shrink-0 opacity-80" />
         </div>
       )}
 

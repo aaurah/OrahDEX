@@ -298,20 +298,6 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      {/* ── Under Construction ribbon ── */}
-      <div
-        className="relative flex items-center justify-center gap-2 px-4 py-1.5 text-xs font-bold tracking-wide z-50"
-        style={{
-          background: "repeating-linear-gradient(90deg,rgba(245,158,11,0.15) 0px,rgba(239,68,68,0.1) 60px,rgba(139,92,246,0.1) 120px,rgba(245,158,11,0.15) 180px)",
-          borderBottom: "1px solid rgba(245,158,11,0.35)",
-          color: "#fbbf24",
-        }}
-      >
-        <FlaskConical className="w-3 h-3 shrink-0 opacity-80" />
-        <span>🚧 UNDER CONSTRUCTION · UNDER ACTIVE TESTING · NOT FOR PRODUCTION USE</span>
-        <FlaskConical className="w-3 h-3 shrink-0 opacity-80" />
-      </div>
-
       {/* ── Demo mode ribbon ── */}
       {isDemo && (
         <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500/20 border-b border-yellow-500/40 text-yellow-400 text-xs font-bold z-50">
