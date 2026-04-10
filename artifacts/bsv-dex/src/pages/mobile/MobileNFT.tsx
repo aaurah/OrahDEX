@@ -13,13 +13,24 @@ import { useLocation } from "wouter";
 
 const API = "/api";
 
+const MODAL_ROOT_STYLE: React.CSSProperties = {
+  position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+  zIndex: 99999, pointerEvents: "auto", display: "flex", flexDirection: "column",
+};
+
 function Portal({ children }: { children: React.ReactNode }) {
+  const target = typeof document !== "undefined"
+    ? (document.getElementById("modal-root") ?? document.body)
+    : null;
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, []);
-  return createPortal(children, document.body);
+
+  if (!target) return null;
+  return createPortal(<div style={MODAL_ROOT_STYLE}>{children}</div>, target);
 }
 
 /* ─── types ─────────────────────────────────────────────────────────────────── */
@@ -177,7 +188,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
+    <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {success ? (
           <div className="text-center py-8">
@@ -338,7 +349,7 @@ function CreatorProfileSheet({
 
   if (loading) return (
     <Portal>
-      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
+      <div className="w-full h-full flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
         <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
       </div>
     </Portal>
@@ -351,7 +362,7 @@ function CreatorProfileSheet({
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="w-full h-full flex flex-col" style={{ background: "var(--color-bg)" }}>
       {/* Top nav */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 absolute top-0 left-0 right-0 z-10">
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
@@ -662,7 +673,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="w-full h-full flex flex-col" style={{ background: "var(--color-bg)" }}>
       <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
         <button onClick={onClose}><ChevronLeft size={22} style={{ color: "var(--color-text)" }} /></button>
         <button onClick={() => { onClose(); onCreator(post.creator); }}>
@@ -771,7 +782,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
 
   return (
     <Portal>
-    <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
+    <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {minted ? (
           <div className="text-center py-8">
