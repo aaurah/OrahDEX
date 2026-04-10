@@ -98,12 +98,13 @@ function Sub({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-function InfoBox({ title, children, color = "blue" }: { title: string; children: React.ReactNode; color?: "blue" | "green" | "amber" | "violet" }) {
+function InfoBox({ title, children, color = "blue" }: { title: string; children: React.ReactNode; color?: "blue" | "green" | "amber" | "violet" | "red" }) {
   const colors = {
     blue:   "bg-blue-400/5 border-blue-400/20 text-blue-300",
     green:  "bg-green-400/5 border-green-400/20 text-green-300",
     amber:  "bg-amber-400/5 border-amber-400/20 text-amber-300",
     violet: "bg-violet-400/5 border-violet-400/20 text-violet-300",
+    red:    "bg-red-400/5 border-red-400/20 text-red-300",
   };
   return (
     <div className={cn("p-4 rounded-xl border space-y-1", colors[color])}>

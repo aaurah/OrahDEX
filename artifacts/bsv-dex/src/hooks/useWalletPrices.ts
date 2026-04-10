@@ -12,6 +12,7 @@ export interface WalletPrices {
   ETH:  TokenPrice;
   BSV:  TokenPrice;
   USDT: TokenPrice;
+  [key: string]: TokenPrice | undefined;
 }
 
 const FALLBACK: WalletPrices = {

@@ -1,16 +1,6 @@
 # Overview
 
-This project is a pnpm workspace monorepo using TypeScript, designed to be a full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform. Its ambition is to rival established platforms like Binance, Poloniex, and Bitfinex by offering on-chain BSV settlement, advanced trading features, and multi-chain support. The platform aims to provide a robust and user-friendly experience for spot and futures trading, liquidity provision, and innovative features like on-chain copy trading and a native multi-chain HD wallet.
-
-Key capabilities include:
-- A native HD Wallet supporting BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC, BCH, BSV, SOL).
-- CopyVault, an on-chain copy trading system with ERC4626-style vault accounting.
-- Comprehensive AMM Liquidity System with detailed fee splits and simulation tools.
-- A sophisticated Trade Engine with a 5-phase "Golden Execution Path" for reliable transaction processing.
-- Multi-chain support, including TRON and various EVM networks.
-- A demo account feature for paper trading with virtual funds.
-- A robust API infrastructure and an Admin AI Intelligence panel for managing AI features and insights.
-- Admin API Health Monitor at `/admin/api-monitor`: live polling every 5s, sparkline response-time chart, per-service status cards, incident log, crash detection after 3 failures, and soft-restart button.
+This project is a pnpm workspace monorepo using TypeScript, designed to be a full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform. Its ambition is to rival established platforms like Binance, Poloniex, and Bitfinex by offering on-chain BSV settlement, advanced trading features, and multi-chain support. The platform aims to provide a robust and user-friendly experience for spot and futures trading, liquidity provision, and innovative features like on-chain copy trading and a native multi-chain HD wallet. Key capabilities include a native HD Wallet, CopyVault for on-chain copy trading, a comprehensive AMM Liquidity System, a sophisticated Trade Engine, multi-chain support (including TRON and various EVM networks), a demo account feature, and an Admin AI Intelligence panel.
 
 # User Preferences
 
@@ -20,101 +10,29 @@ I want iterative development and detailed explanations. Ask before making major 
 
 ## Monorepo Structure
 
-The project is structured as a pnpm monorepo using TypeScript. It includes:
-- `artifacts/`: Deployable applications (`api-server`, `bsv-dex` for web, `aura-dex-mobile` for mobile).
-- `lib/`: Shared libraries (`api-spec`, `api-client-react`, `api-zod`, `db`).
-- `scripts/`: Utility scripts, including a `seedDex.ts` for database initialization.
+The project is structured as a pnpm monorepo using TypeScript, comprising `artifacts/` for deployable applications, `lib/` for shared libraries, and `scripts/` for utilities.
 
 ## UI/UX Decisions
 
-- **Color Schemes**: Specific coin colors defined for better visual identification (e.g., TRX red, BTT purple).
-- **WalletConnectModal**: Features a 3-tab layout for EVM Wallets, TRON, and Bitcoin SV.
-- **AMM Simulators**: Dedicated desktop and mobile versions of the AMM swap calculator with detailed math breakdowns.
-- **LP Position Store**: Uses Zustand and localStorage to track real user positions, enriching static pool data.
-- **TradingView Integration**: Utilizes `lightweight-charts v5` for candlestick charts.
-- **Demo Mode**: A yellow sticky banner visually indicates demo mode, and a dedicated dropdown in `WalletOptionsDropdown` for demo-specific actions.
-- **Quote Currency Selector**: A full-screen picker overlay allows users to select fiat or crypto quote currencies, with conversions applied across the UI.
-- **Admin AI Intelligence Panel**: Provides a comprehensive interface for managing AI models, insights, trade signals, and chat testing.
+The platform incorporates specific coin color schemes, a 3-tab WalletConnectModal, dedicated AMM simulators for desktop and mobile, a Zustand and localStorage-based LP Position Store, TradingView integration using `lightweight-charts v5`, a clear demo mode indicator, and a full-screen quote currency selector. An Admin AI Intelligence Panel is provided for managing AI features.
 
 ## Technical Implementations
 
-### OrahDEX Native HD Wallet
-- **Derivation Paths**: Supports BIP44 for EVM, BTC, BCH, BSV, and SLIP-0010 for SOL, leveraging `@scure/bip32`, `@scure/bip39`, `@noble/curves`, `@noble/hashes`.
-- **Import Flow**: Allows import via BIP39 seed phrase (all 5 chains) or EVM private key (EVM only).
-
-### CopyVault
-- **Architecture**: ERC4626-style vault accounting where followers deposit USDT for shares.
-- **Orchestrator**: `copyOrchestrator.ts` mirrors leader trades proportionally based on vault TVL.
-
-### TRON Chain Support
-- **Integration**: Extends `WalletNetwork` type, adds TRON tab in `WalletConnectModal`, `useTronBalances` hook for fetching token balances via TronGrid API.
-- **UI Elements**: Integrates TRON pools, assets, and network labels into portfolio and liquidity views.
-
-### AMM Liquidity System
-- **Fee Split**: `LP_FEE_RATIO` (5/6) and `PROTOCOL_FEE_RATIO` (1/6) for trading fees.
-- **Formula**: Standard `Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))` with `k = x·y`.
-- **LP Position Management**: `useLiquidityStore` (Zustand) tracks user LP tokens and updates UI components.
-
-### Trade Engine
-- **Phases**: Implements a 5-phase execution path: Precheck, Build, Sign, Broadcast, Confirm, with latency tracking.
-- **Error Handling**: Canonical error taxonomy with `USER | PROTOCOL | INFRA` codes.
-- **Route Caching**: Uses hot route caches on both client and server sides with TTL and price-move invalidation.
-- **Telemetry**: `tradeMetrics.ts` collects aggregate latency and failure stats.
-
-### Demo Account
-- **Activation**: `/api/demo/activate` seeds a virtual wallet with fixed amounts of various assets.
-- **Validation**: API rejects non-`DEMO_`-prefixed addresses for real trading.
-- **UI**: Demo banner, specific wallet options for resetting balance, connecting real wallet, or exiting demo mode.
-
-### OrderIntent Settlement Layer (BSV Core DEX v2)
-- **Canonical OrderIntent type**: `artifacts/api-server/src/lib/orderIntent.ts` — shared contract for wallet + server. Fields: `pair`, `side`, `type`, `price`, `amount`, `expiry` (unix ms TTL), `nonce` (UUID v4 replay guard), `walletAddress`, `fundingRef`, `signature`.
-- **`fundingRef` semantics**: `"ledger:{addr}:{asset}:{amount}"` (API ledger), `"evm-sig:{hash}"` (EVM personal_sign), `"utxo:{txid}:{vout}"` (BSV UTXO), `"margin:{addr}:{asset}:{amount}"` (futures margin bucket). No order is accepted without a valid fundingRef.
-- **Balance bucket isolation invariant**: Spot orders draw exclusively from `user_balances` (available/locked). Futures orders draw exclusively from `futures_margin_accounts`. These tables NEVER cross-contaminate. `depositToFuturesMargin()` is the only authorized cross-bucket pathway.
-- **`fundingVerifier.ts`**: Central invariant enforcement — `verifyAndLockFunding()` routes MARKET/LIMIT to spot bucket and FUTURES to futures margin bucket. Returns a `fundingRef` string. External EVM wallets validated via signature/reportedBalance; demo/orah wallets auto-seeded.
-- **`spotSettlement.ts`**: Extracted spot fill module — HTLC generation → OP_RETURN build → BSV broadcast → ledger settle → HTLC watcher registration. Called once per fill from `orders.ts`.
-- **`futuresSettlement.ts`**: Futures position lifecycle — `openFuturesPosition()` (locks futures margin, inserts row), `closeFuturesPosition()` (computes PnL, releases margin ± PnL), `liquidateFuturesPosition()` (confiscates margin). Liquidation price formula: LONG `entry × (1 - 1/lev + 0.005)`, SHORT `entry × (1 + 1/lev - 0.005)`.
-- **DB schema**: `orders` table has `funding_ref`, `nonce` (unique index), `expiry` columns. `futures_margin_accounts` table (wallet_address + asset PK, available/locked).
-- **New API endpoints**: `POST /futures/margin/deposit` (cross-bucket deposit), `GET /futures/margin/:walletAddress` (bucket balance check).
-- **Frontend wallet utility**: `artifacts/bsv-dex/src/lib/orderIntent.ts` — `buildOrderIntent()`, `canonicalIntentPayload()`, `validateOrderIntentClient()`, `balanceBucketFor()` helpers.
-
-### EVM HTLC Atomic Settlement (v4.2.0)
-- **Contract**: `contracts/OrahDEXHTLC.sol` — Solidity HTLC supporting native ETH and any ERC-20 token. Functions: `lockETH()`, `lockToken()`, `reveal(secret)`, `refund()`, `getLock()`, `isLocked()`. Uses `keccak256(abi.encodePacked(secret)) == secretHash` for verification. Re-entrancy safe (state mutated before transfers). Tested on Ethereum, Polygon, BSC.
-- **Deployment script**: `contracts/deploy.ts` — viem-based deployment with gas estimation, explorer link, and env variable hint.
-- **DB table**: `evm_htlc_sessions` — tracks both sides of an atomic swap: sellerLockId / buyerLockId (derived as `keccak256(tradeId+"_seller/buyer")`), secret, secretHash, status, lock txids, reveal txids.
-- **Service**: `artifacts/api-server/src/lib/evmHtlc.ts` — `initiateEvmHtlcSession()` generates secret/hash pair, derives lock IDs, builds pre-encoded calldata for MetaMask, persists session; `confirmLockTx()` records frontend-reported lock txids; `startEvmHtlcWatcher()` polls `isLocked()` on-chain every 30 s, calls `reveal()` via relayer wallet when both sides locked. Supports Ethereum (chainId=1), Polygon (137), BSC (56).
-- **API endpoints**: `GET /api/settlement/evm/chains`, `POST /api/settlement/evm/session`, `GET /api/settlement/evm/session/:id`, `GET /api/settlement/evm/trade/:tradeId`, `POST /api/settlement/evm/confirm-lock`.
-- **Frontend hook**: `artifacts/bsv-dex/src/hooks/useEvmHtlcSession.ts` — polls session every 10 s, stops on terminal status, provides `confirmLock()`, `buildEthLockTxParams()`, `buildTokenLockTxParams()`, `buildErc20ApproveTxParams()` helpers.
-- **Frontend card**: `artifacts/bsv-dex/src/components/trading/HTLCSettlementCard.tsx` — shows step progress (Awaiting locks → Locking → Both locked → Settling → Complete), per-side lock panels with MetaMask action buttons (approve + lock), explorer tx links, timelock countdown, graceful expired/refunded states.
-- **Timelock design**: Seller 30 min (outer), Buyer 15 min (inner) — asymmetric so buyer's lock expires first, protecting the seller.
-- **End-to-end wiring (v4.2.0)**: `orders.ts` fill loop detects when BOTH parties are external EVM wallets (walletSource="external", networkType="evm", fundingRef startswith "evm-sig:" or "evm-balance:") and calls `initiateEvmHtlcSession()`. The session ID is included in the API response as `evmHtlcSession`. `OrderForm.tsx` detects this field and renders `<HTLCSettlementCard>` immediately after order fill, prompting the user to lock funds on-chain via MetaMask. Bot fills and demo wallet fills are correctly excluded from HTLC session creation.
-- **Non-custodial invariant**: For external wallets, `fundingVerifier.ts` does NOT debit the internal ledger (only validates EVM signature + reportedBalance). `settleTrade()` in `spotSettlement.ts` is a no-op for external wallets (no locked balance to move). The on-chain HTLC contract is the actual custodian — OrahDEX never holds user funds.
-- **Env vars for deployment**: `EVM_HTLC_CONTRACT_ETH`, `EVM_HTLC_CONTRACT_POLYGON`, `EVM_HTLC_CONTRACT_BSC`, `EVM_RELAYER_KEY` (for auto-reveal), `ETH_RPC_URL`, `POLYGON_RPC_URL`, `BSC_RPC_URL`.
-
-### BSV HTLC Atomic Settlement (pre-existing)
-- **Builder**: `artifacts/api-server/src/lib/htlc.ts` — P2SH HTLC script builder with `buildHtlc()`, `buildClaimScriptSig()`, `buildRefundScriptSig()`. Uses SHA-256 preimage, CLTV timelock.
-- **Watcher**: `artifacts/api-server/src/lib/htlcWatcher.ts` — DB-backed adaptive polling, keeper action log, terminal state tracking.
-- **Settlement**: `artifacts/api-server/src/lib/spotSettlement.ts` — full pipeline: HTLC generation → OP_RETURN → BSV broadcast → ledger settle → watcher registration.
-- **API**: `/api/bridge` — HTLC create, status poll, cancel.
-
-### P2P + Atomic Swap
-- **Features**: Dedicated P2P and Atomic Swap tabs, with an HTLC form, protocol visualizer, and BSV settlement.
-
-### Price Engine
-- **Logic**: Prioritizes Binance prices, falls back to `FALLBACK_PRICES` if Binance is unavailable, and uses own-trade prices as a last resort for unlisted coins.
-- **Quote Currency**: Allows users to select preferred fiat or crypto quote currencies, which are used for all price and market cap displays.
+- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC, BCH, BSV, SOL) using `@scure/bip32`, `@scure/bip39`, `@noble/curves`, `@noble/hashes`. Allows import via BIP39 seed phrase or EVM private key.
+- **CopyVault**: Implements ERC4626-style vault accounting where `copyOrchestrator.ts` mirrors leader trades.
+- **TRON Chain Support**: Extends `WalletNetwork` with TRON, integrates with `WalletConnectModal`, uses `useTronBalances` hook, and displays TRON assets in UI.
+- **AMM Liquidity System**: Utilizes a standard `Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))` formula with a defined `LP_FEE_RATIO` and `PROTOCOL_FEE_RATIO`. LP positions are managed via `useLiquidityStore` (Zustand).
+- **Trade Engine**: Features a 5-phase execution path (Precheck, Build, Sign, Broadcast, Confirm) with latency tracking, canonical error handling, client/server route caching, and telemetry via `tradeMetrics.ts`.
+- **Demo Account**: Activated via `/api/demo/activate` to seed virtual funds. API rejects non-demo addresses for real trading, and the UI provides specific demo wallet options.
+- **OrderIntent Settlement Layer (BSV Core DEX v2)**: Introduces a canonical `OrderIntent` type for shared contract between wallet and server. It defines `fundingRef` semantics for various funding sources and enforces balance bucket isolation (`user_balances` for spot, `futures_margin_accounts` for futures). `fundingVerifier.ts` ensures invariant enforcement. `spotSettlement.ts` and `futuresSettlement.ts` handle respective trade settlements. New API endpoints for futures margin are included, alongside frontend wallet utilities for `OrderIntent` management.
+- **EVM HTLC Atomic Settlement**: Utilizes the `OrahDEXHTLC.sol` Solidity contract for atomic swaps on Ethereum, Polygon, and BSC, supporting native ETH and ERC-20 tokens. A `evm_htlc_sessions` DB table tracks swap details, and `evmHtlc.ts` service manages session initiation, lock confirmation, and on-chain watching. API endpoints and frontend hooks (`useEvmHtlcSession`, `HTLCSettlementCard`) facilitate the user experience. The design ensures non-custodial operation for external wallets with asymmetric timelocks for security.
+- **BSV HTLC Atomic Settlement**: Leverages `htlc.ts` for P2SH HTLC script building, `htlcWatcher.ts` for adaptive polling, and `spotSettlement.ts` for the full settlement pipeline. `/api/bridge` handles HTLC operations.
+- **P2P + Atomic Swap**: Dedicated features with HTLC forms and protocol visualizers.
+- **Price Engine**: Prioritizes Binance prices, falls back to `FALLBACK_PRICES`, and uses own-trade prices for unlisted coins. Supports user-selected quote currencies.
 
 ## Feature Specifications
 
-- **Markets**: 958 markets spanning spot + perpetuals across 10 EVM chains + BSV/BTC/SOL/TRON; 210 live price symbols.
-- **Trading Features (Spot)**: Limit, Market, Stop-Limit, Stop-Market, Trailing-Stop, Post-Only order types; real-time order book, TradingView charts, market trades ticker. Fee display is dynamic from Keeper tier (feeBps/100).
-- **Futures Features**: Leverage slider (1x-125x), cross/isolated margin, live mark/index price from ticker API, live per-symbol funding rate (symbol-hash-seeded, color-coded +/-), live open interest. No hardcoded mock values.
-- **EVM Chain Support (10 chains)**: Ethereum, BSC, Polygon, Arbitrum, Base, Avalanche, Linea, Scroll, Mantle, Optimism — reflected in wallet badges and deposit hints throughout Portfolio and Trade pages.
-- **Wallet Connect**: Supports HandCash, RelayX, Twetch, Panda Wallet, Yours Wallet, Sensilet for BSV, and Reown AppKit for EVM and other chains.
-- **Balance Guards**: OrderForm uses strict `availableAmt + 1e-9` tolerance (no 1% overdraft buffer). MobileTrade uses exact wallet balance for sell guards.
-- **Notifications**: System for push notifications on order placement and filling, including BSV settlement transaction IDs.
-- **Admin AI Intelligence**: Model selection (gpt-5-mini/gpt-5/gpt-5.2), system prompt preview, live insights, trade signals, and a streaming chat tester.
-- **Ticker API enhancements**: `generateTicker()` now returns `markPrice`, `indexPrice`, `fundingRate`, `fundingRatePct`, `openInterest`, `high24h`, `low24h`, `volume24h` for every market symbol.
-- **BSV price**: Live from sovereign engine (~$16); all static price fallbacks updated (Bridge SPOT_PRICES, MobileTrade fallbacks).
+The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/BTC/SOL/TRON) with 210 live price symbols. Trading features include various order types (Limit, Market, Stop-Limit, etc.), real-time order books, TradingView charts, and dynamic fee displays. Futures trading offers leverage, cross/isolated margin, live mark/index prices, and funding rates. EVM chain support for 10 chains is integrated throughout. Wallet Connect supports multiple BSV wallets and Reown AppKit for EVM. Balance guards prevent overdrafts. A push notification system is implemented. The Admin AI Intelligence panel offers model selection, prompt preview, insights, trade signals, and a chat tester. Ticker API provides comprehensive market data including `markPrice`, `indexPrice`, and `openInterest`. BSV price is live from a sovereign engine.
 
 # External Dependencies
 
@@ -123,20 +41,13 @@ The project is structured as a pnpm monorepo using TypeScript. It includes:
 - **Database**: PostgreSQL
 - **ORM**: Drizzle ORM
 - **Validation**: Zod, drizzle-zod
-- **API Codegen**: Orval (from OpenAPI spec)
+- **API Codegen**: Orval
 - **Build Tool**: esbuild
 - **Frontend Framework**: React + Vite
 - **Styling**: TailwindCSS
 - **State Management**: Zustand
 - **Data Fetching**: TanStack React Query
 - **Routing**: Wouter
-- **Charting**: lightweight-charts v5 (TradingView library)
-- **Wallet Connectivity**:
-    - `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1` for native HD wallet.
-    - `@reown/appkit`, `@reown/appkit-adapter-wagmi` for WalletConnect v2 integration.
-    - Nodemailer for email/SMTP.
-- **External APIs/Services**:
-    - TronGrid API for TRON balances.
-    - WhatsOnChain for BSV block data and live BSV prices.
-    - Binance for reference prices and volume augmentation.
-    - Mailgun, SendGrid, Postmark for inbound email webhooks.
+- **Charting**: lightweight-charts v5
+- **Wallet Connectivity**: `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1`, `@reown/appkit`, `@reown/appkit-adapter-wagmi`, Nodemailer.
+- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark.

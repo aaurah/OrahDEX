@@ -1624,7 +1624,7 @@ export function MobileNFT() {
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
-          currentUserAddress={address}
+          currentUserAddress={address ?? undefined}
           onClose={() => setCreatorAddress(null)}
           onOpenPost={p => { setCreatorAddress(null); openPost(p); }}
         />
