@@ -26,6 +26,7 @@ import p2pIntentsRouter from "./p2pIntents.js";
 import chatRouter from "./chat.js";
 import evmSettlementRouter from "./evmSettlement.js";
 import withdrawalsRouter from "./withdrawals.js";
+import nftRouter from "./nft.js";
 import { db, pool } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
@@ -80,6 +81,7 @@ router.use(p2pIntentsRouter);
 router.use("/chat", chatRouter);
 router.use("/settlement/evm", evmSettlementRouter);
 router.use(withdrawalsRouter);
+router.use("/nft", nftRouter);
 
 /* ── Demo Account — POST /api/demo/activate ─────────────────────────────────
  * Creates or resets a demo wallet with $80,000 in paper-trading funds.

@@ -18,3 +18,4 @@ export * from "./p2p";
 export * from "./htlc";
 export * from "./evmHtlc";
 export * from "./withdrawals";
+export * from "./nft";

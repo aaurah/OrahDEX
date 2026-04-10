@@ -50,6 +50,7 @@ const MobileGenesis    = lazy(() => import("@/pages/mobile/MobileGenesis"));
 const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
 const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
 const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
+const MobileNFT        = lazy(() => import("@/pages/mobile/MobileNFT").then(m => ({ default: m.MobileNFT })));
 
 /* Admin — single chunk group for the whole admin section */
 const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
@@ -371,6 +372,7 @@ function Router() {
                 <Route path="/settings"           component={MobileSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
+                <Route path="/nft"        component={MobileNFT} />
                 <Route path="/qr-scan"    component={MobileQRScanner} />
                 <Route component={MobileMarkets} />
               </Switch>
