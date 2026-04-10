@@ -5,7 +5,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useLocation } from "wouter";
@@ -159,7 +159,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {success ? (
           <div className="text-center py-8">
@@ -318,7 +318,7 @@ function CreatorProfileSheet({
   const topHolders = data?.topHolders ?? [];
 
   if (loading) return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
       <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
     </div>
   );
@@ -329,7 +329,7 @@ function CreatorProfileSheet({
   const isSelf = currentUserAddress === creatorAddress;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
       {/* Top nav */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 absolute top-0 left-0 right-0 z-10">
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)" }}>
@@ -638,7 +638,7 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "var(--color-bg)" }}>
+    <div className="fixed inset-0 z-[9999] flex flex-col" style={{ background: "var(--color-bg)" }}>
       <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ borderColor: "var(--color-border)" }}>
         <button onClick={onClose}><ChevronLeft size={22} style={{ color: "var(--color-text)" }} /></button>
         <button onClick={() => { onClose(); onCreator(post.creator); }}>
@@ -694,23 +694,30 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
         </div>
         <div className="h-24" />
       </div>
-      <div className="border-t p-3 shrink-0" style={{ borderColor: "var(--color-border)", background: "var(--color-bg)" }}>
+      <div className="border-t px-3 pt-3 shrink-0"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}>
         <button onClick={() => !soldOut && onMint(post)} disabled={soldOut}
-          className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 mb-2 active:opacity-80"
+          className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 mb-3 active:opacity-80 transition-all"
           style={{ background: soldOut ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: soldOut ? "var(--color-text-secondary)" : "#000", opacity: soldOut ? 0.4 : 1 }}>
           <Zap size={16} />{soldOut ? "Sold Out" : `Collect for ${parseFloat(post.mint_price).toFixed(4)} ${post.mint_currency}`}
         </button>
         <div className="flex items-center gap-2">
-          <button onClick={() => onLike(post.id)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl flex-1 justify-center active:scale-90"
-            style={{ background: liked ? "rgba(255,60,60,0.15)" : "rgba(255,255,255,0.05)", color: liked ? "#ff4444" : "var(--color-text-secondary)" }}>
-            <Heart size={15} fill={liked ? "#ff4444" : "none"} stroke={liked ? "#ff4444" : "currentColor"} /><span className="text-xs font-medium">Like</span>
+          <button onClick={() => onLike(post.id)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl justify-center active:scale-90 transition-all shrink-0"
+            style={{ background: liked ? "rgba(255,60,60,0.15)" : "rgba(255,255,255,0.06)", color: liked ? "#ff4444" : "var(--color-text-secondary)", border: liked ? "1px solid rgba(255,60,60,0.3)" : "1px solid var(--color-border)" }}>
+            <Heart size={16} fill={liked ? "#ff4444" : "none"} stroke={liked ? "#ff4444" : "currentColor"} />
+            <span className="text-xs font-bold ml-1">{fmtNum(post.like_count + (liked ? 1 : 0))}</span>
           </button>
-          <div className="flex flex-1 items-center gap-1.5 rounded-xl overflow-hidden" style={{ background: "var(--color-surface)" }}>
-            <input className="flex-1 bg-transparent text-xs px-3 py-2 outline-none" style={{ color: "var(--color-text)" }}
+          <div className="flex flex-1 items-center rounded-xl overflow-hidden" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+            <input className="flex-1 bg-transparent text-xs px-3 py-2.5 outline-none min-w-0" style={{ color: "var(--color-text)" }}
               placeholder={address ? "Add a comment…" : "Connect wallet to comment"} value={commentText}
               onChange={e => setCommentText(e.target.value)} onKeyDown={e => e.key === "Enter" && submitComment()} disabled={!address} />
-            {commentText.trim() && <button onClick={submitComment} className="pr-2"><Send size={14} style={{ color: "var(--color-accent)" }} /></button>}
+            {commentText.trim() && <button onClick={submitComment} className="px-3 py-2.5 shrink-0 active:opacity-60" style={{ color: "var(--color-accent)" }}><Send size={14} /></button>}
           </div>
+          <button className="flex items-center gap-1 px-3 py-2.5 rounded-xl shrink-0"
+            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
+            onClick={() => navigator.share?.({ title: post.title, url: window.location.href }).catch(() => {})}>
+            <Share2 size={14} />
+          </button>
         </div>
       </div>
     </div>
@@ -738,7 +745,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {minted ? (
           <div className="text-center py-8">
@@ -780,14 +787,62 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
 }
 
 /* ─── SEARCH TAB ─────────────────────────────────────────────────────────────── */
+const CHAIN_BADGE: Record<string, { bg: string; label: string }> = {
+  BSV:   { bg: "#f7931a", label: "BSV" },
+  ETH:   { bg: "#627eea", label: "ETH" },
+  BASE:  { bg: "#0052ff", label: "BASE" },
+  SOL:   { bg: "#9945ff", label: "SOL" },
+  ZORA:  { bg: "#00aaff", label: "ZORA" },
+};
+
+function ChainBadge({ chain }: { chain: string }) {
+  const cfg = CHAIN_BADGE[chain] ?? { bg: "#666", label: chain };
+  return (
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: cfg.bg + "33", color: cfg.bg, border: `1px solid ${cfg.bg}44` }}>
+      {cfg.label}
+    </span>
+  );
+}
+
+function ExternalNFTCard({ item, onLink }: { item: any; onLink: (url: string) => void }) {
+  const [imgErr, setImgErr] = useState(false);
+  const price = typeof item.mint_price === "number" ? item.mint_price : parseFloat(item.mint_price ?? "0");
+  return (
+    <button onClick={() => onLink(item.external_url)} className="flex items-center gap-3 p-3 rounded-xl w-full text-left active:opacity-75 transition-all"
+      style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+      <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0" style={{ background: "var(--color-surface-2, #1a1a2e)" }}>
+        {!imgErr ? <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
+          : <div className="w-full h-full flex items-center justify-center text-2xl">🖼️</div>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          <span className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{item.title}</span>
+          <ChainBadge chain={item.chain} />
+        </div>
+        <div className="text-xs truncate" style={{ color: "var(--color-text-secondary)" }}>{item.creator_name}</div>
+        <div className="text-[10px] mt-0.5" style={{ color: "#aaa" }}>{item.marketplace}</div>
+      </div>
+      <div className="text-right shrink-0">
+        {price > 0 && <div className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{price < 0.001 ? price.toExponential(2) : price.toFixed(4)}</div>}
+        {price > 0 && <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{item.mint_currency}</div>}
+        <ExternalLink size={11} className="mt-1 ml-auto" style={{ color: "var(--color-text-secondary)" }} />
+      </div>
+    </button>
+  );
+}
+
 function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<{ creators: any[]; posts: Post[] } | null>(null);
   const [coins, setCoins] = useState<any[]>([]);
   const [loadingCoins, setLoadingCoins] = useState(true);
+  const [external, setExternal] = useState<{ zora: any[]; magicEden: any[] } | null>(null);
+  const [loadingExt, setLoadingExt] = useState(true);
+  const [exploreSection, setExploreSection] = useState<"coins" | "zora" | "sol">("coins");
 
   useEffect(() => {
     fetch(`${API}/social/trending-coins`).then(r => r.json()).then(d => setCoins(d.coins ?? [])).catch(() => {}).finally(() => setLoadingCoins(false));
+    fetch(`${API}/social/external/trending`).then(r => r.json()).then(d => setExternal({ zora: d.zora ?? [], magicEden: d.magicEden ?? [] })).catch(() => setExternal({ zora: [], magicEden: [] })).finally(() => setLoadingExt(false));
   }, []);
 
   useEffect(() => {
@@ -798,13 +853,17 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
     return () => clearTimeout(t);
   }, [q]);
 
+  function openExternal(url: string) {
+    window.open(url, "_blank", "noopener");
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-3 py-2 shrink-0">
         <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
           <Search size={15} style={{ color: "var(--color-text-secondary)" }} />
           <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: "var(--color-text)" }}
-            placeholder="Search creators, posts, coins…" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+            placeholder="Search creators, posts, coins…" value={q} onChange={e => setQ(e.target.value)} />
           {q && <button onClick={() => setQ("")}><X size={14} style={{ color: "var(--color-text-secondary)" }} /></button>}
         </div>
       </div>
@@ -812,35 +871,78 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
       <div className="flex-1 overflow-y-auto px-3 pb-28">
         {!q && (
           <>
-            <div className="flex items-center justify-between mb-3 mt-2">
-              <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>🔥 Trending Coins</span>
-              <RefreshCw size={13} style={{ color: "var(--color-text-secondary)" }} />
+            {/* Section toggle pills */}
+            <div className="flex gap-2 mb-3 mt-1">
+              {([["coins", "🔥 BSV Creator Coins"], ["zora", "⚡ Zora · Base · ETH"], ["sol", "🌊 Magic Eden · SOL"]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setExploreSection(key)}
+                  className="flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+                  style={{ background: exploreSection === key ? "var(--color-accent)" : "var(--color-surface)", color: exploreSection === key ? "#000" : "var(--color-text-secondary)" }}>
+                  {label}
+                </button>
+              ))}
             </div>
-            {loadingCoins ? (
-              <div className="flex items-center justify-center h-24"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>
-            ) : coins.map((c, i) => (
-              <button key={c.address} onClick={() => onCreator(c.address)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl mb-2 active:opacity-80 transition-all"
-                style={{ background: "var(--color-surface)" }}>
-                <div className="text-sm font-bold w-5 shrink-0" style={{ color: "var(--color-text-secondary)" }}>{i + 1}</div>
-                <Avatar src={c.avatar_url} name={c.username} size={38} ring />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{c.username}</span>
-                    {c.is_verified && <BadgeCheck size={11} style={{ color: "var(--color-accent)" }} />}
+
+            {exploreSection === "coins" && (
+              <>
+                {loadingCoins ? (
+                  <div className="flex items-center justify-center h-24"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>
+                ) : coins.length === 0 ? (
+                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>No creator coins yet</div>
+                ) : coins.map((c, i) => (
+                  <button key={c.address} onClick={() => onCreator(c.address)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl mb-2 active:opacity-80 transition-all"
+                    style={{ background: "var(--color-surface)" }}>
+                    <div className="text-sm font-bold w-5 shrink-0" style={{ color: "var(--color-text-secondary)" }}>{i + 1}</div>
+                    <Avatar src={c.avatar_url} name={c.username} size={38} ring />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{c.username}</span>
+                        {c.is_verified && <BadgeCheck size={11} style={{ color: "var(--color-accent)" }} />}
+                      </div>
+                      <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                        <span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>
+                        {" "}· {fmtNum(c.holder_count ?? 0)} holders · <ChainBadge chain="BSV" />
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>{fmtUsd(c.market_cap_usd)}</div>
+                      <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{fmtUsd(c.price_usd)}</div>
+                    </div>
+                    <ChevronRight size={14} style={{ color: "var(--color-text-secondary)" }} />
+                  </button>
+                ))}
+              </>
+            )}
+
+            {exploreSection === "zora" && (
+              <>
+                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Live trending mints from Zora, Base & Ethereum</div>
+                {loadingExt ? (
+                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#0052ff" }} /></div>
+                ) : (external?.zora ?? []).length === 0 ? (
+                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Zora — try again</div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {(external?.zora ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
                   </div>
-                  <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
-                    <span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>
-                    {" "}· {fmtNum(c.holder_count ?? 0)} holders
+                )}
+              </>
+            )}
+
+            {exploreSection === "sol" && (
+              <>
+                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Top 24h collections from Magic Eden · Solana</div>
+                {loadingExt ? (
+                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#9945ff" }} /></div>
+                ) : (external?.magicEden ?? []).length === 0 ? (
+                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Magic Eden — try again</div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {(external?.magicEden ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>{fmtUsd(c.market_cap_usd)}</div>
-                  <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{fmtUsd(c.price_usd)}</div>
-                </div>
-                <ChevronRight size={14} style={{ color: "var(--color-text-secondary)" }} />
-              </button>
-            ))}
+                )}
+              </>
+            )}
           </>
         )}
 

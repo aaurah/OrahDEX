@@ -365,4 +365,117 @@ router.get("/social/profile/:address", async (req, res) => {
   }
 });
 
+/* ── GET /social/external/trending ── Real data from Zora, Base, OpenSea ─── */
+const EXTERNAL_CACHE: { data: any; ts: number } = { data: null, ts: 0 };
+const CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+async function fetchZoraTrending() {
+  const query = `query TrendingTokens {
+    tokens(
+      networks: [
+        { network: ZORA, chain: ZORA_MAINNET }
+        { network: BASE, chain: BASE_MAINNET }
+        { network: ETHEREUM, chain: MAINNET }
+      ]
+      sort: { sortKey: TRENDING, sortDirection: DESC }
+      pagination: { limit: 24 }
+      filter: { mediaType: IMAGE }
+    ) {
+      nodes {
+        token {
+          tokenId
+          name
+          description
+          image { url mimeType }
+          mintInfo { price { nativePrice { raw decimal currency { name address decimals } } } }
+          collectionAddress
+          collection { name symbol description totalSupply }
+          owner
+          lastRefreshTime
+        }
+        markets(pagination: { limit: 1 }) {
+          price { nativePrice { decimal currency { name } } }
+        }
+      }
+    }
+  }`;
+  const res = await fetch("https://api.zora.co/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ query }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error(`Zora API ${res.status}`);
+  const json = await res.json() as any;
+  return (json?.data?.tokens?.nodes ?? []).map((node: any) => {
+    const t = node.token;
+    const price = t.mintInfo?.price?.nativePrice?.decimal ?? node.markets?.[0]?.price?.nativePrice?.decimal ?? 0;
+    const currency = t.mintInfo?.price?.nativePrice?.currency?.name ?? node.markets?.[0]?.price?.nativePrice?.currency?.name ?? "ETH";
+    return {
+      id: `zora-${t.collectionAddress}-${t.tokenId}`,
+      source: "zora",
+      chain: t.collectionAddress ? "BASE" : "ETH",
+      title: t.name ?? t.collection?.name ?? "Untitled",
+      description: t.description ?? t.collection?.description ?? "",
+      image_url: t.image?.url ?? "",
+      creator_name: t.collection?.name ?? "Unknown",
+      creator_avatar: `https://api.dicebear.com/7.x/shapes/svg?seed=${t.collectionAddress}`,
+      collection_address: t.collectionAddress,
+      token_id: t.tokenId,
+      mint_price: price,
+      mint_currency: currency,
+      total_supply: t.collection?.totalSupply ?? null,
+      external_url: `https://zora.co/collect/${t.collectionAddress}/${t.tokenId}`,
+      marketplace: "Zora",
+    };
+  }).filter((n: any) => n.image_url);
+}
+
+async function fetchMagicEdenTrending() {
+  const res = await fetch(
+    "https://api-mainnet.magiceden.dev/v2/marketplace/popular_collections?window=1d&offset=0&limit=12",
+    { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(6000) }
+  );
+  if (!res.ok) throw new Error(`MagicEden ${res.status}`);
+  const json = await res.json() as any[];
+  return (Array.isArray(json) ? json : []).slice(0, 12).map((c: any) => ({
+    id: `me-${c.symbol}`,
+    source: "magic_eden",
+    chain: "SOL",
+    title: c.name ?? c.symbol,
+    description: c.description ?? "",
+    image_url: c.image ?? c.imageUrl ?? "",
+    creator_name: c.name ?? c.symbol,
+    creator_avatar: c.image ?? `https://api.dicebear.com/7.x/shapes/svg?seed=${c.symbol}`,
+    collection_address: c.symbol,
+    token_id: null,
+    mint_price: c.floorPrice ?? 0,
+    mint_currency: "SOL",
+    total_supply: c.totalItems ?? null,
+    volume_24h: c.volumeAll ?? 0,
+    external_url: `https://magiceden.io/marketplace/${c.symbol}`,
+    marketplace: "Magic Eden",
+  })).filter((n: any) => n.image_url);
+}
+
+router.get("/social/external/trending", async (_req, res) => {
+  try {
+    const now = Date.now();
+    if (EXTERNAL_CACHE.data && now - EXTERNAL_CACHE.ts < CACHE_TTL) {
+      return res.json(EXTERNAL_CACHE.data);
+    }
+    const results = await Promise.allSettled([fetchZoraTrending(), fetchMagicEdenTrending()]);
+    const zora = results[0].status === "fulfilled" ? results[0].value : [];
+    const magicEden = results[1].status === "fulfilled" ? results[1].value : [];
+    if (results[0].status === "rejected") logger.warn("Zora API failed:", results[0].reason);
+    if (results[1].status === "rejected") logger.warn("MagicEden API failed:", results[1].reason);
+    const data = { zora, magicEden, fetchedAt: new Date().toISOString() };
+    EXTERNAL_CACHE.data = data;
+    EXTERNAL_CACHE.ts = now;
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message, zora: [], magicEden: [] });
+  }
+});
+
 export default router;
