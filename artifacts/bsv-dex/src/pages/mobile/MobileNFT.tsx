@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
   TrendingUp, PlusSquare, User, ChevronLeft, X, Upload,
@@ -11,6 +12,10 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useLocation } from "wouter";
 
 const API = "/api";
+
+function Portal({ children }: { children: React.ReactNode }) {
+  return createPortal(children, document.body);
+}
 
 /* ─── types ─────────────────────────────────────────────────────────────────── */
 interface Post {
@@ -159,6 +164,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-[9999] flex items-end" style={{ background: "rgba(0,0,0,0.75)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "90vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         {success ? (
@@ -275,6 +281,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
         )}
       </div>
     </div>
+    </Portal>
   );
 }
 
@@ -318,9 +325,11 @@ function CreatorProfileSheet({
   const topHolders = data?.topHolders ?? [];
 
   if (loading) return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
-      <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
-    </div>
+    <Portal>
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center" style={{ background: "var(--color-bg)" }}>
+        <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
+      </div>
+    </Portal>
   );
 
   if (!profile) return null;
