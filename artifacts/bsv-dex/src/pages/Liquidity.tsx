@@ -356,6 +356,17 @@ function LiquidityModal({
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
 
+    const balA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
+    const balB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
+    if (nA > balA) {
+      toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
+      return;
+    }
+    if (nB > balB) {
+      toast({ title: "Insufficient balance", description: `You only have ${balB.toFixed(6)} ${pool.quote} but tried to add ${nB.toFixed(6)}.`, variant: "destructive" });
+      return;
+    }
+
     setSubmitting(true);
     setTxStatus({ step: "idle" });
 
@@ -585,6 +596,9 @@ function LiquidityModal({
                   <span className="text-sm font-bold" style={{ color: colorA }}>{pool.base}</span>
                 </div>
               </div>
+              {walletConnected && parseFloat(amtA || "0") > tokenBalA && (
+                <p className="text-[11px] text-red-400 mt-1">Insufficient {pool.base} balance</p>
+              )}
             </div>
 
             {/* Ratio connector */}
@@ -611,6 +625,9 @@ function LiquidityModal({
                   <span className="text-sm font-bold" style={{ color: colorB }}>{pool.quote}</span>
                 </div>
               </div>
+              {walletConnected && parseFloat(amtB || "0") > tokenBalB && (
+                <p className="text-[11px] text-red-400 mt-1">Insufficient {pool.quote} balance</p>
+              )}
             </div>
 
             {/* Stats */}
@@ -729,11 +746,12 @@ function LiquidityModal({
 
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting || txStatus.step === "success"}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || (walletConnected && (parseFloat(amtA || "0") > tokenBalA || parseFloat(amtB || "0") > tokenBalB))}
               className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {(() => {
                 const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
+                if (walletConnected && (parseFloat(amtA || "0") > tokenBalA || parseFloat(amtB || "0") > tokenBalB)) return "Insufficient Balance";
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
