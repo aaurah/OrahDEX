@@ -513,9 +513,9 @@ export function LandingPage() {
                 { label: "Settlement", value: "BSV + OP_RETURN" },
                 { label: "Liquidity", value: "AMM + VAMM + OB" },
                 { label: "Bridge", value: "HTLC, no custody" },
+                { label: "NFT + Creator Coins", value: "OrahNFT × BSV" },
                 { label: "Copy trading", value: "CopyVault ERC4626" },
-                { label: "AI layer", value: "Ora (context‑aware)" },
-                { label: "Identity", value: "Wallet‑only, no KYC" },
+                { label: "Fiat on-ramp", value: "6 providers" },
               ].map(({ label, value }) => (
                 <div key={label} className="flex flex-col gap-1 px-4 py-3.5">
                   <span className="text-[10px] text-muted-foreground uppercase tracking-widest">{label}</span>
@@ -529,7 +529,7 @@ export function LandingPage() {
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-12">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             {
               label: "Settlement",
@@ -542,6 +542,12 @@ export function LandingPage() {
               pill: "Genesis engine",
               pillColor: "#F5A623",
               desc: "A hybrid of constant-product AMM, virtual AMM, and orderbook routing ensures every listed asset is tradeable — even with few users and no external market makers.",
+            },
+            {
+              label: "OrahNFT",
+              pill: "Creator coins",
+              pillColor: "#f472b6",
+              desc: "A social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Mint, collect, and trade creator tokens on bonding curves — all inside the exchange.",
             },
             {
               label: "CopyVault",
@@ -818,6 +824,8 @@ export function LandingPage() {
 
           <div className="flex items-center gap-6 text-xs text-muted-foreground/50 font-semibold">
             <Link href="/markets" className="hover:text-muted-foreground transition-colors">Markets</Link>
+            <span>·</span>
+            <Link href="/nft" className="hover:text-muted-foreground transition-colors">NFT</Link>
             <span>·</span>
             <Link href="/whitepaper" className="hover:text-muted-foreground transition-colors">Whitepaper</Link>
             <span>·</span>
