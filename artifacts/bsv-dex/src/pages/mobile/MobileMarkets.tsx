@@ -397,6 +397,7 @@ export function MobileMarkets() {
                   isFav={favorites.has(m.symbol)}
                   onFav={() => toggleFav(m.symbol)}
                   onTrade={() => goTrade(m)}
+                  onBuy={() => goTrade(m)}
                 />
               ))}
             </div>

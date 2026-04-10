@@ -819,8 +819,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             // Re-fetch API ledger balances after every fill (covers demo + Orah Wallet)
             fetchDemoBalances(base, quote, address);
           } else if (isEvm && address) {
-            const bal = await fetchEvmBalance(address, currentChainId);
-            if (bal !== null) setbal(bal);
             refreshBalances();
             // Re-fetch API locked amount so "In open orders" row updates immediately
             try {
