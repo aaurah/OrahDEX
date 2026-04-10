@@ -188,7 +188,9 @@ router.get("/social/creators/:address", async (req, res) => {
          FROM creator_profiles cp LEFT JOIN creator_coins cc ON cp.address = cc.creator_address WHERE cp.address = $1`, [address],
       );
       const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address]);
-      res.json({ profile: newProfile[0] ?? null, posts, topHolders: [], trades: [] });
+      const profile = newProfile[0] ?? null;
+      if (profile) profile.post_count = posts.length;
+      res.json({ profile, posts, topHolders: [], trades: [] });
       return;
     }
 
@@ -198,7 +200,8 @@ router.get("/social/creators/:address", async (req, res) => {
       pool.query("SELECT * FROM coin_trades WHERE coin_creator = $1 ORDER BY created_at DESC LIMIT 20", [address]),
     ]);
 
-    res.json({ profile: profiles[0], posts, topHolders, trades });
+    const profile = { ...profiles[0], post_count: posts.length };
+    res.json({ profile, posts, topHolders, trades });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
