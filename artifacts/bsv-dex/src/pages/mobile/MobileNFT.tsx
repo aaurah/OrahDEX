@@ -294,7 +294,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
               className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
               style={{ background: mode === "buy" ? "var(--color-accent)" : "#ff4444", color: "#000" }}>
               {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
-                <>{mode === "buy" ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />} {address ? (mode === "buy" ? `Buy ${creator.symbol}` : `Sell ${creator.symbol}`) : "Connect Wallet"}</>}
+                <>{mode === "buy" ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />} {address ? (mode === "buy" ? "Buy" : "Sell") : "Connect Wallet"}</>}
             </button>
 
             <div className="mt-3 text-center text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
@@ -386,7 +386,15 @@ function CreatorProfileSheet({
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="px-4 pt-4 pb-4">
+
+        {/* ── Cover image ── */}
+        <div className="relative h-28 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
+          {!imgErr && profile.cover_url && (
+            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.7 }} onError={() => setImgErr(true)} />
+          )}
+        </div>
+
+        <div className="px-4 pt-3 pb-4">
 
           {/* ── Avatar + Stats row (Instagram-style) ── */}
           <div className="flex items-center gap-4 mb-3">
