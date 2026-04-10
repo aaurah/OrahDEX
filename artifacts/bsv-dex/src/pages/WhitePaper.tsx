@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.2.0";
-const PUBLISH_DATE = "9 April 2026";
+const VERSION = "4.3.0";
+const PUBLISH_DATE = "10 April 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -21,18 +21,19 @@ const TOC = [
   { id: "cross-chain",      label: "6. Bridge Layer" },
   { id: "trading",          label: "7. Trading Layer" },
   { id: "copy-vault",       label: "8. CopyVault Layer" },
-  { id: "ora-ai",           label: "9. Ora AI Layer" },
-  { id: "tokenomics",       label: "10. Economic Model" },
-  { id: "security",         label: "11. Security Model" },
-  { id: "crypto-foundation",label: "12. Cryptographic Foundations" },
-  { id: "indestructibility",label: "13. Protocol Indestructibility" },
-  { id: "disruption",       label: "14. The Disruption Calculus" },
-  { id: "adversarial",      label: "15. Adversarial Resilience" },
-  { id: "game-theory",      label: "16. Game Theory of Self-Custody" },
-  { id: "network-effect",   label: "17. Network Effect Mechanics" },
-  { id: "compliance",       label: "18. Sovereign Status" },
-  { id: "identity",         label: "  ↳ 18.2 Identity Sovereignty" },
-  { id: "roadmap",          label: "19. Roadmap" },
+  { id: "nft-layer",        label: "9. OrahNFT — Creator Economy" },
+  { id: "ora-ai",           label: "10. Ora AI Layer" },
+  { id: "tokenomics",       label: "11. Economic Model" },
+  { id: "security",         label: "12. Security Model" },
+  { id: "crypto-foundation",label: "13. Cryptographic Foundations" },
+  { id: "indestructibility",label: "14. Protocol Indestructibility" },
+  { id: "disruption",       label: "15. The Disruption Calculus" },
+  { id: "adversarial",      label: "16. Adversarial Resilience" },
+  { id: "game-theory",      label: "17. Game Theory of Self-Custody" },
+  { id: "network-effect",   label: "18. Network Effect Mechanics" },
+  { id: "compliance",       label: "19. Sovereign Status" },
+  { id: "identity",         label: "  ↳ 19.2 Identity Sovereignty" },
+  { id: "roadmap",          label: "20. Roadmap" },
   { id: "glossary",         label: "Appendix — Glossary" },
   { id: "conclusion",       label: "Conclusion" },
   { id: "disclaimer",       label: "Legal Disclaimer" },
@@ -224,7 +225,7 @@ export function WhitePaper() {
                 OrahDEX is a <span className="text-foreground font-medium">sovereign, permissionless trading protocol</span> — not a company, not a product, not a financial intermediary. It is a set of cryptographic rules, smart contracts, and open-source mathematics that connect willing counterparties directly on-chain, with no intermediary, no custody, and no personally identifiable information collected at any layer of the system.
               </p>
               <p>
-                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 950+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
+                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 950+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
               </p>
               <p>
                 At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
@@ -234,6 +235,9 @@ export function WhitePaper() {
               </p>
               <p>
                 The <span className="text-foreground font-medium">CopyVault system</span> is an on-chain copy trading protocol — followers deposit USDT into leader-managed vaults, automatically mirror proportional trades, and receive BSV OP_RETURN proofs for every mirrored execution — immutable, publicly auditable, trustless.
+              </p>
+              <p>
+                <span className="text-foreground font-medium">OrahNFT</span> is a social NFT marketplace inspired by Zora and Instagram, where every post is simultaneously a BSV inscription and a tradeable creator coin. Creators publish visual content — art, photography, generative media — and collectors mint, trade, and hold creator-specific tokens on a bonding curve. The creator economy is embedded directly into the exchange, not bolted on — creator coins are priced by the same VAMM engine that powers spot markets, ensuring always-on liquidity and instant price discovery for every creator.
               </p>
               <p>
                 This document presents the technical architecture, economic model, cryptographic foundations, security design, disruption analysis, adversarial resilience model, and strategic roadmap of OrahDEX as of version {VERSION}. It is written for regulators, engineers, institutional participants, and sovereign individuals equally — because the protocol is permissionless and globally accessible to all of them.
@@ -284,7 +288,8 @@ export function WhitePaper() {
                   { title: "Non-Custodial by Architecture", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX cannot hold, freeze, seize, or reverse user funds — not because of policy, but because the system is designed to make it mathematically impossible." },
                   { title: "Multi-Chain Native", icon: "🌐", desc: "Native support for BSV (settlement), Ethereum + 12 EVM chains (Reown/WalletConnect), and TRON (TRX/TRC-20 USDT). One sovereign interface — every major chain." },
                   { title: "Always-On Liquidity", icon: "⚡", desc: "Genesis Liquidity Engine (VAMM) provides permanent, simulation-based liquidity for all listed assets via a linear bonding curve. The cold-start liquidity problem is eliminated: every asset is tradeable from the moment it is listed, independent of real LP participation." },
-                  { title: "Full Trading Spectrum", icon: "📊", desc: "Spot, futures (100x), VAMM, AMM, P2P, bridge, CopyVault, fiat on-ramp — every instrument in one interface with BSV settlement proofs across all." },
+                  { title: "Full Trading Spectrum", icon: "📊", desc: "Spot, futures (100x), VAMM, AMM, P2P, bridge, CopyVault, NFT marketplace, fiat on-ramp (6 providers) — every instrument in one interface with BSV settlement proofs across all." },
+                  { title: "OrahNFT — Creator Economy", icon: "🎨", desc: "A Zora×Instagram-style social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Creators publish, collectors mint, and bonding curves ensure instant liquidity for every creator token." },
                   { title: "AI Intelligence Layer", icon: "🧠", desc: "Ora AI provides real-time market analysis, portfolio coaching, risk assessment, and trading education — embedded directly in the interface, democratising institutional-grade intelligence." },
                   { title: "Zero Identity Collection", icon: "🛡️", desc: "No name. No email. No government ID. No IP address stored. User identity on OrahDEX is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
                 ].map(({ title, icon, desc }) => (
@@ -934,8 +939,47 @@ High-Water Mark:
               </div>
             </Section>
 
-            {/* ── 9. ORA AI ── */}
-            <Section id="ora-ai" title="9. Ora — Integrated AI Trading Intelligence">
+            {/* ── 9. ORAHNFT ── */}
+            <Section id="nft-layer" title="9. OrahNFT — Creator Economy Layer">
+              <p>
+                <span className="text-foreground font-medium">OrahNFT</span> is a social NFT marketplace that merges Instagram-style content creation with Zora-inspired permissionless minting and tradeable creator coins. Every post published on OrahNFT is simultaneously a <span className="text-foreground font-medium">BSV inscription</span> (immutable content anchored on-chain) and a <span className="text-foreground font-medium">creator coin</span> (a fungible token priced on a bonding curve) — unifying content creation, curation, and financial speculation in a single primitive.
+              </p>
+              <Sub title="9.1 Architecture">
+                <p>
+                  The OrahNFT layer consists of four integrated subsystems: a content feed, a creator profile system, a minting engine, and a creator coin market. Creators register a profile (username, avatar, bio, social links), then publish visual posts — art, photography, generative media, or any image. Each post is categorised by type (art, generative, relics, utility) and tagged with a BSV inscription ID linking the content permanently to the settlement layer.
+                </p>
+                <p>
+                  When a collector mints (collects) a post, the minting price is denominated in BSV and recorded as an on-chain settlement proof. The creator's associated coin supply increases, and the bonding curve price adjusts automatically — providing real-time price discovery for creator reputation and demand.
+                </p>
+              </Sub>
+              <Sub title="9.2 Creator Coins — Bonding Curve Pricing">
+                <p>
+                  Every creator on OrahNFT has a unique creator coin. The coin is priced by the same linear bonding curve engine that powers the Genesis Liquidity Engine (VAMM) — ensuring always-on liquidity and eliminating the need for external market makers. Creator coins can be bought, sold, and held like any other asset on the exchange. The creator's market cap, all-time high, holder count, and trade volume are tracked in real time.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <Metric value="Bonding Curve" label="Pricing Engine" sub="Same VAMM as spot markets" />
+                  <Metric value="Instant" label="Liquidity" sub="Buy/sell anytime" />
+                  <Metric value="BSV" label="Settlement" sub="OP_RETURN inscription" />
+                  <Metric value="Zero" label="Listing Fee" sub="Permissionless creation" />
+                </div>
+              </Sub>
+              <Sub title="9.3 Social Feed — Instagram×Zora">
+                <p>
+                  The NFT tab opens to a social feed where collectors discover new posts sorted by Hot, New, or Top. Each post displays the creator's profile, inscription ID, category tag, mint price, like and comment counts, and a one-tap "Collect" button. Tapping a creator's name or avatar opens their full profile — market cap, coin price, holder distribution, and all published works — creating a complete social trading experience around creator economies.
+                </p>
+                <p>
+                  Search functionality allows discovering creators and posts by keyword, category, or chain. The Create tab enables publishing new posts with image upload, title, description, category selection, and automatic BSV inscription generation.
+                </p>
+              </Sub>
+              <Sub title="9.4 Fiat On-Ramp Integration">
+                <p>
+                  OrahDEX provides 6 integrated fiat on-ramp providers — <span className="text-foreground font-medium">MoonPay, Transak, Ramp Network, Banxa, Simplex, and Mercuryo</span> — supporting Apple Pay, Google Pay, credit/debit card, and bank transfer. Users can purchase crypto directly from the Portfolio page using fiat currency, with instant delivery to their connected wallet. The on-ramp is a convenience layer, not a protocol dependency — its restriction does not affect the core trading, NFT, or settlement infrastructure.
+                </p>
+              </Sub>
+            </Section>
+
+            {/* ── 10. ORA AI ── */}
+            <Section id="ora-ai" title="10. Ora — Integrated AI Trading Intelligence">
               <p>
                 <span className="text-foreground font-medium">Ora</span> is OrahDEX's embedded AI market intelligence layer — the first AI trading assistant to be natively integrated into a sovereign, non-custodial DEX. Ora contextually understands the user's active pair, position state, order book depth, and full OrahDEX product suite without any manual configuration.
               </p>
