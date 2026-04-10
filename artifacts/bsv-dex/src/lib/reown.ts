@@ -57,35 +57,72 @@ export function setupReown(projectId: string): void {
 /**
  * Inject a <style> into the AppKit modal's shadow DOM to hide third-party
  * branding elements ("UX by reown", footer links, etc.).
- * Uses MutationObserver because the modal element is added dynamically.
+ * Recursively walks all shadow roots and installs a MutationObserver inside
+ * each one so newly-added nested components are caught too.
  */
 function suppressThirdPartyBranding(): void {
   const STYLE_ID = "orahdex-no-brand";
   const HIDE_CSS = `
-    wui-footer, w3m-legal-footer, wcm-footer { display: none !important; }
-    [data-testid="w3m-footer"] { display: none !important; }
+    wui-ux-by-reown,
+    wui-footer,
+    w3m-legal-footer,
+    wcm-footer,
+    [class*="reown"],
+    [class*="ux-by"],
+    [data-testid="w3m-footer"],
+    [data-testid="wui-ux-by-reown"] {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
   `;
 
+  const processedRoots = new WeakSet<ShadowRoot>();
+
   function injectIntoShadow(root: ShadowRoot) {
-    if (root.querySelector(`#${STYLE_ID}`)) return;
-    const s = document.createElement("style");
-    s.id = STYLE_ID;
-    s.textContent = HIDE_CSS;
-    root.appendChild(s);
-    // Recurse into nested custom elements inside the shadow root
+    if (processedRoots.has(root)) return;
+    processedRoots.add(root);
+
+    if (!root.querySelector(`#${STYLE_ID}`)) {
+      const s = document.createElement("style");
+      s.id = STYLE_ID;
+      s.textContent = HIDE_CSS;
+      root.appendChild(s);
+    }
+
+    // Recurse into already-present nested shadow roots
     root.querySelectorAll("*").forEach(el => {
-      if ((el as Element & { shadowRoot?: ShadowRoot }).shadowRoot) {
-        injectIntoShadow((el as Element & { shadowRoot: ShadowRoot }).shadowRoot);
-      }
+      const sr = (el as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
+      if (sr) injectIntoShadow(sr);
+    });
+
+    // Watch for new elements added inside this shadow root
+    const innerObserver = new MutationObserver(() => {
+      root.querySelectorAll("*").forEach(el => {
+        const sr = (el as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
+        if (sr) injectIntoShadow(sr);
+      });
+    });
+    innerObserver.observe(root, { childList: true, subtree: true });
+  }
+
+  function scanForModals() {
+    ["w3m-modal", "wcm-modal", "appkit-modal"].forEach(tag => {
+      document.querySelectorAll(tag).forEach(modal => {
+        if ((modal as HTMLElement & { shadowRoot?: ShadowRoot }).shadowRoot) {
+          injectIntoShadow((modal as HTMLElement & { shadowRoot: ShadowRoot }).shadowRoot);
+        }
+      });
     });
   }
 
-  const observer = new MutationObserver(() => {
-    const modal = document.querySelector("w3m-modal");
-    if (modal?.shadowRoot) injectIntoShadow(modal.shadowRoot);
-  });
-
+  // Watch for the modal element being inserted into the DOM
+  const observer = new MutationObserver(scanForModals);
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Also scan immediately in case modal already exists
+  scanForModals();
 }
 
 type ReownView =
