@@ -120,36 +120,11 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId, isDemo, provider, connectDemo } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, isDemo, provider } = useWalletStore();
   const isOrahWallet = provider === 'orah-wallet';
   const usesApiBalance = isDemo || isOrahWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
-
-  // Demo activation (mirrors Spot page behaviour)
-  const [demoLoading, setDemoLoading] = useState(false);
-  const handleDemo = async () => {
-    setDemoLoading(true);
-    try {
-      let demoAddr = localStorage.getItem("orahdex_demo_address");
-      if (!demoAddr) {
-        const uuid = crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase();
-        demoAddr = `DEMO_${uuid}`;
-        localStorage.setItem("orahdex_demo_address", demoAddr);
-      }
-      const resp = await fetch(`${API_BASE}/demo/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: demoAddr }),
-      });
-      if (!resp.ok) throw new Error("Demo activation failed");
-      connectDemo(demoAddr);
-    } catch {
-      toast({ title: "Demo error", description: "Could not start demo. Please try again.", variant: "destructive" });
-    } finally {
-      setDemoLoading(false);
-    }
-  };
 
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
@@ -843,11 +818,9 @@ export function FuturesTrading() {
                     Connect Wallet to Trade
                   </button>
                   <button
-                    onClick={handleDemo}
-                    disabled={demoLoading}
-                    className="w-full flex items-center justify-center gap-2 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 hover:border-yellow-500 py-2.5 rounded-xl font-semibold text-sm transition-all disabled:opacity-60"
+                    onClick={() => openModal()}
+                    className="w-full flex items-center justify-center gap-2 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 hover:border-yellow-500 py-2.5 rounded-xl font-semibold text-sm transition-all"
                   >
-                    {demoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     Try Demo ($80,000 virtual USDT)
                   </button>
                 </div>
