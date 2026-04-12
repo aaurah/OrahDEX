@@ -75,6 +75,15 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - Both desktop `Liquidity.tsx` and mobile `MobileLiquidity.tsx` pass `walletProvider` to all `getLiquidityMode` calls
 - External wallets (metamask, reown, trust, okx, coinbase, etc.) continue to use live/on-chain modes as before
 
+## Prediction Trading (UP/DOWN)
+- **Route**: `/prediction` (desktop and mobile)
+- **API**: `GET /api/prediction/rounds/:symbol`, `POST /api/prediction/bet`, `POST /api/prediction/claim`, `GET /api/prediction/history/:wallet`
+- **Mechanics**: 5-minute rounds, users predict if price goes UP or DOWN before lock (30s before close). Pool-based payout (total pool / winning side). Leverage 1x–100x.
+- **Symbols**: BSV-USDT, BTC-USDT, ETH-USDT, BNB-USDT, SOL-USDT
+- **Bet Amounts**: $5, $10, $25, $50, $100, $250, $500 (plus custom)
+- **Demo**: Works with demo wallet (no real wallet required), deducts/credits USDT from user_balances ledger
+- **State**: In-memory round management with historical seeding; rounds auto-advance on tick
+
 ## Bug Fixed: Futures Close PnL Cap
 - `closeFuturesPosition()` previously used `releaseFuturesMargin()` which capped credit at locked amount via `LEAST(locked, amount)` — profitable trades lost PnL above margin
 - Fixed: now uses atomic transaction with raw SQL that deducts original margin from locked and credits full returnedMargin (including profit) to available
