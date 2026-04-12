@@ -2,11 +2,10 @@
  * OrahDEX HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
  *
  * One seed phrase → five chain addresses:
- *   EVM (Ethereum, BSC, Polygon…) : m/44'/60'/0'/0/0   secp256k1
- *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0   secp256k1 — shared key
- *     → BTC & BSV: Legacy P2PKH (Base58Check, starts with "1")
- *     → BCH:       CashAddr encoding of the same PKH (starts with "bitcoincash:q")
- *   SOL (Solana)                  : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
+ *   EVM (Ethereum, BSC, Polygon…)  : m/44'/60'/0'/0/0   secp256k1
+ *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0    secp256k1 — shared key
+ *     → All three produce the identical legacy P2PKH address (starts with "1")
+ *   SOL (Solana)                   : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
  *
  * BTC, BCH, and BSV are all Bitcoin forks sharing the same secp256k1 curve.
  * Deriving from the same BIP44 path (coin type 0') ensures the same legacy
@@ -56,7 +55,7 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
 
   const bitcoinKey = root.derive("m/44'/0'/0'/0/0");
   const btc = deriveP2PKH(bitcoinKey);
-  const bch = deriveCashAddr(bitcoinKey);
+  const bch = btc;
   const bsv = btc;
   const sol = deriveSolanaAddress(seed);
 

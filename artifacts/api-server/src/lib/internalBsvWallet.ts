@@ -3,12 +3,11 @@
  *
  * Generates and persists a custodial BTC/BSV/BCH wallet for each EVM user.
  *
- * One secp256k1 keypair derives:
- *   • BSV address  = BTC legacy address  (P2PKH, version 0x00, Base58Check, starts with "1")
- *   • BCH address  (same key, CashAddr encoding, starts with "bitcoincash:q")
+ * One secp256k1 keypair derives a single legacy P2PKH address (starts with "1")
+ * shared across all three Bitcoin forks: BTC, BSV, and BCH.
  *
  * The private key is AES-256-GCM encrypted at rest; it is NEVER returned to
- * the client — only the three public addresses are exposed.
+ * the client — only the public addresses are exposed.
  */
 
 import * as secp from "@noble/secp256k1";
@@ -153,17 +152,17 @@ function pubKeyHashToCashAddr(pkh: Buffer): string {
 
 function generateKeypair(): {
   privateKeyHex: string;
-  legacyAddress: string; // BSV = BTC legacy P2PKH (identical string)
-  bchAddress: string;    // BCH CashAddr
+  legacyAddress: string;
+  bchAddress: string;
 } {
   const privBytes     = randomBytes(32);
   const compressedPub = secp.getPublicKey(privBytes, true); // 33 bytes
-  const pkh           = hash160(Buffer.from(compressedPub));
+  const legacy        = pubKeyToLegacyAddress(compressedPub);
 
   return {
     privateKeyHex: Buffer.from(privBytes).toString("hex"),
-    legacyAddress: pubKeyToLegacyAddress(compressedPub),
-    bchAddress:    pubKeyHashToCashAddr(pkh),
+    legacyAddress: legacy,
+    bchAddress:    legacy,
   };
 }
 
@@ -189,11 +188,8 @@ async function ensureTable(): Promise<void> {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export interface BsvWalletResult {
-  /** BSV P2PKH address — identical to the BTC legacy (P2PKH) address */
   bsvAddress: string;
-  /** BTC legacy P2PKH address — same string as bsvAddress, different network */
   btcAddress: string;
-  /** BCH CashAddr — same key, BCH-specific encoding (bitcoincash:q...) */
   bchAddress: string;
   isNew: boolean;
 }
@@ -211,26 +207,7 @@ export async function getOrCreateBsvWallet(evmAddress: string): Promise<BsvWalle
 
   if (rows.length > 0) {
     const bsvAddress = rows[0].bsv_address;
-    let bchAddress  = rows[0].bch_address;
-
-    // Backfill BCH address for wallets created before this column was added
-    if (!bchAddress) {
-      try {
-        const privHex      = decrypt(rows[0].encrypted_key);
-        const privBytes    = Buffer.from(privHex, "hex");
-        const compressedPub = secp.getPublicKey(privBytes, true);
-        const pkh          = hash160(Buffer.from(compressedPub));
-        bchAddress         = pubKeyHashToCashAddr(pkh);
-        await pool.query(
-          "UPDATE internal_bsv_wallets SET bch_address = $1 WHERE evm_address = $2",
-          [bchAddress, evmLower],
-        );
-      } catch {
-        bchAddress = "";
-      }
-    }
-
-    return { bsvAddress, btcAddress: bsvAddress, bchAddress, isNew: false };
+    return { bsvAddress, btcAddress: bsvAddress, bchAddress: bsvAddress, isNew: false };
   }
 
   const { privateKeyHex, legacyAddress, bchAddress } = generateKeypair();
@@ -255,5 +232,5 @@ export async function getBsvWallet(evmAddress: string): Promise<BsvWalletResult 
   );
   if (!rows[0]) return null;
   const bsvAddress = rows[0].bsv_address;
-  return { bsvAddress, btcAddress: bsvAddress, bchAddress: rows[0].bch_address, isNew: false };
+  return { bsvAddress, btcAddress: bsvAddress, bchAddress: bsvAddress, isNew: false };
 }
