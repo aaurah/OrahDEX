@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, FlaskConical } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, FlaskConical, Target, MoreHorizontal, X, TrendingUp, Copy, Repeat } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -10,15 +10,24 @@ import { ChatWidget } from "@/components/ChatWidget";
 
 const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
-const TABS = [
+const MAIN_TABS = [
   { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
   { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
+  { path: "/futures/BSV-USDT", label: "Futures", Icon: TrendingUp },
   { path: "/dex", label: "Mkt Hub", Icon: Layers },
+];
+
+const MORE_TABS = [
+  { path: "/prediction", label: "Prediction", Icon: Target },
   { path: "/nft", label: "NFT", Icon: Image },
   { path: "/bridge", label: "Bridge", Icon: Cable },
+  { path: "/copy-trading", label: "Copy Trade", Icon: Copy },
+  { path: "/p2p", label: "P2P", Icon: Repeat },
   { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
   { path: "/settings", label: "Settings", Icon: Settings },
 ];
+
+const ALL_TABS = [...MAIN_TABS, ...MORE_TABS];
 
 const THEME_CYCLE: Theme[] = ["dark", "light", "amoled", "system"];
 
@@ -35,6 +44,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { address, isDemo } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const [chatOpen, setChatOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   useEffect(() => {
     const handler = () => setChatOpen(true);
@@ -42,10 +52,12 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("mobile:openChat", handler);
   }, []);
 
-  const isActive = (tab: typeof TABS[0]) => {
+  const isActive = (tab: { path: string; exact?: boolean }) => {
     if (tab.exact) return location === tab.path;
     return location.startsWith(tab.path);
   };
+
+  const isMoreActive = MORE_TABS.some(t => isActive(t));
 
   const cycleTheme = () => {
     const idx = THEME_CYCLE.indexOf(theme);
@@ -58,11 +70,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      {/* ── Global brand header ── */}
       <div className="shrink-0 border-b border-border/40 bg-card">
         <div className="flex items-center h-12">
-
-          {/* Brand — hard left corner, no left padding */}
           <button
             onClick={() => navigate("/")}
             className="flex items-center h-full px-2 active:opacity-70 transition-opacity shrink-0"
@@ -70,10 +79,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <BrandLogo textSize="text-2xl" />
           </button>
 
-          {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Theme toggle */}
           <button
             onClick={cycleTheme}
             title={`Theme: ${themeLabel}`}
@@ -82,7 +89,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <ThemeIcon size={18} className="text-foreground/80" />
           </button>
 
-          {/* QR Scan button */}
           <button
             onClick={() => navigate("/qr-scan")}
             title="QR Scanner"
@@ -91,7 +97,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             <QrCode size={17} className="text-foreground/80" />
           </button>
 
-          {/* Wallet button */}
           <div className="shrink-0 pr-3">
             {address ? (
               <WalletOptionsDropdown compact />
@@ -107,7 +112,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      {/* ── Demo mode ribbon ── */}
       {isDemo && (
         <div className="shrink-0 flex items-center justify-center gap-2 px-3 py-[5px] text-[10px] font-bold tracking-wide overflow-hidden"
           style={{ background: "rgba(234,179,8,0.18)", borderBottom: "1px solid rgba(234,179,8,0.4)", color: "#facc15" }}>
@@ -117,16 +121,14 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Page content */}
       <div className="flex-1 overflow-y-auto overscroll-contain relative">
         {children}
       </div>
 
-      {/* Bottom tab bar — 7 tabs */}
       <div className="shrink-0 flex items-stretch border-t border-border bg-background"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        {TABS.map(tab => {
+        {MAIN_TABS.map(tab => {
           const active = isActive(tab);
           return (
             <button
@@ -145,12 +147,67 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             </button>
           );
         })}
+        <button
+          onClick={() => setMoreOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors active:bg-white/5"
+        >
+          <MoreHorizontal
+            size={18}
+            className={isMoreActive ? "text-primary" : "text-muted-foreground"}
+            strokeWidth={isMoreActive ? 2.5 : 1.5}
+          />
+          <span className={`text-[10px] font-medium ${isMoreActive ? "text-primary font-bold" : "text-muted-foreground"}`}>
+            More
+          </span>
+        </button>
       </div>
+
+      {moreOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm"
+            onClick={() => setMoreOpen(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-[91] bg-card border-t border-border rounded-t-2xl shadow-2xl animate-in slide-in-from-bottom duration-200"
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          >
+            <div className="flex items-center justify-between px-5 pt-4 pb-2">
+              <h3 className="text-sm font-bold text-foreground">More</h3>
+              <button
+                onClick={() => setMoreOpen(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 text-muted-foreground"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="px-3 pb-4 grid grid-cols-4 gap-1">
+              {MORE_TABS.map(tab => {
+                const active = isActive(tab);
+                return (
+                  <button
+                    key={tab.path}
+                    onClick={() => { setMoreOpen(false); navigate(tab.path); }}
+                    className={`flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl transition-colors ${active ? "bg-primary/10" : "hover:bg-white/5 active:bg-white/5"}`}
+                  >
+                    <tab.Icon
+                      size={20}
+                      className={active ? "text-primary" : "text-muted-foreground"}
+                      strokeWidth={active ? 2.5 : 1.5}
+                    />
+                    <span className={`text-[10px] font-medium ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                      {tab.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
 
       <Suspense fallback={null}>
         <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
       </Suspense>
-      {/* Floating chat button — bottom right */}
       {!chatOpen && (
         <button
           onClick={() => setChatOpen(true)}

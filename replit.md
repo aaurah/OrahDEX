@@ -81,8 +81,13 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Mechanics**: 5-minute rounds, users predict if price goes UP or DOWN before lock (30s before close). Pool-based payout (total pool / winning side). Leverage 1x–100x.
 - **Symbols**: BSV-USDT, BTC-USDT, ETH-USDT, BNB-USDT, SOL-USDT
 - **Bet Amounts**: $5, $10, $25, $50, $100, $250, $500 (plus custom)
-- **Demo**: Works with demo wallet (no real wallet required), deducts/credits USDT from user_balances ledger
+- **Demo**: Demo mode gated behind wallet connection — users must open wallet modal first, then choose Demo Account tab inside. No standalone demo buttons on any page.
 - **State**: In-memory round management with historical seeding; rounds auto-advance on tick
+
+## Mobile Navigation
+- **Main tabs** (bottom bar): Markets, Trade, Futures, Mkt Hub, More
+- **More drawer** (slide-up sheet): Prediction, NFT, Bridge, Copy Trade, P2P, Portfolio, Settings
+- "More" tab highlights green when any sub-item is the active page
 
 ## Bug Fixed: Futures Close PnL Cap
 - `closeFuturesPosition()` previously used `releaseFuturesMargin()` which capped credit at locked amount via `LEAST(locked, amount)` — profitable trades lost PnL above margin
