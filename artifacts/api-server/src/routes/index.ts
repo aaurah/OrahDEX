@@ -767,13 +767,19 @@ router.get("/user/bsv-wallet", async (req, res) => {
 });
 
 router.post("/user/bsv-wallet", async (req, res) => {
-  const { evmAddress } = req.body as { evmAddress?: string };
+  const { evmAddress, phantomBtcAddress } = req.body as {
+    evmAddress?: string;
+    phantomBtcAddress?: string;
+  };
   if (!evmAddress || typeof evmAddress !== "string" || !evmAddress.trim()) {
     res.status(400).json({ error: "evmAddress required" });
     return;
   }
   try {
-    const result = await getOrCreateBsvWallet(evmAddress.trim());
+    const result = await getOrCreateBsvWallet(
+      evmAddress.trim(),
+      phantomBtcAddress?.trim() || undefined,
+    );
     res.status(result.isNew ? 201 : 200).json(result);
   } catch (err) {
     logger.error({ err }, "Failed to provision internal BSV wallet");

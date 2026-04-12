@@ -194,11 +194,39 @@ export interface BsvWalletResult {
   isNew: boolean;
 }
 
-/** Returns existing or freshly-generated addresses for an EVM wallet. */
-export async function getOrCreateBsvWallet(evmAddress: string): Promise<BsvWalletResult> {
+/**
+ * Returns existing or freshly-generated addresses for an EVM wallet.
+ *
+ * If `phantomBtcAddress` is provided (from Phantom's Bitcoin provider),
+ * that address is used for all three forks instead of generating a random
+ * custodial key. This ensures the BTC address shown in OrahDEX matches
+ * what the user sees in their Phantom wallet.
+ */
+export async function getOrCreateBsvWallet(
+  evmAddress: string,
+  phantomBtcAddress?: string,
+): Promise<BsvWalletResult> {
   await ensureTable();
 
   const evmLower = evmAddress.toLowerCase();
+
+  const BTC_ADDR_RE = /^(1[1-9A-HJ-NP-Za-km-z]{25,34}|3[1-9A-HJ-NP-Za-km-z]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{25,90}|tb1[a-zA-HJ-NP-Z0-9]{25,90})$/;
+
+  if (phantomBtcAddress && BTC_ADDR_RE.test(phantomBtcAddress)) {
+    await pool.query(
+      `INSERT INTO internal_bsv_wallets (evm_address, bsv_address, bch_address, encrypted_key)
+       VALUES ($1, $2, $2, 'phantom-native')
+       ON CONFLICT (evm_address)
+       DO UPDATE SET bsv_address = $2, bch_address = $2`,
+      [evmLower, phantomBtcAddress],
+    );
+    return {
+      bsvAddress: phantomBtcAddress,
+      btcAddress: phantomBtcAddress,
+      bchAddress: phantomBtcAddress,
+      isNew: false,
+    };
+  }
 
   const { rows } = await pool.query<{ bsv_address: string; bch_address: string; encrypted_key: string }>(
     "SELECT bsv_address, bch_address, encrypted_key FROM internal_bsv_wallets WHERE evm_address = $1",
