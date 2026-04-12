@@ -368,6 +368,22 @@ router.post("/social/follow", async (req, res) => {
   }
 });
 
+/* ── GET /social/creators/:address/holders ──────────────────────────────── */
+router.get("/social/creators/:address/holders", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT ch.holder, ch.amount, cp.username
+       FROM coin_holdings ch
+       LEFT JOIN creator_profiles cp ON ch.holder = cp.address
+       WHERE ch.coin_creator = $1 AND ch.amount > 0
+       ORDER BY ch.amount DESC LIMIT 50`, [req.params.address],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 /* ── GET /social/holdings/:address ───────────────────────────────────────── */
 router.get("/social/holdings/:address", async (req, res) => {
   try {

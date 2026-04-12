@@ -51,6 +51,7 @@ const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({
 const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
 const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
 const MobileNFT        = lazy(() => import("@/pages/mobile/MobileNFT").then(m => ({ default: m.MobileNFT })));
+const NFTPage          = lazy(() => import("@/pages/NFT").then(m => ({ default: m.NFTPage })));
 
 /* Admin — single chunk group for the whole admin section */
 const AdminLogin          = lazy(() => import("@/pages/admin/Login").then(m => ({ default: m.AdminLogin })));
@@ -401,6 +402,7 @@ function Router() {
                 <Route path="/copy"           component={CopyTrading} />
                 <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
+                <Route path="/nft"            component={NFTPage} />
                 <Route path="/settings"           component={WebSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route component={NotFound} />

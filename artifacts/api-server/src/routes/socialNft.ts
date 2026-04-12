@@ -182,7 +182,7 @@ async function ensureSocialSeeded() {
 router.get("/social/feed", async (req, res) => {
   await ensureSocialSeeded();
   try {
-    const { category, q, sort = "hot" } = req.query as Record<string, string>;
+    const { category, q, sort = "hot", creator } = req.query as Record<string, string>;
     const offset = parseInt((req.query.offset as string) ?? "0", 10);
     const limit  = Math.min(parseInt((req.query.limit  as string) ?? "20", 10), 50);
 
@@ -191,6 +191,7 @@ router.get("/social/feed", async (req, res) => {
 
     if (category) { params.push(category); where += ` AND category = $${params.length}`; }
     if (q)        { params.push(`%${q}%`);  where += ` AND (title ILIKE $${params.length} OR description ILIKE $${params.length})`; }
+    if (creator)  { params.push(creator);   where += ` AND creator = $${params.length}`; }
 
     const orderBy = sort === "new" ? "created_at DESC" : sort === "top" ? "like_count DESC" : "mint_count DESC";
     params.push(limit, offset);
