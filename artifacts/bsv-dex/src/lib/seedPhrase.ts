@@ -3,10 +3,14 @@
  *
  * One seed phrase → five chain addresses:
  *   EVM (Ethereum, BSC, Polygon…) : m/44'/60'/0'/0/0   secp256k1
- *   BTC (Bitcoin)                 : m/44'/0'/0'/0/0    secp256k1 P2PKH
- *   BCH (Bitcoin Cash)            : m/44'/145'/0'/0/0  secp256k1 CashAddr
- *   BSV (Bitcoin SV)              : m/44'/236'/0'/0/0  secp256k1 P2PKH
+ *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0   secp256k1 — shared key
+ *     → BTC & BSV: Legacy P2PKH (Base58Check, starts with "1")
+ *     → BCH:       CashAddr encoding of the same PKH (starts with "bitcoincash:q")
  *   SOL (Solana)                  : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
+ *
+ * BTC, BCH, and BSV are all Bitcoin forks sharing the same secp256k1 curve.
+ * Deriving from the same BIP44 path (coin type 0') ensures the same legacy
+ * address across all three chains when switching networks.
  *
  * All addresses are fully compatible with MetaMask, Trust Wallet, Phantom, Ledger, etc.
  */
@@ -50,9 +54,10 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const seed = await mnemonicToSeed(phrase);
   const root = HDKey.fromMasterSeed(seed);
 
-  const btc = deriveP2PKH(root.derive("m/44'/0'/0'/0/0"));
-  const bch = deriveCashAddr(root.derive("m/44'/145'/0'/0/0"));
-  const bsv = deriveP2PKH(root.derive("m/44'/236'/0'/0/0"));
+  const bitcoinKey = root.derive("m/44'/0'/0'/0/0");
+  const btc = deriveP2PKH(bitcoinKey);
+  const bch = deriveCashAddr(bitcoinKey);
+  const bsv = btc;
   const sol = deriveSolanaAddress(seed);
 
   return { evm, btc, bch, bsv, sol };

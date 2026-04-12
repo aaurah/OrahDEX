@@ -19,21 +19,21 @@ export function useInternalBsvWallet() {
   const isDemo             = useWalletStore(s => s.isDemo);
   const setInternalBsv     = useWalletStore(s => s.setInternalBsvAddress);
   const setInternalBch     = useWalletStore(s => s.setInternalBchAddress);
+  const setInternalBtc     = useWalletStore(s => s.setInternalBtcAddress);
   const internalBsvAddress = useWalletStore(s => s.internalBsvAddress);
+  const internalBtcAddress = useWalletStore(s => s.internalBtcAddress);
+  const internalBchAddress = useWalletStore(s => s.internalBchAddress);
 
-  // Track which EVM address we last provisioned for to avoid duplicate requests
   const provisionedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    // Only provision for real EVM wallets
     if (!address || network !== "evm" || isDemo) {
-      if (!address) { setInternalBsv(null); setInternalBch(null); }
+      if (!address) { setInternalBsv(null); setInternalBch(null); setInternalBtc(null); }
       return;
     }
 
-    // Already have a BSV address — never overwrite it regardless of how it was set.
-    // This prevents re-provisioning after chain switches or HD wallet derivation.
-    if (internalBsvAddress) return;
+    const allPresent = !!internalBsvAddress && !!internalBtcAddress && !!internalBchAddress;
+    if (allPresent) return;
 
     // Don't send duplicate requests for the same address
     if (provisionedFor.current === address) return;
@@ -47,11 +47,12 @@ export function useInternalBsvWallet() {
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { bsvAddress: string; btcAddress: string; bchAddress: string; isNew: boolean }) => {
         setInternalBsv(data.bsvAddress);
+        setInternalBtc(data.btcAddress);
         setInternalBch(data.bchAddress);
       })
       .catch(err => {
         console.warn("[OrahDEX] Could not provision internal BSV/BTC/BCH wallet:", err);
         provisionedFor.current = null; // allow retry on next render
       });
-  }, [address, network, isDemo, internalBsvAddress]);
+  }, [address, network, isDemo, internalBsvAddress, internalBtcAddress, internalBchAddress]);
 }

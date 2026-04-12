@@ -18,7 +18,7 @@ The platform incorporates specific coin color schemes, a 3-tab WalletConnectModa
 
 ## Technical Implementations
 
-- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC, BCH, BSV, SOL) using `@scure/bip32`, `@scure/bip39`, `@noble/curves`, `@noble/hashes`. Allows import via BIP39 seed phrase or EVM private key.
+- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC/BSV/BCH, SOL) using `@scure/bip32`, `@scure/bip39`, `@noble/curves`, `@noble/hashes`. BTC, BSV, and BCH all derive from the same BIP44 path (`m/44'/0'/0'/0/0`) producing identical legacy P2PKH addresses for BTC/BSV and CashAddr for BCH. External EVM wallets (MetaMask, Phantom) also get matching BTC/BSV/BCH custodial addresses via `/api/user/bsv-wallet`. Allows import via BIP39 seed phrase or EVM private key.
 - **CopyVault**: Implements ERC4626-style vault accounting where `copyOrchestrator.ts` mirrors leader trades.
 - **TRON Chain Support**: Extends `WalletNetwork` with TRON, integrates with `WalletConnectModal`, uses `useTronBalances` hook, and displays TRON assets in UI.
 - **AMM Liquidity System**: Utilizes a standard `Δy = (Δx × (1−fee) × y) / (x + Δx × (1−fee))` formula with a defined `LP_FEE_RATIO` and `PROTOCOL_FEE_RATIO`. LP positions are managed via `useLiquidityStore` (Zustand).
