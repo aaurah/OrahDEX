@@ -40,6 +40,18 @@ async function getPhantomBtcAddress(): Promise<string | null> {
   }
 }
 
+async function persistToServer(evmAddress: string, phantomBtcAddr?: string) {
+  const body: Record<string, string> = { evmAddress };
+  if (phantomBtcAddr) body.phantomBtcAddress = phantomBtcAddr;
+  const r = await fetch(`${API_BASE}/user/bsv-wallet`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw r.status;
+  return r.json() as Promise<{ bsvAddress: string; btcAddress: string; bchAddress: string; isNew: boolean }>;
+}
+
 export function useInternalBsvWallet() {
   const address            = useWalletStore(s => s.address);
   const network            = useWalletStore(s => s.network);
@@ -61,64 +73,51 @@ export function useInternalBsvWallet() {
 
     const allPresent = !!internalBsvAddress && !!internalBtcAddress && !!internalBchAddress;
     const provider = useWalletStore.getState().provider;
+    const isPhantom = provider === "phantom";
 
-    const needsPhantomUpgrade =
-      provider === "phantom" &&
-      allPresent &&
-      internalBtcAddress === internalBsvAddress &&
-      internalBtcAddress === internalBchAddress &&
-      !BTC_ADDR_RE.test(internalBtcAddress ?? "");
+    if (allPresent && !isPhantom) return;
 
-    if (allPresent && !needsPhantomUpgrade) return;
-
-    if (provisionedFor.current === address) return;
-    provisionedFor.current = address;
+    const refKey = isPhantom ? `phantom:${address}` : address;
+    if (provisionedFor.current === refKey) return;
+    provisionedFor.current = refKey;
 
     let cancelled = false;
 
     (async () => {
-      let phantomBtcAddr: string | null = null;
-      if (provider === "phantom") {
-        phantomBtcAddr = await getPhantomBtcAddress();
-      }
-      if (cancelled) return;
+      if (isPhantom) {
+        const phantomBtcAddr = await getPhantomBtcAddress();
+        if (cancelled) return;
 
-      if (phantomBtcAddr) {
-        try {
-          const r = await fetch(`${API_BASE}/user/bsv-wallet`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ evmAddress: address, phantomBtcAddress: phantomBtcAddr }),
-          });
-          if (!r.ok) throw r.status;
+        if (phantomBtcAddr) {
+          if (phantomBtcAddr === internalBtcAddress &&
+              phantomBtcAddr === internalBsvAddress &&
+              phantomBtcAddr === internalBchAddress) {
+            return;
+          }
+          try {
+            await persistToServer(address, phantomBtcAddr);
+          } catch (err) {
+            console.warn("[OrahDEX] Failed to persist Phantom BTC address:", err);
+          }
           if (cancelled) return;
           setInternalBtc(phantomBtcAddr);
           setInternalBsv(phantomBtcAddr);
           setInternalBch(phantomBtcAddr);
-        } catch (err) {
-          console.warn("[OrahDEX] Failed to persist Phantom BTC address:", err);
-          if (cancelled) return;
-          setInternalBtc(phantomBtcAddr);
-          setInternalBsv(phantomBtcAddr);
-          setInternalBch(phantomBtcAddr);
+          return;
         }
-      } else {
-        try {
-          const r = await fetch(`${API_BASE}/user/bsv-wallet`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ evmAddress: address }),
-          });
-          if (!r.ok) throw r.status;
-          if (cancelled) return;
-          const data: { bsvAddress: string; btcAddress: string; bchAddress: string; isNew: boolean } = await r.json();
-          setInternalBsv(data.bsvAddress);
-          setInternalBtc(data.btcAddress);
-          setInternalBch(data.bchAddress);
-        } catch (err) {
-          console.warn("[OrahDEX] Could not provision internal BSV/BTC/BCH wallet:", err);
-          provisionedFor.current = null;
-        }
+      }
+
+      if (allPresent) return;
+
+      try {
+        const data = await persistToServer(address);
+        if (cancelled) return;
+        setInternalBsv(data.bsvAddress);
+        setInternalBtc(data.btcAddress);
+        setInternalBch(data.bchAddress);
+      } catch (err) {
+        console.warn("[OrahDEX] Could not provision internal BSV/BTC/BCH wallet:", err);
+        provisionedFor.current = null;
       }
     })();
 
