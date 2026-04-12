@@ -76,6 +76,13 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - Both desktop `Liquidity.tsx` and mobile `MobileLiquidity.tsx` pass `walletProvider` to all `getLiquidityMode` calls
 - External wallets (metamask, reown, trust, okx, coinbase, etc.) continue to use live/on-chain modes as before
 
+## Liquidity Balance Source Fix (Non-EVM Wallets)
+- **Bug**: `useEvmBalances` hook only fetches on-chain EVM balances; internal wallets (demo/BSV/orah-wallet/passkey/mobile-qr) returned empty balances causing "Insufficient balance" on every deposit
+- **Fix**: Added `useBackendBalances` hook that fetches from `/api/portfolio` endpoint (returns `balances[]` with `asset`, `available`, `price` fields)
+- Balance source selection uses `walletProvider` (not just `network`/address prefix): `INTERNAL_PROVIDERS = ["demo", "orah-wallet", "passkey", "mobile-qr"]` → use backend balances; external EVM wallets → use on-chain EVM balances
+- Simulated deposit mode now calls `POST /api/liquidity` to properly deduct balances server-side (was previously local-only simulation)
+- Backend returns 422 with specific error on insufficient funds; frontend shows proper toast
+
 ## Prediction Trading (UP/DOWN)
 - **Route**: `/prediction` (desktop and mobile)
 - **API**: `GET /api/prediction/rounds/:symbol`, `POST /api/prediction/bet`, `POST /api/prediction/claim`, `GET /api/prediction/history/:wallet`

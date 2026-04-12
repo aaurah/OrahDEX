@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { CoinLogo, COIN_COLORS } from "@/components/CoinLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
@@ -10,12 +10,40 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useEvmBalances, type TokenBalance } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
+
+const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function useBackendBalances(address: string | null) {
+  const [balances, setBalances] = useState<TokenBalance[]>([]);
+  const fetchBalances = useCallback(async () => {
+    if (!address) { setBalances([]); return; }
+    try {
+      const res = await fetch(`${LP_BASE}/api/portfolio?walletAddress=${encodeURIComponent(address)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.balances && Array.isArray(data.balances)) {
+        setBalances(data.balances.map((a: any) => ({
+          symbol: a.asset ?? "",
+          name: a.asset ?? "",
+          amount: parseFloat(String(a.available ?? a.free ?? "0")),
+          usdValue: parseFloat(String(a.valueUSD ?? "0")),
+          price: parseFloat(String(a.price ?? "0")),
+          change24h: 0,
+          color: "#888",
+          decimals: 6,
+        })));
+      }
+    } catch {}
+  }, [address]);
+  useEffect(() => { fetchBalances(); }, [fetchBalances]);
+  return { balances, refresh: fetchBalances };
+}
 
 // ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
 // e.g. 0.3% pool fee → 0.25% to LPs + 0.05% to protocol (mirrors Uniswap v2)
@@ -311,12 +339,15 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
-  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const INTERNAL_PROVIDERS = ["demo", "orah-wallet", "passkey", "mobile-qr"];
+  const isInternalWallet = !!walletProvider && INTERNAL_PROVIDERS.includes(walletProvider);
+  const isEvm = !!address && !isInternalWallet && (network === "evm" || address.startsWith("0x"));
   const walletChain = walletChainId ?? 1;
-  // For on-chain deposits, use the pool's required chain; fall back to wallet chain
   const targetChainId = pool?.chainId ?? walletChain;
   const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
-  const { balances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, walletChain);
+  const { balances: evmBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, walletChain);
+  const { balances: backendBalances, refresh: refreshBackendBalances } = useBackendBalances(address);
+  const balances = isEvm ? evmBalances : backendBalances;
 
   const userPositions = address ? getUserPositions(address) : {};
   const myLpTokens   = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
@@ -426,16 +457,37 @@ function LiquidityModal({
 
     // ── Simulated fallback (non-EVM / unknown chain) ─────────────────────
     setTxStatus({ step: "depositing" });
-    await new Promise(r => setTimeout(r, 1200));
-    addPosition(address, pool.id, lpTokens, valueUsd);
-    setTxStatus({ step: "success", lpTokens, valueUsd });
+    try {
+      const lpRes = await fetch(`${LP_BASE}/api/liquidity`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address, assetA: pool.base, assetB: pool.quote, amountA: nA, amountB: nB }),
+      });
+      if (!lpRes.ok) {
+        const err = await lpRes.json().catch(() => ({ error: "Server error" }));
+        if (lpRes.status === 422) {
+          toast({ title: "Insufficient balance", description: err.error ?? `Not enough ${err.asset ?? "tokens"} in your account.`, variant: "destructive" });
+          setSubmitting(false);
+          setTxStatus({ step: "idle" });
+          return;
+        }
+        throw new Error(err.error ?? "Failed to add liquidity");
+      }
+      const lpData = await lpRes.json();
+      addPosition(address, pool.id, parseFloat(lpData.lpTokens) || lpTokens, valueUsd);
+      setTxStatus({ step: "success", lpTokens, valueUsd });
+      refreshBackendBalances();
+      toast({
+        title: "Liquidity position added!",
+        description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${(parseFloat(lpData.lpTokens) || lpTokens).toFixed(4)} LP tokens.`,
+      });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Deposit failed", description: err?.message ?? "An error occurred.", variant: "destructive" });
+      setTxStatus({ step: "error", error: err?.message });
+    }
     setSubmitting(false);
-    toast({
-      title: "Liquidity position added!",
-      description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
-    });
-    onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, isEvm, balances, walletProvider, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, targetChainId, isEvm, balances, walletProvider, addPosition, toast, onClose, refreshBackendBalances]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
