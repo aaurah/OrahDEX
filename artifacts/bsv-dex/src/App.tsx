@@ -80,6 +80,7 @@ const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").th
 const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
 const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
+const AdminPrediction     = lazy(() => import("@/pages/admin/PredictionAdmin"));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
@@ -321,6 +322,7 @@ function Router() {
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
+      <Route path="/admin/prediction"><AdminRoute><AdminPrediction /></AdminRoute></Route>
       <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
       <Route path="/admin/logs">        <AdminRoute><AdminLogsPage /></AdminRoute></Route>
       <Route path="/admin/support">   <AdminRoute><AdminSupportSettings /></AdminRoute></Route>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
@@ -6,10 +6,12 @@ import { API_BASE } from "@/lib/api";
 import { cn, formatPrice } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
 import {
-  ArrowUp, ArrowDown, Clock, Trophy, Wallet, Loader2, FlaskConical,
+  ArrowUp, ArrowDown, Clock, Trophy, Wallet, Loader2,
   ChevronDown, TrendingUp, TrendingDown, Zap, History, AlertTriangle,
   Check, X, Timer, DollarSign, Shield, Target, ArrowRightLeft,
 } from "lucide-react";
+
+const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
 const SYMBOLS = ["BSV-USDT", "BTC-USDT", "ETH-USDT", "BNB-USDT", "SOL-USDT"];
 const LEVERAGE_OPTIONS = [1, 2, 5, 10, 25, 50, 100];
@@ -105,7 +107,7 @@ function RoundCard({
     <div
       onClick={onClick}
       className={cn(
-        "relative rounded-2xl border p-4 cursor-pointer transition-all duration-200 min-w-[260px] snap-center",
+        "relative rounded-2xl border p-3 cursor-pointer transition-all duration-200 min-w-[220px] snap-center",
         isActive && "ring-2 ring-primary/60",
         isLive && "border-primary/40 bg-primary/5",
         isLocked && "border-yellow-500/40 bg-yellow-500/5",
@@ -126,10 +128,10 @@ function RoundCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-bold text-muted-foreground">#{round.epoch}</span>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-muted-foreground">#{round.epoch}</span>
         <div className={cn(
-          "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase",
+          "text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase",
           isLive && "bg-primary/20 text-primary",
           isLocked && "bg-yellow-500/20 text-yellow-400",
           isClosed && "bg-muted text-muted-foreground",
@@ -141,45 +143,45 @@ function RoundCard({
       {isLive && <CountdownTimer targetTs={round.lockTs} label="to lock" />}
       {isLocked && <CountdownTimer targetTs={round.closeTs} label="to close" />}
 
-      <div className="flex items-center justify-between mt-3">
+      <div className="flex items-center justify-between mt-2">
         <div className="text-center flex-1">
-          <div className="flex items-center justify-center gap-1 text-green-400 text-xs font-semibold mb-0.5">
-            <ArrowUp size={12} /> UP
+          <div className="flex items-center justify-center gap-1 text-green-400 text-[10px] font-semibold mb-0.5">
+            <ArrowUp size={10} /> UP
           </div>
-          <div className="text-[10px] text-muted-foreground">{bullPayout.toFixed(2)}x</div>
-          <div className="text-[10px] text-muted-foreground">${round.bullAmount.toLocaleString()}</div>
+          <div className="text-[9px] text-muted-foreground">{bullPayout.toFixed(2)}x</div>
+          <div className="text-[9px] text-muted-foreground">${round.bullAmount.toLocaleString()}</div>
         </div>
-        <div className="text-center px-3 border-x border-border/30">
+        <div className="text-center px-2 border-x border-border/30">
           {round.lockPrice ? (
             <div className="space-y-0.5">
-              <div className="text-[10px] text-muted-foreground">Lock</div>
-              <div className="text-xs font-bold">${formatPrice(round.lockPrice)}</div>
+              <div className="text-[9px] text-muted-foreground">Lock</div>
+              <div className="text-[10px] font-bold">${formatPrice(round.lockPrice)}</div>
               {(isLocked || isClosed) && (
-                <div className={cn("text-xs font-bold", priceChange > 0 ? "text-green-400" : priceChange < 0 ? "text-red-400" : "text-muted-foreground")}>
+                <div className={cn("text-[10px] font-bold", priceChange > 0 ? "text-green-400" : priceChange < 0 ? "text-red-400" : "text-muted-foreground")}>
                   {priceChange > 0 ? "+" : ""}{priceChange.toFixed(2)}%
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-xs text-muted-foreground">Accepting bets</div>
+            <div className="text-[10px] text-muted-foreground">Accepting</div>
           )}
         </div>
         <div className="text-center flex-1">
-          <div className="flex items-center justify-center gap-1 text-red-400 text-xs font-semibold mb-0.5">
-            <ArrowDown size={12} /> DOWN
+          <div className="flex items-center justify-center gap-1 text-red-400 text-[10px] font-semibold mb-0.5">
+            <ArrowDown size={10} /> DOWN
           </div>
-          <div className="text-[10px] text-muted-foreground">{bearPayout.toFixed(2)}x</div>
-          <div className="text-[10px] text-muted-foreground">${round.bearAmount.toLocaleString()}</div>
+          <div className="text-[9px] text-muted-foreground">{bearPayout.toFixed(2)}x</div>
+          <div className="text-[9px] text-muted-foreground">${round.bearAmount.toLocaleString()}</div>
         </div>
       </div>
 
       {myBet && (
         <div className={cn(
-          "mt-3 pt-2 border-t border-border/30 flex items-center justify-between text-xs",
+          "mt-2 pt-1.5 border-t border-border/30 flex items-center justify-between text-[10px]",
           myBet.position === "bull" ? "text-green-400" : "text-red-400",
         )}>
           <span className="font-semibold flex items-center gap-1">
-            {myBet.position === "bull" ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+            {myBet.position === "bull" ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
             {myBet.position.toUpperCase()} ${myBet.amount} @ {myBet.leverage}x
           </span>
           {won && <span className="text-green-400 font-bold">+${myBet.payout.toFixed(2)}</span>}
@@ -202,8 +204,9 @@ export function PredictionTrading() {
   const [placing, setPlacing] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [myBets, setMyBets] = useState<BetRecord[]>([]);
-  const [tab, setTab] = useState<"trade" | "history">("trade");
+  const [tab, setTab] = useState<"chart" | "rounds" | "history">("chart");
   const [usdtBalance, setUsdtBalance] = useState(0);
+  const [candleInterval, setCandleInterval] = useState("5m");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { address, isDemo } = useWalletStore();
@@ -255,7 +258,6 @@ export function PredictionTrading() {
   }, [fetchRounds]);
 
   useEffect(() => { fetchHistory(); fetchBalance(); }, [fetchHistory, fetchBalance]);
-
 
   const placeBet = async () => {
     if (!address || !selectedRound) return;
@@ -375,12 +377,13 @@ export function PredictionTrading() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-border/50 shrink-0">
         <div className="flex items-center gap-2">
-          <CoinLogo symbol={base} size={28} />
+          <CoinLogo symbol={base} size={24} />
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black">{symbol.replace("-", "/")}</h2>
+              <h2 className="text-base font-black">{symbol.replace("-", "/")}</h2>
               <span className={cn(
                 "text-sm font-bold",
                 currentPrice > 0 ? "text-foreground" : "text-muted-foreground",
@@ -388,16 +391,16 @@ export function PredictionTrading() {
                 ${formatPrice(currentPrice)}
               </span>
             </div>
-            <p className="text-[10px] text-muted-foreground">Prediction Trading — 5-min rounds</p>
+            <p className="text-[10px] text-muted-foreground">Prediction — 5-min rounds</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {SYMBOLS.map(s => (
             <button
               key={s}
               onClick={() => { setSymbol(s); setSelectedRound(null); }}
               className={cn(
-                "px-2.5 py-1 rounded-lg text-xs font-bold transition-colors",
+                "px-2 py-1 rounded-lg text-[11px] font-bold transition-colors",
                 symbol === s ? "bg-primary/20 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -405,30 +408,49 @@ export function PredictionTrading() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 ml-4">
-          <DollarSign size={14} className="text-green-400" />
-          <span className="text-sm font-bold">{usdtBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        <div className="flex items-center gap-1.5 ml-3 border-l border-border/30 pl-3">
+          <DollarSign size={12} className="text-green-400" />
+          <span className="text-xs font-bold">{usdtBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           <span className="text-[10px] text-muted-foreground">USDT</span>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30">
-            <button onClick={() => setTab("trade")} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold", tab === "trade" ? "bg-primary/20 text-primary" : "text-muted-foreground")}>
-              <Target size={12} className="inline mr-1" /> Live Rounds
+        {/* LEFT: Chart + Rounds */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Tab bar */}
+          <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border/30 shrink-0">
+            <button onClick={() => setTab("chart")} className={cn("px-3 py-1 rounded-lg text-xs font-bold", tab === "chart" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground")}>
+              Chart
             </button>
-            <button onClick={() => setTab("history")} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold", tab === "history" ? "bg-primary/20 text-primary" : "text-muted-foreground")}>
-              <History size={12} className="inline mr-1" /> My History
+            <button onClick={() => setTab("rounds")} className={cn("px-3 py-1 rounded-lg text-xs font-bold relative", tab === "rounds" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground")}>
+              Rounds
+              {liveRound && tab !== "rounds" && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-pulse" />}
+            </button>
+            <button onClick={() => setTab("history")} className={cn("px-3 py-1 rounded-lg text-xs font-bold relative", tab === "history" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground")}>
+              History
+              {unclaimedWins.length > 0 && tab !== "history" && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-pulse" />}
             </button>
             {unclaimedWins.length > 0 && (
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs text-green-400 font-bold animate-pulse">{unclaimedWins.length} unclaimed win{unclaimedWins.length > 1 ? "s" : ""}!</span>
-              </div>
+              <span className="ml-auto text-[10px] text-green-400 font-bold animate-pulse">{unclaimedWins.length} unclaimed</span>
             )}
           </div>
 
-          {tab === "trade" && (
+          {/* Chart tab */}
+          {tab === "chart" && (
+            <div className="flex-1 relative min-h-0" style={{ minHeight: "360px" }}>
+              <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading chart...</div>}>
+                <Chart
+                  symbol={symbol}
+                  interval={candleInterval}
+                  onIntervalChange={setCandleInterval}
+                />
+              </Suspense>
+            </div>
+          )}
+
+          {/* Rounds tab */}
+          {tab === "rounds" && (
             <div className="flex-1 overflow-auto p-4">
               <div ref={scrollRef} className="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory">
                 {rounds.map(r => (
@@ -444,26 +466,26 @@ export function PredictionTrading() {
               </div>
 
               {closedRounds.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-bold text-muted-foreground mb-3">Recent Results</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="mt-4">
+                  <h3 className="text-xs font-bold text-muted-foreground mb-2">Recent Results</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {closedRounds.slice(0, 6).map(r => {
                       const change = r.lockPrice && r.closePrice ? ((r.closePrice - r.lockPrice) / r.lockPrice * 100) : 0;
                       return (
                         <div key={r.id} className="flex items-center justify-between bg-card rounded-xl border border-border/50 p-3">
                           <div>
-                            <div className="text-xs font-bold text-muted-foreground">#{r.epoch}</div>
-                            <div className="flex items-center gap-1 mt-1">
-                              <span className="text-xs text-muted-foreground">${formatPrice(r.lockPrice ?? 0)}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className="text-xs font-bold">${formatPrice(r.closePrice ?? 0)}</span>
+                            <div className="text-[10px] font-bold text-muted-foreground">#{r.epoch}</div>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[10px] text-muted-foreground">${formatPrice(r.lockPrice ?? 0)}</span>
+                              <span className="text-muted-foreground text-[10px]">→</span>
+                              <span className="text-[10px] font-bold">${formatPrice(r.closePrice ?? 0)}</span>
                             </div>
                           </div>
                           <div className={cn(
-                            "flex items-center gap-1 text-sm font-black px-2.5 py-1 rounded-lg",
+                            "flex items-center gap-1 text-xs font-black px-2 py-1 rounded-lg",
                             r.winner === "bull" ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400",
                           )}>
-                            {r.winner === "bull" ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+                            {r.winner === "bull" ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
                             {change > 0 ? "+" : ""}{change.toFixed(2)}%
                           </div>
                         </div>
@@ -475,6 +497,7 @@ export function PredictionTrading() {
             </div>
           )}
 
+          {/* History tab */}
           {tab === "history" && (
             <div className="flex-1 overflow-auto p-4">
               {myBets.length === 0 ? (
@@ -538,46 +561,77 @@ export function PredictionTrading() {
           )}
         </div>
 
-        <div className="w-[340px] border-l border-border/50 flex flex-col bg-card/30">
-          <div className="p-4 border-b border-border/30">
+        {/* RIGHT: Bet panel */}
+        <div className="w-[320px] border-l border-border/50 flex flex-col bg-card/30 shrink-0">
+          {/* Active round info */}
+          {selectedRound && (
+            <div className="px-4 py-2 border-b border-border/30 bg-card/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">Round #{selectedRound.epoch}</span>
+                  <span className={cn(
+                    "text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase",
+                    selectedRound.status === "live" && "bg-green-500/20 text-green-400",
+                    selectedRound.status === "locked" && "bg-yellow-500/20 text-yellow-400",
+                    selectedRound.status === "closed" && "bg-muted text-muted-foreground",
+                  )}>{selectedRound.status}</span>
+                </div>
+                {selectedRound.status === "live" && <CountdownTimer targetTs={selectedRound.lockTs} label="" />}
+                {selectedRound.status === "locked" && <CountdownTimer targetTs={selectedRound.closeTs} label="" />}
+              </div>
+              <div className="flex items-center justify-between mt-1.5">
+                <div className="flex items-center gap-1 text-green-400 text-[10px] font-semibold">
+                  <ArrowUp size={10} /> UP {selectedRound.bullAmount > 0 ? (selectedRound.totalAmount / selectedRound.bullAmount).toFixed(2) : "—"}x
+                </div>
+                <div className="text-[10px] font-bold">
+                  Pool: ${selectedRound.totalAmount.toLocaleString()}
+                </div>
+                <div className="flex items-center gap-1 text-red-400 text-[10px] font-semibold">
+                  DOWN {selectedRound.bearAmount > 0 ? (selectedRound.totalAmount / selectedRound.bearAmount).toFixed(2) : "—"}x <ArrowDown size={10} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-4 flex-1 overflow-auto">
             <h3 className="text-sm font-bold mb-3">Place Prediction</h3>
 
             {selectedRound && selectedRound.status === "live" ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPosition("bull")}
                     className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all",
+                      "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-sm transition-all",
                       position === "bull"
                         ? "bg-green-500 text-white shadow-lg shadow-green-500/25"
                         : "bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20",
                     )}
                   >
-                    <ArrowUp size={16} /> UP
+                    <ArrowUp size={14} /> UP
                   </button>
                   <button
                     onClick={() => setPosition("bear")}
                     className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all",
+                      "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl font-bold text-sm transition-all",
                       position === "bear"
                         ? "bg-red-500 text-white shadow-lg shadow-red-500/25"
                         : "bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20",
                     )}
                   >
-                    <ArrowDown size={16} /> DOWN
+                    <ArrowDown size={14} /> DOWN
                   </button>
                 </div>
 
                 <div>
-                  <label className="text-xs text-muted-foreground font-semibold mb-1.5 block">Amount (USDT)</label>
-                  <div className="flex flex-wrap gap-1.5 mb-2">
+                  <label className="text-[10px] text-muted-foreground font-semibold mb-1 block">Amount (USDT)</label>
+                  <div className="flex flex-wrap gap-1 mb-1.5">
                     {BET_AMOUNTS.map(a => (
                       <button
                         key={a}
                         onClick={() => { setBetAmount(a); setCustomAmount(""); }}
                         className={cn(
-                          "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all",
+                          "px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all",
                           !customAmount && betAmount === a
                             ? "bg-primary/20 border-primary text-primary"
                             : "bg-secondary border-border text-muted-foreground hover:border-primary/40",
@@ -597,16 +651,16 @@ export function PredictionTrading() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-muted-foreground font-semibold mb-1.5 block flex items-center gap-1">
-                    <Zap size={12} /> Leverage
+                  <label className="text-[10px] text-muted-foreground font-semibold mb-1 block flex items-center gap-1">
+                    <Zap size={10} /> Leverage
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {LEVERAGE_OPTIONS.map(lv => (
                       <button
                         key={lv}
                         onClick={() => setLeverage(lv)}
                         className={cn(
-                          "px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                          "px-2 py-1 rounded-lg text-[10px] font-bold border transition-all",
                           leverage === lv
                             ? "bg-primary/20 border-primary text-primary"
                             : "bg-secondary border-border text-muted-foreground hover:border-primary/40",
@@ -617,24 +671,24 @@ export function PredictionTrading() {
                     ))}
                   </div>
                   {leverage >= 25 && (
-                    <div className="flex items-start gap-1.5 mt-2 text-[10px] text-orange-400">
+                    <div className="flex items-start gap-1.5 mt-1.5 text-[10px] text-orange-400">
                       <AlertTriangle size={10} className="shrink-0 mt-0.5" />
-                      <span>{leverage >= 50 ? "Extreme leverage — high risk of total loss" : "High leverage — manage your risk carefully"}</span>
+                      <span>{leverage >= 50 ? "Extreme risk" : "High risk"}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="bg-secondary/50 rounded-xl p-3 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Bet Amount</span>
+                <div className="bg-secondary/50 rounded-xl p-3 space-y-1">
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-muted-foreground">Bet</span>
                     <span className="font-bold">${effectiveAmount.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-xs">
+                  <div className="flex justify-between text-[11px]">
                     <span className="text-muted-foreground">Leverage</span>
                     <span className="font-bold">{leverage}x</span>
                   </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Potential Payout</span>
+                  <div className="flex justify-between text-[11px]">
+                    <span className="text-muted-foreground">Potential</span>
                     <span className="font-bold text-green-400">${potentialPayout.toFixed(2)}</span>
                   </div>
                 </div>
@@ -659,30 +713,30 @@ export function PredictionTrading() {
                 </button>
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Clock size={32} className="mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-semibold">Select a live round</p>
-                <p className="text-xs mt-1">Click on a "LIVE" round card above to place a prediction</p>
+              <div className="text-center py-6 text-muted-foreground">
+                <Clock size={28} className="mx-auto mb-2 opacity-30" />
+                <p className="text-xs font-semibold">Select a live round</p>
+                <p className="text-[10px] mt-1">Go to the "Rounds" tab and click a LIVE round</p>
               </div>
             )}
           </div>
 
-          <div className="p-4 flex-1 overflow-auto">
-            <h4 className="text-xs font-bold text-muted-foreground mb-3">HOW IT WORKS</h4>
-            <div className="space-y-3">
+          <div className="p-3 border-t border-border/30">
+            <h4 className="text-[10px] font-bold text-muted-foreground mb-2 uppercase tracking-wider">How It Works</h4>
+            <div className="space-y-1.5">
               {[
-                { icon: Target, title: "Predict", desc: "Choose UP or DOWN before the round locks" },
-                { icon: Clock, title: "Wait", desc: "Price locks for ~30s, then resolves after 5 min" },
-                { icon: Trophy, title: "Win", desc: "If your prediction is correct, claim your payout" },
-                { icon: Zap, title: "Leverage", desc: "Multiply your position up to 100x (higher risk)" },
+                { icon: Target, title: "Predict", desc: "UP or DOWN before lock" },
+                { icon: Clock, title: "Wait", desc: "5-min round resolves" },
+                { icon: Trophy, title: "Win", desc: "Claim payout if correct" },
+                { icon: Zap, title: "Leverage", desc: "Up to 100x multiplier" },
               ].map(({ icon: Icon, title, desc }) => (
-                <div key={title} className="flex items-start gap-2.5">
-                  <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <Icon size={12} className="text-primary" />
+                <div key={title} className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                    <Icon size={10} className="text-primary" />
                   </div>
-                  <div>
-                    <div className="text-xs font-bold">{title}</div>
-                    <div className="text-[10px] text-muted-foreground">{desc}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold">{title}</span>
+                    <span className="text-[9px] text-muted-foreground">{desc}</span>
                   </div>
                 </div>
               ))}
