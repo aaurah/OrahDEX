@@ -329,9 +329,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const { addNotification } = useNotificationStore();
   const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
   const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
-  // Orah HD Wallet users (any network) have their trading balance tracked in the API ledger.
-  // Demo users also use the API ledger. External EVM wallets (MetaMask, WalletConnect) use on-chain balances.
-  const isOrahWallet = provider === 'orah-wallet';
+  // All connected wallets (Phantom, MetaMask, Orah HD, demo) use the API ledger.
+  // This enables balance holds for limit orders and consistent balance display
+  // without requiring wallet signing permission for every trade.
+  const isOrahWallet = !!provider && !isDemo;
   const usesApiBalance = isDemo || isOrahWallet;
 
   const chainId = walletChainId ?? 1;
@@ -344,19 +345,24 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     isEvm ? chainId : null
   );
 
-  // ── Demo balances fetched from API ──────────────────────────────────────────
+  // ── API ledger balances (available + locked) ────────────────────────────────
   const [demoBalances, setDemoBalances] = useState<Record<string, number>>({});
+  const [apiLockedBalances, setApiLockedBalances] = useState<Record<string, number>>({});
   const fetchDemoBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
         const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${addr}`);
-        if (!r.ok) return 0;
+        if (!r.ok) return { available: 0, locked: 0 };
         const j = await r.json();
-        return parseFloat(j.available ?? "0") || 0;
-      } catch { return 0; }
+        return {
+          available: parseFloat(j.available ?? "0") || 0,
+          locked: parseFloat(j.locked ?? "0") || 0,
+        };
+      } catch { return { available: 0, locked: 0 }; }
     };
-    const [bAmt, qAmt] = await Promise.all([fetchOne(b), fetchOne(q)]);
-    setDemoBalances({ [b]: bAmt, [q]: qAmt });
+    const [bRes, qRes] = await Promise.all([fetchOne(b), fetchOne(q)]);
+    setDemoBalances({ [b]: bRes.available, [q]: qRes.available });
+    setApiLockedBalances({ [b]: bRes.locked, [q]: qRes.locked });
   }, []);
   useEffect(() => {
     if (!usesApiBalance || !address) { setDemoBalances({}); return; }
@@ -480,25 +486,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
-  // ── API-locked balance for external EVM wallets ───────────────────────────
-  // External EVM wallets (Reown, MetaMask, Coinbase) use on-chain balances for
-  // display, but the API also maintains a ledger lock for open orders.
-  // Fetch and show the locked amount so the user can see reserved funds.
-  const [apiLockedAmt, setApiLockedAmt] = useState<number>(0);
-  useEffect(() => {
-    if (usesApiBalance || !address || !availableSym) { setApiLockedAmt(0); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`${API_BASE}/balances/${availableSym}?walletAddress=${encodeURIComponent(address)}`);
-        if (!r.ok || cancelled) return;
-        const j = await r.json();
-        const locked = parseFloat(j.locked ?? "0") || 0;
-        if (!cancelled) setApiLockedAmt(locked);
-      } catch { /* non-critical */ }
-    })();
-    return () => { cancelled = true; };
-  }, [usesApiBalance, address, availableSym, side]);
+  // ── Locked amount for open orders (from API ledger) ────────────────────────
+  const apiLockedAmt = usesApiBalance
+    ? (apiLockedBalances[availableSym] ?? 0)
+    : 0;
 
   // ── Precheck runner (declared after balances so availableAmt is in scope) ──
   const runPrecheck = useCallback(async (amt: string, px: string) => {
@@ -666,10 +657,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
-    // For external EVM wallets (Reown / MetaMask), block immediately if the
-    // on-chain balance we've already loaded is clearly too low.
-    // We skip this for demo/Orah wallets because they use the API ledger.
-    if (!usesApiBalance && availableAmt > 0) {
+    // Block immediately if the balance is clearly too low.
+    if (availableAmt > 0) {
       const required = parseFloat(amount);
       const total    = price ? parseFloat(price) * required : 0;
       // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
@@ -776,20 +765,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             });
           }
 
-          // Refresh native + token balances after any trade
-          if (usesApiBalance && address) {
-            // Re-fetch API ledger balances after every fill (covers demo + Orah Wallet)
+          // Refresh balances after any trade (re-fetch available + locked from API)
+          if (address) {
             fetchDemoBalances(base, quote, address);
-          } else if (isEvm && address) {
-            refreshBalances();
-            // Re-fetch API locked amount so "In open orders" row updates immediately
-            try {
-              const r = await fetch(`${API_BASE}/balances/${availableSym}?walletAddress=${encodeURIComponent(address)}`);
-              if (r.ok) {
-                const j = await r.json();
-                setApiLockedAmt(parseFloat(j.locked ?? "0") || 0);
-              }
-            } catch { /* non-critical */ }
           }
         },
         onError: (err: any) => {
@@ -942,7 +920,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
         </div>
 
         {/* Low balance hint — shown when wallet balance is zero */}
-        {!usesApiBalance && availableAmt <= 0 && (
+        {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs -mt-0.5">
             <span className="text-amber-400/80">
               No {availableSym} in wallet. Buy or bridge {availableSym} to start trading.
@@ -950,8 +928,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           </div>
         )}
 
-        {/* Locked-in-orders row (external EVM wallets only) */}
-        {!usesApiBalance && apiLockedAmt > 0 && (
+        {/* Locked-in-orders row */}
+        {apiLockedAmt > 0 && (
           <div className="flex items-center justify-between text-xs px-0.5 -mt-1.5">
             <span className="flex items-center gap-1 text-amber-400/80">
               <Lock className="w-3 h-3" />
@@ -1599,7 +1577,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
               </div>
 
               {/* Insufficient balance warning */}
-              {!usesApiBalance && availableAmt > 0 && locked > availableAmt + 1e-9 && (
+              {availableAmt > 0 && locked > availableAmt + 1e-9 && (
                 <div className="mb-4 p-2.5 rounded-lg bg-sell/10 border border-sell/30 text-xs text-sell">
                   Insufficient balance: you have {availableAmt.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym} but this order requires {locked.toLocaleString("en-US", { maximumFractionDigits: 6 })}.
                 </div>
@@ -1616,7 +1594,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
                 </button>
                 <button
                   type="button"
-                  disabled={(!usesApiBalance && availableAmt > 0 && locked > availableAmt + 1e-9) || isPending}
+                  disabled={(availableAmt > 0 && locked > availableAmt + 1e-9) || isPending}
                   onClick={() => {
                     setShowConfirm(false);
                     confirmRef.current = true;
