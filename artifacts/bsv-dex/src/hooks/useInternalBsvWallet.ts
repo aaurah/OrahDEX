@@ -3,15 +3,13 @@
  *
  * When an EVM wallet is connected, provisions BTC/BSV/BCH addresses:
  *
- * 1. If the wallet is Phantom, requests the user's real Bitcoin address via
- *    window.phantom.bitcoin — the same address the user sees in Phantom.
- *    All three forks (BTC/BSV/BCH) use this address.
+ * 1. If Phantom's Bitcoin provider (window.phantom.bitcoin) is available in the
+ *    browser, requests the user's real Bitcoin address — regardless of whether
+ *    the EVM connection is via Phantom, MetaMask, or any other wallet.
+ *    All three forks (BTC/BSV/BCH) use this Phantom-sourced BTC address.
  *
- * 2. For other EVM wallets (MetaMask, etc.) that don't expose a Bitcoin
- *    provider, falls back to a server-generated custodial sub-account.
- *
- * If addresses are already known (e.g. from HD seed or previous session),
- * this hook is a no-op — it never overwrites existing addresses.
+ * 2. If Phantom's Bitcoin provider is NOT available, falls back to a
+ *    server-generated custodial sub-account.
  */
 
 import { useEffect, useRef } from "react";
@@ -25,14 +23,24 @@ async function getPhantomBtcAddress(): Promise<string | null> {
     const btcProvider = (window as any).phantom?.bitcoin;
     if (!btcProvider) return null;
 
-    const accounts = await btcProvider.requestAccounts();
+    const accounts: Array<{ address: string; addressType: string } | string> =
+      await btcProvider.requestAccounts();
     if (!accounts?.length) return null;
 
-    const first = accounts[0];
-    const addr =
-      typeof first === "string"
-        ? first
-        : first?.address ?? first?.addresses?.[0]?.address ?? null;
+    let addr: string | null = null;
+
+    if (typeof accounts[0] === "string") {
+      addr = accounts[0];
+    } else {
+      const typed = accounts as Array<{ address: string; addressType: string }>;
+      addr =
+        typed.find(a => a.addressType === "p2wpkh")?.address ??
+        typed.find(a => a.addressType === "p2tr")?.address ??
+        typed.find(a => a.addressType !== "p2sh")?.address ??
+        typed[0]?.address ??
+        null;
+    }
+
     if (!addr || !BTC_ADDR_RE.test(addr)) return null;
     return addr;
   } catch {
@@ -71,20 +79,16 @@ export function useInternalBsvWallet() {
       return;
     }
 
-    const allPresent = !!internalBsvAddress && !!internalBtcAddress && !!internalBchAddress;
-    const provider = useWalletStore.getState().provider;
-    const isPhantom = provider === "phantom";
+    const hasPhantomBitcoin = !!(window as any).phantom?.bitcoin;
 
-    if (allPresent && !isPhantom) return;
-
-    const refKey = isPhantom ? `phantom:${address}` : address;
+    const refKey = `${address}:${hasPhantomBitcoin ? "phantom" : "custodial"}`;
     if (provisionedFor.current === refKey) return;
     provisionedFor.current = refKey;
 
     let cancelled = false;
 
     (async () => {
-      if (isPhantom) {
+      if (hasPhantomBitcoin) {
         const phantomBtcAddr = await getPhantomBtcAddress();
         if (cancelled) return;
 
@@ -107,6 +111,7 @@ export function useInternalBsvWallet() {
         }
       }
 
+      const allPresent = !!internalBsvAddress && !!internalBtcAddress && !!internalBchAddress;
       if (allPresent) return;
 
       try {

@@ -319,10 +319,11 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
+export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced }: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
+  onOrderPlaced?: () => void;
 }) {
   const { address, network, balance, chainId: walletChainId, isDemo, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
@@ -608,6 +609,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           });
         }
         setAmount("");
+        if (address) fetchDemoBalances(base, quote, address);
+        setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
         const code        = err?.data?.code ?? err?.code;
@@ -752,10 +755,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
           const url     = data?.explorerUrl ?? null;
 
           if (matched && txid) {
-            // Track BSV settlement tx in the status bar
             addTx({
               hash:                 txid,
-              chainId:              0, // BSV
+              chainId:              0,
               label:                `BSV Settlement · ${side.toUpperCase()} ${amount} ${base}`,
               status:               "confirmed",
               confirmations:        1,
@@ -765,10 +767,35 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill }: {
             });
           }
 
-          // Refresh balances after any trade (re-fetch available + locked from API)
+          if (matched) {
+            const filledQty    = data?.filledQuantity ?? parseFloat(amount || "0");
+            const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : parseFloat(price || "0"));
+            const fillFee      = data?.fee ?? 0;
+            const receivedQty  = side === "sell"
+              ? ((filledQty * avgFillPrice - fillFee) > 0 ? (filledQty * avgFillPrice - fillFee) : filledQty * avgFillPrice).toFixed(2)
+              : filledQty > 0 ? filledQty.toFixed(6) : "0";
+            const receivedTok  = side === "sell" ? quote : base;
+
+            if (address && filledQty > 0 && avgFillPrice > 0) {
+              applyFill(address, side as "buy" | "sell", base, quote, filledQty, avgFillPrice);
+            }
+
+            toast({
+              title: "Order Filled ✓",
+              description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+            });
+          } else {
+            toast({
+              title: "Order Open",
+              description: `${side.toUpperCase()} ${amount} ${base} @ $${price} · waiting for match`,
+            });
+          }
+          setAmount("");
+
           if (address) {
             fetchDemoBalances(base, quote, address);
           }
+          setTimeout(() => onOrderPlaced?.(), 500);
         },
         onError: (err: any) => {
           // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, bad signature)

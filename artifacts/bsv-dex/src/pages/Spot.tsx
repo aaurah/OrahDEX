@@ -759,7 +759,7 @@ export function SpotTrading() {
 
         {/* FAR-RIGHT: Order Form + AI Analysis */}
         <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
-          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
+          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
           <div className="p-2 border-t border-border">
             <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
           </div>
@@ -767,7 +767,7 @@ export function SpotTrading() {
 
         {/* MOBILE: full-width order form below chart */}
         <div className="lg:hidden w-full shrink-0 border-t border-border bg-card">
-          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} />
+          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
         </div>
       </div>
 
