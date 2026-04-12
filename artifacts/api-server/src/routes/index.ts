@@ -29,6 +29,7 @@ import withdrawalsRouter from "./withdrawals.js";
 import nftRouter from "./nft.js";
 import socialNftRouter from "./socialNft.js";
 import creatorCoinsRouter from "./creatorCoins.js";
+import predictionRouter from "./prediction.js";
 import { db, pool } from "@workspace/db";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
@@ -86,6 +87,7 @@ router.use(withdrawalsRouter);
 router.use("/nft", nftRouter);
 router.use(socialNftRouter);
 router.use(creatorCoinsRouter);
+router.use(predictionRouter);
 
 /* ── Demo Account — POST /api/demo/activate ─────────────────────────────────
  * Creates or resets a demo wallet with $80,000 in paper-trading funds.
