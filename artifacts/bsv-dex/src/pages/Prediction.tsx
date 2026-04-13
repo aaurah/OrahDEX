@@ -378,14 +378,14 @@ export function PredictionTrading() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-border/50 shrink-0">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2 border-b border-border/50 shrink-0 overflow-x-auto">
+        <div className="flex items-center gap-2 shrink-0">
           <CoinLogo symbol={base} size={24} />
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-black">{symbol.replace("-", "/")}</h2>
+              <h2 className="text-sm lg:text-base font-black">{symbol.replace("-", "/")}</h2>
               <span className={cn(
-                "text-sm font-bold",
+                "text-xs lg:text-sm font-bold",
                 currentPrice > 0 ? "text-foreground" : "text-muted-foreground",
               )}>
                 ${formatPrice(currentPrice)}
@@ -394,13 +394,13 @@ export function PredictionTrading() {
             <p className="text-[10px] text-muted-foreground">Prediction — 5-min rounds</p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1 lg:gap-1.5 shrink-0">
           {SYMBOLS.map(s => (
             <button
               key={s}
               onClick={() => { setSymbol(s); setSelectedRound(null); }}
               className={cn(
-                "px-2 py-1 rounded-lg text-[11px] font-bold transition-colors",
+                "px-1.5 lg:px-2 py-1 rounded-lg text-[10px] lg:text-[11px] font-bold transition-colors",
                 symbol === s ? "bg-primary/20 text-primary border border-primary/30" : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -408,16 +408,16 @@ export function PredictionTrading() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 ml-3 border-l border-border/30 pl-3">
+        <div className="hidden sm:flex items-center gap-1.5 ml-3 border-l border-border/30 pl-3 shrink-0">
           <DollarSign size={12} className="text-green-400" />
           <span className="text-xs font-bold">{usdtBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           <span className="text-[10px] text-muted-foreground">USDT</span>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden">
         {/* LEFT: Chart + Rounds */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="lg:flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Tab bar */}
           <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border/30 shrink-0">
             <button onClick={() => setTab("chart")} className={cn("px-3 py-1 rounded-lg text-xs font-bold", tab === "chart" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground")}>
@@ -438,7 +438,7 @@ export function PredictionTrading() {
 
           {/* Chart tab */}
           {tab === "chart" && (
-            <div className="flex-1 relative min-h-0" style={{ minHeight: "360px" }}>
+            <div className="relative h-[250px] lg:h-auto lg:flex-1 lg:min-h-[360px]">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading chart...</div>}>
                 <Chart
                   symbol={symbol}
@@ -562,7 +562,7 @@ export function PredictionTrading() {
         </div>
 
         {/* RIGHT: Bet panel */}
-        <div className="w-[320px] border-l border-border/50 flex flex-col bg-card/30 shrink-0">
+        <div className="w-full lg:w-[320px] border-t lg:border-t-0 lg:border-l border-border/50 flex flex-col bg-card/30 shrink-0">
           {/* Active round info */}
           {selectedRound && (
             <div className="px-4 py-2 border-b border-border/30 bg-card/50">
