@@ -120,9 +120,9 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId, isDemo, provider } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, provider } = useWalletStore();
   const isOrahWallet = provider === 'orah-wallet';
-  const usesApiBalance = isDemo || isOrahWallet;
+  const usesApiBalance = isOrahWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
@@ -205,14 +205,14 @@ export function FuturesTrading() {
 
   const countdown = useFundingCountdown();
 
-  const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
+  const isEvm = !address || network === "evm" || address.startsWith("0x");
   const nativeBal = balance ? parseFloat(balance) : 0;
 
   // ── Futures margin bucket (isolated from spot user_balances) ─────────────────
   // Futures orders MUST draw from futures_margin_accounts, never from spot ledger.
   const { margin: futuresMgn } = useFuturesMargin(usesApiBalance ? (address ?? undefined) : undefined);
   // Available margin for futures orders; falls back to 0 for external wallets
-  const demoUsdtBal = futuresMgn.available; // compat alias used throughout this component
+  const apiUsdtBal = futuresMgn.available;
 
   // Canonical L2 chain awareness — BaseETH/ArbETH/OPETH all = ETH at 1:1
   const CHAIN_INFO_FUT: Record<number, { nativeSymbol: string; l2Label: string | null }> = {
@@ -693,9 +693,8 @@ export function FuturesTrading() {
                     <div className="flex items-center gap-1.5">
                       {usesApiBalance ? (
                         <>
-                          <span className="font-mono text-blue-300 font-semibold">{demoUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span className="font-mono text-blue-300 font-semibold">{apiUsdtBal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           <span className="font-mono text-muted-foreground">USDT</span>
-                          {isDemo && <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 leading-none">DEMO</span>}
                         </>
                       ) : (
                         <>
@@ -758,8 +757,8 @@ export function FuturesTrading() {
                   <button
                     key={pct}
                     onClick={() => {
-                      // Use USDT ledger balance for Orah/demo wallets, native balance for external EVM wallets
-                      const availBal = usesApiBalance ? demoUsdtBal : nativeBal;
+                      // Use USDT ledger balance for Orah wallets, native balance for external EVM wallets
+                      const availBal = usesApiBalance ? apiUsdtBal : nativeBal;
                       const portion = availBal * (pct / 100);
                       const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;
                       setSize((portion * leverage / entryPrice).toFixed(4));
@@ -821,7 +820,7 @@ export function FuturesTrading() {
                     onClick={() => openModal()}
                     className="w-full flex items-center justify-center gap-2 bg-yellow-500/10 border border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/20 hover:border-yellow-500 py-2.5 rounded-xl font-semibold text-sm transition-all"
                   >
-                    Try Demo ($80,000 virtual USDT)
+                    Connect Wallet to Trade
                   </button>
                 </div>
               )}

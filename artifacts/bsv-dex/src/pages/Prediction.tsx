@@ -209,7 +209,7 @@ export function PredictionTrading() {
   const [candleInterval, setCandleInterval] = useState("5m");
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { address, isDemo } = useWalletStore();
+  const { address } = useWalletStore();
   const openModal = useWalletModalStore(s => s.open);
   const { toast } = useToast();
 
@@ -344,7 +344,7 @@ export function PredictionTrading() {
           </div>
           <h2 className="text-2xl font-black mb-2">Prediction Trading</h2>
           <p className="text-sm text-muted-foreground max-w-md">
-            Predict if the price will go UP or DOWN. Win up to 100x with leverage. Free to play with demo funds.
+            Predict if the price will go UP or DOWN. Win up to 100x with leverage.
           </p>
         </div>
         <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -355,13 +355,13 @@ export function PredictionTrading() {
             <Wallet className="w-4 h-4" /> Connect Wallet
           </button>
           <p className="text-[10px] text-muted-foreground text-center">
-            Connect wallet to trade — demo mode available inside
+            Connect wallet to start trading
           </p>
         </div>
         <div className="grid grid-cols-3 gap-3 w-full max-w-sm mt-2">
           {[
             { icon: Zap, label: "Up to 100x", sub: "Leverage" },
-            { icon: Shield, label: "Free Demo", sub: "No risk" },
+            { icon: Shield, label: "Secure", sub: "On-chain" },
             { icon: ArrowRightLeft, label: "5-min Rounds", sub: "Fast trades" },
           ].map(({ icon: Icon, label, sub }) => (
             <div key={label} className="flex flex-col items-center gap-1 bg-card rounded-xl py-3 px-2 border border-border/50">

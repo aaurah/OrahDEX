@@ -30,12 +30,8 @@
  *               For BSV: uses utxoRef as proof.
  *               The API ledger is NOT debited for external wallets.
  *
- *   "demo"      Paper money — auto-seeds any missing balance.
- *               For spot: seeds user_balances if needed, then locks.
- *               For futures: seeds futures_margin_accounts if needed, then locks.
- *
  *   "orah"      API-managed wallet with real deposited funds.
- *               Behaves like demo except no auto-seeding.
+ *               Locks from the API ledger.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
  *
@@ -147,7 +143,7 @@ async function verifySpotFunding(
     return { valid: true, fundingRef: utxoFundingRef(txid, parseInt(vout, 10)) };
   }
 
-  // ── Demo / Orah internal ledger ─────────────────────────────────────────
+  // ── Orah internal ledger ────────────────────────────────────────────────
   // Seed on first use, then lock funds from user_balances.
   try {
     const balances = await getBalances(walletAddress);
@@ -180,25 +176,6 @@ async function verifyFuturesFunding(
 ): Promise<FundingVerificationResult> {
   const { walletAddress, asset = "USDT", amount, walletSource } = params;
   const needed = parseFloat(amount);
-
-  // Auto-seed futures margin for demo accounts
-  if (walletSource === "demo") {
-    const { rows } = await pool.query<{ available: string }>(
-      `SELECT available FROM futures_margin_accounts WHERE wallet_address = $1 AND asset = $2`,
-      [walletAddress, asset],
-    );
-    const avail = parseFloat(rows[0]?.available ?? "0");
-    if (avail < needed) {
-      const seed = Math.max(needed * 2, 5000);
-      await pool.query(
-        `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
-         VALUES ($1, $2, $3, 0, now())
-         ON CONFLICT (wallet_address, asset)
-         DO UPDATE SET available = futures_margin_accounts.available + $3, updated_at = now()`,
-        [walletAddress, asset, seed.toFixed(8)],
-      );
-    }
-  }
 
   // Check balance (without locking — the actual lock happens in futuresSettlement.openFuturesPosition)
   const { rows } = await pool.query<{ available: string }>(

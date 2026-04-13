@@ -101,7 +101,7 @@ export const CHAIN_NAMES: Record<number, string> = {
 export type LiquidityMode = "on_chain" | "live" | "simulated";
 
 const INTERNAL_PROVIDERS = new Set([
-  "orah-wallet", "demo", "passkey", "mobile-qr",
+  "orah-wallet", "passkey", "mobile-qr",
 ]);
 
 export function hasExternalConnector(provider: string | null): boolean {

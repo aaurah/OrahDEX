@@ -77,9 +77,9 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
   return rows.map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }));
 }
 
-// ── Seed initial balances (demo / first-time user) ───────────────────────────
+// ── Seed initial balances (first-time user) ──────────────────────────────────
 // Called once when a wallet is first seen.  Uses a deterministic PRNG so every
-// fresh wallet always starts with the same amounts (reproducible demo data).
+// fresh wallet always starts with the same amounts (reproducible seed data).
 
 export async function seedInitialBalances(walletAddress: string): Promise<void> {
   function seededRng(addr: string, slot: number): number {
@@ -146,7 +146,7 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
 
 // ── Ensure a specific asset has at least `minAmount` available ────────────────
 // Called before locking for an order when the user's balance is missing or
-// insufficient for that asset.  Credits a demo amount so any pair can be traded.
+// insufficient for that asset.  Credits a seed amount so any pair can be traded.
 
 const ASSET_SEED_AMOUNTS: Record<string, { amount: string }> = {
   USDT: { amount: "5000" }, USDC: { amount: "5000" }, BUSD: { amount: "5000" },

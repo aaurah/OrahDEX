@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS = {
   redditUrl: "",
   // SEO
   seoTitle: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
-  seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), Demo Account ($80K virtual), and 7-tab mobile navigation.",
+  seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
   seoKeywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures, cross-chain bridge, copy trading, paper trading, mobile DEX",
   ogImageUrl: "",
   canonicalUrl: "https://orahdex.replit.app",

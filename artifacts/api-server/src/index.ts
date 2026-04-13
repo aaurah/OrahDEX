@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedDemoVaults } from "./lib/copyOrchestrator.js";
+
 import net from "node:net";
 
 const rawPort = process.env["PORT"];
@@ -72,7 +72,6 @@ async function startWithRetry(maxAttempts = 8, delayMs = 1000): Promise<void> {
 
   server = app.listen(port, () => {
     logger.info({ port }, "Server listening");
-    seedDemoVaults().catch((e) => logger.error({ err: e?.message }, "seedDemoVaults failed"));
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {

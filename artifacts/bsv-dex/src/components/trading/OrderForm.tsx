@@ -18,7 +18,7 @@ import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
-  XCircle, Info, Route, Timer, FlaskConical, Smartphone, QrCode,
+  XCircle, Info, Route, Timer, Smartphone, QrCode,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
@@ -204,7 +204,7 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
         <div className="text-center">
           <h3 className="font-bold text-foreground text-base mb-1.5">Connect to Trade</h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Connect your wallet or create a new one to start trading. Demo mode available inside.
+            Connect your wallet or create a new one to start trading.
           </p>
         </div>
         <button
@@ -218,7 +218,7 @@ function WalletPrompt({ base = "BSV", quote = "USDT" }: { base?: string; quote?:
           <MobileConnectQR onConnected={() => {}} />
         </div>
         <p className="text-[10px] text-muted-foreground text-center">
-          Real account or demo — choose after connecting
+          Connect to start trading
         </p>
         <div className="w-full grid grid-cols-3 gap-2 pt-1">
           {[
@@ -325,16 +325,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
 }) {
-  const { address, network, balance, chainId: walletChainId, isDemo, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
-  const isEvm = !address || (network === "evm" && !isDemo) || address.startsWith("0x");
-  // All connected wallets (Phantom, MetaMask, Orah HD, demo) use the API ledger.
-  // This enables balance holds for limit orders and consistent balance display
-  // without requiring wallet signing permission for every trade.
-  const isOrahWallet = !!provider && !isDemo;
-  const usesApiBalance = isDemo || isOrahWallet;
+  const isEvm = !address || network === "evm" || address.startsWith("0x");
+  const isOrahWallet = !!provider;
+  const usesApiBalance = isOrahWallet;
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -347,9 +344,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   );
 
   // ── API ledger balances (available + locked) ────────────────────────────────
-  const [demoBalances, setDemoBalances] = useState<Record<string, number>>({});
+  const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
   const [apiLockedBalances, setApiLockedBalances] = useState<Record<string, number>>({});
-  const fetchDemoBalances = useCallback(async (b: string, q: string, addr: string) => {
+  const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
         const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${addr}`);
@@ -362,16 +359,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       } catch { return { available: 0, locked: 0 }; }
     };
     const [bRes, qRes] = await Promise.all([fetchOne(b), fetchOne(q)]);
-    setDemoBalances({ [b]: bRes.available, [q]: qRes.available });
+    setApiBalances({ [b]: bRes.available, [q]: qRes.available });
     setApiLockedBalances({ [b]: bRes.locked, [q]: qRes.locked });
   }, []);
   useEffect(() => {
-    if (!usesApiBalance || !address) { setDemoBalances({}); return; }
+    if (!usesApiBalance || !address) { setApiBalances({}); return; }
     const parts2 = symbol.split("/");
     const b = parts2[0];
     const q = parts2[1] ?? "USDT";
-    fetchDemoBalances(b, q, address);
-  }, [usesApiBalance, address, symbol, fetchDemoBalances]);
+    fetchApiBalances(b, q, address);
+  }, [usesApiBalance, address, symbol, fetchApiBalances]);
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -448,15 +445,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // For HD wallets BTC address differs from BSV; custodial wallets share one key
   const hasSeparateBtcAddr = !!internalBtcAddress && internalBtcAddress !== internalBsvAddress;
   // Show amber cross-chain warning only for truly incompatible chains
-  const showCrossChainNotice = side === "buy" && !!address && !canReceive && !isDemo && !evmHandled && !bsvHandled && !btcHandled && !solHandled;
-  // Show green EVM sub-wallet info box when a BSV user is buying an EVM asset
-  const showEvmWalletInfo = side === "buy" && !!address && network === "bsv" && isEvmChain && hasInternalEvm && !isDemo;
-  // Show teal BSV sub-wallet info box when an EVM user is buying a BSV asset
-  const showBsvWalletInfo = side === "buy" && !!address && network === "evm" && isBsvChain && hasInternalBsv && !isDemo;
-  // Show orange BTC sub-wallet info (HD wallet only — separate BTC address)
-  const showBtcWalletInfo = side === "buy" && !!address && network === "evm" && isBtcChain && hasInternalBtc && !isDemo;
-  // Show violet SOL sub-wallet info (HD wallet only — SLIP-0010 ed25519 address)
-  const showSolWalletInfo = side === "buy" && !!address && network === "evm" && isSolChain && hasInternalSol && !isDemo;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceive && !evmHandled && !bsvHandled && !btcHandled && !solHandled;
+  const showEvmWalletInfo = side === "buy" && !!address && network === "bsv" && isEvmChain && hasInternalEvm;
+  const showBsvWalletInfo = side === "buy" && !!address && network === "evm" && isBsvChain && hasInternalBsv;
+  const showBtcWalletInfo = side === "buy" && !!address && network === "evm" && isBtcChain && hasInternalBtc;
+  const showSolWalletInfo = side === "buy" && !!address && network === "evm" && isSolChain && hasInternalSol;
   const chainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const addrPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -477,12 +470,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
   // Non-custodial: EVM wallets trade directly from wallet.
-  // Demo/Orah Wallet users use the API ledger balance (virtual funding).
+  // Orah Wallet users use the API ledger balance.
   const baseAvailable  = usesApiBalance
-    ? (demoBalances[base] ?? 0)
+    ? (apiBalances[base] ?? 0)
     : walletBase;
   const quoteAvailable = usesApiBalance
-    ? (demoBalances[quote] ?? 0)
+    ? (apiBalances[quote] ?? 0)
     : walletQuote;
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
@@ -609,7 +602,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           });
         }
         setAmount("");
-        if (address) fetchDemoBalances(base, quote, address);
+        if (address) fetchApiBalances(base, quote, address);
         setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
@@ -742,7 +735,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
-          walletSource:   isDemo ? "demo" : isOrahWallet ? "orah" : "external",
+          walletSource:   isOrahWallet ? "orah" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
@@ -793,7 +786,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           setAmount("");
 
           if (address) {
-            fetchDemoBalances(base, quote, address);
+            fetchApiBalances(base, quote, address);
           }
           setTimeout(() => onOrderPlaced?.(), 500);
         },
@@ -1467,14 +1460,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
           </button>
-
-          {/* Demo mode notice */}
-          {isDemo && (
-            <div className="flex items-center justify-center gap-1.5 text-[10px] font-semibold text-yellow-400/80 bg-yellow-500/10 border border-yellow-500/20 rounded-lg py-1.5">
-              <FlaskConical className="w-3 h-3 shrink-0" />
-              Demo — this trade uses virtual paper money, not real funds
-            </div>
-          )}
 
           {/* Fee info & Keeper tier */}
           <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">

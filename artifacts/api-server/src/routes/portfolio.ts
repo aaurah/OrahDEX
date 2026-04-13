@@ -13,7 +13,7 @@ const router: IRouter = Router();
 
 // ── GET /portfolio ─────────────────────────────────────────────────────────────
 // Reads from the user_balances ledger (single source of truth).
-// On first visit, seeds the wallet with demo balances so the UI is populated.
+// On first visit, seeds the wallet with initial balances so the UI is populated.
 router.get("/portfolio", async (req, res) => {
   const walletAddress = req.query.walletAddress as string;
   if (!walletAddress) {
@@ -25,7 +25,7 @@ router.get("/portfolio", async (req, res) => {
     // Fetch balances from the ledger
     let balances = await getBalances(walletAddress);
 
-    // First-time visitor: seed demo balances so the app looks populated
+    // First-time visitor: seed initial balances so the app looks populated
     if (balances.length === 0) {
       await seedInitialBalances(walletAddress);
       balances = await getBalances(walletAddress);

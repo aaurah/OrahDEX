@@ -370,7 +370,7 @@ router.get("/stats", async (_req, res) => {
   const allMarkets = await db.select().from(marketsTable);
   const realUsers = await buildRealUserList();
 
-  // Count unique non-bot wallet addresses from orders (catches API/demo trades too)
+  // Count unique non-bot wallet addresses from orders (catches API trades too)
   const [uniqueOrderWallets] = await db.select({
     cnt: sql<number>`count(distinct ${ordersTable.walletAddress})::int`,
   }).from(ordersTable)

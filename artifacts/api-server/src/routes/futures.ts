@@ -108,10 +108,8 @@ router.post("/futures/positions", async (req, res) => {
     const quantity  = parseFloat(body.quantity);
     const margin    = (entryPrice * quantity) / leverage;
 
-    // ── Verify futures margin from the futures bucket (NOT spot bucket) ────
-    // walletSource "demo" auto-seeds futures_margin_accounts
     const walletSource = body.walletSource === "external" ? "external"
-      : body.walletSource === "orah" ? "orah" : "demo";
+      : body.walletSource === "orah" ? "orah" : "orah";
 
     const fundingVerif = await verifyAndLockFunding({
       walletAddress: body.walletAddress,

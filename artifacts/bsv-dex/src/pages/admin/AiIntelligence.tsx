@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
-const DEMO_PAIRS = [
+const AI_TEST_PAIRS = [
   "BSV/USDT", "BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT",
   "DOGE/USDT", "ADA/USDT", "AVAX/USDT", "DOT/USDT", "MATIC/USDT",
 ];
@@ -25,7 +25,7 @@ const AI_MODELS = [
   { id: "gpt-5.2",     label: "GPT-5.2",      desc: "Most capable general model" },
 ];
 
-type DemoTradeResult = {
+type AiTestTradeResult = {
   pair: string;
   side: "buy" | "sell";
   qty: number;
@@ -55,7 +55,7 @@ function SentimentBadge({ s }: { s?: string }) {
   );
 }
 
-function StatusIcon({ status }: { status: DemoTradeResult["status"] }) {
+function StatusIcon({ status }: { status: AiTestTradeResult["status"] }) {
   if (status === "pending") return <Clock className="w-4 h-4 text-gray-400 animate-spin" />;
   if (status === "placed")  return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
   if (status === "filled")  return <CheckCircle className="w-4 h-4 text-green-400" />;
@@ -195,26 +195,26 @@ function AiTradeSignalsCard() {
   );
 }
 
-/* ── Demo Trade Runner ────────────────────────────────────────────────────── */
-const DEMO_WALLET = "0xDEMO_AI_TRADER_0000000000000000000001";
+/* ── AI Test Trade Runner ─────────────────────────────────────────────────── */
+const AI_TEST_WALLET = "0xAI_TEST_TRADER_0000000000000000000001";
 
-function DemoTradeRunner() {
+function AiTestTradeRunner() {
   const [running, setRunning] = useState(false);
-  const [results, setResults] = useState<DemoTradeResult[]>([]);
+  const [results, setResults] = useState<AiTestTradeResult[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const abortRef = useRef(false);
 
-  async function runDemoTrades() {
+  async function runTestTrades() {
     abortRef.current = false;
     setRunning(true);
-    const initial: DemoTradeResult[] = DEMO_PAIRS.map(pair => ({
+    const initial: AiTestTradeResult[] = AI_TEST_PAIRS.map(pair => ({
       pair, side: Math.random() > 0.5 ? "buy" : "sell", qty: 0, price: 0, status: "pending",
     }));
     setResults(initial);
 
-    for (let i = 0; i < DEMO_PAIRS.length; i++) {
+    for (let i = 0; i < AI_TEST_PAIRS.length; i++) {
       if (abortRef.current) break;
-      const pair = DEMO_PAIRS[i];
+      const pair = AI_TEST_PAIRS[i];
 
       try {
         const start = Date.now();
@@ -232,12 +232,12 @@ function DemoTradeRunner() {
 
         setResults(r => r.map(t => t.pair === pair ? { ...t, side, qty, price, status: "placed", aiSignal: sigData.signal, aiSentiment: sigData.sentiment } : t));
 
-        // 3. Place the demo order
+        // 3. Place the test order
         const orderResp = await fetch(`${BASE}/api/orders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            walletAddress: DEMO_WALLET,
+            walletAddress: AI_TEST_WALLET,
             symbol: pair,
             side,
             type: "market",
@@ -267,7 +267,7 @@ function DemoTradeRunner() {
     setRunning(false);
   }
 
-  function stopDemo() {
+  function stopTest() {
     abortRef.current = true;
     setRunning(false);
   }
@@ -284,18 +284,18 @@ function DemoTradeRunner() {
             <FlaskConical className="w-4 h-4 text-amber-400" />
           </div>
           <div>
-            <p className="text-sm font-bold">AI Demo Trade Runner</p>
-            <p className="text-xs text-muted-foreground">Ora analyses each pair then places a $10 test order · demo wallet</p>
+            <p className="text-sm font-bold">AI Test Trade Runner</p>
+            <p className="text-xs text-muted-foreground">Ora analyses each pair then places a $10 test order · AI test wallet</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {running && (
-            <button onClick={stopDemo} className="px-3 py-1.5 rounded-lg bg-red-400/10 hover:bg-red-400/20 border border-red-400/20 text-red-400 text-xs font-semibold transition-colors">
+            <button onClick={stopTest} className="px-3 py-1.5 rounded-lg bg-red-400/10 hover:bg-red-400/20 border border-red-400/20 text-red-400 text-xs font-semibold transition-colors">
               Stop
             </button>
           )}
           <button
-            onClick={runDemoTrades}
+            onClick={runTestTrades}
             disabled={running}
             className={cn(
               "flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm transition-all",
@@ -305,7 +305,7 @@ function DemoTradeRunner() {
             )}
           >
             {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            {running ? "Running…" : "Run Demo Trades"}
+            {running ? "Running…" : "Run Test Trades"}
           </button>
         </div>
       </div>
@@ -645,7 +645,7 @@ export function AdminAiIntelligence() {
           <Brain className="w-6 h-6 text-green-400" />
           AI Intelligence
         </h2>
-        <p className="text-muted-foreground text-sm">Ora AI — model settings, live insights, trade signals, and demo trading</p>
+        <p className="text-muted-foreground text-sm">Ora AI — model settings, live insights, trade signals, and test trading</p>
       </div>
 
       {/* Status bar */}
@@ -671,8 +671,8 @@ export function AdminAiIntelligence() {
         </div>
       </div>
 
-      {/* Demo Trade Runner — full width */}
-      <DemoTradeRunner />
+      {/* AI Test Trade Runner — full width */}
+      <AiTestTradeRunner />
 
       {/* Chat tester — full width */}
       <AiChatTester />

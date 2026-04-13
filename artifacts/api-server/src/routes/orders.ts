@@ -81,14 +81,8 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * 0.001;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
-    // walletSource distinguishes real external wallets from demo/Orah API-ledger wallets.
-    // "external" = MetaMask / Reown / injected (real on-chain funds, no auto-seeding)
-    // "demo"     = $80k paper-money demo account
-    // "orah"     = OrahDEX HD wallet (API ledger, real deposited funds)
-    // Fallback: if walletAddress has a signature treat it as external, otherwise as orah/demo
-    const walletSource: "external" | "demo" | "orah" =
+    const walletSource: "external" | "orah" =
       body.walletSource === "external" ? "external"
-      : body.walletSource === "demo"   ? "demo"
       : body.walletSource === "orah"   ? "orah"
       : (body.evmSignature || body.signedTx) ? "external"
       : "orah";

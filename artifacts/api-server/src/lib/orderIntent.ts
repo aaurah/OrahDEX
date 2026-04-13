@@ -23,7 +23,7 @@
  *
  *   "ledger:{walletAddress}:{asset}:{amount}"
  *       Internal API ledger — funds already moved available→locked.
- *       Used for demo / orah wallets.
+ *       Used for orah wallets.
  *
  *   "evm-sig:{signatureHash}"
  *       EVM personal_sign signature proves authorisation.
@@ -57,7 +57,7 @@ export type OrderKind = "SPOT" | "FUTURES";
 /** MARKET executes at the best available price; LIMIT rests in the book. */
 export type OrderType = "MARKET" | "LIMIT";
 
-export type WalletSource = "external" | "demo" | "orah";
+export type WalletSource = "external" | "orah";
 
 /**
  * The canonical order intent shared between wallet and server.
