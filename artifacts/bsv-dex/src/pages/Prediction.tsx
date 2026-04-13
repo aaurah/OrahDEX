@@ -417,7 +417,7 @@ export function PredictionTrading() {
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-auto lg:overflow-hidden">
         {/* LEFT: Chart + Rounds */}
-        <div className="lg:flex-1 flex flex-col overflow-hidden min-w-0">
+        <div className="lg:flex-1 flex flex-col min-w-0 shrink-0">
           {/* Tab bar */}
           <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border/30 shrink-0">
             <button onClick={() => setTab("chart")} className={cn("px-3 py-1 rounded-lg text-xs font-bold", tab === "chart" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground")}>
@@ -438,7 +438,7 @@ export function PredictionTrading() {
 
           {/* Chart tab */}
           {tab === "chart" && (
-            <div className="relative h-[250px] lg:h-auto lg:flex-1 lg:min-h-[360px]">
+            <div className="relative h-[44vh] lg:h-auto lg:flex-1 lg:min-h-[360px]">
               <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading chart...</div>}>
                 <Chart
                   symbol={symbol}
