@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, FlaskConical, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -137,7 +137,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
-  const { address, network, provider, chainId, isDemo } = useWalletStore();
+  const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -223,15 +223,13 @@ export function Layout({ children }: { children: ReactNode }) {
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
       const providerLabel = provider ?? networkLabel;
       toast({
-        title: isDemo ? "Demo Mode Active" : "Wallet Connected",
-        description: isDemo ? "$80,000 virtual balance · Start paper trading" : `${providerLabel} · ${shortAddr}`,
+        title: "Wallet Connected",
+        description: `${providerLabel} · ${shortAddr}`,
       });
       addNotification({
         type: "wallet_connected",
-        title: isDemo ? "Demo Mode Active" : "Wallet Connected",
-        body: isDemo
-          ? "$80,000 virtual balance · trades settle via OrahDEX engine"
-          : `${providerLabel} · ${shortAddr} · ready to trade`,
+        title: "Wallet Connected",
+        body: `${providerLabel} · ${shortAddr} · ready to trade`,
       });
       /* Register wallet in the DB so it shows in the admin user list */
       const { chainId: cid } = useWalletStore.getState();
@@ -300,14 +298,6 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      {/* ── Demo mode ribbon ── */}
-      {isDemo && (
-        <div className="relative flex items-center justify-center gap-2 px-4 py-2 bg-yellow-500/20 border-b border-yellow-500/40 text-yellow-400 text-xs font-bold z-50">
-          <FlaskConical className="w-3.5 h-3.5 shrink-0" />
-          <span>DEMO MODE — You are trading with <strong>$80,000 virtual paper money</strong>. No real funds are at risk.</span>
-        </div>
-      )}
-
       <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">
         <div className="flex items-center gap-2">
           {/* Hamburger — left side */}

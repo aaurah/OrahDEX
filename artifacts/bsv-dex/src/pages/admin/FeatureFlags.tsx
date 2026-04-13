@@ -21,7 +21,7 @@ const DEFAULT_FLAGS: Record<string, boolean> = {
   telegram_bot: false, discord_bot: false,
   native_chat: true, global_chat_channel: true, pair_chat_channel: true, ai_chat_moderation: true, system_announcements: true,
   mobile_app_links: true, qr_code_login: false, biometric_lock: true,
-  leaderboard: false, trading_competitions: false, demo_mode: true,
+  leaderboard: false, trading_competitions: false,
   maintenance_mode: false,
   cross_chain_bridge: true, bsv_settlement: true,
   mobile_bridge_tab: true, pair_logos_in_header: true,
@@ -133,7 +133,6 @@ const GROUPS: Group[] = [
       { id: "biometric_lock",      label: "Biometric Screen Lock", description: "App lock screen on mobile" },
       { id: "mobile_bridge_tab",   label: "Mobile Bridge Tab",     description: "Show the Bridge tab in the mobile bottom navigation bar (7-tab layout)" },
       { id: "pair_logos_in_header",label: "Pair Logos in Header",  description: "Show overlapping base/quote coin logos next to the trading pair name in the spot header" },
-      { id: "demo_mode",           label: "Demo / Paper Trading",  description: "Allow paper trading with $80,000 virtual funds — no wallet required" },
     ],
   },
   {

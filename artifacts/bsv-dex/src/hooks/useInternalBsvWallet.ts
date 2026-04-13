@@ -63,7 +63,6 @@ async function persistToServer(evmAddress: string, phantomBtcAddr?: string) {
 export function useInternalBsvWallet() {
   const address            = useWalletStore(s => s.address);
   const network            = useWalletStore(s => s.network);
-  const isDemo             = useWalletStore(s => s.isDemo);
   const setInternalBsv     = useWalletStore(s => s.setInternalBsvAddress);
   const setInternalBch     = useWalletStore(s => s.setInternalBchAddress);
   const setInternalBtc     = useWalletStore(s => s.setInternalBtcAddress);
@@ -74,7 +73,7 @@ export function useInternalBsvWallet() {
   const provisionedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!address || network !== "evm" || isDemo) {
+    if (!address || network !== "evm") {
       if (!address) { setInternalBsv(null); setInternalBch(null); setInternalBtc(null); }
       return;
     }
@@ -127,5 +126,5 @@ export function useInternalBsvWallet() {
     })();
 
     return () => { cancelled = true; };
-  }, [address, network, isDemo, internalBsvAddress, internalBtcAddress, internalBchAddress]);
+  }, [address, network, internalBsvAddress, internalBtcAddress, internalBchAddress]);
 }

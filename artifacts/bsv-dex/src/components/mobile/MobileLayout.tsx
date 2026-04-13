@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, FlaskConical, Target, MoreHorizontal, X, TrendingUp, Copy, Repeat } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, MoreHorizontal, X, TrendingUp, Copy, Repeat } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -41,7 +41,7 @@ const THEME_META: Record<Theme, { icon: React.ComponentType<{ size: number; clas
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
-  const { address, isDemo } = useWalletStore();
+  const { address } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const [chatOpen, setChatOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -111,15 +111,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </div>
-
-      {isDemo && (
-        <div className="shrink-0 flex items-center justify-center gap-2 px-3 py-[5px] text-[10px] font-bold tracking-wide overflow-hidden"
-          style={{ background: "rgba(234,179,8,0.18)", borderBottom: "1px solid rgba(234,179,8,0.4)", color: "#facc15" }}>
-          <FlaskConical size={10} className="shrink-0" />
-          <span className="truncate">DEMO MODE — Trades are simulated · No real funds</span>
-          <FlaskConical size={10} className="shrink-0" />
-        </div>
-      )}
 
       <div className="flex-1 overflow-y-auto overscroll-contain relative">
         {children}

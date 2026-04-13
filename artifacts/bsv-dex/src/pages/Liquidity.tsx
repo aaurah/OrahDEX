@@ -342,7 +342,7 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
-  const INTERNAL_PROVIDERS = ["demo", "orah-wallet", "passkey", "mobile-qr"];
+  const INTERNAL_PROVIDERS = ["orah-wallet", "passkey", "mobile-qr"];
   const isInternalWallet = !!walletProvider && INTERNAL_PROVIDERS.includes(walletProvider);
   const isEvm = !!address && !isInternalWallet && (network === "evm" || address.startsWith("0x"));
   const walletChain = walletChainId ?? 1;

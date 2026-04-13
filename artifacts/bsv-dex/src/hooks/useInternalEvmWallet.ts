@@ -19,27 +19,19 @@ import { API_BASE } from "@/lib/api";
 export function useInternalEvmWallet() {
   const address            = useWalletStore(s => s.address);
   const network            = useWalletStore(s => s.network);
-  const isDemo             = useWalletStore(s => s.isDemo);
   const setInternalEvm     = useWalletStore(s => s.setInternalEvmAddress);
   const internalEvmAddress = useWalletStore(s => s.internalEvmAddress);
 
-  // Track which BSV address we last provisioned for to avoid duplicate requests
   const provisionedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    // Only provision for real BSV wallets
-    if (!address || network !== "bsv" || isDemo) {
+    if (!address || network !== "bsv") {
       if (!address) setInternalEvm(null);
       return;
     }
 
-    // Already have an EVM address — never overwrite it regardless of how it was set.
-    // This is the critical guard: if the user was on EVM and switched to BSV,
-    // switchNetworkType() already saved internalEvmAddress. We must NOT replace it
-    // with a new custodial keypair, which would change the address on switch-back.
     if (internalEvmAddress) return;
 
-    // Don't send duplicate requests for the same BSV address
     if (provisionedFor.current === address) return;
     provisionedFor.current = address;
 
@@ -54,7 +46,7 @@ export function useInternalEvmWallet() {
       })
       .catch(err => {
         console.warn("[OrahDEX] Could not provision internal EVM wallet:", err);
-        provisionedFor.current = null; // allow retry on next render
+        provisionedFor.current = null;
       });
-  }, [address, network, isDemo, internalEvmAddress]);
+  }, [address, network, internalEvmAddress]);
 }

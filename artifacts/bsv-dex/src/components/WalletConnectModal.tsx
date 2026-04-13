@@ -6,7 +6,7 @@ import {
   PlusCircle, Download, Link2, Copy, Check,
   Eye, AlertTriangle, RefreshCw, ArrowLeft,
   Layers, Key, Fingerprint, Loader2, Trash2,
-  Smartphone, Wifi, QrCode, FlaskConical,
+  Smartphone, Wifi, QrCode,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
@@ -197,7 +197,6 @@ const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const connect = useWalletStore((s) => s.connect);
-  const connectDemo = useWalletStore((s) => s.connectDemo);
   const setBalance = useWalletStore((s) => s.setBalance);
   const setInternalEvmAddress = useWalletStore((s) => s.setInternalEvmAddress);
   const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
@@ -205,45 +204,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
   const setInternalSolAddress = useWalletStore((s) => s.setInternalSolAddress);
   const walletState = useWalletStore();
-  const initialTab = useWalletModalStore((s) => s.initialTab);
 
-  const [demoLoading, setDemoLoading] = useState(false);
-  const [demoError, setDemoError] = useState<string | null>(null);
-  const [mainTab, setMainTab] = useState<"real" | "demo">("real");
-
-  // Sync mainTab with initialTab whenever the modal opens
   useEffect(() => {
     if (isOpen) {
-      setMainTab(initialTab);
       setView("landing");
     }
-  }, [isOpen, initialTab]);
-
-  const handleDemoAccount = async () => {
-    setDemoLoading(true);
-    setDemoError(null);
-    try {
-      // Use a stable demo address stored in localStorage so sessions persist
-      let demoAddr = localStorage.getItem("orahdex_demo_address");
-      if (!demoAddr) {
-        const uuid = crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase();
-        demoAddr = `DEMO_${uuid}`;
-        localStorage.setItem("orahdex_demo_address", demoAddr);
-      }
-      const res = await fetch(`${API_BASE}/demo/activate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: demoAddr }),
-      });
-      if (!res.ok) throw new Error("Demo activation failed");
-      connectDemo(demoAddr);
-      onClose();
-    } catch (e: any) {
-      setDemoError(e?.message ?? "Could not start demo — try again");
-    } finally {
-      setDemoLoading(false);
-    }
-  };
+  }, [isOpen]);
 
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
@@ -1111,38 +1077,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   {view === "landing" && (
                     <motion.div key="landing" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
 
-                      {/* ── Top-level account type tabs ── */}
-                      <div className="px-5 pt-4 pb-3 border-b border-border">
-                        <div className="flex bg-secondary/60 rounded-xl p-1 gap-1">
-                          <button
-                            onClick={() => setMainTab("real")}
-                            className={cn(
-                              "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all",
-                              mainTab === "real"
-                                ? "bg-card text-foreground shadow-sm border border-border"
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <Shield className="w-4 h-4" />
-                            Real Account
-                          </button>
-                          <button
-                            onClick={() => setMainTab("demo")}
-                            className={cn(
-                              "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all",
-                              mainTab === "demo"
-                                ? "bg-yellow-500/20 text-yellow-300 shadow-sm border border-yellow-500/30"
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            <FlaskConical className="w-4 h-4" />
-                            Demo Account
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* ── REAL ACCOUNT panel ── */}
-                      {mainTab === "real" && (
                       <div className="p-5 space-y-3">
 
                       {/* ⓪ Passkey — frictionless, no seed phrase */}
@@ -1341,111 +1275,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       </div>
 
                       </div>
-                      )}
-
-                      {/* ── DEMO ACCOUNT panel ── */}
-                      {mainTab === "demo" && (
-                        <div className="p-5 flex flex-col gap-4">
-
-                          {/* Hero card */}
-                          <div className="rounded-2xl border border-yellow-500/40 bg-gradient-to-br from-yellow-500/12 via-yellow-500/5 to-transparent p-5">
-                            <div className="flex items-center gap-3 mb-4">
-                              <div className="w-14 h-14 rounded-2xl bg-yellow-500/20 flex items-center justify-center shrink-0">
-                                <FlaskConical className="w-7 h-7 text-yellow-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <h3 className="font-black text-lg text-foreground leading-tight">Demo Account</h3>
-                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 tracking-wider uppercase">Free</span>
-                                </div>
-                                <p className="text-[12px] text-yellow-400/80 font-medium leading-snug">
-                                  Practice trading with virtual funds — no real money at risk
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Asset breakdown */}
-                            <div className="mb-4">
-                              <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Virtual Funds Included</p>
-                              <div className="grid grid-cols-3 gap-2">
-                                {[
-                                  { icon: "💵", label: "USDT", amount: "50,000" },
-                                  { icon: "₿", label: "BTC", amount: "0.1" },
-                                  { icon: "Ξ", label: "ETH", amount: "7" },
-                                  { icon: "🔶", label: "BNB", amount: "8" },
-                                  { icon: "⚡", label: "BSV", amount: "500" },
-                                  { icon: "◎", label: "SOL", amount: "50" },
-                                ].map(asset => (
-                                  <div key={asset.label} className="flex items-center gap-2 bg-black/20 rounded-xl px-3 py-2.5 border border-white/8">
-                                    <span className="text-base shrink-0">{asset.icon}</span>
-                                    <div className="min-w-0">
-                                      <p className="text-[10px] font-black text-foreground">{asset.amount}</p>
-                                      <p className="text-[9px] text-muted-foreground font-semibold">{asset.label}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="mt-2.5 flex items-center justify-between px-1">
-                                <span className="text-[11px] text-muted-foreground">Total virtual value</span>
-                                <span className="text-[13px] font-black text-yellow-400">≈ $80,000</span>
-                              </div>
-                            </div>
-
-                            {/* Existing demo address notice */}
-                            {localStorage.getItem("orahdex_demo_address") && (
-                              <div className="mb-3 flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-3 py-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 shrink-0 animate-pulse" />
-                                <p className="text-[10px] text-yellow-300/80 font-medium flex-1 min-w-0">
-                                  Existing demo session found — your virtual balance will be restored
-                                </p>
-                              </div>
-                            )}
-
-                            {/* CTA Button */}
-                            <button
-                              onClick={handleDemoAccount}
-                              disabled={demoLoading}
-                              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-yellow-500 hover:bg-yellow-400 text-yellow-950 font-black text-sm shadow-lg shadow-yellow-500/25 active:scale-95 transition-all disabled:opacity-60"
-                            >
-                              {demoLoading
-                                ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up your demo…</>
-                                : <><FlaskConical className="w-4 h-4" /> Connect Demo Account — Continue</>
-                              }
-                            </button>
-                            {demoError && (
-                              <p className="text-[11px] text-red-400 text-center mt-2">{demoError}</p>
-                            )}
-                          </div>
-
-                          {/* What you can practice */}
-                          <div className="rounded-2xl border border-border bg-secondary/20 p-4 space-y-2.5">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">What you can practice</p>
-                            {[
-                              { emoji: "📈", title: "Spot Trading", desc: "Buy & sell crypto pairs with market and limit orders" },
-                              { emoji: "⚡", title: "Futures Trading", desc: "Trade with leverage — up to 100× on major pairs" },
-                              { emoji: "📊", title: "Portfolio Tracking", desc: "Monitor your virtual P&L and asset allocation" },
-                              { emoji: "💧", title: "Liquidity Providing", desc: "Earn virtual fees by providing liquidity to pools" },
-                            ].map(item => (
-                              <div key={item.title} className="flex items-start gap-3">
-                                <span className="text-base shrink-0 mt-0.5">{item.emoji}</span>
-                                <div>
-                                  <p className="text-[12px] font-bold text-foreground">{item.title}</p>
-                                  <p className="text-[11px] text-muted-foreground leading-snug">{item.desc}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Disclaimer */}
-                          <div className="flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/20 rounded-xl">
-                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-amber-300/80 leading-relaxed">
-                              Demo accounts use virtual funds only. No real crypto is deposited or at risk. Switch to a real account anytime.
-                            </p>
-                          </div>
-
-                        </div>
-                      )}
 
                     </motion.div>
                   )}

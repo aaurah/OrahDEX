@@ -206,8 +206,7 @@ router.post("/prediction/bet", async (req, res) => {
     if (!round) return res.status(404).json({ error: "Round not found" });
     if (round.status !== "live") return res.status(400).json({ error: "Round is locked or closed — wait for next round" });
 
-    const isDemo = wallet.startsWith("DEMO_");
-    if (isDemo) {
+    {
       const wAddr = wallet.toLowerCase();
       const balRes = await pool.query(
         `SELECT available FROM user_balances WHERE LOWER(wallet_address) = $1 AND asset_symbol = 'USDT'`,
@@ -282,8 +281,7 @@ router.post("/prediction/claim", async (req, res) => {
       bet.claimed = true;
     }
 
-    const isDemo = wallet.startsWith("DEMO_");
-    if (isDemo && totalPayout > 0) {
+    if (totalPayout > 0) {
       await pool.query(
         `UPDATE user_balances SET available = available + $1 WHERE LOWER(wallet_address) = $2 AND asset_symbol = 'USDT'`,
         [totalPayout.toString(), wallet.toLowerCase()],

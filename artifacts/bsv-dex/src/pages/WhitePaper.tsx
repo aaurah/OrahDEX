@@ -370,7 +370,7 @@ export function WhitePaper() {
                     layer: "Layer 5 — Sovereign Interface (React + Vite)",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. Demo Account ($80,000 virtual paper trading). 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody. Strict boundary: wallet connection · local signing (ECDSA/EdDSA) · UI rendering · charting · trade forms. No price computation and no business logic lives in this layer. Private keys never leave the user's device; OrahDEX servers see only signed messages.",
+                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody. Strict boundary: wallet connection · local signing (ECDSA/EdDSA) · UI rendering · charting · trade forms. No price computation and no business logic lives in this layer. Private keys never leave the user's device; OrahDEX servers see only signed messages.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -1024,9 +1024,9 @@ Example:
                   Settlement proofs for prediction trades follow the same BSV OP_RETURN pattern as spot and futures trades — ensuring every prediction outcome is permanently recorded on-chain and publicly auditable.
                 </p>
               </Sub>
-              <Sub title="10.4 Demo Mode Integration">
+              <Sub title="10.4 Balance Integration">
                 <p>
-                  Prediction Trading is fully functional in demo mode. Users practice with virtual USDT from their demo balance — identical mechanics, identical payout computation, identical round lifecycle — with zero real financial risk. Demo mode is gated behind wallet connection: users must first connect or create a wallet, then optionally activate demo from within the wallet modal.
+                  Prediction Trading uses the API ledger for USDT balances — identical mechanics, identical payout computation, identical round lifecycle. Users connect their wallet to participate in prediction rounds.
                 </p>
               </Sub>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1919,7 +1919,7 @@ If any authority requests user identity data:
                     "Prediction Trading launched — pool-based binary options (UP/DOWN) with 5-minute rounds, 1x–100x leverage, parimutuel payouts across 5 pairs (BSV/BTC/ETH/BNB/SOL).",
                     "Prediction page enhanced with full TradingView-style chart — same professional charting engine as Spot/Futures (lightweight-charts, 15+ indicators, 6 chart types, all intervals).",
                     "3-tab prediction layout — Chart | Rounds | History with compact round cards and live bet panel.",
-                    "Demo mode gated behind wallet connection — demo account accessible only via WalletConnectModal 'Demo Account' tab, not standalone buttons.",
+                    "Wallet connection required for all trading — real wallets only, no demo accounts.",
                     "WhitePaper v4.4.0 — Prediction Trading section added (Section 10), all sections renumbered (11–21), TOC updated.",
                     "Admin Prediction management panel — round monitoring, bet oversight, and configuration controls for prediction trading.",
                   ].map(item => (
@@ -1940,8 +1940,8 @@ If any authority requests user identity data:
                     "Fiat on-ramp expanded to 6 providers — Mercuryo added alongside MoonPay, Transak, Banxa, Simplex, Ramp Network. Supports Apple Pay, Google Pay, Card, and Bank Transfer.",
                     "Buy Crypto button added to Portfolio — desktop and mobile. Full fiat deposit flow accessible from action bar and CTA cards.",
                     "Liquidity balance validation — both desktop and mobile now verify on-chain token balances before allowing LP deposits. Insufficient balance shows inline warnings and disables the button.",
-                    "Provider-aware liquidity mode — internal wallets (orah-wallet, demo, passkey, mobile-qr) fall back to simulated mode, preventing wagmi connector errors.",
-                    "Construction banner removed — app is in production quality; demo mode banner retained for paper trading sessions only.",
+                    "Provider-aware liquidity mode — internal wallets (orah-wallet, passkey, mobile-qr) fall back to simulated mode, preventing wagmi connector errors.",
+                    "Construction banner removed — app is in production quality.",
                     "WhitePaper v4.3.0 — OrahNFT section added (Section 9), TOC renumbered, abstract/solution/roadmap updated to reflect creator economy, fiat on-ramp, and NFT features.",
                   ].map(item => (
                     <li key={item} className="flex items-start gap-2">
@@ -2014,7 +2014,7 @@ If any authority requests user identity data:
                       "6 fiat on-ramp providers (MoonPay, Transak, Banxa, Simplex, Ramp, Mercuryo) — Apple Pay, Google Pay, Card, Bank Transfer",
                       "OrahNFT social marketplace — Instagram×Zora-style feed, BSV inscriptions, creator coins with bonding curve pricing",
                       "Creator profiles with market cap, holder counts, ATH tracking, and permissionless post publishing",
-                      "Demo Account ($80,000 virtual paper trading, no wallet required)",
+                      "Passkey wallet (biometric login, no seed phrase)",
                       "8-tab mobile navigation (Markets, Trade, Mkt Hub, NFT, Bridge, Portfolio, Settings)",
                       "TRON native support (TRX + TRC-20 USDT, 6 TRON wallets)",
                       "Keeper tier system (Initiate → Sentinel → Archon → Sovereign)",

@@ -19,7 +19,7 @@ interface Asset {
   usdRate: () => number;
 }
 
-const BSV_DEPOSIT_ADDRESS = "1A1zP1eP5QGefi2DMPTfTL5SLmv7Divfna"; // demo genesis address
+const BSV_DEPOSIT_ADDRESS = "1A1zP1eP5QGefi2DMPTfTL5SLmv7Divfna"; // placeholder genesis address
 const FEE_PCT = 0.005; // 0.5% bridge fee
 
 function useAssets(prices: ReturnType<typeof useWalletPrices>["prices"]) {

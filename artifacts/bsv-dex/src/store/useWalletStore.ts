@@ -32,7 +32,6 @@ interface WalletState {
   chainId: number | null;
   balance: string | null;
   isConnecting: boolean;
-  isDemo: boolean;
   pendingTxs: PendingTx[];
 
   /** Auto-provisioned EVM address for BSV-wallet users (custodial sub-account). */
@@ -48,7 +47,6 @@ interface WalletState {
   internalSolAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
-  connectDemo: (address: string) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBalance: (balance: string | null) => void;
@@ -101,7 +99,6 @@ export const useWalletStore = create<WalletState>()(
       chainId: null,
       balance: null,
       isConnecting: false,
-      isDemo: false,
       pendingTxs: [],
       internalEvmAddress: null,
       internalBsvAddress: null,
@@ -123,7 +120,6 @@ export const useWalletStore = create<WalletState>()(
             chainId:   wallet.chainId ?? null,
             balance:   wallet.balance ?? null,
             isConnecting: false,
-            isDemo:    false,
             // Preserve internals on same-provider reconnect (chain switch); reset on new wallet
             internalEvmAddress: sameProvider && sameAddress ? s.internalEvmAddress : null,
             internalBsvAddress: sameProvider && sameAddress ? s.internalBsvAddress : null,
@@ -131,22 +127,6 @@ export const useWalletStore = create<WalletState>()(
             internalBtcAddress: sameProvider && sameAddress ? s.internalBtcAddress : null,
             internalSolAddress: sameProvider && sameAddress ? s.internalSolAddress : null,
           };
-        }),
-
-      connectDemo: (address) =>
-        set({
-          address,
-          provider: "demo",
-          network: "evm",
-          chainId: null,
-          balance: null,
-          isConnecting: false,
-          isDemo: true,
-          internalEvmAddress: null,
-          internalBsvAddress: null,
-          internalBchAddress: null,
-          internalBtcAddress: null,
-          internalSolAddress: null,
         }),
 
       disconnect: () =>
@@ -157,7 +137,6 @@ export const useWalletStore = create<WalletState>()(
           chainId: null,
           balance: null,
           isConnecting: false,
-          isDemo: false,
           internalEvmAddress: null,
           internalBsvAddress: null,
           internalBchAddress: null,

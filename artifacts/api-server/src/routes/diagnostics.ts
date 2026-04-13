@@ -5,7 +5,7 @@
  * measures latency, and reports ok / degraded / down for each.
  *
  * Subsystems checked:
- *   database · markets · orders · trades · futures · balances · demo ·
+ *   database · markets · orders · trades · futures · balances ·
  *   wallets · p2p · copy-trading · keepers · bridge · support ·
  *   coin-votes · genesis-vamm · notifications · platform-settings
  */
@@ -137,20 +137,7 @@ router.get("/diagnostics", async (_req, res) => {
       return `${entries} balance entries across ${wallets} wallets`;
     }),
 
-    // ── 7. Demo Account System ─────────────────────────────────────────────
-    probe("demo", "Demo Account System", async () => {
-      const rows = await q<{ cnt: string; assets: string }>(
-        `SELECT COUNT(DISTINCT wallet_address) AS cnt,
-                COUNT(*)                        AS assets
-         FROM user_balances
-         WHERE wallet_address LIKE 'DEMO_%'`
-      );
-      const cnt    = parseInt(rows[0]?.cnt    ?? "0", 10);
-      const assets = parseInt(rows[0]?.assets ?? "0", 10);
-      return `${cnt} demo wallets · ${assets} virtual balance entries`;
-    }),
-
-    // ── 8. Wallet Registry ─────────────────────────────────────────────────
+    // ── 7. Wallet Registry ─────────────────────────────────────────────────
     probe("wallets", "Wallet Registry", async () => {
       const rows = await q<{ cnt: string }>("SELECT COUNT(*) AS cnt FROM wallets");
       const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
