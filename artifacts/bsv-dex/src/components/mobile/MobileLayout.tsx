@@ -1,6 +1,6 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Users2, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, MoreHorizontal, X, TrendingUp, Copy, Repeat } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -10,24 +10,19 @@ import { ChatWidget } from "@/components/ChatWidget";
 
 const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
-const MAIN_TABS = [
-  { path: "/markets", label: "Markets", Icon: BarChart2, exact: true },
-  { path: "/trade/BSV-USDT", label: "Trade", Icon: ArrowRightLeft },
-  { path: "/futures/BSV-USDT", label: "Futures", Icon: TrendingUp },
-  { path: "/dex", label: "Mkt Hub", Icon: Layers },
+const NAV_TABS = [
+  { path: "/markets", matchPrefix: "/markets", label: "Markets", Icon: BarChart2 },
+  { path: "/trade/BSV-USDT", matchPrefix: "/trade", label: "Trade", Icon: ArrowRightLeft },
+  { path: "/futures/BSV-USDT", matchPrefix: "/futures", label: "Futures", Icon: TrendingUp },
+  { path: "/dex", matchPrefix: "/dex", label: "Hub", Icon: Layers },
+  { path: "/prediction", matchPrefix: "/prediction", label: "Predict", Icon: Target },
+  { path: "/nft", matchPrefix: "/nft", label: "NFT", Icon: Image },
+  { path: "/bridge", matchPrefix: "/bridge", label: "Bridge", Icon: Cable },
+  { path: "/copy", matchPrefix: "/copy", label: "Copy", Icon: Copy },
+  { path: "/p2p", matchPrefix: "/p2p", label: "P2P", Icon: Repeat },
+  { path: "/portfolio", matchPrefix: "/portfolio", label: "Portfolio", Icon: Briefcase },
+  { path: "/settings", matchPrefix: "/settings", label: "Settings", Icon: Settings },
 ];
-
-const MORE_TABS = [
-  { path: "/prediction", label: "Prediction", Icon: Target },
-  { path: "/nft", label: "NFT", Icon: Image },
-  { path: "/bridge", label: "Bridge", Icon: Cable },
-  { path: "/copy-trading", label: "Copy Trade", Icon: Copy },
-  { path: "/p2p", label: "P2P", Icon: Repeat },
-  { path: "/portfolio", label: "Portfolio", Icon: Briefcase },
-  { path: "/settings", label: "Settings", Icon: Settings },
-];
-
-const ALL_TABS = [...MAIN_TABS, ...MORE_TABS];
 
 const THEME_CYCLE: Theme[] = ["dark", "light", "amoled", "system"];
 
@@ -44,7 +39,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { address } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const [chatOpen, setChatOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const navScrollRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     const handler = () => setChatOpen(true);
@@ -52,12 +48,21 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("mobile:openChat", handler);
   }, []);
 
-  const isActive = (tab: { path: string; exact?: boolean }) => {
-    if (tab.exact) return location === tab.path;
-    return location.startsWith(tab.path);
+  const isActive = (tab: { matchPrefix: string }) => {
+    if (location === "/" && tab.matchPrefix === "/markets") return true;
+    return location.startsWith(tab.matchPrefix);
   };
 
-  const isMoreActive = MORE_TABS.some(t => isActive(t));
+  const activeIdx = NAV_TABS.findIndex(t => isActive(t));
+
+  useEffect(() => {
+    const el = tabRefs.current[activeIdx];
+    if (el && navScrollRef.current) {
+      const container = navScrollRef.current;
+      const scrollLeft = el.offsetLeft - container.offsetWidth / 2 + el.offsetWidth / 2;
+      container.scrollTo({ left: Math.max(0, scrollLeft), behavior: "smooth" });
+    }
+  }, [activeIdx]);
 
   const cycleTheme = () => {
     const idx = THEME_CYCLE.indexOf(theme);
@@ -116,85 +121,48 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      <div className="shrink-0 flex items-stretch border-t border-border bg-background"
-        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-      >
-        {MAIN_TABS.map(tab => {
-          const active = isActive(tab);
-          return (
-            <button
-              key={tab.path}
-              onClick={() => navigate(tab.path)}
-              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors active:bg-white/5"
-            >
-              <tab.Icon
-                size={18}
-                className={active ? "text-primary" : "text-muted-foreground"}
-                strokeWidth={active ? 2.5 : 1.5}
-              />
-              <span className={`text-[10px] font-medium ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
-                {tab.label}
-              </span>
-            </button>
-          );
-        })}
-        <button
-          onClick={() => setMoreOpen(true)}
-          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors active:bg-white/5"
+      <div className="shrink-0 border-t border-border bg-background relative">
+        <div
+          ref={navScrollRef}
+          className="flex items-stretch overflow-x-auto no-scrollbar"
+          style={{
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            WebkitOverflowScrolling: "touch",
+          }}
         >
-          <MoreHorizontal
-            size={18}
-            className={isMoreActive ? "text-primary" : "text-muted-foreground"}
-            strokeWidth={isMoreActive ? 2.5 : 1.5}
-          />
-          <span className={`text-[10px] font-medium ${isMoreActive ? "text-primary font-bold" : "text-muted-foreground"}`}>
-            More
-          </span>
-        </button>
-      </div>
-
-      {moreOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm"
-            onClick={() => setMoreOpen(false)}
-          />
-          <div className="fixed bottom-0 left-0 right-0 z-[91] bg-card border-t border-border rounded-t-2xl shadow-2xl animate-in slide-in-from-bottom duration-200"
-            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-          >
-            <div className="flex items-center justify-between px-5 pt-4 pb-2">
-              <h3 className="text-sm font-bold text-foreground">More</h3>
+          {NAV_TABS.map((tab, i) => {
+            const active = isActive(tab);
+            return (
               <button
-                onClick={() => setMoreOpen(false)}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 text-muted-foreground"
+                key={tab.path}
+                ref={el => { tabRefs.current[i] = el; }}
+                onClick={() => navigate(tab.path)}
+                className={`
+                  flex flex-col items-center justify-center py-2 gap-0.5
+                  transition-all active:bg-white/5 shrink-0 relative
+                  ${active ? "opacity-100" : "opacity-70"}
+                `}
+                style={{ minWidth: "4.2rem", width: "4.2rem" }}
               >
-                <X size={18} />
+                {active && (
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-[2px] rounded-full bg-primary" />
+                )}
+                <tab.Icon
+                  size={17}
+                  className={active ? "text-primary" : "text-muted-foreground"}
+                  strokeWidth={active ? 2.5 : 1.5}
+                />
+                <span className={`text-[9px] leading-tight font-medium whitespace-nowrap ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                  {tab.label}
+                </span>
               </button>
-            </div>
-            <div className="px-3 pb-4 grid grid-cols-4 gap-1">
-              {MORE_TABS.map(tab => {
-                const active = isActive(tab);
-                return (
-                  <button
-                    key={tab.path}
-                    onClick={() => { setMoreOpen(false); navigate(tab.path); }}
-                    className={`flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-xl transition-colors ${active ? "bg-primary/10" : "hover:bg-white/5 active:bg-white/5"}`}
-                  >
-                    <tab.Icon
-                      size={20}
-                      className={active ? "text-primary" : "text-muted-foreground"}
-                      strokeWidth={active ? 2.5 : 1.5}
-                    />
-                    <span className={`text-[10px] font-medium ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
-                      {tab.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </>
-      )}
+            );
+          })}
+        </div>
+        <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent" />
+      </div>
 
       <Suspense fallback={null}>
         <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
