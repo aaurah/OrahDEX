@@ -75,7 +75,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      <div className="shrink-0 border-b border-border/40 bg-card">
+      <div className="shrink-0 bg-card">
         <div className="flex items-center h-12">
           <button
             onClick={() => navigate("/")}
@@ -115,53 +115,45 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
         </div>
+
+        <div className="relative">
+          <div
+            ref={navScrollRef}
+            className="flex items-center gap-1 overflow-x-auto no-scrollbar px-2 pb-2"
+            style={{
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {NAV_TABS.map((tab, i) => {
+              const active = isActive(tab);
+              return (
+                <button
+                  key={tab.path}
+                  ref={el => { tabRefs.current[i] = el; }}
+                  onClick={() => navigate(tab.path)}
+                  className={`
+                    flex items-center gap-1.5 shrink-0 rounded-full px-3 py-1.5
+                    text-[11px] font-semibold transition-all active:scale-95
+                    ${active
+                      ? "bg-primary/15 text-primary border border-primary/30"
+                      : "bg-secondary/40 text-muted-foreground border border-transparent hover:bg-secondary/60"
+                    }
+                  `}
+                >
+                  <tab.Icon size={13} strokeWidth={active ? 2.5 : 2} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-8 bg-gradient-to-l from-card to-transparent" />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto overscroll-contain relative">
         {children}
-      </div>
-
-      <div className="shrink-0 border-t border-border bg-background relative">
-        <div
-          ref={navScrollRef}
-          className="flex items-stretch overflow-x-auto no-scrollbar"
-          style={{
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
-            scrollbarWidth: "none",
-            msOverflowStyle: "none",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {NAV_TABS.map((tab, i) => {
-            const active = isActive(tab);
-            return (
-              <button
-                key={tab.path}
-                ref={el => { tabRefs.current[i] = el; }}
-                onClick={() => navigate(tab.path)}
-                className={`
-                  flex flex-col items-center justify-center py-2 gap-0.5
-                  transition-all active:bg-white/5 shrink-0 relative
-                  ${active ? "opacity-100" : "opacity-70"}
-                `}
-                style={{ minWidth: "4.2rem", width: "4.2rem" }}
-              >
-                {active && (
-                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-5 h-[2px] rounded-full bg-primary" />
-                )}
-                <tab.Icon
-                  size={17}
-                  className={active ? "text-primary" : "text-muted-foreground"}
-                  strokeWidth={active ? 2.5 : 1.5}
-                />
-                <span className={`text-[9px] leading-tight font-medium whitespace-nowrap ${active ? "text-primary font-bold" : "text-muted-foreground"}`}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-6 bg-gradient-to-l from-background to-transparent" />
       </div>
 
       <Suspense fallback={null}>
@@ -171,10 +163,10 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         <button
           onClick={() => setChatOpen(true)}
           title="Live Support"
-          className="fixed bottom-20 right-4 z-50 w-13 h-13 rounded-full shadow-2xl bg-gradient-to-br from-primary/90 to-primary flex items-center justify-center active:scale-95 transition-transform"
-          style={{ width: 52, height: 52 }}
+          className="fixed bottom-6 right-4 z-50 rounded-full shadow-2xl bg-gradient-to-br from-primary/90 to-primary flex items-center justify-center active:scale-95 transition-transform"
+          style={{ width: 48, height: 48, marginBottom: "env(safe-area-inset-bottom, 0px)" }}
         >
-          <MessageCircle size={22} className="text-white" />
+          <MessageCircle size={20} className="text-white" />
         </button>
       )}
       <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
