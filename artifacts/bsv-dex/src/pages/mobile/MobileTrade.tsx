@@ -198,14 +198,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
+  const isOrahWallet = !!provider;
+  const usesApiBalance = isOrahWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
+
+  const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
+  const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
+    const fetchOne = async (asset: string) => {
+      try {
+        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`);
+        if (!r.ok) return { available: 0 };
+        const j = await r.json();
+        return { available: parseFloat(j.available ?? "0") || 0 };
+      } catch { return { available: 0 }; }
+    };
+    const [bRes, qRes] = await Promise.all([fetchOne(b), fetchOne(q)]);
+    setApiBalances({ [b]: bRes.available, [q]: qRes.available });
+  }, []);
+  useEffect(() => {
+    if (!usesApiBalance || !address) { setApiBalances({}); return; }
+    fetchApiBalances(base, quote, address);
+  }, [usesApiBalance, address, symbol, fetchApiBalances, base, quote]);
+
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
@@ -348,6 +369,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      if (usesApiBalance && address) fetchApiBalances(base, quote, address);
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {
@@ -572,18 +594,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
   const isNativeQuote = nativeSymbol === quote;
 
-  // Non-custodial: trade directly from on-chain wallet balance — no deposit required.
   // Base asset (e.g. ETH): use native balance if it's the native token, else ERC-20.
   // Quote asset (e.g. USDT): use ERC-20 balance.
   const walletBaseBalance  = isNativeBase  ? walletBal : erc20BaseBalance;
   const walletQuoteBalance = isNativeQuote ? walletBal : erc20QuoteBalance;
 
-  // Non-custodial: effective balances come directly from the on-chain wallet,
-  // then net of amounts locked in open orders for this market.
-  const grossSellBalance = walletBaseBalance;
-  const grossBuyBalance  = walletQuoteBalance;
-  const sellBalance = Math.max(0, grossSellBalance - lockedSellQty);
-  const buyBalance  = Math.max(0, grossBuyBalance  - lockedBuySpend);
+  // Orah Wallet users use the API ledger balance.
+  // External wallets use on-chain balance minus open order locks.
+  const grossSellBalance = usesApiBalance ? (apiBalances[base] ?? 0) : walletBaseBalance;
+  const grossBuyBalance  = usesApiBalance ? (apiBalances[quote] ?? 0) : walletQuoteBalance;
+  const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
+  const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
@@ -685,11 +706,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       stopPrice: useStop,
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
+      walletSource:   isOrahWallet ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
-      // reportedBalance: gross on-chain wallet balance (NOT net of open orders).
-      // The backend uses this to verify the user actually holds the funds in their
-      // external wallet.  The "net of locked orders" deduction is UI-only.
-      reportedBalance: side === "sell" ? grossSellBalance : grossBuyBalance,
+      reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
     } as any);
   }
 
