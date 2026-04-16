@@ -154,19 +154,19 @@ Keep it under 200 words. Use plain markdown. No financial advice disclaimer need
 
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 512,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    });
+    }, { signal: AbortSignal.timeout(25_000) });
 
     const content = response.choices[0]?.message?.content || "Analysis unavailable";
     analysisCache.set(symbol, { content, ts: Date.now() });
-    res.json({ symbol, analysis: content, cached: false });
+    if (!res.headersSent) res.json({ symbol, analysis: content, cached: false });
   } catch (err: any) {
     logger.error({ err: err?.message }, "AI market analysis error");
-    res.status(500).json({ error: err?.message ?? "Analysis failed" });
+    if (!res.headersSent) res.status(503).json({ error: "Analysis temporarily unavailable" });
   }
 });
 
@@ -177,9 +177,9 @@ const INSIGHTS_TTL = 10 * 60 * 1000;
 router.get("/ai/insights", async (_req, res) => {
   if (insightsCache.content && Date.now() - insightsCache.ts < INSIGHTS_TTL) {
     try {
-      res.json({ insights: JSON.parse(insightsCache.content), cached: true });
+      if (!res.headersSent) res.json({ insights: JSON.parse(insightsCache.content), cached: true });
     } catch {
-      res.json({ insights: [insightsCache.content], cached: true });
+      if (!res.headersSent) res.json({ insights: [insightsCache.content], cached: true });
     }
     return;
   }
@@ -187,7 +187,7 @@ router.get("/ai/insights", async (_req, res) => {
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 512,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         {
@@ -195,7 +195,7 @@ router.get("/ai/insights", async (_req, res) => {
           content: `Give 3 brief, sharp market insights for crypto traders as of March 2026. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.`
         },
       ],
-    });
+    }, { signal: AbortSignal.timeout(25_000) });
 
     const raw = response.choices[0]?.message?.content || "[]";
     let parsed: string[];
@@ -208,10 +208,10 @@ router.get("/ai/insights", async (_req, res) => {
     const content = JSON.stringify(parsed);
     insightsCache.content = content;
     insightsCache.ts = Date.now();
-    res.json({ insights: parsed, cached: false });
+    if (!res.headersSent) res.json({ insights: parsed, cached: false });
   } catch (err: any) {
     logger.error({ err: err?.message }, "AI insights error");
-    res.status(500).json({ error: err?.message ?? "Insights failed" });
+    if (!res.headersSent) res.status(503).json({ error: "AI insights temporarily unavailable" });
   }
 });
 
@@ -237,22 +237,22 @@ router.get("/ai/trade-signal", async (req, res) => {
 
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 256,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    });
+    }, { signal: AbortSignal.timeout(25_000) });
 
     const signal = response.choices[0]?.message?.content || "";
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
       : signal.toLowerCase().includes("bearish") ? "bearish" : "neutral";
 
     signalCache.set(cacheKey, { signal, sentiment, ts: Date.now() });
-    res.json({ symbol, signal, sentiment });
+    if (!res.headersSent) res.json({ symbol, signal, sentiment });
   } catch (err: any) {
     logger.error({ err: err?.message }, "AI trade signal error");
-    res.status(500).json({ error: err?.message ?? "Signal failed" });
+    if (!res.headersSent) res.status(503).json({ error: "Signal temporarily unavailable" });
   }
 });
 
