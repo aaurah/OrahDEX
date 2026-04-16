@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, TrendingUp, DollarSign, ArrowDownToLine, RefreshCw,
@@ -177,11 +178,13 @@ type BsvWallet = {
 /* ─── main component ───────────────────────────────────────────────────── */
 export function AdminBotProfit() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [amount,  setAmount]  = useState("");
   const [address, setAddress] = useState("");
   const [network, setNetwork] = useState("BSV");
   const [error,   setError]   = useState("");
   const [success, setSuccess] = useState("");
+  const [isEthPending, setIsEthPending] = useState(false);
 
   // Settlement address editor state
   const [editingAddr, setEditingAddr] = useState(false);
@@ -226,10 +229,13 @@ export function AdminBotProfit() {
       return j;
     },
     onSuccess: (j) => {
-      const detail = j.satoshis
-        ? ` (${j.satoshis.toLocaleString()} sat @ $${j.bsvPriceUsd?.toFixed(2)}/BSV)`
-        : "";
-      setSuccess(`Sent! TXID: ${j.txid}${detail}`);
+      if (j.satoshis) {
+        setIsEthPending(false);
+        setSuccess(`Sent on-chain! TXID: ${j.txid} (${j.satoshis.toLocaleString()} sat @ $${j.bsvPriceUsd?.toFixed(2)}/BSV)`);
+      } else {
+        setIsEthPending(true);
+        setSuccess(`Pending: ${j.ethAmount ?? ""} ETH (~$${Number(j.ethAmount ?? 0) * (j.ethPriceUsd ?? 0) < 1 ? "..." : (Number(j.ethAmount ?? 0) * (j.ethPriceUsd ?? 0)).toFixed(2)}) — tap below to send it on-chain.`);
+      }
       setAmount(""); setAddress(""); setError("");
       qc.invalidateQueries({ queryKey: ["admin-bot-profit"] });
       qc.invalidateQueries({ queryKey: ["admin-bsv-wallet"] });
@@ -652,8 +658,19 @@ export function AdminBotProfit() {
               </div>
             )}
             {success && (
-              <div className="flex items-start gap-2 text-green-400 text-xs bg-green-400/10 rounded-lg px-3 py-2 break-all">
-                <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{success}
+              <div className="flex flex-col gap-2 text-green-400 text-xs bg-green-400/10 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2 break-all">
+                  <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{success}
+                </div>
+                {isEthPending && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/admin/withdrawals")}
+                    className="flex items-center gap-1.5 self-start bg-green-500 hover:bg-green-400 text-black text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Go to Withdrawals →
+                  </button>
+                )}
               </div>
             )}
 
