@@ -3,6 +3,7 @@ import { db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router: IRouter = Router();
 
@@ -124,7 +125,7 @@ router.get("/admin/withdrawals", async (req, res) => {
 // ── PATCH /withdrawals/:id ────────────────────────────────────────────────────
 // Admin action: update status to 'cancelled' (refunds balance), 'processing',
 // or 'completed' (with optional txid).
-router.patch("/withdrawals/:id", async (req, res) => {
+router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
   const { id } = req.params;
   const { status, txid, note } = req.body as { status: string; txid?: string; note?: string };
 

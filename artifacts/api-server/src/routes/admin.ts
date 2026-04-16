@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db } from "@workspace/db";
+import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
@@ -134,7 +135,8 @@ router.post("/auth", (req, res) => {
     res.status(401).json({ error: "Invalid email or password." });
     return;
   }
-  res.json({ success: true });
+  const token = generateAdminToken();
+  res.json({ success: true, token });
 });
 
 /**
@@ -150,7 +152,8 @@ router.post("/auth/totp", async (req, res) => {
   const secret = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
-    res.json({ success: true });
+    const token = generateAdminToken();
+    res.json({ success: true, token });
   } else {
     res.status(401).json({ error: "Incorrect code. Try again." });
   }
@@ -222,7 +225,16 @@ router.post("/auth/wallet", async (req, res) => {
     return;
   }
   pendingNonces.delete(address.toLowerCase());
-  res.json({ success: true, address });
+  const token = generateAdminToken();
+  res.json({ success: true, address, token });
+});
+
+/**
+ * POST /admin/auth/logout — revoke all admin tokens (server-side sign-out).
+ */
+router.post("/auth/logout", (req, res) => {
+  revokeAllAdminTokens();
+  res.json({ success: true });
 });
 
 /* ─── WALLET WHITELIST ────────────────────────────────────────────────────── */

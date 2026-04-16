@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { AdminLayout } from "@/components/AdminLayout";
 import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { parseEther } from "viem";
+import { adminFetch } from "@/lib/adminFetch";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -168,7 +169,7 @@ function BalanceAdjustPanel() {
 
   const adjust = useMutation({
     mutationFn: async () => {
-      const r = await fetch(`${API_BASE}/api/admin/balance-adjust`, {
+      const r = await adminFetch(`/api/admin/balance-adjust`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: wallet.trim(), asset: asset.trim(), amount, type, reason }),
@@ -292,7 +293,7 @@ export function AdminWithdrawals() {
   const { data: withdrawals = [], isFetching, refetch } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals"],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/api/admin/withdrawals`);
+      const r = await adminFetch(`/api/admin/withdrawals`);
       if (!r.ok) throw new Error("Failed to load");
       return r.json();
     },
@@ -301,7 +302,7 @@ export function AdminWithdrawals() {
 
   const patch = useMutation({
     mutationFn: async ({ id, status, txid, note }: { id: string; status: string; txid?: string; note?: string }) => {
-      const r = await fetch(`${API_BASE}/api/withdrawals/${id}`, {
+      const r = await adminFetch(`/api/withdrawals/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, txid, note }),
