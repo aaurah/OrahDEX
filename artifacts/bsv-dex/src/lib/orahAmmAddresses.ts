@@ -27,15 +27,14 @@ export interface OrahAmmConfig {
  *   3. Add the chainId to ORAH_AMM_CHAINS below.
  */
 export const ORAH_AMM_ADDRESSES: Record<number, OrahAmmConfig> = {
-  // ── Sepolia testnet (chainId 11155111) ──────────────────────────────────
-  // Populated after deployment — paste factory + router here.
-  // 11155111: {
-  //   factory: "0x...",
-  //   router:  "0x...",
-  //   weth:    "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9",
-  // },
+  // ── Sepolia testnet (chainId 11155111) — deployed 2026-04-16 ────────────
+  11155111: {
+    factory: "0x8c6bdD68078Eb20b99dd8E644fF347013415220c",
+    router:  "0x03EdB4b914A0D05E6Aee0a8389A90eE33c8f664a",
+    weth:    "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9",
+  },
 
-  // ── Base Sepolia testnet (chainId 84532) ────────────────────────────────
+  // ── Base Sepolia testnet (chainId 84532) — not yet deployed ─────────────
   // 84532: {
   //   factory: "0x...",
   //   router:  "0x...",

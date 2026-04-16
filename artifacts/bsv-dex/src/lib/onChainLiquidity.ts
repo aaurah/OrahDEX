@@ -28,6 +28,7 @@ import { checkAllowance, pollTxReceipt, getWagmiConfig } from "./reown";
 const EVM_CHAIN_IDS = new Set([
   1, 56, 137, 42161, 10, 8453,
   59144, 324, 534352, 5000, 43114, 250, 25,
+  11155111, 84532,  // testnets: Sepolia, Base Sepolia
 ]);
 
 // ─── Token addresses per chain ────────────────────────────────────────────────
@@ -43,6 +44,12 @@ export const CHAIN_TOKEN_ADDRESSES: Record<number, Partial<Record<string, string
     USDC:  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
     USDT:  "0xdAC17F958D2ee523a2206206994597C13D831ec7",
     WBTC:  "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+  },
+  11155111: {  // Sepolia testnet — OrahDEX AMM deployed
+    WETH:  "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9",
+    USDC:  "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",  // Circle test USDC on Sepolia
+    USDT:  "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0",  // Aave test USDT on Sepolia
+    WBTC:  "0x29f2D40B0605204364af54EC677bD022dA425d03",  // Aave test WBTC on Sepolia
   },
 };
 
@@ -67,33 +74,37 @@ export const TOKEN_DECIMALS: Record<string, number> = {
 };
 
 export const EXPLORER_TX: Record<number, string> = {
-  8453:   "https://basescan.org/tx/",
-  1:      "https://etherscan.io/tx/",
-  56:     "https://bscscan.com/tx/",
-  137:    "https://polygonscan.com/tx/",
-  42161:  "https://arbiscan.io/tx/",
-  10:     "https://optimistic.etherscan.io/tx/",
-  59144:  "https://lineascan.build/tx/",
-  324:    "https://explorer.zksync.io/tx/",
-  43114:  "https://snowtrace.io/tx/",
-  250:    "https://ftmscan.com/tx/",
-  25:     "https://cronoscan.com/tx/",
+  8453:     "https://basescan.org/tx/",
+  1:        "https://etherscan.io/tx/",
+  56:       "https://bscscan.com/tx/",
+  137:      "https://polygonscan.com/tx/",
+  42161:    "https://arbiscan.io/tx/",
+  10:       "https://optimistic.etherscan.io/tx/",
+  59144:    "https://lineascan.build/tx/",
+  324:      "https://explorer.zksync.io/tx/",
+  43114:    "https://snowtrace.io/tx/",
+  250:      "https://ftmscan.com/tx/",
+  25:       "https://cronoscan.com/tx/",
+  11155111: "https://sepolia.etherscan.io/tx/",
+  84532:    "https://sepolia.basescan.org/tx/",
 };
 
 export const CHAIN_NAMES: Record<number, string> = {
-  1:      "Ethereum",
-  8453:   "Base",
-  56:     "BNB Chain",
-  137:    "Polygon",
-  42161:  "Arbitrum",
-  10:     "Optimism",
-  59144:  "Linea",
-  324:    "zkSync Era",
-  43114:  "Avalanche",
-  250:    "Fantom",
-  25:     "Cronos",
-  534352: "Scroll",
-  5000:   "Mantle",
+  1:        "Ethereum",
+  8453:     "Base",
+  56:       "BNB Chain",
+  137:      "Polygon",
+  42161:    "Arbitrum",
+  10:       "Optimism",
+  59144:    "Linea",
+  324:      "zkSync Era",
+  43114:    "Avalanche",
+  250:      "Fantom",
+  25:       "Cronos",
+  534352:   "Scroll",
+  5000:     "Mantle",
+  11155111: "Sepolia",
+  84532:    "Base Sepolia",
 };
 
 // ─── Mode helpers ─────────────────────────────────────────────────────────────
