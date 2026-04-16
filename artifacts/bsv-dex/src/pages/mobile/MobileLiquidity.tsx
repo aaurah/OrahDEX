@@ -10,6 +10,7 @@ import {
   ExternalLink, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
@@ -841,10 +842,11 @@ function PoolCard({ pool, onAdd, onRemove }: {
 
 /* ── My Positions tab ── */
 function MyPositions({ myPools, onAdd, onRemove }: {
-  myPools: (typeof POOLS[0] & { userLp: number })[];
+  myPools: (typeof POOLS[0] & { userLp: number; userDepositedUsd: number })[];
   onAdd: (p: typeof POOLS[0]) => void;
   onRemove: (p: typeof POOLS[0]) => void;
 }) {
+  const { quoteCurrency } = useSettingsStore();
   if (!myPools.length) return (
     <div className="flex flex-col items-center justify-center h-48 text-center gap-3">
       <Droplets size={40} className="text-muted-foreground/40" />
@@ -871,9 +873,9 @@ function MyPositions({ myPools, onAdd, onRemove }: {
             <div className="grid grid-cols-2 gap-2 mb-3">
               {[
                 ["LP Tokens", `${pool.userLp.toFixed(4)}`],
-                ["Est. Value", `$${(pool.userLp * 12.5).toLocaleString()}`],
+                ["Est. Value", formatQuoteAmount(pool.userDepositedUsd, quoteCurrency)],
                 ["Pool Share", fmtPoolShare(pool.userLp, pool.tvl)],
-                ["Fees Earned (24h)", `$${(pool.vol24 * (pool.fee / 100) * (pool.userLp * 12.5 / pool.tvl)).toFixed(2)}`],
+                ["Fees Earned (24h)", formatQuoteAmount(pool.vol24 * (pool.fee / 100) * (pool.userDepositedUsd / Math.max(pool.tvl, 1)), quoteCurrency)],
               ].map(([l, v]) => (
                 <div key={l} className="bg-secondary/40 rounded-lg p-2">
                   <div className="text-[10px] text-muted-foreground">{l}</div>
@@ -996,7 +998,8 @@ export function MobileLiquidity() {
 
   const enrichPool = (p: typeof POOLS[0]) => ({
     ...p,
-    userLp: userPositions[p.id]?.lpTokens ?? 0,
+    userLp:           userPositions[p.id]?.lpTokens         ?? 0,
+    userDepositedUsd: userPositions[p.id]?.depositedValueUsd ?? 0,
   });
 
   const openAdd    = (p: typeof POOLS[0]) => { setModalPool(enrichPool(p)); setModalMode("add"); };
