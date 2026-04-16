@@ -23,6 +23,41 @@ import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// Per-asset canonical withdrawal network (independent of connected wallet)
+const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string; placeholder: string }> = {
+  BTC:   { network: "btc",  networkLabel: "Bitcoin",            placeholder: "bc1... or 1... or 3..." },
+  BSV:   { network: "bsv",  networkLabel: "Bitcoin SV",         placeholder: "1... (BSV P2PKH)" },
+  BCH:   { network: "bch",  networkLabel: "Bitcoin Cash",       placeholder: "bitcoincash:q... or 1..." },
+  ETH:   { network: "evm",  networkLabel: "Ethereum Mainnet",   placeholder: "0x... (ERC-20 address)" },
+  USDT:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  USDC:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  DAI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  AAVE:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  LINK:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  UNI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  BNB:   { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
+  BUSD:  { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
+  MATIC: { network: "evm",  networkLabel: "Polygon",            placeholder: "0x... (Polygon address)" },
+  AVAX:  { network: "evm",  networkLabel: "Avalanche C-Chain",  placeholder: "0x... (Avalanche address)" },
+  FTM:   { network: "evm",  networkLabel: "Fantom",             placeholder: "0x... (Fantom address)" },
+  SOL:   { network: "sol",  networkLabel: "Solana",             placeholder: "Solana wallet address" },
+  TRX:   { network: "tron", networkLabel: "TRON Network",       placeholder: "T... (TRON address)" },
+  BTT:   { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
+  XRP:   { network: "xrp",  networkLabel: "XRP Ledger",         placeholder: "r... (XRP address)" },
+  ADA:   { network: "ada",  networkLabel: "Cardano",            placeholder: "addr1... (Cardano address)" },
+  DOGE:  { network: "doge", networkLabel: "Dogecoin",           placeholder: "D... (Dogecoin address)" },
+  DOT:   { network: "dot",  networkLabel: "Polkadot",           placeholder: "1... (Polkadot address)" },
+  LTC:   { network: "ltc",  networkLabel: "Litecoin",           placeholder: "L... or ltc1..." },
+  XLM:   { network: "xlm",  networkLabel: "Stellar",            placeholder: "G... (Stellar address)" },
+};
+
+function getAssetNetworkInfo(asset: string, connectedNetwork: string | null):
+  { network: string; networkLabel: string; placeholder: string } {
+  if (ASSET_NETWORK_MAP[asset]) return ASSET_NETWORK_MAP[asset];
+  const net = connectedNetwork ?? "evm";
+  return { network: net, networkLabel: net.toUpperCase(), placeholder: "Destination address" };
+}
+
 // Map EVM chainId → portfolio native symbol
 const EVM_NATIVE: Record<number, string> = {
   1: "ETH", 10: "ETH", 42161: "ETH", 8453: "ETH",
@@ -384,18 +419,24 @@ export function MobilePortfolio() {
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      {withdrawAsset && (
-        <WithdrawSheet
-          open={withdrawOpen}
-          onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-          walletAddress={address ?? ""}
-          asset={withdrawAsset.asset}
-          available={withdrawAsset.available}
-          network={withdrawAsset.network}
-          networkLabel={withdrawAsset.networkLabel}
-          color={withdrawAsset.color}
-        />
-      )}
+      {withdrawAsset && (() => {
+        const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network);
+        const sameNetwork = assetNet.network === (network ?? "evm");
+        const prefillAddress = sameNetwork ? (address ?? "") : "";
+        return (
+          <WithdrawSheet
+            open={withdrawOpen}
+            onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
+            walletAddress={prefillAddress}
+            asset={withdrawAsset.asset}
+            available={withdrawAsset.available}
+            network={assetNet.network}
+            networkLabel={assetNet.networkLabel}
+            addressPlaceholder={assetNet.placeholder}
+            color={withdrawAsset.color}
+          />
+        );
+      })()}
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
         {/* Header */}
@@ -719,7 +760,7 @@ export function MobilePortfolio() {
                         : b.asset === "BSV" ? "#EAB308"
                         : b.asset === "BNB" ? "#F0B90B"
                         : "#6B7280";
-                      const netLabel = network === "evm" ? (chainId === 1 ? "Ethereum" : chainId === 56 ? "BNB Chain" : chainId === 137 ? "Polygon" : "EVM") : network === "tron" ? "TRON" : "BSV";
+                      const assetNet = getAssetNetworkInfo(b.asset, network);
                       return (
                         <div
                           key={b.asset}
@@ -740,7 +781,7 @@ export function MobilePortfolio() {
                           </div>
                           <button
                             onClick={() => {
-                              setWithdrawAsset({ asset: b.asset, available: b.free, network: network ?? "evm", networkLabel: netLabel, color });
+                              setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
                               setWithdrawOpen(true);
                             }}
                             className="px-3 py-1.5 rounded-xl text-xs font-bold bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors shrink-0"
