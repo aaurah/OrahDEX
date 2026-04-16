@@ -32,7 +32,7 @@ function useBackendBalances(address: string | null) {
     if (!address) { setBalances([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${LP_BASE}/api/portfolio?walletAddress=${encodeURIComponent(address)}`);
+      const res = await fetch(`${LP_BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
       if (!res.ok) { setLoading(false); return; }
       const data = await res.json();
       if (data.balances && Array.isArray(data.balances)) {
@@ -40,8 +40,8 @@ function useBackendBalances(address: string | null) {
           symbol: a.asset ?? "",
           name: a.asset ?? "",
           amount: parseFloat(String(a.available ?? a.free ?? "0")),
-          usdValue: parseFloat(String(a.valueUSD ?? "0")),
-          price: parseFloat(String(a.price ?? "0")),
+          usdValue: 0,
+          price: 0,
           change24h: 0,
           color: "#888",
           decimals: 6,
@@ -348,17 +348,15 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
-  // Any 0x address is a real on-chain EVM address regardless of which provider
-  // manages the key (Orah Wallet, passkey, WalletConnect, etc.).
-  // Always fetch from the RPC chain; use the backend ledger only for non-EVM wallets.
   const isEvm = !!address && (network === "evm" || address.startsWith("0x"));
   const walletChain = walletChainId ?? 1;
   const targetChainId = pool?.chainId ?? walletChain;
   const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
-  const { balances: evmBalances, refresh: refreshEvmBalances, loading: evmLoading } = useEvmBalances(isEvm ? address : null, walletChain);
-  const { balances: backendBalances, refresh: refreshBackendBalances, loading: backendLoading } = useBackendBalances(isEvm ? null : address);
-  const balances = isEvm ? evmBalances : backendBalances;
-  const balancesLoading = isEvm ? evmLoading : backendLoading;
+  // Always use the OrahDEX internal ledger for balance checks — funds deposited via
+  // trading flow live here, not in the on-chain wallet.
+  const { balances, refresh: refreshBackendBalances, loading: balancesLoading } = useBackendBalances(address);
+  // Keep EVM hook alive so on-chain mode can refresh wallet display after a real tx.
+  const { refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, walletChain);
 
   const userPositions = address ? getUserPositions(address) : {};
   const myLpTokens   = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
@@ -434,6 +432,7 @@ function LiquidityModal({
               lpTokenAddress: s.lpTokenAddress,
             });
             refreshEvmBalances();
+            refreshBackendBalances();
             toast({
               title: "Liquidity added on-chain!",
               description: `OrahRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP tokens minted.`,
@@ -459,6 +458,7 @@ function LiquidityModal({
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId: targetChainId });
             refreshEvmBalances();
+            refreshBackendBalances();
             toast({
               title: "Liquidity added on-chain!",
               description: `Transaction confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,
@@ -486,6 +486,7 @@ function LiquidityModal({
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
             refreshEvmBalances();
+            refreshBackendBalances();
             useWalletStore.getState().triggerBalanceRefresh();
             toast({
               title: "Position recorded!",
