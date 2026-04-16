@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck, SlidersHorizontal, ChevronDown, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLayout } from "@/components/AdminLayout";
-import { useSendTransaction, useWaitForTransactionReceipt, useAccount } from "wagmi";
+import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { parseEther } from "viem";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -107,7 +107,6 @@ function SendViaWalletButton({ withdrawal, onComplete }: {
   withdrawal: Withdrawal;
   onComplete: (txid: string) => void;
 }) {
-  const { isConnected } = useAccount();
   const { sendTransaction, data: txHash, isPending, error: sendError, reset } = useSendTransaction();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
   const [fired, setFired] = useState(false);
@@ -119,9 +118,9 @@ function SendViaWalletButton({ withdrawal, onComplete }: {
     }
   }, [isSuccess, txHash, fired, onComplete]);
 
-  if (!isConnected) return null;
-
-  const isEvm = withdrawal.network === "evm" || withdrawal.network === "ethereum" || withdrawal.network === "eth";
+  const isEvm = ["evm", "ethereum", "eth", "erc-20", "erc20"].some(n =>
+    withdrawal.network.toLowerCase().includes(n) || (withdrawal.networkLabel ?? "").toLowerCase().includes(n)
+  );
   if (!isEvm) return null;
 
   const handleSend = () => {
