@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { CoinLogo, COIN_COLORS } from "@/components/CoinLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -17,6 +17,28 @@ import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
+
+const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function useBackendBalances(address: string | null) {
+  const [balances, setBalances] = useState<{ symbol: string; amount: number }[]>([]);
+  const fetchBalances = useCallback(async () => {
+    if (!address) { setBalances([]); return; }
+    try {
+      const res = await fetch(`${LP_BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.balances && Array.isArray(data.balances)) {
+        setBalances(data.balances.map((a: any) => ({
+          symbol: a.asset ?? "",
+          amount: parseFloat(String(a.available ?? "0")),
+        })));
+      }
+    } catch {}
+  }, [address]);
+  useEffect(() => { fetchBalances(); }, [fetchBalances]);
+  return { balances, refresh: fetchBalances };
+}
 
 /** Tolerance for floating-point balance comparisons (e.g. MAX button round-trips). */
 const EPSILON = 1e-7;
@@ -254,7 +276,10 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const isEvm = !address || network === "evm" || address?.startsWith("0x");
-  const { balances: evmBalances, refresh: refreshEvmBalances, loading: evmLoading } = useEvmBalances(isEvm ? address : null, chainId);
+  // Always check OrahDEX internal ledger balances — trading funds live here.
+  const { balances, refresh: refreshBackendBalances } = useBackendBalances(address);
+  // Keep EVM hook alive to refresh wallet display after real on-chain txs.
+  const { refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
   const walletConnected = !!address;
 
   const userPositions = address ? getUserPositions(address) : {};
@@ -269,9 +294,9 @@ function LiquidityModal({
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
 
-    if ((evmBalances?.length ?? 0) > 0) {
-      const balA = evmBalances!.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
-      const balB = evmBalances!.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
+    if (balances.length > 0) {
+      const balA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
+      const balB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
       if (nA > balA + EPSILON) {
         toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
         return;
@@ -300,6 +325,7 @@ function LiquidityModal({
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, { txHash: s.txHash, chainId: chainId ?? undefined });
             refreshEvmBalances();
+            refreshBackendBalances();
             toast({ title: "Liquidity added on-chain!", description: `Confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.` });
           }
         },
@@ -323,6 +349,7 @@ function LiquidityModal({
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
             refreshEvmBalances();
+            refreshBackendBalances();
             useWalletStore.getState().triggerBalanceRefresh();
             toast({
               title: "Position recorded!",
@@ -347,7 +374,7 @@ function LiquidityModal({
       description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
     });
     onClose();
-  }, [pool, amtA, amtB, submitting, walletConnected, address, chainId, isEvm, evmBalances, walletProvider, addPosition, toast, onClose]);
+  }, [pool, amtA, amtB, submitting, walletConnected, address, chainId, isEvm, balances, refreshBackendBalances, walletProvider, addPosition, toast, onClose]);
 
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
@@ -480,8 +507,8 @@ function LiquidityModal({
             </p>
             {/* Input A */}
             {(() => {
-              const balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? null;
-              const balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? null;
+              const balA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? null;
+              const balB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? null;
               const fmtBal = (n: number) => n < 0.0001 ? n.toExponential(2) : n.toLocaleString(undefined, { maximumFractionDigits: 6 });
               return (
                 <>
@@ -637,14 +664,14 @@ function LiquidityModal({
 
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || evmLoading || ((evmBalances?.length ?? 0) > 0 && ((parseFloat(amtA || "0") > (evmBalances!.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0) + EPSILON) || (parseFloat(amtB || "0") > (evmBalances!.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0) + EPSILON)))}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || (balances.length > 0 && ((parseFloat(amtA || "0") > (balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0) + EPSILON) || (parseFloat(amtB || "0") > (balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0) + EPSILON)))}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
               {(() => {
                 const m = getLiquidityMode(chainId, pool.base, pool.quote, walletProvider);
-                const _balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
-                const _balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-                if ((evmBalances?.length ?? 0) > 0 && (parseFloat(amtA || "0") > _balA + EPSILON || parseFloat(amtB || "0") > _balB + EPSILON)) return "Insufficient Balance";
+                const _balA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
+                const _balB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
+                if (balances.length > 0 && (parseFloat(amtA || "0") > _balA + EPSILON || parseFloat(amtB || "0") > _balB + EPSILON)) return "Insufficient Balance";
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
