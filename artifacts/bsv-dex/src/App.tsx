@@ -85,6 +85,7 @@ const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
+const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
 
@@ -357,6 +358,13 @@ function Router() {
       </Route>
       <Route path="/support">
         <Suspense fallback={<PageSkeleton />}><SupportPage /></Suspense>
+      </Route>
+      <Route path="/support/thread/:id">
+        {(params) => (
+          <Suspense fallback={<PageSkeleton />}>
+            <SupportThreadPage ticketId={params.id ?? "0"} />
+          </Suspense>
+        )}
       </Route>
 
       {/* ── Mobile layout ── */}
