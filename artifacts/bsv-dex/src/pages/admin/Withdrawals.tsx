@@ -127,9 +127,11 @@ function SendViaWalletButton({ withdrawal, onComplete }: {
     reset();
     setFired(false);
     try {
+      const amt = parseFloat(withdrawal.amount.toString());
       sendTransaction({
         to: withdrawal.recipient as `0x${string}`,
-        value: parseEther(withdrawal.amount.toString()),
+        value: parseEther(amt.toFixed(18)),
+        gas: 21000n,
       });
     } catch {}
   };
