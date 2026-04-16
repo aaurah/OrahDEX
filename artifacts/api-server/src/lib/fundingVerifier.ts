@@ -104,34 +104,42 @@ async function verifySpotFunding(
 ): Promise<FundingVerificationResult> {
   const { walletAddress, walletSource, asset, amount, signature, utxoRef, reportedBalance } = params;
 
-  // ── External EVM wallet ─────────────────────────────────────────────────
-  if (walletSource === "external" && (signature || !utxoRef)) {
-    // External wallets hold funds on-chain.  We cannot debit user_balances for
-    // them; instead we accept the signature + reportedBalance as proof.
-    if (!signature && reportedBalance == null) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "External wallet orders require a signature or reportedBalance",
-        code:       "EXTERNAL_WALLET_NO_PROOF",
-      };
-    }
+  // ── External EVM wallet — deposit model ─────────────────────────────────
+  // External EVM wallets must deposit funds into their OrahDEX internal ledger
+  // before trading. This ensures every order has real, locked collateral and
+  // prevents the ghost-credit bug (USDC credited without ETH ever leaving the
+  // on-chain wallet). The UI prompts users to deposit via GET /deposit/address.
+  if (walletSource === "external" && !utxoRef) {
     const needed = parseFloat(amount);
-    // For SELL orders: if the frontend didn't send reportedBalance, conservatively
-    // assume 0 — an unverified SELL cannot be accepted (no base asset proof).
-    // For BUY orders: if reportedBalance is absent we allow the trade to proceed
-    // (quote asset check is optional; the ledger lock is the primary guard).
-    const effectiveBalance = reportedBalance ?? (params.side === "sell" ? 0 : Infinity);
-    if (needed > effectiveBalance * 1.01) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      `Insufficient on-chain balance: need ${needed} ${params.asset}, have ${reportedBalance ?? 0}`,
-        code:       "INSUFFICIENT_FUNDS",
-      };
+    if (needed <= 0) {
+      return { valid: false, fundingRef: "", error: "Invalid order amount", code: "INVALID_AMOUNT" };
     }
-    const ref = signature ? evmSigFundingRef(signature) : `evm-balance:${walletAddress}`;
-    return { valid: true, fundingRef: ref };
+    try {
+      const balances  = await getBalances(walletAddress);
+      const row       = balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
+      const available = parseFloat(row?.available ?? "0");
+      if (available < needed - 1e-9) {
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      `Insufficient OrahDEX balance: need ${needed} ${asset}, have ${available.toFixed(6)}. Deposit ${asset} to your OrahDEX account first.`,
+          code:       "DEPOSIT_REQUIRED",
+        };
+      }
+      await lockForOrder({ walletAddress, asset, amount });
+      return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.startsWith("INSUFFICIENT_FUNDS")) {
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      `Insufficient ${asset} OrahDEX balance. Deposit ${asset} to trade.`,
+          code:       "DEPOSIT_REQUIRED",
+        };
+      }
+      return { valid: false, fundingRef: "", error: "Ledger error", code: "LEDGER_ERROR" };
+    }
   }
 
   // ── External BSV UTXO wallet ────────────────────────────────────────────

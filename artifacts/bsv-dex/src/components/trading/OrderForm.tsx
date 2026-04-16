@@ -12,6 +12,7 @@ import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
+import { DepositSheet } from "@/components/trading/DepositSheet";
 import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
@@ -340,9 +341,19 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     isEvm ? chainId : null
   );
 
-  // For Orah Wallet (internal EVM wallet): prefer on-chain RPC balance.
-  // Only fall back to the API ledger while the very first RPC fetch is still in-flight.
-  const usesApiBalance = isOrahWallet && balancesLoading && tokenBalances.length === 0;
+  // External EVM wallet = MetaMask/WalletConnect that is NOT the Orah-managed internal wallet.
+  // Under the deposit model, external EVM wallets trade from their internal OrahDEX ledger
+  // balance (funded via the deposit flow), not directly from on-chain.
+  const isExternalEvm = isEvm && !isOrahWallet;
+
+  // For Orah Wallet (internal EVM wallet): prefer on-chain RPC balance during first load.
+  // For external EVM wallets: always use the internal ledger balance (deposit model).
+  const usesApiBalance =
+    isExternalEvm ||
+    (isOrahWallet && balancesLoading && tokenBalances.length === 0);
+
+  // ── Deposit sheet state (external EVM wallets) ───────────────────────────────
+  const [depositOpen, setDepositOpen] = useState(false);
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
@@ -364,12 +375,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     setApiLockedBalances({ [b]: bRes.locked, [q]: qRes.locked });
   }, []);
   useEffect(() => {
-    if (!usesApiBalance || !address) { setApiBalances({}); return; }
+    if ((!usesApiBalance && !isExternalEvm) || !address) { setApiBalances({}); return; }
     const parts2 = symbol.split("/");
     const b = parts2[0];
     const q = parts2[1] ?? "USDT";
     fetchApiBalances(b, q, address);
-  }, [usesApiBalance, address, symbol, fetchApiBalances]);
+  }, [usesApiBalance, isExternalEvm, address, symbol, fetchApiBalances]);
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -916,11 +927,18 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           ))}
         </div>
 
-        {/* Wallet balance row — non-custodial: wallet balance is directly tradeable */}
+        {/* Balance row */}
         <div className="flex items-center justify-between text-xs px-0.5">
-          <span className="text-muted-foreground">Available</span>
-          <div className="flex items-center gap-1">
-            {balancesLoading && isEvm ? (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            {isExternalEvm ? (
+              <>
+                <Shield className="w-3 h-3 text-emerald-400/70" />
+                OrahDEX Balance
+              </>
+            ) : "Available"}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {balancesLoading && isEvm && !isExternalEvm ? (
               <RefreshCw className="w-3 h-3 animate-spin text-muted-foreground/40" />
             ) : (
               <span className={cn(
@@ -932,15 +950,52 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   : "0.0000"}{" "}{availableSym}
               </span>
             )}
+            {isExternalEvm && (
+              <button
+                type="button"
+                onClick={() => setDepositOpen(true)}
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors ml-0.5"
+              >
+                + Deposit
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Low balance hint — shown when wallet balance is zero */}
-        {availableAmt <= 0 && (
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-amber-500/8 border border-amber-500/20 text-xs -mt-0.5">
-            <span className="text-amber-400/80">
-              No {availableSym} in wallet. Buy or bridge {availableSym} to start trading.
+        {/* On-chain balance reference row (external EVM wallets only) */}
+        {isExternalEvm && walletBase > 0 && (
+          <div className="flex items-center justify-between text-xs px-0.5 -mt-1">
+            <span className="text-muted-foreground/50">On-chain wallet</span>
+            <span className="font-mono text-muted-foreground/50">
+              {walletBase.toLocaleString("en-US", { maximumFractionDigits: 6 })}{" "}{availableSym}
             </span>
+          </div>
+        )}
+
+        {/* Low balance hint */}
+        {availableAmt <= 0 && (
+          <div className={cn(
+            "flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5",
+            isExternalEvm
+              ? "bg-emerald-500/8 border border-emerald-500/20"
+              : "bg-amber-500/8 border border-amber-500/20"
+          )}>
+            {isExternalEvm ? (
+              <span className="text-emerald-400/80 flex items-center gap-1.5 flex-1">
+                No {availableSym} in your OrahDEX account.
+                <button
+                  type="button"
+                  onClick={() => setDepositOpen(true)}
+                  className="underline underline-offset-2 font-medium hover:text-emerald-300 transition-colors"
+                >
+                  Deposit {availableSym} to trade.
+                </button>
+              </span>
+            ) : (
+              <span className="text-amber-400/80">
+                No {availableSym} in wallet. Buy or bridge {availableSym} to start trading.
+              </span>
+            )}
           </div>
         )}
 
@@ -1628,6 +1683,17 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         );
       })()}
+
+      {/* Deposit sheet — external EVM wallets */}
+      {isExternalEvm && address && (
+        <DepositSheet
+          open={depositOpen}
+          onClose={() => setDepositOpen(false)}
+          walletAddress={address}
+          chainId={chainId}
+          onCredited={() => fetchApiBalances(base, quote, address)}
+        />
+      )}
     </div>
   );
 }
