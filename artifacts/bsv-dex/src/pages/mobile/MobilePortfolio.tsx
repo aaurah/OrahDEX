@@ -740,7 +740,7 @@ export function MobilePortfolio() {
                         </div>
                         <div className="bg-secondary/30 rounded-xl p-3">
                           <div className="text-[10px] text-muted-foreground mb-0.5">Est. Value</div>
-                          <div className="font-mono font-bold text-sm">${pos.depositedValueUsd.toFixed(2)}</div>
+                          <div className="font-mono font-bold text-sm">{formatQuoteAmount(pos.depositedValueUsd, quoteCurrency)}</div>
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
