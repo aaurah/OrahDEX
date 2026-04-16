@@ -594,10 +594,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Native token is usable as quote spend (e.g. ETH on Arbitrum buying in TOKEN/ETH)
   const isNativeQuote = nativeSymbol === quote;
 
-  // Base asset (e.g. ETH): use native balance if it's the native token, else ERC-20.
-  // Quote asset (e.g. USDT): use ERC-20 balance.
-  const walletBaseBalance  = isNativeBase  ? walletBal : erc20BaseBalance;
-  const walletQuoteBalance = isNativeQuote ? walletBal : erc20QuoteBalance;
+  // useEvmBalances always includes the native token in its results alongside ERC-20s.
+  // Prefer the hook value so we never show the stale wallet-store ledger balance.
+  // Fall back to walletBal only before the hook's first fetch (evmTokenBalances empty).
+  const walletBaseBalance  = evmTokenBalances.length > 0 ? erc20BaseBalance  : (isNativeBase  ? walletBal : 0);
+  const walletQuoteBalance = evmTokenBalances.length > 0 ? erc20QuoteBalance : (isNativeQuote ? walletBal  : 0);
 
   // Orah Wallet users use the API ledger balance.
   // External wallets use on-chain balance minus open order locks.

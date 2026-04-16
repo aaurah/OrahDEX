@@ -20,7 +20,7 @@ import {
 const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /** Tolerance for floating-point balance comparisons (e.g. MAX button round-trips). */
-const EPSILON = 1e-9;
+const EPSILON = 1e-7;
 
 function useBackendBalances(address: string | null) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);

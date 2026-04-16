@@ -462,11 +462,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const isNativeBase = base.toUpperCase() === nativeSymbol.toUpperCase();
 
   // Non-custodial: trade directly from on-chain wallet balance — no deposit required.
-  // Base (e.g. ETH) comes from native balance if it's the native token, else ERC-20.
-  // Quote (e.g. USDT) comes from the ERC-20 token balance.
-  const walletBase  = isNativeBase
-    ? nativeBal
-    : (baseBalEntry?.amount ?? 0);
+  // useEvmBalances includes the native token (ETH/BNB/…) in its results, so prefer that
+  // over the wallet store's stale `balance` field. Fall back to the store value only while
+  // the hook hasn't completed its first fetch (tokenBalances still empty).
+  const walletBase  = baseBalEntry?.amount ?? (isNativeBase ? nativeBal : 0);
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
   // Non-custodial: EVM wallets trade directly from wallet.

@@ -19,7 +19,7 @@ import {
 } from "@/lib/onChainLiquidity";
 
 /** Tolerance for floating-point balance comparisons (e.g. MAX button round-trips). */
-const EPSILON = 1e-9;
+const EPSILON = 1e-7;
 
 /* ─── pool data ─── */
 const POOLS = [
