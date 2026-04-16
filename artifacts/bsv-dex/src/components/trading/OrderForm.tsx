@@ -572,7 +572,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Your order matched! Lock ${receivedQty} ${receivedTok} in the HTLC contract below to complete the P2P atomic swap.`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain. Provide your ${fillChainName} address to receive funds.`
-                : `+${receivedQty} ${receivedTok} settled to your wallet`,
+                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
           });
           addNotification({
             type: "order_filled",
@@ -581,7 +581,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Lock ${receivedQty} ${receivedTok} on-chain to complete atomic swap — see settlement card`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain · provide ${fillChainName} address to receive`
-                : `+${receivedQty} ${receivedTok} settled via BSV`,
+                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -769,7 +769,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
             toast({
               title: "Order Filled ✓",
-              description: `+${receivedQty} ${receivedTok} settled to your wallet`,
+              description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
             });
           } else {
             toast({

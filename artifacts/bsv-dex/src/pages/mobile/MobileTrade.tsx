@@ -385,12 +385,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `+${receivedQty} ${receivedTok} settled to your wallet`,
+          description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `+${receivedQty} ${receivedTok} settled via BSV`,
+          body: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -1514,10 +1514,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
                           const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-                          return `+${creditedQty} ${orderResult.quoteSymbol} settled to your wallet`;
+                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX balance`;
                         } else {
                           const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          return `+${creditedQty} ${orderResult.base} settled to your wallet`;
+                          return `+${creditedQty} ${orderResult.base} credited to your OrahDEX balance`;
                         }
                       })()
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
