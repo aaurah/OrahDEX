@@ -155,14 +155,17 @@ function PageSkeleton() {
 }
 
 function RequireAdminAuth({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAdminAuthStore();
+  const { isAuthenticated, token, logout } = useAdminAuthStore();
   const [, navigate] = useLocation();
 
   useEffect(() => {
-    if (!isAuthenticated) navigate("/admin/login");
-  }, [isAuthenticated]);
+    if (!isAuthenticated || !token) {
+      if (isAuthenticated && !token) logout();
+      navigate("/admin/login");
+    }
+  }, [isAuthenticated, token]);
 
-  if (!isAuthenticated) return null;
+  if (!isAuthenticated || !token) return null;
   return <>{children}</>;
 }
 
