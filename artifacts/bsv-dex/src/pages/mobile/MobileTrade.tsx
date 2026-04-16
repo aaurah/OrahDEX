@@ -580,7 +580,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     : network === "btc" ? "BTC"
     : network === "sol" ? "SOL"
     : chainInfo?.nativeSymbol ?? "ETH";
-  const walletBal = address && walletBalance ? parseFloat(walletBalance) : 0;
+  // For EVM external wallets: never use the persisted wallet store balance as a fallback.
+  // It may hold a stale internal-ledger value (e.g. 1,472 ETH). Use 0 until useEvmBalances
+  // completes its first RPC fetch. For non-EVM (BSV/BTC/SOL) the store is set by on-chain
+  // polling hooks so it is safe to use.
+  const walletBal = address && walletBalance && !isEvm ? parseFloat(walletBalance) : 0;
 
   // Resolve ERC-20 balances for base and quote tokens
   const erc20BaseBalance  = evmTokenBalances.find(t => t.symbol.toUpperCase() === base.toUpperCase())?.amount  ?? 0;

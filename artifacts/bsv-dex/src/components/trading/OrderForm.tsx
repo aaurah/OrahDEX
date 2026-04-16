@@ -463,9 +463,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
   // Non-custodial: trade directly from on-chain wallet balance — no deposit required.
   // useEvmBalances includes the native token (ETH/BNB/…) in its results, so prefer that
-  // over the wallet store's stale `balance` field. Fall back to the store value only while
-  // the hook hasn't completed its first fetch (tokenBalances still empty).
-  const walletBase  = baseBalEntry?.amount ?? (isNativeBase ? nativeBal : 0);
+  // over the wallet store's stale `balance` field.
+  // For EVM external wallets: never fall back to the store balance — use 0 while the first
+  // RPC fetch is in flight. The store `balance` may hold a stale internal-ledger value.
+  // For non-EVM wallets (BSV/BTC/SOL): the store balance is set by on-chain polling hooks
+  // (useBsvBalance etc.) so it is safe to use as a fallback.
+  const walletBase  = baseBalEntry?.amount ?? (isNativeBase && !isEvm ? nativeBal : 0);
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
   // Non-custodial: EVM wallets trade directly from wallet.
