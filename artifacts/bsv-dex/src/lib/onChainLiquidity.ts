@@ -22,7 +22,8 @@ import {
   writeContract  as coreWriteContract,
   signMessage    as coreSignMessage,
 } from "@wagmi/core";
-import { checkAllowance, pollTxReceipt, getWagmiConfig } from "./reown";
+import { checkAllowance, pollTxReceipt, getWagmiConfig, CHAIN_RPC_URLS } from "./reown";
+import { getOrahAmm, hasOrahAmm, ORAH_ROUTER_ABI, ORAH_FACTORY_ABI } from "./orahAmmAddresses";
 
 // ─── EVM chains we recognise ──────────────────────────────────────────────────
 const EVM_CHAIN_IDS = new Set([
@@ -109,7 +110,7 @@ export const CHAIN_NAMES: Record<number, string> = {
 
 // ─── Mode helpers ─────────────────────────────────────────────────────────────
 
-export type LiquidityMode = "on_chain" | "live" | "simulated";
+export type LiquidityMode = "on_chain" | "orah_amm" | "live" | "simulated";
 
 const INTERNAL_PROVIDERS = new Set([
   "orah-wallet", "passkey", "mobile-qr",
@@ -128,6 +129,8 @@ export function getLiquidityMode(
 ): LiquidityMode {
   if (!chainId || !EVM_CHAIN_IDS.has(chainId)) return "simulated";
   if (provider !== undefined && !hasExternalConnector(provider)) return "simulated";
+  // OrahDEX-native AMM chains get real on-chain add/remove via OrahRouter02
+  if (hasOrahAmm(chainId)) return "orah_amm";
   const pairKey = `${base.toUpperCase()}/${quote.toUpperCase()}`;
   const supported = SUPPORTED_V3_PAIRS[chainId];
   if (supported?.has(pairKey)) return "on_chain";
@@ -151,6 +154,8 @@ export interface LiquidityTxStatus {
   lpTokens?: number;
   valueUsd?: number;
   error?: string;
+  /** OrahDEX LP token (pair) address — set on success for orah_amm mode */
+  lpTokenAddress?: string;
 }
 
 // ─── Unified transaction helpers ─────────────────────────────────────────────
@@ -459,4 +464,454 @@ export async function addLiquidityLive(params: AddLiquidityLiveParams): Promise<
   }
 
   onStatus({ step: "success", lpTokens, valueUsd, txHash: sig.slice(0, 20) + "…" });
+}
+
+// ─── OrahDEX AMM helpers (raw JSON-RPC, no wagmi chain config required) ───────
+
+/**
+ * Raw eth_call via JSON-RPC — no dependency on wagmi chain list.
+ * Used for reading on-chain data on any chain (including testnets).
+ */
+async function ethCallRaw(rpc: string, to: string, data: string): Promise<string | null> {
+  try {
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "eth_call",
+        params: [{ to, data }, "latest"],
+      }),
+    });
+    const json = await res.json();
+    return json?.result ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Poll for tx receipt on the given RPC.
+ * Resolves when the tx is mined or after a timeout (~4 minutes).
+ */
+async function waitOrahTx(txHash: string, rpc: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const MAX_ATTEMPTS = 80;
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "eth_getTransactionReceipt",
+            params: [txHash],
+          }),
+        });
+        const json = await res.json();
+        if (json?.result?.blockHash) {
+          clearInterval(poll);
+          resolve();
+          return;
+        }
+      } catch {}
+      if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(poll);
+        resolve();
+      }
+    }, 3000);
+  });
+}
+
+/** Pad an address to 32-byte ABI slot. */
+const padAddr = (a: string) => a.replace("0x", "").padStart(64, "0");
+
+/**
+ * Fetch the OrahDEX pair address from the factory for a token pair.
+ * Returns undefined when the pair doesn't exist yet.
+ */
+async function getOrahPairAddress(
+  rpc: string,
+  factoryAddress: string,
+  tokenA: string,
+  tokenB: string,
+): Promise<string | undefined> {
+  try {
+    const calldata = encodeFunctionData({
+      abi: ORAH_FACTORY_ABI,
+      functionName: "getPair",
+      args: [tokenA as `0x${string}`, tokenB as `0x${string}`],
+    });
+    const raw = await ethCallRaw(rpc, factoryAddress, calldata);
+    if (raw && raw !== "0x" && raw.length >= 66) {
+      const addr = "0x" + raw.slice(-40);
+      if (addr.toLowerCase() !== "0x0000000000000000000000000000000000000000") {
+        return addr;
+      }
+    }
+  } catch {}
+  return undefined;
+}
+
+// ─── addLiquidityOrahAmm ─────────────────────────────────────────────────────
+
+export interface AddLiquidityOrahAmmParams {
+  base:     string;
+  quote:    string;
+  amountA:  number;
+  amountB:  number;
+  address:  string;
+  chainId:  number;
+  onStatus: (s: LiquidityTxStatus) => void;
+}
+
+/**
+ * Add liquidity via OrahRouter02 on any chain where OrahDEX AMM is deployed.
+ * Uses window.ethereum directly so it works on any wallet+chain without wagmi
+ * network config (important for Sepolia which isn't in REOWN_NETWORKS).
+ */
+export async function addLiquidityOrahAmm(
+  params: AddLiquidityOrahAmmParams,
+): Promise<void> {
+  const { base, quote, amountA, amountB, address, chainId, onStatus } = params;
+  const update = (s: LiquidityTxStatus) => onStatus(s);
+
+  const amm = getOrahAmm(chainId);
+  if (!amm) {
+    update({ step: "error", error: "OrahDEX AMM not deployed on this chain." });
+    return;
+  }
+
+  const eth = (window as any).ethereum;
+  if (!eth) {
+    update({ step: "error", error: "No injected wallet found." });
+    return;
+  }
+
+  const rpc = CHAIN_RPC_URLS[chainId];
+  if (!rpc) {
+    update({ step: "error", error: `No RPC URL for chain ${chainId}.` });
+    return;
+  }
+
+  const tokens     = CHAIN_TOKEN_ADDRESSES[chainId] ?? {};
+  const isETHBase  = base.toUpperCase()  === "ETH";
+  const isETHQuote = quote.toUpperCase() === "ETH";
+  const baseKey    = isETHBase  ? "WETH" : base.toUpperCase()  === "BTC" ? "WBTC" : base.toUpperCase();
+  const quoteKey   = isETHQuote ? "WETH" : quote.toUpperCase() === "BTC" ? "WBTC" : quote.toUpperCase();
+
+  const baseDecimals  = TOKEN_DECIMALS[base.toUpperCase()]  ?? 18;
+  const quoteDecimals = TOKEN_DECIMALS[quote.toUpperCase()] ?? 6;
+  const baseWei       = toWei(amountA, baseDecimals);
+  const quoteWei      = toWei(amountB, quoteDecimals);
+  const deadline      = BigInt(Math.floor(Date.now() / 1000) + 1800);
+  const router        = amm.router;
+
+  const resolvedTokenA = tokens[baseKey]  ?? amm.weth;
+  const resolvedTokenB = tokens[quoteKey] ?? amm.weth;
+
+  update({ step: "checking" });
+
+  // Pre-read pair address so we can look it up before the pair might be created
+  let pairAddress = await getOrahPairAddress(rpc, amm.factory, resolvedTokenA, resolvedTokenB);
+
+  // ── Branch A: ETH + ERC-20 pair (addLiquidityETH) ─────────────────────────
+  if (isETHBase || isETHQuote) {
+    const tokenAddr   = (isETHBase  ? tokens[quoteKey] : tokens[baseKey]) as string | undefined;
+    const tokenAmount = isETHBase  ? quoteWei : baseWei;
+    const ethWei      = isETHBase  ? baseWei  : quoteWei;
+
+    if (!tokenAddr) {
+      update({ step: "error", error: `${isETHBase ? quote : base} token not configured for chain ${chainId}.` });
+      return;
+    }
+
+    // Approve ERC-20 token to router
+    const allowanceData = "0xdd62ed3e" + padAddr(address) + padAddr(router);
+    const allowanceRaw  = await ethCallRaw(rpc, tokenAddr, allowanceData);
+    const allowance     = allowanceRaw && allowanceRaw !== "0x" ? BigInt(allowanceRaw) : 0n;
+
+    if (allowance < tokenAmount) {
+      update({ step: "approving" });
+      const approveData = "0x095ea7b3" + padAddr(router) + "f".repeat(64);
+      let approveHash: string;
+      try {
+        approveHash = await eth.request({
+          method: "eth_sendTransaction",
+          params: [{ from: address, to: tokenAddr, data: approveData }],
+        });
+      } catch (err: any) {
+        update({ step: "error", error: err?.code === 4001 ? "Approval rejected." : (err?.message ?? "Approval failed.") });
+        return;
+      }
+      update({ step: "approval_pending", txHash: approveHash });
+      await waitOrahTx(approveHash, rpc);
+    }
+
+    update({ step: "depositing" });
+    const calldata = encodeFunctionData({
+      abi: ORAH_ROUTER_ABI,
+      functionName: "addLiquidityETH",
+      args: [tokenAddr as `0x${string}`, tokenAmount, 0n, 0n, address as `0x${string}`, deadline],
+    });
+
+    let txHash: string;
+    try {
+      txHash = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: router, data: calldata, value: "0x" + ethWei.toString(16) }],
+      });
+    } catch (err: any) {
+      update({ step: "error", error: err?.code === 4001 ? "Transaction rejected." : (err?.message ?? "Transaction failed.") });
+      return;
+    }
+
+    update({ step: "deposit_pending", txHash });
+    await waitOrahTx(txHash, rpc);
+
+    // Re-read pair address now that the pool may have been created
+    if (!pairAddress) {
+      pairAddress = await getOrahPairAddress(rpc, amm.factory, resolvedTokenA, resolvedTokenB);
+    }
+
+    const valueUsd = amountA * (SPOT_PRICES[base.toUpperCase()] ?? 1) + amountB * (SPOT_PRICES[quote.toUpperCase()] ?? 1);
+    const lpTokens = valueUsd / 12.5;
+    update({ step: "success", txHash, lpTokens, valueUsd, lpTokenAddress: pairAddress });
+    return;
+  }
+
+  // ── Branch B: ERC-20 + ERC-20 pair (addLiquidity) ─────────────────────────
+  const tokenAAddr = tokens[baseKey];
+  const tokenBAddr = tokens[quoteKey];
+
+  if (!tokenAAddr) {
+    update({ step: "error", error: `${base} token not configured for chain ${chainId}.` });
+    return;
+  }
+  if (!tokenBAddr) {
+    update({ step: "error", error: `${quote} token not configured for chain ${chainId}.` });
+    return;
+  }
+
+  // Approve tokenA
+  const allowanceDataA = "0xdd62ed3e" + padAddr(address) + padAddr(router);
+  const allowanceRawA  = await ethCallRaw(rpc, tokenAAddr, allowanceDataA);
+  const allowanceA     = allowanceRawA && allowanceRawA !== "0x" ? BigInt(allowanceRawA) : 0n;
+
+  if (allowanceA < baseWei) {
+    update({ step: "approving" });
+    const approveDataA = "0x095ea7b3" + padAddr(router) + "f".repeat(64);
+    let approveHashA: string;
+    try {
+      approveHashA = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: tokenAAddr, data: approveDataA }],
+      });
+    } catch (err: any) {
+      update({ step: "error", error: err?.code === 4001 ? "Approval rejected." : (err?.message ?? "Approval failed.") });
+      return;
+    }
+    update({ step: "approval_pending", txHash: approveHashA });
+    await waitOrahTx(approveHashA, rpc);
+  }
+
+  // Approve tokenB
+  const allowanceDataB = "0xdd62ed3e" + padAddr(address) + padAddr(router);
+  const allowanceRawB  = await ethCallRaw(rpc, tokenBAddr, allowanceDataB);
+  const allowanceB     = allowanceRawB && allowanceRawB !== "0x" ? BigInt(allowanceRawB) : 0n;
+
+  if (allowanceB < quoteWei) {
+    update({ step: "approving" });
+    const approveDataB = "0x095ea7b3" + padAddr(router) + "f".repeat(64);
+    let approveHashB: string;
+    try {
+      approveHashB = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: tokenBAddr, data: approveDataB }],
+      });
+    } catch (err: any) {
+      update({ step: "error", error: err?.code === 4001 ? "Approval rejected." : (err?.message ?? "Approval failed.") });
+      return;
+    }
+    update({ step: "approval_pending", txHash: approveHashB });
+    await waitOrahTx(approveHashB, rpc);
+  }
+
+  update({ step: "depositing" });
+  const calldata = encodeFunctionData({
+    abi: ORAH_ROUTER_ABI,
+    functionName: "addLiquidity",
+    args: [
+      tokenAAddr as `0x${string}`, tokenBAddr as `0x${string}`,
+      baseWei, quoteWei, 0n, 0n,
+      address as `0x${string}`, deadline,
+    ],
+  });
+
+  let txHash: string;
+  try {
+    txHash = await eth.request({
+      method: "eth_sendTransaction",
+      params: [{ from: address, to: router, data: calldata }],
+    });
+  } catch (err: any) {
+    update({ step: "error", error: err?.code === 4001 ? "Transaction rejected." : (err?.message ?? "Transaction failed.") });
+    return;
+  }
+
+  update({ step: "deposit_pending", txHash });
+  await waitOrahTx(txHash, rpc);
+
+  if (!pairAddress) {
+    pairAddress = await getOrahPairAddress(rpc, amm.factory, tokenAAddr, tokenBAddr);
+  }
+
+  const valueUsd = amountA * (SPOT_PRICES[base.toUpperCase()] ?? 1) + amountB * (SPOT_PRICES[quote.toUpperCase()] ?? 1);
+  const lpTokens = valueUsd / 12.5;
+  update({ step: "success", txHash, lpTokens, valueUsd, lpTokenAddress: pairAddress });
+}
+
+// ─── removeLiquidityOrahAmm ──────────────────────────────────────────────────
+
+export interface RemoveLiquidityOrahAmmParams {
+  base:            string;
+  quote:           string;
+  pct:             number;          // 1–100
+  address:         string;
+  chainId:         number;
+  lpTokenAddress?: string;          // pair contract address if already stored
+  onStatus:        (s: LiquidityTxStatus) => void;
+}
+
+/**
+ * Remove liquidity via OrahRouter02.
+ * Reads the user's on-chain LP balance, approves the pair LP token to the router,
+ * then calls removeLiquidity or removeLiquidityETH.
+ */
+export async function removeLiquidityOrahAmm(
+  params: RemoveLiquidityOrahAmmParams,
+): Promise<void> {
+  const { base, quote, pct, address, chainId, lpTokenAddress: knownPair, onStatus } = params;
+  const update = (s: LiquidityTxStatus) => onStatus(s);
+
+  const amm = getOrahAmm(chainId);
+  if (!amm) {
+    update({ step: "error", error: "OrahDEX AMM not deployed on this chain." });
+    return;
+  }
+
+  const eth = (window as any).ethereum;
+  if (!eth) {
+    update({ step: "error", error: "No injected wallet found." });
+    return;
+  }
+
+  const rpc = CHAIN_RPC_URLS[chainId];
+  if (!rpc) {
+    update({ step: "error", error: `No RPC URL for chain ${chainId}.` });
+    return;
+  }
+
+  const tokens     = CHAIN_TOKEN_ADDRESSES[chainId] ?? {};
+  const isETHBase  = base.toUpperCase()  === "ETH";
+  const isETHQuote = quote.toUpperCase() === "ETH";
+  const baseKey    = isETHBase  ? "WETH" : base.toUpperCase()  === "BTC" ? "WBTC" : base.toUpperCase();
+  const quoteKey   = isETHQuote ? "WETH" : quote.toUpperCase() === "BTC" ? "WBTC" : quote.toUpperCase();
+  const tokenAAddr = (tokens[baseKey]  ?? amm.weth) as string;
+  const tokenBAddr = (tokens[quoteKey] ?? amm.weth) as string;
+  const router     = amm.router;
+  const deadline   = BigInt(Math.floor(Date.now() / 1000) + 1800);
+
+  update({ step: "checking" });
+
+  // ── Resolve pair address ───────────────────────────────────────────────────
+  let pairAddress = knownPair;
+  if (!pairAddress) {
+    pairAddress = await getOrahPairAddress(rpc, amm.factory, tokenAAddr, tokenBAddr);
+  }
+
+  if (!pairAddress) {
+    update({ step: "error", error: `Pool ${base}/${quote} not found on-chain. Add liquidity first.` });
+    return;
+  }
+
+  // ── Read LP balance ────────────────────────────────────────────────────────
+  const balanceData = "0x70a08231" + padAddr(address);
+  const balanceRaw  = await ethCallRaw(rpc, pairAddress, balanceData);
+  const lpBalance   = balanceRaw && balanceRaw !== "0x" ? BigInt(balanceRaw) : 0n;
+
+  if (lpBalance === 0n) {
+    update({ step: "error", error: "No LP tokens found in wallet for this pair." });
+    return;
+  }
+
+  const liquidity = (lpBalance * BigInt(pct)) / 100n;
+  if (liquidity === 0n) {
+    update({ step: "error", error: "Remove amount too small." });
+    return;
+  }
+
+  // ── Approve LP tokens to router ───────────────────────────────────────────
+  const lpAllowanceData = "0xdd62ed3e" + padAddr(address) + padAddr(router);
+  const lpAllowanceRaw  = await ethCallRaw(rpc, pairAddress, lpAllowanceData);
+  const lpAllowance     = lpAllowanceRaw && lpAllowanceRaw !== "0x" ? BigInt(lpAllowanceRaw) : 0n;
+
+  if (lpAllowance < liquidity) {
+    update({ step: "approving" });
+    const approveData = "0x095ea7b3" + padAddr(router) + "f".repeat(64);
+    let approveHash: string;
+    try {
+      approveHash = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: pairAddress, data: approveData }],
+      });
+    } catch (err: any) {
+      update({ step: "error", error: err?.code === 4001 ? "Approval rejected." : (err?.message ?? "Approval failed.") });
+      return;
+    }
+    update({ step: "approval_pending", txHash: approveHash });
+    await waitOrahTx(approveHash, rpc);
+  }
+
+  // ── Call removeLiquidity / removeLiquidityETH ──────────────────────────────
+  update({ step: "depositing" });
+
+  const hasETH = isETHBase || isETHQuote;
+  let calldata: string;
+
+  if (hasETH) {
+    const erc20Addr = (isETHBase ? tokens[quoteKey] : tokens[baseKey]) ?? tokenBAddr;
+    calldata = encodeFunctionData({
+      abi: ORAH_ROUTER_ABI,
+      functionName: "removeLiquidityETH",
+      args: [erc20Addr as `0x${string}`, liquidity, 0n, 0n, address as `0x${string}`, deadline],
+    });
+  } else {
+    calldata = encodeFunctionData({
+      abi: ORAH_ROUTER_ABI,
+      functionName: "removeLiquidity",
+      args: [
+        tokenAAddr as `0x${string}`, tokenBAddr as `0x${string}`,
+        liquidity, 0n, 0n,
+        address as `0x${string}`, deadline,
+      ],
+    });
+  }
+
+  let txHash: string;
+  try {
+    txHash = await eth.request({
+      method: "eth_sendTransaction",
+      params: [{ from: address, to: router, data: calldata }],
+    });
+  } catch (err: any) {
+    update({ step: "error", error: err?.code === 4001 ? "Transaction rejected." : (err?.message ?? "Transaction failed.") });
+    return;
+  }
+
+  update({ step: "deposit_pending", txHash });
+  await waitOrahTx(txHash, rpc);
+  update({ step: "success", txHash });
 }
