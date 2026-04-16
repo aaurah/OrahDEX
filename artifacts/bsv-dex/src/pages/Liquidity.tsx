@@ -348,14 +348,15 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const walletConnected = !!address;
-  const INTERNAL_PROVIDERS = ["orah-wallet", "passkey", "mobile-qr"];
-  const isInternalWallet = !!walletProvider && INTERNAL_PROVIDERS.includes(walletProvider);
-  const isEvm = !!address && !isInternalWallet && (network === "evm" || address.startsWith("0x"));
+  // Any 0x address is a real on-chain EVM address regardless of which provider
+  // manages the key (Orah Wallet, passkey, WalletConnect, etc.).
+  // Always fetch from the RPC chain; use the backend ledger only for non-EVM wallets.
+  const isEvm = !!address && (network === "evm" || address.startsWith("0x"));
   const walletChain = walletChainId ?? 1;
   const targetChainId = pool?.chainId ?? walletChain;
   const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
   const { balances: evmBalances, refresh: refreshEvmBalances, loading: evmLoading } = useEvmBalances(isEvm ? address : null, walletChain);
-  const { balances: backendBalances, refresh: refreshBackendBalances, loading: backendLoading } = useBackendBalances(address);
+  const { balances: backendBalances, refresh: refreshBackendBalances, loading: backendLoading } = useBackendBalances(isEvm ? null : address);
   const balances = isEvm ? evmBalances : backendBalances;
   const balancesLoading = isEvm ? evmLoading : backendLoading;
 
