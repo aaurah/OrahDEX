@@ -371,6 +371,24 @@ export const CHAINS: Record<number, ChainConfig> = {
       USDC: { symbol: "USDC", address: "0x07d83526730c7438048D55A4fc0b850e2aaB6f0b", decimals: 6 },
     },
   },
+
+  // ── Sepolia testnet — OrahDEX native AMM (OrahRouter02) ───────────────────
+  11155111: {
+    chainId:      11155111,
+    name:         "Sepolia",
+    shortName:    "SEP",
+    rpcUrl:       "https://ethereum-sepolia-rpc.publicnode.com",
+    explorerUrl:  "https://sepolia.etherscan.io",
+    nativeSymbol: "ETH",
+    nativeName:   "Ethereum",
+    nativeColor:  "#8B5CF6",
+    router:       "0x03EdB4b914A0D05E6Aee0a8389A90eE33c8f664a",  // OrahRouter02
+    tokens: {
+      USDC: { symbol: "USDC", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", decimals: 6 },
+      USDT: { symbol: "USDT", address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", decimals: 6 },
+      WBTC: { symbol: "WBTC", address: "0x29f2D40B0605204364af54EC677bD022dA425d03", decimals: 8 },
+    },
+  },
 };
 
 /**

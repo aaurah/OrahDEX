@@ -14,6 +14,7 @@ import { useEvmBalances, type TokenBalance } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
+  addLiquidityOrahAmm, removeLiquidityOrahAmm,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 import { useLpBalance } from "@/hooks/useLpBalance";
@@ -414,6 +415,35 @@ function LiquidityModal({
 
     const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
 
+    // ── OrahDEX native AMM deposit (OrahRouter02) ───────────────────────────
+    if (mode === "orah_amm") {
+      await addLiquidityOrahAmm({
+        base:    pool.base,
+        quote:   pool.quote,
+        amountA: nA,
+        amountB: nB,
+        address,
+        chainId: targetChainId,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, {
+              txHash:         s.txHash,
+              chainId:        targetChainId,
+              lpTokenAddress: s.lpTokenAddress,
+            });
+            refreshEvmBalances();
+            toast({
+              title: "Liquidity added on-chain!",
+              description: `OrahRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP tokens minted.`,
+            });
+          }
+        },
+      });
+      setSubmitting(false);
+      return;
+    }
+
     // ── Real on-chain Uniswap V3 deposit ────────────────────────────────────
     if (mode === "on_chain") {
       await addLiquidityOnChain({
@@ -506,6 +536,41 @@ function LiquidityModal({
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
     setSubmitting(true);
+    setTxStatus({ step: "idle" });
+
+    const removeMode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
+
+    // ── OrahDEX native AMM — real on-chain LP token burn via OrahRouter02 ───
+    if (removeMode === "orah_amm") {
+      const lpTokenAddress = pool ? (userPositions[pool.id]?.lpTokenAddress) : undefined;
+      await removeLiquidityOrahAmm({
+        base:  pool.base,
+        quote: pool.quote,
+        pct,
+        address,
+        chainId: targetChainId,
+        lpTokenAddress,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            removePositionPct(address, pool.id, pct);
+            refreshEvmBalances();
+            toast({
+              title: "Liquidity removed!",
+              description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool. Tokens returned to your wallet.`,
+            });
+            onClose();
+          }
+          if (s.step === "error") {
+            toast({ title: "Remove failed", description: s.error, variant: "destructive" });
+          }
+        },
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    // ── Simulated / live fallback (non-OrahAMM chains) ──────────────────────
     await new Promise(r => setTimeout(r, 1500));
     removePositionPct(address, pool.id, pct);
     setSubmitting(false);
@@ -514,7 +579,7 @@ function LiquidityModal({
       description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, pct, submitting, walletConnected, address, removePositionPct, toast, onClose]);
+  }, [pool, pct, submitting, walletConnected, address, targetChainId, walletProvider, userPositions, removePositionPct, refreshEvmBalances, toast, onClose]);
 
   if (!pool) return null;
 

@@ -18,7 +18,19 @@
 
 import { encodeFunctionData, decodeFunctionResult } from "viem";
 import { CHAIN_RPC_URLS } from "./reown";
-import { getChainRouter } from "./chainConfig";
+import { getChainRouter as _getChainRouter } from "./chainConfig";
+import { getOrahAmm } from "./orahAmmAddresses";
+
+/**
+ * Return the correct DEX router for a chain.
+ * OrahDEX AMM chains (e.g. Sepolia) use OrahRouter02 instead of the
+ * Uniswap v2 fallback stored in chainConfig.
+ */
+function getChainRouter(chainId: number): string {
+  const amm = getOrahAmm(chainId);
+  if (amm) return amm.router;
+  return _getChainRouter(chainId);
+}
 
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -79,19 +91,20 @@ const ROUTER_V2_ABI = [
  * Needed to build WETH→TOKEN or TOKEN→WETH paths on the router.
  */
 export const WRAPPED_NATIVE: Record<number, string> = {
-  1:      "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH  (Ethereum)
-  56:     "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB  (BNB Chain)
-  137:    "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // WMATIC (Polygon)
-  42161:  "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH  (Arbitrum)
-  10:     "0x4200000000000000000000000000000000000006", // WETH  (Optimism)
-  8453:   "0x4200000000000000000000000000000000000006", // WETH  (Base)
-  43114:  "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", // WAVAX (Avalanche)
-  250:    "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83", // WFTM  (Fantom)
-  25:     "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23", // WCRO  (Cronos)
-  59144:  "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34F", // WETH  (Linea)
-  5000:   "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8", // WMNT  (Mantle)
-  324:    "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", // WETH  (zkSync Era)
-  534352: "0x5300000000000000000000000000000000000004", // WETH  (Scroll)
+  1:        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH  (Ethereum)
+  56:       "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB  (BNB Chain)
+  137:      "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // WMATIC (Polygon)
+  42161:    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH  (Arbitrum)
+  10:       "0x4200000000000000000000000000000000000006", // WETH  (Optimism)
+  8453:     "0x4200000000000000000000000000000000000006", // WETH  (Base)
+  43114:    "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", // WAVAX (Avalanche)
+  250:      "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83", // WFTM  (Fantom)
+  25:       "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23", // WCRO  (Cronos)
+  59144:    "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34F", // WETH  (Linea)
+  5000:     "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8", // WMNT  (Mantle)
+  324:      "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", // WETH  (zkSync Era)
+  534352:   "0x5300000000000000000000000000000000000004", // WETH  (Scroll)
+  11155111: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9", // WETH  (Sepolia — OrahDEX WETH)
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
