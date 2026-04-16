@@ -3,12 +3,13 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity, CreditCard } from "lucide-react";
+import { Eye, EyeOff, ArrowDownToLine, Upload, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity, CreditCard } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
@@ -215,6 +216,8 @@ export function Portfolio() {
   const [hideBalances, setHideBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; color: string } | null>(null);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
   const [bsvBalFetching, setBsvBalFetching] = useState(false);
@@ -462,6 +465,18 @@ export function Portfolio() {
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
+      {withdrawAsset && (
+        <WithdrawSheet
+          open={withdrawOpen}
+          onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
+          walletAddress={address ?? ""}
+          asset={withdrawAsset.asset}
+          available={withdrawAsset.available}
+          network={network ?? "evm"}
+          networkLabel={networkLabel}
+          color={withdrawAsset.color}
+        />
+      )}
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
         {/* Page header */}
@@ -736,10 +751,26 @@ export function Portfolio() {
         <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
           <div className="p-6 border-b border-border bg-secondary/20 flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-bold">Asset Balances</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets live in separate wallets"}
-              </p>
+              {hasExchangeBalances ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold">OrahDEX Exchange Balance</h3>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/25">
+                      INTERNAL
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Post-trade balances credited to your OrahDEX account · withdraw to <span className="font-semibold">{networkLabel}</span> anytime
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold">Asset Balances</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets live in separate wallets"}
+                  </p>
+                </>
+              )}
             </div>
             <span className="text-xs text-muted-foreground">Live prices · 30s refresh</span>
           </div>
@@ -828,10 +859,24 @@ export function Portfolio() {
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => setReceiveOpen(true)}
-                              className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                            <button
+                              onClick={() => setReceiveOpen(true)}
+                              className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors"
+                            >
                               Receive
                             </button>
+                            {hasExchangeBalances && bal.free > 0 && (
+                              <button
+                                onClick={() => {
+                                  setWithdrawAsset({ asset: bal.asset, available: bal.free, color: bal.color });
+                                  setWithdrawOpen(true);
+                                }}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-semibold hover:bg-orange-500/20 transition-colors"
+                              >
+                                <Upload className="w-3 h-3" />
+                                Withdraw
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
