@@ -171,7 +171,7 @@ router.patch("/withdrawals/:id", async (req, res) => {
     if (status === "cancelled") {
       await client.query(
         `INSERT INTO user_balances (wallet_address, asset_symbol, available, updated_at)
-         VALUES ($1, $2, $3, now())
+         VALUES ($1::varchar, $2::varchar, $3::numeric, now())
          ON CONFLICT (wallet_address, asset_symbol)
          DO UPDATE SET available = user_balances.available + EXCLUDED.available,
                        updated_at = now()`,
@@ -181,11 +181,11 @@ router.patch("/withdrawals/:id", async (req, res) => {
 
     await client.query(
       `UPDATE withdrawal_requests
-       SET status = $1,
-           txid = COALESCE($2, txid),
-           note = COALESCE($3, note),
-           processed_at = CASE WHEN $1 IN ('completed','cancelled') THEN now() ELSE processed_at END
-       WHERE id = $4`,
+       SET status = $1::varchar,
+           txid = COALESCE($2::varchar, txid),
+           note = COALESCE($3::text, note),
+           processed_at = CASE WHEN $1::varchar IN ('completed','cancelled') THEN now() ELSE processed_at END
+       WHERE id = $4::varchar`,
       [status, txid ?? null, note ?? null, id],
     );
 
