@@ -50,14 +50,15 @@ interface WithdrawHistoryItem {
 }
 
 export interface WithdrawSheetProps {
-  open:          boolean;
-  onClose:       () => void;
-  walletAddress: string;
-  asset:         string;
-  available:     number;
-  network:       string;
-  networkLabel:  string;
-  color?:        string;
+  open:                boolean;
+  onClose:             () => void;
+  walletAddress:       string;
+  asset:               string;
+  available:           number;
+  network:             string;
+  networkLabel:        string;
+  addressPlaceholder?: string;
+  color?:              string;
 }
 
 export function WithdrawSheet({
@@ -68,6 +69,7 @@ export function WithdrawSheet({
   available,
   network,
   networkLabel,
+  addressPlaceholder = "Destination wallet address",
   color = "#6B7280",
 }: WithdrawSheetProps) {
   const { toast } = useToast();
@@ -260,11 +262,13 @@ export function WithdrawSheet({
               <Input
                 value={recipient}
                 onChange={e => setRecipient(e.target.value)}
-                placeholder="Destination wallet address"
+                placeholder={addressPlaceholder}
                 className="font-mono text-xs"
               />
               <p className="text-xs text-muted-foreground">
-                Pre-filled with your connected wallet. You may change this to any valid {networkLabel} address.
+                {walletAddress
+                  ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
+                  : `Enter a valid ${networkLabel} address to receive your ${asset}.`}
               </p>
             </div>
 

@@ -79,6 +79,53 @@ function getChainInfo(chainId: number | null): ChainInfo | null {
   return CHAIN_INFO[chainId] ?? null;
 }
 
+// Maps each asset to its canonical withdrawal network + address placeholder
+const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string; placeholder: string }> = {
+  BTC:   { network: "btc",  networkLabel: "Bitcoin",            placeholder: "bc1... or 1... or 3..." },
+  BSV:   { network: "bsv",  networkLabel: "Bitcoin SV",         placeholder: "1... (BSV P2PKH)" },
+  BCH:   { network: "bch",  networkLabel: "Bitcoin Cash",       placeholder: "bitcoincash:q... or 1..." },
+  ETH:   { network: "evm",  networkLabel: "Ethereum Mainnet",   placeholder: "0x... (ERC-20 address)" },
+  USDT:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  USDC:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  DAI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  AAVE:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  LINK:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  UNI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  BNB:   { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
+  BUSD:  { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
+  CAKE:  { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
+  MATIC: { network: "evm",  networkLabel: "Polygon",            placeholder: "0x... (Polygon address)" },
+  AVAX:  { network: "evm",  networkLabel: "Avalanche C-Chain",  placeholder: "0x... (Avalanche address)" },
+  FTM:   { network: "evm",  networkLabel: "Fantom",             placeholder: "0x... (Fantom address)" },
+  SOL:   { network: "sol",  networkLabel: "Solana",             placeholder: "Solana wallet address" },
+  TRX:   { network: "tron", networkLabel: "TRON Network",       placeholder: "T... (TRON address)" },
+  BTT:   { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
+  WIN:   { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
+  JST:   { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
+  XRP:   { network: "xrp",  networkLabel: "XRP Ledger",         placeholder: "r... (XRP address)" },
+  ADA:   { network: "ada",  networkLabel: "Cardano",            placeholder: "addr1... (Cardano address)" },
+  DOGE:  { network: "doge", networkLabel: "Dogecoin",           placeholder: "D... (Dogecoin address)" },
+  DOT:   { network: "dot",  networkLabel: "Polkadot",           placeholder: "1... (Polkadot address)" },
+  LTC:   { network: "ltc",  networkLabel: "Litecoin",           placeholder: "L... or ltc1..." },
+  XLM:   { network: "xlm",  networkLabel: "Stellar",            placeholder: "G... (Stellar address)" },
+  ATOM:  { network: "cosmos", networkLabel: "Cosmos Hub",       placeholder: "cosmos1... address" },
+  NEAR:  { network: "near", networkLabel: "NEAR Protocol",      placeholder: "account.near" },
+  ALGO:  { network: "algo", networkLabel: "Algorand",           placeholder: "Algorand address" },
+  VET:   { network: "vet",  networkLabel: "VeChain",            placeholder: "0x... (VeChain address)" },
+  ICP:   { network: "icp",  networkLabel: "Internet Computer",  placeholder: "ICP principal or account ID" },
+  HBAR:  { network: "hbar", networkLabel: "Hedera",             placeholder: "0.0.XXXXX (Hedera ID)" },
+};
+
+function getAssetNetworkInfo(asset: string, connectedNetwork: string | null, chainId: number | null):
+  { network: string; networkLabel: string; placeholder: string } {
+  if (ASSET_NETWORK_MAP[asset]) return ASSET_NETWORK_MAP[asset];
+  // Fallback: use connected wallet's network
+  const net = connectedNetwork ?? "evm";
+  const label = getNetworkLabel(connectedNetwork, chainId, null);
+  const placeholder = net === "evm" ? "0x... (wallet address)" : net === "bsv" ? "1... (BSV address)" : "Destination address";
+  return { network: net, networkLabel: label, placeholder };
+}
+
 function getNativeAsset(network: string | null, chainId: number | null): string {
   if (network === "bsv")  return "BSV";
   if (network === "sol")  return "SOL";
@@ -465,18 +512,25 @@ export function Portfolio() {
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      {withdrawAsset && (
-        <WithdrawSheet
-          open={withdrawOpen}
-          onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-          walletAddress={address ?? ""}
-          asset={withdrawAsset.asset}
-          available={withdrawAsset.available}
-          network={network ?? "evm"}
-          networkLabel={networkLabel}
-          color={withdrawAsset.color}
-        />
-      )}
+      {withdrawAsset && (() => {
+        const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network, chainId);
+        // Pre-fill address only when asset's network matches connected wallet
+        const sameNetwork = assetNet.network === (network ?? "evm");
+        const prefillAddress = sameNetwork ? (address ?? "") : "";
+        return (
+          <WithdrawSheet
+            open={withdrawOpen}
+            onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
+            walletAddress={prefillAddress}
+            asset={withdrawAsset.asset}
+            available={withdrawAsset.available}
+            network={assetNet.network}
+            networkLabel={assetNet.networkLabel}
+            addressPlaceholder={assetNet.placeholder}
+            color={withdrawAsset.color}
+          />
+        );
+      })()}
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
         {/* Page header */}
