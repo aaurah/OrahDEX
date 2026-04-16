@@ -214,7 +214,7 @@ function LiveChatTab() {
     try {
       const r = await fetch(`${BASE}/api/chat/channels`);
       const data = await r.json();
-      if (Array.isArray(data)) setChannels(data);
+      setChannels(Array.isArray(data) ? data : (data.channels ?? []));
     } catch { /* silent */ }
     finally { setChLoading(false); }
   };
@@ -224,7 +224,7 @@ function LiveChatTab() {
     try {
       const r = await fetch(`${BASE}/api/chat/channels/${encodeURIComponent(ch)}/messages?limit=30`);
       const data = await r.json();
-      if (Array.isArray(data)) setMessages(data);
+      setMessages(Array.isArray(data) ? data : (data.messages ?? []));
     } catch { /* silent */ }
     finally { setMsgLoading(false); }
   };
@@ -258,7 +258,7 @@ function LiveChatTab() {
       const r = await fetch(`${BASE}/api/chat/system`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: announcement.trim(), adminKey }),
+        body: JSON.stringify({ text: announcement.trim(), adminKey }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -292,7 +292,7 @@ function LiveChatTab() {
   };
 
   const totalMessages = channels.reduce((s, c) => s + (c.messageCount ?? 0), 0);
-  const totalSubs     = channels.reduce((s, c) => s + (c.activeSubscribers ?? 0), 0);
+  const totalSubs     = channels.reduce((s, c) => s + (c.activeClients ?? c.activeSubscribers ?? 0), 0);
 
   return (
     <div className="space-y-6">
@@ -328,13 +328,14 @@ function LiveChatTab() {
         ) : (
           <div className="divide-y divide-border">
             {channels.map((ch: any) => {
-              const meta = channelIcon(ch.name);
+              const chId = ch.id ?? ch.name;
+              const meta = channelIcon(chId);
               const Icon = meta.icon;
-              const isSelected = selectedCh === ch.name;
+              const isSelected = selectedCh === chId;
               return (
                 <button
-                  key={ch.name}
-                  onClick={() => setSelectedCh(isSelected ? null : ch.name)}
+                  key={chId}
+                  onClick={() => setSelectedCh(isSelected ? null : chId)}
                   className={cn(
                     "w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-muted/20",
                     isSelected && "bg-primary/5 border-l-2 border-primary"
@@ -351,8 +352,8 @@ function LiveChatTab() {
                       <p className="text-[10px] text-muted-foreground">msgs</p>
                     </div>
                     <div>
-                      <p className={cn("text-sm font-mono font-semibold", (ch.activeSubscribers ?? 0) > 0 ? "text-green-400" : "text-muted-foreground")}>
-                        {ch.activeSubscribers ?? 0}
+                      <p className={cn("text-sm font-mono font-semibold", (ch.activeClients ?? ch.activeSubscribers ?? 0) > 0 ? "text-green-400" : "text-muted-foreground")}>
+                        {ch.activeClients ?? ch.activeSubscribers ?? 0}
                       </p>
                       <p className="text-[10px] text-muted-foreground">live</p>
                     </div>
