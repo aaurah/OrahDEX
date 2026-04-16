@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, TrendingUp, DollarSign, ArrowDownToLine, RefreshCw,
@@ -178,7 +178,7 @@ type BsvWallet = {
 /* ─── main component ───────────────────────────────────────────────────── */
 export function AdminBotProfit() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
   const [amount,  setAmount]  = useState("");
   const [address, setAddress] = useState("");
   const [network, setNetwork] = useState("BSV");
