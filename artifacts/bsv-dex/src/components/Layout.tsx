@@ -303,6 +303,18 @@ export function Layout({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [notifOpen]);
 
+  const handleNotifClick = useCallback((n: { id: string; type: string; pair?: string; href?: string }) => {
+    markRead(n.id);
+    const dest = getNotifPath(n);
+    if (!dest) return;
+    setNotifOpen(false);
+    if (dest.startsWith("http")) {
+      window.open(dest, "_blank", "noopener,noreferrer");
+    } else {
+      navigate(dest);
+    }
+  }, [markRead, navigate]);
+
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
       <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">
@@ -431,7 +443,6 @@ export function Layout({ children }: { children: ReactNode }) {
                         const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
                         const dest = getNotifPath(n);
-                        const isExternal = dest?.startsWith("http");
                         const relTime = (() => {
                           const diff = Date.now() - n.timestamp;
                           if (diff < 60_000) return "just now";
@@ -440,29 +451,13 @@ export function Layout({ children }: { children: ReactNode }) {
                           return new Date(n.timestamp).toLocaleDateString();
                         })();
                         return (
-                          <div
+                          <button
                             key={n.id}
-                            role={dest ? "button" : undefined}
-                            tabIndex={dest ? 0 : undefined}
-                            onClick={() => {
-                              markRead(n.id);
-                              if (!dest) return;
-                              setNotifOpen(false);
-                              if (isExternal) {
-                                window.open(dest, "_blank", "noopener,noreferrer");
-                              } else {
-                                navigate(dest);
-                              }
-                            }}
-                            onKeyDown={e => {
-                              if (dest && (e.key === "Enter" || e.key === " ")) {
-                                markRead(n.id);
-                                setNotifOpen(false);
-                                isExternal ? window.open(dest, "_blank", "noopener,noreferrer") : navigate(dest);
-                              }
-                            }}
+                            type="button"
+                            onClick={() => handleNotifClick(n)}
+                            disabled={!dest}
                             className={cn(
-                              "px-4 py-3 border-b border-border/40 transition-colors last:border-0 group",
+                              "w-full text-left px-4 py-3 border-b border-border/40 transition-colors last:border-0 group",
                               !n.read && "bg-primary/5",
                               dest ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : "cursor-default",
                             )}
@@ -502,7 +497,7 @@ export function Layout({ children }: { children: ReactNode }) {
                                 <p className="text-[10px] text-muted-foreground/40 mt-0.5">{relTime}</p>
                               </div>
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
 
