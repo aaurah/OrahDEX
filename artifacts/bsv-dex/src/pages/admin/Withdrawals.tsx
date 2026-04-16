@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck, SlidersHorizontal, ChevronDown } from "lucide-react";
+import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck, SlidersHorizontal, ChevronDown, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLayout } from "@/components/AdminLayout";
+import { useSendTransaction, useWaitForTransactionReceipt, useAccount } from "wagmi";
+import { parseEther } from "viem";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -98,6 +100,59 @@ function NoteModal({ id, onClose, onSave }: { id: string; onClose: () => void; o
         </div>
       </div>
     </div>
+  );
+}
+
+function SendViaWalletButton({ withdrawal, onComplete }: {
+  withdrawal: Withdrawal;
+  onComplete: (txid: string) => void;
+}) {
+  const { isConnected } = useAccount();
+  const { sendTransaction, data: txHash, isPending, error: sendError, reset } = useSendTransaction();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const [fired, setFired] = useState(false);
+
+  useEffect(() => {
+    if (isSuccess && txHash && !fired) {
+      setFired(true);
+      onComplete(txHash);
+    }
+  }, [isSuccess, txHash, fired, onComplete]);
+
+  if (!isConnected) return null;
+
+  const isEvm = withdrawal.network === "evm" || withdrawal.network === "ethereum" || withdrawal.network === "eth";
+  if (!isEvm) return null;
+
+  const handleSend = () => {
+    reset();
+    setFired(false);
+    try {
+      sendTransaction({
+        to: withdrawal.recipient as `0x${string}`,
+        value: parseEther(withdrawal.amount.toString()),
+      });
+    } catch {}
+  };
+
+  if (isSuccess && txHash) {
+    return (
+      <span className="text-xs text-green-400 flex items-center gap-1">
+        <Check className="w-3 h-3" /> Sent
+      </span>
+    );
+  }
+
+  return (
+    <button
+      disabled={isPending || isConfirming}
+      onClick={handleSend}
+      className="px-2.5 py-1 rounded-lg text-xs bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/40 disabled:opacity-40 flex items-center gap-1"
+      title={sendError ? sendError.message : "Send via MetaMask / Rabby"}
+    >
+      {isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : isConfirming ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wallet className="w-3 h-3" />}
+      {isPending ? "Confirm…" : isConfirming ? "Sending…" : "Send via Wallet"}
+    </button>
   );
 }
 
@@ -387,6 +442,12 @@ export function AdminWithdrawals() {
                               >
                                 Mark Processing
                               </button>
+                            )}
+                            {isActionable && (
+                              <SendViaWalletButton
+                                withdrawal={w}
+                                onComplete={txid => patch.mutate({ id: w.id, status: "completed", txid })}
+                              />
                             )}
                             {isActionable && (
                               <button
