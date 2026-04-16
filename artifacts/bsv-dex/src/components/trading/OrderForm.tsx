@@ -329,7 +329,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
-  const usesApiBalance = isOrahWallet;
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -340,6 +339,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     isEvm ? address : null,
     isEvm ? chainId : null
   );
+
+  // For Orah Wallet (internal EVM wallet): prefer on-chain RPC balance.
+  // Only fall back to the API ledger while the very first RPC fetch is still in-flight.
+  const usesApiBalance = isOrahWallet && balancesLoading && tokenBalances.length === 0;
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
