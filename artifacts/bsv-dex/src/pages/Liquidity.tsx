@@ -351,10 +351,10 @@ function LiquidityModal({
   const walletChain = walletChainId ?? 1;
   const targetChainId = pool?.chainId ?? walletChain;
   const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
-  const { balances: evmBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, walletChain);
+  const { balances: evmBalances, refresh: refreshEvmBalances, loading: evmLoading } = useEvmBalances(isEvm ? address : null, walletChain);
   const { balances: backendBalances, refresh: refreshBackendBalances, loading: backendLoading } = useBackendBalances(address);
   const balances = isEvm ? evmBalances : backendBalances;
-  const balancesLoading = !isEvm && backendLoading;
+  const balancesLoading = isEvm ? evmLoading : backendLoading;
 
   const userPositions = address ? getUserPositions(address) : {};
   const myLpTokens   = pool ? (userPositions[pool.id]?.lpTokens ?? 0) : 0;
