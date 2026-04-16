@@ -14,6 +14,7 @@ import {
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
+import { hasCategory } from "@/lib/market-categories";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation } from "wouter";
@@ -218,10 +219,33 @@ export function Markets() {
   const dbByQuote = (quote: string) =>
     tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
 
-  /** For category tabs: cross-reference mock list with DB pairs so only real DB pairs show */
+  /** For protocol tabs: cross-reference mock list with DB pairs so only real DB pairs show */
   const dbBySymbols = (mockList: any[]) => {
     const symbols = new Set(mockList.map((m: any) => m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`));
     return tradeable(raw.filter(m => symbols.has(m.symbol)));
+  };
+
+  /**
+   * For themed category tabs: use the live category map so every DB pair
+   * whose base asset belongs to `tag` is shown automatically.
+   * Prefer USDT pairs; if a base asset only has other quotes those show too.
+   */
+  const dbByCategory = (tag: string) => {
+    const inCategory = raw.filter(m => m.type !== "futures" && hasCategory(m.baseAsset, tag));
+    if (inCategory.length === 0) return [];
+    // Group by base asset and pick the best quote in priority order
+    const priority = ["USDT","USDC","TUSD","USDD","BTC","ETH","BSV","BNB"];
+    const byBase = new Map<string, any>();
+    for (const m of inCategory) {
+      const existing = byBase.get(m.baseAsset);
+      if (!existing) { byBase.set(m.baseAsset, m); continue; }
+      const ePri = priority.indexOf(existing.quoteAsset);
+      const mPri = priority.indexOf(m.quoteAsset);
+      const eIdx = ePri === -1 ? 999 : ePri;
+      const mIdx = mPri === -1 ? 999 : mPri;
+      if (mIdx < eIdx) byBase.set(m.baseAsset, m);
+    }
+    return tradeable([...byBase.values()]);
   };
 
   function getMarkets(): any[] {
@@ -250,20 +274,20 @@ export function Markets() {
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
       case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
-      case "sol":     return dbBySymbols(SOL_MARKETS.map(normalise));
-      case "ai":      return dbBySymbols(AI_MARKETS.map(normalise));
-      case "depin":   return dbBySymbols(DEPIN_MARKETS.map(normalise));
-      case "meme":    return dbBySymbols(MEME_MARKETS.map(normalise));
-      case "defi":    return dbBySymbols(DEFI_MARKETS.map(normalise));
+      case "sol":     return dbByCategory("sol_eco");
+      case "ai":      return dbByCategory("ai");
+      case "depin":   return dbByCategory("depin");
+      case "meme":    return dbByCategory("meme");
+      case "defi":    return dbByCategory("defi");
       case "uniswap": return dbBySymbols(UNISWAP_MARKETS.map(normalise));
       case "pancake": return dbBySymbols(PANCAKE_MARKETS.map(normalise));
-      case "gaming":  return dbBySymbols(GAMING_MARKETS.map(normalise));
-      case "cosmos":  return dbBySymbols(COSMOS_MARKETS.map(normalise));
-      case "l1":      return dbBySymbols(L1_MARKETS.map(normalise));
-      case "l2":      return dbBySymbols(L2_MARKETS.map(normalise));
-      case "rwa":     return dbBySymbols(RWA_MARKETS.map(normalise));
-      case "exchange":return dbBySymbols(EXCHANGE_MARKETS.map(normalise));
-      case "brc20":   return dbBySymbols(BRC20_MARKETS.map(normalise));
+      case "gaming":  return dbByCategory("gaming");
+      case "cosmos":  return dbByCategory("cosmos");
+      case "l1":      return dbByCategory("l1");
+      case "l2":      return dbByCategory("l2");
+      case "rwa":     return dbByCategory("rwa");
+      case "exchange":return dbByCategory("exchange");
+      case "brc20":   return dbByCategory("brc20");
       case "futures": return tradeable(raw.filter(m => m.type === "futures"));
       default:        return [];
     }
@@ -293,20 +317,20 @@ export function Markets() {
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
       case "zora":      return dbS(ZORA_MARKETS);
-      case "sol":       return dbS(SOL_MARKETS);
-      case "ai":        return dbS(AI_MARKETS);
-      case "depin":     return dbS(DEPIN_MARKETS);
-      case "meme":      return dbS(MEME_MARKETS);
-      case "defi":      return dbS(DEFI_MARKETS);
+      case "sol":       return dbByCategory("sol_eco").length;
+      case "ai":        return dbByCategory("ai").length;
+      case "depin":     return dbByCategory("depin").length;
+      case "meme":      return dbByCategory("meme").length;
+      case "defi":      return dbByCategory("defi").length;
       case "uniswap":   return dbS(UNISWAP_MARKETS);
       case "pancake":   return dbS(PANCAKE_MARKETS);
-      case "gaming":    return dbS(GAMING_MARKETS);
-      case "cosmos":    return dbS(COSMOS_MARKETS);
-      case "l1":        return dbS(L1_MARKETS);
-      case "l2":        return dbS(L2_MARKETS);
-      case "rwa":       return dbS(RWA_MARKETS);
-      case "exchange":  return dbS(EXCHANGE_MARKETS);
-      case "brc20":     return dbS(BRC20_MARKETS);
+      case "gaming":    return dbByCategory("gaming").length;
+      case "cosmos":    return dbByCategory("cosmos").length;
+      case "l1":        return dbByCategory("l1").length;
+      case "l2":        return dbByCategory("l2").length;
+      case "rwa":       return dbByCategory("rwa").length;
+      case "exchange":  return dbByCategory("exchange").length;
+      case "brc20":     return dbByCategory("brc20").length;
       case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length;
       default:          return 0;
     }
