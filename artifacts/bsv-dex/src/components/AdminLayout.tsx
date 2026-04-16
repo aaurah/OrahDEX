@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
   Key, Cpu, Palette, LogOut, Menu, X, ChevronRight, Activity,
-  Wallet, Link2, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
+  Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search,
 } from "lucide-react";
@@ -77,7 +77,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/pairs",        label: "Trade Pairs",        icon: ArrowRightLeft },
       { href: "/admin/trade-analytics", label: "Trade Analytics", icon: TrendingUp, badge: "NEW" },
       { href: "/admin/fees",         label: "Fee Configuration",  icon: DollarSign },
-      { href: "/admin/integrations", label: "Integrations",       icon: Link2 },
       { href: "/admin/contracts",    label: "Contracts & Coins",  icon: Cpu },
       { href: "/admin/copy-vaults",  label: "CopyVault",          icon: Copy,    badge: "NEW" },
       { href: "/admin/prediction",  label: "Prediction",         icon: TrendingUp, badge: "NEW" },
@@ -104,12 +103,6 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
       { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },
       { href: "/admin/logs",         label: "System Logs",        icon: Terminal },
-    ],
-  },
-  {
-    title: "Integrations",
-    items: [
-      { href: "/admin/cex",          label: "CEX Connections",    icon: Link2,   badge: "NEW" },
     ],
   },
   {

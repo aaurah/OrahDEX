@@ -66,7 +66,6 @@ const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").
 const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
 const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
 const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
-const AdminIntegrations   = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
 const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
 const AdminSiteSettings   = lazy(() => import("@/pages/admin/SiteSettings").then(m => ({ default: m.AdminSiteSettings })));
 const AdminHomeBuilder    = lazy(() => import("@/pages/admin/HomeBuilder").then(m => ({ default: m.AdminHomeBuilder })));
@@ -75,7 +74,6 @@ const AdminSecuritySettings = lazy(() => import("@/pages/admin/SecuritySettings"
 const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m => ({ default: m.AdminFeeConfig })));
 const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
-const AdminCexConnections = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
 const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
 const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
@@ -314,7 +312,6 @@ function Router() {
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
       <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>
-      <Route path="/admin/integrations"><AdminRoute><AdminIntegrations /></AdminRoute></Route>
       <Route path="/admin/bot-profit"><AdminRoute><AdminBotProfit /></AdminRoute></Route>
       <Route path="/admin/site">    <AdminRoute><AdminSiteSettings /></AdminRoute></Route>
       <Route path="/admin/home">    <AdminRoute><AdminHomeBuilder /></AdminRoute></Route>
@@ -323,7 +320,6 @@ function Router() {
       <Route path="/admin/fees">    <AdminRoute><AdminFeeConfig /></AdminRoute></Route>
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
       <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
-      <Route path="/admin/cex">       <AdminRoute><AdminCexConnections /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
