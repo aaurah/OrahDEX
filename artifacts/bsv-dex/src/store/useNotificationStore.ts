@@ -10,6 +10,8 @@ export type NotifType =
   | "price_alert"
   | "wallet_connected"
   | "wallet_disconnected"
+  | "withdrawal"
+  | "liquidity"
   | "info"
   | "warning"
   | "success"
