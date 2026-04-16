@@ -7,7 +7,7 @@ import { Eye, EyeOff, ArrowDownToLine, History, Copy, Check, RefreshCw, Info, Al
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { DepositModal } from "@/components/DepositModal";
+import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -213,7 +213,7 @@ export function Portfolio() {
   const usdtLockedSpot = parseFloat(usdtSpot?.locked    ?? "0");
 
   const [hideBalances, setHideBalances] = useState(false);
-  const [depositOpen, setDepositOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
@@ -261,7 +261,7 @@ export function Portfolio() {
             </div>
             <h2 className="text-2xl font-black text-foreground tracking-tight">Login to Trade</h2>
             <p className="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
-              Connect your wallet to view balances, track P&amp;L, deposit, withdraw, and start trading instantly.
+              Connect your wallet to view live balances, track P&amp;L, receive funds, and start trading instantly.
             </p>
           </div>
 
@@ -357,7 +357,7 @@ export function Portfolio() {
               {[
                 { icon: "📊", text: "View live portfolio balance & P&L" },
                 { icon: "💳", text: "Buy crypto with fiat (Apple Pay, Card, Bank)" },
-                { icon: "💸", text: "Deposit & withdraw instantly" },
+                { icon: "💸", text: "Receive funds directly to your wallet" },
                 { icon: "⚡", text: "Trade spot & futures markets" },
                 { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
               ].map(f => (
@@ -460,7 +460,7 @@ export function Portfolio() {
 
   return (
     <>
-      <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
+      <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
@@ -517,10 +517,10 @@ export function Portfolio() {
               <CreditCard className="w-4 h-4" /> Buy Crypto
             </button>
             <button
-              onClick={() => setDepositOpen(true)}
+              onClick={() => setReceiveOpen(true)}
               className="flex items-center gap-2 bg-primary text-primary-foreground hover:opacity-90 px-5 py-2.5 rounded-xl transition-all font-semibold text-sm shadow-lg shadow-primary/20"
             >
-              <ArrowDownToLine className="w-4 h-4" /> Deposit
+              <ArrowDownToLine className="w-4 h-4" /> Receive
             </button>
           </div>
         </div>
@@ -627,16 +627,16 @@ export function Portfolio() {
             <span className="text-green-400 text-sm font-medium shrink-0">Buy →</span>
           </div>
           <div
-            onClick={() => setDepositOpen(true)}
+            onClick={() => setReceiveOpen(true)}
             className="p-4 rounded-2xl border border-primary/20 bg-primary/5 flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all group"
           >
             <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 group-hover:bg-primary/25 transition-colors">
               <ArrowDownToLine className="w-4.5 h-4.5 text-primary" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-semibold text-foreground">Deposit Crypto</p>
+              <p className="text-sm font-semibold text-foreground">Receive Crypto</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Send ETH, BNB, MATIC, BSV, and all EVM L1/L2/L3 via QR code
+                Your wallet address QR for ETH, BNB, MATIC, BSV, and all EVM chains
               </p>
             </div>
             <span className="text-primary text-sm font-medium shrink-0">View QR →</span>
@@ -686,9 +686,9 @@ export function Portfolio() {
               <span className="text-muted-foreground font-medium">Futures Positions</span>
               <span className="text-2xl font-bold font-mono text-foreground">0</span>
             </div>
-            <button onClick={() => setDepositOpen(true)}
+            <button onClick={() => setReceiveOpen(true)}
               className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors">
-              <ArrowDownToLine className="w-4 h-4" /> Deposit to Trade
+              <ArrowDownToLine className="w-4 h-4" /> Receive Funds
             </button>
           </div>
         </div>
@@ -738,7 +738,7 @@ export function Portfolio() {
             <div>
               <h3 className="text-lg font-bold">Asset Balances</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets require a deposit"}
+                {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets live in separate wallets"}
               </p>
             </div>
             <span className="text-xs text-muted-foreground">Live prices · 30s refresh</span>
@@ -828,9 +828,9 @@ export function Portfolio() {
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button onClick={() => setDepositOpen(true)}
+                            <button onClick={() => setReceiveOpen(true)}
                               className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
-                              Deposit
+                              Receive
                             </button>
                           </div>
                         </td>

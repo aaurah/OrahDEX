@@ -5,7 +5,6 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
-import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getNativeSymbol } from "@/lib/chainConfig";
@@ -328,7 +327,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { getBalance: getDexBalance } = useExchangeBalanceStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
   const usesApiBalance = isOrahWallet;
@@ -765,10 +763,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? ((filledQty * avgFillPrice - fillFee) > 0 ? (filledQty * avgFillPrice - fillFee) : filledQty * avgFillPrice).toFixed(2)
               : filledQty > 0 ? filledQty.toFixed(6) : "0";
             const receivedTok  = side === "sell" ? quote : base;
-
-            if (address && filledQty > 0 && avgFillPrice > 0) {
-              applyFill(address, side as "buy" | "sell", base, quote, filledQty, avgFillPrice);
-            }
 
             toast({
               title: "Order Filled ✓",
@@ -1273,7 +1267,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               {receiveAddress && (
                 <div className="flex items-center gap-1.5 text-[10px] text-green-400">
                   <CheckCircle2 className="w-3 h-3 shrink-0" />
-                  {base} will be queued for withdrawal to this address after order fills.
+                  {base} will be settled directly to this address on fill.
                 </div>
               )}
             </div>

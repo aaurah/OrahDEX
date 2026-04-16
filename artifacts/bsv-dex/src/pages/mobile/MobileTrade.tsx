@@ -10,7 +10,6 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNotificationStore } from "@/store/useNotificationStore";
-import { useExchangeBalanceStore } from "@/store/useExchangeBalanceStore";
 import { useToast } from "@/hooks/use-toast";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
@@ -207,8 +206,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { getBalance: getDexBalance } = useExchangeBalanceStore();
-
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {

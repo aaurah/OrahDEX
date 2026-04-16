@@ -10,7 +10,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { DepositModal } from "@/components/DepositModal";
+import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
@@ -88,7 +88,7 @@ export function MobilePortfolio() {
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("assets");
-  const [depositOpen, setDepositOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -248,7 +248,7 @@ export function MobilePortfolio() {
           </div>
           <h2 className="text-2xl font-black text-foreground tracking-tight">Login to Trade</h2>
           <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
-            Connect your wallet to view balances, track P&amp;L, deposit, withdraw, and start trading instantly.
+            Connect your wallet to view live balances, track P&amp;L, receive funds, and start trading instantly.
           </p>
         </div>
 
@@ -344,7 +344,7 @@ export function MobilePortfolio() {
             {[
               { icon: "📊", text: "View live portfolio balance & P&L" },
               { icon: "💳", text: "Buy crypto with fiat (Apple Pay, Card, Bank)" },
-              { icon: "💸", text: "Deposit & withdraw instantly" },
+              { icon: "💸", text: "Receive funds directly to your wallet" },
               { icon: "⚡", text: "Trade spot & futures markets" },
               { icon: "🔗", text: "Cross-chain BSV settlements via HTLC" },
             ].map(f => (
@@ -361,7 +361,7 @@ export function MobilePortfolio() {
 
   return (
     <>
-      <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
+      <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
@@ -536,9 +536,9 @@ export function MobilePortfolio() {
               <CreditCard size={15} />
               Buy
             </button>
-            <button onClick={() => setDepositOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
+            <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
-              Deposit
+              Receive
             </button>
             <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors">
               <ArrowLeftRight size={15} />
@@ -557,12 +557,12 @@ export function MobilePortfolio() {
             </div>
             <span className="text-green-400 text-xs font-medium shrink-0">Buy →</span>
           </button>
-          <button onClick={() => setDepositOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
+          <button onClick={() => setReceiveOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
             <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
               <ArrowDownToLine size={16} className="text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Deposit via QR Code</p>
+              <p className="text-sm font-semibold text-foreground">Receive via QR Code</p>
               <p className="text-xs text-muted-foreground truncate">ETH · BNB · MATIC · ARB · BASE · AVAX · Linea · Scroll · Mantle · all EVM</p>
             </div>
             <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
