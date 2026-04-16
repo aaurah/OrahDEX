@@ -185,6 +185,9 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   43114:      "https://api.avax.network/ext/bc/C/rpc",
   250:        "https://rpc.ftm.tools",
   25:         "https://evm.cronos.org",
+  // ── Testnets ──────────────────────────────────────────────────────
+  11155111:   "https://ethereum-sepolia-rpc.publicnode.com",  // Sepolia — OrahDEX AMM
+  84532:      "https://sepolia.base.org",                     // Base Sepolia
   // ── Additional chains ─────────────────────────────────────────────
   100:        "https://rpc.gnosischain.com",
   42220:      "https://forno.celo.org",
