@@ -176,7 +176,19 @@ router.get("/prediction/rounds/:symbol", async (req, res) => {
     await tickRounds(symbol);
     const arr = getSymbolRounds(symbol);
     const price = await getCurrentPrice(symbol);
-    res.json({ rounds: arr.slice(-10), currentPrice: price, serverTime: Math.floor(Date.now() / 1000) });
+    const normalized = arr.slice(-10).map(r => ({
+      ...r,
+      bullPool:   Number(r.bullAmount  ?? 0),
+      bearPool:   Number(r.bearAmount  ?? 0),
+      totalPool:  Number(r.totalAmount ?? 0),
+      startTime:  (r.startTs ?? 0) * 1000,
+      lockTime:   (r.lockTs  ?? 0) * 1000,
+      closeTime:  (r.closeTs ?? 0) * 1000,
+      result:     r.winner ?? null,
+      lockPrice:  r.lockPrice  ?? null,
+      closePrice: r.closePrice ?? null,
+    }));
+    res.json({ rounds: normalized, currentPrice: price ?? 0, serverTime: Math.floor(Date.now() / 1000) });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
