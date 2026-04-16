@@ -102,15 +102,15 @@ function RoundCard({ round }: { round: Round }) {
           <div className="bg-red-500 transition-all" style={{ width: `${bearPct}%` }} />
         </div>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-          <span>${round.bullPool.toFixed(2)} ({bullMulti.toFixed(2)}x)</span>
-          <span>${round.bearPool.toFixed(2)} ({bearMulti.toFixed(2)}x)</span>
+          <span>${Number(round.bullPool ?? 0).toFixed(2)} ({Number(bullMulti ?? 0).toFixed(2)}x)</span>
+          <span>${Number(round.bearPool ?? 0).toFixed(2)} ({Number(bearMulti ?? 0).toFixed(2)}x)</span>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-[10px] text-muted-foreground">Total Pool</p>
-          <p className="text-xs font-bold text-foreground">${round.totalPool.toFixed(2)}</p>
+          <p className="text-xs font-bold text-foreground">${Number(round.totalPool ?? 0).toFixed(2)}</p>
         </div>
         <div>
           <p className="text-[10px] text-muted-foreground">Lock Price</p>
@@ -150,9 +150,9 @@ function BetRow({ bet }: { bet: Bet }) {
           {bet.direction}
         </span>
       </td>
-      <td className="px-3 py-2.5 text-xs font-mono text-foreground">${bet.amount.toFixed(2)}</td>
+      <td className="px-3 py-2.5 text-xs font-mono text-foreground">${Number(bet.amount ?? 0).toFixed(2)}</td>
       <td className="px-3 py-2.5 text-xs font-mono text-foreground">{bet.leverage}x</td>
-      <td className="px-3 py-2.5 text-xs font-mono text-foreground">${bet.effectiveStake.toFixed(2)}</td>
+      <td className="px-3 py-2.5 text-xs font-mono text-foreground">${Number(bet.effectiveStake ?? 0).toFixed(2)}</td>
       <td className="px-3 py-2.5 text-xs text-muted-foreground">
         {new Date(bet.timestamp).toLocaleTimeString()}
       </td>
@@ -169,6 +169,7 @@ export default function PredictionAdmin() {
   });
   const [selectedSymbol, setSelectedSymbol] = useState<string>("ALL");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -195,7 +196,7 @@ export default function PredictionAdmin() {
       let totalPayout = 0;
 
       for (const round of allRounds) {
-        totalVolume += round.totalPool;
+        totalVolume += Number(round.totalPool ?? 0);
       }
 
       const uniqueWallets = walletSet.size;
@@ -211,8 +212,10 @@ export default function PredictionAdmin() {
         uniqueWallets,
       });
       setLastRefresh(new Date());
-    } catch (err) {
+      setError(null);
+    } catch (err: any) {
       console.error("Failed to fetch prediction data:", err);
+      setError(err?.message ?? "Failed to load prediction data");
     } finally {
       setLoading(false);
     }
@@ -238,6 +241,25 @@ export default function PredictionAdmin() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error && rounds.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="w-10 h-10 text-red-400 opacity-60" />
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground mb-1">Failed to load prediction data</p>
+          <p className="text-xs text-muted-foreground mb-4">{error}</p>
+          <button
+            onClick={fetchData}
+            className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-xs font-semibold hover:bg-primary/20 transition-all mx-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Try Again
+          </button>
+        </div>
       </div>
     );
   }
@@ -282,8 +304,8 @@ export default function PredictionAdmin() {
         <StatCard label="Total Rounds" value={stats.totalRounds.toString()} icon={BarChart2} />
         <StatCard label="Active Rounds" value={stats.activeRounds.toString()} icon={Activity} color="text-green-400" />
         <StatCard label="Total Bets" value={stats.totalBets.toString()} icon={Users} />
-        <StatCard label="Total Volume" value={`$${stats.totalVolume.toFixed(2)}`} icon={DollarSign} color="text-amber-400" />
-        <StatCard label="Total Payout" value={`$${stats.totalPayout.toFixed(2)}`} icon={TrendingUp} color="text-green-400" />
+        <StatCard label="Total Volume" value={`$${Number(stats.totalVolume ?? 0).toFixed(2)}`} icon={DollarSign} color="text-amber-400" />
+        <StatCard label="Total Payout" value={`$${Number(stats.totalPayout ?? 0).toFixed(2)}`} icon={TrendingUp} color="text-green-400" />
         <StatCard label="Unique Wallets" value={stats.uniqueWallets.toString()} icon={Users} color="text-violet-400" />
       </div>
 
