@@ -64,6 +64,20 @@ router.post("/support/contact", async (req, res) => {
   }
 });
 
+/* ── PUBLIC: Get a single ticket by ID (user can view their own ticket) ────── */
+router.get("/support/tickets/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id || isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
+    const [ticket] = await db.select().from(supportTicketsTable)
+      .where(eq(supportTicketsTable.id, id));
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    res.json(ticket);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 /* ── PUBLIC: Get published FAQs ────────────────────────────────────────────── */
 router.get("/support/faqs", async (_req, res) => {
   try {

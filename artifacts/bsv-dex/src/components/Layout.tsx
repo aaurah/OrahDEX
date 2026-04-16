@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -86,6 +86,7 @@ const NOTIF_TYPE_ICON: Record<string, typeof Info> = {
   withdrawal:         Upload,
   liquidity:          Droplets,
   support:            Headphones,
+  support_reply:      MessageCircle,
   info:               Info,
   warning:            AlertTriangle,
   success:            CheckCheck,
@@ -104,6 +105,7 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
   withdrawal:         "text-orange-400",
   liquidity:          "text-cyan-400",
   support:            "text-violet-400",
+  support_reply:      "text-emerald-400",
   info:               "text-blue-400",
   warning:            "text-amber-400",
   success:            "text-green-400",

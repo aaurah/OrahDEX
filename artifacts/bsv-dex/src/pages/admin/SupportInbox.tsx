@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import {
   Headphones, Inbox, RefreshCw, Search, X, Send, CheckCircle2,
   Clock, Circle, ChevronRight, AlertCircle, Filter, MessageSquare,
@@ -68,6 +69,7 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 export function AdminSupportInbox() {
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Ticket | null>(null);
@@ -114,6 +116,12 @@ export function AdminSupportInbox() {
       setTickets(ts => ts.map(t => t.id === updated.id ? updated : t));
       setReply("");
       toast({ title: "Reply sent" });
+      addNotification({
+        type:  "support_reply",
+        title: "Support Reply Sent",
+        body:  `Your reply to ticket #${updated.id} ("${updated.subject.slice(0, 50)}${updated.subject.length > 50 ? "…" : ""}") has been sent to ${updated.email}.`,
+        href:  `/support/thread/${updated.id}`,
+      });
     } catch (err: any) {
       toast({ title: "Failed to send reply", description: err.message, variant: "destructive" });
     } finally {

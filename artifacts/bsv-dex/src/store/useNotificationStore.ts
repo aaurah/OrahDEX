@@ -13,6 +13,7 @@ export type NotifType =
   | "withdrawal"
   | "liquidity"
   | "support"
+  | "support_reply"
   | "info"
   | "warning"
   | "success"
