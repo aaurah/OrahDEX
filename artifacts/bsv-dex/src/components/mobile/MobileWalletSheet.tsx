@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  X, Copy, Check, LogOut, ArrowDownToLine, ArrowUpFromLine,
+  X, Copy, Check, LogOut, ArrowDownToLine,
   ExternalLink, Wallet, TrendingUp, TrendingDown, RefreshCw,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -181,14 +181,10 @@ export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Quick actions */}
-        <div className="grid grid-cols-2 gap-3 px-5 py-4 border-b border-border">
-          <button className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/15 transition-all">
+        <div className="px-5 py-4 border-b border-border">
+          <button className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary/10 border border-primary/20 text-primary font-semibold text-sm hover:bg-primary/15 transition-all">
             <ArrowDownToLine className="w-4 h-4" />
             Deposit
-          </button>
-          <button className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-white/5 border border-border text-foreground font-semibold text-sm hover:bg-white/8 transition-all">
-            <ArrowUpFromLine className="w-4 h-4" />
-            Withdraw
           </button>
         </div>
 

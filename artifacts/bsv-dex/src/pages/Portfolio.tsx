@@ -3,12 +3,11 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { formatPrice, formatPercent, cn, getProviderLabel } from "@/lib/utils";
-import { Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity, CreditCard } from "lucide-react";
+import { Eye, EyeOff, ArrowDownToLine, History, Copy, Check, RefreshCw, Info, AlertTriangle, Droplets, ExternalLink, TrendingUp, Cpu, Waves, Gauge, Layers, Zap, Activity, CreditCard } from "lucide-react";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
-import { WithdrawModal } from "@/components/WithdrawModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -215,9 +214,7 @@ export function Portfolio() {
 
   const [hideBalances, setHideBalances] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
-  const [withdrawAsset, setWithdrawAsset] = useState("USDT");
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
   const [bsvBalFetching, setBsvBalFetching] = useState(false);
@@ -464,7 +461,6 @@ export function Portfolio() {
   return (
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
-      <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} defaultAsset={withdrawAsset} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full">
@@ -525,12 +521,6 @@ export function Portfolio() {
               className="flex items-center gap-2 bg-primary text-primary-foreground hover:opacity-90 px-5 py-2.5 rounded-xl transition-all font-semibold text-sm shadow-lg shadow-primary/20"
             >
               <ArrowDownToLine className="w-4 h-4" /> Deposit
-            </button>
-            <button
-              onClick={() => { setWithdrawAsset("USDT"); setWithdrawOpen(true); }}
-              className="flex items-center gap-2 bg-secondary hover:bg-white/10 px-5 py-2.5 rounded-xl transition-colors font-semibold text-sm border border-border"
-            >
-              <ArrowUpFromLine className="w-4 h-4" /> Withdraw
             </button>
           </div>
         </div>
@@ -659,14 +649,7 @@ export function Portfolio() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
             <div className="relative z-10">
               <div className="flex items-center gap-3 text-muted-foreground mb-2">
-                <span className="font-medium">
-                  {hasExchangeBalances ? "OrahDEX Exchange Balance" : "Wallet Balance"}
-                </span>
-                {hasExchangeBalances && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/30 uppercase tracking-wider">
-                    Live · auto-updates
-                  </span>
-                )}
+                <span className="font-medium">Wallet Balance</span>
                 <button onClick={() => setHideBalances(!hideBalances)} className="hover:text-foreground transition-colors ml-auto">
                   {hideBalances ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -849,13 +832,6 @@ export function Portfolio() {
                               className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
                               Deposit
                             </button>
-                            {bal.total > 0 && (
-                              <button
-                                onClick={() => { setWithdrawAsset(bal.asset); setWithdrawOpen(true); }}
-                                className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold hover:bg-red-500/20 transition-colors">
-                                Withdraw
-                              </button>
-                            )}
                           </div>
                         </td>
                       </tr>

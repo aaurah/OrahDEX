@@ -207,7 +207,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
+  const { getBalance: getDexBalance } = useExchangeBalanceStore();
 
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
@@ -373,9 +373,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {
-        // Credit the OrahDEX exchange balance ledger so Portfolio reflects the fill
-        applyFill(address, ordSide as "buy" | "sell", ordBase, ordQuote, filledQty, avgFillPrice);
-
         // Compute credited amount from fill payload — never from wallet diff
         let receivedQty: string;
         let receivedTok: string;
@@ -391,12 +388,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · view in Portfolio → DeFi`,
+          description: `+${receivedQty} ${receivedTok} settled to your wallet`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
+          body: `+${receivedQty} ${receivedTok} settled via BSV`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -1416,7 +1413,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-[11px] text-amber-300 font-semibold">{base} lives on {crossChainName}</p>
                     <p className="text-[10px] text-amber-200/70 leading-relaxed mt-0.5">
-                      Bought {base} goes to your <span className="text-amber-300 font-medium">OrahDEX balance</span>. Add a {crossChainName} address to withdraw later.
+                      Bought {base} lives on {crossChainName}. Provide your {crossChainName} address below to receive funds after settlement.
                     </p>
                   </div>
                 </div>
@@ -1438,7 +1435,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 {receiveAddress && (
                   <div className="flex items-center gap-1.5 text-[10px] text-green-400">
                     <CheckCircle2 size={11} className="shrink-0" />
-                    Will be queued for {crossChainName} withdrawal after fill.
+                    Address confirmed — funds will be sent to this address after settlement.
                   </div>
                 )}
               </div>
@@ -1516,10 +1513,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
                           const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
+                          return `+${creditedQty} ${orderResult.quoteSymbol} settled to your wallet`;
                         } else {
                           const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          return `+${creditedQty} ${orderResult.base} credited to your OrahDEX Balance · view in Portfolio → DeFi`;
+                          return `+${creditedQty} ${orderResult.base} settled to your wallet`;
                         }
                       })()
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
