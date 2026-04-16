@@ -935,9 +935,9 @@ function OnChainLpBadge({
       {lpBalance === 0 && (
         <span className="text-[10px] text-muted-foreground">No LP tokens minted yet</span>
       )}
-      {pairAddress && (
+      {pairAddress && chainId && (
         <a
-          href={`https://sepolia.etherscan.io/address/${pairAddress}`}
+          href={`${(EXPLORER_TX[chainId] ?? "https://etherscan.io/tx/").replace("/tx/", "/address/")}${pairAddress}`}
           target="_blank" rel="noreferrer"
           className="text-[9px] text-primary/70 hover:text-primary flex items-center gap-0.5"
         >
