@@ -84,6 +84,7 @@ const AdminPrediction     = lazy(() => import("@/pages/admin/PredictionAdmin"));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
+const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
 
@@ -329,7 +330,8 @@ function Router() {
       <Route path="/admin/prediction"><AdminRoute><AdminPrediction /></AdminRoute></Route>
       <Route path="/admin/tradingview"><AdminRoute><AdminTradingView /></AdminRoute></Route>
       <Route path="/admin/logs">        <AdminRoute><AdminLogsPage /></AdminRoute></Route>
-      <Route path="/admin/support">   <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
+      <Route path="/admin/support">         <AdminRoute><AdminSupportSettings /></AdminRoute></Route>
+      <Route path="/admin/support/inbox">  <AdminRoute><AdminSupportInbox /></AdminRoute></Route>
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
 

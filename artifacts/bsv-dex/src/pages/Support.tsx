@@ -9,6 +9,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { BrandLogo } from "@/components/BrandLogo";
+import { useNotificationStore } from "@/store/useNotificationStore";
+import { useWalletStore } from "@/store/useWalletStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -88,6 +90,8 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
 
 export function SupportPage() {
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
+  const { address } = useWalletStore();
   const [form, setForm] = useState({
     name: "", email: "", subject: "", category: "general", message: "",
   });
@@ -127,6 +131,11 @@ export function SupportPage() {
       if (!r.ok) throw new Error(data.error ?? "Failed to send");
       setSent(true);
       toast({ title: "Message sent!", description: data.message });
+      addNotification({
+        type:  "support",
+        title: "New Support Ticket",
+        body:  `${form.name} (${form.email}) · ${form.category} · ${form.subject.slice(0, 60)}${address ? ` · wallet: ${address.slice(0, 8)}…` : ""}`,
+      });
     } catch (err: any) {
       toast({ title: "Failed to send", description: err.message, variant: "destructive" });
     } finally {
@@ -139,6 +148,11 @@ export function SupportPage() {
     const userMsg = chatInput.trim();
     setChatInput("");
     setChatMessages(m => [...m, { role: "user", text: userMsg, ts: Date.now() }]);
+    addNotification({
+      type:  "support",
+      title: "Live Chat Message",
+      body:  `${address ? address.slice(0, 10) + "…" : "Anonymous"} · ${userMsg.slice(0, 80)}${userMsg.length > 80 ? "…" : ""}`,
+    });
     setChatLoading(true);
     try {
       const convRes = await fetch(`${BASE}/api/ai/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "Support Chat" }) });

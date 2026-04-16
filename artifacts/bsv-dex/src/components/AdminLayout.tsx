@@ -92,6 +92,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Support",
     items: [
       { href: "/admin/support",      label: "Support & Contact",  icon: Headphones },
+      { href: "/admin/support/inbox", label: "Support Inbox",      icon: Inbox },
     ],
   },
   {
