@@ -3,6 +3,7 @@ import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
@@ -478,7 +479,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
 
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
   try {
-    const bsvRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/exchangerate", {
+    const bsvRes = await fetch(`${BSV_NET.wocBase}/exchangerate`, {
       signal: AbortSignal.timeout(5000),
     });
     if (bsvRes.ok) {

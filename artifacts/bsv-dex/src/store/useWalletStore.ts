@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type WalletNetwork = 'bsv' | 'evm' | 'sol' | 'btc' | 'tron' | 'bch';
+export type WalletNetwork = 'bsv' | 'bsv-test' | 'evm' | 'sol' | 'btc' | 'tron' | 'bch';
 
 export interface ConnectedWallet {
   address: string;

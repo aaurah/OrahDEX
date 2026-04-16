@@ -332,7 +332,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const isOrahWallet = provider === "orah-wallet";
 
   const chainId = walletChainId ?? 1;
-  const nativeSymbol = network === "bsv" ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
+  const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
 
   // Fetch real on-chain token balances for the connected EVM wallet
@@ -440,7 +440,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const canReceive = walletCanReceive(network, baseChain);
   // EVM assets can be held by the internal EVM sub-wallet (for BSV users)
   const isEvmChain = baseChain === "evm";
-  const hasInternalEvm = !!internalEvmAddress && network === "bsv";
+  const hasInternalEvm = !!internalEvmAddress && (network === "bsv" || network === "bsv-test");
   const evmHandled = isEvmChain && hasInternalEvm;
   // BSV assets can be held by the internal BSV sub-wallet (for EVM users)
   const isBsvChain = baseChain === "bsv";
@@ -458,7 +458,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const hasSeparateBtcAddr = !!internalBtcAddress && internalBtcAddress !== internalBsvAddress;
   // Show amber cross-chain warning only for truly incompatible chains
   const showCrossChainNotice = side === "buy" && !!address && !canReceive && !evmHandled && !bsvHandled && !btcHandled && !solHandled;
-  const showEvmWalletInfo = side === "buy" && !!address && network === "bsv" && isEvmChain && hasInternalEvm;
+  const showEvmWalletInfo = side === "buy" && !!address && (network === "bsv" || network === "bsv-test") && isEvmChain && hasInternalEvm;
   const showBsvWalletInfo = side === "buy" && !!address && network === "evm" && isBsvChain && hasInternalBsv;
   const showBtcWalletInfo = side === "buy" && !!address && network === "evm" && isBtcChain && hasInternalBtc;
   const showSolWalletInfo = side === "buy" && !!address && network === "evm" && isSolChain && hasInternalSol;

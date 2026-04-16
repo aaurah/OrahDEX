@@ -18,6 +18,7 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
 /* ── Base-58 alphabet (Bitcoin / BSV) ──────────────────────────────────── */
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -60,7 +61,7 @@ export function hash160(data: Buffer | Uint8Array): Buffer {
 
 /** Derive a WIF (Wallet Import Format) string from a raw 32-byte private key */
 export function privKeyToWif(privKey: Buffer): string {
-  return base58Check(Buffer.concat([privKey, Buffer.from([0x01])]), 0x80); // mainnet + compressed
+  return base58Check(Buffer.concat([privKey, Buffer.from([0x01])]), BSV_NET.wifVersion);
 }
 
 /** Recover raw 32-byte private key from WIF */
@@ -78,7 +79,7 @@ export function wifToPrivKey(wif: string): Buffer {
 export function privKeyToAddress(privKey: Buffer): string {
   const pubKey = secp.getPublicKey(privKey, true); // compressed 33 bytes
   const h160   = hash160(Buffer.from(pubKey));
-  return base58Check(h160, 0x00); // mainnet P2PKH
+  return base58Check(h160, BSV_NET.p2pkhVersion);
 }
 
 /** Get compressed public key bytes from private key */
@@ -92,12 +93,12 @@ export function pubKeyToAddress(pubKeyHexOrBuf: string | Buffer | Uint8Array): s
     ? Buffer.from(pubKeyHexOrBuf.replace(/^0x/, ""), "hex")
     : Buffer.from(pubKeyHexOrBuf);
   const h160 = hash160(buf);
-  return base58Check(h160, 0x00);
+  return base58Check(h160, BSV_NET.p2pkhVersion);
 }
 
-/** Check whether a string looks like a BSV P2PKH address (starts with 1, 26-35 chars) */
+/** Check whether a string looks like a BSV P2PKH address on the configured network */
 export function isBsvAddress(addr: string): boolean {
-  return /^1[1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+  return BSV_NET.addressRegex.test(addr);
 }
 
 /** Check whether a string looks like a paymail address (user@domain.tld) */
@@ -348,7 +349,7 @@ export async function buildAndBroadcastBsvTx(
   ]).toString("hex");
 
   // Broadcast
-  const broadRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/tx/raw", {
+  const broadRes = await fetch(BSV_NET.wocBroadcast, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ txhex: txHex }),
@@ -363,7 +364,7 @@ export async function buildAndBroadcastBsvTx(
 }
 
 export async function fetchWalletBalance(address: string): Promise<WalletBalance> {
-  const BASE = "https://api.whatsonchain.com/v1/bsv/main";
+  const BASE = BSV_NET.wocBase;
 
   const empty: WalletBalance = {
     address, confirmedSatoshis: 0, unconfirmedSatoshis: 0,

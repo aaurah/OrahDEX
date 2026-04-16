@@ -17,10 +17,11 @@ import * as secp from "@noble/secp256k1";
 import crypto from "node:crypto";
 import { hash160, type Utxo } from "./bsvWallet.js";
 import { logger } from "./logger.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
-const WOC_BROADCAST = "https://api.whatsonchain.com/v1/bsv/main/tx/raw";
-const FEE_SAT       = 1500;   // 1500 satoshis ≈ generous for a 2-output OP_RETURN tx
-const DUST_SAT      = 546;    // minimum change output
+const WOC_BROADCAST = BSV_NET.wocBroadcast;
+const FEE_SAT       = BSV_NET.feeSat;
+const DUST_SAT      = BSV_NET.dustSat;
 
 /* ── Buffer / encoding helpers ──────────────────────────────────────────── */
 

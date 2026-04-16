@@ -1845,7 +1845,7 @@ const SITE_DEFAULTS: Record<string, string> = {
 };
 
 const INTEGRATION_DEFAULTS: Record<string, string> = {
-  bsv_rpc_url: "https://api.whatsonchain.com/v1/bsv/main",
+  bsv_rpc_url: `https://api.whatsonchain.com/v1/bsv/${process.env.BSV_NETWORK ?? "main"}`,
 };
 
 router.post("/auto-setup", async (_req, res) => {

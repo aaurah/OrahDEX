@@ -39,6 +39,7 @@ import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js"
 import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router: IRouter = Router();
 
@@ -172,6 +173,18 @@ router.get("/bsv/resolve-handle/:handle", async (req, res) => {
   });
 });
 
+/* ── BSV network info ────────────────────────────────────────────────────── */
+router.get("/bsv/network-info", (_req, res) => {
+  res.json({
+    network:    BSV_NET.network,
+    isTestnet:  BSV_NET.isTestnet,
+    explorer:   BSV_NET.explorer,
+    wocBase:    BSV_NET.wocBase,
+    label:      BSV_NET.isTestnet ? "Bitcoin SV Testnet" : "Bitcoin SV",
+    networkKey: BSV_NET.isTestnet ? "bsv-test" : "bsv",
+  });
+});
+
 /* ── BSV address / paymail balance lookup ─────────────────────────────────── */
 router.get("/bsv/balance/:address", async (req, res) => {
   const raw = decodeURIComponent(req.params.address ?? "").trim();
@@ -273,7 +286,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const wocRes = await fetch(
-      `https://api.whatsonchain.com/v1/bsv/main/address/${bsvAddress}/balance`,
+      `${BSV_NET.wocBase}/address/${bsvAddress}/balance`,
       { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
     );
     clearTimeout(timer);
@@ -313,7 +326,7 @@ router.get("/bsv/utxos/:address", async (req, res) => {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
     const wocRes = await fetch(
-      `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`,
+      `${BSV_NET.wocBase}/address/${address}/unspent`,
       { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
     );
     clearTimeout(timer);
@@ -351,7 +364,7 @@ router.post("/bsv/broadcast", async (req, res) => {
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15_000);
-    const wocRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/tx/raw", {
+    const wocRes = await fetch(BSV_NET.wocBroadcast, {
       method:  "POST",
       headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
       body:    JSON.stringify({ txhex: rawHex }),
@@ -362,7 +375,7 @@ router.post("/bsv/broadcast", async (req, res) => {
     if (wocRes.ok && text) {
       // WoC returns the txid as plain or JSON-quoted text
       const txid = text.trim().replace(/^"|"$/g, "");
-      res.json({ txid, explorerUrl: `https://whatsonchain.com/tx/${txid}` });
+      res.json({ txid, explorerUrl: `${BSV_NET.explorer}/tx/${txid}` });
     } else {
       res.status(wocRes.status).json({ error: text || "Broadcast failed" });
     }
