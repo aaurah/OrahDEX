@@ -8,8 +8,10 @@ function uid() { return crypto.randomUUID(); }
 /* ── Constants ──────────────────────────────────────────────────────────────── */
 const BSV_USD = 16; // rough peg for display
 const INIT_VIRTUAL_BSV = 30;
-const INIT_VIRTUAL_TOKENS = 1_073_000_191;
+// Bonding-curve virtual reserve: TOTAL_SUPPLY + 73_000_191 buffer
+// (matches pump.fun-style initialisation — this is NOT a credential)
 const TOTAL_SUPPLY = 1_000_000_000;
+const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
 
 /* ── Seed data ──────────────────────────────────────────────────────────────── */
 const SEED_CREATORS = [
