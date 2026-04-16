@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useTicketReadStore } from "@/store/useTicketReadStore";
 import {
   Headphones, Inbox, RefreshCw, Search, X, Send, CheckCircle2,
   Clock, Circle, ChevronRight, AlertCircle, Filter, MessageSquare,
@@ -70,6 +71,7 @@ function PriorityBadge({ priority }: { priority: string }) {
 export function AdminSupportInbox() {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
+  const { isRead, markRead, markAllRead, setAdminUnreadCount, adminUnreadCount } = useTicketReadStore();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Ticket | null>(null);
@@ -87,6 +89,7 @@ export function AdminSupportInbox() {
       const data: Ticket[] = await r.json();
       setTickets(data);
       setSelected(prev => prev ? (data.find(t => t.id === prev.id) ?? prev) : null);
+      setAdminUnreadCount(data.filter(t => !isRead(t.id)).length);
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, []);
@@ -218,6 +221,15 @@ export function AdminSupportInbox() {
                   className="w-full bg-background border border-border rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
+              {adminUnreadCount > 0 && (
+                <button
+                  onClick={() => { markAllRead(tickets.map(t => t.id)); setAdminUnreadCount(0); }}
+                  className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title="Mark all as read"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
                 onClick={load}
                 className="p-1.5 rounded-lg hover:bg-muted/30 text-muted-foreground transition-colors shrink-0"
@@ -258,16 +270,27 @@ export function AdminSupportInbox() {
             ) : filtered.map(t => (
               <button
                 key={t.id}
-                onClick={() => { setSelected(t); setReply(""); }}
+                onClick={() => {
+                  const wasUnread = !isRead(t.id);
+                  setSelected(t);
+                  setReply("");
+                  if (wasUnread) {
+                    markRead(t.id);
+                    setAdminUnreadCount(Math.max(0, adminUnreadCount - 1));
+                  }
+                }}
                 className={cn(
-                  "w-full text-left px-3 py-3 hover:bg-muted/20 transition-colors group",
+                  "w-full text-left px-3 py-3 hover:bg-muted/20 transition-colors group relative",
                   selected?.id === t.id && "bg-primary/5 border-l-2 border-primary"
                 )}
               >
-                <div className="flex items-start justify-between gap-1.5 mb-1">
+                {!isRead(t.id) && (
+                  <span className="absolute right-2.5 top-3 w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                )}
+                <div className="flex items-start justify-between gap-1.5 mb-1 pr-3">
                   <p className={cn(
-                    "text-xs font-semibold leading-tight truncate flex-1",
-                    t.status === "open" ? "text-foreground" : "text-muted-foreground"
+                    "text-xs leading-tight truncate flex-1",
+                    !isRead(t.id) ? "font-bold text-foreground" : t.status === "open" ? "font-semibold text-foreground" : "font-medium text-muted-foreground"
                   )}>
                     {t.subject}
                   </p>
