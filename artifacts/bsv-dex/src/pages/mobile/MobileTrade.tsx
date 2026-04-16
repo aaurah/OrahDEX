@@ -200,7 +200,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
-  const isOrahWallet = !!provider;
+  const isOrahWallet = provider === "orah-wallet";
   const usesApiBalance = isOrahWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
