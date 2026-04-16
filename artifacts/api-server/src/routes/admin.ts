@@ -811,6 +811,14 @@ router.patch("/admins/:id/password", (req, res) => {
   res.json({ success: true });
 });
 
+router.patch("/admins/:id/2fa", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  const { twoFa } = req.body;
+  if (typeof twoFa === "boolean") admin.twoFa = twoFa;
+  res.json({ success: true, admin });
+});
+
 /* ─── TRADE PAIRS ─── */
 router.get("/pairs", async (_req, res) => {
   const allMarkets = await db.select().from(marketsTable);
