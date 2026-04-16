@@ -18,6 +18,9 @@ import {
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
+/** Tolerance for floating-point balance comparisons (e.g. MAX button round-trips). */
+const EPSILON = 1e-9;
+
 /* ─── pool data ─── */
 const POOLS = [
   { id: "btc-usdt",  base: "BTC",  quote: "USDT", tvl: 423_600_000, vol24: 98_200_000,  farmApr: 4.2,  fee: 0.3,  userLp: 0,      chain: "BSV" },
@@ -268,11 +271,11 @@ function LiquidityModal({
 
     const balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
     const balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-    if (nA > balA) {
+    if (nA > balA + EPSILON) {
       toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
       return;
     }
-    if (nB > balB) {
+    if (nB > balB + EPSILON) {
       toast({ title: "Insufficient balance", description: `You only have ${balB.toFixed(6)} ${pool.quote} but tried to add ${nB.toFixed(6)}.`, variant: "destructive" });
       return;
     }
@@ -511,7 +514,7 @@ function LiquidityModal({
                         <span className="text-xs font-bold" style={{ color: colorA }}>{pool.base}</span>
                       </div>
                     </div>
-                    {balA !== null && parseFloat(amtA || "0") > balA && (
+                    {balA !== null && parseFloat(amtA || "0") > balA + EPSILON && (
                       <p className="text-[10px] text-red-400 mt-1">Insufficient {pool.base} balance</p>
                     )}
                   </div>
@@ -551,7 +554,7 @@ function LiquidityModal({
                         <span className="text-xs font-bold" style={{ color: colorB }}>{pool.quote}</span>
                       </div>
                     </div>
-                    {balB !== null && parseFloat(amtB || "0") > balB && (
+                    {balB !== null && parseFloat(amtB || "0") > balB + EPSILON && (
                       <p className="text-[10px] text-red-400 mt-1">Insufficient {pool.quote} balance</p>
                     )}
                   </div>
@@ -632,14 +635,14 @@ function LiquidityModal({
 
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || ((parseFloat(amtA || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0)) || (parseFloat(amtB || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0)))}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || ((parseFloat(amtA || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0) + EPSILON) || (parseFloat(amtB || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0) + EPSILON))}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
               {(() => {
                 const m = getLiquidityMode(chainId, pool.base, pool.quote, walletProvider);
                 const _balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
                 const _balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-                if (parseFloat(amtA || "0") > _balA || parseFloat(amtB || "0") > _balB) return "Insufficient Balance";
+                if (parseFloat(amtA || "0") > _balA + EPSILON || parseFloat(amtB || "0") > _balB + EPSILON) return "Insufficient Balance";
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
