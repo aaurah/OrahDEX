@@ -1,0 +1,98 @@
+Pure, honest on‑chain value
+• Smart off‑chain UX and indexing
+• Zero fake balances or hidden custody
+
+
+Here’s the cleanest hybrid design for OrahDEX.
+
+---
+
+1. Core principle
+
+• All user value lives on‑chain.
+ETH, tokens, LP, NFTs, vault shares—always contracts, never DB rows.
+• Off‑chain is only for speed, aggregation, and UX.
+Indexing, analytics, notifications, leaderboards, social.
+
+
+No exceptions. If it’s money, it’s a contract.
+
+---
+
+2. On‑chain layer (the “hard” side)
+
+You implement:
+
+• AMM pools (x·y=k or custom curves)
+• LP representation• ERC‑20 LP tokens (V2‑style), or
+• ERC‑721 position NFTs (V3‑style)
+
+• NFTs• ERC‑721 / ERC‑1155 for creator coins + mythic artifacts
+
+• Optional vaults• ERC‑4626 for yield strategies
+
+• Optional wBSV + HTLC bridge• wBSV ERC‑20
+• HTLC contracts for cross‑chain swaps
+
+
+
+Wallets + explorers see everything natively:
+
+• eth_getBalance, balanceOf, ownerOf—nothing custom.
+
+
+---
+
+3. Off‑chain layer (the “soft” side)
+
+You run:
+
+• Indexers• Track pools, prices, LP positions, fees, PnL
+• Track NFT ownership, floor, volume
+
+• API• Serves aggregated views to your frontend
+• Never the source of truth for balances
+
+• Social / creator graph• Followers, posts, feeds, profiles
+• Tied to addresses / Keepers, not to balances
+
+
+
+If the indexer dies, funds are still safe—contracts hold everything.
+
+---
+
+4. Hybrid wallet experience
+
+In Orah Wallet / OrahDEX UI:
+
+• Rich, opinionated views:• LP breakdown, fee APR, IL estimates
+• NFT collections, creator stats
+• Cross‑chain positions, Keeper roles
+
+
+
+In MetaMask / Rabby / Phantom:
+
+• They see:• Native ETH
+• LP tokens
+• NFTs
+• Vault shares
+
+• Their DeFi tab picks up OrahDEX automatically once your contracts are known.
+
+
+You get deep UX in your app, universal visibility in wallets.
+
+---
+
+5. Keeper / “internal” path (the only allowed soft balance)
+
+If you ever keep an internal Orah wallet:
+
+• It must be:• Explicitly labeled as custodial / internal
+• Fully backed by on‑chain contracts
+• Settled via clear, auditable flows
+
+• No mixing with external wallets.
+• No synthetic numbers for MetaMask/Rabby users—ever.
