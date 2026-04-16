@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTicketReadStore } from "@/store/useTicketReadStore";
 import { Link } from "wouter";
 import {
   ArrowLeft, Headphones, User, Clock, CheckCircle2, Reply,
@@ -45,6 +46,7 @@ interface Props {
 
 export function SupportThread({ ticketId }: Props) {
   const id = parseInt(ticketId, 10);
+  const { markRead } = useTicketReadStore();
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +63,7 @@ export function SupportThread({ ticketId }: Props) {
       const data: Ticket = await r.json();
       setTicket(data);
       setError(null);
+      markRead(id);
     } catch (err: any) {
       setError(err.message);
     } finally {

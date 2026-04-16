@@ -8,6 +8,7 @@ import {
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { useTicketReadStore } from "@/store/useTicketReadStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { WalletConnectModal } from "@/components/WalletConnectModal";
@@ -286,6 +287,7 @@ function AdminWalletWidget() {
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { email, logout } = useAdminAuthStore();
+  const { adminUnreadCount } = useTicketReadStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
@@ -419,7 +421,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                             <span className="truncate">{item.label}</span>
                           </div>
                           {active && <ChevronRight className="w-3 h-3 shrink-0" />}
-                          {item.badge && (
+                          {item.href === "/admin/support/inbox" && adminUnreadCount > 0 ? (
+                            <span className="text-[9px] font-black min-w-[18px] text-center px-1.5 py-0.5 rounded-full bg-red-500 text-white tabular-nums">{adminUnreadCount > 99 ? "99+" : adminUnreadCount}</span>
+                          ) : item.badge && (
                             <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">{item.badge}</span>
                           )}
                         </Link>
