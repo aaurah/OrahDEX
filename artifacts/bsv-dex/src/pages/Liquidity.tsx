@@ -19,6 +19,9 @@ import {
 
 const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/** Tolerance for floating-point balance comparisons (e.g. MAX button round-trips). */
+const EPSILON = 1e-9;
+
 function useBackendBalances(address: string | null) {
   const [balances, setBalances] = useState<TokenBalance[]>([]);
   const [loading, setLoading] = useState(false);
@@ -394,11 +397,11 @@ function LiquidityModal({
     if (balances.length > 0) {
       const balA = balances.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
       const balB = balances.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-      if (nA > balA) {
+      if (nA > balA + EPSILON) {
         toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
         return;
       }
-      if (nB > balB) {
+      if (nB > balB + EPSILON) {
         toast({ title: "Insufficient balance", description: `You only have ${balB.toFixed(6)} ${pool.quote} but tried to add ${nB.toFixed(6)}.`, variant: "destructive" });
         return;
       }
@@ -657,7 +660,7 @@ function LiquidityModal({
                   <span className="text-sm font-bold" style={{ color: colorA }}>{pool.base}</span>
                 </div>
               </div>
-              {walletConnected && balances.length > 0 && parseFloat(amtA || "0") > tokenBalA && (
+              {walletConnected && balances.length > 0 && parseFloat(amtA || "0") > tokenBalA + EPSILON && (
                 <p className="text-[11px] text-red-400 mt-1">Insufficient {pool.base} balance</p>
               )}
             </div>
@@ -686,7 +689,7 @@ function LiquidityModal({
                   <span className="text-sm font-bold" style={{ color: colorB }}>{pool.quote}</span>
                 </div>
               </div>
-              {walletConnected && balances.length > 0 && parseFloat(amtB || "0") > tokenBalB && (
+              {walletConnected && balances.length > 0 && parseFloat(amtB || "0") > tokenBalB + EPSILON && (
                 <p className="text-[11px] text-red-400 mt-1">Insufficient {pool.quote} balance</p>
               )}
             </div>
@@ -807,13 +810,13 @@ function LiquidityModal({
 
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || balancesLoading || (walletConnected && !balancesLoading && balances.length > 0 && (parseFloat(amtA || "0") > tokenBalA || parseFloat(amtB || "0") > tokenBalB))}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || balancesLoading || (walletConnected && !balancesLoading && balances.length > 0 && (parseFloat(amtA || "0") > tokenBalA + EPSILON || parseFloat(amtB || "0") > tokenBalB + EPSILON))}
               className="w-full py-3.5 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {(() => {
                 const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
                 if (balancesLoading) return "Loading balances…";
-                if (walletConnected && balances.length > 0 && (parseFloat(amtA || "0") > tokenBalA || parseFloat(amtB || "0") > tokenBalB)) return "Insufficient Balance";
+                if (walletConnected && balances.length > 0 && (parseFloat(amtA || "0") > tokenBalA + EPSILON || parseFloat(amtB || "0") > tokenBalB + EPSILON)) return "Insufficient Balance";
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
