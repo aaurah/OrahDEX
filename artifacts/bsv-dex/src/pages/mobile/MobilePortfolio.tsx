@@ -12,6 +12,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -92,7 +93,27 @@ export function MobilePortfolio() {
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
   const queryClient = useQueryClient();
+
+  const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
+    queryKey: ["mobile-exchange-balances", address],
+    queryFn: async () => {
+      if (!address) return [];
+      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : (data.balances ?? []);
+    },
+    enabled: !!address,
+    refetchInterval: 15_000,
+    staleTime: 8_000,
+  });
+
+  const exchBalancesWithValue = exchangeBalances
+    .map(b => ({ ...b, free: parseFloat(b.available), locked: parseFloat(b.locked) }))
+    .filter(b => b.free > 0 || b.locked > 0);
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
   const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
@@ -363,6 +384,18 @@ export function MobilePortfolio() {
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
+      {withdrawAsset && (
+        <WithdrawSheet
+          open={withdrawOpen}
+          onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
+          walletAddress={address ?? ""}
+          asset={withdrawAsset.asset}
+          available={withdrawAsset.available}
+          network={withdrawAsset.network}
+          networkLabel={withdrawAsset.networkLabel}
+          color={withdrawAsset.color}
+        />
+      )}
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
         {/* Header */}
@@ -669,6 +702,60 @@ export function MobilePortfolio() {
                   </div>
                 ))}
               </div>
+
+              {/* OrahDEX Exchange Balances */}
+              {exchBalancesWithValue.length > 0 && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2 px-1 mb-2">
+                    <Zap size={12} className="text-primary" />
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">OrahDEX Exchange</span>
+                  </div>
+                  <div className="bg-card border border-primary/20 rounded-2xl overflow-hidden">
+                    {exchBalancesWithValue.map((b, i) => {
+                      const color = b.asset === "ETH" ? "#627EEA"
+                        : b.asset === "BTC" ? "#F7931A"
+                        : b.asset === "USDT" ? "#26A17B"
+                        : b.asset === "USDC" ? "#2775CA"
+                        : b.asset === "BSV" ? "#EAB308"
+                        : b.asset === "BNB" ? "#F0B90B"
+                        : "#6B7280";
+                      const netLabel = network === "evm" ? (chainId === 1 ? "Ethereum" : chainId === 56 ? "BNB Chain" : chainId === 137 ? "Polygon" : "EVM") : network === "tron" ? "TRON" : "BSV";
+                      return (
+                        <div
+                          key={b.asset}
+                          className={`flex items-center gap-3 px-4 py-3.5 ${i < exchBalancesWithValue.length - 1 ? "border-b border-border" : ""}`}
+                        >
+                          <div
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                            style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                          >
+                            {b.asset[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold">{b.asset}</p>
+                            <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                              {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.0001 ? 8 : 6 })}
+                              {b.locked > 0 && <span className="text-muted-foreground/50"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setWithdrawAsset({ asset: b.asset, available: b.free, network: network ?? "evm", networkLabel: netLabel, color });
+                              setWithdrawOpen(true);
+                            }}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors shrink-0"
+                          >
+                            Withdraw
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground px-1 mt-1.5">
+                    Post-trade balances credited to your OrahDEX account. Withdraw to your wallet anytime.
+                  </p>
+                </div>
+              )}
             </>
           )}
 
