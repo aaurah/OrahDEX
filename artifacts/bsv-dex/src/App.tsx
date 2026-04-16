@@ -86,6 +86,7 @@ const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").t
 const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
+const AdminWithdrawals       = lazy(() => import("@/pages/admin/Withdrawals").then(m => ({ default: m.AdminWithdrawals })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -311,6 +312,7 @@ function Router() {
       <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
+      <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
       <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>
       <Route path="/admin/bot-profit"><AdminRoute><AdminBotProfit /></AdminRoute></Route>
       <Route path="/admin/site">    <AdminRoute><AdminSiteSettings /></AdminRoute></Route>

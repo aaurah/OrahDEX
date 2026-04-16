@@ -87,6 +87,122 @@ router.post("/withdrawals", async (req, res) => {
   }
 });
 
+// ── GET /admin/withdrawals ────────────────────────────────────────────────────
+// Returns ALL withdrawal requests for the admin panel, newest first.
+router.get("/admin/withdrawals", async (req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      id: string; wallet_address: string; asset: string; amount: string;
+      network: string; network_label: string | null; recipient: string;
+      fee: string | null; status: string; txid: string | null;
+      note: string | null; created_at: Date; processed_at: Date | null;
+    }>(
+      `SELECT * FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
+    );
+
+    res.json(rows.map(r => ({
+      id:           r.id,
+      walletAddress: r.wallet_address,
+      asset:        r.asset,
+      amount:       parseFloat(r.amount),
+      network:      r.network,
+      networkLabel: r.network_label,
+      recipient:    r.recipient,
+      fee:          r.fee,
+      status:       r.status,
+      txid:         r.txid,
+      note:         r.note,
+      createdAt:    r.created_at,
+      processedAt:  r.processed_at,
+    })));
+  } catch (err) {
+    req.log.error({ err }, "admin/withdrawals: failed to fetch all");
+    res.status(500).json({ error: "Failed to fetch withdrawal requests" });
+  }
+});
+
+// ── PATCH /withdrawals/:id ────────────────────────────────────────────────────
+// Admin action: update status to 'cancelled' (refunds balance), 'processing',
+// or 'completed' (with optional txid).
+router.patch("/withdrawals/:id", async (req, res) => {
+  const { id } = req.params;
+  const { status, txid, note } = req.body as { status: string; txid?: string; note?: string };
+
+  const VALID = ["cancelled", "processing", "completed"];
+  if (!VALID.includes(status)) {
+    res.status(400).json({ error: `status must be one of: ${VALID.join(", ")}` });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Fetch the current withdrawal request (lock for update)
+    const { rows } = await client.query<{
+      id: string; wallet_address: string; asset: string; amount: string; status: string;
+    }>(
+      `SELECT id, wallet_address, asset, amount, status
+       FROM withdrawal_requests WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Withdrawal request not found" });
+      return;
+    }
+
+    const wr = rows[0];
+
+    if (wr.status === status) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: `Request is already ${status}` });
+      return;
+    }
+
+    if (wr.status === "completed" || wr.status === "cancelled") {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: `Cannot change a ${wr.status} request` });
+      return;
+    }
+
+    // If cancelling — refund the deducted balance back to the user
+    if (status === "cancelled") {
+      await client.query(
+        `INSERT INTO user_balances (wallet_address, asset_symbol, available, updated_at)
+         VALUES ($1, $2, $3, now())
+         ON CONFLICT (wallet_address, asset_symbol)
+         DO UPDATE SET available = user_balances.available + EXCLUDED.available,
+                       updated_at = now()`,
+        [wr.wallet_address, wr.asset, wr.amount],
+      );
+    }
+
+    await client.query(
+      `UPDATE withdrawal_requests
+       SET status = $1,
+           txid = COALESCE($2, txid),
+           note = COALESCE($3, note),
+           processed_at = CASE WHEN $1 IN ('completed','cancelled') THEN now() ELSE processed_at END
+       WHERE id = $4`,
+      [status, txid ?? null, note ?? null, id],
+    );
+
+    await client.query("COMMIT");
+
+    req.log.info({ id, status, walletAddress: wr.wallet_address, asset: wr.asset }, "withdrawals: status updated");
+
+    res.json({ id, status, message: `Withdrawal ${status}` });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    req.log.error({ err }, "withdrawals: failed to update status");
+    res.status(500).json({ error: "Failed to update withdrawal status" });
+  } finally {
+    client.release();
+  }
+});
+
 // ── GET /withdrawals/:walletAddress ──────────────────────────────────────────
 // Returns the full withdrawal history for a wallet, newest first.
 router.get("/withdrawals/:walletAddress", async (req, res) => {
