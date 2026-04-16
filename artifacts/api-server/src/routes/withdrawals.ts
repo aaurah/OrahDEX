@@ -203,6 +203,69 @@ router.patch("/withdrawals/:id", async (req, res) => {
   }
 });
 
+// ── POST /admin/balance-adjust ────────────────────────────────────────────────
+// Admin: manually credit or deduct a user's internal balance for a given asset.
+router.post("/admin/balance-adjust", async (req, res) => {
+  const { walletAddress, asset, amount, type, reason } = req.body as {
+    walletAddress: string; asset: string; amount: string; type: "credit" | "deduct"; reason?: string;
+  };
+
+  if (!walletAddress || !asset || !amount || !type) {
+    res.status(400).json({ error: "walletAddress, asset, amount, type are required" });
+    return;
+  }
+  if (!["credit", "deduct"].includes(type)) {
+    res.status(400).json({ error: "type must be 'credit' or 'deduct'" });
+    return;
+  }
+  const parsed = parseFloat(amount);
+  if (isNaN(parsed) || parsed <= 0) {
+    res.status(400).json({ error: "amount must be a positive number" });
+    return;
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    if (type === "deduct") {
+      const { rows } = await client.query<{ available: string }>(
+        `SELECT available FROM user_balances WHERE wallet_address = $1::varchar AND asset_symbol = $2::varchar FOR UPDATE`,
+        [walletAddress, asset],
+      );
+      const available = parseFloat(rows[0]?.available ?? "0");
+      if (available < parsed) {
+        await client.query("ROLLBACK");
+        res.status(400).json({ error: `Insufficient balance: ${available} ${asset} available` });
+        return;
+      }
+      await client.query(
+        `UPDATE user_balances SET available = available - $1::numeric, updated_at = now()
+         WHERE wallet_address = $2::varchar AND asset_symbol = $3::varchar`,
+        [parsed.toString(), walletAddress, asset],
+      );
+    } else {
+      await client.query(
+        `INSERT INTO user_balances (wallet_address, asset_symbol, available, updated_at)
+         VALUES ($1::varchar, $2::varchar, $3::numeric, now())
+         ON CONFLICT (wallet_address, asset_symbol)
+         DO UPDATE SET available = user_balances.available + EXCLUDED.available, updated_at = now()`,
+        [walletAddress, asset, parsed.toString()],
+      );
+    }
+
+    await client.query("COMMIT");
+    req.log.info({ walletAddress, asset, amount: parsed, type, reason }, "admin: manual balance adjustment");
+    res.json({ success: true, walletAddress, asset, amount: parsed, type });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    req.log.error({ err }, "admin/balance-adjust: failed");
+    res.status(500).json({ error: "Balance adjustment failed" });
+  } finally {
+    client.release();
+  }
+});
+
 // ── GET /withdrawals/:walletAddress ──────────────────────────────────────────
 // Returns the full withdrawal history for a wallet, newest first.
 router.get("/withdrawals/:walletAddress", async (req, res) => {
