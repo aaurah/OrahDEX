@@ -328,7 +328,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
+  const { getBalance: getDexBalance } = useExchangeBalanceStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
   const usesApiBalance = isOrahWallet;
@@ -546,11 +546,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             setEvmHtlcSessionId(data.evmHtlcSession.id);
           }
 
-          // Credit the exchange balance ledger so Portfolio reflects the trade
-          if (address && filledQty > 0 && avgFillPrice > 0) {
-            applyFill(address, side as "buy" | "sell", base, quote, filledQty, avgFillPrice);
-          }
-
           // Compute credited amount from fill payload — no wallet diff
           let receivedQty: string;
           let receivedTok: string;
@@ -572,8 +567,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             description: hasEvmHtlc
               ? `Your order matched! Lock ${receivedQty} ${receivedTok} in the HTLC contract below to complete the P2P atomic swap.`
               : isCrossChainFill
-                ? `+${receivedQty} ${receivedTok} → OrahDEX balance. To withdraw to ${fillChainName}, go to Portfolio → Withdraw.`
-                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+                ? `+${receivedQty} ${receivedTok} settled on-chain. Provide your ${fillChainName} address to receive funds.`
+                : `+${receivedQty} ${receivedTok} settled to your wallet`,
           });
           addNotification({
             type: "order_filled",
@@ -581,8 +576,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             body: hasEvmHtlc
               ? `Lock ${receivedQty} ${receivedTok} on-chain to complete atomic swap — see settlement card`
               : isCrossChainFill
-                ? `+${receivedQty} ${receivedTok} in OrahDEX balance · withdraw to ${fillChainName} via Portfolio`
-                : `+${receivedQty} ${receivedTok} → OrahDEX balance · BSV settled`,
+                ? `+${receivedQty} ${receivedTok} settled on-chain · provide ${fillChainName} address to receive`
+                : `+${receivedQty} ${receivedTok} settled via BSV`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -774,7 +769,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
             toast({
               title: "Order Filled ✓",
-              description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+              description: `+${receivedQty} ${receivedTok} settled to your wallet`,
             });
           } else {
             toast({
@@ -1247,7 +1242,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                     {base} lives on {chainName}
                   </p>
                   <p className="text-[10px] text-amber-200/70 leading-relaxed mt-0.5">
-                    Bought {base} goes to your <span className="text-amber-300 font-medium">OrahDEX balance</span>. Your connected wallet can't hold {base} directly. To withdraw to {chainName} later, provide your {base} address below or go to <span className="text-amber-300 font-medium">Portfolio → Withdraw</span>.
+                    Bought {base} lives on {chainName}. Your connected wallet is on a different chain. Provide your {base} address below to receive funds after settlement.
                   </p>
                 </div>
               </div>

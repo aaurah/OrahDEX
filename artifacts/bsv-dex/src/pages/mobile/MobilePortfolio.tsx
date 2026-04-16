@@ -1,6 +1,6 @@
 import {
   TrendingUp, TrendingDown,
-  ArrowDownToLine, ArrowUpFromLine,
+  ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
 } from "lucide-react";
@@ -11,7 +11,6 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DepositModal } from "@/components/DepositModal";
-import { WithdrawModal } from "@/components/WithdrawModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
@@ -90,7 +89,6 @@ export function MobilePortfolio() {
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>("assets");
   const [depositOpen, setDepositOpen] = useState(false);
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -364,7 +362,6 @@ export function MobilePortfolio() {
   return (
     <>
       <DepositModal isOpen={depositOpen} onClose={() => setDepositOpen(false)} />
-      <WithdrawModal isOpen={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
@@ -533,8 +530,8 @@ export function MobilePortfolio() {
             </div>
           )}
 
-          {/* Buy / Deposit / Withdraw / Bridge */}
-          <div className="grid grid-cols-4 gap-2">
+          {/* Buy / Deposit / Bridge */}
+          <div className="grid grid-cols-3 gap-2">
             <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
               <CreditCard size={15} />
               Buy
@@ -542,10 +539,6 @@ export function MobilePortfolio() {
             <button onClick={() => setDepositOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
               Deposit
-            </button>
-            <button onClick={() => setWithdrawOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-card border border-border text-foreground font-semibold text-xs active:opacity-80">
-              <ArrowUpFromLine size={15} />
-              Withdraw
             </button>
             <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors">
               <ArrowLeftRight size={15} />
