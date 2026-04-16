@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck } from "lucide-react";
+import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminLayout } from "@/components/AdminLayout";
 
@@ -97,6 +97,132 @@ function NoteModal({ id, onClose, onSave }: { id: string; onClose: () => void; o
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BalanceAdjustPanel() {
+  const [open, setOpen] = useState(false);
+  const [wallet, setWallet] = useState("");
+  const [asset, setAsset] = useState("ETH");
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<"deduct" | "credit">("deduct");
+  const [reason, setReason] = useState("");
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const adjust = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${API_BASE}/api/admin/balance-adjust`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: wallet.trim(), asset: asset.trim(), amount, type, reason }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Failed");
+      return data;
+    },
+    onSuccess: () => {
+      setResult({ ok: true, msg: `${type === "deduct" ? "Deducted" : "Credited"} ${amount} ${asset} successfully` });
+      setAmount(""); setReason("");
+    },
+    onError: (e: Error) => setResult({ ok: false, msg: e.message }),
+  });
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 bg-muted/20 hover:bg-muted/40 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+          <span className="font-medium text-sm">Manual Balance Adjustment</span>
+          <span className="text-xs text-muted-foreground">Correct ledger discrepancies</span>
+        </div>
+        <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="p-5 space-y-4 border-t border-border">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Wallet Address</label>
+              <input
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-mono"
+                placeholder="0x..."
+                value={wallet}
+                onChange={e => setWallet(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Asset</label>
+              <input
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm"
+                placeholder="ETH, BNB, USDT..."
+                value={asset}
+                onChange={e => setAsset(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Amount</label>
+              <input
+                className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm font-mono"
+                placeholder="0.00"
+                type="number"
+                min="0"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground uppercase tracking-wider">Type</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setType("deduct")}
+                  className={cn("flex-1 py-2 rounded-lg text-sm border transition-colors",
+                    type === "deduct" ? "bg-red-600/20 border-red-500/40 text-red-400" : "border-border text-muted-foreground hover:bg-muted")}
+                >
+                  Deduct
+                </button>
+                <button
+                  onClick={() => setType("credit")}
+                  className={cn("flex-1 py-2 rounded-lg text-sm border transition-colors",
+                    type === "credit" ? "bg-green-600/20 border-green-500/40 text-green-400" : "border-border text-muted-foreground hover:bg-muted")}
+                >
+                  Credit
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">Reason (optional)</label>
+            <input
+              className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm"
+              placeholder="e.g. Ledger correction — spurious refund from pre-fix cancel"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+            />
+          </div>
+          {result && (
+            <div className={cn("text-sm px-3 py-2 rounded-lg border", result.ok
+              ? "bg-green-500/10 border-green-500/30 text-green-400"
+              : "bg-red-500/10 border-red-500/30 text-red-400")}>
+              {result.msg}
+            </div>
+          )}
+          <button
+            disabled={!wallet.trim() || !asset.trim() || !amount || adjust.isPending}
+            onClick={() => { setResult(null); adjust.mutate(); }}
+            className={cn(
+              "px-5 py-2 rounded-lg text-sm font-medium disabled:opacity-40",
+              type === "deduct"
+                ? "bg-red-600 hover:bg-red-700 text-white"
+                : "bg-green-600 hover:bg-green-700 text-white",
+            )}
+          >
+            {adjust.isPending ? "Processing…" : `${type === "deduct" ? "Deduct" : "Credit"} Balance`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -293,6 +419,9 @@ export function AdminWithdrawals() {
             </div>
           )}
         </div>
+
+        {/* Manual balance adjustment */}
+        <BalanceAdjustPanel />
       </div>
 
       {txidModal && (
