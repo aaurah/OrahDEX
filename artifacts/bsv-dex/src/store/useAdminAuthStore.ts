@@ -12,6 +12,7 @@ interface AdminAuthState {
   walletAddress: string | null;
   loginMethod: "credentials" | "wallet" | null;
   displayName: string;
+  token: string | null;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   loginViaWallet: (address: string, signature: string) => Promise<boolean>;
@@ -35,6 +36,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       walletAddress: null,
       loginMethod: null,
       displayName: 'Admin',
+      token: null,
       error: null,
 
       loginViaWallet: async (address, signature) => {
@@ -46,7 +48,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            set({ isAuthenticated: true, walletAddress: address, loginMethod: "wallet", error: null });
+            set({ isAuthenticated: true, walletAddress: address, loginMethod: "wallet", token: data.token ?? null, error: null });
             return true;
           }
           set({ error: data.error ?? "Wallet login failed." });
@@ -68,9 +70,9 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           if (res.ok && data.success) {
             const { twoFaEnabled } = get();
             if (!twoFaEnabled) {
-              set({ email, isAuthenticated: true, error: null, twoFaVerified: false });
+              set({ email, isAuthenticated: true, token: data.token ?? null, error: null, twoFaVerified: false });
             } else {
-              set({ email, error: null, twoFaVerified: false });
+              set({ email, token: data.token ?? null, error: null, twoFaVerified: false });
             }
             return true;
           }
@@ -91,7 +93,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            set({ isAuthenticated: true, twoFaVerified: true, error: null });
+            set({ isAuthenticated: true, twoFaVerified: true, token: data.token ?? null, error: null });
             return true;
           }
           set({ error: data.error ?? "Incorrect code. Try again." });
@@ -106,14 +108,24 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       enable2FA: () => set({ twoFaEnabled: true, twoFaSetupDone: false }),
       disable2FA: () => set({ twoFaEnabled: false, twoFaSetupDone: false }),
 
-      logout: () => set({
-        isAuthenticated: false,
-        twoFaVerified: false,
-        email: null,
-        walletAddress: null,
-        loginMethod: null,
-        error: null,
-      }),
+      logout: () => {
+        const token = get().token;
+        if (token) {
+          fetch(`${API}/api/admin/auth/logout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+          }).catch(() => {});
+        }
+        set({
+          isAuthenticated: false,
+          twoFaVerified: false,
+          email: null,
+          walletAddress: null,
+          loginMethod: null,
+          token: null,
+          error: null,
+        });
+      },
 
       clearError: () => set({ error: null }),
 
@@ -127,7 +139,13 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         twoFaEnabled: s.twoFaEnabled,
         twoFaSetupDone: s.twoFaSetupDone,
         displayName: s.displayName,
+        token: s.token,
       }),
     }
   )
 );
+
+export function getAdminHeaders(): Record<string, string> {
+  const token = useAdminAuthStore.getState().token;
+  return token ? { "x-admin-token": token } : {};
+}

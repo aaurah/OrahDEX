@@ -32,6 +32,7 @@ import socialNftRouter from "./socialNft.js";
 import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
 import { db, pool } from "@workspace/db";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -70,6 +71,11 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
+// Protect all /admin routes except the auth endpoints themselves
+router.use("/admin", (req, res, next) => {
+  if (req.path.startsWith("/auth")) return next();
+  requireAdminToken(req, res, next);
+});
 router.use("/admin", adminRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
