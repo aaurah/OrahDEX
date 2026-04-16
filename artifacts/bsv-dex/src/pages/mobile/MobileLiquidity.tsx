@@ -254,7 +254,7 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const isEvm = !address || network === "evm" || address?.startsWith("0x");
-  const { balances: evmBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
+  const { balances: evmBalances, refresh: refreshEvmBalances, loading: evmLoading } = useEvmBalances(isEvm ? address : null, chainId);
   const walletConnected = !!address;
 
   const userPositions = address ? getUserPositions(address) : {};
@@ -269,15 +269,17 @@ function LiquidityModal({
     const valueUsd = nA * priceA_ + nB * priceB_;
     const lpTokens = valueUsd / 12.5;
 
-    const balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
-    const balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-    if (nA > balA + EPSILON) {
-      toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
-      return;
-    }
-    if (nB > balB + EPSILON) {
-      toast({ title: "Insufficient balance", description: `You only have ${balB.toFixed(6)} ${pool.quote} but tried to add ${nB.toFixed(6)}.`, variant: "destructive" });
-      return;
+    if ((evmBalances?.length ?? 0) > 0) {
+      const balA = evmBalances!.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
+      const balB = evmBalances!.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
+      if (nA > balA + EPSILON) {
+        toast({ title: "Insufficient balance", description: `You only have ${balA.toFixed(6)} ${pool.base} but tried to add ${nA.toFixed(6)}.`, variant: "destructive" });
+        return;
+      }
+      if (nB > balB + EPSILON) {
+        toast({ title: "Insufficient balance", description: `You only have ${balB.toFixed(6)} ${pool.quote} but tried to add ${nB.toFixed(6)}.`, variant: "destructive" });
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -635,14 +637,14 @@ function LiquidityModal({
 
             <button
               onClick={handleAdd}
-              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || ((parseFloat(amtA || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0) + EPSILON) || (parseFloat(amtB || "0") > (evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0) + EPSILON))}
+              disabled={!amtA || !amtB || submitting || txStatus.step === "success" || evmLoading || ((evmBalances?.length ?? 0) > 0 && ((parseFloat(amtA || "0") > (evmBalances!.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0) + EPSILON) || (parseFloat(amtB || "0") > (evmBalances!.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0) + EPSILON)))}
               className="w-full py-3.5 rounded-xl font-bold text-sm text-white bg-green-600 active:opacity-80 disabled:opacity-40"
             >
               {(() => {
                 const m = getLiquidityMode(chainId, pool.base, pool.quote, walletProvider);
                 const _balA = evmBalances?.find(b => b.symbol.toUpperCase() === pool.base.toUpperCase())?.amount ?? 0;
                 const _balB = evmBalances?.find(b => b.symbol.toUpperCase() === pool.quote.toUpperCase())?.amount ?? 0;
-                if (parseFloat(amtA || "0") > _balA + EPSILON || parseFloat(amtB || "0") > _balB + EPSILON) return "Insufficient Balance";
+                if ((evmBalances?.length ?? 0) > 0 && (parseFloat(amtA || "0") > _balA + EPSILON || parseFloat(amtB || "0") > _balB + EPSILON)) return "Insufficient Balance";
                 if (submitting) {
                   if (txStatus.step === "approving")        return "Waiting for approval…";
                   if (txStatus.step === "approval_pending") return "Confirming approval…";
