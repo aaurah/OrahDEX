@@ -1235,24 +1235,40 @@ router.post("/bot-profit/withdraw", async (req, res) => {
       return res.json({ success: true, txid, satoshis, bsvPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
     }
 
-    // ── Non-BSV: record withdrawal intent (EVM/Solana require on-chain wallet) ──
+    // ── Non-BSV: create a real pending withdrawal request ──────────────────────
     const cumulative = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
     const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
     const available  = cumulative - withdrawn;
 
     if (amount > available) return res.status(400).json({ error: `Insufficient balance. Available: $${available.toFixed(4)}` });
 
-    const newWithdrawn = withdrawn + amount;
-    const txid = "orah_" + crypto.randomBytes(16).toString("hex");
+    // Get ETH price to convert USD amount → ETH amount
+    const ethMarket = await db.select({ lastPrice: marketsTable.lastPrice })
+      .from(marketsTable)
+      .where(eq(marketsTable.symbol, "ETH/USDT"))
+      .limit(1);
+    const ethPriceUsd = parseFloat(ethMarket[0]?.lastPrice ?? "0") || 3200;
+    const ethAmount   = parseFloat((amount / ethPriceUsd).toFixed(8));
 
+    // Insert into withdrawal_requests so it appears in the admin Withdrawals panel
+    const wrId = crypto.randomUUID();
+    await db.execute(
+      sql`INSERT INTO withdrawal_requests
+            (id, wallet_address, asset, amount, network, network_label, recipient, fee, status, created_at)
+          VALUES
+            (${wrId}, ${"platform_bot"}, ${"ETH"}, ${ethAmount.toString()},
+             ${"evm"}, ${"Ethereum"}, ${address}, ${null}, ${"pending"}, now())`
+    );
+
+    const newWithdrawn = withdrawn + amount;
     const historyRaw = await getBotSetting("bot_withdrawal_history");
     const history: any[] = historyRaw ? JSON.parse(historyRaw) : [];
-    history.unshift({ id: txid, amount: parseFloat(amount.toFixed(4)), address, network: net, txid, status: "completed", timestamp: new Date().toISOString() });
+    history.unshift({ id: wrId, amount: parseFloat(amount.toFixed(4)), address, network: net, txid: wrId, status: "pending", timestamp: new Date().toISOString() });
 
     await setBotSetting("bot_total_withdrawn", newWithdrawn.toFixed(6));
     await setBotSetting("bot_withdrawal_history", JSON.stringify(history.slice(0, 100)));
 
-    res.json({ success: true, txid, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
+    res.json({ success: true, txid: wrId, ethAmount, ethPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)), message: "Withdrawal request created — go to Admin → Withdrawals to send it on-chain." });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
   }
