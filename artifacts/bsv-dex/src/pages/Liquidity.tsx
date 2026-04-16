@@ -616,10 +616,20 @@ function LiquidityModal({
               <CoinLogo symbol={pool.quote} size={36} ring />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 rounded font-bold tracking-wide">SIMULATED</span>
-              </div>
+              {(() => {
+                const hdrMode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
+                const badge = hdrMode === "orah_amm" || hdrMode === "on_chain"
+                  ? { label: "ON-CHAIN", cls: "bg-green-500/15 text-green-400 border-green-500/30" }
+                  : hdrMode === "live"
+                  ? { label: "LIVE", cls: "bg-primary/15 text-primary border-primary/30" }
+                  : { label: "SIMULATED", cls: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30" };
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-base">{pool.base}/{pool.quote}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 border rounded font-bold tracking-wide ${badge.cls}`}>{badge.label}</span>
+                  </div>
+                );
+              })()}
               <div className="text-xs text-muted-foreground">{pool.fee}% AMM fee · BSV settled</div>
             </div>
           </div>
@@ -639,6 +649,14 @@ function LiquidityModal({
         {/* Chain mode notice */}
         {(() => {
           const mode = pool ? getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider) : "simulated";
+          if (mode === "orah_amm") return (
+            <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
+              <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-green-300/90 leading-relaxed">
+                <strong>OrahDEX AMM — real on-chain.</strong> Tokens are deposited into OrahRouter02. You receive real ERC-20 LP tokens visible in MetaMask. Gas is spent on Sepolia.
+              </p>
+            </div>
+          );
           if (mode === "on_chain") return (
             <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
               <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
