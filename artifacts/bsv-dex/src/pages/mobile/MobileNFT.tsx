@@ -1703,7 +1703,12 @@ export function MobileNFT() {
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
           currentUserAddress={address ?? undefined}
-          onClose={() => setCreatorAddress(null)}
+          onClose={() => {
+            setCreatorAddress(null);
+            // If the profile tab triggered this sheet, return to feed
+            // so the tab doesn't stay on the permanent loading spinner.
+            if (activeTab === "profile") setActiveTab("feed");
+          }}
           onOpenPost={p => { setCreatorAddress(null); openPost(p); }}
         />
       )}
