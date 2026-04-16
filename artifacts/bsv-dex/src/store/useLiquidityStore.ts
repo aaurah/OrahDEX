@@ -7,6 +7,8 @@ export interface PositionEntry {
   depositedAt: number;
   txHash?: string;
   chainId?: number;
+  /** OrahDEX LP token contract address (pair address) — set when AMM is deployed on-chain */
+  lpTokenAddress?: string;
 }
 
 interface LiquidityState {
@@ -16,7 +18,7 @@ interface LiquidityState {
     poolId: string,
     lpTokens: number,
     valueUsd: number,
-    meta?: { txHash?: string; chainId?: number }
+    meta?: { txHash?: string; chainId?: number; lpTokenAddress?: string }
   ) => void;
   removePositionPct: (walletAddress: string, poolId: string, pct: number) => void;
   removePosition: (walletAddress: string, poolId: string) => void;
@@ -44,6 +46,7 @@ export const useLiquidityStore = create<LiquidityState>()(
                   depositedAt:       existing?.depositedAt ?? Date.now(),
                   txHash:            meta?.txHash ?? existing?.txHash,
                   chainId:           meta?.chainId ?? existing?.chainId,
+                  lpTokenAddress:    meta?.lpTokenAddress ?? existing?.lpTokenAddress,
                 },
               },
             },

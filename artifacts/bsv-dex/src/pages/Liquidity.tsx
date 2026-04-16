@@ -16,6 +16,8 @@ import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
+import { useLpBalance } from "@/hooks/useLpBalance";
+import { hasOrahAmm } from "@/lib/orahAmmAddresses";
 
 const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -900,6 +902,52 @@ function LiquidityModal({
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
+/**
+ * OnChainLpBadge — reads the user's real OrahDEX LP token balance from the
+ * on-chain pair contract and shows it alongside the locally-stored position.
+ * Renders nothing when the AMM isn't deployed on the pool's chain.
+ */
+function OnChainLpBadge({
+  userAddress, chainId, base, quote,
+}: { userAddress: string | null; chainId: number | null; base: string; quote: string }) {
+  const { lpBalance, valueUsd, pairAddress, loading } = useLpBalance(userAddress, chainId, base, quote);
+
+  if (!chainId || !hasOrahAmm(chainId)) return null;
+  if (loading && lpBalance === null) {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+        <Loader2 size={10} className="animate-spin" /> on-chain…
+      </span>
+    );
+  }
+  if (lpBalance === null) return null;
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold inline-flex items-center gap-1">
+        <CheckCircle2 size={9} /> ORAH-LP ON-CHAIN
+      </span>
+      {lpBalance > 0 && (
+        <span className="text-[10px] text-muted-foreground">
+          {lpBalance.toFixed(6)} LP {valueUsd ? `≈ $${valueUsd.toFixed(2)}` : ""}
+        </span>
+      )}
+      {lpBalance === 0 && (
+        <span className="text-[10px] text-muted-foreground">No LP tokens minted yet</span>
+      )}
+      {pairAddress && (
+        <a
+          href={`https://sepolia.etherscan.io/address/${pairAddress}`}
+          target="_blank" rel="noreferrer"
+          className="text-[9px] text-primary/70 hover:text-primary flex items-center gap-0.5"
+        >
+          View pair <ExternalLink size={8} />
+        </a>
+      )}
+    </div>
+  );
+}
+
 type Tab = "pools" | "positions" | "farming";
 
 export function Liquidity() {
@@ -1211,9 +1259,18 @@ export function Liquidity() {
                   const lpValue    = pool.userLp * 12.5;
                   const shareRatio = pool.tvl > 0 ? (lpValue / pool.tvl) : 0;
                   const feesEarned = pool.vol24 * (pool.fee / 100) * shareRatio;
+                  const posChainId = userPositions[pool.id]?.chainId ?? pool.chainId ?? null;
                   return (
                     <div key={pool.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-3.5 items-center border-b border-border/50 last:border-0">
-                      <TokenPair base={pool.base} quote={pool.quote} />
+                      <div className="flex flex-col gap-1">
+                        <TokenPair base={pool.base} quote={pool.quote} />
+                        <OnChainLpBadge
+                          userAddress={walletAddress}
+                          chainId={posChainId}
+                          base={pool.base}
+                          quote={pool.quote}
+                        />
+                      </div>
                       <span className="text-right text-sm font-semibold">{pool.userLp.toFixed(4)}</span>
                       <span className="text-right text-sm">{fmtTvl(lpValue)}</span>
                       <span className="text-right text-sm text-muted-foreground">{fmtPoolShare(pool.userLp, pool.tvl)}</span>
