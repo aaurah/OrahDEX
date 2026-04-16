@@ -9,6 +9,7 @@ import {
   ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useLocation } from "wouter";
 
 const API = "/api";
@@ -145,7 +146,13 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address } = useWalletStore();
+  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
+  const isOrahWallet = provider === "orah-wallet";
+  const { balances: evmBalances } = useEvmBalances();
+  const availableBalance = isEvm && !isOrahWallet
+    ? (() => { const native = evmBalances?.find(b => b.isNative); return native ? parseFloat(native.amount).toFixed(4) + " " + (native.symbol ?? "ETH") : null; })()
+    : storeBalance != null ? parseFloat(String(storeBalance)).toFixed(6) + " BSV" : null;
   const [, navigate] = useLocation();
 
   useEffect(() => {
@@ -214,7 +221,12 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             </div>
             {mode === "buy" ? (
               <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">BSV Amount</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-muted-foreground">BSV Amount</label>
+                  {availableBalance && (
+                    <span className="text-xs text-muted-foreground">Available: <span className="text-foreground font-mono">{availableBalance}</span></span>
+                  )}
+                </div>
                 <input type="number" value={bsvAmount} onChange={e => setBsvAmount(e.target.value)} step="0.001" min="0.001"
                   className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
               </div>

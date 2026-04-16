@@ -9,6 +9,7 @@ import {
   ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useLocation } from "wouter";
 
 const API = "/api";
@@ -150,7 +151,13 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address } = useWalletStore();
+  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
+  const isOrahWallet = provider === "orah-wallet";
+  const { balances: evmBalances } = useEvmBalances();
+  const availableBalance = isEvm && !isOrahWallet
+    ? (() => { const native = evmBalances?.find(b => b.isNative); return native ? parseFloat(native.amount).toFixed(4) + " " + (native.symbol ?? "ETH") : null; })()
+    : storeBalance != null ? parseFloat(String(storeBalance)).toFixed(6) + " BSV" : null;
   const [, navigate] = useLocation();
 
   useEffect(() => {
@@ -257,7 +264,14 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {/* Input */}
             {mode === "buy" ? (
               <div className="mb-3">
-                <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>BSV to spend</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>BSV to spend</label>
+                  {availableBalance && (
+                    <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                      Available: <span className="font-mono font-medium" style={{ color: "var(--color-text)" }}>{availableBalance}</span>
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="0.001" step="0.001" value={bsvAmount} onChange={e => setBsvAmount(e.target.value)} />
