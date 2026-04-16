@@ -90,7 +90,7 @@ router.post("/withdrawals", async (req, res) => {
 
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
 // Returns ALL withdrawal requests for the admin panel, newest first.
-router.get("/admin/withdrawals", async (req, res) => {
+router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   try {
     const { rows } = await pool.query<{
       id: string; wallet_address: string; asset: string; amount: string;
@@ -206,7 +206,7 @@ router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
 
 // ── POST /admin/balance-adjust ────────────────────────────────────────────────
 // Admin: manually credit or deduct a user's internal balance for a given asset.
-router.post("/admin/balance-adjust", async (req, res) => {
+router.post("/admin/balance-adjust", requireAdminToken, async (req, res) => {
   const { walletAddress, asset, amount, type, reason } = req.body as {
     walletAddress: string; asset: string; amount: string; type: "credit" | "deduct"; reason?: string;
   };

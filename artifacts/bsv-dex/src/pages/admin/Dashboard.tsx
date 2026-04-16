@@ -285,7 +285,7 @@ export function AdminDashboard() {
             {[
               { label: "Total Users",    value: stats?.totalUsers?.toLocaleString() ?? "—",    icon: Users,          color: "text-blue-400" },
               { label: "Trades Today",   value: stats?.totalTrades24h?.toLocaleString() ?? "—", icon: ArrowRightLeft, color: "text-green-400" },
-              { label: "Revenue Today",  value: stats ? `$${(stats.revenue24h).toLocaleString()}` : "—", icon: DollarSign, color: "text-orange-400" },
+              { label: "Revenue Today",  value: stats ? `$${(stats.revenue24h ?? 0).toLocaleString()}` : "—", icon: DollarSign, color: "text-orange-400" },
               { label: "TVL",            value: stats ? `$${((stats.tvl ?? 0) / 1e6).toFixed(0)}M` : "—", icon: ShieldCheck, color: "text-violet-400" },
             ].map(({ label, value, icon: Icon, color }) => (
               <div key={label} className="flex flex-col gap-1.5">
