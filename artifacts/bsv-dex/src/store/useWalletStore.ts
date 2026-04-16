@@ -211,6 +211,23 @@ export const useWalletStore = create<WalletState>()(
           pendingTxs: s.pendingTxs.filter((tx) => tx.status === 'pending'),
         })),
     }),
-    { name: 'orah-wallet' }
+    {
+      name: 'orah-wallet',
+      // v1: strip the `balance` field from any previously-persisted state.
+      // Before the non-custodial refactor the store held an internal-ledger balance
+      // (e.g. 1,472 ETH) that must never be shown to users again.
+      // `balance` is always derived from on-chain polling (useEvmBalances / useBsvBalance)
+      // so there is no reason to persist it at all.
+      version: 1,
+      migrate: (persisted: any) => {
+        const { balance: _dropped, ...rest } = persisted ?? {};
+        return { ...rest, balance: null };
+      },
+      partialize: (state) => {
+        // Exclude `balance` from storage — it is always fetched live on mount.
+        const { balance: _b, ...rest } = state as any;
+        return rest;
+      },
+    }
   )
 );
