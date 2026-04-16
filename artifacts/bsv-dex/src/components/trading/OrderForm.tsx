@@ -788,6 +788,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           if (address) {
             fetchApiBalances(base, quote, address);
           }
+          refreshBalances();
+          useWalletStore.getState().triggerBalanceRefresh();
           setTimeout(() => onOrderPlaced?.(), 500);
         },
         onError: (err: any) => {

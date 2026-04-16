@@ -67,6 +67,13 @@ interface WalletState {
   updateTx: (hash: string, update: Partial<PendingTx>) => void;
   removeTx: (hash: string) => void;
   clearConfirmedTxs: () => void;
+
+  /**
+   * Increment this counter to signal all balance hooks to re-fetch on-chain
+   * balances immediately (e.g. after a trade or liquidity action settles).
+   */
+  balanceRefreshKey: number;
+  triggerBalanceRefresh: () => void;
 }
 
 const BLOCK_EXPLORER_URLS: Record<number, string> = {
@@ -105,6 +112,7 @@ export const useWalletStore = create<WalletState>()(
       internalBchAddress: null,
       internalBtcAddress: null,
       internalSolAddress: null,
+      balanceRefreshKey: 0,
 
       connect: (wallet) =>
         set((s) => {
@@ -181,6 +189,9 @@ export const useWalletStore = create<WalletState>()(
             internalEvmAddress: evmAddr,
           };
         }),
+
+      triggerBalanceRefresh: () =>
+        set((s) => ({ balanceRefreshKey: s.balanceRefreshKey + 1 })),
 
       addPendingTx: (tx) =>
         set((s) => ({ pendingTxs: [tx, ...s.pendingTxs.slice(0, 9)] })),

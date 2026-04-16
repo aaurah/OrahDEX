@@ -185,8 +185,13 @@ function AdminRoute({ children }: { children: ReactNode }) {
 function Router() {
   const isMobile = useIsMobile();
 
-  useBsvBalance();
+  const { refresh: refreshBsvBalance } = useBsvBalance();
+  const balanceRefreshKey = useWalletStore((s) => s.balanceRefreshKey);
   useTxTracker();
+
+  useEffect(() => {
+    if (balanceRefreshKey > 0) refreshBsvBalance();
+  }, [balanceRefreshKey, refreshBsvBalance]);
 
   useEffect(() => {
     applyStoredTheme();

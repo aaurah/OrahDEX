@@ -449,6 +449,8 @@ function LiquidityModal({
           setTxStatus(s);
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            refreshEvmBalances();
+            useWalletStore.getState().triggerBalanceRefresh();
             toast({
               title: "Position recorded!",
               description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} added. ${lpTokens.toFixed(4)} LP tokens.`,
@@ -483,6 +485,7 @@ function LiquidityModal({
       addPosition(address, pool.id, parseFloat(lpData.lpTokens) || lpTokens, valueUsd);
       setTxStatus({ step: "success", lpTokens, valueUsd });
       refreshBackendBalances();
+      useWalletStore.getState().triggerBalanceRefresh();
       toast({
         title: "Liquidity position added!",
         description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${(parseFloat(lpData.lpTokens) || lpTokens).toFixed(4)} LP tokens.`,
