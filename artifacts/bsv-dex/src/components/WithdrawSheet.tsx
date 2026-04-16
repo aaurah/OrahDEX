@@ -34,6 +34,7 @@ import {
 import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
+import { useNotificationStore } from "@/store/useNotificationStore";
 
 interface WithdrawHistoryItem {
   id:           string;
@@ -70,6 +71,7 @@ export function WithdrawSheet({
   color = "#6B7280",
 }: WithdrawSheetProps) {
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
   const [tab,       setTab]       = useState<"withdraw" | "history">("withdraw");
   const [amount,    setAmount]    = useState("");
   const [recipient, setRecipient] = useState(walletAddress);
@@ -131,6 +133,11 @@ export function WithdrawSheet({
       toast({
         title:       "Withdrawal requested",
         description: `${parsedAmount} ${asset} withdrawal is queued for processing.`,
+      });
+      addNotification({
+        type:  "withdrawal",
+        title: "Withdrawal Requested",
+        body:  `${parsedAmount} ${asset} withdrawal queued — check Portfolio for status updates.`,
       });
       refetchHistory();
     } catch (err: any) {

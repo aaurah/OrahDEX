@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { CoinLogo, COIN_COLORS } from "@/components/CoinLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useSEO } from "@/hooks/useSEO";
@@ -343,6 +344,7 @@ function LiquidityModal({
   const [submitting, setSubmitting] = useState(false);
   const [txStatus, setTxStatus] = useState<LiquidityTxStatus>({ step: "idle" });
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
 
   const { address, network, chainId: walletChainId, provider: walletProvider } = useWalletStore();
   const openWalletModal = useWalletModalStore((s) => s.open);
@@ -437,6 +439,11 @@ function LiquidityModal({
               title: "Liquidity added on-chain!",
               description: `OrahRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP tokens minted.`,
             });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Added",
+              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP minted.`,
+            });
           }
         },
       });
@@ -462,6 +469,11 @@ function LiquidityModal({
             toast({
               title: "Liquidity added on-chain!",
               description: `Transaction confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,
+            });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Added",
+              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(s.lpTokens ?? lpTokens).toFixed(4)} LP tokens recorded.`,
             });
           }
         },
@@ -491,6 +503,11 @@ function LiquidityModal({
             toast({
               title: "Position recorded!",
               description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote} added. ${lpTokens.toFixed(4)} LP tokens.`,
+            });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Position Opened",
+              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${lpTokens.toFixed(4)} LP tokens.`,
             });
             onClose();
           }
@@ -527,6 +544,11 @@ function LiquidityModal({
         title: "Liquidity position added!",
         description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${(parseFloat(lpData.lpTokens) || lpTokens).toFixed(4)} LP tokens.`,
       });
+      addNotification({
+        type:  "liquidity",
+        title: "Liquidity Position Opened",
+        body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(parseFloat(lpData.lpTokens) || lpTokens).toFixed(4)} LP tokens.`,
+      });
       onClose();
     } catch (err: any) {
       toast({ title: "Deposit failed", description: err?.message ?? "An error occurred.", variant: "destructive" });
@@ -561,6 +583,11 @@ function LiquidityModal({
               title: "Liquidity removed!",
               description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool. Tokens returned to your wallet.`,
             });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Removed",
+              body:  `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool. Tokens returned to your wallet.`,
+            });
             onClose();
           }
           if (s.step === "error") {
@@ -580,8 +607,13 @@ function LiquidityModal({
       title: "Liquidity removed!",
       description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
+    addNotification({
+      type:  "liquidity",
+      title: "Liquidity Removed",
+      body:  `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
+    });
     onClose();
-  }, [pool, pct, submitting, walletConnected, address, targetChainId, walletProvider, userPositions, removePositionPct, refreshEvmBalances, toast, onClose]);
+  }, [pool, pct, submitting, walletConnected, address, targetChainId, walletProvider, userPositions, removePositionPct, refreshEvmBalances, toast, addNotification, onClose]);
 
   if (!pool) return null;
 

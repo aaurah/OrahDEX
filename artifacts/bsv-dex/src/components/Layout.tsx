@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -83,6 +83,8 @@ const NOTIF_TYPE_ICON: Record<string, typeof Info> = {
   price_alert:        Activity,
   wallet_connected:   LogIn,
   wallet_disconnected: LogOut,
+  withdrawal:         Upload,
+  liquidity:          Droplets,
   info:               Info,
   warning:            AlertTriangle,
   success:            CheckCheck,
@@ -98,6 +100,8 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
   price_alert:        "text-orange-400",
   wallet_connected:   "text-green-400",
   wallet_disconnected: "text-amber-400",
+  withdrawal:         "text-orange-400",
+  liquidity:          "text-cyan-400",
   info:               "text-blue-400",
   warning:            "text-amber-400",
   success:            "text-green-400",
@@ -126,12 +130,15 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
   if (pair) {
     const urlPair = pair.replace("/", "-"); // "BSV/USDT" → "BSV-USDT"
     const isFutures = urlPair.includes("PERP");
-    if (["order_placed", "order_filled", "order_cancelled", "trade", "price_alert"].includes(type)) {
+    if (["order_placed", "order_filled", "order_cancelled", "trade", "price_alert", "error"].includes(type)) {
       return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
   if (type === "bridge") return "/bridge";
   if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
+  if (type === "withdrawal") return "/portfolio";
+  if (type === "liquidity") return "/liquidity";
+  if (type === "order_placed" || type === "order_cancelled") return "/portfolio";
   return null;
 }
 
