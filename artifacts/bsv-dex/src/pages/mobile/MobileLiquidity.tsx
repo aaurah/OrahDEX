@@ -317,6 +317,8 @@ function LiquidityModal({
           setTxStatus(s);
           if (s.step === "success") {
             addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd);
+            refreshEvmBalances();
+            useWalletStore.getState().triggerBalanceRefresh();
             toast({
               title: "Position recorded!",
               description: `${nA.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.base} + ${nB.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.quote}. ${lpTokens.toFixed(4)} LP tokens.`,
