@@ -401,6 +401,20 @@ router.get("/social/holdings/:address", async (req, res) => {
   }
 });
 
+/* ── GET /social/holdings/:holderAddress/coin/:creatorAddress ─────────────── */
+router.get("/social/holdings/:holderAddress/coin/:creatorAddress", async (req, res) => {
+  try {
+    const { holderAddress, creatorAddress } = req.params;
+    const { rows } = await pool.query(
+      "SELECT amount FROM coin_holdings WHERE holder = $1 AND coin_creator = $2",
+      [holderAddress, creatorAddress],
+    );
+    res.json({ amount: parseFloat(rows[0]?.amount ?? "0") });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 /* ── GET /social/search ───────────────────────────────────────────────────── */
 router.get("/social/search", async (req, res) => {
   await ensureCreatorsSeeded();

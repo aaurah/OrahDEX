@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
 
 const API = "/api";
@@ -154,10 +155,36 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
+
+  useBsvBalance();
   const { balances: evmBalances } = useEvmBalances();
-  const availableBalance = isEvm && !isOrahWallet
-    ? (() => { const native = evmBalances?.find(b => b.isNative); return native ? parseFloat(native.amount).toFixed(4) + " " + (native.symbol ?? "ETH") : null; })()
-    : storeBalance != null ? parseFloat(String(storeBalance)).toFixed(6) + " BSV" : null;
+
+  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
+  const availableBsvNum = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    : parseFloat(String(storeBalance ?? "0")) || 0;
+  const hasLoadedBalance = isEvm && !isOrahWallet
+    ? (evmBalances != null && evmBalances.length > 0)
+    : storeBalance != null;
+  const availableLabel = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
+
+  const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
+  useEffect(() => {
+    if (mode !== "sell" || !address) { setHoldingAmount(null); return; }
+    fetch(`${API}/social/holdings/${address}/coin/${creator.address}`)
+      .then(r => r.json())
+      .then(d => setHoldingAmount(parseFloat(d.amount) || 0))
+      .catch(() => setHoldingAmount(null));
+  }, [mode, address, creator.address]);
+
+  const parsedBsvAmount = parseFloat(bsvAmount) || 0;
+  const parsedTokenAmount = parseFloat(tokenAmount) || 0;
+  const insufficientFunds = mode === "buy" && hasLoadedBalance && parsedBsvAmount > availableBsvNum;
+  const insufficientTokens = mode === "sell" && holdingAmount !== null && parsedTokenAmount > holdingAmount;
+  const canTrade = !insufficientFunds && !insufficientTokens;
+
   const [, navigate] = useLocation();
 
   useEffect(() => {
@@ -175,6 +202,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
 
   async function doTrade() {
     if (!address) { navigate("/settings"); return; }
+    if (!canTrade) return;
     setLoading(true); setError("");
     try {
       const res = await fetch(`${API}/social/creators/${creator.address}/trade`, {
@@ -266,17 +294,18 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>BSV to spend</label>
-                  {availableBalance && (
+                  {availableLabel && (
                     <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
-                      Available: <span className="font-mono font-medium" style={{ color: "var(--color-text)" }}>{availableBalance}</span>
+                      Available: <span className="font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientFunds ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="0.001" step="0.001" value={bsvAmount} onChange={e => setBsvAmount(e.target.value)} />
                   <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>BSV</span>
                 </div>
+                {insufficientFunds && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient balance</p>}
                 <div className="flex gap-1.5 mt-1.5">
                   {["0.001", "0.01", "0.1", "1"].map(v => (
                     <button key={v} onClick={() => setBsvAmount(v)} className="flex-1 py-1 rounded-lg text-xs font-bold"
@@ -289,12 +318,20 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
               </div>
             ) : (
               <div className="mb-3">
-                <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Tokens to sell</label>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>Tokens to sell</label>
+                  {holdingAmount !== null && (
+                    <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                      Held: <span className="font-mono font-medium" style={{ color: insufficientTokens ? "#ff4444" : "var(--color-text)" }}>{fmtNum(holdingAmount)}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientTokens ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="1" step="1000" value={tokenAmount} onChange={e => setTokenAmount(e.target.value)} />
                   <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{creator.symbol}</span>
                 </div>
+                {insufficientTokens && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient token balance</p>}
                 {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} BSV · impact {quote.priceImpact}%</p>}
               </div>
             )}
@@ -304,10 +341,12 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             </div>}
             {error && <div className="p-3 rounded-xl text-xs mb-3" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
 
-            <button onClick={doTrade} disabled={loading}
+            <button onClick={doTrade} disabled={loading || !canTrade}
               className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
-              style={{ background: mode === "buy" ? "var(--color-accent)" : "#ff4444", color: "#000" }}>
+              style={{ background: insufficientFunds || insufficientTokens ? "#555" : mode === "buy" ? "var(--color-accent)" : "#ff4444", color: insufficientFunds || insufficientTokens ? "#fff" : "#000" }}>
               {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
+                insufficientFunds ? "Insufficient Balance" :
+                insufficientTokens ? "Insufficient Tokens" :
                 <>{mode === "buy" ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />} {address ? (mode === "buy" ? "Buy" : "Sell") : "Connect Wallet"}</>}
             </button>
 
@@ -1009,11 +1048,27 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
   const [minted, setMinted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const { address } = useWalletStore();
+  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
+  const isOrahWallet = provider === "orah-wallet";
+  useBsvBalance();
+  const { balances: evmBalances } = useEvmBalances();
+  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
+  const availableNum = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    : parseFloat(String(storeBalance ?? "0")) || 0;
+  const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
+  const availableLabel = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
+  const mintPrice = parseFloat(String(post.mint_price)) || 0;
+  const isBsvMint = !isEvm || post.mint_currency === "BSV";
+  const insufficientFunds = !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
   const [, navigate] = useLocation();
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
+    if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
       const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: address }) });
@@ -1052,13 +1107,22 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
                 <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
               </div>
             ))}
+            {availableLabel && (
+              <div className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
+                <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Your balance</span>
+                <span className="text-sm font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
+              </div>
+            )}
             <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
             {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
+            {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
             {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-            <button onClick={doMint} disabled={loading}
+            <button onClick={doMint} disabled={loading || insufficientFunds}
               className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
-              style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
-              {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> : <><Zap size={16} />{address ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
+              style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
+              {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
+                insufficientFunds ? "Insufficient Balance" :
+                <><Zap size={16} />{address ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
             </button>
           </>
         )}
