@@ -2,20 +2,22 @@
  * BSV Chain Monitor — OrahDEX
  *
  * Polls the WhatsOnChain public API every 60 s to retrieve the live
- * BSV mainnet block height, hash, difficulty, mempool stats and fee rates.
+ * BSV block height, hash, difficulty, mempool stats and fee rates.
+ * Network (main/test) is determined by BSV_NET from bsvNetworkConfig.ts.
  * Persists data in platformSettingsTable so any route can read without re-fetching.
  *
  * WhatsOnChain public endpoints used (no API key required):
- *   GET https://api.whatsonchain.com/v1/bsv/main/chain/info
- *   GET https://api.whatsonchain.com/v1/bsv/main/mempool/info
+ *   GET ${BSV_NET.wocBase}/chain/info
+ *   GET ${BSV_NET.wocBase}/mempool/info
  */
 
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
-const WOC_BASE       = "https://api.whatsonchain.com/v1/bsv/main";
+const WOC_BASE       = BSV_NET.wocBase;
 const WOC_CHAIN_INFO = `${WOC_BASE}/chain/info`;
 const WOC_MEMPOOL    = `${WOC_BASE}/mempool/info`;
 const TIMEOUT_MS     = 10_000;
@@ -153,8 +155,8 @@ export async function getBsvChainStatus(): Promise<BsvChainStatus> {
     medianTime,
     lastChecked,
     explorerUrl: bestBlockHash
-      ? `https://whatsonchain.com/block/${bestBlockHash}`
-      : "https://whatsonchain.com",
+      ? `${BSV_NET.explorer}/block/${bestBlockHash}`
+      : BSV_NET.explorer,
     hashrateEHs,
     mempoolTxCount,
     mempoolBytes,

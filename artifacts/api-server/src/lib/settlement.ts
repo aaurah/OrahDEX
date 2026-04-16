@@ -31,6 +31,7 @@
  */
 
 import crypto from "node:crypto";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
 export interface TradeSettlement {
   tradeId: string;
@@ -136,7 +137,7 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
     txid,
     opReturnData,
     rawTxHex:     rawTx.toString("hex"),
-    explorerUrl:  `https://whatsonchain.com/tx/${txid}`,
+    explorerUrl:  `${BSV_NET.explorer}/tx/${txid}`,
     settlementType: crossChain ? "utxo_htlc" : "op_return_audit",
     crossChain,
     htlcSecretHash:    trade.htlcSecretHash,

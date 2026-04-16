@@ -13,6 +13,7 @@ import { htlcLocksTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router = Router();
 
@@ -21,7 +22,7 @@ async function getCurrentBlockHeight(): Promise<number> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
-    const res = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
+    const res = await fetch(`${BSV_NET.wocBase}/chain/info`, {
       signal: ctrl.signal,
       headers: { "User-Agent": "OrahDEX/1.0" },
     });
@@ -46,7 +47,7 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const res = await fetch(
-      `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`,
+      `${BSV_NET.wocBase}/address/${address}/unspent`,
       { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
     );
     clearTimeout(timer);

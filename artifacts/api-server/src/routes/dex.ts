@@ -14,6 +14,7 @@ import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router: IRouter = Router();
 
@@ -98,7 +99,7 @@ async function fetchKeyPrices() {
     const [btcRes, ethRes, bsvRes] = await Promise.allSettled([
       fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", { signal: AbortSignal.timeout(4000) }),
       fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", { signal: AbortSignal.timeout(4000) }),
-      fetch("https://api.whatsonchain.com/v1/bsv/main/exchangerate",       { signal: AbortSignal.timeout(4000) }),
+      fetch(`${BSV_NET.wocBase}/exchangerate`,                             { signal: AbortSignal.timeout(4000) }),
     ]);
     if (btcRes.status === "fulfilled" && btcRes.value.ok) {
       const d = await btcRes.value.json() as { lastPrice?: string; priceChangePercent?: string };

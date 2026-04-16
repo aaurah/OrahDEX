@@ -57,6 +57,7 @@
  */
 
 import { createHash, randomBytes } from "crypto";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
 // ── BSV script opcodes ────────────────────────────────────────────────────────
 const OP = {
@@ -197,10 +198,10 @@ export function buildHtlc(params: HtlcParams): HtlcResult {
   ]);
 
   // 3. Derive P2SH address
-  //   P2SH = Base58Check( 0x05 || HASH160(redeemScript) )
+  //   P2SH = Base58Check( p2shVersion || HASH160(redeemScript) )
   const scriptHash = hash160(redeemScript);            // 20 bytes
   const versionedHash = Buffer.concat([
-    Buffer.from([0x05]),  // BSV P2SH version byte (same as BTC mainnet)
+    Buffer.from([BSV_NET.p2shVersion]),  // 0x05 mainnet, 0xc4 testnet
     scriptHash,
   ]);
   const checksum = hash256(versionedHash).slice(0, 4);

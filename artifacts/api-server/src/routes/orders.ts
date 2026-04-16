@@ -13,6 +13,7 @@ import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router: IRouter = Router();
 
@@ -445,7 +446,7 @@ router.post("/orders", async (req, res) => {
       matched:        !!settlementTxid,
       settlementTxid,
       quoteSymbol,
-      explorerUrl:    settlementTxid ? `https://whatsonchain.com/tx/${settlementTxid}` : null,
+      explorerUrl:    settlementTxid ? `${BSV_NET.explorer}/tx/${settlementTxid}` : null,
       // BSV Core DEX v2 settlement metadata
       settlement: settlementTxid ? {
         type:              lastSettlementType,
@@ -503,7 +504,7 @@ router.get("/orders/:orderId", async (req, res) => {
     }
     res.json({
       ...serializeOrder(order),
-      explorerUrl: order.txid ? `https://whatsonchain.com/tx/${order.txid}` : null,
+      explorerUrl: order.txid ? `${BSV_NET.explorer}/tx/${order.txid}` : null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get order");
@@ -693,7 +694,7 @@ router.get("/settlements", async (req, res) => {
       .map(o => ({
         id:          o.id,
         txid:        o.txid!,
-        explorerUrl: `https://whatsonchain.com/tx/${o.txid}`,
+        explorerUrl: `${BSV_NET.explorer}/tx/${o.txid}`,
         symbol:      o.symbol,
         side:        o.side,
         price:       parseFloat(o.price ?? "0"),

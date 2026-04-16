@@ -70,7 +70,7 @@ export function walletCanReceive(
 ): boolean {
   const net = walletNetwork ?? "evm";
   if (assetChain === "evm")    return net === "evm";
-  if (assetChain === "bsv")    return net === "bsv";
+  if (assetChain === "bsv")    return net === "bsv" || net === "bsv-test";
   if (assetChain === "tron")   return net === "tron";
   if (assetChain === "solana") return net === "sol";
   return false;

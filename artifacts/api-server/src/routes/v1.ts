@@ -17,6 +17,7 @@ import { randomUUID } from "crypto";
 import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES, COINGECKO_IDS } from "../lib/priceUpdater.js";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router = Router();
 
@@ -591,7 +592,7 @@ router.post("/tx/broadcast", async (req, res) => {
       // Proxy to WhatsonChain
       const ctrl  = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15_000);
-      const wocRes = await fetch("https://api.whatsonchain.com/v1/bsv/main/tx/raw", {
+      const wocRes = await fetch(BSV_NET.wocBroadcast, {
         method:  "POST",
         headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
         body:    JSON.stringify({ txhex: rawTx }),
@@ -601,7 +602,7 @@ router.post("/tx/broadcast", async (req, res) => {
       const text = await wocRes.text();
       if (wocRes.ok) {
         const txid = text.trim().replace(/^"|"$/g, "");
-        res.json({ txHash: txid, txid, status: "broadcast", network: "bsv", explorerUrl: `https://whatsonchain.com/tx/${txid}` });
+        res.json({ txHash: txid, txid, status: "broadcast", network: "bsv", explorerUrl: `${BSV_NET.explorer}/tx/${txid}` });
       } else {
         res.status(400).json({ error: text || "Broadcast failed" });
       }
@@ -644,7 +645,7 @@ async function getBsvBlockHeight(): Promise<number> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
-    const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
+    const r = await fetch(`${BSV_NET.wocBase}/chain/info`, {
       signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" },
     });
     clearTimeout(timer);
