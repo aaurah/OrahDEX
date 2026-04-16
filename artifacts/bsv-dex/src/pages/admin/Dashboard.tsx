@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchStats    = () => fetch(`${BASE}/api/admin/stats`).then(r => r.json());
 const fetchActivity = () => fetch(`${BASE}/api/admin/activity?limit=12`).then(r => r.json());
-const fetchApiKeys  = () => fetch(`${BASE}/api/admin/api-settings`).then(r => r.json());
+const fetchApiKeys  = () => fetch(`${BASE}/api/admin/api-keys`).then(r => r.json());
 const fetchChatChannels = () => fetch(`${BASE}/api/chat/channels`).then(r => r.json()).catch(() => []);
 
 function StatCard({ icon: Icon, label, value, sub, color = "primary", live = false }: {
