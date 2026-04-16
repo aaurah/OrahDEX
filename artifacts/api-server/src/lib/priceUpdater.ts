@@ -263,7 +263,7 @@ export const USDT_PAIRS = [
   "KSM","ACA","ASTR","PHA",
   // ── Meme coins ───────────────────────────────────────────────────────────────
   "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
-  "BABYDOGE","MEME","NOT","HMSTR","DOGS","EIGEN",
+  "MEME","NOT","HMSTR","DOGS","EIGEN",
   // ── L2 / bridge ──────────────────────────────────────────────────────────────
   "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
   "WBTC","WSTETH","RETH",
@@ -278,13 +278,13 @@ export const USDT_PAIRS = [
 export const BTC_PAIRS = [
   "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
   "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","DASH","XMR","ZEC","PEPE","SHIB","MKR","CRV","RUNE","YFI",
+  "AAVE","DASH","XMR","ZEC","MKR","CRV","RUNE","YFI",
   "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
   "ETC","FTM","EOS","THETA","VET","BSV","BCH",
   "TON","KAS","SEI","TIA","KAVA","ONE","ZIL","AXS","GALA","ENJ",
-  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI","SATS",
+  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI",
   "STX","GMX","DYDX","PENDLE","FET","RNDR","TAO","WLD",
-  "BONK","WIF","JUP","PYTH","RON","AKT","LUNA",
+  "WIF","JUP","PYTH","RON","AKT","LUNA",
 ];
 
 // ETH pairs — top coins vs ETH
