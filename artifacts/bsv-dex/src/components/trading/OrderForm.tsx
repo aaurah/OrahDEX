@@ -330,7 +330,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { addNotification } = useNotificationStore();
   const { applyFill, getBalance: getDexBalance } = useExchangeBalanceStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
-  const isOrahWallet = !!provider;
+  const isOrahWallet = provider === "orah-wallet";
   const usesApiBalance = isOrahWallet;
 
   const chainId = walletChainId ?? 1;
