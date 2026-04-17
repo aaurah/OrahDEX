@@ -27,3 +27,9 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VAULT_CONTRACT_ADDRESS = "0x67C7f23eE49B6417661748F23F743C0B274039e2"
+VAULT_CHAIN_ID = "8453"
