@@ -514,7 +514,7 @@ function CreatorProfileSheet({
                 <div className="text-[10px] font-medium mb-0.5" style={{ color: "var(--color-text-secondary)" }}>Market cap</div>
                 <div className="text-xl font-black" style={{ color: "var(--color-accent)" }}>{fmtUsd(profile.market_cap_usd ?? 0)}</div>
                 <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
-                  {fmtUsd(profile.price_usd ?? 0)} / {profile.symbol}
+                  {fmtUsd(profile.price_usd ?? 0)} per token
                 </div>
               </div>
               <div className="flex-1 text-right">
