@@ -514,14 +514,13 @@ export function Portfolio() {
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network, chainId);
-        // Pre-fill address only when asset's network matches connected wallet
         const sameNetwork = assetNet.network === (network ?? "evm");
-        const prefillAddress = sameNetwork ? (address ?? "") : "";
         return (
           <WithdrawSheet
             open={withdrawOpen}
             onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-            walletAddress={prefillAddress}
+            walletAddress={address ?? ""}
+            defaultRecipient={sameNetwork ? (address ?? "") : ""}
             asset={withdrawAsset.asset}
             available={withdrawAsset.available}
             network={assetNet.network}

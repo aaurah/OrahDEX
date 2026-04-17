@@ -422,12 +422,12 @@ export function MobilePortfolio() {
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network);
         const sameNetwork = assetNet.network === (network ?? "evm");
-        const prefillAddress = sameNetwork ? (address ?? "") : "";
         return (
           <WithdrawSheet
             open={withdrawOpen}
             onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-            walletAddress={prefillAddress}
+            walletAddress={address ?? ""}
+            defaultRecipient={sameNetwork ? (address ?? "") : ""}
             asset={withdrawAsset.asset}
             available={withdrawAsset.available}
             network={assetNet.network}
