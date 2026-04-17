@@ -284,6 +284,22 @@ export function MobilePortfolio() {
     ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
     : 0;
 
+  // ── Orah Wallet: exchange balance is the primary trading balance ───────────
+  const isOrahWallet = provider === "orah-wallet";
+
+  const exchTotalUsd = exchBalancesWithValue.reduce((sum, b) => {
+    const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
+    const p = isStable ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
+    return sum + (b.free + b.locked) * p;
+  }, 0);
+
+  const exchNonZero = exchBalancesWithValue.map(b => {
+    const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
+    const p = isStable ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
+    const change = isStable ? 0 : (prices?.[b.asset]?.priceChangePercent24h ?? 0);
+    return { ...b, price: p, value: (b.free + b.locked) * p, change };
+  }).filter(b => b.free > 0 || b.locked > 0);
+
   const handleCopy = () => {
     if (!address) return;
     navigator.clipboard?.writeText(address);
@@ -490,86 +506,152 @@ export function MobilePortfolio() {
         </div>
 
         <div className="px-4 space-y-4">
-          {/* ── BUCKET 1: Wallet Balance (on-chain) ─────────────────────────────── */}
-          <div className="bg-card border border-border rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
-              <span className={cn(
-                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
-                  : network === "evm" ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
-                  : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
-                  : "bg-secondary text-muted-foreground border-border"
-              )}>
-                {provider ? getProviderLabel(provider) : (network ?? "").toUpperCase()}
-              </span>
-            </div>
-            {pricesLoading && total === 0 ? (
-              <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
-            ) : (
-              <p className="text-3xl font-bold text-foreground tracking-tight">
-                {formatQuoteAmount(total, quoteCurrency)}
-              </p>
-            )}
-
-            {total > 0 && (() => {
-              const pnlUsd = total * totalChange / 100;
-              return (
-                <div className="flex items-center gap-3 mt-1.5">
-                  <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
-                    {totalChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                    <span className="text-sm font-bold">{totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%</span>
-                  </div>
-                  <span className="text-muted-foreground/40 text-xs">·</span>
-                  <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
-                    {pnlUsd >= 0 ? "+" : "−"}{formatQuoteAmount(Math.abs(pnlUsd), quoteCurrency)} today
-                  </span>
+          {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
+          {isOrahWallet ? (
+            /* ── Orah Wallet: Exchange balance IS the trading balance ── */
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <Zap size={12} className="text-primary" />
+                  <p className="text-xs text-muted-foreground font-medium">Trading Balance</p>
                 </div>
-              );
-            })()}
-
-            {/* Available vs Locked breakdown */}
-            {lockedTotalUsd > 0 && (
-              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-3">
-                <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Available</p>
-                  <p className="text-sm font-bold text-green-400">{formatQuoteAmount(Math.max(0, total - lockedTotalUsd), quoteCurrency)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
-                  <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Orah Wallet info note */}
-            {provider === "orah-wallet" && (
-              <div className="mt-3 pt-3 border-t border-border/40 flex items-start gap-2">
-                <span className="text-[10px] text-muted-foreground leading-relaxed">
-                  This shows your on-chain balance. Trades and deposits are reflected in <span className="text-foreground font-medium">OrahDEX Exchange</span> below.
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-primary/10 text-primary border-primary/25">
+                  Orah Wallet
                 </span>
               </div>
-            )}
 
-            {/* Allocation bar */}
-            {total > 0 && nonZero.length > 0 && (
-              <>
-                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                  {nonZero.map(r => (
-                    <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
-                  ))}
+              {pricesLoading && exchTotalUsd === 0 ? (
+                <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
+              ) : (
+                <p className="text-3xl font-bold text-foreground tracking-tight">
+                  {formatQuoteAmount(exchTotalUsd, quoteCurrency)}
+                </p>
+              )}
+
+              <p className="text-[10px] text-muted-foreground mt-1 mb-4">
+                Live balance — updates immediately after every trade
+              </p>
+
+              {/* Exchange token rows */}
+              {exchNonZero.length > 0 && (
+                <div className="space-y-2.5">
+                  {exchNonZero.map(b => {
+                    const color = ASSET_COLORS[b.asset] ?? "#6B7280";
+                    return (
+                      <div key={b.asset} className="flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
+                          style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                        >
+                          {b.asset[0]}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{b.asset}</p>
+                          <p className="text-xs text-muted-foreground font-mono">
+                            {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.001 ? 8 : 4 })}
+                            {b.locked > 0 && (
+                              <span className="text-orange-400/70"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-foreground">{formatQuoteAmount(b.value, quoteCurrency)}</p>
+                          {b.change !== 0 && (
+                            <p className={`text-xs mt-0.5 ${b.change >= 0 ? "text-green-500" : "text-red-500"}`}>
+                              {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="flex gap-3 mt-2 flex-wrap">
-                  {nonZero.map(r => (
-                    <div key={r.asset} className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
-                      <span className="text-[10px] text-muted-foreground">{r.asset}</span>
+              )}
+
+              {/* On-chain balance — secondary */}
+              {nativeBalance > 0 && (
+                <div className="mt-4 pt-3 border-t border-border/40">
+                  <p className="text-[10px] text-muted-foreground mb-1">On-chain ({nativeAsset})</p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {nativeBalance.toFixed(6)} {nativeAsset}
+                    <span className="ml-2 text-muted-foreground/50">(not tradable — withdraw/deposit to use)</span>
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── External wallet: on-chain balance is primary ── */
+            <div className="bg-card border border-border rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
+                <span className={cn(
+                  "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                  network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
+                    : network === "evm" ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
+                    : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
+                    : "bg-secondary text-muted-foreground border-border"
+                )}>
+                  {provider ? getProviderLabel(provider) : (network ?? "").toUpperCase()}
+                </span>
+              </div>
+              {pricesLoading && total === 0 ? (
+                <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
+              ) : (
+                <p className="text-3xl font-bold text-foreground tracking-tight">
+                  {formatQuoteAmount(total, quoteCurrency)}
+                </p>
+              )}
+
+              {total > 0 && (() => {
+                const pnlUsd = total * totalChange / 100;
+                return (
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
+                      {totalChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                      <span className="text-sm font-bold">{totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%</span>
                     </div>
-                  ))}
+                    <span className="text-muted-foreground/40 text-xs">·</span>
+                    <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
+                      {pnlUsd >= 0 ? "+" : "−"}{formatQuoteAmount(Math.abs(pnlUsd), quoteCurrency)} today
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Available vs Locked breakdown */}
+              {lockedTotalUsd > 0 && (
+                <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-0.5">Available</p>
+                    <p className="text-sm font-bold text-green-400">{formatQuoteAmount(Math.max(0, total - lockedTotalUsd), quoteCurrency)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
+                    <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
+              )}
+
+              {/* Allocation bar */}
+              {total > 0 && nonZero.length > 0 && (
+                <>
+                  <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
+                    {nonZero.map(r => (
+                      <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
+                    ))}
+                  </div>
+                  <div className="flex gap-3 mt-2 flex-wrap">
+                    {nonZero.map(r => (
+                      <div key={r.asset} className="flex items-center gap-1">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
+                        <span className="text-[10px] text-muted-foreground">{r.asset}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* ── BUCKET 2: Busy in Trade (locked in open limit/stop orders) ───── */}
           {lockedEntries.length > 0 && (
@@ -754,8 +836,8 @@ export function MobilePortfolio() {
                 ))}
               </div>
 
-              {/* OrahDEX Exchange Balances */}
-              {exchBalancesWithValue.length > 0 && (
+              {/* OrahDEX Exchange Balances — hidden for Orah Wallet (shown in Trading Balance card) */}
+              {!isOrahWallet && exchBalancesWithValue.length > 0 && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2 px-1 mb-2">
                     <Zap size={12} className="text-primary" />
