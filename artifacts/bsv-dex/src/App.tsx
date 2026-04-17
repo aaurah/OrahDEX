@@ -92,6 +92,7 @@ const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics")
 const AdminWithdrawals       = lazy(() => import("@/pages/admin/Withdrawals").then(m => ({ default: m.AdminWithdrawals })));
 const AdminIntegrations      = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
 const AdminMintBurn          = lazy(() => import("@/pages/admin/MintBurn").then(m => ({ default: m.AdminMintBurn })));
+const AdminLedgerManager     = lazy(() => import("@/pages/admin/LedgerManager").then(m => ({ default: m.AdminLedgerManager })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -321,6 +322,7 @@ function Router() {
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
+      <Route path="/admin/ledger">    <AdminRoute><AdminLedgerManager /></AdminRoute></Route>
       <Route path="/admin/treasury">  <AdminRoute><AdminTreasury /></AdminRoute></Route>
       <Route path="/admin/mint-burn"><AdminRoute><AdminMintBurn /></AdminRoute></Route>
       <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>

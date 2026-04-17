@@ -2148,6 +2148,116 @@ router.post("/mint-burn", requireAdminToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /admin/ledger-adjust
+ * Manually credit (deposit) or debit (withdraw) any asset on any wallet's
+ * internal exchange ledger. Unrestricted — any asset symbol is accepted.
+ * Body: { action: "deposit"|"withdraw", walletAddress, asset, amount, note? }
+ */
+router.post("/ledger-adjust", requireAdminToken, async (req, res) => {
+  const { action, walletAddress, asset, amount, note } = req.body ?? {};
+
+  if (!action || !["deposit","withdraw"].includes(action))
+    return res.status(400).json({ error: "action must be 'deposit' or 'withdraw'" });
+  if (!walletAddress?.trim())
+    return res.status(400).json({ error: "walletAddress is required" });
+  if (!asset?.trim())
+    return res.status(400).json({ error: "asset is required" });
+  const numAmount = Number(amount);
+  if (!amount || isNaN(numAmount) || numAmount <= 0)
+    return res.status(400).json({ error: "amount must be a positive number" });
+
+  try {
+    const { creditAvailable, debitAvailable } = await import("../lib/ledger.js");
+
+    if (action === "deposit") {
+      await creditAvailable(walletAddress.trim(), asset.trim().toUpperCase(), String(numAmount));
+    } else {
+      await debitAvailable(walletAddress.trim(), asset.trim().toUpperCase(), String(numAmount));
+    }
+
+    // Audit log — reuse mint_burn_log table, mapping deposit→mint, withdraw→burn
+    await pool.query(
+      `INSERT INTO mint_burn_log (action, asset, amount, wallet_address, note)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [action === "deposit" ? "mint" : "burn", asset.trim().toUpperCase(), String(numAmount), walletAddress.trim(), note ?? null]
+    );
+
+    res.json({
+      success: true,
+      action,
+      asset: asset.trim().toUpperCase(),
+      amount: numAmount,
+      walletAddress: walletAddress.trim(),
+      message: action === "deposit"
+        ? `Deposited ${numAmount} ${asset.toUpperCase()} to ${walletAddress}`
+        : `Withdrew ${numAmount} ${asset.toUpperCase()} from ${walletAddress}`,
+    });
+  } catch (err: any) {
+    const isInsufficient = err.message?.startsWith("INSUFFICIENT_FUNDS");
+    res.status(isInsufficient ? 400 : 500).json({
+      error: isInsufficient
+        ? `Insufficient ${asset?.toUpperCase()} balance to withdraw that amount`
+        : err.message,
+    });
+  }
+});
+
+/**
+ * GET /admin/ledger-wallets
+ * Returns a paginated list of wallets with their total ledger balances (USD),
+ * for the admin ledger overview table.
+ * Query: ?limit=50&offset=0&search=0x...
+ */
+router.get("/ledger-wallets", requireAdminToken, async (req, res) => {
+  const limit  = Math.min(parseInt(String(req.query.limit  ?? "50")), 200);
+  const offset = parseInt(String(req.query.offset ?? "0"));
+  const search = String(req.query.search ?? "").trim().toLowerCase();
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         wallet_address,
+         COUNT(asset_symbol)                          AS asset_count,
+         SUM(available::numeric + locked::numeric)   AS total_units,
+         MAX(updated_at)                              AS last_activity
+       FROM user_balances
+       WHERE ($1 = '' OR LOWER(wallet_address) LIKE '%' || $1 || '%')
+         AND (available::numeric + locked::numeric) > 0
+       GROUP BY wallet_address
+       ORDER BY last_activity DESC
+       LIMIT $2 OFFSET $3`,
+      [search, limit, offset]
+    );
+    const { rows: total } = await pool.query(
+      `SELECT COUNT(DISTINCT wallet_address) AS cnt FROM user_balances
+       WHERE ($1 = '' OR LOWER(wallet_address) LIKE '%' || $1 || '%')`,
+      [search]
+    );
+    res.json({ wallets: rows, total: parseInt(total[0]?.cnt ?? "0") });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /admin/ledger-audit
+ * Returns recent deposit/withdrawal adjustments made via the admin panel.
+ */
+router.get("/ledger-audit", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, action, asset, amount::text, wallet_address, note, created_at
+       FROM mint_burn_log
+       ORDER BY created_at DESC
+       LIMIT 100`
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /admin/exchange-wallet ────────────────────────────────────────────────
 // Returns the exchange hot wallet addresses and on-chain balances.
 // These are the addresses the operator must fund to enable auto-withdrawals.
