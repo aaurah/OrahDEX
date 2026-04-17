@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Search, Filter, RefreshCw, ExternalLink, Copy, Check,
@@ -18,6 +18,7 @@ type TxStatus = "confirmed" | "pending" | "failed";
 interface OnChainTx {
   id: string;
   txHash: string;
+  hasTxid: boolean;
   chain: Chain;
   type: TxType;
   status: TxStatus;
@@ -167,15 +168,22 @@ function TxDetail({ tx }: { tx: OnChainTx }) {
           )}
           {/* Explorer link */}
           <div className="col-span-2 md:col-span-4 pt-1">
-            <a
-              href={EXPLORER[tx.chain](tx.txHash)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors"
-            >
-              <ExternalLink className="w-3 h-3" />
-              View on {tx.chain === "BSV" ? "WhatsOnChain" : tx.chain === "ETH" ? "Etherscan" : tx.chain === "BNB" ? "BscScan" : tx.chain === "MATIC" ? "Polygonscan" : "Arbiscan"}
-            </a>
+            {tx.hasTxid ? (
+              <a
+                href={EXPLORER[tx.chain](tx.txHash)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-primary hover:text-primary/80 font-medium transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View on {tx.chain === "BSV" ? "WhatsOnChain" : tx.chain === "ETH" ? "Etherscan" : tx.chain === "BNB" ? "BscScan" : tx.chain === "MATIC" ? "Polygonscan" : "Arbiscan"}
+              </a>
+            ) : (
+              <span className="inline-flex items-center gap-2 text-muted-foreground/50 text-xs">
+                <Hash className="w-3 h-3" />
+                Internal DEX record — no blockchain TXID
+              </span>
+            )}
           </div>
         </div>
       </td>
@@ -243,6 +251,7 @@ export function AdminTransactions() {
     return (txData?.transactions ?? []).map((t: any) => ({
       id:                    t.id,
       txHash:                t.txHash,
+      hasTxid:               !!t.hasTxid,
       chain:                 t.chain as Chain,
       type:                  t.type as TxType,
       status:                t.status as TxStatus,
@@ -449,9 +458,8 @@ export function AdminTransactions() {
                 const StatusIcon = sm.icon;
                 const TypeIcon = tm.icon;
                 return (
-                  <>
+                  <React.Fragment key={tx.id}>
                     <tr
-                      key={tx.id}
                       onClick={() => setExpandedId(expanded ? null : tx.id)}
                       className={cn(
                         "hover:bg-secondary/20 transition-colors cursor-pointer",
@@ -461,17 +469,21 @@ export function AdminTransactions() {
                       {/* Hash */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <code className="font-mono text-xs text-foreground">{shortHash(tx.txHash)}</code>
-                          <CopyBtn text={tx.txHash} />
-                          <a
-                            href={EXPLORER[tx.chain](tx.txHash)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            className="text-muted-foreground hover:text-primary transition-colors"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                          <code className={cn("font-mono text-xs", tx.hasTxid ? "text-foreground" : "text-muted-foreground/60")}>
+                            {tx.hasTxid ? shortHash(tx.txHash) : "Internal record"}
+                          </code>
+                          {tx.hasTxid && <CopyBtn text={tx.txHash} />}
+                          {tx.hasTxid && (
+                            <a
+                              href={EXPLORER[tx.chain](tx.txHash)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
                         </div>
                       </td>
 
@@ -524,8 +536,8 @@ export function AdminTransactions() {
                       </td>
                     </tr>
 
-                    {expanded && <TxDetail key={`detail-${tx.id}`} tx={tx} />}
-                  </>
+                    {expanded && <TxDetail tx={tx} />}
+                  </React.Fragment>
                 );
               })}
             </tbody>
