@@ -1389,9 +1389,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             {[
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
                               { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
-                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
-                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0 (legacy P2PKH)",    addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
+                              { label: "BCH", sub: "Bitcoin Cash · same fork address as BTC",         addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
+                              { label: "BSV", sub: "Bitcoin SV · same fork address as BTC",           addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
                             ].map(({ label, sub, addr, color, net }) => {
                               const isActive = walletState.network === net;
                               const inner = (
@@ -1573,9 +1573,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             {[
                               { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: hdAddresses.evm, color: "blue",    net: "evm" as WalletNetwork },
                               { label: "SOL", sub: "Solana · Phantom-compatible",      addr: hdAddresses.sol, color: "violet",  net: "sol" as WalletNetwork },
-                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0",        addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
-                              { label: "BCH", sub: "Bitcoin Cash · CashAddr",          addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
-                              { label: "BSV", sub: "Bitcoin SV · m/44'/236'/0'/0/0",   addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
+                              { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0 (legacy P2PKH)",    addr: hdAddresses.btc, color: "orange",  net: "btc" as WalletNetwork },
+                              { label: "BCH", sub: "Bitcoin Cash · same fork address as BTC",         addr: hdAddresses.bch, color: "green",   net: "bch" as WalletNetwork },
+                              { label: "BSV", sub: "Bitcoin SV · same fork address as BTC",           addr: hdAddresses.bsv, color: "emerald", net: "bsv" as WalletNetwork },
                             ].map(({ label, sub, addr, color, net }) => {
                               const isActive = walletState.network === net;
                               const inner = (
@@ -2203,9 +2203,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 {[
                                   { label: "EVM", sub: "ETH · BSC · Polygon · Arbitrum…", addr: passkeyResult.chains.evm, color: "blue" },
                                   { label: "SOL", sub: "Solana · Phantom-compatible", addr: passkeyResult.chains.sol, color: "violet" },
-                                  { label: "BTC", sub: "Bitcoin", addr: passkeyResult.chains.btc, color: "orange" },
-                                  { label: "BCH", sub: "Bitcoin Cash · CashAddr", addr: passkeyResult.chains.bch, color: "green" },
-                                  { label: "BSV", sub: "Bitcoin SV", addr: passkeyResult.chains.bsv, color: "emerald" },
+                                  { label: "BTC", sub: "Bitcoin · m/44'/0'/0'/0/0 (legacy P2PKH)",  addr: passkeyResult.chains.btc, color: "orange" },
+                                  { label: "BCH", sub: "Bitcoin Cash · same fork address as BTC",    addr: passkeyResult.chains.bch, color: "green" },
+                                  { label: "BSV", sub: "Bitcoin SV · same fork address as BTC",      addr: passkeyResult.chains.bsv, color: "emerald" },
                                 ].filter(r => r.addr).map(({ label, sub, addr, color }) => (
                                   <div key={label} className={`flex items-center gap-2 p-2 rounded-lg bg-${color}-500/8 border border-${color}-500/20`}>
                                     <span className={`text-[10px] font-black text-${color}-400 w-7 shrink-0`}>{label}</span>
