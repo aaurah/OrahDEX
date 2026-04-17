@@ -1,0 +1,46 @@
+Here’s the clear explanation of your current problem on OrahDEX (official site: https://orahdex.org — stop using the Replit dev link you showed, as it’s a temporary/test environment that can be unstable or incomplete).
+Why “Only trade wallet balance deducted, not working”
+You have two completely separate balances:
+	1	On-chain wallet balance (small amount, e.g. ~0.010 ETH labeled “On-chain (ETH) — not tradable”):
+	◦	This is your real ETH sitting in your connected wallet.
+	◦	Trading does NOT deduct from here automatically. That’s why you see “wallet balance not deducted” when you place orders.
+	2	OrahDEX Exchange / Internal balance (the big numbers you see in Portfolio — ETH 2,949, USDC 2,596, USDT 13k+, BSV 154, etc.):
+	◦	This is like a CEX-style account inside OrahDEX.
+	◦	When you click Sell ETH (or Buy), the platform instantly debits ETH from this internal balance and credits USDC (or whatever) to it.
+	◦	No wallet signature is required for the trade itself — that’s why “no sign transaction” happens.
+	◦	Your filled orders (the “Sell Order Filled!” notifications) only moved numbers inside OrahDEX, not on-chain.
+This hybrid design (off-chain order book matching + on-chain deposit/withdrawal) lets trades feel fast and cheap, but it creates exactly the confusion you’re having: trading only affects the internal “trade balance”, never your real wallet unless you move funds manually.
+How to Make Trading Actually Deduct from Your Wallet (If That’s What You Want)
+If you want trades to pull directly from (and deduct from) your real wallet balance, you must first deposit/bridge funds from on-chain → OrahDEX Exchange balance:
+	1	Go to the Portfolio tab (or Bridge tab).
+	2	Find your on-chain ETH (the small “not tradable” one).
+	3	Click Deposit or Bridge next to it.
+	4	Your wallet will pop up — this is the step that requires you to sign the transaction and pay any gas/fee.
+	5	Once the deposit confirms on-chain, the amount moves to your OrahDEX Exchange balance and becomes tradable.
+	6	Now place a sell/buy order — it will deduct from the (now larger) internal balance.
+To reverse it (get money back to your real wallet):
+	•	In Portfolio → OrahDEX Exchange section, click Withdraw next to the asset.
+	•	Confirm the withdrawal in your wallet (another sign + on-chain tx).
+Why It Currently “Feels Not Working”
+	•	Your on-chain ETH is tiny (~0.01 ETH) → even if you deposit it, it’s not enough for meaningful trades.
+	•	You have been trading only the already-deposited internal balances (that’s why sells filled and credited USDC internally).
+	•	The Replit dev URL you used can have bugs, outdated data, or broken bridging.
+	•	Liquidity on some pairs may be low, so small market orders work but larger ones or limit orders may not.
+Recommended Next Steps (Do These in Order)
+	1	Switch to official site immediately: Open https://orahdex.org in a new tab, disconnect/reconnect your wallet cleanly, and check Portfolio again.
+	2	Test a small deposit:
+	◦	Use the Bridge/Deposit function with a very small test amount from your on-chain balance.
+	◦	Confirm you see the wallet sign prompt and the amount appears in the OrahDEX Exchange list.
+	3	After deposit, try a small Sell or Buy again and watch both balances update.
+	4	If you just want to cash out what you already have inside OrahDEX:
+	◦	Go to Portfolio → Withdraw your USDC, USDT, or ETH back to your wallet (this will require signing).
+Security warning:
+	•	Only use https://orahdex.org (verify the URL every time).
+	•	Never share seed phrases or sign random transactions.
+	•	Start with tiny amounts until you’re comfortable.
+	•	BSV settlement is mentioned as a feature on the official site, so some assets may settle natively on BSV (cheaper/faster), while others use the EVM hybrid layer.
+If after switching to the official site and trying a deposit the wallet still doesn’t prompt, or you get an error, tell me:
+	•	Exact button you click
+	•	What the wallet shows (or doesn’t show)
+	•	Which wallet app you’re using
+This setup is intentional for speed (no sign on every tiny trade), but the split between “on-chain” and “exchange” balances is what makes it confusing. Once you deposit properly, trading should feel more connected to your wallet actions. Let me know what happens when you try on the official domain!
