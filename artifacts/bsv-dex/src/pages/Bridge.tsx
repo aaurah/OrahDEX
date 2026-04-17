@@ -360,27 +360,14 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
                 <span className="text-sm font-bold">Your {coin} Deposit Address</span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Send {coin} from your {asset.l1.chain} wallet to the address below. Your OrahDEX exchange balance will be credited within 1–3 on-chain confirmations (~5 min).
+                Direct {coin} deposits from {asset.l1.chain} to your OrahDEX exchange balance — coming soon. On-chain deposit detection is under development.
               </p>
-              <div className="bg-secondary/80 rounded-xl p-3 border border-border">
-                <p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wide font-semibold">Deposit address ({asset.l1.chain})</p>
-                <div className="flex items-center gap-2">
-                  <p className="font-mono text-xs text-foreground break-all flex-1 select-all">{depositAddr}</p>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(depositAddr).catch(() => {});
-                      setAddrCopied(true);
-                      setTimeout(() => setAddrCopied(false), 2000);
-                    }}
-                    className="shrink-0 p-2 rounded-lg bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors"
-                  >
-                    {addrCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </button>
+              <div className="flex items-start gap-2 p-3 rounded-xl border border-red-500/30 bg-red-500/8 text-xs text-red-400">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold mb-0.5">Demo only — do not send real funds</p>
+                  <p className="text-red-400/80 leading-relaxed">On-chain deposit detection is not yet implemented. This address is a placeholder. Sending real {coin} here will result in permanent loss.</p>
                 </div>
-              </div>
-              <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                Only send {coin} on {asset.l1.chain}. Sending other assets or on wrong networks may result in permanent loss.
               </div>
             </div>
           );
