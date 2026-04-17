@@ -158,6 +158,57 @@ function SendViaWalletButton({ withdrawal, onComplete }: {
   );
 }
 
+function SendBsvButton({ withdrawal, onComplete }: {
+  withdrawal: Withdrawal;
+  onComplete: (txid: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(false);
+
+  const isBsvLike = ["bsv", "bitcoin sv"].some(n =>
+    withdrawal.network.toLowerCase().includes(n) ||
+    (withdrawal.networkLabel ?? "").toLowerCase().includes(n)
+  );
+  if (!isBsvLike) return null;
+
+  const handleSend = async () => {
+    setErr(""); setLoading(true);
+    try {
+      const r = await adminFetch(`${API_BASE}/api/admin/bsv-wallet/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toAddress: withdrawal.recipient, bsv: withdrawal.amount }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "BSV send failed");
+      setDone(true);
+      onComplete(j.txid);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) return <span className="text-xs text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Sent</span>;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <button
+        disabled={loading}
+        onClick={handleSend}
+        className="px-2.5 py-1 rounded-lg text-xs bg-green-600/20 border border-green-500/30 text-green-400 hover:bg-green-600/40 disabled:opacity-40 flex items-center gap-1"
+        title={err || "Send from BSV settlement wallet"}
+      >
+        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wallet className="w-3 h-3" />}
+        {loading ? "Sending…" : "Send BSV"}
+      </button>
+      {err && <span className="text-[10px] text-red-400 max-w-[140px] text-right leading-tight">{err}</span>}
+    </div>
+  );
+}
+
 function BalanceAdjustPanel() {
   const [open, setOpen] = useState(false);
   const [wallet, setWallet] = useState("");
@@ -447,6 +498,12 @@ export function AdminWithdrawals() {
                             )}
                             {isActionable && (
                               <SendViaWalletButton
+                                withdrawal={w}
+                                onComplete={txid => patch.mutate({ id: w.id, status: "completed", txid })}
+                              />
+                            )}
+                            {isActionable && (
+                              <SendBsvButton
                                 withdrawal={w}
                                 onComplete={txid => patch.mutate({ id: w.id, status: "completed", txid })}
                               />
