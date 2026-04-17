@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Users, ArrowRightLeft, TrendingUp, DollarSign,
   Cpu, Key, Activity, ShieldCheck, AlertTriangle,
-  RefreshCw, Flame, MessageCircle,
+  RefreshCw, Flame, MessageCircle, Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -157,6 +157,54 @@ export function AdminDashboard() {
         <StatCard live icon={MessageCircle} label="Live Chat"
           value={`${channels.length || "—"} channels`}
           sub={`${totalChatMessages} msgs · ${totalChatSubs} live`} color="blue" />
+      </div>
+
+      {/* Platform Updates */}
+      <div className="bg-card border border-border rounded-2xl p-5">
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <Zap className="w-4 h-4 text-primary" /> Platform Updates
+          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.5.0 · 17 Apr 2026</span>
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            {
+              icon: "✉",
+              color: "text-green-400",
+              bg: "bg-green-400/5 border-green-400/20",
+              title: "Outbound Email Live",
+              detail: "Brevo SMTP confirmed. All platform mail sent from support@orahdex.org.",
+            },
+            {
+              icon: "📬",
+              color: "text-blue-400",
+              bg: "bg-blue-400/5 border-blue-400/20",
+              title: "Inbound Email Routing",
+              detail: "ImprovMX MX records active. support@, legal@, admin@ forwarding enabled.",
+            },
+            {
+              icon: "⚖",
+              color: "text-amber-400",
+              bg: "bg-amber-400/5 border-amber-400/20",
+              title: "Balance Display Fixed",
+              detail: "Orah wallet balance now always reads from the internal ledger — deducts correctly after every trade.",
+            },
+            {
+              icon: "🔌",
+              color: "text-violet-400",
+              bg: "bg-violet-400/5 border-violet-400/20",
+              title: "Integrations Nav Added",
+              detail: "Admin Integrations page accessible via sidebar. SMTP config, connection tests, and service management.",
+            },
+          ].map(({ icon, color, bg, title, detail }) => (
+            <div key={title} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${bg}`}>
+              <span className={`${color} shrink-0 mt-0.5 text-base`}>{icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-foreground font-medium leading-tight text-[13px]">{title}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
