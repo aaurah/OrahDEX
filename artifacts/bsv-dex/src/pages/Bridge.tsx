@@ -249,30 +249,24 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
       {/* ── Left: form ── */}
       <div className="space-y-4">
 
-        {/* Canonical architecture explainer */}
-        <div className={cn("rounded-2xl border bg-gradient-to-br p-4", accentBg)}>
-          <div className={cn("flex items-center gap-2 mb-2", accentColor)}>
+        {/* Simple explainer */}
+        <div className={cn("rounded-2xl border bg-gradient-to-br p-3", accentBg)}>
+          <div className={cn("flex items-center gap-2", accentColor)}>
             {isDeposit ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
-            <span className="font-bold text-sm">
-              {isDeposit && isExchangeDirect ? `Deposit: ${asset.l1.chain} → OrahDEX Exchange`
-               : isDeposit ? "Deposit: L1 → L2 Canonical Bridge"
-               : "Withdraw: L2 → L1 Canonical Bridge"}
+            <span className="font-semibold text-sm">
+              {isDeposit && isExchangeDirect
+                ? `Send ${coin} to your deposit address — credited to your OrahDEX balance within ~5 min.`
+                : isDeposit
+                  ? `Bridge ${coin} from L1 to ${l2.chain} via ${l2.bridge}.`
+                  : `Withdraw ${coin} back to your wallet on ${asset.l1.chain}.`}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            {isDeposit && isExchangeDirect
-              ? `Select the OrahDEX Exchange destination below to get your personal ${coin} deposit address on ${asset.l1.chain}. Send any amount — your exchange trading balance is credited within ~5 minutes.`
-              : isDeposit
-                ? `Your ${coin} is locked in the canonical bridge contract on L1. The bridge mints an equivalent ${l2.symbol} on ${l2.chain} — a 1:1 claim on your locked ${coin}. You trade ${l2.symbol} on OrahDEX exactly as if it were ${coin}. Arbitrage bots keep the peg at 1:1.`
-                : `Burning ${l2.symbol} on ${l2.chain} submits a proof to the ${asset.l1.chain} L1 bridge contract. The contract verifies the burn and releases your original ${coin}. This is fully non-custodial — only you can unlock your ${coin}.`
-            }
-          </p>
         </div>
 
-        {/* L1 coin selector */}
+        {/* Coin selector */}
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            {isDeposit ? "L1 Coin to Deposit" : "L2 Token to Burn"}
+            {isDeposit ? "Select Coin" : "Select Coin to Withdraw"}
           </div>
           <div className="flex gap-2 flex-wrap">
             {L1_COINS.map(c => (
@@ -305,10 +299,10 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           )}
         </div>
 
-        {/* L2/L3 destination selector */}
+        {/* Destination selector */}
         <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            {isDeposit ? "Destination Chain (L2 / L3)" : "Source Chain (L2 / L3)"}
+            {isDeposit ? "Where to receive" : "Where to withdraw from"}
           </div>
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
             {l2Options.map((l2opt, idx) => (
@@ -1423,8 +1417,8 @@ export function BridgePage() {
   const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">(() => {
     const params = new URLSearchParams(searchStr);
     const t = params.get("tab");
-    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history") return t;
-    return "bsvswap";
+    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history" || t === "bsvswap") return t;
+    return "deposit";
   });
   const [historyCount, setHistoryCount] = useState(() => loadSwapHistory().length);
 
@@ -1637,16 +1631,16 @@ export function BridgePage() {
       )}
 
       {/* ── Header ── */}
-      <div className="mb-8">
-        <div className="flex items-center gap-2 mb-2">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1">
           <Link2 className="w-5 h-5 text-primary" />
-          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Cross-Chain Bridge</span>
+          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Bridge</span>
         </div>
-        <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-2">
-          Swap Across Any Chain
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-1">
+          Deposit, Withdraw &amp; Bridge
         </h1>
-        <p className="text-muted-foreground max-w-2xl">
-          Move assets across all layers — L1 (BSV, BTC, ETH, SOL, BNB, AVAX, TRON), L2 rollups (Arbitrum, Base, Optimism, Polygon, zkSync, Linea, Scroll, Blast, Mode + 8 more), and L3 app-chains (Degen, Xai, ApeChain, Zora, Treasure). All settled on BSV.
+        <p className="text-muted-foreground text-sm">
+          Move ETH, BTC, SOL and more between chains — or deposit to start trading.
         </p>
       </div>
 
@@ -1654,10 +1648,10 @@ export function BridgePage() {
       <div className="w-full max-w-xl mb-8">
         <div className="flex gap-1 p-1 bg-secondary rounded-2xl overflow-x-auto scrollbar-none">
           {([
-            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"  },
-            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Swap"      },
             { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"   },
             { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"  },
+            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain" },
+            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"  },
             { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"   },
           ] as const).map(tab => (
             <button
@@ -1692,8 +1686,8 @@ export function BridgePage() {
         <BsvQuickSwap onSwapDone={() => setHistoryCount(c => c + 1)} />
       )}
 
-      {/* ── BSV Settlement Network Card (shown on BSV→Any and Swap tabs) ── */}
-      {(pageTab === "bsvswap" || pageTab === "swap") && (
+      {/* ── BSV Settlement Network Card (shown on BSV→Any tab only) ── */}
+      {pageTab === "bsvswap" && (
         <div className="rounded-2xl border border-green-500/20 bg-gradient-to-br from-green-500/5 to-transparent p-4 mb-6 mt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
@@ -1749,47 +1743,6 @@ export function BridgePage() {
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
       {pageTab === "swap" && <>
-
-      {/* ── L1/L2/L3 Architecture strip ── */}
-      <div className="grid grid-cols-3 gap-3 mb-8">
-        {[
-          {
-            layer: "L1", title: "Base Security", icon: Shield, color: "text-green-400",
-            bg: "from-green-500/5 to-green-500/10 border-green-500/20",
-            items: ["BSV · BTC · ETH · SOL", "Final settlement", "HTLC scripts"],
-          },
-          {
-            layer: "L2", title: "Scaling", icon: Zap, color: "text-sky-400",
-            bg: "from-sky-500/5 to-sky-500/10 border-sky-500/20",
-            items: ["Arbitrum · Optimism · Base", "Cheap fast execution", "Rollup proofs"],
-          },
-          {
-            layer: "L3", title: "OrahDEX Router", icon: Layers, color: "text-primary",
-            bg: "from-primary/5 to-primary/10 border-primary/20",
-            items: ["Smart routing engine", "Fee & rewards", "Cross-chain settlement"],
-          },
-        ].map(({ layer, title, icon: Icon, color, bg, items }) => (
-          <div key={layer} className={cn("rounded-2xl border bg-gradient-to-br p-4", bg)}>
-            <div className="flex items-center gap-2 mb-3">
-              <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center bg-background/60", color)}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <div>
-                <div className={cn("text-[10px] font-black uppercase tracking-wider", color)}>{layer}</div>
-                <div className="text-xs font-semibold text-foreground leading-tight">{title}</div>
-              </div>
-            </div>
-            <ul className="space-y-1">
-              {items.map(item => (
-                <li key={item} className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                  <span className={cn("w-1 h-1 rounded-full shrink-0", color.replace("text-", "bg-"))} />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">
 
@@ -2081,66 +2034,71 @@ export function BridgePage() {
             </div>
           </div>
 
-          {/* HTLC Script info card */}
-          {mode === "htlc" && (
-            <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                <Lock className="w-4 h-4 text-orange-400" />
-                HTLC Script
-              </div>
-              <div className="space-y-2 text-xs">
-                {[
-                  { label: "Script type", value: "P2SH HTLC" },
-                  { label: "Hash function", value: "SHA-256" },
-                  { label: "Claim path", value: "Reveal preimage → relayer claims" },
-                  { label: "Refund path", value: "CLTV + 144 blocks (~24 hrs)" },
-                  { label: "Network", value: "BSV Mainnet" },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between">
-                    <span className="text-muted-foreground">{label}</span>
-                    <span className="font-mono font-semibold text-foreground">{value}</span>
+          {/* Collapsible technical details */}
+          <details className="group">
+            <summary className="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors list-none py-1">
+              <Info className="w-3.5 h-3.5" />
+              <span>Technical details</span>
+              <ChevronDown className="w-3.5 h-3.5 ml-auto group-open:rotate-180 transition-transform" />
+            </summary>
+            <div className="mt-3 space-y-3">
+              {mode === "htlc" && (
+                <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                    <Lock className="w-4 h-4 text-orange-400" />
+                    HTLC Script
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Security callout */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-              <Shield className="w-4 h-4 text-primary" />
-              Security Notes
-            </div>
-            <ul className="space-y-2">
-              {[
-                { label: "Non-custodial HTLC", detail: "Funds locked by script — not by OrahDEX" },
-                { label: "HTLC timeouts", detail: "144-block refund window prevents stuck funds" },
-                { label: "Slippage protection", detail: "Min received guaranteed; tx reverts if breached" },
-                { label: "On-chain verifiable", detail: "Redeem script and secret hash are public" },
-              ].map(({ label, detail }) => (
-                <li key={label} className="flex items-start gap-2 text-xs">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold text-foreground">{label}</span>
-                    <span className="text-muted-foreground"> — {detail}</span>
+                  <div className="space-y-2 text-xs">
+                    {[
+                      { label: "Script type", value: "P2SH HTLC" },
+                      { label: "Hash function", value: "SHA-256" },
+                      { label: "Claim path", value: "Reveal preimage → relayer claims" },
+                      { label: "Refund path", value: "CLTV + 144 blocks (~24 hrs)" },
+                      { label: "Network", value: "BSV Mainnet" },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between">
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className="font-mono font-semibold text-foreground">{value}</span>
+                      </div>
+                    ))}
                   </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* BSV settlement badge */}
-          <div className="rounded-2xl border border-green-500/25 bg-green-500/5 p-4 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
-              <span className="text-lg animate-pulse">⚡</span>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-green-400">BSV Final Settlement</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Every cross-chain swap is anchored to the BSV blockchain via OP_RETURN — immutable, instant, &lt;$0.001.
+                </div>
+              )}
+              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
+                  <Shield className="w-4 h-4 text-primary" />
+                  Security Notes
+                </div>
+                <ul className="space-y-2">
+                  {[
+                    { label: "Non-custodial HTLC", detail: "Funds locked by script — not by OrahDEX" },
+                    { label: "HTLC timeouts", detail: "144-block refund window prevents stuck funds" },
+                    { label: "Slippage protection", detail: "Min received guaranteed; tx reverts if breached" },
+                    { label: "On-chain verifiable", detail: "Redeem script and secret hash are public" },
+                  ].map(({ label, detail }) => (
+                    <li key={label} className="flex items-start gap-2 text-xs">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold text-foreground">{label}</span>
+                        <span className="text-muted-foreground"> — {detail}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-green-500/25 bg-green-500/5 p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
+                  <span className="text-lg animate-pulse">⚡</span>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-green-400">BSV Final Settlement</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Every cross-chain swap is anchored to the BSV blockchain via OP_RETURN — immutable, instant, &lt;$0.001.
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </details>
         </div>
       </div>
       </>}
