@@ -426,11 +426,14 @@ function SlippageSettings({ slippage, onChange }: { slippage: number; onChange: 
 export function Swap() {
   useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
 
-  const { address, chainId: walletChainId } = useWalletStore();
+  const { address, chainId: walletChainId, provider } = useWalletStore();
+  const isOrahWallet = provider === "orah-wallet";
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  const [mode,      setMode]      = useState<"dex" | "exchange">("dex");
+  // Default: external wallets → on-chain DEX (direct wallet-to-wallet)
+  //          orah-wallet      → exchange (internal ledger, no gas)
+  const [mode, setMode] = useState<"dex" | "exchange">(isOrahWallet ? "exchange" : "dex");
   const [chainId,   setChainId]   = useState<SupportedChainId>(1);
   const tokens = TOKENS[chainId];
 
@@ -450,6 +453,11 @@ export function Swap() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chainConfig = DEX_CHAINS.find(c => c.id === chainId)!;
+
+  // Auto-switch mode when wallet connects/disconnects
+  useEffect(() => {
+    setMode(isOrahWallet ? "exchange" : "dex");
+  }, [isOrahWallet]);
 
   // Re-init tokens when chain changes
   useEffect(() => {
