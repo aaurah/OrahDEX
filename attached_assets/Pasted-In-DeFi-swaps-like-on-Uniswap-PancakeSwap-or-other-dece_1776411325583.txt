@@ -1,0 +1,41 @@
+In DeFi swaps (like on Uniswap, PancakeSwap, or other decentralized exchanges), “wallet sign” refers to the process where your crypto wallet (e.g., MetaMask, Uniswap Wallet, Trust Wallet, or a hardware wallet like Ledger) uses your private key to digitally sign actions. This proves you authorize the transaction without ever sharing your private keys with the DeFi app or anyone else.
+DeFi is non-custodial — the app can’t move your funds on its own. You must explicitly approve and sign everything from your wallet.
+Why Signing Happens in a DeFi Swap
+A swap typically involves two main on-chain actions (sometimes combined or batched):
+	1	Token Approval (often the first “sign”):
+	◦	ERC-20 tokens (and equivalents on other chains) don’t let just anyone spend them.
+	◦	You sign a message granting the DEX’s smart contract permission to spend a certain amount of your input token (e.g., “allow Uniswap router to spend up to 100 USDC”).
+	◦	This is usually required the first time you swap a specific token with that protocol. You can set a limited or unlimited approval.
+	2	The Swap Transaction (second “sign”):
+	◦	You sign the actual swap call to the smart contract.
+	◦	This tells the contract: “Take X amount of token A from my wallet, swap it via the liquidity pool, and send me Y amount of token B (minus fees/slippage).”
+Some advanced protocols (like CoW Swap) use signed “intents” instead of direct transactions — you sign a message with your trade details, and off-chain solvers find the best route and execute it on-chain for you.
+Step-by-Step: How Wallet Signing Works in a Typical Swap
+Here’s the usual flow (example with MetaMask on Uniswap):
+	1	Connect Wallet — Click “Connect Wallet” on the DeFi site. Your wallet shows a “Sign in” or connection request. This often involves signing a harmless message (no gas cost, no funds moved) to verify ownership of the address. It doesn’t give the site control.
+	2	Select Swap Details — Choose input/output tokens, amount, slippage tolerance, etc. The interface simulates the trade.
+	3	Approve (if needed) — Click “Approve”. Your wallet pops up with details:
+	◦	What you’re approving (spending cap, contract address).
+	◦	Gas fees estimate.
+	◦	You review and click “Sign” or “Confirm”.
+	4	Confirm the Swap — After approval succeeds, click “Swap”. Wallet shows:
+	◦	Exact amounts in/out.
+	◦	Router/contract address.
+	◦	Gas fees.
+	◦	Slippage/price impact warnings.
+	◦	You review carefully and sign again.
+	5	Broadcast — Your wallet signs the data with your private key (using ECDSA or similar cryptography on Ethereum-like chains). It broadcasts the signed transaction to the blockchain network. Miners/validators include it in a block if valid.
+	6	Execution — The smart contract runs the swap atomically. Funds move directly between your wallet and the liquidity pool — no intermediary holds them.
+The whole process is cryptographically secure: only your private key can produce a valid signature for your address. The blockchain verifies the signature before executing.
+Types of Signing in Wallets
+	•	Transaction Signing — For on-chain actions (costs gas).
+	•	Message Signing (e.g., personal_sign or EIP-712 typed data) — For login, approvals, or off-chain intents. Usually free, no gas.
+	•	Hardware Wallets — The private key never leaves the device; you confirm on the physical screen.
+Important Security Notes
+	•	Always double-check the details in the wallet popup before signing. Malicious sites can trick you into approving unlimited spending or draining your wallet.
+	•	Approvals can be risky if unlimited — consider using tools to revoke them later.
+	•	Gas fees (network cost) are paid in the chain’s native token (e.g., ETH, BNB, SOL).
+	•	On some chains like Solana, signing is faster and often feels like one step, but the principle is the same.
+	•	Never sign on untrusted sites. Verify URLs and contract addresses.
+If you’re seeing a specific “sign” prompt in your wallet (e.g., a weird message or contract), feel free to describe it or share a screenshot description — I can help explain what it likely means.
+This mechanism is what makes DeFi trustless and powerful: you stay in control of your keys and funds at all times. Let me know if you want details for a specific DEX, chain, or wallet!
