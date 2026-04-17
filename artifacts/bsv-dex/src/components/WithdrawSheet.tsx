@@ -52,7 +52,8 @@ interface WithdrawHistoryItem {
 export interface WithdrawSheetProps {
   open:                boolean;
   onClose:             () => void;
-  walletAddress:       string;
+  walletAddress:       string;   // connected wallet — used for account identification (API)
+  defaultRecipient?:   string;   // pre-filled recipient address (may be empty for non-native assets)
   asset:               string;
   available:           number;
   network:             string;
@@ -65,6 +66,7 @@ export function WithdrawSheet({
   open,
   onClose,
   walletAddress,
+  defaultRecipient,
   asset,
   available,
   network,
@@ -76,7 +78,7 @@ export function WithdrawSheet({
   const { addNotification } = useNotificationStore();
   const [tab,       setTab]       = useState<"withdraw" | "history">("withdraw");
   const [amount,    setAmount]    = useState("");
-  const [recipient, setRecipient] = useState(walletAddress);
+  const [recipient, setRecipient] = useState(defaultRecipient ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [submitted,  setSubmitted]  = useState(false);
   const [copiedId,   setCopiedId]   = useState<string | null>(null);
@@ -86,10 +88,10 @@ export function WithdrawSheet({
     if (open) {
       setTab("withdraw");
       setAmount("");
-      setRecipient(walletAddress);
+      setRecipient(defaultRecipient ?? "");
       setSubmitted(false);
     }
-  }, [open, walletAddress]);
+  }, [open, defaultRecipient]);
 
   // Withdrawal history
   const { data: history = [], refetch: refetchHistory } = useQuery<WithdrawHistoryItem[]>({
