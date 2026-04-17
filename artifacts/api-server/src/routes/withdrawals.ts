@@ -4,6 +4,7 @@ import { withdrawalRequestsTable, platformSettingsTable } from "@workspace/db/sc
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
+import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 
 const router: IRouter = Router();
 
@@ -68,10 +69,36 @@ router.post("/withdrawals", async (req, res) => {
 
     req.log.info({ id, walletAddress, asset, amount: parsed, network, recipient }, "withdrawals: request created and balance deducted");
 
+    // ── Attempt immediate on-chain processing ─────────────────────────────────
+    // Run async so the HTTP response is fast. Errors are caught internally and
+    // leave the request in "pending" for admin fallback.
+    setImmediate(async () => {
+      try {
+        const result = await processWithdrawal({ asset, amount: parsed, network, recipient });
+
+        if (result.status === "completed" && result.txid) {
+          await pool.query(
+            `UPDATE withdrawal_requests
+             SET status = 'completed', txid = $1, note = $2, processed_at = now()
+             WHERE id = $3`,
+            [result.txid, result.explorer ?? null, id],
+          );
+          req.log.info({ id, txid: result.txid }, "withdrawals: auto-processed on-chain");
+        } else if (result.note) {
+          await pool.query(
+            `UPDATE withdrawal_requests SET note = $1 WHERE id = $2`,
+            [result.note, id],
+          );
+        }
+      } catch (autoErr) {
+        req.log.warn({ autoErr, id }, "withdrawals: auto-processing error (staying pending)");
+      }
+    });
+
     res.status(201).json({
       id,
       status: "pending",
-      message: "Withdrawal request recorded. Funds will be sent on-chain to your address within 24 hours.",
+      message: "Withdrawal submitted — processing on-chain now. Check withdrawal history for live status.",
       walletAddress,
       asset,
       amount: parsed,
