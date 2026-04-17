@@ -200,7 +200,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
-  const usesApiBalance = isOrahWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
@@ -219,10 +218,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     const [bRes, qRes] = await Promise.all([fetchOne(b), fetchOne(q)]);
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
   }, []);
+  // Fetch exchange balances for all EVM users — Reown/WalletConnect users who
+  // have exchange ledger funds (e.g. previously used Orah Wallet) should also
+  // see and trade against those balances.
   useEffect(() => {
-    if (!usesApiBalance || !address) { setApiBalances({}); return; }
+    if (!isEvm || !address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
-  }, [usesApiBalance, address, symbol, fetchApiBalances, base, quote]);
+  }, [isEvm, address, symbol, fetchApiBalances, base, quote]);
+  // Use exchange balance if this is an Orah Wallet OR if the address has any
+  // real exchange funds (covers Reown-connected users with existing balances).
+  const usesApiBalance = isOrahWallet || Object.values(apiBalances).some(v => v > 0);
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
