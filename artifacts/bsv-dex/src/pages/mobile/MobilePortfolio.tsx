@@ -569,6 +569,12 @@ export function MobilePortfolio() {
                             )}
                           </div>
                           <button
+                            onClick={() => navigate(`/bridge?tab=deposit&asset=${b.asset}`)}
+                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-green-500/10 border border-green-500/25 text-green-400 active:bg-green-500/20 shrink-0"
+                          >
+                            Deposit
+                          </button>
+                          <button
                             onClick={() => {
                               setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
                               setWithdrawOpen(true);
@@ -887,6 +893,12 @@ export function MobilePortfolio() {
                               {b.locked > 0 && <span className="text-muted-foreground/50"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>}
                             </p>
                           </div>
+                          <button
+                            onClick={() => navigate(`/bridge?tab=deposit&asset=${b.asset}`)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-green-500/10 border border-green-500/25 text-green-400 hover:bg-green-500/20 transition-colors shrink-0"
+                          >
+                            Deposit
+                          </button>
                           <button
                             onClick={() => {
                               setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
