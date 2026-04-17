@@ -108,3 +108,10 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - `closeFuturesPosition()` previously used `releaseFuturesMargin()` which capped credit at locked amount via `LEAST(locked, amount)` — profitable trades lost PnL above margin
 - Fixed: now uses atomic transaction with raw SQL that deducts original margin from locked and credits full returnedMargin (including profit) to available
 - Also fixed: position read + status check + margin update + position close all run on the same DB client inside one transaction (prevents double-close and ensures atomicity)
+
+## Exchange Revenue & Fee System (2026-04-17)
+- **`artifacts/api-server/src/lib/feeCollector.ts`** — Central fee accumulation library. `recordPlatformFee(source, amount, asset)` inserts into `keeper_earnings` table under wallet `EXCHANGE_TREASURY`. All routes call this after successful fee events.
+- **Fee sources wired**: `swap.ts` (0.3% on output), `orders.ts` (0.1% on fill total), `copyTrading.ts` (10% of vault performance fee)
+- **`GET /api/revenue`** — Aggregated platform revenue by source (swap, orderbook, copy_trade, lp_spread, p2p, withdrawal) across 24h / 7d / 30d / all-time periods
+- **`GET /api/fee-schedule`** — Public fee tier table (Standard / Silver / Gold / Platinum based on 30d volume)
+- **Frontend `/fees` page** (`artifacts/bsv-dex/src/pages/Revenue.tsx`) — Live revenue dashboard + full fee schedule. Accessible from nav sidebar ("Fees" link). Available on both desktop and mobile routes.

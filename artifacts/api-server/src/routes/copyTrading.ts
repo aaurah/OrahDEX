@@ -8,6 +8,10 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { buildSettlement, type TradeSettlement } from "../lib/settlement.js";
+import { recordPlatformFee } from "../lib/feeCollector.js";
+
+// OrahDEX takes 10% of the vault manager's performance fee as platform revenue
+const PLATFORM_COPY_FEE_SHARE = 0.10;
 
 const router: IRouter = Router();
 
@@ -212,6 +216,12 @@ router.post("/copy/vaults/:id/withdraw", async (req, res) => {
         updatedAt: new Date(),
       })
       .where(eq(copyVaultsTable.id, vault.id));
+
+    // Record platform's share of the performance fee as exchange revenue
+    if (performanceFee > 0) {
+      const platformCut = performanceFee * PLATFORM_COPY_FEE_SHARE;
+      recordPlatformFee({ source: "copy_trade", amount: platformCut, asset: "USDT", txRef: vault.id });
+    }
 
     logger.info({ vaultId: vault.id, followerWallet, netPayout, performanceFee }, "CopyVault withdraw");
     res.json({ netPayout, performanceFee, realizedPnl, redeemValue });

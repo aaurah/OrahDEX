@@ -14,6 +14,7 @@ import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
 
@@ -404,6 +405,9 @@ router.post("/orders", async (req, res) => {
         const avgFillPrice    = totalFillValue / totalFilled;
         const isFullyFilled   = remainingQty <= 0.000001;
         const correctFee      = (totalFillValue * 0.001).toFixed(8);
+        // Record exchange revenue from the order book fill fee (0.1%)
+        const feeAssetSymbol = (body.symbol as string).split("/")[1] ?? "USDT";
+        recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 
         await db.update(ordersTable)
           .set({
