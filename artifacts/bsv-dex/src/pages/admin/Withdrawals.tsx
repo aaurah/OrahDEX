@@ -174,7 +174,7 @@ function SendBsvButton({ withdrawal, onComplete }: {
   const handleSend = async () => {
     setErr(""); setLoading(true);
     try {
-      const r = await adminFetch(`${API_BASE}/api/admin/bsv-wallet/send`, {
+      const r = await adminFetch(`/api/admin/bsv-wallet/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toAddress: withdrawal.recipient, bsv: withdrawal.amount }),
@@ -336,15 +336,15 @@ function BalanceAdjustPanel() {
 
 export function AdminWithdrawals() {
   const qc = useQueryClient();
-  const [filter, setFilter] = useState<"all" | "pending" | "processing" | "completed" | "cancelled">("pending");
+  const [filter, setFilter] = useState<"all" | "pending" | "processing" | "completed" | "cancelled">("all");
   const [txidModal, setTxidModal] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<string | null>(null);
 
-  const { data: withdrawals = [], isFetching, refetch } = useQuery<Withdrawal[]>({
+  const { data: withdrawals = [], isFetching, isError, refetch } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals"],
     queryFn: async () => {
       const r = await adminFetch(`/api/admin/withdrawals`);
-      if (!r.ok) throw new Error("Failed to load");
+      if (!r.ok) throw new Error(`Failed to load (${r.status})`);
       return r.json();
     },
     refetchInterval: 30_000,
@@ -395,9 +395,16 @@ export function AdminWithdrawals() {
           </button>
         </div>
 
+        {isError && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            Failed to load withdrawal requests. Check your admin session and try refreshing.
+          </div>
+        )}
+
         {/* Status filter tabs */}
         <div className="flex gap-2 flex-wrap">
-          {(["pending", "processing", "all", "completed", "cancelled"] as const).map(s => (
+          {(["all", "pending", "processing", "completed", "cancelled"] as const).map(s => (
             <button
               key={s}
               onClick={() => setFilter(s)}
