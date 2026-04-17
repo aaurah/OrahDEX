@@ -75,6 +75,9 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@ledgerhq/errors": "^6.33.0",
+    "@ledgerhq/hw-app-eth": "^7.7.0",
+    "@ledgerhq/hw-transport-webhid": "^6.35.0",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
