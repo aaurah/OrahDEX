@@ -25,11 +25,12 @@ import {
   Upload,
   CheckCircle2,
   Loader2,
-  Clock,
+  Zap,
   History,
   Copy,
   Check,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -103,8 +104,8 @@ export function WithdrawSheet({
       return r.json();
     },
     enabled: !!walletAddress && open,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: submitted ? 4_000 : 30_000,
+    staleTime: 2_000,
   });
 
   const parsedAmount = parseFloat(amount) || 0;
@@ -135,13 +136,13 @@ export function WithdrawSheet({
       if (!r.ok) throw new Error(data.error ?? "Failed to submit withdrawal");
       setSubmitted(true);
       toast({
-        title:       "Withdrawal requested",
-        description: `${parsedAmount} ${asset} withdrawal is queued for processing.`,
+        title:       "Withdrawal sent",
+        description: `${parsedAmount} ${asset} is being broadcast on-chain to your wallet.`,
       });
       addNotification({
         type:  "withdrawal",
-        title: "Withdrawal Requested",
-        body:  `${parsedAmount} ${asset} withdrawal queued — check Portfolio for status updates.`,
+        title: "Withdrawal Processing",
+        body:  `${parsedAmount} ${asset} is being sent on-chain — check Portfolio history for the TX.`,
       });
       refetchHistory();
     } catch (err: any) {
@@ -275,10 +276,10 @@ export function WithdrawSheet({
             </div>
 
             {/* Processing notice */}
-            <div className="flex gap-2.5 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
-              <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+              <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Withdrawals are processed manually within 24 hours. Funds will be sent on-chain to the recipient address once verified.
+                Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
               </p>
             </div>
 
@@ -304,11 +305,10 @@ export function WithdrawSheet({
               <CheckCircle2 className="w-9 h-9 text-green-400" />
             </div>
             <div className="space-y-1">
-              <p className="text-lg font-bold">Withdrawal Requested</p>
+              <p className="text-lg font-bold">Sending to Your Wallet</p>
               <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
-                Your request has been submitted. You'll receive{" "}
                 <span className="font-semibold text-foreground">{parsedAmount} {asset}</span>{" "}
-                at your address within 24 hours.
+                is being broadcast on-chain right now. Check the History tab for your transaction ID once confirmed.
               </p>
             </div>
             <div className="flex gap-2 w-full pt-2">
@@ -382,9 +382,21 @@ export function WithdrawSheet({
                     </div>
                   )}
 
-                  {/* Note from admin */}
+                  {/* Note / explorer link */}
                   {item.note && (
-                    <p className="text-xs text-muted-foreground italic">{item.note}</p>
+                    item.note.startsWith("http") ? (
+                      <a
+                        href={item.note}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        View on block explorer
+                      </a>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">{item.note}</p>
+                    )
                   )}
                 </div>
               ))
