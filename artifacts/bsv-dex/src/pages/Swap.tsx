@@ -115,14 +115,15 @@ const TOKENS: Record<SupportedChainId, Token[]> = {
     { symbol: "SNX",  name: "Synthetix",       decimals: 18, address: "0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4" },
   ],
   137: [
-    { symbol: "POL",  name: "Polygon",         decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
-    { symbol: "USDC", name: "USD Coin",         decimals: 6,  address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },
-    { symbol: "USDT", name: "Tether",           decimals: 6,  address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" },
-    { symbol: "WBTC", name: "Wrapped Bitcoin",  decimals: 8,  address: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6" },
-    { symbol: "DAI",  name: "Dai",              decimals: 18, address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063" },
-    { symbol: "WETH", name: "Wrapped ETH",      decimals: 18, address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619" },
-    { symbol: "LINK", name: "Chainlink",        decimals: 18, address: "0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39" },
-    { symbol: "AAVE", name: "Aave",             decimals: 18, address: "0xD6DF932A45C0f255f85145f286eA0b292B21C90B" },
+    { symbol: "POL",    name: "Polygon",           decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC.e", name: "USD Coin (Bridged)", decimals: 6,  address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" },
+    { symbol: "USDC",   name: "USD Coin (Native)",  decimals: 6,  address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },
+    { symbol: "USDT",   name: "Tether",             decimals: 6,  address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" },
+    { symbol: "WBTC",   name: "Wrapped Bitcoin",    decimals: 8,  address: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6" },
+    { symbol: "DAI",    name: "Dai",                decimals: 18, address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063" },
+    { symbol: "WETH",   name: "Wrapped ETH",        decimals: 18, address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619" },
+    { symbol: "LINK",   name: "Chainlink",          decimals: 18, address: "0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39" },
+    { symbol: "AAVE",   name: "Aave",               decimals: 18, address: "0xD6DF932A45C0f255f85145f286eA0b292B21C90B" },
   ],
   43114: [
     { symbol: "AVAX", name: "Avalanche",       decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
@@ -505,12 +506,13 @@ function GasTopUpPanel({
   const [error, setError]         = useState<string | null>(null);
   const { toast }                 = useToast();
 
-  const availableStables = tokens.filter(t => t.symbol === "USDC" || t.symbol === "USDT");
-  const hasUsdc = availableStables.some(t => t.symbol === "USDC");
+  const availableStables = tokens.filter(t => t.symbol === "USDC.e" || t.symbol === "USDC" || t.symbol === "USDT");
+  const hasUsdc = availableStables.some(t => t.symbol === "USDC.e" || t.symbol === "USDC");
   const hasUsdt = availableStables.some(t => t.symbol === "USDT");
 
   const stablecoin = useMemo(() => {
-    const preferred = tokens.find(t => t.symbol === payWith);
+    // Prefer USDC.e on Polygon (has the deepest Uniswap V3 liquidity), then USDC, then USDT
+    const preferred = tokens.find(t => t.symbol === "USDC.e") ?? tokens.find(t => t.symbol === payWith);
     if (preferred) return preferred;
     return tokens.find(t => t.symbol === "USDC" || t.symbol === "USDT") ?? null;
   }, [tokens, payWith]);
