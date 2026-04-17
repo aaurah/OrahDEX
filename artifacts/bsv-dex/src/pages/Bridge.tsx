@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch } from "wouter";
+import { DepositSheet } from "@/components/trading/DepositSheet";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -196,16 +197,6 @@ const L1_COINS = Object.keys(CANONICAL_ASSETS);
 
 // ─── Canonical Deposit / Withdraw panel ──────────────────────────────────────
 
-// Deterministic deposit address derived from user wallet + coin
-function deriveDepositAddress(walletAddress: string | undefined, coin: string): string {
-  if (!walletAddress) return "Connect wallet to get your deposit address";
-  const base = walletAddress.slice(2, 10).toLowerCase();
-  const tail  = walletAddress.slice(-6).toLowerCase();
-  if (coin === "BTC") return `bc1q${base}orah${tail}dex0`;
-  if (coin === "BSV") return `1Orah${base.toUpperCase()}DEX${tail}`;
-  if (coin === "SOL") return `Orah${base.toUpperCase()}DEXSolana${tail}`;
-  return `0xOrah${base}DEX${tail}`.replace("xOra", "x0ra").slice(0, 42);
-}
 
 function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [coin, setCoin] = useState("ETH");
@@ -213,8 +204,8 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [amount, setAmount] = useState("");
   const [step, setStep] = useState<0|1|2|3|4>(0); // 0=idle, 1..4=progress
   const [running, setRunning] = useState(false);
-  const [addrCopied, setAddrCopied] = useState(false);
-  const { address } = useWalletStore();
+  const [depositSheetOpen, setDepositSheetOpen] = useState(false);
+  const { address, chainId: walletChainId } = useWalletStore();
 
   const asset = CANONICAL_ASSETS[coin];
   const l2Options = asset.l2;
@@ -350,28 +341,42 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           </div>
         </div>
 
-        {/* Exchange direct deposit address card */}
-        {isExchangeDirect && isDeposit && (() => {
-          const depositAddr = deriveDepositAddress(address, coin);
-          return (
-            <div className="rounded-2xl border border-green-500/30 bg-green-500/8 p-4 space-y-3">
-              <div className="flex items-center gap-2 text-green-400">
-                <ArrowDown className="w-4 h-4" />
-                <span className="text-sm font-bold">Your {coin} Deposit Address</span>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Direct {coin} deposits from {asset.l1.chain} to your OrahDEX exchange balance — coming soon. On-chain deposit detection is under development.
-              </p>
-              <div className="flex items-start gap-2 p-3 rounded-xl border border-red-500/30 bg-red-500/8 text-xs text-red-400">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold mb-0.5">Demo only — do not send real funds</p>
-                  <p className="text-red-400/80 leading-relaxed">On-chain deposit detection is not yet implemented. This address is a placeholder. Sending real {coin} here will result in permanent loss.</p>
-                </div>
-              </div>
+        {/* Exchange direct deposit — opens real deposit flow */}
+        {isExchangeDirect && isDeposit && (
+          <div className="rounded-2xl border border-green-500/30 bg-green-500/8 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-green-400">
+              <ArrowDown className="w-4 h-4" />
+              <span className="text-sm font-bold">Deposit {coin} → OrahDEX Exchange</span>
             </div>
-          );
-        })()}
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Get your personal {asset.l1.chain} deposit address. Send {coin} to it on-chain and verify the transaction hash — your exchange balance is credited immediately.
+            </p>
+            {address ? (
+              <button
+                onClick={() => setDepositSheetOpen(true)}
+                className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
+              >
+                <ArrowDown className="w-4 h-4" />
+                Get My Deposit Address
+              </button>
+            ) : (
+              <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                Connect your wallet to get your personal deposit address.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Deposit Sheet dialog */}
+        {address && (
+          <DepositSheet
+            open={depositSheetOpen}
+            onClose={() => setDepositSheetOpen(false)}
+            walletAddress={address}
+            chainId={typeof walletChainId === "number" ? walletChainId : 1}
+          />
+        )}
 
         {/* You will receive / you will unlock */}
         {!isExchangeDirect && amount && parseFloat(amount) > 0 && (
