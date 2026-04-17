@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat, ArrowUpDown } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -15,6 +15,7 @@ const NAV_TABS = [
   { path: "/trade/BSV-USDT", matchPrefix: "/trade", label: "Trade", Icon: ArrowRightLeft },
   { path: "/futures/BSV-USDT-PERP", matchPrefix: "/futures", label: "Futures", Icon: TrendingUp },
   { path: "/dex", matchPrefix: "/dex", label: "Hub", Icon: Layers },
+  { path: "/swap", matchPrefix: "/swap", label: "Swap", Icon: ArrowUpDown },
   { path: "/prediction", matchPrefix: "/prediction", label: "Predict", Icon: Target },
   { path: "/nft", matchPrefix: "/nft", label: "NFT", Icon: Image },
   { path: "/bridge", matchPrefix: "/bridge", label: "Bridge", Icon: Cable },
