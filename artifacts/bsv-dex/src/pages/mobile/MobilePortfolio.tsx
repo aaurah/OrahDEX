@@ -4,10 +4,11 @@ import {
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
 } from "lucide-react";
+import { ExchangeAddressesCard } from "@/components/ExchangeAddressesCard";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
@@ -510,6 +511,9 @@ export function MobilePortfolio() {
         </div>
 
         <div className="px-4 space-y-4">
+          {/* ── Exchange Addresses ───────────────────────────────────────────────── */}
+          <ExchangeAddressesCard walletAddress={address} />
+
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
           {showTradingBalance ? (
             /* ── Orah Wallet / any user with exchange balances: Trading Balance is primary ── */
