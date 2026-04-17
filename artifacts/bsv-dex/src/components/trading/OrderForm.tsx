@@ -346,11 +346,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // balance (funded via the deposit flow), not directly from on-chain.
   const isExternalEvm = isEvm && !isOrahWallet;
 
-  // For Orah Wallet (internal EVM wallet): prefer on-chain RPC balance during first load.
+  // For Orah Wallet (internal/custodial EVM wallet): always use the internal ledger balance —
+  // all trades deduct from the ledger, so the displayed balance must track the ledger.
+  // Showing on-chain RPC balance here would mean the balance never decreases after a trade.
   // For external EVM wallets: always use the internal ledger balance (deposit model).
-  const usesApiBalance =
-    isExternalEvm ||
-    (isOrahWallet && balancesLoading && tokenBalances.length === 0);
+  const usesApiBalance = isExternalEvm || isOrahWallet;
 
   // ── Deposit sheet state (external EVM wallets) ───────────────────────────────
   const [depositOpen, setDepositOpen] = useState(false);
