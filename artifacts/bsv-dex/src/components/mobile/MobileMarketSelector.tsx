@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
@@ -118,16 +118,22 @@ interface Props {
   open: boolean;
   onClose: () => void;
   currentSymbol?: string;
+  defaultCat?: Cat;
 }
 
-export function MobileMarketSelector({ open, onClose, currentSymbol }: Props) {
+export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat }: Props) {
   const [, navigate] = useLocation();
-  const [cat, setCat]         = useState<Cat>("usd");
+  const [cat, setCat]         = useState<Cat>(defaultCat ?? "usd");
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  // Reset to defaultCat every time the selector opens
+  useEffect(() => {
+    if (open) setCat(defaultCat ?? "usd");
+  }, [open]);
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
