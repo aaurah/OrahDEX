@@ -23,6 +23,7 @@ import {
 } from "@/lib/passkeyWallet";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
+import { LedgerConnectPanel } from "@/components/LedgerConnectPanel";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainName } from "@/lib/chainConfig";
@@ -185,14 +186,15 @@ function getEvmProvider(walletId: string): any {
 }
 
 type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr";
-type ConnectTab = "reown" | "bsv" | "tron";
+type ConnectTab = "reown" | "bsv" | "tron" | "ledger";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
-  { id: "reown", label: "EVM Wallets", emoji: "🔗" },
-  { id: "tron",  label: "TRON",        emoji: "🔴" },
-  { id: "bsv",   label: "Bitcoin SV",  emoji: "⚡" },
+  { id: "reown",  label: "EVM Wallets", emoji: "ð" },
+  { id: "ledger", label: "Ledger",      emoji: "ð" },
+  { id: "tron",   label: "TRON",        emoji: "ð´" },
+  { id: "bsv",    label: "Bitcoin SV",  emoji: "â¡" },
 ];
 
 export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -1926,6 +1928,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                           )}
 
+                          {connectTab === "ledger" && (
+                            <div className="p-6">
+                              <LedgerConnectPanel
+                                onConnected={(addr, path) => {
+                                  connect({ address: addr, provider: "ledger", network: "evm" });
+                                  goToPrep(addr, "evm", "ledger");
+                                }}
+                              />
+                            </div>
+                          )}
+
                           {/* Network description */}
                           {connectTab === "bsv" && (
                           <div className="px-6 pt-3 pb-1">
@@ -1942,7 +1955,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           )}
 
-                          {connectTab !== "reown" && (
+                          {connectTab !== "reown" && connectTab !== "ledger" && (
                           <div className="p-4 space-y-2">
                             {currentWallets.map(wallet => {
                               const isConn = connecting === wallet.id;
