@@ -2316,5 +2316,160 @@ router.get("/admin/exchange-wallet", requireAdminToken, async (req, res) => {
   }
 });
 
+
+/**
+ * GET /admin/db-health
+ * Returns a comprehensive database integrity report.
+ */
+router.get("/db-health", requireAdminToken, async (req, res) => {
+  try {
+    const run = (sql, params = []) =>
+      pool.query(sql, params).then(r => r.rows);
+
+    const [
+      totalWallets, walletsWithBalances, orphanBalanceWallets,
+      orphanOrderWallets, orphanTradeWallets, totalOrders, openOrders,
+      totalTrades, pendingWithdrawals, verifiedDeposits, depositAddresses,
+      mintBurnLogs, walletsByNetwork, topBalanceWallets, recentMintBurn,
+    ] = await Promise.all([
+      run("SELECT COUNT(*) AS cnt FROM wallets"),
+      run("SELECT COUNT(DISTINCT wallet_address) AS cnt FROM user_balances WHERE (available+locked) > 0"),
+      run("SELECT COUNT(DISTINCT wallet_address) AS cnt FROM user_balances WHERE wallet_address NOT IN (SELECT address FROM wallets)"),
+      run("SELECT COUNT(DISTINCT wallet_address) AS cnt FROM orders WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)"),
+      run("SELECT COUNT(DISTINCT wallet_address) AS cnt FROM trades WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)"),
+      run("SELECT COUNT(*) AS cnt FROM orders"),
+      run("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'open'"),
+      run("SELECT COUNT(*) AS cnt FROM trades"),
+      run("SELECT COUNT(*) AS cnt FROM withdrawal_requests WHERE status = 'pending'"),
+      run("SELECT COUNT(*) AS cnt FROM evm_deposits_verified"),
+      run("SELECT COUNT(*) AS cnt FROM evm_deposit_addresses"),
+      run("SELECT COUNT(*) AS cnt FROM mint_burn_log"),
+      run("SELECT network_type, COUNT(*) AS cnt FROM wallets GROUP BY network_type ORDER BY cnt DESC"),
+      run(`SELECT w.address, w.network_type, w.provider, w.last_seen,
+              COUNT(DISTINCT ub.asset_symbol) AS asset_count,
+              COALESCE(SUM(ub.available + ub.locked), 0) AS total_balance_units
+           FROM wallets w
+           LEFT JOIN user_balances ub ON ub.wallet_address = w.address
+           GROUP BY w.address, w.network_type, w.provider, w.last_seen
+           ORDER BY total_balance_units DESC NULLS LAST
+           LIMIT 20`),
+      run("SELECT action, asset, amount::text, wallet_address, note, created_at FROM mint_burn_log ORDER BY created_at DESC LIMIT 10"),
+    ]);
+
+    const orphanTotal = parseInt(orphanBalanceWallets[0]?.cnt ?? "0")
+                      + parseInt(orphanOrderWallets[0]?.cnt ?? "0")
+                      + parseInt(orphanTradeWallets[0]?.cnt ?? "0");
+    const totalW = parseInt(totalWallets[0]?.cnt ?? "0");
+    const coverageScore = totalW === 0 ? 0 : Math.round((totalW / Math.max(totalW + orphanTotal, 1)) * 100);
+
+    res.json({
+      summary: {
+        totalWallets: totalW,
+        walletsWithBalances:    parseInt(walletsWithBalances[0]?.cnt ?? "0"),
+        orphanedBalanceWallets: parseInt(orphanBalanceWallets[0]?.cnt ?? "0"),
+        orphanedOrderWallets:   parseInt(orphanOrderWallets[0]?.cnt ?? "0"),
+        orphanedTradeWallets:   parseInt(orphanTradeWallets[0]?.cnt ?? "0"),
+        totalOrders:            parseInt(totalOrders[0]?.cnt ?? "0"),
+        openOrders:             parseInt(openOrders[0]?.cnt ?? "0"),
+        totalTrades:            parseInt(totalTrades[0]?.cnt ?? "0"),
+        pendingWithdrawals:     parseInt(pendingWithdrawals[0]?.cnt ?? "0"),
+        verifiedDeposits:       parseInt(verifiedDeposits[0]?.cnt ?? "0"),
+        depositAddresses:       parseInt(depositAddresses[0]?.cnt ?? "0"),
+        mintBurnLogs:           parseInt(mintBurnLogs[0]?.cnt ?? "0"),
+        coverageScore,
+      },
+      walletsByNetwork,
+      topBalanceWallets,
+      recentMintBurn,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /admin/db-sync
+ * Reconciles the wallets table against all other tables.
+ */
+router.post("/db-sync", requireAdminToken, async (req, res) => {
+  try {
+    const run = (sql) => pool.query(sql).then(r => r.rowCount ?? 0);
+
+    const [fromBalances, fromOrders, fromTrades, fromDeposits] = await Promise.all([
+      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+           SELECT DISTINCT wallet_address, 'evm', 'active', NOW(), NOW()
+           FROM user_balances
+           WHERE wallet_address NOT IN (SELECT address FROM wallets)
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+           SELECT DISTINCT wallet_address, 'evm', 'active', NOW(), NOW()
+           FROM orders
+           WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+           SELECT DISTINCT wallet_address, 'evm', 'active', NOW(), NOW()
+           FROM trades
+           WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+           SELECT DISTINCT user_wallet, 'evm', 'active', NOW(), NOW()
+           FROM evm_deposit_addresses
+           WHERE user_wallet NOT IN (SELECT address FROM wallets)
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+    ]);
+
+    const totalInserted = fromBalances + fromOrders + fromTrades + fromDeposits;
+    const { rows: tw } = await pool.query("SELECT COUNT(*) AS cnt FROM wallets");
+
+    res.json({
+      success: true,
+      inserted: { fromBalances, fromOrders, fromTrades, fromDeposits, total: totalInserted },
+      totalWallets: parseInt(tw[0]?.cnt ?? "0"),
+      message: `Reconciled ${totalInserted} wallet(s). Total registered: ${tw[0]?.cnt}`,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /admin/wallet-detail/:address
+ * Returns full detail for one wallet: balances, orders, trades, deposits, withdrawals.
+ */
+router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
+  const addr = req.params.address?.trim().toLowerCase();
+  if (!addr) return res.status(400).json({ error: "address is required" });
+
+  try {
+    const [wallet, balances, recentOrders, recentTrades, deposits, withdrawals] = await Promise.all([
+      pool.query("SELECT * FROM wallets WHERE address = $1", [addr]),
+      pool.query(`SELECT asset_symbol, available::text, locked::text, updated_at
+         FROM user_balances WHERE wallet_address = $1 AND (available+locked) > 0
+         ORDER BY (available+locked) DESC`, [addr]),
+      pool.query(`SELECT id, symbol, side, type, status, price::text, quantity::text,
+                filled_quantity::text, fee::text, fee_asset, txid, created_at
+         FROM orders WHERE wallet_address = $1 ORDER BY created_at DESC LIMIT 20`, [addr]),
+      pool.query(`SELECT id, symbol, side, price::text, quantity::text, total::text,
+                fee::text, txid, timestamp
+         FROM trades WHERE wallet_address = $1 ORDER BY timestamp DESC LIMIT 20`, [addr]),
+      pool.query(`SELECT tx_hash, chain_id, asset, amount::text, verified_at
+         FROM evm_deposits_verified WHERE user_wallet = $1 ORDER BY verified_at DESC`, [addr]),
+      pool.query(`SELECT id, asset, amount::text, network, status, txid, created_at
+         FROM withdrawal_requests WHERE wallet_address = $1 ORDER BY created_at DESC LIMIT 20`, [addr]),
+    ]);
+
+    res.json({
+      wallet: wallet.rows[0] ?? null,
+      balances: balances.rows,
+      recentOrders: recentOrders.rows,
+      recentTrades: recentTrades.rows,
+      deposits: deposits.rows,
+      withdrawals: withdrawals.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
 
