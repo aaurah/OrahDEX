@@ -565,7 +565,8 @@ router.post("/users/ping", async (req, res) => {
     const addr = address.trim().toLowerCase();
     const networkType = (network ?? (addr.startsWith("0x") ? "evm" : "bsv")).toLowerCase();
 
-    await db.insert(walletsTable)
+    // Upsert wallet registration
+    const inserted = await db.insert(walletsTable)
       .values({
         address: addr,
         networkType,
@@ -582,9 +583,31 @@ router.post("/users/ping", async (req, res) => {
           ...(chainId != null && { chainId: String(chainId) }),
           ...(network && { networkType }),
         },
-      });
+      })
+      .returning({ address: walletsTable.address });
 
-    res.json({ success: true, address: addr });
+    // Seed initial exchange balances for wallets that have never had any
+    // (runs in background — non-blocking, so ping response stays fast)
+    const isNewEntry = inserted.length > 0;
+    if (isNewEntry) {
+      (async () => {
+        try {
+          const { rows } = await pool.query(
+            `SELECT 1 FROM user_balances WHERE wallet_address = $1 LIMIT 1`,
+            [addr],
+          );
+          if (rows.length === 0) {
+            const { seedInitialBalances } = await import("../lib/ledger.js");
+            await seedInitialBalances(addr);
+            logger.info({ address: addr }, "Seeded initial exchange balances for new wallet");
+          }
+        } catch (err: any) {
+          logger.error({ err: err?.message, address: addr }, "Failed to seed initial balances");
+        }
+      })();
+    }
+
+    res.json({ success: true, address: addr, isNew: isNewEntry });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to ping wallet");
     res.status(500).json({ error: err?.message ?? "Failed to register wallet" });

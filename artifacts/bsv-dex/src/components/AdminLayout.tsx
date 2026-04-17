@@ -118,7 +118,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Finance",
     items: [
-      { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database,        badge: "NEW" },
+      { href: "/admin/db-sync",      label: "DB Sync & Health",   icon: ShieldCheck,     badge: "NEW" },
+      { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database },
       { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
       { href: "/admin/treasury",     label: "Treasury",           icon: Landmark },
       { href: "/admin/mint-burn",    label: "Mint & Burn",        icon: Printer },
