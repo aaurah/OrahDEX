@@ -1601,24 +1601,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             )}
 
             {/* Confirm / Place Order button */}
-            <button
-              onClick={handlePlaceOrder}
-              disabled={!address || !amount || amtNum <= 0 || isSubmitting}
-              className={cn(
-                "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
-                side === "sell"
-                  ? "bg-red-600 shadow-lg shadow-red-500/20"
-                  : "bg-green-600 shadow-lg shadow-green-500/20",
-                (!address || !amount || amtNum <= 0 || isSubmitting)
-                  && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {isSubmitting ? (
-                <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
-              ) : (
-                `${side === "sell" ? "Sell" : "Buy"} ${base}`
-              )}
-            </button>
+            {!address ? (
+              <button
+                onClick={() => openWallet()}
+                className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary shadow-lg"
+              >
+                <Wallet size={16} />
+                Connect Wallet to Trade
+              </button>
+            ) : (
+              <button
+                onClick={handlePlaceOrder}
+                disabled={!amount || amtNum <= 0 || isSubmitting}
+                className={cn(
+                  "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
+                  side === "sell"
+                    ? "bg-red-600 shadow-lg shadow-red-500/20"
+                    : "bg-green-600 shadow-lg shadow-green-500/20",
+                  (!amount || amtNum <= 0 || isSubmitting) && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isSubmitting ? (
+                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
+                ) : (
+                  `${side === "sell" ? "Sell" : "Buy"} ${base}`
+                )}
+              </button>
+            )}
 
           </div>
         )}
