@@ -575,7 +575,9 @@ export function MobilePortfolio() {
                   <p className="text-[10px] text-muted-foreground mb-1">On-chain ({nativeAsset})</p>
                   <p className="text-xs text-muted-foreground font-mono">
                     {nativeBalance.toFixed(6)} {nativeAsset}
-                    <span className="ml-2 text-muted-foreground/50">(not tradable — withdraw/deposit to use)</span>
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/50 mt-0.5">
+                    This is your hot wallet balance used for gas fees and on-chain withdrawals. Trading uses your ledger balance above.
                   </p>
                 </div>
               )}
