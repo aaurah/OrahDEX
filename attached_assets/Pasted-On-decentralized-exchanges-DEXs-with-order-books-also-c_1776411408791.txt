@@ -1,0 +1,55 @@
+On decentralized exchanges (DEXs) with order books (also called Central Limit Order Books or CLOBs), wallet signing works differently from simple AMM swaps (like Uniswap). Order book DEXs let you place limit orders (buy/sell at a specific price or better), which sit in the book until matched by another trader’s order.
+The core principle remains the same: your wallet (holding your private key) signs to prove you authorize the action. The DEX/smart contracts can’t move funds without your explicit cryptographic signature.
+Order book DEXs come in two main architectures, which affect how signing happens:
+1. Hybrid/Off-Chain Order Book (Most Common for Ethereum & Similar Chains)
+This is the classic model used by protocols like 0x, older Serum forks, or many limit-order aggregators.
+	•	Placing a Limit Order (as “Maker”):
+	◦	You fill in order details: token pair, amount, price, expiry, etc.
+	◦	The frontend creates a structured “order” object (e.g., maker address, taker address or any, amounts, price, nonce/salt for uniqueness, expiry).
+	◦	Your wallet prompts you to sign a message — usually via EIP-712 typed data (human-readable in modern wallets like MetaMask).
+	▪	You see clear fields like “Sell 100 USDC for 0.05 ETH at price X, expires in 30 days” instead of raw hex.
+	▪	This uses eth_signTypedData (or v4) under the hood. The signature is an ECDSA signature (r, s, v values) over a hashed version of the order + domain separator (includes chain ID and verifying contract to prevent replay attacks across chains or contracts).
+	◦	The signed order is broadcast off-chain (to a relayer, order book server, or P2P network). It doesn’t cost gas yet and doesn’t move funds.
+	◦	Funds stay in your wallet (you may need to approve the DEX contract once for spending, similar to swaps).
+	•	Filling/Taking an Order (as “Taker”):
+	◦	Someone else’s signed order appears in the book.
+	◦	You (or the interface) submit a transaction to the on-chain settlement contract.
+	◦	You sign a full on-chain transaction (costs gas).
+	◦	The smart contract:
+	▪	Verifies the maker’s signature (using ecrecover on the order hash).
+	▪	Checks conditions (not expired, not already filled, sufficient balance/allowance).
+	▪	Atomically transfers tokens: takes from maker (via their pre-signed permission) and from you, settles the trade.
+	◦	The taker usually pays the gas; the maker pays nothing for posting the order.
+This hybrid approach keeps order placement/cancellation fast and cheap (off-chain), while settlement is trustless and on-chain.
+Security: The signature binds the order to your address. Only a valid signature + matching details allows execution. Nonces/salts prevent replay. You can cancel by submitting an on-chain cancel tx (or some protocols allow off-chain cancel with another signature).
+2. Fully On-Chain Order Book (e.g., OpenBook/Serum on Solana, dYdX v4, Hyperliquid, XRPL)
+Here, everything (order placement, matching, settlement) happens on-chain for maximum transparency.
+	•	You construct and sign a full transaction (or instruction on Solana) via your wallet.
+	◦	On Solana (OpenBook): You sign a transaction that funds an “OpenOrders” account (intermediate holding), places the order into the on-chain request queue, and the program matches it against the book if possible. Matching is deterministic and on-chain.
+	◦	On high-performance chains like dYdX (Cosmos-based) or Hyperliquid (own L1): You sign a MsgPlaceOrder or similar transaction. Validators check the signature, add it to the order book state, and the matching engine runs in the block.
+	•	No separate “message signing” for the order itself — the tx signature authorizes everything.
+	•	Gas (or compute units on Solana) is paid for placement, updates, and fills. High TPS chains make this feasible without huge costs.
+In both cases, when the order fills:
+	•	Funds move directly via smart contract (from your wallet or approved balance).
+	•	No custodian holds your assets.
+Key Differences from AMM Swaps
+	•	AMM swaps (previous question): Usually two signatures — one for token approval + one for the swap tx.
+	•	Order book: Often one off-chain signature for posting your limit order (no immediate gas), then a separate on-chain tx only when filled (or when you cancel/take). Limit orders can stay open even if you disconnect your wallet (as long as the signed order is in the book).
+Wallet Experience
+	•	MetaMask / Ethereum wallets: For off-chain orders → “Sign” prompt with EIP-712 (shows structured data). For fills/cancels → standard “Confirm Transaction” with gas estimate.
+	•	Phantom / Solana wallets: Usually signs a full transaction (shows instructions, accounts involved, fee).
+	•	Hardware wallets (Ledger/Trezor): You confirm details on the device screen.
+	•	Always review what you’re signing: contract address, amounts, expiry, etc. Malicious sites could ask for dangerous approvals.
+Common Protocols Examples
+	•	0x Protocol: Classic off-chain orders with EIP-712 signatures.
+	•	Uniswap Limit Orders (via UniswapX): Similar intent-based signed orders, often gasless for the user.
+	•	dYdX / Hyperliquid / GMX (perps): Signed orders or txs on their chain/L2, with margin checks.
+	•	OpenBook (Solana): On-chain tx signing for order placement into the book.
+Risks & Best Practices:
+	•	Approvals (if any) can be limited or revoked later.
+	•	Check for replay protection (chain ID, nonce, salt).
+	•	Use trusted interfaces — verify contract addresses.
+	•	Limit orders don’t execute if price never hits your level or liquidity is insufficient.
+	•	On some systems, partial fills are possible.
+If you’re using a specific DEX (e.g., dYdX, a 0x-based aggregator, OpenBook market, or Hyperliquid), describe the exact “sign” prompt you’re seeing or name the platform — I can give more precise details on what the signature represents and what to watch for.
+This signing mechanism keeps DeFi non-custodial and verifiable: the blockchain (or relayer + contract) only honors signatures from your private key. Let me know if you want a step-by-step for a particular exchange!
