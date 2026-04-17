@@ -24,10 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { CoinLogo } from "@/components/CoinLogo";
-import { createPublicClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
+import type { Account } from "viem";
 import { writeContract as coreWriteContract } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
+import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
+import { Fingerprint } from "lucide-react";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -325,6 +328,88 @@ async function executeSwap(
   });
 }
 
+// ─── Swap executor (Orah passkey wallet — uses local viem walletClient) ───────
+
+async function executeSwapWithLocalAccount(
+  chainId: SupportedChainId,
+  fromToken: Token,
+  toToken: Token,
+  amountIn: bigint,
+  amountOutMin: bigint,
+  fee: number,
+  userAddress: `0x${string}`,
+  account: Account,
+  chainName: string,
+  nativeSymbol: string,
+): Promise<`0x${string}`> {
+  const routerAddr = SWAP_ROUTER[chainId];
+  const weth       = WETH[chainId];
+  const rpcUrl     = CHAIN_RPC_URLS[chainId];
+  const tokenIn    = fromToken.isNative ? weth : fromToken.address;
+  const tokenOut   = toToken.isNative   ? weth : toToken.address;
+  const isEthIn    = fromToken.isNative;
+  const isEthOut   = toToken.isNative;
+
+  const chain = {
+    id: chainId,
+    name: chainName,
+    nativeCurrency: { name: nativeSymbol, symbol: nativeSymbol, decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  };
+
+  const walletClient = createWalletClient({
+    account,
+    transport: http(rpcUrl),
+    chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
+  });
+
+  const publicClient = createPublicClient({ transport: http(rpcUrl) });
+
+  if (!isEthIn) {
+    const currentAllowance = await checkAllowance(fromToken.address, userAddress, routerAddr, chainId);
+    if (currentAllowance < amountIn) {
+      const approveHash = await walletClient.writeContract({
+        address: fromToken.address,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [routerAddr, maxUint256],
+        chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    }
+  }
+
+  if (isEthOut) {
+    const swapCalldata = encodeFunctionData({
+      abi: SWAP_ROUTER_ABI,
+      functionName: "exactInputSingle",
+      args: [{ tokenIn, tokenOut, fee: fee as 100|500|3000|10000, recipient: routerAddr, amountIn, amountOutMinimum: amountOutMin, sqrtPriceLimitX96: 0n }],
+    });
+    const unwrapCalldata = encodeFunctionData({
+      abi: SWAP_ROUTER_ABI,
+      functionName: "unwrapWETH9",
+      args: [amountOutMin, userAddress],
+    });
+    return await walletClient.writeContract({
+      address: routerAddr,
+      abi: SWAP_ROUTER_ABI,
+      functionName: "multicall",
+      args: [[swapCalldata, unwrapCalldata]],
+      value: amountIn,
+      chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
+    });
+  }
+
+  return await walletClient.writeContract({
+    address: routerAddr,
+    abi: SWAP_ROUTER_ABI,
+    functionName: "exactInputSingle",
+    args: [{ tokenIn, tokenOut, fee: fee as 100|500|3000|10000, recipient: userAddress, amountIn, amountOutMinimum: amountOutMin, sqrtPriceLimitX96: 0n }],
+    value: isEthIn ? amountIn : 0n,
+    chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
+  });
+}
+
 // ─── Token picker ─────────────────────────────────────────────────────────────
 
 function TokenPicker({
@@ -431,9 +516,10 @@ export function Swap() {
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  // Default: external wallets → on-chain DEX (direct wallet-to-wallet)
-  //          orah-wallet      → exchange (internal ledger, no gas)
-  const [mode, setMode] = useState<"dex" | "exchange">(isOrahWallet ? "exchange" : "dex");
+  // Default: all wallets start in on-chain DEX mode (Uniswap V3).
+  // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
+  // Exchange mode (internal ledger) is still available for gas-free instant swaps.
+  const [mode, setMode] = useState<"dex" | "exchange">("dex");
   const [chainId,   setChainId]   = useState<SupportedChainId>(1);
   const tokens = TOKENS[chainId];
 
@@ -454,9 +540,9 @@ export function Swap() {
 
   const chainConfig = DEX_CHAINS.find(c => c.id === chainId)!;
 
-  // Auto-switch mode when wallet connects/disconnects
+  // Auto-switch to DEX mode when a non-Orah wallet connects
   useEffect(() => {
-    setMode(isOrahWallet ? "exchange" : "dex");
+    if (!isOrahWallet) setMode("dex");
   }, [isOrahWallet]);
 
   // Re-init tokens when chain changes
@@ -519,15 +605,41 @@ export function Swap() {
       const slippageBps = BigInt(Math.round(slippage * 100));
       const amtOutMin   = quote.amountOut * (10000n - slippageBps) / 10000n;
 
-      const hash = await executeSwap(
-        chainId,
-        fromToken,
-        toToken,
-        amtIn,
-        amtOutMin,
-        quote.fee,
-        address as `0x${string}`,
-      );
+      let hash: `0x${string}`;
+
+      if (isOrahWallet && mode === "dex") {
+        // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
+        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
+        let account: Account;
+        try {
+          account = await getViemAccountForOrahWallet(address);
+        } catch (authErr: any) {
+          const msg: string = authErr?.message ?? "";
+          if (msg.startsWith("NO_PASSKEY_WALLET")) {
+            toast({
+              title: "Passkey wallet required",
+              description: "On-chain swaps require a passkey wallet. Switching to Exchange mode for instant ledger swaps.",
+              variant: "destructive",
+            });
+            setMode("exchange");
+          } else {
+            toast({ title: "Authentication failed", description: msg, variant: "destructive" });
+          }
+          setSwapping(false);
+          return;
+        }
+        hash = await executeSwapWithLocalAccount(
+          chainId, fromToken, toToken, amtIn, amtOutMin, quote.fee,
+          address as `0x${string}`, account,
+          chainConfig.name, chainConfig.nativeSymbol,
+        );
+      } else {
+        hash = await executeSwap(
+          chainId, fromToken, toToken, amtIn, amtOutMin, quote.fee,
+          address as `0x${string}`,
+        );
+      }
+
       setTxHash(hash);
       toast({ title: "Transaction sent", description: "Waiting for confirmation…" });
 
@@ -725,15 +837,25 @@ export function Swap() {
                   {quoting ? "Getting quote…" : "No route found"}
                 </button>
               ) : (
-                <button
-                  onClick={handleSwap}
-                  disabled={swapping}
-                  className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {swapping
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping…</>
-                    : <><Zap className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>}
-                </button>
+                <>
+                  {isOrahWallet && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-400">
+                      <Fingerprint className="w-3.5 h-3.5 shrink-0" />
+                      <span>Your passkey will authenticate this swap — no seed phrase needed.</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleSwap}
+                    disabled={swapping}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {swapping
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping…</>
+                      : isOrahWallet
+                        ? <><Fingerprint className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>
+                        : <><Zap className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>}
+                  </button>
+                </>
               )}
             </div>
 
@@ -742,7 +864,7 @@ export function Swap() {
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name} via
-                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}. Your wallet signs the transaction directly — OrahDEX never holds your funds.
+                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
               </span>
             </div>
           </>
