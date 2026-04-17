@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark,
+  Landmark, Plug2,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -60,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin",              label: "Dashboard",          icon: LayoutDashboard, exact: true },
       { href: "/admin/setup",        label: "Setup",              icon: Rocket, badge: "A–Z" },
       { href: "/admin/mail",         label: "Email Inbox",        icon: Mail },
+      { href: "/admin/integrations", label: "Integrations",       icon: Plug2 },
     ],
   },
   {

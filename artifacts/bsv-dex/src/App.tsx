@@ -88,6 +88,7 @@ const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
 const AdminWithdrawals       = lazy(() => import("@/pages/admin/Withdrawals").then(m => ({ default: m.AdminWithdrawals })));
+const AdminIntegrations      = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -326,7 +327,8 @@ function Router() {
       <Route path="/admin/security"><AdminRoute><AdminSecuritySettings /></AdminRoute></Route>
       <Route path="/admin/fees">    <AdminRoute><AdminFeeConfig /></AdminRoute></Route>
       <Route path="/admin/announcements"><AdminRoute><AdminAnnouncements /></AdminRoute></Route>
-      <Route path="/admin/mail">      <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
+      <Route path="/admin/mail">          <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
+      <Route path="/admin/integrations"> <AdminRoute><AdminIntegrations /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
