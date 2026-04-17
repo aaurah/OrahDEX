@@ -241,6 +241,8 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [amount, setAmount] = useState("");
   const [step, setStep] = useState<0|1|2|3|4>(0); // 0=idle, 1..4=progress
   const [running, setRunning] = useState(false);
+  const [withdrawTx, setWithdrawTx] = useState<{ txid: string; explorer?: string } | null>(null);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
   const [depositSheetOpen, setDepositSheetOpen] = useState(false);
   const { address, chainId: walletChainId } = useWalletStore();
 
@@ -268,12 +270,36 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         { icon: <CheckCircle2 className="w-4 h-4" />, label: `${coin} received on L1`,             detail: `Real ${coin} in your wallet — fully on-chain, non-custodial` },
       ];
 
-  const handleRun = () => {
-    if (running || !amount || parseFloat(amount) <= 0) return;
-    setRunning(true); setStep(1);
-    let s = 1;
-    const tick = () => { s++; setStep(s as 0|1|2|3|4); if (s < 4) setTimeout(tick, 1100); else { setRunning(false); } };
-    setTimeout(tick, 1200);
+  const handleRun = async () => {
+    if (running || !amount || parseFloat(amount) <= 0 || !address) return;
+    setRunning(true);
+    setWithdrawTx(null);
+    setWithdrawError(null);
+    setStep(1);
+
+    try {
+      const res = await fetch("/api/withdrawals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress: address,
+          asset: coin,
+          amount,
+          network: l2.chainId,
+          networkLabel: l2.chain,
+          recipient: address,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Withdrawal failed");
+      setStep(4);
+      if (data.txid) setWithdrawTx({ txid: data.txid, explorer: data.explorer });
+    } catch (err: any) {
+      setWithdrawError(err?.message ?? "Withdrawal request failed");
+      setStep(0);
+    } finally {
+      setRunning(false);
+    }
   };
 
   const isDeposit = mode === "deposit";
@@ -447,7 +473,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         {!isExchangeDirect && !isDeposit && (
           <button
             onClick={handleRun}
-            disabled={!amount || parseFloat(amount) <= 0 || running}
+            disabled={!amount || parseFloat(amount) <= 0 || running || !address}
             className={cn(
               "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 text-white shadow-lg",
               `bg-gradient-to-r ${btnGrad}`,
@@ -462,6 +488,32 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
               <><ArrowUp className="w-5 h-5" /> Withdraw {l2.symbol} → {coin}</>
             )}
           </button>
+        )}
+
+        {/* Withdraw success */}
+        {withdrawTx && (
+          <div className="rounded-2xl border border-green-500/30 bg-green-500/5 p-4 space-y-2">
+            <div className="flex items-center gap-2 text-green-400 font-bold text-sm">
+              <CheckCircle2 className="w-4 h-4" /> Withdrawal submitted
+            </div>
+            <div className="text-xs text-muted-foreground break-all">
+              Tx: <span className="font-mono text-foreground">{withdrawTx.txid}</span>
+            </div>
+            {withdrawTx.explorer && (
+              <a href={`${withdrawTx.explorer}/tx/${withdrawTx.txid}`} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-primary underline">
+                View on explorer ↗
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Withdraw error */}
+        {withdrawError && (
+          <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-400">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{withdrawError}</span>
+          </div>
         )}
       </div>
 

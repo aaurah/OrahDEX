@@ -38,11 +38,38 @@ interface EvmChain {
 }
 
 const EVM_REGISTRY: Record<string, EvmChain> = {
-  ETH:  { id: 1,     name: "Ethereum",   rpcUrl: process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",           explorer: "https://etherscan.io",    nativeToken: "ETH"  },
-  BNB:  { id: 56,    name: "BNB Chain",  rpcUrl: process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",   explorer: "https://bscscan.com",     nativeToken: "BNB"  },
-  MATIC:{ id: 137,   name: "Polygon",    rpcUrl: process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",            explorer: "https://polygonscan.com", nativeToken: "MATIC"},
-  AVAX: { id: 43114, name: "Avalanche",  rpcUrl: process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc", explorer: "https://snowtrace.io", nativeToken: "AVAX" },
-  FTM:  { id: 250,   name: "Fantom",     rpcUrl: process.env.FTM_RPC_URL      ?? "https://rpcapi.fantom.network",      explorer: "https://ftmscan.com",     nativeToken: "FTM"  },
+  ETH:    { id: 1,       name: "Ethereum",   rpcUrl: process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",                  explorer: "https://etherscan.io",              nativeToken: "ETH"  },
+  BNB:    { id: 56,      name: "BNB Chain",  rpcUrl: process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",          explorer: "https://bscscan.com",               nativeToken: "BNB"  },
+  MATIC:  { id: 137,     name: "Polygon",    rpcUrl: process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",                   explorer: "https://polygonscan.com",           nativeToken: "MATIC"},
+  AVAX:   { id: 43114,   name: "Avalanche",  rpcUrl: process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",    explorer: "https://snowtrace.io",              nativeToken: "AVAX" },
+  FTM:    { id: 250,     name: "Fantom",     rpcUrl: process.env.FTM_RPC_URL      ?? "https://rpcapi.fantom.network",             explorer: "https://ftmscan.com",               nativeToken: "FTM"  },
+  BASE:   { id: 8453,    name: "Base",       rpcUrl: process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",                  explorer: "https://basescan.org",              nativeToken: "ETH"  },
+  ARB:    { id: 42161,   name: "Arbitrum",   rpcUrl: process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",              explorer: "https://arbiscan.io",               nativeToken: "ETH"  },
+  OP:     { id: 10,      name: "Optimism",   rpcUrl: process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",               explorer: "https://optimistic.etherscan.io",   nativeToken: "ETH"  },
+  ZKSYNC: { id: 324,     name: "zkSync Era", rpcUrl: process.env.ZKSYNC_RPC_URL   ?? "https://mainnet.era.zksync.io",             explorer: "https://explorer.zksync.io",        nativeToken: "ETH"  },
+  LINEA:  { id: 59144,   name: "Linea",      rpcUrl: process.env.LINEA_RPC_URL    ?? "https://rpc.linea.build",                   explorer: "https://lineascan.build",           nativeToken: "ETH"  },
+  SCROLL: { id: 534352,  name: "Scroll",     rpcUrl: process.env.SCROLL_RPC_URL   ?? "https://rpc.scroll.io",                     explorer: "https://scrollscan.com",            nativeToken: "ETH"  },
+  BLAST:  { id: 81457,   name: "Blast",      rpcUrl: process.env.BLAST_RPC_URL    ?? "https://rpc.blast.io",                      explorer: "https://blastscan.io",              nativeToken: "ETH"  },
+  MODE:   { id: 34443,   name: "Mode",       rpcUrl: process.env.MODE_RPC_URL     ?? "https://mainnet.mode.network",              explorer: "https://modescan.io",               nativeToken: "ETH"  },
+  TAIKO:  { id: 167000,  name: "Taiko",      rpcUrl: process.env.TAIKO_RPC_URL    ?? "https://rpc.mainnet.taiko.xyz",             explorer: "https://taikoscan.io",              nativeToken: "ETH"  },
+};
+
+// Maps the l2.chainId keys used in the Bridge UI → EVM_REGISTRY keys
+const BRIDGE_CHAIN_TO_REGISTRY: Record<string, string> = {
+  eth:    "ETH",
+  bnb:    "BNB",
+  poly:   "MATIC",
+  avax:   "AVAX",
+  ftm:    "FTM",
+  base:   "BASE",
+  arb:    "ARB",
+  op:     "OP",
+  zksync: "ZKSYNC",
+  linea:  "LINEA",
+  scroll: "SCROLL",
+  blast:  "BLAST",
+  mode:   "MODE",
+  taiko:  "TAIKO",
 };
 
 // ── ERC-20 token registry (symbol → per-chainId contract + decimals) ──────────
@@ -112,14 +139,15 @@ function chainById(id: number): EvmChain | undefined {
 // ── EVM withdrawal ─────────────────────────────────────────────────────────────
 
 async function processEvmWithdrawal(params: {
-  asset:     string;
-  amount:    number;
-  recipient: string;
+  asset:      string;
+  amount:     number;
+  recipient:  string;
+  chainIdOverride?: number;
 }): Promise<{ txid: string; explorer: string }> {
   const hotWallet = await getOrCreateEvmHotWallet();
   const privKey = hotWallet.privKeyHex;
   const account = privateKeyToAccount(privKey);
-  const chainId = assetToChainId(params.asset);
+  const chainId = params.chainIdOverride ?? assetToChainId(params.asset);
   const chain   = chainById(chainId);
   if (!chain) throw new Error(`No EVM chain config for chainId ${chainId}`);
 
@@ -231,8 +259,18 @@ export async function processWithdrawal(params: {
   const net = params.network.toLowerCase();
 
   try {
+    // ── Legacy "evm" key — asset determines the chain ─────────────────────────
     if (net === "evm") {
       const { txid, explorer } = await processEvmWithdrawal(params);
+      return { status: "completed", txid, explorer };
+    }
+
+    // ── Bridge-specific chain keys (base, arb, op, zksync, …) ────────────────
+    const registryKey = BRIDGE_CHAIN_TO_REGISTRY[net];
+    if (registryKey) {
+      const chainCfg = EVM_REGISTRY[registryKey];
+      if (!chainCfg) throw new Error(`No EVM registry config for key ${registryKey}`);
+      const { txid, explorer } = await processEvmWithdrawal({ ...params, chainIdOverride: chainCfg.id });
       return { status: "completed", txid, explorer };
     }
 
