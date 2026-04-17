@@ -285,7 +285,9 @@ export function MobilePortfolio() {
     : 0;
 
   // ── Orah Wallet: exchange balance is the primary trading balance ───────────
-  const isOrahWallet = provider === "orah-wallet";
+  // "reown" is the WalletConnect provider used by Orah Wallet — both map to
+  // "Orah Wallet" in the UI and both use the internal exchange ledger.
+  const isOrahWallet = provider === "orah-wallet" || provider === "reown";
 
   const exchTotalUsd = exchBalancesWithValue.reduce((sum, b) => {
     const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
@@ -299,6 +301,10 @@ export function MobilePortfolio() {
     const change = isStable ? 0 : (prices?.[b.asset]?.priceChangePercent24h ?? 0);
     return { ...b, price: p, value: (b.free + b.locked) * p, change };
   }).filter(b => b.free > 0 || b.locked > 0);
+
+  // Show Trading Balance card if Orah/Reown wallet OR if the address has any
+  // exchange ledger balances (covers edge cases where provider string differs).
+  const showTradingBalance = isOrahWallet || exchNonZero.length > 0;
 
   const handleCopy = () => {
     if (!address) return;
@@ -507,8 +513,8 @@ export function MobilePortfolio() {
 
         <div className="px-4 space-y-4">
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
-          {isOrahWallet ? (
-            /* ── Orah Wallet: Exchange balance IS the trading balance ── */
+          {showTradingBalance ? (
+            /* ── Orah Wallet / any user with exchange balances: Trading Balance is primary ── */
             <div className="bg-card border border-border rounded-2xl p-5">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1.5">
@@ -836,8 +842,8 @@ export function MobilePortfolio() {
                 ))}
               </div>
 
-              {/* OrahDEX Exchange Balances — hidden for Orah Wallet (shown in Trading Balance card) */}
-              {!isOrahWallet && exchBalancesWithValue.length > 0 && (
+              {/* OrahDEX Exchange Balances — hidden when Trading Balance card is shown above */}
+              {!showTradingBalance && exchBalancesWithValue.length > 0 && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2 px-1 mb-2">
                     <Zap size={12} className="text-primary" />
