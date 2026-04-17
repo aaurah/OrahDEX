@@ -370,12 +370,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     setApiLockedBalances({ [b]: bRes.locked, [q]: qRes.locked });
   }, []);
   useEffect(() => {
-    if (!usesApiBalance || !address) { setApiBalances({}); return; }
+    if (!address) { setApiBalances({}); return; }
     const parts2 = symbol.split("/");
     const b = parts2[0];
     const q = parts2[1] ?? "USDT";
     fetchApiBalances(b, q, address);
-  }, [usesApiBalance, address, symbol, fetchApiBalances]);
+  }, [address, symbol, fetchApiBalances]);
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
@@ -478,14 +478,18 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const walletBase  = baseBalEntry?.amount ?? (isNativeBase && !isEvm ? nativeBal : 0);
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
-  // Non-custodial: EVM wallets trade directly from wallet.
-  // Orah Wallet users use the API ledger balance.
+  // Non-custodial: EVM wallets trade directly from their on-chain wallet.
+  // Orah Wallet users use the API ledger exclusively.
+  // External wallets: merge on-chain balance with internal exchange balance so
+  // assets accumulated via exchange trades can also be sold / used.
+  const internalBase  = apiBalances[base]  ?? 0;
+  const internalQuote = apiBalances[quote] ?? 0;
   const baseAvailable  = usesApiBalance
-    ? (apiBalances[base] ?? 0)
-    : walletBase;
+    ? internalBase
+    : Math.max(walletBase, internalBase);
   const quoteAvailable = usesApiBalance
-    ? (apiBalances[quote] ?? 0)
-    : walletQuote;
+    ? internalQuote
+    : Math.max(walletQuote, internalQuote);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
 
