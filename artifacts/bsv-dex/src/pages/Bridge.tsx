@@ -920,10 +920,12 @@ function SwapHistory() {
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center px-6">
         <Clock className="w-10 h-10 text-muted-foreground/30" />
         <p className="text-muted-foreground font-semibold">No swap history yet</p>
-        <p className="text-xs text-muted-foreground/60">Completed swaps will appear here</p>
+        <p className="text-xs text-muted-foreground/60 leading-relaxed">
+          Swaps completed from this browser will appear here. History is saved locally — earlier swaps from previous sessions are not shown.
+        </p>
       </div>
     );
   }
@@ -1574,40 +1576,40 @@ export function BridgePage() {
       </div>
 
       {/* ── Top-level page tabs ── */}
-      <div className="flex gap-1 p-1 bg-secondary rounded-2xl mb-8 w-full max-w-xl">
-        {([
-          { id: "bsvswap",  icon: <ArrowRight className="w-4 h-4" />,     label: "BSV → Any" },
-          { id: "swap",     icon: <ArrowLeftRight className="w-4 h-4" />, label: "Swap"       },
-          { id: "deposit",  icon: <ArrowDown className="w-4 h-4" />,      label: "Deposit"    },
-          { id: "withdraw", icon: <ArrowUp className="w-4 h-4" />,        label: "Withdraw"   },
-          { id: "history",  icon: <Clock className="w-4 h-4" />,          label: "History"    },
-        ] as const).map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setPageTab(tab.id)}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-sm font-semibold transition-all",
-              pageTab === tab.id
-                ? tab.id === "bsvswap"
-                  ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/30"
-                  : tab.id === "deposit"
-                    ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
-                    : tab.id === "withdraw"
-                      ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
-                      : tab.id === "history"
-                        ? "bg-card text-foreground shadow-sm border border-border/50"
+      <div className="w-full max-w-xl mb-8">
+        <div className="flex gap-1 p-1 bg-secondary rounded-2xl overflow-x-auto scrollbar-none">
+          {([
+            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"  },
+            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Swap"      },
+            { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"   },
+            { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"  },
+            { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"   },
+          ] as const).map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setPageTab(tab.id)}
+              className={cn(
+                "shrink-0 flex items-center justify-center gap-1 py-2 px-3 rounded-xl text-xs font-semibold transition-all whitespace-nowrap",
+                pageTab === tab.id
+                  ? tab.id === "bsvswap"
+                    ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/30"
+                    : tab.id === "deposit"
+                      ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
+                      : tab.id === "withdraw"
+                        ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
                         : "bg-card text-foreground shadow-sm border border-border/50"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.icon} {tab.label}
-            {tab.id === "history" && historyCount > 0 && (
-              <span className="ml-0.5 text-[10px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full leading-none">
-                {historyCount}
-              </span>
-            )}
-          </button>
-        ))}
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.icon} {tab.label}
+              {tab.id === "history" && historyCount > 0 && (
+                <span className="text-[10px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full leading-none">
+                  {historyCount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── BSV Quick Swap (HandCash-style) ── */}
