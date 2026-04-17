@@ -1602,7 +1602,7 @@ router.get("/treasury", requireAdminToken, async (_req, res) => {
       WHERE wallet_address NOT LIKE 'BOT%'
         AND (available::numeric > 0 OR locked::numeric > 0)
       GROUP BY asset_symbol
-      ORDER BY total_available::numeric DESC
+      ORDER BY SUM(available::numeric) DESC
       LIMIT 50
     `);
 
