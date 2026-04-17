@@ -8,8 +8,6 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { adminFetch } from "@/lib/adminFetch";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 interface TreasuryData {
   bsvWallet: {
     address: string;
@@ -73,7 +71,7 @@ function assetColor(asset: string) {
 export function AdminTreasury() {
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useQuery<TreasuryData>({
     queryKey: ["admin-treasury"],
-    queryFn: () => adminFetch("/api/admin/treasury"),
+    queryFn: () => adminFetch("/api/admin/treasury").then(r => r.json()),
     refetchInterval: 30_000,
   });
 
