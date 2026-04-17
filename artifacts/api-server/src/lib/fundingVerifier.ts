@@ -104,44 +104,6 @@ async function verifySpotFunding(
 ): Promise<FundingVerificationResult> {
   const { walletAddress, walletSource, asset, amount, signature, utxoRef, reportedBalance } = params;
 
-  // ── External EVM wallet — deposit model ─────────────────────────────────
-  // External EVM wallets must deposit funds into their OrahDEX internal ledger
-  // before trading. This ensures every order has real, locked collateral and
-  // prevents the ghost-credit bug (USDC credited without ETH ever leaving the
-  // on-chain wallet). The UI prompts users to deposit via GET /deposit/address.
-  if (walletSource === "external" && !utxoRef) {
-    const needed = parseFloat(amount);
-    if (needed <= 0) {
-      return { valid: false, fundingRef: "", error: "Invalid order amount", code: "INVALID_AMOUNT" };
-    }
-    try {
-      const balances  = await getBalances(walletAddress);
-      const row       = balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
-      const available = parseFloat(row?.available ?? "0");
-      if (available < needed - 1e-9) {
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      `Insufficient OrahDEX balance: need ${needed} ${asset}, have ${available.toFixed(6)}. Deposit ${asset} to your OrahDEX account first.`,
-          code:       "DEPOSIT_REQUIRED",
-        };
-      }
-      await lockForOrder({ walletAddress, asset, amount });
-      return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
-    } catch (err: any) {
-      const msg: string = err?.message ?? "";
-      if (msg.startsWith("INSUFFICIENT_FUNDS")) {
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      `Insufficient ${asset} OrahDEX balance. Deposit ${asset} to trade.`,
-          code:       "DEPOSIT_REQUIRED",
-        };
-      }
-      return { valid: false, fundingRef: "", error: "Ledger error", code: "LEDGER_ERROR" };
-    }
-  }
-
   // ── External BSV UTXO wallet ────────────────────────────────────────────
   if (walletSource === "external" && utxoRef) {
     const [txid, vout] = utxoRef.split(":");

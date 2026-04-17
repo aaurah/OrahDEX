@@ -229,9 +229,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!isEvm || !address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [isEvm, address, symbol, fetchApiBalances, base, quote]);
-  // Orah Wallet always reads from the internal ledger so deductions appear instantly.
-  // External wallets use their on-chain balance regardless of any exchange funds.
-  const usesApiBalance = isOrahWallet;
+  // All connected wallets read from the internal ledger (seeded on first use).
+  const usesApiBalance = !!address;
   // True while we're still waiting for the exchange balance fetch to complete.
   // Covers all EVM users so no stale on-chain balance flashes as Max.
   const balancesPending = isEvm && apiBalancesLoading;
