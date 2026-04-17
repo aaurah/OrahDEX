@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "node:crypto";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
@@ -1559,6 +1559,76 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
     res.json({ success: true, txid, satoshis, toAddress });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Send failed" });
+  }
+});
+
+/* ─── TREASURY — exchange wallets + internal ledger totals ──────────────── */
+router.get("/treasury", requireAdminToken, async (_req, res) => {
+  try {
+    // 1. BSV Settlement Wallet (real on-chain balance)
+    const wallet = await getOrCreateWallet();
+    const overrideRows = await db.select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+    const customAddress = overrideRows.length ? overrideRows[0].value : null;
+    const displayAddress = customAddress || wallet.address;
+
+    let bsvBalance = { bsv: 0, confirmedSatoshis: 0, unconfirmedSatoshis: 0, funded: false };
+    try {
+      const bal = await fetchWalletBalance(displayAddress);
+      bsvBalance = {
+        bsv: bal.bsv,
+        confirmedSatoshis: bal.confirmedSatoshis,
+        unconfirmedSatoshis: bal.unconfirmedSatoshis,
+        funded: bal.funded,
+      };
+    } catch {
+      // wallet balance fetch can fail if WhatsOnChain is unavailable
+    }
+
+    // 2. Internal ledger totals — sum of user_balances by asset (excluding bot accounts)
+    const ledgerResult = await pool.query<{
+      asset_symbol: string;
+      total_available: string;
+      total_locked: string;
+      user_count: string;
+    }>(`
+      SELECT
+        asset_symbol,
+        COALESCE(SUM(available::numeric), 0)::text  AS total_available,
+        COALESCE(SUM(locked::numeric), 0)::text      AS total_locked,
+        COUNT(DISTINCT wallet_address)::text         AS user_count
+      FROM user_balances
+      WHERE wallet_address NOT LIKE 'BOT%'
+        AND (available::numeric > 0 OR locked::numeric > 0)
+      GROUP BY asset_symbol
+      ORDER BY total_available::numeric DESC
+      LIMIT 50
+    `);
+
+    const ledger = ledgerResult.rows.map(r => ({
+      asset:          r.asset_symbol,
+      totalAvailable: parseFloat(r.total_available),
+      totalLocked:    parseFloat(r.total_locked),
+      userCount:      parseInt(r.user_count, 10),
+    }));
+
+    res.json({
+      bsvWallet: {
+        address:             displayAddress,
+        customAddress:       customAddress ?? null,
+        bsv:                 bsvBalance.bsv,
+        confirmedSatoshis:   bsvBalance.confirmedSatoshis,
+        unconfirmedSatoshis: bsvBalance.unconfirmedSatoshis,
+        funded:              bsvBalance.funded,
+        explorerUrl:         `https://whatsonchain.com/address/${displayAddress}`,
+      },
+      ledger,
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[treasury]", err);
+    res.status(500).json({ error: "Failed to load treasury data" });
   }
 });
 
