@@ -25,6 +25,7 @@ const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.S
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
 const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
 const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
+const SwapPage     = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
 const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
 const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
@@ -389,6 +390,7 @@ function Router() {
                   {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
                 </Route>
                 <Route path="/dex"        component={DexHub} />
+                <Route path="/swap"       component={SwapPage} />
                 <Route path="/liquidity"  component={MobileLiquidity} />
                 <Route path="/genesis"    component={MobileGenesis} />
                 <Route path="/p2p"        component={P2P} />
@@ -420,6 +422,7 @@ function Router() {
                 <Route path="/trade/:symbol"  component={SpotTrading} />
                 <Route path="/futures/:symbol" component={FuturesTrading} />
                 <Route path="/dex"            component={DexHub} />
+                <Route path="/swap"           component={SwapPage} />
                 <Route path="/liquidity"      component={Liquidity} />
                 <Route path="/genesis"        component={GenesisLiquidity} />
                 <Route path="/p2p"            component={P2P} />
