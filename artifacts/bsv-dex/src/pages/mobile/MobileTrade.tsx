@@ -1830,6 +1830,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         open={selectorOpen}
         onClose={() => setSelectorOpen(false)}
         currentSymbol={symbol}
+        defaultCat={isFutures ? "futures" : "usd"}
       />
 
       {/* ── NOTIFICATIONS DRAWER ── */}
