@@ -332,6 +332,16 @@ export function MobilePortfolio() {
     return { ...b, price: p, value: (b.free + b.locked) * p, change };
   }).filter(b => b.free > 0 || b.locked > 0);
 
+  // On-chain native asset price (e.g. ETH, BNB, BSV) from the live price feed
+  const nativeAssetPriceUsd = (() => {
+    const isStable = ["USDT","USDC","DAI","BUSD"].includes(nativeAsset);
+    return isStable ? 1 : (prices?.[nativeAsset]?.lastPrice ?? 0);
+  })();
+  const nativeBalanceUsd = nativeBalance * nativeAssetPriceUsd;
+
+  // Combined total: exchange ledger + on-chain native balance
+  const combinedTotalUsd = exchTotalUsd + nativeBalanceUsd;
+
   // Show Trading Balance card if Orah/Reown wallet OR if the address has any
   // exchange ledger balances (covers edge cases where provider string differs).
   const showTradingBalance = isOrahWallet || exchNonZero.length > 0;
@@ -538,16 +548,16 @@ export function MobilePortfolio() {
                 </span>
               </div>
 
-              {pricesLoading && exchTotalUsd === 0 ? (
+              {pricesLoading && combinedTotalUsd === 0 ? (
                 <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
               ) : (
                 <p className="text-3xl font-bold text-foreground tracking-tight">
-                  {formatQuoteAmount(exchTotalUsd, quoteCurrency)}
+                  {formatQuoteAmount(combinedTotalUsd, quoteCurrency)}
                 </p>
               )}
 
               <p className="text-[10px] text-muted-foreground mt-1 mb-4">
-                Live balance — updates immediately after every trade
+                Trading account + on-chain balance
               </p>
 
               {/* Exchange token rows */}
@@ -598,28 +608,39 @@ export function MobilePortfolio() {
                 </div>
               )}
 
-              {/* On-chain balance — secondary */}
+              {/* On-chain balance row — included in combined total above */}
               {nativeBalance > 0 && (
-                <div className="mt-4 pt-3 border-t border-border/40">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[10px] text-muted-foreground">On-chain ({nativeAsset})</p>
+                <div className={cn("flex items-center gap-3", exchNonZero.length > 0 && "mt-2.5")}>
+                  <div
+                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
+                    style={{ backgroundColor: (ASSET_COLORS[nativeAsset] ?? "#6B7280") + "22", borderColor: (ASSET_COLORS[nativeAsset] ?? "#6B7280") + "44", color: ASSET_COLORS[nativeAsset] ?? "#6B7280" }}
+                  >
+                    {nativeAsset[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground">{nativeAsset} <span className="text-[10px] text-muted-foreground font-normal">(on-chain)</span></p>
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {nativeBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-foreground">{formatQuoteAmount(nativeBalanceUsd, quoteCurrency)}</p>
+                    </div>
                     <button
                       onClick={handleSweepToLedger}
                       disabled={sweeping}
-                      className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 disabled:opacity-50"
+                      className="px-2 py-1 rounded-lg text-[10px] font-bold bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 disabled:opacity-50 shrink-0"
                     >
-                      {sweeping ? "Depositing…" : "Deposit to Trading Account"}
+                      {sweeping ? "…" : "Deposit"}
                     </button>
                   </div>
-                  <p className="text-xs text-muted-foreground font-mono">
-                    {nativeBalance.toFixed(6)} {nativeAsset}
-                  </p>
-                  {sweepMsg && (
-                    <p className={cn("text-[10px] mt-1", sweepMsg.includes("+") ? "text-green-400" : "text-red-400")}>
-                      {sweepMsg}
-                    </p>
-                  )}
                 </div>
+              )}
+              {sweepMsg && (
+                <p className={cn("text-[10px] mt-1", sweepMsg.includes("+") ? "text-green-400" : "text-red-400")}>
+                  {sweepMsg}
+                </p>
               )}
             </div>
           ) : (
