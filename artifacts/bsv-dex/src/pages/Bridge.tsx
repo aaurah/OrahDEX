@@ -443,8 +443,8 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           </div>
         )}
 
-        {/* Action button — hidden for exchange direct (address shown above) */}
-        {!isExchangeDirect && (
+        {/* Action button — only for withdraw (deposit uses the address flow above) */}
+        {!isExchangeDirect && !isDeposit && (
           <button
             onClick={handleRun}
             disabled={!amount || parseFloat(amount) <= 0 || running}
