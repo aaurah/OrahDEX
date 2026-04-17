@@ -456,4 +456,18 @@ router.get("/markets/:symbol/trades", async (req, res) => {
   }
 });
 
+// ─── /api/prices — real Binance-sourced USD prices (never internal order book) ─
+const pricesCache = new TtlCache<Record<string, number>>(15_000); // 15 s
+
+router.get("/prices", (_req, res) => {
+  const cached = pricesCache.get("all");
+  if (cached) { res.json(cached); return; }
+  const out: Record<string, number> = {};
+  for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
+    if (usd > 0) out[sym] = usd;
+  }
+  pricesCache.set("all", out);
+  res.json(out);
+});
+
 export default router;

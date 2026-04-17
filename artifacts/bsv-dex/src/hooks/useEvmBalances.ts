@@ -266,26 +266,25 @@ async function fetchMarketPrices(): Promise<Record<string, number>> {
   for (const sym of STABLECOINS) prices[sym] = 1;
 
   try {
-    const res = await globalThis.fetch(`${BASE_URL}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
+    // Use /api/prices — Binance-sourced real prices, never internal order book
+    const res = await globalThis.fetch(`${BASE_URL}/api/prices`, { cache: "no-store" });
     if (res.ok) {
-      const rows: Array<{ baseAsset: string; lastPrice: number }> = await res.json();
-      for (const row of rows) {
-        if (row.baseAsset && row.lastPrice > 0) {
-          prices[row.baseAsset] = row.lastPrice;
-        }
+      const data: Record<string, number> = await res.json();
+      for (const [sym, usd] of Object.entries(data)) {
+        if (sym && usd > 0) prices[sym] = usd;
       }
     }
-  } catch { /* use stablecoin fallbacks only */ }
+  } catch { /* use hardcoded fallbacks only */ }
 
-  // Fallback spot prices for native gas tokens (in case markets API is slow)
-  if (!prices["ETH"])  prices["ETH"]  = 2000;
-  if (!prices["BNB"])  prices["BNB"]  = 600;
-  if (!prices["AVAX"]) prices["AVAX"] = 30;
-  if (!prices["FTM"])  prices["FTM"]  = 0.4;
-  if (!prices["CRO"])  prices["CRO"]  = 0.08;
-  if (!prices["MNT"])  prices["MNT"]  = 0.5;
-  if (!prices["POL"])  prices["POL"]  = 0.3;
-  if (!prices["MATIC"])prices["MATIC"]= 0.3;
+  // Hardcoded last-resort fallbacks for native gas tokens
+  if (!prices["ETH"])  prices["ETH"]  = 1800;
+  if (!prices["BNB"])  prices["BNB"]  = 580;
+  if (!prices["AVAX"]) prices["AVAX"] = 18;
+  if (!prices["FTM"])  prices["FTM"]  = 0.2;
+  if (!prices["CRO"])  prices["CRO"]  = 0.09;
+  if (!prices["MNT"])  prices["MNT"]  = 1.02;
+  if (!prices["POL"])  prices["POL"]  = 0.32;
+  if (!prices["MATIC"])prices["MATIC"]= 0.32;
 
   return prices;
 }
