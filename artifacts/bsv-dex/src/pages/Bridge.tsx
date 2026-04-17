@@ -195,6 +195,43 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
 
 const L1_COINS = Object.keys(CANONICAL_ASSETS);
 
+// Map l2 chainId strings → EVM numeric chain IDs for DepositSheet
+const CHAIN_ID_MAP: Record<string, number> = {
+  "orah-exchange": 1,
+  eth:      1,
+  base:     8453,
+  arb:      42161,
+  op:       10,
+  poly:     137,
+  bnb:      56,
+  avax:     43114,
+  zksync:   324,
+  linea:    59144,
+  scroll:   534352,
+  mantle:   5000,
+  blast:    81457,
+  mode:     34443,
+  boba:     288,
+  metis:    1088,
+  taiko:    167000,
+  gnosis:   100,
+  celo:     42220,
+  moonbeam: 1284,
+  sonic:    146,
+  degen:    666666666,
+  xai:      660279,
+  apechain: 33139,
+  zora:     7777777,
+  redstone: 690,
+  treasure: 978658,
+  hypr:     1002,
+  // L1s
+  btc:      1,   // fallback to ETH mainnet for BTC wrapping
+  sol:      1,   // fallback
+  tron:     1,
+  dot:      1,
+};
+
 // ─── Canonical Deposit / Withdraw panel ──────────────────────────────────────
 
 
@@ -213,6 +250,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const isExchangeDirect = l2.type === "exchange";
   const l1Price = SPOT_PRICES[coin] ?? 1;
   const usdValue = parseFloat(amount || "0") * l1Price;
+  const depositChainId = CHAIN_ID_MAP[l2.chainId] ?? 1;
 
   // deposit steps: lock → detect → mint → trade
   // withdraw steps: burn → verify → unlock → received
@@ -335,15 +373,21 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           </div>
         </div>
 
-        {/* Exchange direct deposit — opens real deposit flow */}
-        {isExchangeDirect && isDeposit && (
+        {/* Deposit address — available for ALL chain destinations */}
+        {isDeposit && (
           <div className="rounded-2xl border border-green-500/30 bg-green-500/8 p-4 space-y-3">
             <div className="flex items-center gap-2 text-green-400">
               <ArrowDown className="w-4 h-4" />
-              <span className="text-sm font-bold">Deposit {coin} → OrahDEX Exchange</span>
+              <span className="text-sm font-bold">
+                {isExchangeDirect
+                  ? `Deposit ${coin} → OrahDEX Exchange`
+                  : `Deposit ${coin} via ${l2.chain}`}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Get your personal {asset.l1.chain} deposit address. Send {coin} to it on-chain and verify the transaction hash — your exchange balance is credited immediately.
+              {isExchangeDirect
+                ? `Get your personal deposit address on ${asset.l1.chain}. Send ${coin} and verify the tx hash — your balance is credited within ~5 min.`
+                : `Get your deposit address on ${l2.chain} (${l2.bridge}). Send ${coin} and paste the tx hash to credit your balance.`}
             </p>
             {address ? (
               <button
@@ -351,7 +395,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
                 className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
               >
                 <ArrowDown className="w-4 h-4" />
-                Get My Deposit Address
+                Get My {l2.chain} Deposit Address
               </button>
             ) : (
               <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
@@ -368,7 +412,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
             open={depositSheetOpen}
             onClose={() => setDepositSheetOpen(false)}
             walletAddress={address}
-            chainId={typeof walletChainId === "number" ? walletChainId : 1}
+            chainId={depositChainId}
           />
         )}
 
