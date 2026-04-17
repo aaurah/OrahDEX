@@ -709,7 +709,7 @@ export function AdminEmailInbox() {
         <div className={cn(
           "flex flex-col bg-card border border-border rounded-2xl overflow-hidden min-w-0",
           "md:flex", // always show on desktop
-          mobilePanel === "list" ? "flex flex-1" : "hidden md:flex md:flex-1", // mobile: only show when list panel active
+          (mobilePanel === "list" || mobilePanel === "detail") ? "flex flex-1" : "hidden md:flex md:flex-1", // mobile: show for list AND detail panels
         )}>
           {/* Search bar */}
           <div className="px-4 py-3 border-b border-border">
