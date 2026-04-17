@@ -2,12 +2,15 @@ import { useState, useMemo } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import {
   Users2, Search, ChevronDown, Shield, Star, Clock, Plus, X, Check,
   ArrowUpDown, Filter, Globe, Zap, AlertCircle, MessageSquare, Lock,
   TrendingUp, Activity, CheckCircle2, Info, ChevronRight,
   ArrowLeftRight, Link2, Unlock, RefreshCw, AlertTriangle, Timer,
+  Copy, Send, Wallet, ArrowRight, SlidersHorizontal, Trash2,
 } from "lucide-react";
+import { CoinLogo } from "@/components/CoinLogo";
 import { cn, formatPrice } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -626,7 +629,7 @@ export function P2P() {
     }
   });
 
-  const [mainTab, setMainTab] = useState<"p2p" | "atomic">("p2p");
+  const [mainTab, setMainTab] = useState<"p2p" | "atomic" | "direct">("p2p");
   const [side, setSide] = useState<Side>("buy");
   const [coin, setCoin] = useState<Coin>("BTC");
   const [fiat, setFiat] = useState<Fiat>("USD");
@@ -658,6 +661,142 @@ export function P2P() {
       setTimeout(() => { setAtomicStep(step); if (step === 4) setHtlcRunning(false); }, delay);
     advance(2, 1200); advance(3, 2800); advance(4, 4200);
   };
+
+  // ── Direct Trade state ──────────────────────────────────────────────────────
+  const ALL_COINS = ["ETH","BTC","BSV","USDT","USDC","BNB","SOL","AVAX","ARB","OP","POL","MATIC","DAI","LINK","UNI","AAVE","WBTC","CAKE","GMX","DEGEN","BRETT"] as const;
+  type DirectCoin = typeof ALL_COINS[number];
+
+  const [dtGiveCoin,  setDtGiveCoin]  = useState<DirectCoin>("ETH");
+  const [dtWantCoin,  setDtWantCoin]  = useState<DirectCoin>("USDC");
+  const [dtGiveAmt,   setDtGiveAmt]   = useState("");
+  const [dtWantAmt,   setDtWantAmt]   = useState("");
+  const [dtCounterparty, setDtCounterparty] = useState("");
+  const [dtExpiry,    setDtExpiry]    = useState<number>(24 * 60 * 60 * 1000);
+  const [dtPosting,   setDtPosting]   = useState(false);
+  const [dtPostedId,  setDtPostedId]  = useState<string | null>(null);
+  const [dtCopyDone,  setDtCopyDone]  = useState(false);
+  const [dtFillId,    setDtFillId]    = useState<string | null>(null);
+  const [dtFilling,   setDtFilling]   = useState(false);
+  const [dtCancelId,  setDtCancelId]  = useState<string | null>(null);
+  const [dtFilterCoin, setDtFilterCoin] = useState<DirectCoin | "ALL">("ALL");
+
+  const { address: walletAddress } = useWalletStore();
+  const { open: openWalletModal }  = useWalletModalStore();
+  const qcDirect = useQueryClient();
+
+  const directIntentsQ = useQuery<{ intents: Array<{
+    intentId: string; makerAddress: string; tokenIn: string; tokenOut: string;
+    amountIn: string; minAmountOut: string; price: string;
+    status: string; createdAt: string; expiresAt: string;
+    takerAddress?: string; filledAmountOut?: string;
+  }> }>({
+    queryKey: ["direct-intents", dtFilterCoin],
+    queryFn: async () => {
+      const params = new URLSearchParams({ status: "open", limit: "50" });
+      if (dtFilterCoin !== "ALL") params.set("tokenIn", dtFilterCoin);
+      const r = await fetch(`${BASE}/api/p2p/intents?${params}`);
+      if (!r.ok) return { intents: [] };
+      return r.json();
+    },
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+    enabled: mainTab === "direct",
+  });
+
+  const myDirectIntentsQ = useQuery<{ intents: Array<{
+    intentId: string; makerAddress: string; tokenIn: string; tokenOut: string;
+    amountIn: string; minAmountOut: string; price: string;
+    status: string; createdAt: string; expiresAt: string;
+  }> }>({
+    queryKey: ["my-direct-intents", walletAddress],
+    queryFn: async () => {
+      if (!walletAddress) return { intents: [] };
+      const r = await fetch(`${BASE}/api/p2p/intents?maker=${walletAddress}&limit=20`);
+      if (!r.ok) return { intents: [] };
+      return r.json();
+    },
+    enabled: !!walletAddress && mainTab === "direct",
+    refetchInterval: 20_000,
+  });
+
+  async function postDirectTrade() {
+    if (!walletAddress) { openWalletModal(); return; }
+    if (!dtGiveAmt || !dtWantAmt || parseFloat(dtGiveAmt) <= 0 || parseFloat(dtWantAmt) <= 0) return;
+    setDtPosting(true);
+    try {
+      const body = {
+        makerAddress: walletAddress,
+        tokenIn:  dtGiveCoin,
+        tokenOut: dtWantCoin,
+        amountIn: dtGiveAmt,
+        minAmountOut: dtWantAmt,
+        expiresInMs: dtExpiry,
+        terms: dtCounterparty ? `private:${dtCounterparty.toLowerCase()}` : "",
+      };
+      const r = await fetch(`${BASE}/api/p2p/intents`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Failed");
+      setDtPostedId(data.intentId);
+      qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
+      qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
+    } catch (e: any) {
+      alert(e.message ?? "Failed to post trade");
+    } finally {
+      setDtPosting(false);
+    }
+  }
+
+  async function fillDirectTrade(intentId: string, wantAmt: string) {
+    if (!walletAddress) { openWalletModal(); return; }
+    setDtFilling(true);
+    setDtFillId(intentId);
+    try {
+      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}/fill`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ takerAddress: walletAddress, amountOut: wantAmt }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Fill failed");
+      qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
+      qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
+      alert("Trade filled! Both parties' balances have been updated.");
+    } catch (e: any) {
+      alert(e.message ?? "Fill failed");
+    } finally {
+      setDtFilling(false);
+      setDtFillId(null);
+    }
+  }
+
+  async function cancelDirectTrade(intentId: string) {
+    if (!walletAddress) return;
+    setDtCancelId(intentId);
+    try {
+      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}?walletAddress=${walletAddress}`, { method: "DELETE" });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Cancel failed");
+      qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
+      qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
+    } catch (e: any) {
+      alert(e.message ?? "Cancel failed");
+    } finally {
+      setDtCancelId(null);
+    }
+  }
+
+  function copyTradeLink(id: string) {
+    const link = `${window.location.origin}${BASE}/p2p?trade=${id}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setDtCopyDone(true);
+      setTimeout(() => setDtCopyDone(false), 2000);
+    });
+  }
+
+  const openDirectIntents = directIntentsQ.data?.intents ?? [];
+  const myIntents = myDirectIntentsQ.data?.intents ?? [];
 
   // ── Live intents from real API ─────────────────────────────────────────────
   const intentsQ = useQuery<{ intents: Array<{
@@ -796,13 +935,19 @@ export function P2P() {
       <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-xl border-b border-border px-4 lg:px-10 py-3">
         <div className="max-w-[1400px] mx-auto flex flex-wrap items-center gap-3">
 
-          {/* Main mode tabs: P2P / Atomic Swap */}
+          {/* Main mode tabs */}
           <div className="flex bg-secondary rounded-xl p-1 border border-border">
             <button onClick={() => setMainTab("p2p")}
               className={cn("px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all",
                 mainTab === "p2p" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
               )}>
               <Users2 className="w-3.5 h-3.5" /> P2P Trades
+            </button>
+            <button onClick={() => setMainTab("direct")}
+              className={cn("px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all",
+                mainTab === "direct" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
+              )}>
+              <Send className="w-3.5 h-3.5" /> Direct Trade
             </button>
             <button onClick={() => setMainTab("atomic")}
               className={cn("px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all",
@@ -895,6 +1040,398 @@ export function P2P() {
           </div>
         </div>
       </div>
+
+      {/* ── Direct Trade View ────────────────────────────────────────────── */}
+      {mainTab === "direct" && (
+        <div className="px-4 lg:px-10 py-8 max-w-[1400px] mx-auto space-y-8">
+
+          {/* ── Create offer ────────────────────────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Send className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <div className="font-bold text-foreground">Create Direct Trade</div>
+                  <div className="text-xs text-muted-foreground">Offer crypto, set your rate, share the link</div>
+                </div>
+              </div>
+
+              {/* Posted success */}
+              {dtPostedId ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col items-center gap-2 py-4">
+                    <div className="w-14 h-14 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
+                      <CheckCircle2 className="w-7 h-7 text-green-500" />
+                    </div>
+                    <div className="font-bold text-foreground">Trade Offer Created!</div>
+                    <div className="text-xs text-muted-foreground text-center">Share this link with your counterparty so they can fill the trade.</div>
+                  </div>
+                  <div className="flex items-center gap-2 p-3 rounded-xl bg-secondary border border-border">
+                    <div className="flex-1 font-mono text-xs text-foreground truncate">
+                      {`${window.location.origin}${BASE}/p2p?trade=${dtPostedId}`}
+                    </div>
+                    <button
+                      onClick={() => copyTradeLink(dtPostedId)}
+                      className={cn("shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+                        dtCopyDone ? "bg-green-500/20 text-green-400" : "bg-primary/15 text-primary hover:bg-primary/25"
+                      )}>
+                      {dtCopyDone ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                    </button>
+                  </div>
+                  <button onClick={() => { setDtPostedId(null); setDtGiveAmt(""); setDtWantAmt(""); setDtCounterparty(""); }}
+                    className="w-full py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                    Create Another Trade
+                  </button>
+                </div>
+              ) : (
+              <div className="space-y-4">
+                {/* You give */}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You Give</div>
+                  <div className="flex items-center gap-2 bg-secondary rounded-xl p-3 border border-border">
+                    <div className="relative">
+                      <select
+                        value={dtGiveCoin}
+                        onChange={e => setDtGiveCoin(e.target.value as any)}
+                        className="appearance-none bg-transparent text-sm font-bold text-foreground pr-5 cursor-pointer focus:outline-none"
+                      >
+                        {ALL_COINS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                    </div>
+                    <input
+                      type="number" value={dtGiveAmt} onChange={e => setDtGiveAmt(e.target.value)}
+                      placeholder="0.00"
+                      className="flex-1 text-right bg-transparent font-mono font-semibold text-lg text-foreground focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex justify-center">
+                  <button onClick={() => { const g=dtGiveCoin,w=dtWantCoin,ga=dtGiveAmt,wa=dtWantAmt; setDtGiveCoin(w); setDtWantCoin(g); setDtGiveAmt(wa); setDtWantAmt(ga); }}
+                    className="w-9 h-9 rounded-full border border-border bg-secondary hover:border-primary/50 hover:bg-primary/10 flex items-center justify-center transition-all">
+                    <ArrowLeftRight className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                </div>
+
+                {/* You want */}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You Want</div>
+                  <div className="flex items-center gap-2 bg-secondary rounded-xl p-3 border border-border">
+                    <div className="relative">
+                      <select
+                        value={dtWantCoin}
+                        onChange={e => setDtWantCoin(e.target.value as any)}
+                        className="appearance-none bg-transparent text-sm font-bold text-foreground pr-5 cursor-pointer focus:outline-none"
+                      >
+                        {ALL_COINS.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
+                    </div>
+                    <input
+                      type="number" value={dtWantAmt} onChange={e => setDtWantAmt(e.target.value)}
+                      placeholder="0.00"
+                      className="flex-1 text-right bg-transparent font-mono font-semibold text-lg text-foreground focus:outline-none"
+                    />
+                  </div>
+                  {dtGiveAmt && dtWantAmt && parseFloat(dtGiveAmt) > 0 && parseFloat(dtWantAmt) > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1.5 text-right">
+                      Rate: 1 {dtGiveCoin} = {(parseFloat(dtWantAmt) / parseFloat(dtGiveAmt)).toFixed(6)} {dtWantCoin}
+                    </div>
+                  )}
+                </div>
+
+                {/* Counterparty (optional) */}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                    <Lock className="w-3 h-3" /> Counterparty Address <span className="text-muted-foreground/50 normal-case font-normal">(optional — leave blank for public)</span>
+                  </div>
+                  <input
+                    type="text" value={dtCounterparty} onChange={e => setDtCounterparty(e.target.value)}
+                    placeholder="0x... or leave blank for anyone to fill"
+                    className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+
+                {/* Expiry */}
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide flex items-center gap-1.5">
+                    <Timer className="w-3 h-3" /> Offer Expires In
+                  </div>
+                  <div className="flex gap-2">
+                    {([
+                      [1 * 60 * 60 * 1000, "1h"],
+                      [6 * 60 * 60 * 1000, "6h"],
+                      [24 * 60 * 60 * 1000, "24h"],
+                      [7 * 24 * 60 * 60 * 1000, "7d"],
+                    ] as [number, string][]).map(([ms, label]) => (
+                      <button key={label} onClick={() => setDtExpiry(ms)}
+                        className={cn("flex-1 py-2 rounded-xl border text-xs font-semibold transition-all",
+                          dtExpiry === ms ? "border-primary/50 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:border-border/80"
+                        )}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={postDirectTrade}
+                  disabled={dtPosting || !dtGiveAmt || !dtWantAmt || parseFloat(dtGiveAmt) <= 0 || parseFloat(dtWantAmt) <= 0}
+                  className="w-full py-3.5 rounded-2xl font-bold text-sm bg-primary text-primary-foreground flex items-center justify-center gap-2 hover:-translate-y-0.5 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {dtPosting ? <><RefreshCw className="w-4 h-4 animate-spin" /> Creating…</> : walletAddress ? <><Send className="w-4 h-4" /> Create Trade Offer</> : <><Wallet className="w-4 h-4" /> Connect Wallet to Trade</>}
+                </button>
+              </div>
+              )}
+            </div>
+
+            {/* My open offers */}
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center">
+                    <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-foreground">My Offers</div>
+                    <div className="text-xs text-muted-foreground">Your active direct trade offers</div>
+                  </div>
+                </div>
+                <button onClick={() => qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] })}
+                  className="text-muted-foreground hover:text-foreground transition-colors">
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+
+              {!walletAddress ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
+                  <Wallet className="w-8 h-8 text-muted-foreground/40" />
+                  <div className="text-sm text-muted-foreground">Connect your wallet to see your offers</div>
+                  <button onClick={openWalletModal} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold">Connect Wallet</button>
+                </div>
+              ) : myIntents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                  <Send className="w-8 h-8 text-muted-foreground/30" />
+                  <div className="text-sm text-muted-foreground">No active offers yet</div>
+                  <div className="text-xs text-muted-foreground/60">Create a trade on the left to get started</div>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {myIntents.map(intent => (
+                    <div key={intent.intentId} className={cn(
+                      "rounded-xl border p-3 space-y-2",
+                      intent.status === "open" ? "border-primary/30 bg-primary/5" : "border-border bg-secondary/20 opacity-60"
+                    )}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
+                            intent.status === "open" ? "bg-primary/20 text-primary" :
+                            intent.status === "filled" ? "bg-green-500/20 text-green-400" :
+                            "bg-muted/40 text-muted-foreground"
+                          )}>{intent.status}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {intent.status === "open" && (
+                            <button onClick={() => copyTradeLink(intent.intentId)}
+                              className="w-7 h-7 rounded-lg hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-primary transition-colors" title="Copy link">
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {intent.status === "open" && (
+                            <button onClick={() => cancelDirectTrade(intent.intentId)}
+                              disabled={dtCancelId === intent.intentId}
+                              className="w-7 h-7 rounded-lg hover:bg-red-500/10 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-colors" title="Cancel offer">
+                              {dtCancelId === intent.intentId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-bold text-foreground">{parseFloat(intent.amountIn).toLocaleString()} {intent.tokenIn}</span>
+                        <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="font-bold text-foreground">{parseFloat(intent.minAmountOut).toLocaleString()} {intent.tokenOut}</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground font-mono">ID: {intent.intentId.slice(0, 18)}…</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Open market ──────────────────────────────────── */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-bold text-foreground text-lg">Open Trade Offers</div>
+                <div className="text-sm text-muted-foreground">Browse and fill open direct trades from other wallets</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["ALL", "ETH", "BTC", "BSV", "USDT", "USDC", "BNB"] as const).map(c => (
+                    <button key={c} onClick={() => setDtFilterCoin(c as any)}
+                      className={cn("px-3 py-1.5 rounded-xl border text-xs font-bold transition-all",
+                        dtFilterCoin === c ? "border-primary/50 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                      )}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => qcDirect.invalidateQueries({ queryKey: ["direct-intents"] })}
+                  className="text-muted-foreground hover:text-foreground transition-colors ml-1">
+                  <RefreshCw className={cn("w-4 h-4", directIntentsQ.isFetching && "animate-spin")} />
+                </button>
+              </div>
+            </div>
+
+            {openDirectIntents.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-center bg-card border border-border rounded-2xl">
+                <Send className="w-10 h-10 text-muted-foreground/30" />
+                <div className="font-semibold text-foreground">No open offers yet</div>
+                <div className="text-sm text-muted-foreground">Be the first to create a direct trade offer above.</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Table header */}
+                <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1.5fr_auto] gap-4 px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b border-border">
+                  <span>Maker</span>
+                  <span>Offer</span>
+                  <span>Rate</span>
+                  <span>Expires</span>
+                  <span className="text-right">Action</span>
+                </div>
+                {openDirectIntents.map(intent => {
+                  const isOwnOffer = walletAddress && intent.makerAddress.toLowerCase() === walletAddress.toLowerCase();
+                  const isPrivate = intent.terms?.startsWith("private:");
+                  const privateTarget = isPrivate ? intent.terms.replace("private:", "") : null;
+                  const canFill = !isOwnOffer && (!isPrivate || (walletAddress && privateTarget === walletAddress.toLowerCase()));
+                  const expiresAt = new Date(intent.expiresAt);
+                  const minsLeft = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 60000));
+                  const timeLabel = minsLeft > 60 * 24 ? `${Math.floor(minsLeft/1440)}d` : minsLeft > 60 ? `${Math.floor(minsLeft/60)}h` : `${minsLeft}m`;
+                  const rate = parseFloat(intent.minAmountOut) / parseFloat(intent.amountIn);
+                  const shortAddr = `${intent.makerAddress.slice(0,6)}…${intent.makerAddress.slice(-4)}`;
+                  return (
+                    <div key={intent.intentId}
+                      className={cn(
+                        "bg-card hover:bg-card/80 border rounded-2xl p-4 transition-all",
+                        isOwnOffer ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary/30",
+                        isPrivate && !canFill && "opacity-60"
+                      )}>
+                      {/* Mobile layout */}
+                      <div className="lg:hidden space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center text-white text-[10px] font-bold">{shortAddr.slice(0,2).toUpperCase()}</div>
+                            <div>
+                              <div className="text-sm font-semibold text-foreground font-mono">{shortAddr}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {isOwnOffer && <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>}
+                                {isPrivate && <span className="text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full flex items-center gap-1"><Lock className="w-2.5 h-2.5" /> Private</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Timer className="w-3 h-3" /> {timeLabel}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 p-2.5 rounded-xl bg-secondary text-center">
+                            <div className="text-[10px] text-muted-foreground">Give</div>
+                            <div className="font-bold text-sm text-foreground">{parseFloat(intent.amountIn).toLocaleString()} {intent.tokenIn}</div>
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <div className="flex-1 p-2.5 rounded-xl bg-secondary text-center">
+                            <div className="text-[10px] text-muted-foreground">Want</div>
+                            <div className="font-bold text-sm text-foreground">{parseFloat(intent.minAmountOut).toLocaleString()} {intent.tokenOut}</div>
+                          </div>
+                        </div>
+                        {canFill && (
+                          <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut)}
+                            disabled={dtFilling && dtFillId === intent.intentId}
+                            className="w-full py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                            {dtFilling && dtFillId === intent.intentId ? <><RefreshCw className="w-4 h-4 animate-spin" /> Filling…</> : <><Check className="w-4 h-4" /> Accept Trade</>}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Desktop layout */}
+                      <div className="hidden lg:grid grid-cols-[2fr_2fr_1fr_1.5fr_auto] gap-4 items-center">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center text-white text-[10px] font-bold shrink-0">{shortAddr.slice(0,2).toUpperCase()}</div>
+                          <div>
+                            <div className="text-sm font-mono text-foreground">{shortAddr}</div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              {isOwnOffer && <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold">You</span>}
+                              {isPrivate && <span className="text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-full flex items-center gap-1"><Lock className="w-2.5 h-2.5" /> Private</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 font-semibold text-sm">
+                          <span className="text-foreground">{parseFloat(intent.amountIn).toLocaleString()} {intent.tokenIn}</span>
+                          <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-foreground">{parseFloat(intent.minAmountOut).toLocaleString()} {intent.tokenOut}</span>
+                        </div>
+                        <div className="text-sm text-muted-foreground font-mono">
+                          {rate.toFixed(rate < 0.01 ? 6 : 4)}
+                        </div>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Timer className="w-3.5 h-3.5" /> {timeLabel}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => copyTradeLink(intent.intentId)}
+                            className="w-8 h-8 rounded-xl hover:bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors" title="Copy trade link">
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          {canFill ? (
+                            <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut)}
+                              disabled={dtFilling && dtFillId === intent.intentId}
+                              className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                              {dtFilling && dtFillId === intent.intentId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              Accept
+                            </button>
+                          ) : isOwnOffer ? (
+                            <button onClick={() => cancelDirectTrade(intent.intentId)}
+                              disabled={dtCancelId === intent.intentId}
+                              className="px-4 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-sm font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50">
+                              {dtCancelId === intent.intentId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                              Cancel
+                            </button>
+                          ) : (
+                            <div className="px-4 py-2 text-xs text-muted-foreground/50">Private</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* How it works */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {[
+              { icon: Send,         title: "Create an Offer",    desc: "Choose what you give and what you want. Set your own rate. Optionally restrict to a specific wallet address for a private trade." },
+              { icon: Copy,         title: "Share the Link",     desc: "Copy the unique trade link and send it to your counterparty — or leave the offer open for anyone in the market to fill." },
+              { icon: CheckCircle2, title: "Instant Settlement", desc: "When filled, both sides settle atomically on OrahDEX internal ledger. No slippage, no gas, instant confirmation." },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-4 p-5 bg-card border border-border rounded-2xl">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                  <Icon className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground mb-1">{title}</div>
+                  <div className="text-xs text-muted-foreground leading-relaxed">{desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Atomic Swap View ─────────────────────────────────────────────── */}
       {mainTab === "atomic" && (
