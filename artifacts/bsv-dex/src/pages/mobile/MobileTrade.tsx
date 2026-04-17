@@ -206,6 +206,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
+  const [apiBalancesLoading, setApiBalancesLoading] = useState(false);
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
@@ -215,8 +216,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         return { available: parseFloat(j.available ?? "0") || 0 };
       } catch { return { available: 0 }; }
     };
+    setApiBalancesLoading(true);
     const [bRes, qRes] = await Promise.all([fetchOne(b), fetchOne(q)]);
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
+    setApiBalancesLoading(false);
   }, []);
   // Fetch exchange balances for all EVM users — Reown/WalletConnect users who
   // have exchange ledger funds (e.g. previously used Orah Wallet) should also
@@ -228,6 +231,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Use exchange balance if this is an Orah Wallet OR if the address has any
   // real exchange funds (covers Reown-connected users with existing balances).
   const usesApiBalance = isOrahWallet || Object.values(apiBalances).some(v => v > 0);
+  // True while we're still waiting for the exchange balance fetch to complete
+  // for a non-Orah EVM wallet. Prevents showing stale on-chain balance as Max.
+  const balancesPending = isEvm && !isOrahWallet && apiBalancesLoading;
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
@@ -1276,14 +1282,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 {[25, 50, 75, 100].map(p => (
                   <button
                     key={p}
+                    disabled={balancesPending}
                     onClick={() => {
+                      if (balancesPending) return;
                       if (side === "buy" && buyBalance > 0 && effectivePrice > 0) {
                         setAmount(((buyBalance / effectivePrice) * p / 100).toFixed(6));
                       } else if (side === "sell" && sellBalance > 0) {
                         setAmount((sellBalance * p / 100).toFixed(6));
                       }
                     }}
-                    className="text-[10px] text-muted-foreground font-semibold"
+                    className="text-[10px] text-muted-foreground font-semibold disabled:opacity-40"
                   >{p}%</button>
                 ))}
               </div>
@@ -1460,10 +1468,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFillMax}
-                    disabled={!address || available <= 0}
+                    disabled={!address || available <= 0 || balancesPending}
                     className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
                   >
-                    {available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{availableSym}
+                    {balancesPending ? "—" : available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{availableSym}
                     {side === "sell" && isNativeBase && chainInfo?.l2Label && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         {chainInfo.l2Label}
@@ -1491,7 +1499,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Max {side === "buy" ? "Buy" : "Sell"}</span>
                 <span className="text-xs font-semibold text-foreground tabular-nums">
-                  {side === "buy" ? maxBuy : maxSell}
+                  {balancesPending ? "—" : side === "buy" ? maxBuy : maxSell}
                 </span>
               </div>
               <div className="flex items-center justify-between">
