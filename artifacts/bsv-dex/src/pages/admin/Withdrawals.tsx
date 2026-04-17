@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDownToLine, Check, X, Clock, Loader2, RefreshCw, AlertTriangle, Copy, CheckCheck, SlidersHorizontal, ChevronDown, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AdminLayout } from "@/components/AdminLayout";
 import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { parseEther } from "viem";
 import { adminFetch } from "@/lib/adminFetch";
@@ -375,7 +374,7 @@ export function AdminWithdrawals() {
   };
 
   return (
-    <AdminLayout>
+    <>
       <div className="p-6 space-y-6 max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -558,6 +557,6 @@ export function AdminWithdrawals() {
           onSave={note => { patch.mutate({ id: cancelModal, status: "cancelled", note: note || undefined }); setCancelModal(null); }}
         />
       )}
-    </AdminLayout>
+    </>
   );
 }
