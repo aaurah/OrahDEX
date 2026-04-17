@@ -1136,7 +1136,37 @@ router.get("/bot-profit", async (_req, res) => {
     const lastLiqAt        = await getBotSetting("bot_last_liquidation_at");
     const startTime        = await getBotSetting("bot_start_time");
     const historyRaw       = await getBotSetting("bot_withdrawal_history");
-    const history          = historyRaw ? JSON.parse(historyRaw) : [];
+    const historyBase: any[] = historyRaw ? JSON.parse(historyRaw) : [];
+
+    // Cross-reference withdrawal_requests table to get live status and real TXIDs
+    // for EVM entries that were initially stored with internal orah_ IDs
+    let history = historyBase;
+    if (historyBase.length > 0) {
+      try {
+        const ids = historyBase.map((h: any) => h.id).filter(Boolean);
+        if (ids.length > 0) {
+          const placeholders = ids.map((_: any, i: number) => `$${i + 1}`).join(",");
+          const { rows: wrRows } = await pool.query<{
+            id: string; status: string; txid: string | null;
+          }>(
+            `SELECT id, status, txid FROM withdrawal_requests WHERE id IN (${placeholders})`,
+            ids,
+          );
+          const wrMap = new Map(wrRows.map(r => [r.id, r]));
+          history = historyBase.map((h: any) => {
+            const wr = wrMap.get(h.id);
+            if (!wr) return h;
+            return {
+              ...h,
+              status: wr.status,
+              txid: (wr.txid && !wr.txid.startsWith("orah_")) ? wr.txid : h.txid,
+            };
+          });
+        }
+      } catch {
+        history = historyBase; // non-fatal — fall back to stored history
+      }
+    }
 
     const available = Math.max(0, cumulative - withdrawn);
 

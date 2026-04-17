@@ -35,7 +35,7 @@ type Withdrawal = {
   address: string;
   network: string;
   txid: string;
-  status: "completed" | "pending";
+  status: "completed" | "pending" | "cancelled" | "processing";
   timestamp: string;
 };
 
@@ -729,53 +729,99 @@ export function AdminBotProfit() {
               <p className="text-xs mt-1">All three income streams are running — profits build up every cycle</p>
             </div>
           ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-white/40 border-b border-white/10">
-                    <th className="text-left pb-2 font-normal">Time</th>
-                    <th className="text-right pb-2 font-normal">Amount</th>
-                    <th className="text-left pb-2 font-normal pl-4">Network</th>
-                    <th className="text-left pb-2 font-normal pl-4">Address / TXID</th>
-                    <th className="text-left pb-2 font-normal pl-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.history.map((w) => (
-                    <tr key={w.id}>
-                      <td className="py-2.5 text-white/50 whitespace-nowrap pr-3">
-                        {new Date(w.timestamp).toLocaleString()}
-                      </td>
-                      <td className="py-2.5 text-right font-semibold text-green-400 whitespace-nowrap">
-                        ${w.amount.toFixed(4)}
-                      </td>
-                      <td className="py-2.5 pl-4 text-white/60 whitespace-nowrap">{w.network}</td>
-                      <td className="py-2.5 pl-4 max-w-[180px]">
-                        <div className="flex items-center text-white/50 truncate">
-                          <span className="truncate">{w.address.slice(0, 12)}…</span>
-                          <CopyBtn text={w.address} />
-                        </div>
-                        <div className="flex items-center text-white/30 truncate mt-0.5">
-                          <span className="truncate">{w.txid.slice(0, 18)}…</span>
-                          <CopyBtn text={w.txid} />
-                        </div>
-                      </td>
-                      <td className="py-2.5 pl-4">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
-                          w.status === "completed"
-                            ? "bg-green-400/10 text-green-400"
-                            : "bg-green-400/10 text-green-400",
-                        )}>
-                          {w.status === "completed"
-                            ? <><CheckCircle className="w-3 h-3" /> Completed</>
-                            : <><Clock className="w-3 h-3" /> Pending</>}
-                        </span>
-                      </td>
+            <div className="space-y-3">
+              {/* Alert: EVM withdrawals marked complete but never sent */}
+              {data.history.some(w =>
+                w.status === "completed" && w.network !== "BSV" && w.txid?.startsWith("orah_")
+              ) && (
+                <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-red-200 mb-1">Funds not sent — action required</p>
+                    <p>One or more EVM withdrawals were marked "complete" but were never actually broadcast on-chain. Go to <strong>Admin → Withdrawals</strong>, find these requests for <code className="font-mono">platform_bot</code>, and send the funds from your connected wallet. The "orah_..." reference is an internal ID, not a blockchain TXID.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="overflow-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-white/40 border-b border-white/10">
+                      <th className="text-left pb-2 font-normal">Time</th>
+                      <th className="text-right pb-2 font-normal">Amount</th>
+                      <th className="text-left pb-2 font-normal pl-4">Network</th>
+                      <th className="text-left pb-2 font-normal pl-4">Address / TXID</th>
+                      <th className="text-left pb-2 font-normal pl-4">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {data.history.map((w) => {
+                      const isRealTxid = w.txid && !w.txid.startsWith("orah_") && w.txid.length > 20;
+                      const isBsv = w.network === "BSV";
+                      const unsentEvm = w.status === "completed" && !isBsv && !isRealTxid;
+                      const explorerUrl = isBsv
+                        ? `https://whatsonchain.com/tx/${w.txid}`
+                        : `https://etherscan.io/tx/${w.txid}`;
+                      return (
+                        <tr key={w.id} className={unsentEvm ? "bg-red-500/5" : ""}>
+                          <td className="py-2.5 text-white/50 whitespace-nowrap pr-3">
+                            {new Date(w.timestamp).toLocaleString()}
+                          </td>
+                          <td className="py-2.5 text-right font-semibold text-green-400 whitespace-nowrap">
+                            ${w.amount.toFixed(4)}
+                          </td>
+                          <td className="py-2.5 pl-4 text-white/60 whitespace-nowrap">{w.network}</td>
+                          <td className="py-2.5 pl-4 max-w-[180px]">
+                            <div className="flex items-center text-white/50 truncate">
+                              <span className="truncate">{w.address.slice(0, 12)}…</span>
+                              <CopyBtn text={w.address} />
+                            </div>
+                            <div className="flex items-center truncate mt-0.5">
+                              {isRealTxid ? (
+                                <>
+                                  <a href={explorerUrl} target="_blank" rel="noreferrer"
+                                    className="font-mono text-green-400/70 hover:text-green-400 truncate underline underline-offset-2">
+                                    {w.txid.slice(0, 16)}…
+                                  </a>
+                                  <CopyBtn text={w.txid} />
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-white/20 font-mono truncate">Ref: {w.txid.slice(5, 18)}…</span>
+                                  <CopyBtn text={w.txid} />
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 pl-4 whitespace-nowrap">
+                            {unsentEvm ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-red-500/15 text-red-400">
+                                <AlertTriangle className="w-3 h-3" /> Unsent
+                              </span>
+                            ) : w.status === "completed" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-400/10 text-green-400">
+                                <CheckCircle className="w-3 h-3" /> Sent
+                              </span>
+                            ) : w.status === "cancelled" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-white/5 text-white/40">
+                                <X className="w-3 h-3" /> Cancelled
+                              </span>
+                            ) : w.status === "processing" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-blue-400/10 text-blue-400">
+                                <RefreshCw className="w-3 h-3" /> Processing
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-orange-400/10 text-orange-400">
+                                <Clock className="w-3 h-3" /> Pending
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
