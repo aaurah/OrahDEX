@@ -338,6 +338,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     fee: number;
   } | null>(null);
 
+  const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
+
   const orderMutation = useMutation({
     mutationFn: async (body: object) => {
       const res = await fetch(`${BASE}/api/orders`, {
@@ -345,10 +347,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("Order failed");
+      if (!res.ok) {
+        let errMsg = "Order failed";
+        let errCode: string | undefined;
+        try {
+          const errData = await res.json();
+          errMsg  = errData?.error ?? errMsg;
+          errCode = errData?.code;
+        } catch { /* ignore parse error */ }
+        const err: any = new Error(errMsg);
+        err.code = errCode;
+        throw err;
+      }
       return res.json();
     },
     onSuccess: (data, variables: any) => {
+      setOrderError(null);
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
       const tradeId  = data?.id ?? null;
@@ -433,14 +447,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         });
       }
     },
-    onError: () => {
+    onError: (err: any) => {
       // Release lock on error so the user can try again
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       lastOrderFingerprintRef.current = null;
+      const msg  = err?.message ?? "Could not place order";
+      const code = err?.code;
+      setOrderError({ message: msg, code });
       toast({
-        title: "Order Failed",
-        description: "Could not place order — check your balance and try again.",
+        title:       "Order Failed",
+        description: code === "DEPOSIT_REQUIRED"
+          ? "Deposit funds to your OrahDEX trading balance before trading."
+          : code === "INSUFFICIENT_FUNDS"
+          ? "Insufficient balance. Check your trading balance."
+          : msg,
         variant: "destructive",
       });
     },
@@ -960,6 +981,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         setPrice(String(bP));
                         setAmount(bQ != null ? bQ.toFixed(3) : "");
                         setSide("buy");
+                        setOrderError(null);
                         setShowOrderForm(true);
                       }}
                     >
@@ -990,6 +1012,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         setPrice(String(aP));
                         setAmount(aQ != null ? aQ.toFixed(3) : "");
                         setSide("sell");
+                        setOrderError(null);
                         setShowOrderForm(true);
                       }}
                     >
@@ -1268,7 +1291,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   className="flex-1 bg-transparent text-sm text-center outline-none tabular-nums"
                   placeholder={`Amount (${base})`}
                   value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  onChange={e => { setAmount(e.target.value); setOrderError(null); }}
                   inputMode="decimal"
                 />
               </div>
@@ -1547,10 +1570,33 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             )}
 
             {/* Error banner */}
-            {orderMutation.isError && (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border bg-red-500/10 border-red-500/25 text-red-400 text-sm font-semibold">
-                <AlertCircle size={16} className="shrink-0" />
-                Order failed — please try again
+            {orderError && (
+              <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border bg-red-500/10 border-red-500/25 text-red-400 text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span className="font-semibold leading-snug">
+                    {orderError.code === "DEPOSIT_REQUIRED"
+                      ? "Deposit required to trade"
+                      : orderError.code === "INSUFFICIENT_FUNDS"
+                      ? "Insufficient trading balance"
+                      : "Order failed"}
+                  </span>
+                </div>
+                <p className="text-xs text-red-400/80 leading-relaxed pl-6">
+                  {orderError.code === "DEPOSIT_REQUIRED"
+                    ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                    : orderError.code === "INSUFFICIENT_FUNDS"
+                    ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
+                    : orderError.message}
+                </p>
+                {orderError.code === "DEPOSIT_REQUIRED" && (
+                  <a
+                    href="/bridge"
+                    className="ml-6 mt-0.5 text-xs font-bold text-primary underline underline-offset-2"
+                  >
+                    Go to Deposit →
+                  </a>
+                )}
               </div>
             )}
 
@@ -1611,6 +1657,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   handlePlaceOrder();
                 } else {
                   setSide("buy");
+                  setOrderError(null);
                   setShowOrderForm(true);
                 }
               }}
@@ -1638,6 +1685,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   handlePlaceOrder();
                 } else {
                   setSide("sell");
+                  setOrderError(null);
                   setShowOrderForm(true);
                 }
               }}
