@@ -34,6 +34,8 @@ const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string;
   USDT:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
   USDC:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
   DAI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  TUSD:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
+  FDUSD: { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
   AAVE:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
   LINK:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
   UNI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
@@ -79,8 +81,11 @@ function getNativeAsset(network: string | null, chainId: number | null): string 
 const ASSET_COLORS: Record<string, string> = {
   ETH: "#8B5CF6", BNB: "#EAB308", MATIC: "#7C3AED", POL: "#7C3AED",
   USDT: "#22C55E", USDC: "#3B82F6", DAI: "#EAB308", WBTC: "#F97316",
-  LINK: "#3B82F6", BSV: "#22C55E", BTC: "#F97316", SOL: "#9945FF",
-  AVAX: "#E84142", FTM: "#1969FF", MNT: "#6B7280",
+  TUSD: "#1D4ED8", BUSD: "#F59E0B", FDUSD: "#64748B",
+  LINK: "#2563EB", BSV: "#22C55E", BTC: "#F97316", SOL: "#9945FF",
+  AVAX: "#E84142", FTM: "#1969FF", MNT: "#6B7280", ADA: "#0033AD",
+  DOGE: "#C8A300", DOT: "#E6007A", LTC: "#A0A0A0", XRP: "#00A9E0",
+  UNI: "#FF007A", AAVE: "#B6509E", BCH: "#8DC351",
   TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
 };
 
@@ -135,6 +140,7 @@ export function MobilePortfolio() {
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [sweeping, setSweeping] = useState(false);
   const [sweepMsg, setSweepMsg] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -187,12 +193,28 @@ export function MobilePortfolio() {
     staleTime: 30_000,
   });
 
-  // Group history by date label
+  // All coins that appear in history (for filter chips)
+  const historyCoins: string[] = (() => {
+    const seen = new Set<string>();
+    for (const t of historyData) {
+      const base = (t.symbol ?? "BSV/USDT").split("/")[0] ?? "BSV";
+      seen.add(base);
+    }
+    return Array.from(seen);
+  })();
+
+  // Group history by date label (filtered by selected coin)
   const historyByDate: { label: string; trades: any[] }[] = (() => {
     const today = new Date(); today.setHours(0,0,0,0);
     const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
     const groups: Record<string, any[]> = {};
-    for (const t of historyData) {
+    const filtered = historyFilter
+      ? historyData.filter(t => {
+          const base = (t.symbol ?? "BSV/USDT").split("/")[0];
+          return base === historyFilter;
+        })
+      : historyData;
+    for (const t of filtered) {
       const d = new Date(t.timestamp ?? t.createdAt ?? Date.now());
       d.setHours(0,0,0,0);
       const label = d.getTime() === today.getTime() ? "Today"
@@ -328,9 +350,9 @@ export function MobilePortfolio() {
     }
   }
   const lockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
+  const STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","FDUSD","USDD","oUSD"]);
   const lockedTotalUsd = lockedEntries.reduce((s, [token, v]) => {
-    const isStable = ["USDT", "USDC", "DAI", "BUSD"].includes(token);
-    const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
+    const p = STABLES.has(token) ? 1 : (prices?.[token]?.lastPrice ?? 0);
     return s + v.amount * p;
   }, 0);
 
@@ -345,15 +367,13 @@ export function MobilePortfolio() {
   const isOrahWallet = provider === "orah-wallet";
 
   const exchTotalUsd = exchBalancesWithValue.reduce((sum, b) => {
-    const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
-    const p = isStable ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
+    const p = STABLES.has(b.asset) ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
     return sum + (b.free + b.locked) * p;
   }, 0);
 
   const exchNonZero = exchBalancesWithValue.map(b => {
-    const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
-    const p = isStable ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
-    const change = isStable ? 0 : (prices?.[b.asset]?.priceChangePercent24h ?? 0);
+    const p = STABLES.has(b.asset) ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
+    const change = STABLES.has(b.asset) ? 0 : (prices?.[b.asset]?.priceChangePercent24h ?? 0);
     return { ...b, price: p, value: (b.free + b.locked) * p, change };
   }).filter(b => b.free > 0 || b.locked > 0);
 
@@ -1149,42 +1169,70 @@ export function MobilePortfolio() {
                 <RefreshCw size={20} className="animate-spin opacity-40" />
                 <p className="text-xs">Loading history…</p>
               </div>
-            ) : historyByDate.length === 0 ? (
+            ) : historyData.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <History size={28} className="opacity-20 mb-1" />
                 <p className="text-sm font-medium">No transaction history yet</p>
                 <p className="text-xs opacity-60 text-center">Your trades will appear here after you buy or sell</p>
               </div>
             ) : (
-              <div className="space-y-4 mb-4">
-                {historyByDate.map(({ label, trades }) => (
-                  <div key={label}>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
-                    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                      {trades.map((t: any, i: number) => {
-                        const isBuy  = (t.side ?? "buy") === "buy";
-                        const sym    = (t.symbol ?? "BSV/USDT").split("/");
-                        const base   = sym[0] ?? "BSV";
-                        const quote  = sym[1] ?? "USDT";
-                        // BUY  = received base coin (green arrow in)
-                        // SELL = received quote coin (red arrow out)
-                        const coinIn  = isBuy ? base  : quote;
-                        const coinOut = isBuy ? quote : base;
-                        const amtIn   = isBuy
-                          ? Number(t.quantity ?? t.fillQty ?? 0)
-                          : Number(t.total    ?? (Number(t.quantity) * Number(t.price)));
-                        const amtOut  = isBuy
-                          ? Number(t.total    ?? (Number(t.quantity) * Number(t.price)))
-                          : Number(t.quantity ?? t.fillQty ?? 0);
-                        const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
-                        const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                        const fee     = Number(t.fee ?? 0);
-                        const coinColors: Record<string, string> = {
-                          BTC:"#F7931A", ETH:"#627EEA", BSV:"#EAB308", BNB:"#F0B90B",
-                          USDT:"#26A17B", USDC:"#2775CA", SOL:"#9945FF",
-                          MATIC:"#8247E5", AVAX:"#E84142", ADA:"#0033AD",
-                        };
-                        const color = coinColors[base] ?? "#6B7280";
+              <>
+                {/* Coin filter chips */}
+                {historyCoins.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                    <button
+                      onClick={() => setHistoryFilter(null)}
+                      className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                        !historyFilter
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {historyCoins.map(coin => (
+                      <button
+                        key={coin}
+                        onClick={() => setHistoryFilter(historyFilter === coin ? null : coin)}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                          historyFilter === coin
+                            ? "bg-primary/15 border-primary/40 text-primary"
+                            : "bg-card border-border text-muted-foreground"
+                        }`}
+                      >
+                        <span
+                          className="w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
+                          style={{ backgroundColor: (ASSET_COLORS[coin] ?? "#6B7280") + "33", color: ASSET_COLORS[coin] ?? "#6B7280" }}
+                        >
+                          {coin[0]}
+                        </span>
+                        {coin}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="space-y-4 mb-4">
+                  {historyByDate.map(({ label, trades }) => (
+                    <div key={label}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
+                      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        {trades.map((t: any, i: number) => {
+                          const isBuy  = (t.side ?? "buy") === "buy";
+                          const sym    = (t.symbol ?? "BSV/USDT").split("/");
+                          const base   = sym[0] ?? "BSV";
+                          const quote  = sym[1] ?? "USDT";
+                          const coinIn  = isBuy ? base  : quote;
+                          const coinOut = isBuy ? quote : base;
+                          const amtIn   = isBuy
+                            ? Number(t.quantity ?? t.fillQty ?? 0)
+                            : Number(t.total    ?? (Number(t.quantity) * Number(t.price)));
+                          const amtOut  = isBuy
+                            ? Number(t.total    ?? (Number(t.quantity) * Number(t.price)))
+                            : Number(t.quantity ?? t.fillQty ?? 0);
+                          const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+                          const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                          const fee     = Number(t.fee ?? 0);
+                          const color = ASSET_COLORS[base] ?? "#6B7280";
                         return (
                           <div
                             key={t.id ?? i}
@@ -1234,6 +1282,7 @@ export function MobilePortfolio() {
                   </div>
                 ))}
               </div>
+              </>
             )
           )}
         </div>
