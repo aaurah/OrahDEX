@@ -10,7 +10,7 @@
  *   - Fast, no gas, uses OrahDEX internal ledger balances
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
@@ -31,6 +31,7 @@ import { getWagmiConfig, CHAIN_RPC_URLS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -540,6 +541,46 @@ export function Swap() {
 
   const chainConfig = DEX_CHAINS.find(c => c.id === chainId)!;
 
+  // Fetch on-chain balances for the selected chain so we can show "Balance: X.XX ETH"
+  const { balances: onChainBalances, refresh: refreshBalances } = useEvmBalances(
+    address ?? null,
+    chainId,
+  );
+
+  const fromTokenBalance = useMemo(() => {
+    if (!onChainBalances.length) return null;
+    const match = onChainBalances.find(b =>
+      fromToken.isNative ? !!b.isNative : b.symbol.toUpperCase() === fromToken.symbol.toUpperCase()
+    );
+    return match ? match.amount : null;
+  }, [onChainBalances, fromToken]);
+
+  const toTokenBalance = useMemo(() => {
+    if (!onChainBalances.length) return null;
+    const match = onChainBalances.find(b =>
+      toToken.isNative ? !!b.isNative : b.symbol.toUpperCase() === toToken.symbol.toUpperCase()
+    );
+    return match ? match.amount : null;
+  }, [onChainBalances, toToken]);
+
+  const handleMax = () => {
+    if (fromTokenBalance == null) return;
+    // Leave a small gas buffer for native asset swaps
+    const maxAmt = fromToken.isNative
+      ? Math.max(0, fromTokenBalance - 0.002)
+      : fromTokenBalance;
+    const val = maxAmt.toFixed(6).replace(/\.?0+$/, "") || "0";
+    setAmountIn(val);
+    setTxHash(null); setTxSuccess(false);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchQuote(val), 300);
+  };
+
+  // Refresh balances after a confirmed swap
+  useEffect(() => {
+    if (txSuccess) refreshBalances();
+  }, [txSuccess, refreshBalances]);
+
   // Auto-switch to DEX mode when a non-Orah wallet connects
   useEffect(() => {
     if (!isOrahWallet) setMode("dex");
@@ -725,12 +766,24 @@ export function Swap() {
 
               {/* From */}
               <div className="rounded-xl bg-muted/40 p-3 space-y-1">
-                <TokenPicker
-                  tokens={tokens}
-                  selected={fromToken}
-                  onChange={t => { setFromToken(t); setQuote(null); setAmountIn(""); }}
-                  label="You pay"
-                />
+                <div className="flex items-center justify-between">
+                  <TokenPicker
+                    tokens={tokens}
+                    selected={fromToken}
+                    onChange={t => { setFromToken(t); setQuote(null); setAmountIn(""); }}
+                    label="You pay"
+                  />
+                  {fromTokenBalance != null && (
+                    <button
+                      onClick={handleMax}
+                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors ml-2 shrink-0"
+                    >
+                      <span className="text-muted-foreground">Balance:</span>
+                      <span className="font-mono">{fromTokenBalance < 0.0001 && fromTokenBalance > 0 ? fromTokenBalance.toFixed(8) : fromTokenBalance.toFixed(4)}</span>
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-primary/15 text-primary font-bold">MAX</span>
+                    </button>
+                  )}
+                </div>
                 <input
                   type="number"
                   min="0"
@@ -759,6 +812,11 @@ export function Swap() {
                   onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
                   label="You receive"
                 />
+                {toTokenBalance != null && (
+                  <p className="text-xs text-muted-foreground">
+                    Balance: <span className="font-mono">{toTokenBalance < 0.0001 && toTokenBalance > 0 ? toTokenBalance.toFixed(8) : toTokenBalance.toFixed(4)}</span> {toToken.symbol}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   {quoting ? (
                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
