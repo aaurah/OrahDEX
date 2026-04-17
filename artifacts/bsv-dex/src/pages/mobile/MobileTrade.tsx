@@ -223,18 +223,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
     setApiBalancesLoading(false);
   }, []);
-  // Fetch exchange balances for all EVM users — Reown/WalletConnect users who
-  // have exchange ledger funds (e.g. previously used Orah Wallet) should also
-  // see and trade against those balances.
+  // Fetch exchange balances only for the internal orah-wallet.
+  // External wallets (MetaMask, WalletConnect, etc.) trade from their on-chain balance.
   useEffect(() => {
-    if (!isEvm || !address) { setApiBalances({}); return; }
+    if (!isOrahWallet || !isEvm || !address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
-  }, [isEvm, address, symbol, fetchApiBalances, base, quote]);
-  // All connected wallets read from the internal ledger (seeded on first use).
-  const usesApiBalance = !!address;
-  // True while we're still waiting for the exchange balance fetch to complete.
-  // Covers all EVM users so no stale on-chain balance flashes as Max.
-  const balancesPending = isEvm && apiBalancesLoading;
+  }, [isOrahWallet, isEvm, address, symbol, fetchApiBalances, base, quote]);
+  // Only the internal orah-wallet reads from the internal ledger.
+  // External connected wallets use their on-chain balance directly.
+  const usesApiBalance = isOrahWallet;
+  // True while we're still waiting for the orah-wallet ledger fetch to complete.
+  const balancesPending = isOrahWallet && isEvm && apiBalancesLoading;
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
