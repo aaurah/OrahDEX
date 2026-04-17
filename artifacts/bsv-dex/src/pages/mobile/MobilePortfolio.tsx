@@ -473,18 +473,6 @@ export function MobilePortfolio() {
           </div>
           <div className="flex items-center gap-1.5">
             <button
-              onClick={handleCopy}
-              className={cn(
-                "p-2 rounded-full border transition-all",
-                copied
-                  ? "border-green-500/40 text-green-400 bg-green-500/10"
-                  : "border-border text-muted-foreground hover:text-foreground"
-              )}
-              title="Copy address"
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-            </button>
-            <button
               onClick={() => { refetch(); if (network === "evm") evmRefresh?.(); if (network === "tron") tronRefresh?.(); }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-foreground transition-all"
               title="Refresh"
