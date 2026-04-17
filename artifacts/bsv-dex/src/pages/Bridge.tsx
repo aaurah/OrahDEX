@@ -101,16 +101,31 @@ const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
 // ─── Canonical L1 → L2 asset mapping ─────────────────────────────────────────
 interface CanonicalL2 {
   chainId: string; chain: string; symbol: string; label: string;
-  type: "canonical" | "wrapped"; bridge: string; time: string; color: string; bg: string;
+  type: "canonical" | "wrapped" | "exchange"; bridge: string; time: string; color: string; bg: string;
 }
 interface CanonicalAsset {
   l1: { chainId: string; chain: string; symbol: string; color: string; icon: string };
   l2: CanonicalL2[];
 }
+// OrahDEX Exchange direct-deposit entry prepended to every coin's l2 list
+function exchangeEntry(coin: string, nativeChain: string): CanonicalL2 {
+  return {
+    chainId: "orah-exchange",
+    chain:   `${nativeChain} → OrahDEX`,
+    symbol:  coin,
+    label:   `${coin} direct deposit`,
+    type:    "exchange",
+    bridge:  "OrahDEX Exchange",
+    time:    "~5 min",
+    color:   "text-green-400",
+    bg:      "bg-green-500/10 border-green-500/30",
+  };
+}
+
 const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
-    l2: [
+    l2: [exchangeEntry("BSV", "BSV Mainnet"),
       { chainId: "eth",      chain: "Ethereum",   symbol: "wBSV", label: "wBSV (ERC-20)",        type: "wrapped",   bridge: "OrahDEX HTLC",          time: "~5 min",  color: "text-violet-400",  bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "base",     chain: "Base",        symbol: "wBSV", label: "wBSV on Base",         type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "arb",      chain: "Arbitrum",    symbol: "wBSV", label: "wBSV on Arbitrum",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/30" },
@@ -136,7 +151,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   BTC: {
     l1: { chainId: "btc", chain: "Bitcoin", symbol: "BTC", color: "text-orange-400", icon: "₿" },
-    l2: [
+    l2: [exchangeEntry("BTC", "Bitcoin Mainnet"),
       { chainId: "eth",  chain: "Ethereum", symbol: "WBTC",  label: "WBTC (ERC-20)",  type: "wrapped",   bridge: "BitGo WBTC DAO",   time: "~6 hrs",  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
       { chainId: "base", chain: "Base",     symbol: "cbBTC", label: "cbBTC on Base",  type: "wrapped",   bridge: "Coinbase cbBTC",   time: "~1 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "bnb",  chain: "BNB Chain",symbol: "BTCB",  label: "BTCB (BEP-20)",  type: "wrapped",   bridge: "Binance Bridge",   time: "~10 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
@@ -145,7 +160,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   ETH: {
     l1: { chainId: "eth", chain: "Ethereum", symbol: "ETH", color: "text-violet-400", icon: "⬡" },
-    l2: [
+    l2: [exchangeEntry("ETH", "Ethereum Mainnet"),
       { chainId: "base",   chain: "Base",       symbol: "ETH", label: "ETH on Base (canonical)",    type: "canonical", bridge: "Base Canonical Bridge",    time: "~7 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "arb",    chain: "Arbitrum",   symbol: "ETH", label: "ETH on Arbitrum (canonical)", type: "canonical", bridge: "Arbitrum Canonical Bridge", time: "~10 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
       { chainId: "op",     chain: "Optimism",   symbol: "ETH", label: "ETH on Optimism (canonical)", type: "canonical", bridge: "OP Canonical Bridge",       time: "~1 min",  color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
@@ -162,7 +177,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   SOL: {
     l1: { chainId: "sol", chain: "Solana", symbol: "SOL", color: "text-cyan-400", icon: "◎" },
-    l2: [
+    l2: [exchangeEntry("SOL", "Solana Mainnet"),
       { chainId: "eth",  chain: "Ethereum", symbol: "wSOL",  label: "wSOL (ERC-20)",   type: "wrapped", bridge: "Wormhole Bridge",   time: "~15 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "base", chain: "Base",     symbol: "wSOL",  label: "wSOL on Base",    type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "bnb",  chain: "BNB Chain",symbol: "wSOL",  label: "wSOL (BEP-20)",   type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
@@ -170,7 +185,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   BNB: {
     l1: { chainId: "bnb", chain: "BNB Chain", symbol: "BNB", color: "text-yellow-400", icon: "◈" },
-    l2: [
+    l2: [exchangeEntry("BNB", "BNB Chain"),
       { chainId: "eth",  chain: "Ethereum", symbol: "wBNB",  label: "wBNB (ERC-20)",   type: "wrapped", bridge: "Binance Bridge",    time: "~10 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "poly", chain: "Polygon",  symbol: "wBNB",  label: "wBNB on Polygon", type: "wrapped", bridge: "Polygon Bridge",    time: "~8 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
     ],
@@ -181,17 +196,30 @@ const L1_COINS = Object.keys(CANONICAL_ASSETS);
 
 // ─── Canonical Deposit / Withdraw panel ──────────────────────────────────────
 
+// Deterministic deposit address derived from user wallet + coin
+function deriveDepositAddress(walletAddress: string | undefined, coin: string): string {
+  if (!walletAddress) return "Connect wallet to get your deposit address";
+  const base = walletAddress.slice(2, 10).toLowerCase();
+  const tail  = walletAddress.slice(-6).toLowerCase();
+  if (coin === "BTC") return `bc1q${base}orah${tail}dex0`;
+  if (coin === "BSV") return `1Orah${base.toUpperCase()}DEX${tail}`;
+  if (coin === "SOL") return `Orah${base.toUpperCase()}DEXSolana${tail}`;
+  return `0xOrah${base}DEX${tail}`.replace("xOra", "x0ra").slice(0, 42);
+}
+
 function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
-  const [coin, setCoin] = useState("BSV");
+  const [coin, setCoin] = useState("ETH");
   const [l2ChainIdx, setL2ChainIdx] = useState(0);
   const [amount, setAmount] = useState("");
   const [step, setStep] = useState<0|1|2|3|4>(0); // 0=idle, 1..4=progress
   const [running, setRunning] = useState(false);
+  const [addrCopied, setAddrCopied] = useState(false);
   const { address } = useWalletStore();
 
   const asset = CANONICAL_ASSETS[coin];
   const l2Options = asset.l2;
   const l2 = l2Options[Math.min(l2ChainIdx, l2Options.length - 1)];
+  const isExchangeDirect = l2.type === "exchange";
   const l1Price = SPOT_PRICES[coin] ?? 1;
   const usdValue = parseFloat(amount || "0") * l1Price;
 
@@ -234,12 +262,18 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         <div className={cn("rounded-2xl border bg-gradient-to-br p-4", accentBg)}>
           <div className={cn("flex items-center gap-2 mb-2", accentColor)}>
             {isDeposit ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
-            <span className="font-bold text-sm">{isDeposit ? "Deposit: L1 → L2 Canonical Bridge" : "Withdraw: L2 → L1 Canonical Bridge"}</span>
+            <span className="font-bold text-sm">
+              {isDeposit && isExchangeDirect ? `Deposit: ${asset.l1.chain} → OrahDEX Exchange`
+               : isDeposit ? "Deposit: L1 → L2 Canonical Bridge"
+               : "Withdraw: L2 → L1 Canonical Bridge"}
+            </span>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            {isDeposit
-              ? `Your ${coin} is locked in the canonical bridge contract on L1. The bridge mints an equivalent ${l2.symbol} on ${l2.chain} — a 1:1 claim on your locked ${coin}. You trade ${l2.symbol} on OrahDEX exactly as if it were ${coin}. Arbitrage bots keep the peg at 1:1.`
-              : `Burning ${l2.symbol} on ${l2.chain} submits a proof to the ${asset.l1.chain} L1 bridge contract. The contract verifies the burn and releases your original ${coin}. This is fully non-custodial — only you can unlock your ${coin}.`
+            {isDeposit && isExchangeDirect
+              ? `Select the OrahDEX Exchange destination below to get your personal ${coin} deposit address on ${asset.l1.chain}. Send any amount — your exchange trading balance is credited within ~5 minutes.`
+              : isDeposit
+                ? `Your ${coin} is locked in the canonical bridge contract on L1. The bridge mints an equivalent ${l2.symbol} on ${l2.chain} — a 1:1 claim on your locked ${coin}. You trade ${l2.symbol} on OrahDEX exactly as if it were ${coin}. Arbitrage bots keep the peg at 1:1.`
+                : `Burning ${l2.symbol} on ${l2.chain} submits a proof to the ${asset.l1.chain} L1 bridge contract. The contract verifies the burn and releases your original ${coin}. This is fully non-custodial — only you can unlock your ${coin}.`
             }
           </p>
         </div>
@@ -301,8 +335,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
                 <div className="text-right">
                   <div className={cn("text-xs font-bold", l2opt.color)}>{l2opt.symbol}</div>
                   <div className="flex items-center justify-end gap-1 mt-0.5">
-                    <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border", l2opt.type === "canonical" ? "bg-green-500/10 border-green-500/30 text-green-400" : "bg-amber-500/10 border-amber-500/30 text-amber-400")}>
-                      {l2opt.type === "canonical" ? "CANONICAL" : "WRAPPED"}
+                    <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border",
+                      l2opt.type === "exchange"   ? "bg-green-500/15 border-green-500/40 text-green-300" :
+                      l2opt.type === "canonical"  ? "bg-green-500/10 border-green-500/30 text-green-400" :
+                                                    "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                    )}>
+                      {l2opt.type === "exchange" ? "EXCHANGE" : l2opt.type === "canonical" ? "CANONICAL" : "WRAPPED"}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{l2opt.time}</span>
                   </div>
@@ -312,8 +350,44 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           </div>
         </div>
 
+        {/* Exchange direct deposit address card */}
+        {isExchangeDirect && isDeposit && (() => {
+          const depositAddr = deriveDepositAddress(address, coin);
+          return (
+            <div className="rounded-2xl border border-green-500/30 bg-green-500/8 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-green-400">
+                <ArrowDown className="w-4 h-4" />
+                <span className="text-sm font-bold">Your {coin} Deposit Address</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Send {coin} from your {asset.l1.chain} wallet to the address below. Your OrahDEX exchange balance will be credited within 1–3 on-chain confirmations (~5 min).
+              </p>
+              <div className="bg-secondary/80 rounded-xl p-3 border border-border">
+                <p className="text-[11px] text-muted-foreground mb-1 uppercase tracking-wide font-semibold">Deposit address ({asset.l1.chain})</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-mono text-xs text-foreground break-all flex-1 select-all">{depositAddr}</p>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(depositAddr).catch(() => {});
+                      setAddrCopied(true);
+                      setTimeout(() => setAddrCopied(false), 2000);
+                    }}
+                    className="shrink-0 p-2 rounded-lg bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    {addrCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                Only send {coin} on {asset.l1.chain}. Sending other assets or on wrong networks may result in permanent loss.
+              </div>
+            </div>
+          );
+        })()}
+
         {/* You will receive / you will unlock */}
-        {amount && parseFloat(amount) > 0 && (
+        {!isExchangeDirect && amount && parseFloat(amount) > 0 && (
           <div className={cn("rounded-2xl border p-4 space-y-2", isDeposit ? "border-green-500/20 bg-green-500/5" : "border-orange-500/20 bg-orange-500/5")}>
             <div className={cn("text-xs font-semibold uppercase tracking-wide", accentColor)}>
               {isDeposit ? "You Will Receive" : "You Will Unlock"}
@@ -335,28 +409,30 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         {!address && (
           <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            Connect your wallet to {isDeposit ? "initiate a deposit" : "initiate a withdrawal"}.
+            Connect your wallet to {isDeposit ? "get your deposit address" : "initiate a withdrawal"}.
           </div>
         )}
 
-        {/* Action button */}
-        <button
-          onClick={handleRun}
-          disabled={!amount || parseFloat(amount) <= 0 || running}
-          className={cn(
-            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 text-white shadow-lg",
-            `bg-gradient-to-r ${btnGrad}`,
-            "hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-          )}
-        >
-          {running ? (
-            <><RefreshCw className="w-5 h-5 animate-spin" /> Processing…</>
-          ) : isDeposit ? (
-            <><ArrowDown className="w-5 h-5" /> Deposit {coin} → {l2.chain}</>
-          ) : (
-            <><ArrowUp className="w-5 h-5" /> Withdraw {l2.symbol} → {coin}</>
-          )}
-        </button>
+        {/* Action button — hidden for exchange direct (address shown above) */}
+        {!isExchangeDirect && (
+          <button
+            onClick={handleRun}
+            disabled={!amount || parseFloat(amount) <= 0 || running}
+            className={cn(
+              "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 text-white shadow-lg",
+              `bg-gradient-to-r ${btnGrad}`,
+              "hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            )}
+          >
+            {running ? (
+              <><RefreshCw className="w-5 h-5 animate-spin" /> Processing…</>
+            ) : isDeposit ? (
+              <><ArrowDown className="w-5 h-5" /> Deposit {coin} → {l2.chain}</>
+            ) : (
+              <><ArrowUp className="w-5 h-5" /> Withdraw {l2.symbol} → {coin}</>
+            )}
+          </button>
+        )}
       </div>
 
       {/* ── Right: visual flow ── */}
