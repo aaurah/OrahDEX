@@ -67,6 +67,7 @@ const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => 
 const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
 const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
 const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
+const AdminTreasury       = lazy(() => import("@/pages/admin/Treasury").then(m => ({ default: m.AdminTreasury })));
 const AdminSiteSettings   = lazy(() => import("@/pages/admin/SiteSettings").then(m => ({ default: m.AdminSiteSettings })));
 const AdminHomeBuilder    = lazy(() => import("@/pages/admin/HomeBuilder").then(m => ({ default: m.AdminHomeBuilder })));
 const AdminFeatureFlags   = lazy(() => import("@/pages/admin/FeatureFlags").then(m => ({ default: m.AdminFeatureFlags })));
@@ -316,6 +317,7 @@ function Router() {
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
+      <Route path="/admin/treasury">  <AdminRoute><AdminTreasury /></AdminRoute></Route>
       <Route path="/admin/fee-wallet"><AdminRoute><AdminFeeWallet /></AdminRoute></Route>
       <Route path="/admin/bot-profit"><AdminRoute><AdminBotProfit /></AdminRoute></Route>
       <Route path="/admin/site">    <AdminRoute><AdminSiteSettings /></AdminRoute></Route>

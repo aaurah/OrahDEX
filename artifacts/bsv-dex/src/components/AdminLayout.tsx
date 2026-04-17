@@ -6,6 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
+  Landmark,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -116,6 +117,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Finance",
     items: [
+      { href: "/admin/treasury",     label: "Treasury",           icon: Landmark },
       { href: "/admin/fee-wallet",   label: "Fee Wallet",         icon: Wallet },
       { href: "/admin/bot-profit",   label: "Bot Profit",         icon: Bot },
       { href: "/admin/transactions", label: "On-Chain Txns",      icon: Activity },
