@@ -192,7 +192,8 @@ const ORDER_TYPE_DESCS: Record<OrderType, string> = {
 
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
-  const symbol = rawSymbol.replace(/-/g, "/");
+  // Only replace the first hyphen (base-quote separator); keep -PERP suffix intact
+  const symbol = rawSymbol.replace(/^([^-]+)-/, "$1/");
   const base = symbol.split("/")[0];
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");

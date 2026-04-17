@@ -13,7 +13,7 @@ const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").
 const NAV_TABS = [
   { path: "/markets", matchPrefix: "/markets", label: "Markets", Icon: BarChart2 },
   { path: "/trade/BSV-USDT", matchPrefix: "/trade", label: "Trade", Icon: ArrowRightLeft },
-  { path: "/futures/BSV-USDT", matchPrefix: "/futures", label: "Futures", Icon: TrendingUp },
+  { path: "/futures/BSV-USDT-PERP", matchPrefix: "/futures", label: "Futures", Icon: TrendingUp },
   { path: "/dex", matchPrefix: "/dex", label: "Hub", Icon: Layers },
   { path: "/prediction", matchPrefix: "/prediction", label: "Predict", Icon: Target },
   { path: "/nft", matchPrefix: "/nft", label: "NFT", Icon: Image },
