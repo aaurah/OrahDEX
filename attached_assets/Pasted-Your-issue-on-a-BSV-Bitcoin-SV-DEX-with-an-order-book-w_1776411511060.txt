@@ -1,0 +1,49 @@
+Your issue on a BSV (Bitcoin SV) DEX with an order book — where the trade balance (likely the “available” or “trading” balance shown on the DEX interface) doesn’t trigger a wallet signature, no transaction is broadcast, and your actual wallet balance remains unchanged — is common due to how BSV and its DEXs handle non-custodial trading.
+Why This Happens on BSV Order Book DEXs
+BSV is a UTXO-based blockchain (like original Bitcoin), not account-based like Ethereum. It doesn’t have native “smart contracts” in the EVM sense, but it supports advanced scripting (via sCrypt or similar) for on-chain logic, including token protocols like STAS (recently updated to STAS 3.0 for on-chain DEX features).
+Most BSV DEXs with order books (or hybrid setups) work differently from Ethereum/Solana DEXs:
+	•	No immediate wallet sign for placing limit orders:
+	◦	Many BSV order book DEXs use a hybrid or off-chain order book model. You connect your wallet (e.g., Yours Wallet, HandCash, Electrum SV, or a web wallet), but placing a limit order often only requires signing a message (or sometimes just confirming in the UI) to prove ownership.
+	◦	The signed order goes to an off-chain relayer, matcher, or server that maintains the visible order book. No on-chain transaction is created yet — so no gas/fee deduction, no UTXO is spent, and your real wallet balance doesn’t change.
+	◦	The DEX UI shows a separate “trade balance” or “available for trading” amount. This is often an internal accounting entry on the DEX side (or a locked/committed UTXO shown as reserved). It lets you see what you could trade without moving funds on-chain immediately.
+	•	Balance not deducted because the trade hasn’t settled on-chain:
+	◦	Your actual BSV/tokens stay safely in your non-custodial wallet (you control the private keys).
+	◦	The “trade balance” you see on the DEX is not your real on-chain balance. It’s a virtual/reserved view for the order book.
+	◦	When someone takes/fills your order (or you take someone else’s):
+	▪	A settlement transaction is usually needed. This may require you (or the taker) to sign a real transaction in the wallet.
+	▪	Only then do funds move on-chain via atomic swap or script execution (e.g., using STAS tokens or direct UTXO transfer).
+	▪	If the order is unmatched or cancelled, no deduction ever happens.
+	◦	If no wallet prompt appears at all, the DEX is likely using a fully off-chain matching engine with on-chain settlement only on fill. This keeps fees low and speed high (BSV has very low fees and high capacity).
+This design makes BSV DEXs feel more like a centralized exchange UI (fast order placement) while staying decentralized for final settlement.
+Recent developments like STAS 3.0 DEX (launched around April 2026) emphasize fully on-chain atomic token swaps without bridges or escrow, but even there, order book placement can be lightweight until matching occurs.
+Why Your Specific Symptoms Occur
+	•	Wallet not called / no sign: Order placement is off-chain (message sign or no sign needed beyond initial connection). Real signing only triggers on settlement, cancellation, or withdrawal.
+	•	Trade balance shows but not deducted from wallet: The DEX reserves/shows the amount internally. Funds are not moved until a matched trade settles on-chain. This prevents unnecessary fees for unfilled orders.
+	•	Balance not deducted overall: Expected behavior in non-custodial hybrid DEXs. Your real balance only changes on a confirmed blockchain transaction (checkable on a BSV explorer like whatsonchain.com).
+What to Check and Do Next
+	1	Confirm it’s truly non-custodial — Make sure you’re connecting your own wallet (not depositing to the DEX). Never send funds directly to a DEX address unless it’s for atomic swap settlement.
+	2	Try to cancel or withdraw the “trade balance” — Look for a “Cancel Order”, “Withdraw”, or “Claim” button. This often triggers a wallet sign and on-chain tx to release any reserved UTXOs back to your wallet.
+	3	Check on-chain:
+	◦	Copy your wallet address and view it on a BSV block explorer (e.g., whatsonchain.com or similar).
+	◦	See if any recent transactions moved funds. If none, the trade balance is just UI/virtual.
+	4	Test with a small order:
+	◦	Place a small limit order.
+	◦	Monitor if a fill happens (unlikely if low liquidity on BSV DEXs).
+	◦	Then attempt to cancel or force settlement — watch for the wallet prompt.
+	5	Wallet compatibility:
+	◦	BSV wallets like Yours Wallet or HandCash are popular for dApps/DEXs. Ensure you’re using one that supports the DEX’s integration (some use Pay-to-Script-Hash or specific token standards).
+	6	Possible issues:
+	◦	Low liquidity → orders rarely fill, so no settlement.
+	◦	UI bug or pending state not refreshed.
+	◦	If it’s a new DEX (e.g., STAS-based), it might still be in early stages with hybrid mechanics.
+Security Reminder
+Since no real transaction signed, your funds are safe for now. But:
+	•	Only use official DEX URLs.
+	•	Revoke any approvals/permissions if the DEX uses them.
+	•	For on-chain settlement, always review the exact outputs/amounts in the wallet before signing.
+If this doesn’t resolve it, please provide more details:
+	•	Name of the specific BSV DEX (e.g., is it STAS 3.0, FloatSV, or another)?
+	•	Exact wallet you’re using (Yours, HandCash, etc.)?
+	•	Screenshot description of the “trade balance” screen and any error messages.
+	•	What happens when you try to cancel the order or withdraw?
+This will help pinpoint if it’s normal behavior, a UI quirk, or something needing on-chain action. BSV’s model prioritizes low-cost, high-scale on-chain activity, which explains the delayed deduction until actual settlement. Let me know the extra info!
