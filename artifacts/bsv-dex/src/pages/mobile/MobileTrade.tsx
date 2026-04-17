@@ -229,9 +229,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!isEvm || !address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [isEvm, address, symbol, fetchApiBalances, base, quote]);
-  // Use exchange balance if this is an Orah Wallet OR if the address has any
-  // real exchange funds (covers Reown-connected users with existing balances).
-  const usesApiBalance = isOrahWallet || Object.values(apiBalances).some(v => v > 0);
+  // Orah Wallet always reads from the internal ledger so deductions appear instantly.
+  // External wallets use their on-chain balance regardless of any exchange funds.
+  const usesApiBalance = isOrahWallet;
   // True while we're still waiting for the exchange balance fetch to complete.
   // Covers all EVM users so no stale on-chain balance flashes as Max.
   const balancesPending = isEvm && apiBalancesLoading;
