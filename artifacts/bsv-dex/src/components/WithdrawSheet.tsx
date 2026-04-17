@@ -44,10 +44,26 @@ interface WithdrawHistoryItem {
   recipient:    string;
   network:      string;
   networkLabel: string;
-  status:       "pending" | "processing" | "completed" | "failed";
+  status:       "pending" | "processing" | "completed" | "failed" | "cancelled";
   txid?:        string | null;
   note?:        string | null;
   createdAt:    string;
+}
+
+/** Condense a raw blockchain/Viem error into a short readable message. */
+function summariseNote(raw: string): string {
+  if (!raw) return raw;
+  // Viem "total cost exceeds balance" pattern
+  if (raw.includes("total cost") && raw.includes("gas fee")) return "Insufficient gas — account needs more ETH to cover the transaction fee.";
+  // Insufficient funds generic
+  if (/insufficient funds/i.test(raw)) return "Insufficient funds to complete the transaction.";
+  // Nonce-related
+  if (/nonce/i.test(raw)) return "Transaction nonce conflict — please retry.";
+  // Execution reverted
+  if (/execution reverted/i.test(raw)) return "Transaction reverted by the contract.";
+  // Just return the first sentence / first 120 chars
+  const firstSentence = raw.split(/\.\s/)[0];
+  return firstSentence.length <= 120 ? firstSentence : firstSentence.slice(0, 117) + "…";
 }
 
 export interface WithdrawSheetProps {
@@ -82,7 +98,8 @@ export function WithdrawSheet({
   const [recipient, setRecipient] = useState(defaultRecipient ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [submitted,  setSubmitted]  = useState(false);
-  const [copiedId,   setCopiedId]   = useState<string | null>(null);
+  const [copiedId,    setCopiedId]    = useState<string | null>(null);
+  const [expandedNote, setExpandedNote] = useState<string | null>(null);
 
   // Reset when the dialog re-opens for a new asset
   useEffect(() => {
@@ -168,6 +185,7 @@ export function WithdrawSheet({
   const statusStyle = (s: string) => {
     if (s === "completed")  return "text-green-400  bg-green-400/10  border-green-400/20";
     if (s === "failed")     return "text-red-400    bg-red-400/10    border-red-400/20";
+    if (s === "cancelled")  return "text-orange-400 bg-orange-400/10 border-orange-400/20";
     if (s === "processing") return "text-blue-400   bg-blue-400/10   border-blue-400/20";
     return "text-yellow-400 bg-yellow-400/10 border-yellow-400/20";
   };
@@ -394,9 +412,27 @@ export function WithdrawSheet({
                         <ExternalLink className="w-3 h-3" />
                         View on block explorer
                       </a>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">{item.note}</p>
-                    )
+                    ) : (() => {
+                      const note    = item.note as string;
+                      const summary = summariseNote(note);
+                      const isLong  = note.length > summary.length + 2;
+                      const isOpen  = expandedNote === item.id;
+                      return (
+                        <div className="text-xs text-muted-foreground bg-secondary/30 rounded-lg px-2.5 py-2 space-y-1">
+                          <p className="italic leading-relaxed">
+                            {isOpen ? item.note : summary}
+                          </p>
+                          {isLong && (
+                            <button
+                              onClick={() => setExpandedNote(isOpen ? null : item.id)}
+                              className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
+                            >
+                              {isOpen ? "Show less" : "Show more"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()
                   )}
                 </div>
               ))
