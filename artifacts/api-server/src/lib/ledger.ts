@@ -100,8 +100,11 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     // Stablecoins — generous seed so any quote asset works
     { asset: "USDT",  min: 1000, max: 20000, dec: 2 },
     { asset: "USDC",  min: 1000, max: 20000, dec: 2 },
+    { asset: "TUSD",  min: 1000, max: 10000, dec: 2 },
+    { asset: "FDUSD", min: 500,  max: 5000,  dec: 2 },
     { asset: "BUSD",  min: 500,  max: 10000, dec: 2 },
     { asset: "DAI",   min: 500,  max: 10000, dec: 2 },
+    { asset: "USDD",  min: 200,  max: 3000,  dec: 2 },
     // Major chains
     { asset: "BTC",   min: 0.01,  max: 1.0,   dec: 8 },
     { asset: "ETH",   min: 0.5,   max: 10,    dec: 6 },
@@ -113,13 +116,19 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     { asset: "LTC",   min: 0.5,   max: 20,    dec: 6 },
     { asset: "XRP",   min: 100,   max: 5000,  dec: 2 },
     { asset: "ADA",   min: 100,   max: 5000,  dec: 2 },
-    // DeFi tokens
+    { asset: "TRX",   min: 500,   max: 10000, dec: 2 },
+    // DeFi / mid-cap tokens
+    { asset: "ICP",   min: 10,    max: 500,   dec: 4 },
+    { asset: "BONK",  min: 1000000, max: 50000000, dec: 0 },
     { asset: "LINK",  min: 10,    max: 500,   dec: 4 },
     { asset: "UNI",   min: 10,    max: 500,   dec: 4 },
     { asset: "AAVE",  min: 1,     max: 50,    dec: 4 },
     { asset: "DOGE",  min: 500,   max: 20000, dec: 2 },
     { asset: "DOT",   min: 10,    max: 300,   dec: 4 },
     { asset: "AVAX",  min: 5,     max: 100,   dec: 4 },
+    { asset: "SUI",   min: 50,    max: 2000,  dec: 4 },
+    { asset: "ARB",   min: 50,    max: 2000,  dec: 4 },
+    { asset: "OP",    min: 20,    max: 500,   dec: 4 },
   ];
 
   const client = await pool.connect();
@@ -151,12 +160,15 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
 const ASSET_SEED_AMOUNTS: Record<string, { amount: string }> = {
   USDT: { amount: "5000" }, USDC: { amount: "5000" }, BUSD: { amount: "5000" },
   DAI:  { amount: "5000" }, TUSD: { amount: "5000" }, FDUSD: { amount: "5000" },
+  USDD: { amount: "2000" },
   BTC:  { amount: "0.5" },  ETH:  { amount: "5" },    BSV:   { amount: "100" },
   BNB:  { amount: "15" },   SOL:  { amount: "50" },   MATIC: { amount: "1000" },
   BCH:  { amount: "10" },   LTC:  { amount: "10" },   XRP:   { amount: "2000" },
   ADA:  { amount: "2000" }, LINK: { amount: "200" },  UNI:   { amount: "200" },
   AAVE: { amount: "20" },   DOGE: { amount: "5000" }, DOT:   { amount: "100" },
-  AVAX: { amount: "50" },
+  AVAX: { amount: "50" },   TRX:  { amount: "2000" }, ICP:   { amount: "100" },
+  BONK: { amount: "5000000" }, SUI: { amount: "200" }, ARB:  { amount: "200" },
+  OP:   { amount: "100" },
 };
 
 export async function ensureSeedForAsset(

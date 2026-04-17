@@ -53,6 +53,12 @@ const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string;
   DOT:   { network: "dot",  networkLabel: "Polkadot",           placeholder: "1... (Polkadot address)" },
   LTC:   { network: "ltc",  networkLabel: "Litecoin",           placeholder: "L... or ltc1..." },
   XLM:   { network: "xlm",  networkLabel: "Stellar",            placeholder: "G... (Stellar address)" },
+  ICP:   { network: "icp",  networkLabel: "Internet Computer",  placeholder: "xxxxx-xxxxx (ICP principal)" },
+  SUI:   { network: "sui",  networkLabel: "Sui Network",        placeholder: "0x... (Sui address)" },
+  ARB:   { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" },
+  OP:    { network: "evm",  networkLabel: "Optimism",           placeholder: "0x... (Optimism address)" },
+  USDD:  { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
+  BONK:  { network: "sol",  networkLabel: "Solana (SPL)",       placeholder: "Solana wallet address" },
 };
 
 function getAssetNetworkInfo(asset: string, connectedNetwork: string | null):
@@ -87,6 +93,8 @@ const ASSET_COLORS: Record<string, string> = {
   DOGE: "#C8A300", DOT: "#E6007A", LTC: "#A0A0A0", XRP: "#00A9E0",
   UNI: "#FF007A", AAVE: "#B6509E", BCH: "#8DC351",
   TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
+  ICP: "#F15A24", BONK: "#FF9900", SUI: "#4DA2FF", ARB: "#2D374B",
+  OP:  "#FF0420", USDD: "#1B7D3A",
 };
 
 const TRON_POOL_IDS = new Set(["trx-usdt","btt-usdt","btt-trx","win-trx","jst-usdt","trx-btc"]);
