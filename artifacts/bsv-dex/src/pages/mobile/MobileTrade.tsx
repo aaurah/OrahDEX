@@ -297,6 +297,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      if (usesApiBalance && address) {
+        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
+      }
     },
   });
 
@@ -366,7 +369,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
-      if (usesApiBalance && address) fetchApiBalances(base, quote, address);
+      if (usesApiBalance && address) {
+        fetchApiBalances(base, quote, address);
+        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
+      }
       setTimeout(() => setOrderResult(null), 10000);
 
       if (matched && address) {
