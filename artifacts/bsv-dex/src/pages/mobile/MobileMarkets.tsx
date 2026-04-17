@@ -230,7 +230,7 @@ export function MobileMarkets() {
     setFavorites(prev => { const n = new Set(prev); n.has(sym) ? n.delete(sym) : n.add(sym); return n; });
 
   const goTrade = (m: MktRow) => {
-    const slug = m.symbol.replace(/\//g, "-").replace(/-PERP$/, "");
+    const slug = m.symbol.replace(/\//g, "-");
     navigate(m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`);
   };
 
