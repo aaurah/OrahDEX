@@ -25,6 +25,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from "./bsvWallet.js";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
+import { isVaultConfigured, vaultWithdraw } from "./orahVault.js";
 import { logger } from "./logger.js";
 
 // ── EVM chain registry ─────────────────────────────────────────────────────────
@@ -144,12 +145,33 @@ async function processEvmWithdrawal(params: {
   recipient:  string;
   chainIdOverride?: number;
 }): Promise<{ txid: string; explorer: string }> {
-  const hotWallet = await getOrCreateEvmHotWallet();
-  const privKey = hotWallet.privKeyHex;
-  const account = privateKeyToAccount(privKey);
   const chainId = params.chainIdOverride ?? assetToChainId(params.asset);
   const chain   = chainById(chainId);
   if (!chain) throw new Error(`No EVM chain config for chainId ${chainId}`);
+
+  const assetUp  = params.asset.toUpperCase();
+  const isNative = chain.nativeToken === assetUp;
+
+  // ── Vault path: ERC-20 tokens when VAULT_CONTRACT_ADDRESS is set ───────────
+  if (!isNative && isVaultConfigured()) {
+    try {
+      const result = await vaultWithdraw({
+        asset:     assetUp,
+        amount:    params.amount,
+        recipient: params.recipient,
+        chainId,
+      });
+      logger.info({ txHash: result.txHash, vault: result.vault, asset: assetUp, chainId }, "EVM withdrawal via vault");
+      return { txid: result.txHash, explorer: result.explorer };
+    } catch (vaultErr: any) {
+      // If vault throws because this token isn't in the vault registry, fall through to direct transfer
+      logger.warn({ err: vaultErr?.message, asset: assetUp, chainId }, "vault.withdraw failed — falling back to direct ERC-20 transfer");
+    }
+  }
+
+  // ── Hot-wallet direct path (native tokens + vault fallback) ───────────────
+  const hotWallet = await getOrCreateEvmHotWallet();
+  const account   = privateKeyToAccount(hotWallet.privKeyHex);
 
   const viemChain = {
     id:   chain.id,
@@ -161,20 +183,17 @@ async function processEvmWithdrawal(params: {
   const publicClient = createPublicClient({ chain: viemChain, transport: http(chain.rpcUrl) });
   const walletClient = createWalletClient({ account, chain: viemChain, transport: http(chain.rpcUrl) });
 
-  const assetUp = params.asset.toUpperCase();
-  const isNative = chain.nativeToken === assetUp;
-
   let txHash: `0x${string}`;
 
   if (isNative) {
-    // ── Native token transfer (ETH, BNB, MATIC, AVAX, FTM) ────────────────────
+    // ── Native token transfer (ETH, BNB, MATIC, AVAX, FTM) ──────────────────
     const weiAmount = BigInt(Math.round(params.amount * 1e18));
     txHash = await walletClient.sendTransaction({
       to:    params.recipient as Address,
       value: weiAmount,
     });
   } else {
-    // ── ERC-20 transfer ────────────────────────────────────────────────────────
+    // ── ERC-20 direct transfer (vault not configured or vault fallback) ───────
     const tokenInfo = ERC20_TOKENS[assetUp]?.[chainId];
     if (!tokenInfo) throw new Error(`No ERC-20 contract known for ${assetUp} on chainId ${chainId}`);
 
@@ -189,7 +208,6 @@ async function processEvmWithdrawal(params: {
   }
 
   await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 }).catch(() => {
-    // Don't throw — tx is broadcast; receipt may just be slow
     logger.warn({ txHash }, "withdrawal: receipt polling timed out (tx is broadcast)");
   });
 

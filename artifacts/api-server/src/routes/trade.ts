@@ -16,6 +16,7 @@ import { or, eq } from "drizzle-orm";
 import { settleSwap, getBalances, seedInitialBalances } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
 import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
@@ -340,24 +341,44 @@ router.post("/withdraw", async (req, res) => {
 
     await client.query("COMMIT");
 
-    logger.info({ id, walletAddress, asset, amount: parsed, network, recipient, vaultAddress }, "withdraw: request created");
+    const useVault   = isVaultConfigured();
+    const vaultAddr  = getVaultAddress();
+    const vaultChain = getVaultChainId();
 
-    // Attempt async on-chain broadcast (hot wallet or vault)
-    processWithdrawal({ id, walletAddress, asset, amount: parsed.toString(), network, recipient })
-      .catch(err => logger.warn({ id, err: err?.message }, "withdraw: on-chain broadcast failed — staying pending"));
+    logger.info({ id, walletAddress, asset, amount: parsed, network, recipient, useVault, vaultAddr }, "withdraw: request created");
+
+    // Attempt async on-chain broadcast (vault → hot-wallet fallback)
+    setImmediate(async () => {
+      try {
+        if (useVault) {
+          await vaultWithdraw({ asset, amount: parsed, recipient, chainId: vaultChain });
+          logger.info({ id, asset, amount: parsed, recipient, vault: vaultAddr }, "withdraw: vault.withdraw() succeeded");
+        } else {
+          await processWithdrawal({ id, walletAddress, asset, amount: parsed.toString(), network, recipient });
+        }
+        // Mark completed in DB
+        await client.query(
+          `UPDATE withdrawal_requests SET status='completed', updated_at=now() WHERE id=$1`,
+          [id],
+        ).catch(() => {});
+      } catch (err: any) {
+        logger.warn({ id, err: err?.message }, "withdraw: on-chain broadcast failed — staying pending");
+      }
+    });
 
     res.status(201).json({
       id,
-      status: "pending",
+      status:           "pending",
       walletAddress,
       asset,
-      amount: parsed.toString(),
+      amount:           parsed.toString(),
       network,
       recipient,
-      settlementMethod: vaultAddress ? "vault" : "hot-wallet",
-      vaultAddress,
-      note: vaultAddress
-        ? `Will call vault.withdraw() on contract ${vaultAddress} once the broadcast confirms.`
+      settlementMethod: useVault ? "vault" : "hot-wallet",
+      vaultAddress:     vaultAddr,
+      vaultChainId:     useVault ? vaultChain : null,
+      note: useVault
+        ? `vault.withdraw() called on OrahVault at ${vaultAddr} (chainId ${vaultChain}).`
         : "Hot-wallet broadcast initiated. Fund the hot wallet to enable instant auto-withdrawals.",
       createdAt: new Date().toISOString(),
     });
