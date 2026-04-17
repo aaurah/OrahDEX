@@ -26,39 +26,98 @@ import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // Per-asset canonical withdrawal network (independent of connected wallet)
+const EVM_ERC20 = { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" };
+const EVM_BEP20 = { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" };
+const EVM_ARB   = { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" };
+const EVM_OP    = { network: "evm",  networkLabel: "Optimism",           placeholder: "0x... (Optimism address)" };
+const SOL_NET   = { network: "sol",  networkLabel: "Solana",             placeholder: "Solana wallet address" };
+const SOL_SPL   = { network: "sol",  networkLabel: "Solana (SPL token)", placeholder: "Solana wallet address" };
+const TRON_TRC20= { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" };
+const COSMOS_NET= { network: "cosmos",networkLabel: "Cosmos Hub",        placeholder: "cosmos1... (Bech32 address)" };
+
 const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string; placeholder: string }> = {
-  BTC:   { network: "btc",  networkLabel: "Bitcoin",            placeholder: "bc1... or 1... or 3..." },
-  BSV:   { network: "bsv",  networkLabel: "Bitcoin SV",         placeholder: "1... (BSV P2PKH)" },
-  BCH:   { network: "bch",  networkLabel: "Bitcoin Cash",       placeholder: "1... (P2PKH — same fork address as BTC/BSV)" },
-  ETH:   { network: "evm",  networkLabel: "Ethereum Mainnet",   placeholder: "0x... (ERC-20 address)" },
-  USDT:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  USDC:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  DAI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  TUSD:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  FDUSD: { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
-  AAVE:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  LINK:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  UNI:   { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
-  BNB:   { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
-  BUSD:  { network: "evm",  networkLabel: "BNB Chain (BEP-20)", placeholder: "0x... (BEP-20 address)" },
-  MATIC: { network: "evm",  networkLabel: "Polygon",            placeholder: "0x... (Polygon address)" },
-  AVAX:  { network: "evm",  networkLabel: "Avalanche C-Chain",  placeholder: "0x... (Avalanche address)" },
-  FTM:   { network: "evm",  networkLabel: "Fantom",             placeholder: "0x... (Fantom address)" },
-  SOL:   { network: "sol",  networkLabel: "Solana",             placeholder: "Solana wallet address" },
-  TRX:   { network: "tron", networkLabel: "TRON Network",       placeholder: "T... (TRON address)" },
-  BTT:   { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
-  XRP:   { network: "xrp",  networkLabel: "XRP Ledger",         placeholder: "r... (XRP address)" },
-  ADA:   { network: "ada",  networkLabel: "Cardano",            placeholder: "addr1... (Cardano address)" },
-  DOGE:  { network: "doge", networkLabel: "Dogecoin",           placeholder: "D... (Dogecoin address)" },
-  DOT:   { network: "dot",  networkLabel: "Polkadot",           placeholder: "1... (Polkadot address)" },
-  LTC:   { network: "ltc",  networkLabel: "Litecoin",           placeholder: "L... or ltc1..." },
-  XLM:   { network: "xlm",  networkLabel: "Stellar",            placeholder: "G... (Stellar address)" },
-  ICP:   { network: "icp",  networkLabel: "Internet Computer",  placeholder: "xxxxx-xxxxx (ICP principal)" },
-  SUI:   { network: "sui",  networkLabel: "Sui Network",        placeholder: "0x... (Sui address)" },
-  ARB:   { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" },
-  OP:    { network: "evm",  networkLabel: "Optimism",           placeholder: "0x... (Optimism address)" },
-  USDD:  { network: "tron", networkLabel: "TRON (TRC-20)",      placeholder: "T... (TRON address)" },
-  BONK:  { network: "sol",  networkLabel: "Solana (SPL)",       placeholder: "Solana wallet address" },
+  // ── Bitcoin family ──────────────────────────────────────────────────────────
+  BTC:    { network: "btc",    networkLabel: "Bitcoin",              placeholder: "bc1... or 1... or 3..." },
+  BSV:    { network: "bsv",    networkLabel: "Bitcoin SV",          placeholder: "1... (BSV P2PKH)" },
+  BCH:    { network: "bch",    networkLabel: "Bitcoin Cash",        placeholder: "1... (P2PKH address)" },
+  LTC:    { network: "ltc",    networkLabel: "Litecoin",            placeholder: "L... or ltc1..." },
+  DASH:   { network: "dash",   networkLabel: "Dash",                placeholder: "X... (Dash address)" },
+  ZEC:    { network: "zec",    networkLabel: "Zcash",               placeholder: "t1... (Zcash address)" },
+  XMR:    { network: "xmr",    networkLabel: "Monero",              placeholder: "4... (Monero address)" },
+  DOGE:   { network: "doge",   networkLabel: "Dogecoin",            placeholder: "D... (Dogecoin address)" },
+  ORDI:   { network: "btc",    networkLabel: "Bitcoin (Ordinals)",  placeholder: "bc1p... (Taproot address)" },
+  // ── EVM — Ethereum mainnet ──────────────────────────────────────────────────
+  ETH:    { network: "evm",    networkLabel: "Ethereum Mainnet",    placeholder: "0x... (Ethereum address)" },
+  USDT:   EVM_ERC20, USDC: EVM_ERC20, DAI: EVM_ERC20, TUSD: EVM_ERC20,
+  AAVE:   EVM_ERC20, LINK: EVM_ERC20, UNI:  EVM_ERC20, MKR: EVM_ERC20,
+  CRV:    EVM_ERC20, SUSHI:EVM_ERC20, COMP: EVM_ERC20, GRT: EVM_ERC20,
+  SNX:    EVM_ERC20, YFI:  EVM_ERC20, LDO:  EVM_ERC20, ENS: EVM_ERC20,
+  RUNE:   EVM_ERC20, RNDR: EVM_ERC20, FET:  EVM_ERC20, IMX: EVM_ERC20,
+  MANA:   EVM_ERC20, SAND: EVM_ERC20, AXS:  EVM_ERC20, GALA:EVM_ERC20,
+  SHIB:   EVM_ERC20, PEPE: EVM_ERC20, FLOKI:EVM_ERC20, TURBO:EVM_ERC20,
+  THETA:  EVM_ERC20, GNS:  EVM_ERC20, PENDLE:EVM_ERC20, EIGEN:EVM_ERC20,
+  WLD:    EVM_ERC20, TAO:  EVM_ERC20,
+  // ── EVM — BNB Chain ─────────────────────────────────────────────────────────
+  BNB:    EVM_BEP20, BUSD: EVM_BEP20, FDUSD: EVM_BEP20,
+  CAKE:   EVM_BEP20, BAKE: EVM_BEP20, ALPACA:EVM_BEP20,
+  // ── EVM — Polygon ───────────────────────────────────────────────────────────
+  MATIC:  { network: "evm",    networkLabel: "Polygon",             placeholder: "0x... (Polygon address)" },
+  // ── EVM — Avalanche ─────────────────────────────────────────────────────────
+  AVAX:   { network: "evm",    networkLabel: "Avalanche C-Chain",   placeholder: "0x... (Avalanche address)" },
+  // ── EVM — Fantom ────────────────────────────────────────────────────────────
+  FTM:    { network: "evm",    networkLabel: "Fantom Opera",        placeholder: "0x... (Fantom address)" },
+  // ── EVM — Arbitrum ──────────────────────────────────────────────────────────
+  ARB:    EVM_ARB, GMX: EVM_ARB, RDNT: EVM_ARB,
+  // ── EVM — Optimism ──────────────────────────────────────────────────────────
+  OP:     EVM_OP, SNX_OP: EVM_OP,
+  // ── EVM — other L2s ─────────────────────────────────────────────────────────
+  SUI:    { network: "sui",    networkLabel: "Sui Network",         placeholder: "0x... (Sui address)" },
+  APT:    { network: "apt",    networkLabel: "Aptos",               placeholder: "0x... (Aptos address)" },
+  METIS:  { network: "evm",    networkLabel: "Metis Andromeda",     placeholder: "0x... (Metis address)" },
+  STRK:   { network: "evm",    networkLabel: "Starknet (L2)",       placeholder: "0x... (StarkNet address)" },
+  ZK:     { network: "evm",    networkLabel: "zkSync Era",          placeholder: "0x... (zkSync address)" },
+  // ── Solana ecosystem ────────────────────────────────────────────────────────
+  SOL:    SOL_NET, BONK: SOL_SPL, WIF: SOL_SPL, RNDR_SOL: SOL_SPL,
+  // ── TRON ecosystem ──────────────────────────────────────────────────────────
+  TRX:    { network: "tron",   networkLabel: "TRON Network",        placeholder: "T... (TRON address)" },
+  BTT:    TRON_TRC20, WIN: TRON_TRC20, JST: TRON_TRC20, USDD: TRON_TRC20,
+  // ── XRP Ledger ──────────────────────────────────────────────────────────────
+  XRP:    { network: "xrp",    networkLabel: "XRP Ledger",          placeholder: "r... (XRP address)" },
+  // ── Cardano ─────────────────────────────────────────────────────────────────
+  ADA:    { network: "ada",    networkLabel: "Cardano",             placeholder: "addr1... (Cardano address)" },
+  // ── Polkadot ────────────────────────────────────────────────────────────────
+  DOT:    { network: "dot",    networkLabel: "Polkadot",            placeholder: "1... (Polkadot address)" },
+  // ── Cosmos ecosystem ────────────────────────────────────────────────────────
+  ATOM:   COSMOS_NET,
+  OSMO:   { network: "cosmos", networkLabel: "Osmosis",             placeholder: "osmo1... (Bech32 address)" },
+  INJ:    { network: "cosmos", networkLabel: "Injective",           placeholder: "inj1... (Bech32 address)" },
+  SEI:    { network: "cosmos", networkLabel: "Sei Network",         placeholder: "sei1... (Bech32 address)" },
+  TIA:    { network: "cosmos", networkLabel: "Celestia",            placeholder: "celestia1... (Bech32 address)" },
+  DYDX:   { network: "cosmos", networkLabel: "dYdX Chain",          placeholder: "dydx1... (Bech32 address)" },
+  // ── Stellar ─────────────────────────────────────────────────────────────────
+  XLM:    { network: "xlm",    networkLabel: "Stellar",             placeholder: "G... (Stellar address)" },
+  // ── TON ─────────────────────────────────────────────────────────────────────
+  TON:    { network: "ton",    networkLabel: "The Open Network",    placeholder: "UQ... or EQ... (TON address)" },
+  NOT:    { network: "ton",    networkLabel: "TON (Jetton)",        placeholder: "UQ... or EQ... (TON address)" },
+  // ── Hedera ──────────────────────────────────────────────────────────────────
+  HBAR:   { network: "hbar",   networkLabel: "Hedera Hashgraph",    placeholder: "0.0.xxxxx (Hedera account)" },
+  // ── NEAR ────────────────────────────────────────────────────────────────────
+  NEAR:   { network: "near",   networkLabel: "NEAR Protocol",       placeholder: "yourname.near or 0x..." },
+  // ── Algorand ────────────────────────────────────────────────────────────────
+  ALGO:   { network: "algo",   networkLabel: "Algorand",            placeholder: "A... (Algorand address)" },
+  // ── Filecoin ────────────────────────────────────────────────────────────────
+  FIL:    { network: "fil",    networkLabel: "Filecoin",            placeholder: "f1... or f3... (Filecoin)" },
+  // ── Other L1s ───────────────────────────────────────────────────────────────
+  ICP:    { network: "icp",    networkLabel: "Internet Computer",   placeholder: "xxxxx-xxxxx (ICP principal)" },
+  VET:    { network: "vet",    networkLabel: "VeChain",             placeholder: "0x... (VeChain address)" },
+  ETC:    { network: "evm",    networkLabel: "Ethereum Classic",    placeholder: "0x... (ETC address)" },
+  EOS:    { network: "eos",    networkLabel: "EOS Network",         placeholder: "account.name (EOS account)" },
+  EGLD:   { network: "egld",   networkLabel: "MultiversX",          placeholder: "erd1... (MultiversX address)" },
+  KAS:    { network: "kas",    networkLabel: "Kaspa",               placeholder: "kaspa:... (Kaspa address)" },
+  STX:    { network: "stx",    networkLabel: "Stacks",              placeholder: "SP... or SM... (Stacks address)" },
+  ROSE:   { network: "cosmos", networkLabel: "Oasis Network",       placeholder: "oasis1... (Oasis address)" },
+  ONE:    { network: "evm",    networkLabel: "Harmony ONE",         placeholder: "one1... (Harmony address)" },
+  RUNE_N: { network: "native", networkLabel: "THORChain",           placeholder: "thor1... (THORChain address)" },
 };
 
 function getAssetNetworkInfo(asset: string, connectedNetwork: string | null):
@@ -85,16 +144,47 @@ function getNativeAsset(network: string | null, chainId: number | null): string 
 }
 
 const ASSET_COLORS: Record<string, string> = {
-  ETH: "#8B5CF6", BNB: "#EAB308", MATIC: "#7C3AED", POL: "#7C3AED",
-  USDT: "#22C55E", USDC: "#3B82F6", DAI: "#EAB308", WBTC: "#F97316",
-  TUSD: "#1D4ED8", BUSD: "#F59E0B", FDUSD: "#64748B",
-  LINK: "#2563EB", BSV: "#22C55E", BTC: "#F97316", SOL: "#9945FF",
-  AVAX: "#E84142", FTM: "#1969FF", MNT: "#6B7280", ADA: "#0033AD",
-  DOGE: "#C8A300", DOT: "#E6007A", LTC: "#A0A0A0", XRP: "#00A9E0",
-  UNI: "#FF007A", AAVE: "#B6509E", BCH: "#8DC351",
-  TRX: "#EF4444", BTT: "#9333EA", WIN: "#F59E0B", JST: "#06B6D4",
-  ICP: "#F15A24", BONK: "#FF9900", SUI: "#4DA2FF", ARB: "#2D374B",
-  OP:  "#FF0420", USDD: "#1B7D3A",
+  // Stablecoins
+  USDT:  "#22C55E", USDC:  "#3B82F6", DAI:   "#EAB308", TUSD:  "#1D4ED8",
+  BUSD:  "#F59E0B", FDUSD: "#64748B", USDD:  "#1B7D3A",
+  // Bitcoin family
+  BTC:   "#F97316", BSV:   "#22C55E", BCH:   "#8DC351", LTC:   "#A0A0A0",
+  DOGE:  "#C8A300", DASH:  "#008DE4", ZEC:   "#F4B728", XMR:   "#FF6600",
+  ORDI:  "#FF8C00",
+  // Major L1s
+  ETH:   "#8B5CF6", BNB:   "#EAB308", SOL:   "#9945FF", XRP:   "#00A9E0",
+  ADA:   "#0033AD", TRX:   "#EF4444", TON:   "#0088CC", MATIC: "#7C3AED",
+  POL:   "#7C3AED", AVAX:  "#E84142", DOT:   "#E6007A", ATOM:  "#2E3148",
+  NEAR:  "#00C08B", FTM:   "#1969FF", ALGO:  "#00B4D8", XLM:   "#7D00FF",
+  HBAR:  "#222C6E", ETC:   "#669073", XMR2:  "#FF6600", EGLD:  "#23F7DD",
+  ZEC2:  "#F4B728", DASH2: "#008DE4", EOS:   "#443F54", THETA: "#2AB8E6",
+  VET:   "#15BDFF", ICP:   "#F15A24", SEI:   "#9B5DE5", KAS:   "#70C7BA",
+  STX:   "#5546FF", ROSE:  "#E75F88", ONE:   "#00AEE9",
+  // L2s
+  ARB:   "#2D374B", OP:    "#FF0420", SUI:   "#4DA2FF", APT:   "#00B4D8",
+  IMX:   "#17EEE0", STRK:  "#EC796B", ZK:    "#8B5CF6", METIS: "#00D2FF",
+  MNT:   "#6B7280",
+  // DeFi
+  LINK:  "#2563EB", UNI:   "#FF007A", AAVE:  "#B6509E", MKR:   "#1AAB9B",
+  CRV:   "#3466A5", SUSHI: "#FA52A0", COMP:  "#00D395", GRT:   "#5A3DFF",
+  SNX:   "#00D1FF", YFI:   "#006AE3", LDO:   "#F9A825", GMX:   "#2D42FC",
+  DYDX:  "#6966FF", RUNE:  "#00CCFF", INJ:   "#00F2FE", RNDR:  "#FF004F",
+  FET:   "#1D5A8E", TAO:   "#8B5CF6", WLD:   "#374151", EIGEN: "#6366F1",
+  TIA:   "#7C3AED", PENDLE:"#3BACE2", ENS:   "#5284FF",
+  // Gaming / NFT / Metaverse
+  AXS:   "#0055D5", SAND:  "#00ADE8", MANA:  "#FF2D55", GALA:  "#0080FF",
+  ILV:   "#1F2937", FIL:   "#0090FF",
+  // Meme coins
+  PEPE:  "#00A86B", SHIB:  "#FFA409", BONK:  "#FF9900", FLOKI: "#F5A623",
+  WIF:   "#D97706", POPCAT:"#FF6B6B", NOT:   "#36B6F0", DOGS:  "#4B5563",
+  NEIRO: "#EC4899", TURBO: "#F59E0B", CATI:  "#8B5CF6", HMSTR: "#6B7280",
+  // Tron ecosystem
+  BTT:   "#CC0000", WIN:   "#A428F5", JST:   "#06B6D4",
+  // Wrapped / bridged
+  WBTC:  "#F97316", WETH:  "#8B5CF6", CBETH: "#6366F1", WSTETH:"#00A3FF",
+  CBBTC: "#F97316",
+  // Other
+  CAKE:  "#D1884F", ORDI2: "#FF8C00",
 };
 
 const TRON_POOL_IDS = new Set(["trx-usdt","btt-usdt","btt-trx","win-trx","jst-usdt","trx-btc"]);
