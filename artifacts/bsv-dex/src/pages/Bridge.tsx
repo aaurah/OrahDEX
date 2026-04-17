@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useSearch } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1348,9 +1349,15 @@ export function BridgePage() {
 
   const { address: evmAddress, network, chainId } = useWalletStore();
   const { toast } = useToast();
+  const searchStr = useSearch();
 
   const { data: bsvChain } = useBsvChain();
-  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">("bsvswap");
+  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">(() => {
+    const params = new URLSearchParams(searchStr);
+    const t = params.get("tab");
+    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history") return t;
+    return "bsvswap";
+  });
   const [historyCount, setHistoryCount] = useState(() => loadSwapHistory().length);
 
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
