@@ -1536,7 +1536,7 @@ router.put("/site-settings", async (req, res) => {
 });
 
 // ── POST /admin/bsv-wallet/send — send BSV directly from settlement wallet ───
-router.post("/bsv-wallet/send", async (req, res) => {
+router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
   try {
     const { toAddress, bsv: bsvAmount } = req.body as { toAddress: string; bsv: number };
     if (!toAddress)                             return res.status(400).json({ error: "Destination address required" });

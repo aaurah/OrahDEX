@@ -157,19 +157,14 @@ function SendViaWalletButton({ withdrawal, onComplete }: {
   );
 }
 
-function SendBsvButton({ withdrawal, onComplete }: {
+function BsvSendModal({ withdrawal, onClose, onComplete }: {
   withdrawal: Withdrawal;
+  onClose: () => void;
   onComplete: (txid: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [done, setDone] = useState(false);
-
-  const isBsvLike = ["bsv", "bitcoin sv"].some(n =>
-    withdrawal.network.toLowerCase().includes(n) ||
-    (withdrawal.networkLabel ?? "").toLowerCase().includes(n)
-  );
-  if (!isBsvLike) return null;
+  const [txid, setTxid] = useState("");
 
   const handleSend = async () => {
     setErr(""); setLoading(true);
@@ -181,7 +176,7 @@ function SendBsvButton({ withdrawal, onComplete }: {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "BSV send failed");
-      setDone(true);
+      setTxid(j.txid);
       onComplete(j.txid);
     } catch (e: any) {
       setErr(e.message);
@@ -190,21 +185,106 @@ function SendBsvButton({ withdrawal, onComplete }: {
     }
   };
 
-  if (done) return <span className="text-xs text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Sent</span>;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="bg-background border border-border rounded-xl p-6 w-full max-w-md space-y-4">
+        <h3 className="font-semibold text-lg flex items-center gap-2">
+          <Wallet className="w-5 h-5 text-green-400" /> Send BSV On-Chain
+        </h3>
+
+        {txid ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-green-400">
+              <Check className="w-5 h-5" />
+              <span className="font-semibold">Transaction broadcast successfully!</span>
+            </div>
+            <div className="bg-muted rounded-lg p-3 space-y-1">
+              <p className="text-xs text-muted-foreground">TXID</p>
+              <p className="font-mono text-xs break-all text-green-400">{txid}</p>
+            </div>
+            <button onClick={onClose} className="w-full px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium">
+              Done
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount</span>
+                <span className="font-semibold font-mono">{withdrawal.amount} BSV</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-muted-foreground shrink-0">To</span>
+                <span className="font-mono text-xs text-right break-all">{withdrawal.recipient}</span>
+              </div>
+            </div>
+
+            {err && (
+              <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 text-sm">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="break-words">{err}</span>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              This will broadcast a real BSV transaction from the settlement wallet. Make sure the wallet has sufficient confirmed BSV.
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                disabled={loading}
+                className="flex-1 px-4 py-2 rounded-lg text-sm border border-border hover:bg-muted disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSend}
+                disabled={loading}
+                className="flex-1 px-4 py-2 rounded-lg text-sm bg-green-600 hover:bg-green-700 text-white disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
+                {loading ? "Broadcasting…" : "Confirm & Send"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SendBsvButton({ withdrawal, onComplete }: {
+  withdrawal: Withdrawal;
+  onComplete: (txid: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const isBsvLike = ["bsv", "bitcoin sv"].some(n =>
+    withdrawal.network.toLowerCase().includes(n) ||
+    (withdrawal.networkLabel ?? "").toLowerCase().includes(n)
+  );
+  if (!isBsvLike) return null;
+
+  if (sent) return <span className="text-xs text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Sent</span>;
 
   return (
-    <div className="flex flex-col items-end gap-0.5">
+    <>
       <button
-        disabled={loading}
-        onClick={handleSend}
-        className="px-2.5 py-1 rounded-lg text-xs bg-green-600/20 border border-green-500/30 text-green-400 hover:bg-green-600/40 disabled:opacity-40 flex items-center gap-1"
-        title={err || "Send from BSV settlement wallet"}
+        onClick={() => setOpen(true)}
+        className="px-2.5 py-1 rounded-lg text-xs bg-green-600/20 border border-green-500/30 text-green-400 hover:bg-green-600/40 flex items-center gap-1"
       >
-        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wallet className="w-3 h-3" />}
-        {loading ? "Sending…" : "Send BSV"}
+        <Wallet className="w-3 h-3" /> Send BSV
       </button>
-      {err && <span className="text-[10px] text-red-400 max-w-[140px] text-right leading-tight">{err}</span>}
-    </div>
+      {open && (
+        <BsvSendModal
+          withdrawal={withdrawal}
+          onClose={() => setOpen(false)}
+          onComplete={txid => { setSent(true); setOpen(false); onComplete(txid); }}
+        />
+      )}
+    </>
   );
 }
 
