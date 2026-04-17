@@ -234,7 +234,7 @@ export function Portfolio() {
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
   const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
-    chainId,
+    network === "evm" ? (chainId ?? 1) : null,
   );
   const { balances: tronBalances, loading: tronLoading, refresh: tronRefresh } = useTronBalances(
     network === "tron" ? address : null,
