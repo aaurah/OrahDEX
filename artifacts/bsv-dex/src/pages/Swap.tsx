@@ -32,6 +32,7 @@ import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { API_BASE } from "@/lib/api";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -507,6 +508,231 @@ function SlippageSettings({ slippage, onChange }: { slippage: number; onChange: 
   );
 }
 
+// ─── Exchange Swap Panel — real internal AMM swap ─────────────────────────────
+
+const EXCHANGE_ASSETS = [
+  "ETH","BTC","BSV","USDT","USDC","BNB","SOL","AVAX","MATIC","LINK","DOGE","XRP","ADA","DOT","BCH","LTC","UNI","AAVE",
+];
+
+interface ExchangeQuote {
+  assetIn: string; assetOut: string;
+  amountIn: string; amountOut: string;
+  fee: string; rate: string;
+}
+interface ExBalance { asset: string; available: string }
+
+function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; onOpenWallet: () => void }) {
+  const { toast } = useToast();
+  const [fromAsset, setFromAsset] = useState("ETH");
+  const [toAsset,   setToAsset]   = useState("USDT");
+  const [amount,    setAmount]    = useState("");
+  const [quote,     setQuote]     = useState<ExchangeQuote | null>(null);
+  const [quoting,   setQuoting]   = useState(false);
+  const [quoteErr,  setQuoteErr]  = useState<string | null>(null);
+  const [swapping,  setSwapping]  = useState(false);
+  const [result,    setResult]    = useState<ExchangeQuote | null>(null);
+  const [swapErr,   setSwapErr]   = useState<string | null>(null);
+  const [balances,  setBalances]  = useState<ExBalance[]>([]);
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadBalances = useCallback(async () => {
+    if (!address) return;
+    try {
+      const r = await fetch(`${API_BASE}/balances?walletAddress=${address}`);
+      if (r.ok) {
+        const data = await r.json();
+        setBalances(Array.isArray(data) ? data : (data.balances ?? []));
+      }
+    } catch { /* ignore */ }
+  }, [address]);
+
+  useEffect(() => { loadBalances(); }, [loadBalances]);
+
+  const balFor = (asset: string) => {
+    const row = balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
+    return row ? parseFloat(row.available) : null;
+  };
+
+  const fetchQuote = useCallback(async (val: string) => {
+    if (!val || parseFloat(val) <= 0 || fromAsset === toAsset) {
+      setQuote(null); setQuoteErr(null); return;
+    }
+    setQuoting(true); setQuoteErr(null);
+    try {
+      const r = await fetch(`${API_BASE}/swap/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assetIn: fromAsset, assetOut: toAsset, amountIn: val }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setQuoteErr(data.error ?? "No price found"); setQuote(null); }
+      else setQuote(data);
+    } catch { setQuoteErr("Quote failed"); setQuote(null); }
+    setQuoting(false);
+  }, [fromAsset, toAsset]);
+
+  const handleAmountChange = (val: string) => {
+    setAmount(val); setResult(null); setSwapErr(null);
+    if (debRef.current) clearTimeout(debRef.current);
+    debRef.current = setTimeout(() => fetchQuote(val), 400);
+  };
+
+  const handleFlip = () => {
+    setFromAsset(toAsset); setToAsset(fromAsset);
+    setQuote(null); setAmount(""); setResult(null);
+  };
+
+  const handleSwap = async () => {
+    if (!address || !amount || !quote || swapping) return;
+    setSwapping(true); setSwapErr(null); setResult(null);
+    try {
+      const minOut = (parseFloat(quote.amountOut) * 0.995).toFixed(8);
+      const r = await fetch(`${API_BASE}/swap`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address, assetIn: fromAsset, assetOut: toAsset, amountIn: amount, minAmountOut: minOut }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        const msg = data.error ?? "Swap failed";
+        setSwapErr(msg);
+        toast({ title: "Swap failed", description: msg, variant: "destructive" });
+      } else {
+        setResult(data);
+        setAmount(""); setQuote(null);
+        toast({ title: "Swap complete!", description: `${data.amountIn} ${data.assetIn} → ${parseFloat(data.amountOut).toFixed(6)} ${data.assetOut}` });
+        setTimeout(loadBalances, 600);
+      }
+    } catch (err: any) {
+      setSwapErr(err.message ?? "Network error");
+    }
+    setSwapping(false);
+  };
+
+  const fromBal = balFor(fromAsset);
+  const isNewUser = balances.length === 0;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-bold">
+          <RefreshCw className="w-4 h-4 text-primary" />
+          OrahDEX Exchange
+        </div>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
+      </div>
+
+      {isNewUser && address && (
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300">
+          <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5 text-violet-400" />
+          <span>First swap unlocks your <b>demo balance</b> — trade instantly with no deposit needed.</span>
+        </div>
+      )}
+
+      {/* From */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>You pay</span>
+          {fromBal != null && (
+            <button onClick={() => handleAmountChange(fromBal.toFixed(6))}
+              className="flex items-center gap-1 text-primary font-medium hover:text-primary/80 transition-colors">
+              Balance: <span className="font-mono">{fromBal.toFixed(4)}</span>
+              <span className="text-[10px] px-1 py-0.5 rounded bg-primary/15 font-bold">MAX</span>
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={fromAsset} onChange={e => { setFromAsset(e.target.value); setQuote(null); setAmount(""); }}
+            className="shrink-0 bg-muted border border-border rounded-lg px-2 py-1.5 text-sm font-bold text-foreground focus:outline-none">
+            {EXCHANGE_ASSETS.filter(a => a !== toAsset).map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <input type="number" min="0" placeholder="0.0" value={amount} onChange={e => handleAmountChange(e.target.value)}
+            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40" />
+        </div>
+      </div>
+
+      {/* Flip */}
+      <div className="flex justify-center -my-1">
+        <button onClick={handleFlip} className="p-2 rounded-full border border-border bg-card hover:bg-muted/60 transition-colors">
+          <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* To */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>You receive</span>
+          {balFor(toAsset) != null && <span className="font-mono">Balance: {balFor(toAsset)!.toFixed(4)}</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={toAsset} onChange={e => { setToAsset(e.target.value); setQuote(null); setAmount(""); }}
+            className="shrink-0 bg-muted border border-border rounded-lg px-2 py-1.5 text-sm font-bold text-foreground focus:outline-none">
+            {EXCHANGE_ASSETS.filter(a => a !== fromAsset).map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <div className="flex-1 text-2xl font-bold">
+            {quoting ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              : <span className={quote ? "text-foreground" : "text-muted-foreground/40"}>
+                  {quote ? parseFloat(quote.amountOut).toFixed(6) : "0.0"}
+                </span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Rate / error */}
+      {quote && (
+        <div className="rounded-xl bg-muted/30 px-3 py-2 text-xs flex items-center justify-between text-muted-foreground">
+          <span>Rate</span>
+          <span className="font-mono">1 {fromAsset} ≈ {parseFloat(quote.rate).toFixed(6)} {toAsset}</span>
+        </div>
+      )}
+      {quoteErr && (
+        <div className="flex items-center gap-2 text-xs text-amber-400 px-1">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{quoteErr}
+        </div>
+      )}
+
+      {/* Success */}
+      {result && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-green-500/10 border border-green-500/20 text-xs text-green-400">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          Swapped {result.amountIn} {result.assetIn} → {parseFloat(result.amountOut).toFixed(6)} {result.assetOut}
+        </div>
+      )}
+      {swapErr && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{swapErr}
+        </div>
+      )}
+
+      {/* CTA */}
+      {!address ? (
+        <button onClick={onOpenWallet}
+          className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 transition-all">
+          Connect Wallet to Swap
+        </button>
+      ) : !amount || parseFloat(amount) <= 0 ? (
+        <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+          Enter an amount
+        </button>
+      ) : !quote ? (
+        <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+          {quoting ? "Getting quote…" : "No price found for this pair"}
+        </button>
+      ) : (
+        <button onClick={handleSwap} disabled={swapping}
+          className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+          {swapping ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping…</>
+            : <><RefreshCw className="w-4 h-4" /> Swap {fromAsset} → {toAsset}</>}
+        </button>
+      )}
+
+      <p className="text-[11px] text-muted-foreground/60 text-center">
+        Instant · No gas · 0.3% fee · Uses OrahDEX internal balance
+      </p>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
@@ -927,36 +1153,8 @@ export function Swap() {
             </div>
           </>
         ) : (
-          /* ── Exchange mode ── */
-          <div className="rounded-2xl border border-border bg-card shadow-lg p-5 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <RefreshCw className="w-4 h-4 text-primary" />
-              OrahDEX Exchange (Custodial)
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Trade instantly using your OrahDEX internal balance — no gas fees, instant execution, BSV + multi-asset support.
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {[
-                ["No gas fees", "Trades settle against internal liquidity"],
-                ["BSV + EVM", "All major assets supported"],
-                ["Instant fills", "Order matched in milliseconds"],
-                ["Demo balances", "New users get seeded balances"],
-              ].map(([title, desc]) => (
-                <div key={title} className="rounded-xl bg-muted/40 p-2.5">
-                  <p className="font-semibold text-foreground">{title}</p>
-                  <p className="text-muted-foreground mt-0.5">{desc}</p>
-                </div>
-              ))}
-            </div>
-            <a
-              href="/trade/ETH-USDT"
-              className="flex items-center justify-center gap-2 w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 transition-all"
-            >
-              <ArrowRight className="w-4 h-4" />
-              Open Exchange Trading
-            </a>
-          </div>
+          /* ── Exchange mode — real internal AMM swap ── */
+          <ExchangeSwapPanel address={address ?? null} onOpenWallet={openWalletModal} />
         )}
 
         {/* Liquidity CTA */}
