@@ -22,14 +22,10 @@ router.get("/portfolio", async (req, res) => {
   }
 
   try {
-    // Fetch balances from the ledger
-    let balances = await getBalances(walletAddress);
-
-    // First-time visitor: seed initial balances so the app looks populated
-    if (balances.length === 0) {
-      await seedInitialBalances(walletAddress);
-      balances = await getBalances(walletAddress);
-    }
+    // Always seed to fill in any missing assets (ON CONFLICT DO NOTHING keeps existing values intact).
+    // This ensures wallets seeded with an older, smaller asset list get the full current set.
+    await seedInitialBalances(walletAddress);
+    const balances = await getBalances(walletAddress);
 
     // Gather symbols for price lookup — DB stores symbols with slash (BTC/USDT)
     const symbols = balances
@@ -133,11 +129,9 @@ router.get("/balances", async (req, res) => {
     return;
   }
   try {
-    let balances = await getBalances(walletAddress);
-    if (balances.length === 0) {
-      await seedInitialBalances(walletAddress);
-      balances = await getBalances(walletAddress);
-    }
+    // Always seed to fill in any missing assets (ON CONFLICT DO NOTHING — safe for existing wallets).
+    await seedInitialBalances(walletAddress);
+    const balances = await getBalances(walletAddress);
     res.json({ walletAddress, balances });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch balances");
