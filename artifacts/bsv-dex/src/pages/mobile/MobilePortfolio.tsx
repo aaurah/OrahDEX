@@ -141,6 +141,7 @@ export function MobilePortfolio() {
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
+  const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
   const [sweeping, setSweeping] = useState(false);
   const [sweepMsg, setSweepMsg] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -189,7 +190,7 @@ export function MobilePortfolio() {
   const { data: historyData = [], isLoading: historyLoading } = useQuery<any[]>({
     queryKey: ["trade-history", ledgerAddress],
     queryFn: () => fetch(`${BASE}/api/trades/history?walletAddress=${encodeURIComponent(ledgerAddress || "")}&limit=100`).then(r => r.json()),
-    enabled: !!ledgerAddress && tab === "history",
+    enabled: !!ledgerAddress,
     staleTime: 30_000,
   });
 
@@ -903,7 +904,8 @@ export function MobilePortfolio() {
                 {rows.map((r, i) => (
                   <div
                     key={r.asset}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < rows.length - 1 ? "border-b border-border" : ""}`}
+                    onClick={() => setCoinHistoryOpen(r.asset)}
+                    className={`flex items-center gap-3 px-4 py-3.5 active:bg-muted/40 cursor-pointer transition-colors ${i < rows.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div
                       className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
@@ -957,32 +959,31 @@ export function MobilePortfolio() {
                   </div>
                   <div className="bg-card border border-primary/20 rounded-2xl overflow-hidden">
                     {exchBalancesWithValue.map((b, i) => {
-                      const color = b.asset === "ETH" ? "#627EEA"
-                        : b.asset === "BTC" ? "#F7931A"
-                        : b.asset === "USDT" ? "#26A17B"
-                        : b.asset === "USDC" ? "#2775CA"
-                        : b.asset === "BSV" ? "#EAB308"
-                        : b.asset === "BNB" ? "#F0B90B"
-                        : "#6B7280";
+                      const color = ASSET_COLORS[b.asset] ?? "#6B7280";
                       const assetNet = getAssetNetworkInfo(b.asset, network);
                       return (
                         <div
                           key={b.asset}
                           className={`flex items-center gap-3 px-4 py-3.5 ${i < exchBalancesWithValue.length - 1 ? "border-b border-border" : ""}`}
                         >
-                          <div
-                            className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                            style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                          <button
+                            onClick={() => setCoinHistoryOpen(b.asset)}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left active:bg-muted/30 transition-colors rounded-lg -ml-1 pl-1"
                           >
-                            {b.asset[0]}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold">{b.asset}</p>
-                            <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                              {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.0001 ? 8 : 6 })}
-                              {b.locked > 0 && <span className="text-muted-foreground/50"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>}
-                            </p>
-                          </div>
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                            >
+                              {b.asset[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold">{b.asset}</p>
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                                {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.0001 ? 8 : 6 })}
+                                {b.locked > 0 && <span className="text-muted-foreground/50"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>}
+                              </p>
+                            </div>
+                          </button>
                           <button
                             onClick={() => {
                               setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
@@ -1288,6 +1289,126 @@ export function MobilePortfolio() {
         </div>
 
       </div>
+
+      {/* Coin History Bottom Sheet */}
+      {coinHistoryOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setCoinHistoryOpen(null)}
+          />
+          {/* Sheet */}
+          <div className="relative bg-background border-t border-border rounded-t-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1 shrink-0">
+              <div className="w-10 h-1 rounded-full bg-border" />
+            </div>
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 py-3 border-b border-border shrink-0">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold border"
+                style={{
+                  backgroundColor: (ASSET_COLORS[coinHistoryOpen] ?? "#6B7280") + "22",
+                  borderColor:     (ASSET_COLORS[coinHistoryOpen] ?? "#6B7280") + "44",
+                  color:            ASSET_COLORS[coinHistoryOpen] ?? "#6B7280",
+                }}
+              >
+                {coinHistoryOpen[0]}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-foreground">{coinHistoryOpen}</p>
+                <p className="text-[11px] text-muted-foreground">Trade history</p>
+              </div>
+              <button
+                onClick={() => setCoinHistoryOpen(null)}
+                className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-muted-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Trade list */}
+            <div className="overflow-y-auto flex-1 px-4 py-3 space-y-1">
+              {(() => {
+                const coinTrades = historyData.filter(t => {
+                  const base = (t.symbol ?? "BSV/USDT").split("/")[0];
+                  return base === coinHistoryOpen;
+                });
+                if (historyLoading) return (
+                  <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+                    <RefreshCw size={16} className="animate-spin opacity-40" />
+                    <span className="text-xs">Loading…</span>
+                  </div>
+                );
+                if (coinTrades.length === 0) return (
+                  <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                    <History size={24} className="opacity-20" />
+                    <p className="text-sm">No {coinHistoryOpen} trades yet</p>
+                    <p className="text-xs opacity-60 text-center">Buy or sell {coinHistoryOpen} to see your history here</p>
+                  </div>
+                );
+                return coinTrades.map((t: any, i: number) => {
+                  const isBuy   = (t.side ?? "buy") === "buy";
+                  const sym     = (t.symbol ?? `${coinHistoryOpen}/USDT`).split("/");
+                  const base    = sym[0] ?? coinHistoryOpen;
+                  const quote   = sym[1] ?? "USDT";
+                  const coinIn  = isBuy ? base  : quote;
+                  const coinOut = isBuy ? quote : base;
+                  const amtIn   = isBuy
+                    ? Number(t.quantity ?? t.fillQty ?? 0)
+                    : Number(t.total ?? (Number(t.quantity) * Number(t.price)));
+                  const amtOut  = isBuy
+                    ? Number(t.total ?? (Number(t.quantity) * Number(t.price)))
+                    : Number(t.quantity ?? t.fillQty ?? 0);
+                  const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+                  const dateStr = time.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                  const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <div
+                      key={t.id ?? i}
+                      className="flex items-center gap-3 py-3 border-b border-border last:border-0"
+                    >
+                      {/* Direction icon */}
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isBuy ? "bg-green-500/15" : "bg-red-500/15"}`}>
+                        {isBuy
+                          ? <ArrowDownLeft size={14} className="text-green-400" strokeWidth={2.5} />
+                          : <ArrowUpRight  size={14} className="text-red-400"   strokeWidth={2.5} />
+                        }
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                            {isBuy ? "BUY" : "SELL"}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground/70 mt-0.5">{dateStr} · {timeStr}</p>
+                      </div>
+                      {/* Amounts */}
+                      <div className="text-right shrink-0 space-y-0.5">
+                        <div className="flex items-center justify-end gap-1 text-green-400">
+                          <span className="text-xs font-bold font-mono">
+                            +{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-end gap-1 text-muted-foreground/60">
+                          <span className="text-[11px] font-mono">
+                            -{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
