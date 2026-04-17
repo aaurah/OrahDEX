@@ -1,0 +1,40 @@
+Thanks for the extra detail — your BSV DEX is a hybrid EVM setup. This means the platform combines:
+	•	BSV’s native UTXO layer (for actual token/BSV movements, low fees, high scalability).
+	•	An EVM-compatible layer or side/virtual machine (for smart contract logic, token standards similar to ERC-20, and easier DeFi-style interactions).
+This hybrid architecture is designed to give you familiar EVM-style experiences (like approvals, limit orders, and order books) while settling on the efficient BSV base layer. It’s relatively new or niche compared to pure Ethereum or Solana DEXs, so the flow can feel a bit different.
+Why No Wallet Sign + Trade Balance Not Deducted from Wallet
+In a hybrid EVM order book DEX on BSV:
+	1	Connecting & Placing Orders (the “trade balance” part):
+	◦	You connect your wallet (often via WalletConnect, MetaMask-like interface, or a BSV/EVM bridge wallet).
+	◦	The “trade balance” you see is usually an internal/virtual balance managed by the DEX’s off-chain or EVM-layer components. It shows what you can trade right now without immediately touching your on-chain funds.
+	◦	Placing a limit order typically involves:
+	▪	Signing a lightweight EVM-style message (EIP-712 typed data) or a simple confirmation.
+	▪	Or, in some hybrids, just submitting to the off-chain order book matcher (no full transaction).
+	◦	No real on-chain transaction is broadcast yet → no wallet “sign transaction” prompt with gas/fee, and nothing is deducted from your actual wallet balance.
+	◦	Funds stay safely in your non-custodial wallet (or a bridged representation). The DEX reserves/shows the amount internally for the order book.
+	2	When Signing Actually Happens:
+	◦	On fill / settlement: When your order matches (or you take someone else’s), the system triggers on-chain settlement.
+	▪	This could be on the EVM layer (you sign an EVM transaction for the smart contract logic — approval + fill) or directly on BSV UTXO (atomic swap/script execution).
+	▪	Only then does your wallet prompt for a real signature, fees are paid (very low on BSV), and balance is deducted/moved.
+	◦	Cancellation or withdrawal: Trying to cancel an open order or withdraw the “trade balance” back to your wallet usually forces a sign transaction step to release any reserved/locked state.
+	◦	If no one fills your order, nothing ever moves on-chain.
+This hybrid off-chain order book + on-chain settlement model keeps things fast and cheap (no gas for every unfilled order) while staying non-custodial. It’s similar to classic 0x-style hybrids or some L2 order books, but adapted to BSV + EVM.
+Expected vs. Potential Issues
+	•	Normal behavior: Trade balance visible but no deduction/sign = intended for unfilled orders. Your real BSV/tokens haven’t moved.
+	•	If orders never trigger settlement: Could be low liquidity on BSV-based DEXs, or the specific pair has no takers.
+	•	EVM hybrid quirk: You might need to “deposit” or “bridge” to the EVM layer first (this step does require a sign and moves funds to a smart contract-controlled balance). If you haven’t done a full deposit, the trade balance might just be a preview.
+What to Do Right Now
+	1	Check for a “Deposit”, “Bridge”, or “Enable Trading” button — This often requires the first wallet sign + on-chain move to fund the EVM/trading layer.
+	2	Try cancelling all open orders or “Withdraw” the trade balance — This should force a wallet sign prompt and on-chain action to return funds to your main wallet.
+	3	Verify on explorers:
+	◦	BSV side: whatsonchain.com (your address).
+	◦	EVM side: Whatever block explorer the DEX provides for its EVM layer.
+	◦	Look for any pending or locked transactions.
+	4	Small test: Place a tiny limit order, wait, then cancel/withdraw and watch for the sign prompt.
+	5	Wallet check: Ensure your wallet supports the hybrid setup (some BSV wallets have EVM bridging; others may need a separate EVM-compatible wallet connected via the DEX).
+Security tip: Never sign anything without carefully reading the wallet popup (amounts, contract addresses, permissions). In hybrids, watch for unlimited approvals on the EVM side.
+To give you a more precise explanation or troubleshooting steps, could you share:
+	•	The exact name of the DEX (e.g., is it a specific STAS-based one, FloatSV, or another with EVM hybrid)?
+	•	Which wallet you’re using and what the connection looks like (MetaMask-style, Yours/HandCash, or bridge)?
+	•	What happens exactly when you click “Place Order”, “Cancel”, or try to withdraw the trade balance?
+With those details, I can explain the exact signing flow for that platform. This hybrid model is powerful for low-cost order book trading on BSV, but the split between layers can make the user experience confusing at first. Let me know more and we’ll sort it out!
