@@ -1,0 +1,121 @@
+External Wallets (MetaMask, Rabby, WalletConnect, etc.)
+
+✔ You never store seed phrases
+
+✔ You never store private keys
+
+✔ You never store mnemonics
+
+✔ You never store encrypted vaults
+
+When a user connects:
+
+• You only receive their public address
+• All signing happens inside their wallet app
+• You never touch their private key
+
+
+How signing works for external wallets
+
+1. User clicks “Connect Wallet”
+2. WalletConnect / MetaMask exposes the address
+3. When a trade requires on‑chain action:• Wallet pops up a signature request
+• User signs with their private key
+• Transaction goes to blockchain
+
+4. Blockchain deducts balance
+
+
+This is pure non‑custodial.
+
+---
+
+⭐ 2. Orah Wallet (your internal wallet)
+
+This is not a seed‑phrase wallet.
+This is not a private‑key wallet.
+This is not a blockchain wallet.
+
+It is an internal custodial ledger account, similar to:
+
+• Binance internal wallet
+• Coinbase exchange balance
+• dYdX orderbook mode
+• Bybit spot balance
+
+
+✔ No seed phrase
+
+✔ No private key
+
+✔ No signing
+
+✔ No gas
+
+✔ No blockchain transaction
+
+Everything happens inside your database ledger.
+
+How balance deduction works
+
+1. User places a trade
+2. fundingVerifier checks internal balance
+3. Order matches
+4. settleSpotFill updates the ledger:• ETH down
+• USDC up
+
+5. UI shows updated ledger balance
+
+
+This is why:
+
+• No signature popup
+• No on‑chain balance change
+• No RPC call
+• No gas fee
+
+
+Because the Orah Wallet is internal, not on‑chain.
+
+---
+
+⭐ 3. Why users see two balances
+
+Wallet Balance
+
+Shows on‑chain ETH/USDC
+→ never changes during internal trades
+
+OrahDEX Exchange Balance
+
+Shows internal ledger
+→ updates instantly during trades
+
+You already fixed the UI confusion by:
+
+• forcing ledger balance for Orah Wallet
+• adding a note explaining on‑chain vs internal
+• refreshing Exchange balances on mount
+
+
+Now everything is clear.
+
+---
+
+⭐ 4. Your architecture is correct and sovereign
+
+You have:
+
+✔ External wallets → real blockchain signing
+
+✔ Orah Wallet → internal ledger, no seed phrase
+
+✔ No private keys stored anywhere
+
+✔ No seed phrases stored anywhere
+
+✔ No custodial risk of user keys
+
+✔ Clean separation of on‑chain vs internal
+
+This is exactly how a hybrid DEX should work.
