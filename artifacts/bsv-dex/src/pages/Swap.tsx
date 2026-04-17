@@ -27,7 +27,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
 import type { Account } from "viem";
 import { writeContract as coreWriteContract } from "@wagmi/core";
-import { getWagmiConfig, CHAIN_RPC_URLS } from "@/lib/reown";
+import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
@@ -237,21 +237,14 @@ interface QuoteResult {
   fee:         number;
 }
 
-async function getSwapQuote(
-  chainId: SupportedChainId,
-  fromToken: Token,
-  toToken: Token,
+async function tryQuoteOnRpc(
+  rpcUrl: string,
+  quoterAddr: `0x${string}`,
+  tokenIn: `0x${string}`,
+  tokenOut: `0x${string}`,
   amountIn: bigint,
 ): Promise<QuoteResult | null> {
-  const quoterAddr = QUOTER_V2[chainId];
-  const rpcUrl     = CHAIN_RPC_URLS[chainId];
-  if (!quoterAddr || !rpcUrl || amountIn === 0n) return null;
-
-  const tokenIn  = fromToken.isNative ? WETH[chainId] : fromToken.address;
-  const tokenOut = toToken.isNative   ? WETH[chainId] : toToken.address;
-
   const publicClient = createPublicClient({ transport: http(rpcUrl) });
-
   for (const fee of FEE_TIERS) {
     try {
       const { result } = await publicClient.simulateContract({
@@ -265,6 +258,33 @@ async function getSwapQuote(
       }
     } catch {}
   }
+  return null;
+}
+
+async function getSwapQuote(
+  chainId: SupportedChainId,
+  fromToken: Token,
+  toToken: Token,
+  amountIn: bigint,
+): Promise<QuoteResult | null> {
+  const quoterAddr = QUOTER_V2[chainId];
+  const primaryRpc = CHAIN_RPC_URLS[chainId];
+  if (!quoterAddr || !primaryRpc || amountIn === 0n) return null;
+
+  const tokenIn  = fromToken.isNative ? WETH[chainId] : fromToken.address;
+  const tokenOut = toToken.isNative   ? WETH[chainId] : toToken.address;
+
+  // Try primary RPC first
+  const primary = await tryQuoteOnRpc(primaryRpc, quoterAddr, tokenIn, tokenOut, amountIn);
+  if (primary) return primary;
+
+  // If primary returned nothing, try fallback RPC before giving up
+  const fallbackRpc = CHAIN_RPC_FALLBACKS[chainId];
+  if (fallbackRpc && fallbackRpc !== primaryRpc) {
+    const fallback = await tryQuoteOnRpc(fallbackRpc, quoterAddr, tokenIn, tokenOut, amountIn);
+    if (fallback) return fallback;
+  }
+
   return null;
 }
 
@@ -1152,7 +1172,7 @@ export function Swap() {
       const amtIn = parseUnits(val, fromToken.decimals);
       const result = await getSwapQuote(chainId, fromToken, toToken, amtIn);
       if (result) { setQuote(result); }
-      else         { setQuoteErr("No liquidity pool found for this pair."); setQuote(null); }
+      else         { setQuoteErr(`No liquidity pool found for ${fromToken.symbol} → ${toToken.symbol} on this chain. Try a different token pair or switch chains.`); setQuote(null); }
     } catch (e: any) {
       setQuoteErr(e.message ?? "Quote failed.");
       setQuote(null);
