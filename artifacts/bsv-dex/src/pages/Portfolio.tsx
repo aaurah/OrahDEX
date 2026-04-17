@@ -84,7 +84,7 @@ function getChainInfo(chainId: number | null): ChainInfo | null {
 const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string; placeholder: string }> = {
   BTC:   { network: "btc",  networkLabel: "Bitcoin",            placeholder: "bc1... or 1... or 3..." },
   BSV:   { network: "bsv",  networkLabel: "Bitcoin SV",         placeholder: "1... (BSV P2PKH)" },
-  BCH:   { network: "bch",  networkLabel: "Bitcoin Cash",       placeholder: "bitcoincash:q... or 1..." },
+  BCH:   { network: "bch",  networkLabel: "Bitcoin Cash",       placeholder: "1... (P2PKH — same fork address as BTC/BSV)" },
   ETH:   { network: "evm",  networkLabel: "Ethereum Mainnet",   placeholder: "0x... (ERC-20 address)" },
   USDT:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
   USDC:  { network: "evm",  networkLabel: "Ethereum (ERC-20)",  placeholder: "0x... (ERC-20 address)" },
