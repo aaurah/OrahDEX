@@ -285,9 +285,7 @@ export function MobilePortfolio() {
     : 0;
 
   // ── Orah Wallet: exchange balance is the primary trading balance ───────────
-  // "reown" is the WalletConnect provider used by Orah Wallet — both map to
-  // "Orah Wallet" in the UI and both use the internal exchange ledger.
-  const isOrahWallet = provider === "orah-wallet" || provider === "reown";
+  const isOrahWallet = provider === "orah-wallet";
 
   const exchTotalUsd = exchBalancesWithValue.reduce((sum, b) => {
     const isStable = ["USDT","USDC","DAI","BUSD","oUSD"].includes(b.asset);
