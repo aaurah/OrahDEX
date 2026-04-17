@@ -172,12 +172,12 @@ export function getReownAccount(): { address?: string; isConnected: boolean } {
 
 /* ── Public RPC endpoints for every supported chain ──────────────────────── */
 export const CHAIN_RPC_URLS: Record<number, string> = {
-  1:          "https://ethereum.publicnode.com",
-  56:         "https://bsc-dataseed.binance.org",
-  137:        "https://polygon-rpc.com",
-  42161:      "https://arb1.arbitrum.io/rpc",
-  10:         "https://mainnet.optimism.io",
-  8453:       "https://mainnet.base.org",
+  1:          "https://eth.llamarpc.com",
+  56:         "https://bsc.llamarpc.com",
+  137:        "https://polygon.llamarpc.com",
+  42161:      "https://arbitrum.llamarpc.com",
+  10:         "https://optimism.llamarpc.com",
+  8453:       "https://base.llamarpc.com",
   59144:      "https://rpc.linea.build",
   324:        "https://mainnet.era.zksync.io",
   534352:     "https://rpc.scroll.io",
@@ -186,8 +186,8 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   250:        "https://rpc.ftm.tools",
   25:         "https://evm.cronos.org",
   // ── Testnets ──────────────────────────────────────────────────────
-  11155111:   "https://ethereum-sepolia-rpc.publicnode.com",  // Sepolia — OrahDEX AMM
-  84532:      "https://sepolia.base.org",                     // Base Sepolia
+  11155111:   "https://ethereum-sepolia-rpc.publicnode.com",
+  84532:      "https://sepolia.base.org",
   // ── Additional chains ─────────────────────────────────────────────
   100:        "https://rpc.gnosischain.com",
   42220:      "https://forno.celo.org",
@@ -198,6 +198,17 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   288:        "https://mainnet.boba.network",
   1088:       "https://andromeda.metis.io/?owner=1088",
   167000:     "https://rpc.mainnet.taiko.xyz",
+};
+
+/* ── Fallback RPC endpoints (tried when primary is rate-limited) ─────── */
+export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
+  1:     "https://ethereum.publicnode.com",
+  56:    "https://bsc-dataseed.binance.org",
+  137:   "https://rpc.ankr.com/polygon",
+  42161: "https://arb1.arbitrum.io/rpc",
+  10:    "https://mainnet.optimism.io",
+  8453:  "https://mainnet.base.org",
+  43114: "https://api.avax.network/ext/bc/C/rpc",
 };
 
 /**
