@@ -893,7 +893,72 @@ const QUICK_COINS: QuickCoin[] = [
   { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.022,  minBsv:20,    maxBsv:50000 },
 ];
 
-function BsvQuickSwap() {
+const SWAP_HISTORY_KEY = "orah_swap_history";
+
+interface SwapHistoryItem {
+  id: string;
+  bsvAmount: number;
+  receiveAmt: number;
+  coinSymbol: string;
+  coinName: string;
+  chainLabel: string;
+  status: "completed";
+  ts: number;
+}
+
+function loadSwapHistory(): SwapHistoryItem[] {
+  try { return JSON.parse(localStorage.getItem(SWAP_HISTORY_KEY) ?? "[]"); } catch { return []; }
+}
+function saveSwapToHistory(item: SwapHistoryItem) {
+  const existing = loadSwapHistory();
+  localStorage.setItem(SWAP_HISTORY_KEY, JSON.stringify([item, ...existing].slice(0, 50)));
+}
+
+function SwapHistory() {
+  const [items, setItems] = useState<SwapHistoryItem[]>(loadSwapHistory);
+  const clear = () => { localStorage.removeItem(SWAP_HISTORY_KEY); setItems([]); };
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
+        <Clock className="w-10 h-10 text-muted-foreground/30" />
+        <p className="text-muted-foreground font-semibold">No swap history yet</p>
+        <p className="text-xs text-muted-foreground/60">Completed swaps will appear here</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-lg mx-auto space-y-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold text-muted-foreground">{items.length} swap{items.length !== 1 ? "s" : ""}</p>
+        <button onClick={clear} className="text-xs text-red-400/70 hover:text-red-400 transition-colors">Clear all</button>
+      </div>
+      {items.map(item => (
+        <div key={item.id} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-green-500/15 border border-green-500/25 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-green-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold">{item.bsvAmount} BSV</span>
+              <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="text-sm font-bold text-green-400">{item.receiveAmt.toFixed(6)} {item.coinSymbol}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] text-muted-foreground">{item.chainLabel}</span>
+              <span className="text-[10px] text-muted-foreground/40">·</span>
+              <span className="text-[11px] text-muted-foreground">{new Date(item.ts).toLocaleString()}</span>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold text-green-400 bg-green-500/10 px-2 py-1 rounded-lg shrink-0">Completed</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
   const { prices: livePrices } = useWalletPrices();
   const BSV_USD_PRICE = livePrices?.BSV?.usd ?? 15;
 
@@ -903,8 +968,10 @@ function BsvQuickSwap() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [step, setStep]               = useState<"idle"|"confirm"|"pending"|"done">("idle");
   const [timer, setTimer]             = useState(8);
+  const [swapCompleted, setSwapCompleted] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const filteredCoins = useMemo(() =>
     search.length === 0
@@ -935,7 +1002,7 @@ function BsvQuickSwap() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  /* Countdown timer for "pending" step */
+  /* Countdown timer for "pending" step → transitions to "done" */
   useEffect(() => {
     if (step === "pending") {
       setTimer(8);
@@ -949,6 +1016,26 @@ function BsvQuickSwap() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [step]);
 
+  /* When step reaches "done": save to history, then auto-complete after 4s */
+  useEffect(() => {
+    if (step === "done" && selectedCoin) {
+      const item: SwapHistoryItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        bsvAmount,
+        receiveAmt,
+        coinSymbol: selectedCoin.symbol,
+        coinName: selectedCoin.name,
+        chainLabel: selectedCoin.chainLabel,
+        status: "completed",
+        ts: Date.now(),
+      };
+      saveSwapToHistory(item);
+      onSwapDone?.();
+      completeTimerRef.current = setTimeout(() => setSwapCompleted(true), 4000);
+    }
+    return () => { if (completeTimerRef.current) clearTimeout(completeTimerRef.current); };
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleContinue = () => {
     if (!canContinue) return;
     if (step === "idle") { setStep("confirm"); return; }
@@ -956,7 +1043,7 @@ function BsvQuickSwap() {
   };
 
   const handleReset = () => {
-    setStep("idle"); setSendAmount(""); setSelectedCoin(null); setSearch(""); setTimer(8);
+    setStep("idle"); setSendAmount(""); setSelectedCoin(null); setSearch(""); setTimer(8); setSwapCompleted(false);
   };
 
   return (
@@ -1007,9 +1094,15 @@ function BsvQuickSwap() {
               </div>
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Status</span>
-                <span className="text-amber-400 font-semibold flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3 animate-spin" /> Processing
-                </span>
+                {swapCompleted ? (
+                  <span className="text-green-400 font-semibold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Completed
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-semibold flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Processing…
+                  </span>
+                )}
               </div>
             </div>
             <button onClick={handleReset}
@@ -1255,7 +1348,8 @@ export function BridgePage() {
   const { toast } = useToast();
 
   const { data: bsvChain } = useBsvChain();
-  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw">("bsvswap");
+  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">("bsvswap");
+  const [historyCount, setHistoryCount] = useState(() => loadSwapHistory().length);
 
   const [fromChain, setFromChain] = useState<Chain>(CHAINS[0]);
   const [toChain, setToChain]     = useState<Chain>(CHAINS[2]);
@@ -1486,6 +1580,7 @@ export function BridgePage() {
           { id: "swap",     icon: <ArrowLeftRight className="w-4 h-4" />, label: "Swap"       },
           { id: "deposit",  icon: <ArrowDown className="w-4 h-4" />,      label: "Deposit"    },
           { id: "withdraw", icon: <ArrowUp className="w-4 h-4" />,        label: "Withdraw"   },
+          { id: "history",  icon: <Clock className="w-4 h-4" />,          label: "History"    },
         ] as const).map(tab => (
           <button
             key={tab.id}
@@ -1499,17 +1594,26 @@ export function BridgePage() {
                     ? "bg-green-500/20 text-green-400 shadow-sm border border-green-500/20"
                     : tab.id === "withdraw"
                       ? "bg-orange-500/20 text-orange-400 shadow-sm border border-orange-500/20"
-                      : "bg-card text-foreground shadow-sm border border-border/50"
+                      : tab.id === "history"
+                        ? "bg-card text-foreground shadow-sm border border-border/50"
+                        : "bg-card text-foreground shadow-sm border border-border/50"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
             {tab.icon} {tab.label}
+            {tab.id === "history" && historyCount > 0 && (
+              <span className="ml-0.5 text-[10px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full leading-none">
+                {historyCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* ── BSV Quick Swap (HandCash-style) ── */}
-      {pageTab === "bsvswap" && <BsvQuickSwap />}
+      {pageTab === "bsvswap" && (
+        <BsvQuickSwap onSwapDone={() => setHistoryCount(c => c + 1)} />
+      )}
 
       {/* ── BSV Settlement Network Card (shown on BSV→Any and Swap tabs) ── */}
       {(pageTab === "bsvswap" || pageTab === "swap") && (
@@ -1564,6 +1668,7 @@ export function BridgePage() {
       {/* ── Deposit / Withdraw canonical panels ── */}
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
+      {pageTab === "history"  && <SwapHistory />}
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
       {pageTab === "swap" && <>
