@@ -4,7 +4,7 @@
  * MODE 1: "On-Chain DEX" — wallet signs real Uniswap V3 / PancakeSwap V3 swaps.
  *   - Real quotes via QuoterV2 (static simulation, no gas)
  *   - Real execution via SwapRouter02 (wallet signs, non-custodial)
- *   - Chains: Ethereum, Base, BSC
+ *   - Chains: Ethereum, Base, BSC, Arbitrum, Optimism, Polygon, Avalanche
  *
  * MODE 2: "Exchange" — custodial internal order matching (existing system).
  *   - Fast, no gas, uses OrahDEX internal ledger balances
@@ -32,12 +32,16 @@ import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 // ─── Chain config ────────────────────────────────────────────────────────────
 
 const DEX_CHAINS = [
-  { id: 1,    name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",  explorer: "https://etherscan.io/tx/" },
-  { id: 8453, name: "Base",     nativeSymbol: "ETH",  logo: "ETH",  explorer: "https://basescan.org/tx/" },
-  { id: 56,   name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",  explorer: "https://bscscan.com/tx/" },
+  { id: 1,     name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://etherscan.io/tx/",         color: "#627EEA" },
+  { id: 8453,  name: "Base",     nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://basescan.org/tx/",         color: "#0052FF" },
+  { id: 56,    name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",   explorer: "https://bscscan.com/tx/",          color: "#F0B90B" },
+  { id: 42161, name: "Arbitrum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://arbiscan.io/tx/",          color: "#28A0F0" },
+  { id: 10,    name: "Optimism", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://optimistic.etherscan.io/tx/", color: "#FF0420" },
+  { id: 137,   name: "Polygon",  nativeSymbol: "POL",  logo: "MATIC", explorer: "https://polygonscan.com/tx/",      color: "#8247E5" },
+  { id: 43114, name: "Avalanche",nativeSymbol: "AVAX", logo: "AVAX",  explorer: "https://snowtrace.io/tx/",         color: "#E84142" },
 ] as const;
 
-type SupportedChainId = 1 | 8453 | 56;
+type SupportedChainId = 1 | 8453 | 56 | 42161 | 10 | 137 | 43114;
 
 // ─── Token list ───────────────────────────────────────────────────────────────
 
@@ -54,52 +58,109 @@ const NATIVE_PLACEHOLDER = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" as `0x${
 
 const TOKENS: Record<SupportedChainId, Token[]> = {
   1: [
-    { symbol: "ETH",  name: "Ethereum",         decimals: 18, address: NATIVE_PLACEHOLDER,                                    isNative: true  },
-    { symbol: "USDC", name: "USD Coin",          decimals: 6,  address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"           },
-    { symbol: "USDT", name: "Tether",            decimals: 6,  address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"           },
-    { symbol: "WBTC", name: "Wrapped Bitcoin",   decimals: 8,  address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"           },
-    { symbol: "DAI",  name: "Dai",               decimals: 18, address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"           },
-    { symbol: "LINK", name: "Chainlink",         decimals: 18, address: "0x514910771AF9Ca656af840dff83E8264EcF986CA"           },
-    { symbol: "UNI",  name: "Uniswap",           decimals: 18, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"           },
-    { symbol: "AAVE", name: "Aave",              decimals: 18, address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9"           },
+    { symbol: "ETH",  name: "Ethereum",         decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC", name: "USD Coin",          decimals: 6,  address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" },
+    { symbol: "USDT", name: "Tether",            decimals: 6,  address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin",   decimals: 8,  address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599" },
+    { symbol: "DAI",  name: "Dai",               decimals: 18, address: "0x6B175474E89094C44Da98b954EedeAC495271d0F" },
+    { symbol: "LINK", name: "Chainlink",         decimals: 18, address: "0x514910771AF9Ca656af840dff83E8264EcF986CA" },
+    { symbol: "UNI",  name: "Uniswap",           decimals: 18, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" },
+    { symbol: "AAVE", name: "Aave",              decimals: 18, address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9" },
+    { symbol: "MKR",  name: "Maker",             decimals: 18, address: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2" },
+    { symbol: "CRV",  name: "Curve DAO",         decimals: 18, address: "0xD533a949740bb3306d119CC777fa900bA034cd52" },
   ],
   8453: [
-    { symbol: "ETH",   name: "Ethereum",   decimals: 18, address: NATIVE_PLACEHOLDER,                                    isNative: true  },
-    { symbol: "USDC",  name: "USD Coin",   decimals: 6,  address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"           },
-    { symbol: "USDT",  name: "Tether",     decimals: 6,  address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2"           },
-    { symbol: "WBTC",  name: "WBTC",       decimals: 8,  address: "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c"           },
-    { symbol: "DEGEN", name: "Degen",      decimals: 18, address: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed"           },
-    { symbol: "BRETT", name: "Brett",      decimals: 18, address: "0x532f27101965dd16442E59d40670FaF5eBB142E4"           },
-    { symbol: "TOSHI", name: "Toshi",      decimals: 18, address: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4"           },
+    { symbol: "ETH",   name: "Ethereum",   decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC",  name: "USD Coin",   decimals: 6,  address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+    { symbol: "USDT",  name: "Tether",     decimals: 6,  address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" },
+    { symbol: "WBTC",  name: "WBTC",       decimals: 8,  address: "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c" },
+    { symbol: "DAI",   name: "Dai",        decimals: 18, address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb" },
+    { symbol: "DEGEN", name: "Degen",      decimals: 18, address: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed" },
+    { symbol: "BRETT", name: "Brett",      decimals: 18, address: "0x532f27101965dd16442E59d40670FaF5eBB142E4" },
+    { symbol: "TOSHI", name: "Toshi",      decimals: 18, address: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4" },
   ],
   56: [
-    { symbol: "BNB",  name: "BNB",              decimals: 18, address: NATIVE_PLACEHOLDER,                                    isNative: true  },
-    { symbol: "BTCB", name: "Bitcoin BEP-20",   decimals: 18, address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c"           },
-    { symbol: "ETH",  name: "Ethereum BEP-20",  decimals: 18, address: "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"           },
-    { symbol: "USDT", name: "Tether",           decimals: 18, address: "0x55d398326f99059fF775485246999027B3197955"           },
-    { symbol: "USDC", name: "USD Coin",         decimals: 18, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"           },
-    { symbol: "CAKE", name: "PancakeSwap",      decimals: 18, address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82"           },
+    { symbol: "BNB",  name: "BNB",              decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDT", name: "Tether",           decimals: 18, address: "0x55d398326f99059fF775485246999027B3197955" },
+    { symbol: "USDC", name: "USD Coin",         decimals: 18, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" },
+    { symbol: "BTCB", name: "Bitcoin BEP-20",   decimals: 18, address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c" },
+    { symbol: "ETH",  name: "Ethereum BEP-20",  decimals: 18, address: "0x2170Ed0880ac9A755fd29B2688956BD959F933F8" },
+    { symbol: "CAKE", name: "PancakeSwap",      decimals: 18, address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82" },
+    { symbol: "XVS",  name: "Venus",            decimals: 18, address: "0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63" },
+    { symbol: "ADA",  name: "Cardano BEP-20",   decimals: 18, address: "0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47" },
+  ],
+  42161: [
+    { symbol: "ETH",  name: "Ethereum",       decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC", name: "USD Coin",        decimals: 6,  address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831" },
+    { symbol: "USDT", name: "Tether",          decimals: 6,  address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin", decimals: 8,  address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f" },
+    { symbol: "ARB",  name: "Arbitrum",        decimals: 18, address: "0x912CE59144191C1204E64559FE8253a0e49E6548" },
+    { symbol: "DAI",  name: "Dai",             decimals: 18, address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1" },
+    { symbol: "LINK", name: "Chainlink",       decimals: 18, address: "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4" },
+    { symbol: "GMX",  name: "GMX",             decimals: 18, address: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a" },
+  ],
+  10: [
+    { symbol: "ETH",  name: "Ethereum",       decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC", name: "USD Coin",        decimals: 6,  address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" },
+    { symbol: "USDT", name: "Tether",          decimals: 6,  address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin", decimals: 8,  address: "0x68f180fcCe6836688e9084f035309E29Bf0A2095" },
+    { symbol: "DAI",  name: "Dai",             decimals: 18, address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1" },
+    { symbol: "OP",   name: "Optimism",        decimals: 18, address: "0x4200000000000000000000000000000000000042" },
+    { symbol: "LINK", name: "Chainlink",       decimals: 18, address: "0x350a791Bfc2C21F9Ed5d10980Dad2e2638ffa7f6" },
+    { symbol: "SNX",  name: "Synthetix",       decimals: 18, address: "0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4" },
+  ],
+  137: [
+    { symbol: "POL",  name: "Polygon",         decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC", name: "USD Coin",         decimals: 6,  address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },
+    { symbol: "USDT", name: "Tether",           decimals: 6,  address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin",  decimals: 8,  address: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6" },
+    { symbol: "DAI",  name: "Dai",              decimals: 18, address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063" },
+    { symbol: "WETH", name: "Wrapped ETH",      decimals: 18, address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619" },
+    { symbol: "LINK", name: "Chainlink",        decimals: 18, address: "0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39" },
+    { symbol: "AAVE", name: "Aave",             decimals: 18, address: "0xD6DF932A45C0f255f85145f286eA0b292B21C90B" },
+  ],
+  43114: [
+    { symbol: "AVAX", name: "Avalanche",       decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "USDC", name: "USD Coin",        decimals: 6,  address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6C" },
+    { symbol: "USDT", name: "Tether",          decimals: 6,  address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7" },
+    { symbol: "WBTC", name: "Wrapped Bitcoin", decimals: 8,  address: "0x50b7545627a5162F82A992c33b87aDc75187B218" },
+    { symbol: "DAI",  name: "Dai",             decimals: 18, address: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70" },
+    { symbol: "JOE",  name: "Trader Joe",      decimals: 18, address: "0x6e84a6216eA6dACC71eE8E6b0a5B7322EEbC0fDd" },
+    { symbol: "QI",   name: "BENQI",           decimals: 18, address: "0x8729438EB15e2C8B576fCc6AeCdA6A148776C0F5" },
+    { symbol: "GMX",  name: "GMX",             decimals: 18, address: "0x62edc0692BD897D2295872a9FFCac5425011c661" },
   ],
 };
 
 // ─── Contract addresses ───────────────────────────────────────────────────────
 
 const QUOTER_V2: Record<SupportedChainId, `0x${string}`> = {
-  1:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  8453: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
-  56:   "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  1:     "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  8453:  "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+  56:    "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  42161: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  10:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  137:   "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  43114: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
 };
 
 const SWAP_ROUTER: Record<SupportedChainId, `0x${string}`> = {
-  1:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  8453: "0x2626664c2603336E57B271c5C0b26F421741e481",
-  56:   "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  1:     "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  8453:  "0x2626664c2603336E57B271c5C0b26F421741e481",
+  56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  42161: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  10:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  137:   "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  43114: "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
 };
 
 const WETH: Record<SupportedChainId, `0x${string}`> = {
-  1:    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  8453: "0x4200000000000000000000000000000000000006",
-  56:   "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  1:     "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  8453:  "0x4200000000000000000000000000000000000006",
+  56:    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  10:    "0x4200000000000000000000000000000000000006",
+  137:   "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+  43114: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
 };
 
 const FEE_TIERS = [100, 500, 3000, 10000];
@@ -401,7 +462,8 @@ export function Swap() {
 
   // Sync chainId with connected wallet when possible
   useEffect(() => {
-    if (walletChainId && [1, 8453, 56].includes(walletChainId)) {
+    const SUPPORTED = [1, 8453, 56, 42161, 10, 137, 43114];
+    if (walletChainId && SUPPORTED.includes(walletChainId)) {
       setChainId(walletChainId as SupportedChainId);
     }
   }, [walletChainId]);
@@ -532,7 +594,7 @@ export function Swap() {
                       : "border-border/40 text-muted-foreground hover:border-border",
                   )}
                 >
-                  <CoinLogo symbol={c.nativeSymbol} size={14} />
+                  <CoinLogo symbol={c.logo} size={14} />
                   {c.name}
                 </button>
               ))}
