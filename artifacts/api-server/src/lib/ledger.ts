@@ -202,6 +202,42 @@ export async function creditAvailable(
   );
 }
 
+// ── Debit available balance (burn / admin deduction) ──────────────────────────
+
+export async function debitAvailable(
+  walletAddress: string,
+  asset:         string,
+  amount:        string,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const row = rows[0];
+    if (!row || lt(row.available, amount)) {
+      throw new Error(`INSUFFICIENT_FUNDS:${asset}`);
+    }
+    await client.query(
+      `UPDATE user_balances
+       SET available  = available - $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [amount, walletAddress, asset],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ── Lock funds for an order (available → locked) ──────────────────────────────
 
 export async function lockForOrder(params: {
