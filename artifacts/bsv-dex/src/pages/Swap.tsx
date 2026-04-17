@@ -921,7 +921,28 @@ export function Swap() {
         });
       });
       setTxSuccess(true);
-      toast({ title: "Swap confirmed!", description: `${amountIn} ${fromToken.symbol} → ${parseFloat(formatUnits(quote.amountOut, toToken.decimals)).toFixed(6)} ${toToken.symbol}` });
+
+      // Post-confirmation settlement: record on backend & credit internal balance
+      const amtOut = parseFloat(formatUnits(quote.amountOut, toToken.decimals));
+      try {
+        await fetch("/api/trade/wallet/settle", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            txHash,
+            chainId,
+            walletAddress:  address,
+            assetIn:        fromToken.symbol,
+            assetOut:       toToken.symbol,
+            amountIn,
+            amountOut:      amtOut.toFixed(toToken.decimals > 6 ? 8 : 6),
+          }),
+        });
+      } catch {
+        // Non-blocking — swap succeeded, settlement recording is best-effort
+      }
+
+      toast({ title: "Swap confirmed!", description: `${amountIn} ${fromToken.symbol} → ${amtOut.toFixed(6)} ${toToken.symbol}` });
     } catch (e: any) {
       toast({ title: "Swap failed", description: e.shortMessage ?? e.message ?? "Transaction rejected.", variant: "destructive" });
     }
