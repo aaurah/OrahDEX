@@ -97,6 +97,12 @@ export function AdminEmailInbox() {
     refetchInterval: 30000,
   });
 
+  const { data: smtpStatus } = useQuery<{ configured: boolean; host?: string; isTestAccount?: boolean; user?: string }>({
+    queryKey: ["smtp-status"],
+    queryFn: () => fetch(`${BASE}/api/admin/mail/smtp-status`).then(r => r.json()),
+    staleTime: 60_000,
+  });
+
   const patchEmail = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Email> }) =>
       fetch(`${BASE}/api/admin/mail/${id}`, {
@@ -135,7 +141,22 @@ export function AdminEmailInbox() {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setComposing(false);
       setCompose({ from: "support@orahdex.org", to: "", subject: "", body: "" });
-      toast({ title: "Saved to Sent folder", description: "Message saved. Configure your mail client using the setup guide to send real emails." });
+      if (data?.smtpSent) {
+        if (data?.previewUrl) {
+          toast({
+            title: "Email sent via Ethereal (test mode)",
+            description: `View it at: ${data.previewUrl}`,
+            duration: 12000,
+          });
+          window.open(data.previewUrl, "_blank", "noopener,noreferrer");
+        } else {
+          toast({ title: "Email sent successfully", description: `Delivered to ${data.toAddress}` });
+        }
+      } else if (data?.smtpError) {
+        toast({ title: "Saved to Sent — delivery failed", description: data.smtpError, variant: "destructive" });
+      } else {
+        toast({ title: "Saved to Sent folder", description: "SMTP not configured — email was not delivered externally." });
+      }
     },
   });
 
@@ -208,6 +229,23 @@ export function AdminEmailInbox() {
           <p className="text-xs text-muted-foreground mt-0.5">
             System notifications, contact forms, and platform alerts
           </p>
+          {smtpStatus && (
+            <div className={cn(
+              "flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full border w-fit",
+              smtpStatus.configured
+                ? smtpStatus.isTestAccount
+                  ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                  : "bg-green-500/10 border-green-500/20 text-green-400"
+                : "bg-red-500/10 border-red-500/20 text-red-400"
+            )}>
+              <span className={cn("w-1.5 h-1.5 rounded-full", smtpStatus.configured ? "bg-current" : "bg-red-400")} />
+              {smtpStatus.configured
+                ? smtpStatus.isTestAccount
+                  ? "SMTP: Ethereal test account (preview only)"
+                  : `SMTP: ${smtpStatus.host}`
+                : "SMTP: Not configured"}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
