@@ -179,6 +179,77 @@ router.post("/deposit/verify", async (req, res) => {
   }
 });
 
+// ── POST /deposit/sweep-wallet ───────────────────────────────────────────────
+// Credits the on-chain native balance of a custodial hot wallet to the internal
+// trading ledger.  Used when the user's own wallet address has received on-chain
+// funds that haven't been credited yet (i.e. the "not tradable" on-chain balance).
+//
+// Body: { walletAddress, chainId? }
+// Uses walletAddress as the on-chain address to read, not a separate deposit addr.
+
+router.post("/deposit/sweep-wallet", async (req, res) => {
+  const { walletAddress, chainId: rawChainId } = req.body ?? {};
+  const chainId = parseInt(String(rawChainId ?? 1), 10);
+
+  if (!walletAddress || !walletAddress.startsWith("0x")) {
+    res.status(400).json({ error: "walletAddress is required (must be 0x…)" });
+    return;
+  }
+
+  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
+
+  try {
+    const client = createPublicClient({ transport: http(chain.rpcUrl) });
+
+    // Read current on-chain balance
+    const balanceWei = await client.getBalance({ address: walletAddress as Hex });
+    const balanceNative = Number(balanceWei) / 1e18;
+
+    if (balanceNative <= 0) {
+      res.status(400).json({ error: "No on-chain balance to sweep." });
+      return;
+    }
+
+    // Use a deterministic reference to prevent double-crediting the same balance
+    // Key: wallet + chain + truncated balance to 6dp (prevents re-sweeping same snapshot)
+    const sweepRef = `sweep:${walletAddress.toLowerCase()}:${chainId}:${balanceNative.toFixed(6)}`;
+    const alreadyCredited = await isDepositAlreadyCredited(sweepRef, chainId);
+    if (alreadyCredited) {
+      res.status(409).json({ error: "This balance has already been credited to your trading account." });
+      return;
+    }
+
+    const asset     = chain.nativeSymbol;
+    const amountStr = balanceNative.toFixed(18);
+
+    await creditAvailable(walletAddress, asset, amountStr);
+    await recordVerifiedDeposit({
+      txHash:     sweepRef,
+      chainId,
+      userWallet: walletAddress,
+      asset,
+      amount:     amountStr,
+    });
+
+    req.log.info({ walletAddress, chainId, asset, amount: amountStr }, "deposit/sweep-wallet: credited");
+
+    const updatedBalances = await getBalances(walletAddress);
+    const credited = updatedBalances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
+
+    res.json({
+      success:    true,
+      asset,
+      amount:     balanceNative,
+      amountStr,
+      newBalance: credited?.available ?? amountStr,
+      message:    `+${balanceNative.toFixed(6)} ${asset} credited to your trading account`,
+    });
+  } catch (err) {
+    req.log.error({ err }, "deposit/sweep-wallet: failed");
+    res.status(500).json({ error: "Sweep failed. Please try again." });
+  }
+});
+
 // ── GET /deposit/history ──────────────────────────────────────────────────────
 // List the user's verified deposit history.
 
