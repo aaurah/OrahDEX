@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
+  ArrowDownLeft, ArrowUpRight, History,
 } from "lucide-react";
 
 import { useWalletStore } from "@/store/useWalletStore";
@@ -117,7 +118,7 @@ function useLivePrices() {
 
 const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e", cancelled: "#6b7280" };
 
-type Tab = "assets" | "defi" | "orders";
+type Tab = "assets" | "defi" | "orders" | "history";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect, internalEvmAddress } = useWalletStore();
@@ -178,6 +179,30 @@ export function MobilePortfolio() {
     refetchInterval: 2000,
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
+
+  const { data: historyData = [], isLoading: historyLoading } = useQuery<any[]>({
+    queryKey: ["trade-history", ledgerAddress],
+    queryFn: () => fetch(`${BASE}/api/trades/history?walletAddress=${encodeURIComponent(ledgerAddress || "")}&limit=100`).then(r => r.json()),
+    enabled: !!ledgerAddress && tab === "history",
+    staleTime: 30_000,
+  });
+
+  // Group history by date label
+  const historyByDate: { label: string; trades: any[] }[] = (() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const groups: Record<string, any[]> = {};
+    for (const t of historyData) {
+      const d = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+      d.setHours(0,0,0,0);
+      const label = d.getTime() === today.getTime() ? "Today"
+        : d.getTime() === yesterday.getTime() ? "Yesterday"
+        : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined });
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(t);
+    }
+    return Object.entries(groups).map(([label, trades]) => ({ label, trades }));
+  })();
 
   const cancelMutation = useMutation({
     mutationFn: async (orderId: string) => {
@@ -817,18 +842,21 @@ export function MobilePortfolio() {
           )}
 
           {/* Tabs */}
-          <div className="flex gap-2">
-            {(["assets", "defi", "orders"] as Tab[]).map(t => (
+          <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+            {(["assets", "defi", "orders", "history"] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
+                className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
                   tab === t
                     ? "bg-primary/15 border-primary/40 text-primary"
                     : "bg-card border-border text-muted-foreground"
                 }`}
               >
-                {t === "assets" ? "Token" : t === "defi" ? "DeFi" : "Orders"}
+                {t === "assets" ? "Token"
+                  : t === "defi" ? "DeFi"
+                  : t === "orders" ? "Orders"
+                  : <><History size={11} className="shrink-0" />History</>}
                 {t === "defi" && lpPositions.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
                     {lpPositions.length}
@@ -1108,6 +1136,101 @@ export function MobilePortfolio() {
                         </p>
                       </div>
                     )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* History tab */}
+          {tab === "history" && (
+            historyLoading ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                <RefreshCw size={20} className="animate-spin opacity-40" />
+                <p className="text-xs">Loading history…</p>
+              </div>
+            ) : historyByDate.length === 0 ? (
+              <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                <History size={28} className="opacity-20 mb-1" />
+                <p className="text-sm font-medium">No transaction history yet</p>
+                <p className="text-xs opacity-60 text-center">Your trades will appear here after you buy or sell</p>
+              </div>
+            ) : (
+              <div className="space-y-4 mb-4">
+                {historyByDate.map(({ label, trades }) => (
+                  <div key={label}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
+                    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                      {trades.map((t: any, i: number) => {
+                        const isBuy  = (t.side ?? "buy") === "buy";
+                        const sym    = (t.symbol ?? "BSV/USDT").split("/");
+                        const base   = sym[0] ?? "BSV";
+                        const quote  = sym[1] ?? "USDT";
+                        // BUY  = received base coin (green arrow in)
+                        // SELL = received quote coin (red arrow out)
+                        const coinIn  = isBuy ? base  : quote;
+                        const coinOut = isBuy ? quote : base;
+                        const amtIn   = isBuy
+                          ? Number(t.quantity ?? t.fillQty ?? 0)
+                          : Number(t.total    ?? (Number(t.quantity) * Number(t.price)));
+                        const amtOut  = isBuy
+                          ? Number(t.total    ?? (Number(t.quantity) * Number(t.price)))
+                          : Number(t.quantity ?? t.fillQty ?? 0);
+                        const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+                        const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                        const fee     = Number(t.fee ?? 0);
+                        const coinColors: Record<string, string> = {
+                          BTC:"#F7931A", ETH:"#627EEA", BSV:"#EAB308", BNB:"#F0B90B",
+                          USDT:"#26A17B", USDC:"#2775CA", SOL:"#9945FF",
+                          MATIC:"#8247E5", AVAX:"#E84142", ADA:"#0033AD",
+                        };
+                        const color = coinColors[base] ?? "#6B7280";
+                        return (
+                          <div
+                            key={t.id ?? i}
+                            className={`flex items-center gap-3 px-4 py-3.5 ${i < trades.length - 1 ? "border-b border-border" : ""}`}
+                          >
+                            {/* Coin avatar */}
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                            >
+                              {base[0]}
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-semibold text-foreground">{base}/{quote}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                                  {isBuy ? "BUY" : "SELL"}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} · {timeStr}
+                                {fee > 0 && <span className="text-muted-foreground/50"> · fee {fee.toFixed(4)}</span>}
+                              </p>
+                            </div>
+
+                            {/* In / Out amounts */}
+                            <div className="text-right shrink-0 space-y-0.5">
+                              <div className="flex items-center justify-end gap-1 text-green-400">
+                                <ArrowDownLeft size={10} strokeWidth={2.5} />
+                                <span className="text-xs font-bold font-mono">
+                                  +{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-end gap-1 text-muted-foreground/70">
+                                <ArrowUpRight size={10} strokeWidth={2.5} />
+                                <span className="text-[11px] font-mono">
+                                  -{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
               </div>
