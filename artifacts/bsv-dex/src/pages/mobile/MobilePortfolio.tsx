@@ -162,7 +162,7 @@ export function MobilePortfolio() {
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
   const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
-    chainId,
+    network === "evm" ? (chainId ?? 1) : null,
   );
   const { balances: tronBalances, refresh: tronRefresh } = useTronBalances(
     network === "tron" ? address : null,

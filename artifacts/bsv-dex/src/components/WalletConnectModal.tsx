@@ -333,7 +333,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setPasskeyResult({ address: result.address, label: result.label, chains: result.chains });
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "orah-wallet", network: "evm" });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
@@ -356,7 +356,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setRestoredFromBackup(result.restoredFromBackup ?? false);
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "orah-wallet", network: "evm" });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
       if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
       if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
@@ -969,7 +969,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     try {
       const addrs = await deriveAllAddresses(mnemonic);
       setHdAddresses(addrs);
-      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm" });
+      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
@@ -992,7 +992,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const addrs = await deriveAllAddresses(result.words);
       setHdAddresses(addrs);
       setImportAddress(addrs.evm);
-      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm" });
+      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
@@ -1022,7 +1022,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
     setImportAddress(addr);
-    connect({ address: addr, provider: "orah-wallet", network: "evm" });
+    connect({ address: addr, provider: "orah-wallet", network: "evm", chainId: 1 });
     setImportStep("done");
     setTimeout(() => goToPrep(addr, "evm", "orah-wallet"), 1500);
   };
@@ -2374,7 +2374,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                           setPasskeyResult({ address: wallet.address, label: wallet.label ?? "Passkey Wallet" });
                                           setRestoredFromBackup(true);
                                           setPasskeyStep("done");
-                                          connect({ address: wallet.address, provider: "orah-wallet", network: "evm" });
+                                          connect({ address: wallet.address, provider: "orah-wallet", network: "evm", chainId: 1 });
                                           setTimeout(() => goToPrep(wallet.address, "evm", "passkey"), 2000);
                                         } catch (err: any) {
                                           setTransferCodeError(err?.message ?? "Transfer failed");
