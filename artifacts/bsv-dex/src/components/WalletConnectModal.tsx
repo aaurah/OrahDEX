@@ -24,6 +24,7 @@ import {
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { LedgerConnectPanel } from "@/components/LedgerConnectPanel";
+import { openReownModal, isReownReady } from "@/lib/reown";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainName } from "@/lib/chainConfig";
@@ -660,11 +661,24 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   /* ── EVM connection ─────────────────────────────────────────────────────── */
   const handleConnectEvm = async (walletId: string, installUrl?: string) => {
     setConnectError(null);
+
+    // Ledger is handled by its own tab
+    if (walletId === "ledger") return;
+
     let provider: any = getEvmProvider(walletId);
 
+    // No browser extension found — open Reown/WalletConnect modal as fallback.
+    // This works on mobile (deep-link) and desktop (QR scan) for all WC-compatible wallets.
     if (!provider) {
-      if (installUrl) window.open(installUrl, "_blank");
-      setConnectError(`${walletId === "metamask" ? "MetaMask" : "Wallet"} not detected. Install the extension and try again.`);
+      if (isReownReady()) {
+        onClose(); // close our custom modal first
+        openReownModal("Connect");
+      } else if (installUrl) {
+        window.open(installUrl, "_blank");
+        setConnectError("Extension not found. Install the wallet extension, or scan the QR code from your mobile wallet.");
+      } else {
+        setConnectError("Wallet extension not detected. Use a mobile wallet and scan the QR code via 'EVM Wallets' → Connect Wallet.");
+      }
       return;
     }
 
