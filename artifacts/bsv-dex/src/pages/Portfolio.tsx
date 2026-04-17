@@ -196,10 +196,12 @@ function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({
     queryKey: ["portfolio-live-prices"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets?quote=USDT&limit=500`, { cache: "no-store" });
+      const res = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
       if (!res.ok) throw new Error("price fetch failed");
       const rows: MarketRow[] = await res.json();
-      return Object.fromEntries(rows.map(r => [r.baseAsset, r]));
+      // Only use USDT-quoted pairs so non-USDT cross rates don't corrupt prices
+      const usdtRows = rows.filter(r => r.quoteAsset === "USDT");
+      return Object.fromEntries(usdtRows.map(r => [r.baseAsset, r]));
     },
     refetchInterval: 30_000,
     staleTime: 15_000,
