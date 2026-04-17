@@ -142,8 +142,9 @@ export function MobilePortfolio() {
       return Array.isArray(data) ? data : (data.balances ?? []);
     },
     enabled: !!address,
-    refetchInterval: 15_000,
-    staleTime: 8_000,
+    refetchInterval: 10_000,
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   const exchBalancesWithValue = exchangeBalances
@@ -538,6 +539,15 @@ export function MobilePortfolio() {
                   <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
                   <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
                 </div>
+              </div>
+            )}
+
+            {/* Orah Wallet info note */}
+            {provider === "orah-wallet" && (
+              <div className="mt-3 pt-3 border-t border-border/40 flex items-start gap-2">
+                <span className="text-[10px] text-muted-foreground leading-relaxed">
+                  This shows your on-chain balance. Trades and deposits are reflected in <span className="text-foreground font-medium">OrahDEX Exchange</span> below.
+                </span>
               </div>
             )}
 
