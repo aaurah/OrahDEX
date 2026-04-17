@@ -1,0 +1,140 @@
+“Exchange wallet balance trade working well — balance reduces.
+But the connected wallet does NOT reduce ETH and does NOT receive USDC.”
+
+And the truth is:
+
+⭐ That is 100% correct — because your connected wallet is NEVER used for trading.
+
+Your architecture does NOT trade from the connected wallet.
+Your architecture trades from the OrahDEX internal ledger.
+
+Let me break it down cleanly so you fully understand why the connected wallet never changes.
+
+---
+
+⭐ 1. Your DEX does NOT use the connected wallet for trading
+
+When a user connects MetaMask / WalletConnect:
+
+• You read their address
+• You do NOT send any transaction to their wallet
+• You do NOT ask for a signature
+• You do NOT deduct ETH from their wallet
+• You do NOT send USDC to their wallet
+
+
+Because your DEX is not an on‑chain swap.
+
+It is an internal orderbook exchange, like:
+
+• Binance
+• Coinbase
+• Bybit
+• dYdX (orderbook mode)
+
+
+These exchanges never touch the user’s wallet during trading.
+
+---
+
+⭐ 2. Your trades happen inside the OrahDEX internal ledger
+
+This is the key:
+
+✔ Trades happen inside your database
+
+✔ ETH and USDC move inside the internal ledger
+
+✔ No blockchain transaction is created
+
+✔ No RPC call is made
+
+✔ No wallet signature is required
+
+✔ No on‑chain balance changes
+
+This is why:
+
+• Exchange balance reduces
+• Exchange balance increases
+• Connected wallet stays the same
+
+
+This is correct behavior.
+
+---
+
+⭐ 3. Why your connected wallet ETH never reduces
+
+Because your DEX never sends a transaction to the blockchain.
+
+To reduce ETH in a real wallet, you would need:
+
+• A signed transaction
+• Gas
+• A blockchain broadcast
+• A mined block
+
+
+Your system does none of these.
+
+So the connected wallet ETH stays the same.
+
+---
+
+⭐ 4. Why your connected wallet never receives USDC
+
+Because your DEX never sends USDC to the wallet unless the user performs a withdrawal.
+
+Your flow is:
+
+Deposit → Trade → Withdraw
+
+NOT:
+
+Trade directly from wallet
+
+This is the correct architecture for an internal‑ledger exchange.
+
+---
+
+⭐ 5. The ONLY time the connected wallet changes is:
+
+✔ When the user deposits
+
+→ ETH leaves wallet
+→ ETH enters OrahDEX ledger
+
+✔ When the user withdraws
+
+→ USDC leaves OrahDEX ledger
+→ USDC enters wallet
+
+❌ Trading does NOT touch the wallet
+
+Trading only moves balances inside the ledger.
+
+---
+
+⭐ 6. If you WANT the connected wallet to reduce ETH during trades
+
+Then you must change your entire architecture to:
+
+• On‑chain swaps
+• Smart contracts
+• Wallet signatures
+• Gas fees
+• Blockchain settlement
+
+
+This is a completely different system.
+
+Right now, you are running a centralized orderbook DEX, not an AMM.
+
+---
+
+⭐ Final Answer
+
+Your connected wallet does NOT reduce ETH and does NOT receive USDC because trades happen inside the OrahDEX internal ledger, not on the blockchain. Only deposits and withdrawals touch the real wallet.
+
+Your system is working exactly as designed.
