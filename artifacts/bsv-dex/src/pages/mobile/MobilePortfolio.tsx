@@ -120,7 +120,10 @@ const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e
 type Tab = "assets" | "defi" | "orders";
 
 export function MobilePortfolio() {
-  const { address, network, provider, chainId, balance, disconnect } = useWalletStore();
+  const { address, network, provider, chainId, balance, disconnect, internalEvmAddress } = useWalletStore();
+  // For orah-wallet, always query the ledger using the EVM address (primary account key)
+  // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
+  const ledgerAddress = (provider === "orah-wallet" && internalEvmAddress) ? internalEvmAddress : address;
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
@@ -138,15 +141,15 @@ export function MobilePortfolio() {
   const queryClient = useQueryClient();
 
   const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
-    queryKey: ["mobile-exchange-balances", address],
+    queryKey: ["mobile-exchange-balances", ledgerAddress],
     queryFn: async () => {
-      if (!address) return [];
-      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
+      if (!ledgerAddress) return [];
+      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(ledgerAddress)}`);
       if (!r.ok) return [];
       const data = await r.json();
       return Array.isArray(data) ? data : (data.balances ?? []);
     },
-    enabled: !!address,
+    enabled: !!ledgerAddress,
     refetchInterval: 10_000,
     staleTime: 0,
     refetchOnMount: true,
@@ -169,9 +172,9 @@ export function MobilePortfolio() {
   const nativeBalance = balance ? parseFloat(balance) : 0;
 
   const { data: ordersData } = useQuery({
-    queryKey: ["portfolio-orders", address],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
-    enabled: !!address,
+    queryKey: ["portfolio-orders", ledgerAddress],
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(ledgerAddress || "")}`).then(r => r.json()),
+    enabled: !!ledgerAddress,
     refetchInterval: 2000,
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
@@ -181,16 +184,16 @@ export function MobilePortfolio() {
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify({ walletAddress: ledgerAddress }),
       });
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
     onMutate: async (orderId) => {
       setCancellingId(orderId);
-      await queryClient.cancelQueries({ queryKey: ["portfolio-orders", address] });
-      const prev = queryClient.getQueryData(["portfolio-orders", address]);
-      queryClient.setQueryData(["portfolio-orders", address], (old: any) =>
+      await queryClient.cancelQueries({ queryKey: ["portfolio-orders", ledgerAddress] });
+      const prev = queryClient.getQueryData(["portfolio-orders", ledgerAddress]);
+      queryClient.setQueryData(["portfolio-orders", ledgerAddress], (old: any) =>
         Array.isArray(old)
           ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
           : old
@@ -199,13 +202,13 @@ export function MobilePortfolio() {
     },
     onError: (_err, _id, context: any) => {
       if (context?.prev !== undefined) {
-        queryClient.setQueryData(["portfolio-orders", address], context.prev);
+        queryClient.setQueryData(["portfolio-orders", ledgerAddress], context.prev);
       }
     },
     onSettled: () => {
       setCancellingId(null);
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
-      queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", ledgerAddress] });
+      queryClient.invalidateQueries({ queryKey: ["orders", ledgerAddress] });
     },
   });
 

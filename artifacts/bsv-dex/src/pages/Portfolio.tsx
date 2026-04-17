@@ -223,7 +223,10 @@ export function Portfolio() {
     }
   });
 
-  const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
+  const { address, network, provider, chainId, balance, setBalance, internalEvmAddress } = useWalletStore();
+  // For orah-wallet, always query the ledger using the EVM address (primary account key)
+  // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
+  const ledgerAddress = (provider === "orah-wallet" && internalEvmAddress) ? internalEvmAddress : address;
   const openWallet = useWalletModalStore((s) => s.open);
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions } = useLiquidityStore();
@@ -241,15 +244,15 @@ export function Portfolio() {
   const { data: exchangeApiBalances, refetch: refetchExchangeBalances } = useQuery<
     { asset: string; available: string; locked: string }[]
   >({
-    queryKey: ["portfolio-exchange-balances", address],
+    queryKey: ["portfolio-exchange-balances", ledgerAddress],
     queryFn: async () => {
-      if (!address) return [];
-      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(address)}`);
+      if (!ledgerAddress) return [];
+      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(ledgerAddress)}`);
       if (!r.ok) return [];
       const data = await r.json();
       return Array.isArray(data) ? data : data.balances ?? [];
     },
-    enabled: !!address,
+    enabled: !!ledgerAddress,
     refetchInterval: 15_000,
     staleTime: 8_000,
   });
