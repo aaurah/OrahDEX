@@ -447,6 +447,85 @@ export async function restoreFromTransferCode(
   return wallet;
 }
 
+// ─── On-chain transaction signing ─────────────────────────────────────────────
+
+/**
+ * Authenticate with the Orah passkey wallet for the given EVM address and
+ * return a viem LocalAccount that can sign and send real on-chain transactions.
+ *
+ * Flow: passkey biometric auth → decrypt private key in-memory → viem account.
+ * The private key is NEVER persisted or logged.
+ *
+ * Throws if:
+ *   - No passkey wallet is found for the given address (seed-phrase-only wallets)
+ *   - User cancels biometric auth
+ */
+export async function getViemAccountForOrahWallet(address: string): Promise<import("viem").Account> {
+  if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
+
+  const wallets = listPasskeyWallets();
+
+  // Prefer the wallet whose stored address matches; fall back to discoverable flow
+  const matching = wallets.filter(w =>
+    w.address.toLowerCase() === address.toLowerCase()
+  );
+
+  if (matching.length === 0 && wallets.length === 0) {
+    throw new Error(
+      "NO_PASSKEY_WALLET: No passkey wallet found. On-chain swaps require a passkey wallet. Use Exchange mode instead."
+    );
+  }
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
+
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      allowCredentials,
+      userVerification: "required",
+      timeout: 60_000,
+    },
+  }) as PublicKeyCredential | null;
+
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error("Passkey wallet data not found. Please restore your wallet first.");
+    wallet = restored;
+  }
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+
+  const { privateKeyToAccount } = await import("viem/accounts");
+
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+  let privateKey: `0x${string}`;
+
+  if (isMnemonic) {
+    // Re-derive the raw EVM private key from the mnemonic (same path as viem mnemonicToAccount)
+    const { HDKey } = await import("@scure/bip32");
+    const { mnemonicToSeedSync } = await import("@scure/bip39");
+    const seed    = mnemonicToSeedSync(secret.trim());
+    const root    = HDKey.fromMasterSeed(seed);
+    const derived = root.derive("m/44'/60'/0'/0/0");
+    if (!derived.privateKey) throw new Error("Key derivation failed");
+    const hex = Array.from(derived.privateKey).map(b => b.toString(16).padStart(2, "0")).join("");
+    privateKey = `0x${hex}` as `0x${string}`;
+  } else {
+    privateKey = secret as `0x${string}`;
+  }
+
+  return privateKeyToAccount(privateKey);
+}
+
 // ─── Signing ──────────────────────────────────────────────────────────────────
 
 export interface SignResult {
