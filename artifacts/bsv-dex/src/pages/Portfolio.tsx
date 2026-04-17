@@ -17,7 +17,7 @@ import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useFuturesMargin } from "@/hooks/useFuturesMargin";
-import { ExchangeAddressesCard } from "@/components/ExchangeAddressesCard";
+
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -677,11 +677,6 @@ export function Portfolio() {
             )}
           </div>
         )}
-
-        {/* ── Exchange Addresses ────────────────────────────────────────────────── */}
-        <div className="mb-6">
-          <ExchangeAddressesCard walletAddress={address ?? ""} />
-        </div>
 
         {/* Fund your account CTAs */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
