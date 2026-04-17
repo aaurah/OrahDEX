@@ -206,7 +206,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
-  const [apiBalancesLoading, setApiBalancesLoading] = useState(false);
+  // Start as true so EVM users see "—" immediately rather than a flash of on-chain balance
+  const [apiBalancesLoading, setApiBalancesLoading] = useState(true);
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
@@ -231,9 +232,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Use exchange balance if this is an Orah Wallet OR if the address has any
   // real exchange funds (covers Reown-connected users with existing balances).
   const usesApiBalance = isOrahWallet || Object.values(apiBalances).some(v => v > 0);
-  // True while we're still waiting for the exchange balance fetch to complete
-  // for a non-Orah EVM wallet. Prevents showing stale on-chain balance as Max.
-  const balancesPending = isEvm && !isOrahWallet && apiBalancesLoading;
+  // True while we're still waiting for the exchange balance fetch to complete.
+  // Covers all EVM users so no stale on-chain balance flashes as Max.
+  const balancesPending = isEvm && apiBalancesLoading;
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
