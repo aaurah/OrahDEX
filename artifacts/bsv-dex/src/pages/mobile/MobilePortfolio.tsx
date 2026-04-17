@@ -541,6 +541,7 @@ export function MobilePortfolio() {
                 <div className="space-y-2.5">
                   {exchNonZero.map(b => {
                     const color = ASSET_COLORS[b.asset] ?? "#6B7280";
+                    const assetNet = getAssetNetworkInfo(b.asset, network);
                     return (
                       <div key={b.asset} className="flex items-center gap-3">
                         <div
@@ -558,13 +559,24 @@ export function MobilePortfolio() {
                             )}
                           </p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-foreground">{formatQuoteAmount(b.value, quoteCurrency)}</p>
-                          {b.change !== 0 && (
-                            <p className={`text-xs mt-0.5 ${b.change >= 0 ? "text-green-500" : "text-red-500"}`}>
-                              {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
-                            </p>
-                          )}
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-foreground">{formatQuoteAmount(b.value, quoteCurrency)}</p>
+                            {b.change !== 0 && (
+                              <p className={`text-xs mt-0.5 ${b.change >= 0 ? "text-green-500" : "text-red-500"}`}>
+                                {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
+                              setWithdrawOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 shrink-0"
+                          >
+                            Withdraw
+                          </button>
                         </div>
                       </div>
                     );
