@@ -477,6 +477,316 @@ function TokenPicker({
   );
 }
 
+// ─── Gas Top-Up Panel (Rabby-style) ───────────────────────────────────────────
+
+const GAS_PRESETS_USD = [2, 5, 10, 20];
+
+function GasTopUpPanel({
+  chainId, chainName, nativeSymbol, gasBalance, address, isOrahWallet, onSuccess, tokens,
+}: {
+  chainId: SupportedChainId;
+  chainName: string;
+  nativeSymbol: string;
+  gasBalance: number | null;
+  address: string | null;
+  isOrahWallet: boolean;
+  onSuccess: () => void;
+  tokens: Token[];
+}) {
+  const [open, setOpen]           = useState(false);
+  const [payWith, setPayWith]     = useState<"USDC" | "USDT">("USDC");
+  const [presetUSD, setPresetUSD] = useState(5);
+  const [nativePrice, setNativePrice] = useState<number | null>(null);
+  const [gasQuote, setGasQuote]   = useState<QuoteResult | null>(null);
+  const [quoting, setQuoting]     = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [txHash, setTxHash]       = useState<string | null>(null);
+  const [txSuccess, setTxSuccess] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const { toast }                 = useToast();
+
+  const availableStables = tokens.filter(t => t.symbol === "USDC" || t.symbol === "USDT");
+  const hasUsdc = availableStables.some(t => t.symbol === "USDC");
+  const hasUsdt = availableStables.some(t => t.symbol === "USDT");
+
+  const stablecoin = useMemo(() => {
+    const preferred = tokens.find(t => t.symbol === payWith);
+    if (preferred) return preferred;
+    return tokens.find(t => t.symbol === "USDC" || t.symbol === "USDT") ?? null;
+  }, [tokens, payWith]);
+
+  const nativeToken = useMemo(() => tokens.find(t => t.isNative) ?? null, [tokens]);
+
+  useEffect(() => {
+    if (!open || !stablecoin || !nativeToken) return;
+    let cancelled = false;
+    const run = async () => {
+      setQuoting(true); setGasQuote(null); setError(null);
+      try {
+        const amtIn = parseUnits(presetUSD.toString(), stablecoin.decimals);
+        const result = await getSwapQuote(chainId, stablecoin, nativeToken, amtIn);
+        if (cancelled) return;
+        if (result) {
+          setGasQuote(result);
+          const gotNative = parseFloat(formatUnits(result.amountOut, 18));
+          if (gotNative > 0) setNativePrice(presetUSD / gotNative);
+        } else {
+          setError("No liquidity found for this pair on this chain");
+        }
+      } catch (e: any) { if (!cancelled) setError(e.message ?? "Quote failed"); }
+      if (!cancelled) setQuoting(false);
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [open, chainId, stablecoin, nativeToken, presetUSD]);
+
+  const handleGetGas = async () => {
+    if (!address || !gasQuote || !stablecoin || !nativeToken) return;
+    setExecuting(true); setError(null); setTxHash(null); setTxSuccess(false);
+    try {
+      const amtIn     = parseUnits(presetUSD.toString(), stablecoin.decimals);
+      const amtOutMin = gasQuote.amountOut * 95n / 100n;
+      let hash: `0x${string}`;
+      if (isOrahWallet) {
+        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to top up gas…" });
+        const account = await getViemAccountForOrahWallet(address as `0x${string}`);
+        hash = await executeSwapWithLocalAccount(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`, account, chainName, nativeSymbol);
+      } else {
+        hash = await executeSwap(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`);
+      }
+      setTxHash(hash);
+      toast({ title: "Gas top-up sent", description: "Waiting for on-chain confirmation…" });
+      await new Promise<void>((resolve, reject) => {
+        pollTxReceipt(hash, chainId, {
+          onReceipt: (r: any) => {
+            const s = r?.status;
+            (s === "0x1" || s === 1 || s === true) ? resolve() : reject(new Error("Transaction reverted"));
+          },
+          onTimeout: () => reject(new Error("Timed out waiting for confirmation")),
+        });
+      });
+      setTxSuccess(true);
+      const gotAmt = parseFloat(formatUnits(gasQuote.amountOut, 18));
+      toast({ title: "Gas received!", description: `Got ${gotAmt.toFixed(5)} ${nativeSymbol} — you're ready to transact` });
+      onSuccess();
+    } catch (e: any) {
+      const msg = e.shortMessage ?? e.message ?? "Failed";
+      setError(msg);
+      toast({ title: "Gas top-up failed", description: msg, variant: "destructive" });
+    }
+    setExecuting(false);
+  };
+
+  const gasLevel = gasBalance == null ? "empty"
+    : gasBalance >= 0.01 ? "good"
+    : gasBalance >= 0.003 ? "low"
+    : gasBalance > 0 ? "critical"
+    : "empty";
+
+  const gasColors   = { good: "text-green-400",  low: "text-yellow-400", critical: "text-orange-400", empty: "text-red-400" } as const;
+  const gasBarColor = { good: "bg-green-500",     low: "bg-yellow-500",  critical: "bg-orange-500",   empty: "bg-red-500"   } as const;
+  const gasLabels   = { good: "Sufficient",       low: "Low",            critical: "Critical",         empty: "No gas"       } as const;
+
+  const chainExplorer  = DEX_CHAINS.find(c => c.id === chainId)?.explorer ?? "";
+  const estimatedGas   = gasQuote ? parseFloat(formatUnits(gasQuote.amountOut, 18)) : null;
+  const dexName        = chainId === 56 ? "PancakeSwap" : "Uniswap";
+
+  const pulseClass = gasLevel !== "good" ? "animate-pulse" : "";
+
+  return (
+    <div className="space-y-2">
+      {/* Trigger pill */}
+      <button
+        onClick={() => { setOpen(o => !o); setTxHash(null); setTxSuccess(false); setError(null); }}
+        className={cn(
+          "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shrink-0",
+          open
+            ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+            : gasLevel !== "good"
+              ? `bg-amber-500/10 border-amber-400/30 text-amber-400 ${pulseClass}`
+              : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
+        )}
+      >
+        ⛽ Get Gas
+        {gasBalance != null && (
+          <span className={cn("font-mono ml-1", gasColors[gasLevel])}>
+            {gasBalance < 0.0001 && gasBalance > 0 ? gasBalance.toFixed(5) : gasBalance.toFixed(4)} {nativeSymbol}
+          </span>
+        )}
+        {gasLevel !== "good" && gasLevel !== "empty" && (
+          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 ml-0.5 uppercase tracking-wide">
+            {gasLabels[gasLevel]}
+          </span>
+        )}
+        {gasLevel === "empty" && (
+          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 ml-0.5 uppercase tracking-wide">
+            No Gas
+          </span>
+        )}
+      </button>
+
+      {/* Expanded panel */}
+      {open && (
+        <div className="rounded-2xl border border-amber-500/25 bg-gradient-to-b from-amber-500/5 to-transparent p-4 space-y-3.5">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold">Gas Top-Up</span>
+              {gasBalance != null && (
+                <span className={cn("text-[11px] font-semibold flex items-center gap-1", gasColors[gasLevel])}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+                  {gasLabels[gasLevel]}
+                </span>
+              )}
+            </div>
+            <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors p-0.5">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Gas balance bar */}
+          {gasBalance != null && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Your {nativeSymbol} balance</span>
+                <span className={cn("font-mono font-semibold", gasColors[gasLevel])}>
+                  {gasBalance.toFixed(5)} {nativeSymbol}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-700", gasBarColor[gasLevel])}
+                  style={{ width: `${Math.min(100, (gasBalance / 0.05) * 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-muted-foreground/60">
+                <span>Empty</span>
+                <span>0.01 recommended</span>
+                <span>0.05+</span>
+              </div>
+            </div>
+          )}
+
+          {/* Pay with toggle */}
+          {availableStables.length > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Pay with:</span>
+              {hasUsdc && (
+                <button
+                  onClick={() => setPayWith("USDC")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
+                    payWith === "USDC" ? "bg-primary/10 border-primary/30 text-primary" : "border-border/40 text-muted-foreground hover:border-border",
+                  )}
+                >
+                  <CoinLogo symbol="USDC" size={12} /> USDC
+                </button>
+              )}
+              {hasUsdt && (
+                <button
+                  onClick={() => setPayWith("USDT")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors",
+                    payWith === "USDT" ? "bg-primary/10 border-primary/30 text-primary" : "border-border/40 text-muted-foreground hover:border-border",
+                  )}
+                >
+                  <CoinLogo symbol="USDT" size={12} /> USDT
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Preset amount chips */}
+          <div className="space-y-1.5">
+            <span className="text-xs text-muted-foreground">Gas amount (USD):</span>
+            <div className="grid grid-cols-4 gap-2">
+              {GAS_PRESETS_USD.map(usd => (
+                <button
+                  key={usd}
+                  onClick={() => setPresetUSD(usd)}
+                  className={cn(
+                    "py-2 rounded-xl text-xs font-bold border transition-colors",
+                    presetUSD === usd
+                      ? "bg-amber-500/20 border-amber-500/50 text-amber-300"
+                      : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
+                  )}
+                >
+                  ${usd}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quote preview */}
+          <div className="rounded-xl bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>You pay</span>
+              <span className="font-mono font-semibold text-foreground">${presetUSD} {stablecoin?.symbol ?? "USDC"}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>You receive (gas)</span>
+              {quoting
+                ? <span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Quoting…</span>
+                : estimatedGas != null
+                  ? <span className="font-mono font-semibold text-amber-300">≈ {estimatedGas.toFixed(5)} {nativeSymbol}</span>
+                  : <span className="text-muted-foreground/50">—</span>
+              }
+            </div>
+            {nativePrice != null && (
+              <div className="flex justify-between text-muted-foreground border-t border-border/30 pt-1.5 mt-0.5">
+                <span>Market rate</span>
+                <span className="font-mono">${nativePrice.toFixed(0)} / {nativeSymbol}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {error}
+            </div>
+          )}
+
+          {/* TX success */}
+          {txHash && txSuccess && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-green-500/10 border border-green-500/20 text-xs text-green-400">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Gas topped up!</span>
+              <a href={`${chainExplorer}${txHash}`} target="_blank" rel="noopener noreferrer" className="ml-auto flex items-center gap-1 hover:text-green-300">
+                View <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
+          {/* CTA */}
+          {!address ? (
+            <p className="text-xs text-center text-muted-foreground py-1">Connect wallet to top up gas</p>
+          ) : !stablecoin ? (
+            <p className="text-xs text-center text-muted-foreground py-1">No stablecoin available on this chain</p>
+          ) : (
+            <button
+              onClick={handleGetGas}
+              disabled={executing || quoting || !gasQuote}
+              className="w-full py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {executing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Getting gas…</>
+                : quoting
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Quoting…</>
+                  : <>⛽ Get {estimatedGas != null ? estimatedGas.toFixed(5) : "…"} {nativeSymbol}</>
+              }
+            </button>
+          )}
+
+          <p className="text-[11px] text-muted-foreground/50 text-center">
+            Swaps {stablecoin?.symbol ?? "USDC"} → {nativeSymbol} via {dexName} V3 on {chainName}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Slippage picker ──────────────────────────────────────────────────────────
 
 function SlippageSettings({ slippage, onChange }: { slippage: number; onChange: (v: number) => void }) {
@@ -989,23 +1299,40 @@ export function Swap() {
 
         {mode === "dex" ? (
           <>
-            {/* Chain selector */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-              {DEX_CHAINS.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setChainId(c.id as SupportedChainId)}
-                  className={cn(
-                    "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors",
-                    chainId === c.id
-                      ? "bg-primary/10 border-primary/30 text-primary"
-                      : "border-border/40 text-muted-foreground hover:border-border",
-                  )}
-                >
-                  <CoinLogo symbol={c.logo} size={14} />
-                  {c.name}
-                </button>
-              ))}
+            {/* Chain selector + Gas top-up */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                {DEX_CHAINS.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => setChainId(c.id as SupportedChainId)}
+                    className={cn(
+                      "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors",
+                      chainId === c.id
+                        ? "bg-primary/10 border-primary/30 text-primary"
+                        : "border-border/40 text-muted-foreground hover:border-border",
+                    )}
+                  >
+                    <CoinLogo symbol={c.logo} size={14} />
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Rabby-style Gas Top-Up */}
+              <GasTopUpPanel
+                chainId={chainId}
+                chainName={chainConfig.name}
+                nativeSymbol={chainConfig.nativeSymbol}
+                gasBalance={(() => {
+                  const native = onChainBalances.find(b => b.isNative);
+                  return native ? native.amount : null;
+                })()}
+                address={address ?? null}
+                isOrahWallet={isOrahWallet}
+                onSuccess={refreshBalances}
+                tokens={tokens}
+              />
             </div>
 
             {/* Swap card */}
