@@ -450,8 +450,7 @@ export function AdminEmailInbox() {
                 </p>
                 <div className="space-y-2">
                   {[
-                    { addr: "support@orahdex.org",  color: "text-primary",          label: "Support (primary)" },
-                    { addr: "support@orahdex.com",  color: "text-primary",          label: "Support (.com alias)" },
+                    { addr: "support@orahdex.org",  color: "text-primary",          label: "General Support" },
                     { addr: "admin@orahdex.org",    color: "text-violet-400",       label: "Admin" },
                     { addr: "legal@orahdex.org",    color: "text-blue-400",         label: "Legal & Compliance" },
                     { addr: "contact@orahdex.org",  color: "text-green-400",        label: "General Contact" },

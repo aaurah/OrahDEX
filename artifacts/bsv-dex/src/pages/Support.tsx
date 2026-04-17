@@ -275,9 +275,9 @@ export function SupportPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { icon: Mail, label: "General Support", value: "support@orahdex.com", href: "mailto:support@orahdex.com", color: "text-primary" },
-              { icon: Shield, label: "Security & Legal", value: "legal@orahdex.com", href: "mailto:legal@orahdex.com", color: "text-blue-400" },
-              { icon: Globe, label: "Press & Media", value: "press@orahdex.com", href: "mailto:press@orahdex.com", color: "text-purple-400" },
+              { icon: Mail, label: "General Support", value: "support@orahdex.org", href: "mailto:support@orahdex.org", color: "text-primary" },
+              { icon: Shield, label: "Security & Legal", value: "legal@orahdex.org", href: "mailto:legal@orahdex.org", color: "text-blue-400" },
+              { icon: Globe, label: "Press & Media", value: "press@orahdex.org", href: "mailto:press@orahdex.org", color: "text-purple-400" },
               { icon: MessageSquare, label: "Community", value: "Telegram Channel", href: "#", color: "text-teal-400" },
             ].map(ch => (
               <a
