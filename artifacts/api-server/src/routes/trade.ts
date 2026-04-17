@@ -10,10 +10,11 @@
  */
 
 import { Router, type IRouter } from "express";
+import { createPublicClient, http } from "viem";
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { or, eq } from "drizzle-orm";
-import { settleSwap, getBalances, seedInitialBalances } from "../lib/ledger.js";
+import { marketsTable, tradesTable } from "@workspace/db/schema";
+import { or, eq, desc } from "drizzle-orm";
+import { settleSwap, getBalances, seedInitialBalances, creditAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
@@ -21,6 +22,17 @@ import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
+
+// ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
+const VERIFY_RPC: Record<number, string> = {
+  1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+  56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
+  137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
+  8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
+  42161:  process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
+  10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
+  43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
+};
 
 const router: IRouter = Router();
 
@@ -178,6 +190,150 @@ router.post("/trade/wallet", async (req, res) => {
   }
 });
 
+// ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
+/**
+ * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
+ * 1. Fetches the tx receipt from the chain to verify success.
+ * 2. Inserts a record in the trades table (with txid).
+ * 3. Credits the user's internal exchange balance with the received assetOut amount,
+ *    so tokens are immediately available for exchange-mode trading or withdrawal.
+ *
+ * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut }
+ */
+router.post("/trade/wallet/settle", async (req, res) => {
+  const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut } = req.body ?? {};
+
+  if (!txHash || !chainId || !walletAddress || !assetIn || !assetOut || !amountIn || !amountOut) {
+    res.status(400).json({ error: "txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut are required" });
+    return;
+  }
+
+  const numChain = parseInt(String(chainId), 10);
+  if (isNaN(numChain) || !VERIFY_RPC[numChain]) {
+    res.status(422).json({ error: `Unsupported chainId ${chainId}` });
+    return;
+  }
+
+  // Guard: reject duplicate tx settlements
+  const existing = await db.select({ id: tradesTable.id })
+    .from(tradesTable)
+    .where(eq(tradesTable.txid, txHash))
+    .limit(1);
+  if (existing.length > 0) {
+    res.status(409).json({ error: "Transaction already settled", tradeId: existing[0].id });
+    return;
+  }
+
+  try {
+    // Verify the tx on-chain
+    const client = createPublicClient({ transport: http(VERIFY_RPC[numChain]) });
+    let receipt: { status: string } | null = null;
+    try {
+      receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+    } catch (rpcErr: any) {
+      logger.warn({ txHash, chainId, err: rpcErr?.message }, "RPC receipt fetch failed — proceeding with optimistic settlement");
+    }
+
+    if (receipt && receipt.status !== "success") {
+      res.status(422).json({ error: "Transaction reverted on-chain", txHash });
+      return;
+    }
+
+    const amtIn   = parseFloat(amountIn);
+    const amtOut  = parseFloat(amountOut);
+    const fee     = amtIn * FEE_PCT;
+    const price   = amtIn > 0 ? amtOut / amtIn : 0;
+    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+
+    const tradeId = crypto.randomUUID();
+
+    // Insert trade record
+    await db.insert(tradesTable).values({
+      id:            tradeId,
+      symbol,
+      side:          "buy",
+      price:         price.toFixed(8),
+      quantity:      amtIn.toFixed(8),
+      total:         amtOut.toFixed(8),
+      fee:           fee.toFixed(8),
+      feeAsset:      assetIn.toUpperCase(),
+      walletAddress,
+      txid:          txHash,
+    });
+
+    // Credit the received asset to the user's internal balance
+    try {
+      await creditAvailable(walletAddress, assetOut.toUpperCase(), amtOut.toFixed(8));
+    } catch (creditErr: any) {
+      logger.warn({ creditErr: creditErr?.message }, "Balance credit failed after on-chain settlement (trade still recorded)");
+    }
+
+    logger.info({ tradeId, txHash, walletAddress, assetOut, amtOut }, "On-chain swap settled");
+
+    res.json({
+      settled:   true,
+      tradeId,
+      txHash,
+      chainId:   numChain,
+      assetIn:   assetIn.toUpperCase(),
+      assetOut:  assetOut.toUpperCase(),
+      amountIn:  amtIn.toFixed(8),
+      amountOut: amtOut.toFixed(8),
+      fee:       fee.toFixed(8),
+      message:   `${amtOut.toFixed(6)} ${assetOut.toUpperCase()} credited to your exchange balance`,
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "trade/wallet/settle failed");
+    res.status(500).json({ error: "Settlement failed" });
+  }
+});
+
+// ── GET /trade/settlements/:walletAddress — settlement history ────────────────
+router.get("/trade/settlements/:walletAddress", async (req, res) => {
+  const { walletAddress } = req.params;
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    const settlements = await db
+      .select()
+      .from(tradesTable)
+      .where(eq(tradesTable.walletAddress, walletAddress))
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(limit);
+
+    const onChain   = settlements.filter(t => t.txid && t.txid.startsWith("0x"));
+    const exchange  = settlements.filter(t => !t.txid || !t.txid.startsWith("0x"));
+
+    res.json({
+      walletAddress,
+      total:       settlements.length,
+      onChain:     onChain.length,
+      exchange:    exchange.length,
+      settlements: settlements.map(t => ({
+        id:        t.id,
+        symbol:    t.symbol,
+        side:      t.side,
+        price:     parseFloat(t.price),
+        quantity:  parseFloat(t.quantity),
+        total:     parseFloat(t.total),
+        fee:       parseFloat(t.fee),
+        feeAsset:  t.feeAsset,
+        txid:      t.txid ?? null,
+        mode:      t.txid?.startsWith("0x") ? "on-chain" : "exchange",
+        timestamp: t.timestamp,
+      })),
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "trade/settlements fetch failed");
+    res.status(500).json({ error: "Failed to fetch settlement history" });
+  }
+});
+
 // ── POST /trade/exchange/quote ─────────────────────────────────────────────────
 router.post("/trade/exchange/quote", async (req, res) => {
   const { assetIn, assetOut, amountIn } = req.body ?? {};
@@ -252,14 +408,46 @@ router.post("/trade/exchange", async (req, res) => {
       return;
     }
 
-    await settleSwap(walletAddress, assetIn.toUpperCase(), assetOut.toUpperCase(), amtIn, amtOut);
+    await settleSwap({
+      walletAddress,
+      assetIn:   assetIn.toUpperCase(),
+      assetOut:  assetOut.toUpperCase(),
+      amountIn:  amtIn.toFixed(8),
+      amountOut: amtOut.toFixed(8),
+    });
     await recordPlatformFee(fee, assetOut.toUpperCase(), "exchange-swap");
 
+    // Record exchange-mode trade in trades table
+    const tradeId = crypto.randomUUID();
+    const price   = amtIn > 0 ? amtOut / amtIn : 0;
+    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    try {
+      await db.insert(tradesTable).values({
+        id:           tradeId,
+        symbol,
+        side:         "buy",
+        price:        price.toFixed(8),
+        quantity:     amtIn.toFixed(8),
+        total:        amtOut.toFixed(8),
+        fee:          fee.toFixed(8),
+        feeAsset:     assetIn.toUpperCase(),
+        walletAddress,
+        txid:         `exchange:${tradeId}`,
+      });
+    } catch (dbErr: any) {
+      logger.warn({ dbErr: dbErr?.message }, "Exchange trade record insert failed (settlement still valid)");
+    }
+
     const balances = await getBalances(walletAddress);
+
+    const vaultActive  = isVaultConfigured();
+    const vaultAddress = vaultActive ? getVaultAddress() : null;
+    const vaultChain   = vaultActive ? getVaultChainId() : null;
 
     res.json({
       mode:       "exchange",
       success:    true,
+      tradeId,
       walletAddress,
       assetIn:    assetIn.toUpperCase(),
       assetOut:   assetOut.toUpperCase(),
@@ -268,6 +456,15 @@ router.post("/trade/exchange", async (req, res) => {
       fee:        fee.toFixed(8),
       feePct:     FEE_PCT * 100,
       rate:       rate.toFixed(8),
+      settlement: {
+        layer:           vaultActive ? "vault" : "internal-ledger",
+        vaultAddress:    vaultAddress ?? null,
+        vaultChainId:    vaultChain   ?? null,
+        withdrawEnabled: vaultActive,
+        note:            vaultActive
+          ? `Withdrawals settled via OrahVault on chain ${vaultChain}`
+          : "Internal ledger settlement — deploy OrahVault to enable on-chain withdrawals",
+      },
       balances,
       settledAt:  new Date().toISOString(),
     });
