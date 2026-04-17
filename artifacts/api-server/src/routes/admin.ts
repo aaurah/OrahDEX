@@ -2041,5 +2041,111 @@ router.post("/auto-setup-email", async (_req, res) => {
   }
 });
 
+/* ─── STABLECOIN MINT / BURN ─────────────────────────────────────────────── */
+
+// Ensure the audit log table exists
+pool.query(`
+  CREATE TABLE IF NOT EXISTS mint_burn_log (
+    id          SERIAL PRIMARY KEY,
+    action      VARCHAR(4)  NOT NULL CHECK (action IN ('mint','burn')),
+    asset       VARCHAR(20) NOT NULL,
+    amount      NUMERIC(36,18) NOT NULL,
+    wallet_address TEXT NOT NULL,
+    note        TEXT,
+    admin_ref   TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  )
+`).catch(err => console.warn("mint_burn_log table init:", err.message));
+
+/**
+ * GET /admin/mint-burn-log
+ * Returns the last 200 mint/burn operations.
+ */
+router.get("/mint-burn-log", requireAdminToken, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, action, asset, amount::text, wallet_address, note, admin_ref, created_at
+       FROM mint_burn_log
+       ORDER BY created_at DESC
+       LIMIT 200`
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /admin/user-exchange-balance/:address
+ * Returns the OrahDEX exchange (ledger) balances for a wallet.
+ */
+router.get("/user-exchange-balance/:address", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT asset_symbol AS asset, available::text, locked::text
+       FROM user_balances
+       WHERE wallet_address = $1
+       ORDER BY asset_symbol`,
+      [req.params.address]
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /admin/mint-burn
+ * Body: { action: "mint"|"burn", asset: string, amount: string, walletAddress: string, note?: string }
+ */
+router.post("/mint-burn", requireAdminToken, async (req, res) => {
+  const { action, asset, amount, walletAddress, note } = req.body ?? {};
+
+  const SUPPORTED_STABLES = ["USDT","USDC","BUSD","DAI","oUSD"];
+
+  if (!action || !["mint","burn"].includes(action))
+    return res.status(400).json({ error: "action must be 'mint' or 'burn'" });
+  if (!SUPPORTED_STABLES.includes(asset))
+    return res.status(400).json({ error: `Unsupported asset. Allowed: ${SUPPORTED_STABLES.join(", ")}` });
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0)
+    return res.status(400).json({ error: "amount must be a positive number" });
+  if (!walletAddress)
+    return res.status(400).json({ error: "walletAddress is required" });
+
+  try {
+    const { creditAvailable, debitAvailable } = await import("../lib/ledger.js");
+
+    if (action === "mint") {
+      await creditAvailable(walletAddress, asset, amount);
+    } else {
+      await debitAvailable(walletAddress, asset, amount);
+    }
+
+    await pool.query(
+      `INSERT INTO mint_burn_log (action, asset, amount, wallet_address, note)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [action, asset, amount, walletAddress, note ?? null]
+    );
+
+    res.json({
+      success: true,
+      action,
+      asset,
+      amount,
+      walletAddress,
+      message: action === "mint"
+        ? `Minted ${amount} ${asset} to ${walletAddress}`
+        : `Burned ${amount} ${asset} from ${walletAddress}`,
+    });
+  } catch (err: any) {
+    const isInsufficient = err.message?.startsWith("INSUFFICIENT_FUNDS");
+    res.status(isInsufficient ? 400 : 500).json({
+      error: isInsufficient
+        ? `Insufficient ${asset} balance to burn that amount`
+        : err.message,
+    });
+  }
+});
+
 export default router;
 
