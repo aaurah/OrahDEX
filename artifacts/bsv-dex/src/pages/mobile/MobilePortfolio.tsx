@@ -472,12 +472,6 @@ export function MobilePortfolio() {
             )}
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1.5 bg-card border border-border rounded-full px-3 py-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs text-muted-foreground font-mono font-medium">
-                {address.slice(0, 6)}...{address.slice(-4)}
-              </span>
-            </div>
             <button
               onClick={handleCopy}
               className={cn(
