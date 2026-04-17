@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
-import { withdrawalRequestsTable } from "@workspace/db/schema";
+import { withdrawalRequestsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
@@ -194,7 +194,27 @@ router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
 
     req.log.info({ id, status, walletAddress: wr.wallet_address, asset: wr.asset }, "withdrawals: status updated");
 
-    res.json({ id, status, message: `Withdrawal ${status}` });
+    // ── Sync status back to bot_withdrawal_history if this was a platform bot withdrawal ──
+    if (wr.wallet_address === "platform_bot" && (status === "completed" || status === "cancelled")) {
+      try {
+        const historyRows = await db.select()
+          .from(platformSettingsTable)
+          .where(eq(platformSettingsTable.key, "bot_withdrawal_history"));
+        const history: any[] = historyRows[0]?.value ? JSON.parse(historyRows[0].value) : [];
+        const idx = history.findIndex((h: any) => h.id === id);
+        if (idx !== -1) {
+          history[idx].status = status === "completed" ? "completed" : "cancelled";
+          if (txid && status === "completed") history[idx].txid = txid;
+          await db.insert(platformSettingsTable)
+            .values({ key: "bot_withdrawal_history", value: JSON.stringify(history) })
+            .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(history), updatedAt: new Date() } });
+        }
+      } catch (syncErr) {
+        req.log.warn({ syncErr }, "withdrawals: failed to sync status to bot_withdrawal_history (non-fatal)");
+      }
+    }
+
+    res.json({ id, status, txid: txid ?? null, message: `Withdrawal ${status}` });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     req.log.error({ err }, "withdrawals: failed to update status");
