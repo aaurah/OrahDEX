@@ -131,6 +131,8 @@ export function MobilePortfolio() {
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepMsg, setSweepMsg] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
   const queryClient = useQueryClient();
@@ -206,6 +208,30 @@ export function MobilePortfolio() {
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
     },
   });
+
+  const handleSweepToLedger = async () => {
+    if (!address || sweeping) return;
+    setSweeping(true);
+    setSweepMsg(null);
+    try {
+      const res = await fetch(`${BASE}/api/deposit/sweep-wallet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address, chainId: chainId ?? 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSweepMsg(data.error ?? "Sweep failed");
+      } else {
+        setSweepMsg(data.message ?? "Credited to trading account");
+        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
+      }
+    } catch {
+      setSweepMsg("Network error. Please try again.");
+    } finally {
+      setSweeping(false);
+    }
+  };
 
   // Build rows from real on-chain data where available
   const rows = (() => {
@@ -572,13 +598,24 @@ export function MobilePortfolio() {
               {/* On-chain balance — secondary */}
               {nativeBalance > 0 && (
                 <div className="mt-4 pt-3 border-t border-border/40">
-                  <p className="text-[10px] text-muted-foreground mb-1">On-chain ({nativeAsset})</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] text-muted-foreground">On-chain ({nativeAsset})</p>
+                    <button
+                      onClick={handleSweepToLedger}
+                      disabled={sweeping}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 disabled:opacity-50"
+                    >
+                      {sweeping ? "Depositing…" : "Deposit to Trading Account"}
+                    </button>
+                  </div>
                   <p className="text-xs text-muted-foreground font-mono">
                     {nativeBalance.toFixed(6)} {nativeAsset}
                   </p>
-                  <p className="text-[10px] text-muted-foreground/50 mt-0.5">
-                    This is your hot wallet balance used for gas fees and on-chain withdrawals. Trading uses your ledger balance above.
-                  </p>
+                  {sweepMsg && (
+                    <p className={cn("text-[10px] mt-1", sweepMsg.includes("+") ? "text-green-400" : "text-red-400")}>
+                      {sweepMsg}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
