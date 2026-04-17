@@ -20,6 +20,8 @@
  * 2. Transfer Code: 8-char code valid for 10 min — works across OS ecosystems
  */
 
+import { generateMnemonic, deriveAllAddresses } from "./seedPhrase";
+
 const STORAGE_KEY  = "orahdex_passkey_wallets_v1";
 const RP_NAME      = "OrahDEX";
 const PBKDF2_SALT  = new TextEncoder().encode("OrahDEX-passkey-wallet-v1");
@@ -258,7 +260,6 @@ export async function registerPasskeyWallet(
   const credentialId = b642url(buf2b64(rawId));
 
   // Generate a BIP39 mnemonic and derive all 5 chain addresses
-  const { generateMnemonic, deriveAllAddresses } = await import("./seedPhrase");
   const words    = generateMnemonic(12);
   const addrs    = await deriveAllAddresses(words);
   const mnemonic = words.join(" ");
@@ -363,7 +364,6 @@ export async function loginWithPasskey(): Promise<LoginResult> {
 
   if (isMnemonic) {
     // New format: derive all 5 chain addresses from the BIP39 mnemonic
-    const { deriveAllAddresses } = await import("./seedPhrase");
     const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
     address = addrs.evm;
     chains  = { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv };
