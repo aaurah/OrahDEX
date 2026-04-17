@@ -20,6 +20,7 @@ import {
   getBalances,
   seedInitialBalances,
 } from "../lib/ledger.js";
+import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
 
@@ -106,7 +107,10 @@ router.post("/swap", async (req, res) => {
       amountOut: amtOut.toFixed(18),
     });
 
-    req.log.info({ walletAddress, assetIn, assetOut, amtIn, amtOut }, "Swap settled");
+    // Record exchange platform fee revenue
+    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase(), txRef: walletAddress });
+
+    req.log.info({ walletAddress, assetIn, assetOut, amtIn, amtOut, fee }, "Swap settled");
 
     res.json({
       success:   true,
