@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark, Plug2, Printer,
+  Landmark, Plug2, Printer, Database,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -118,12 +118,13 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Finance",
     items: [
+      { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database,        badge: "NEW" },
+      { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
       { href: "/admin/treasury",     label: "Treasury",           icon: Landmark },
-      { href: "/admin/mint-burn",    label: "Mint & Burn",        icon: Printer,  badge: "NEW" },
+      { href: "/admin/mint-burn",    label: "Mint & Burn",        icon: Printer },
       { href: "/admin/fee-wallet",   label: "Fee Wallet",         icon: Wallet },
       { href: "/admin/bot-profit",   label: "Bot Profit",         icon: Bot },
       { href: "/admin/transactions", label: "On-Chain Txns",      icon: Activity },
-      { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
     ],
   },
   {
