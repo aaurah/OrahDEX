@@ -24,6 +24,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from "./bsvWallet.js";
+import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
 import { logger } from "./logger.js";
 
 // ── EVM chain registry ─────────────────────────────────────────────────────────
@@ -115,10 +116,8 @@ async function processEvmWithdrawal(params: {
   amount:    number;
   recipient: string;
 }): Promise<{ txid: string; explorer: string }> {
-  const rawKey = process.env.EXCHANGE_HOT_WALLET_KEY;
-  if (!rawKey) throw new Error("EXCHANGE_HOT_WALLET_KEY not configured — cannot auto-process EVM withdrawal");
-
-  const privKey = (rawKey.startsWith("0x") ? rawKey : `0x${rawKey}`) as `0x${string}`;
+  const hotWallet = await getOrCreateEvmHotWallet();
+  const privKey = hotWallet.privKeyHex;
   const account = privateKeyToAccount(privKey);
   const chainId = assetToChainId(params.asset);
   const chain   = chainById(chainId);

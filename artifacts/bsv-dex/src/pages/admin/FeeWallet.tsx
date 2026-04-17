@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Wallet, Save, Copy, Check, AlertTriangle, ShieldCheck,
-  ExternalLink, Info, DollarSign, Percent,
+  ExternalLink, Info, DollarSign, Percent, Zap, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +53,160 @@ function saveFeeWallet(cfg: FeeConfig): Promise<FeeConfig> {
     body: JSON.stringify(cfg),
   }).then(r => r.json());
 }
+
+// ── Exchange Hot Wallet card (auto-generated, funds user withdrawals) ──────────
+
+type HotWalletData = {
+  evm: {
+    address:   string;
+    note:      string;
+    balances:  { ETH: string | null; BNB: string | null; MATIC: string | null };
+    explorers: Record<string, string>;
+  };
+  bsv: {
+    address:  string;
+    note:     string;
+    balance:  string | null;
+    funded:   boolean;
+    explorer: string;
+  };
+};
+
+function ExchangeHotWalletCard() {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const { data, isLoading, refetch, isFetching } = useQuery<HotWalletData>({
+    queryKey: ["admin-exchange-wallet"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/admin/exchange-wallet`);
+      if (!r.ok) throw new Error("Failed to load wallet");
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  return (
+    <div className="rounded-2xl border border-amber-500/30 bg-card overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-amber-500/20 bg-gradient-to-r from-amber-500/8 to-transparent">
+        <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-amber-400" />
+        </div>
+        <div className="flex-1">
+          <p className="font-semibold text-foreground text-sm">Exchange Hot Wallet</p>
+          <p className="text-xs text-muted-foreground">Auto-generated wallet that processes user withdrawals instantly on-chain</p>
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
+        </button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <div className="w-5 h-5 border-2 border-amber-400/40 border-t-amber-400 rounded-full animate-spin" />
+          </div>
+        ) : !data ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Failed to load wallet info</p>
+        ) : (
+          <>
+            {/* Notice banner */}
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-muted-foreground leading-relaxed">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <span>
+                This wallet was <strong className="text-foreground">auto-generated</strong> and its private key is encrypted in the database.
+                Send funds to these addresses on each chain — whenever a user withdraws, OrahDEX pays from here instantly.
+                Keep a reserve balance to cover expected withdrawals.
+              </span>
+            </div>
+
+            {/* EVM address */}
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">
+                EVM Address <span className="normal-case font-normal">(works on Ethereum, BNB Chain, Polygon, Avalanche, Fantom — same address)</span>
+              </p>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-xs font-mono text-foreground break-all">
+                  {data.evm.address}
+                </code>
+                <button
+                  onClick={() => copy(data.evm.address, "evm-addr")}
+                  className="px-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                >
+                  {copiedKey === "evm-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Per-chain balances */}
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {[
+                  { label: "ETH Balance", val: data.evm.balances.ETH, explorer: data.evm.explorers.ethereum,  color: "text-blue-400"  },
+                  { label: "BNB Balance", val: data.evm.balances.BNB, explorer: data.evm.explorers.bsc,       color: "text-yellow-400"},
+                  { label: "MATIC",       val: data.evm.balances.MATIC, explorer: data.evm.explorers.polygon, color: "text-purple-400"},
+                ].map(({ label, val, explorer, color }) => (
+                  <a
+                    key={label}
+                    href={explorer}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-3 rounded-xl border border-border bg-background/50 hover:border-primary/30 transition-colors group"
+                  >
+                    <p className="text-[10px] text-muted-foreground mb-1">{label}</p>
+                    <p className={cn("text-sm font-bold font-mono", val ? color : "text-muted-foreground/40")}>
+                      {val ?? "—"}
+                    </p>
+                    <ExternalLink className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground mt-1 transition-colors" />
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* BSV address */}
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-2">BSV Address</p>
+              <div className="flex gap-2">
+                <code className="flex-1 bg-background border border-border rounded-xl px-4 py-3 text-xs font-mono text-foreground break-all">
+                  {data.bsv.address}
+                </code>
+                <button
+                  onClick={() => copy(data.bsv.address, "bsv-addr")}
+                  className="px-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                >
+                  {copiedKey === "bsv-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <span className={cn("text-xs font-mono font-bold", data.bsv.funded ? "text-green-400" : "text-amber-400/80")}>
+                  {data.bsv.balance ?? "No balance yet"}
+                </span>
+                <a
+                  href={data.bsv.explorer}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-emerald-400 flex items-center gap-1 hover:underline"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  WhatsOnChain
+                </a>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main admin page ────────────────────────────────────────────────────────────
 
 export function AdminFeeWallet() {
   const qc = useQueryClient();
@@ -267,6 +421,9 @@ export function AdminFeeWallet() {
           )}
         </div>
       </div>
+
+      {/* ── Exchange Hot Wallet (Withdrawals) ───────────────────────────────── */}
+      <ExchangeHotWalletCard />
 
       {/* Fee Rates */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">

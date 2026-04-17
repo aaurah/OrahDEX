@@ -5,6 +5,7 @@ import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
+import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
@@ -2144,6 +2145,64 @@ router.post("/mint-burn", requireAdminToken, async (req, res) => {
         ? `Insufficient ${asset} balance to burn that amount`
         : err.message,
     });
+  }
+});
+
+// ── GET /admin/exchange-wallet ────────────────────────────────────────────────
+// Returns the exchange hot wallet addresses and on-chain balances.
+// These are the addresses the operator must fund to enable auto-withdrawals.
+router.get("/admin/exchange-wallet", requireAdminToken, async (req, res) => {
+  try {
+    const evmAddress = await getEvmHotWalletAddress();
+
+    // Fetch native balances from each chain (non-blocking, best-effort)
+    const fetchNative = async (rpcUrl: string, symbol: string) => {
+      try {
+        const r = await fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [evmAddress, "latest"] }),
+          signal: AbortSignal.timeout(6_000),
+        });
+        if (!r.ok) return null;
+        const j = await r.json() as { result?: string };
+        if (!j.result) return null;
+        return (parseInt(j.result, 16) / 1e18).toFixed(6) + ` ${symbol}`;
+      } catch { return null; }
+    };
+
+    const [ethBal, bnbBal, maticBal] = await Promise.all([
+      fetchNative(process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",         "ETH"),
+      fetchNative(process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org", "BNB"),
+      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",      "MATIC"),
+    ]);
+
+    const bsvWallet  = await getOrCreateWallet();
+    const bsvBalance = await fetchWalletBalance(bsvWallet.address).catch(() => null);
+
+    res.json({
+      evm: {
+        address:  evmAddress,
+        note:     "Fund this address on each chain to enable automatic withdrawals",
+        balances: { ETH: ethBal, BNB: bnbBal, MATIC: maticBal },
+        explorers: {
+          ethereum:  `https://etherscan.io/address/${evmAddress}`,
+          bsc:       `https://bscscan.com/address/${evmAddress}`,
+          polygon:   `https://polygonscan.com/address/${evmAddress}`,
+          avalanche: `https://snowtrace.io/address/${evmAddress}`,
+        },
+      },
+      bsv: {
+        address:  bsvWallet.address,
+        note:     "Fund this address with BSV to enable automatic BSV withdrawals",
+        balance:  bsvBalance ? `${bsvBalance.bsv.toFixed(8)} BSV` : null,
+        funded:   bsvBalance?.funded ?? false,
+        explorer: `https://whatsonchain.com/address/${bsvWallet.address}`,
+      },
+    });
+  } catch (err: any) {
+    req.log.error({ err }, "admin/exchange-wallet: failed");
+    res.status(500).json({ error: err.message });
   }
 });
 
