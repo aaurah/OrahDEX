@@ -65,11 +65,11 @@ interface Faq {
 function EmailSetupTab() {
   const { toast } = useToast();
   const [settings, setSettings] = useState({
-    support_email: "support@orahdex.com",
-    support_email_legal: "legal@orahdex.com",
-    support_email_billing: "billing@orahdex.com",
-    support_email_press: "press@orahdex.com",
-    support_email_privacy: "privacy@orahdex.com",
+    support_email: "support@orahdex.org",
+    support_email_legal: "legal@orahdex.org",
+    support_email_billing: "billing@orahdex.org",
+    support_email_press: "press@orahdex.org",
+    support_email_privacy: "privacy@orahdex.org",
     support_response_time: "< 2 hours",
     support_hours: "24/7",
   });
