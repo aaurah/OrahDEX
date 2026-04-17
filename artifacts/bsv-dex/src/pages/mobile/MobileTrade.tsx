@@ -223,14 +223,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
     setApiBalancesLoading(false);
   }, []);
-  // Fetch exchange balances only for the internal orah-wallet.
-  // External wallets (MetaMask, WalletConnect, etc.) trade from their on-chain balance.
+  // Fetch internal exchange balance for ALL connected wallets — not just Orah.
+  // External EVM wallets accumulate internal balance after exchange trades or
+  // on-chain swap settlements. Without this, sell orders on cross-chain pairs
+  // (e.g. EVM wallet selling BSV) are incorrectly blocked by the sell guard.
   useEffect(() => {
-    if (!isOrahWallet || !isEvm || !address) { setApiBalances({}); return; }
+    if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
-  }, [isOrahWallet, isEvm, address, symbol, fetchApiBalances, base, quote]);
-  // Only the internal orah-wallet reads from the internal ledger.
-  // External connected wallets use their on-chain balance directly.
+  }, [address, symbol, fetchApiBalances, base, quote]);
+  // Orah internal wallet exclusively uses the API ledger as its source of truth.
+  // External wallets use on-chain balance as primary, internal ledger as fallback.
   const usesApiBalance = isOrahWallet;
   // True while we're still waiting for the orah-wallet ledger fetch to complete.
   const balancesPending = isOrahWallet && isEvm && apiBalancesLoading;
@@ -638,8 +640,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   // Orah Wallet users use the API ledger balance.
   // External wallets use on-chain balance minus open order locks.
-  const grossSellBalance = usesApiBalance ? (apiBalances[base] ?? 0) : walletBaseBalance;
-  const grossBuyBalance  = usesApiBalance ? (apiBalances[quote] ?? 0) : walletQuoteBalance;
+  // For external wallets: merge on-chain and internal exchange balance.
+  // This allows selling assets received via internal exchange trades
+  // (e.g. BSV bought on BSV/USDT pair stays in internal ledger).
+  const internalBaseBalance  = apiBalances[base]  ?? 0;
+  const internalQuoteBalance = apiBalances[quote] ?? 0;
+  const grossSellBalance = usesApiBalance
+    ? internalBaseBalance
+    : Math.max(walletBaseBalance, internalBaseBalance);
+  const grossBuyBalance  = usesApiBalance
+    ? internalQuoteBalance
+    : Math.max(walletQuoteBalance, internalQuoteBalance);
   const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
   const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
 
@@ -1510,12 +1521,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
-              {/* Low balance hint — shown when wallet balance is zero */}
-              {address && available === 0 && (
+              {/* Low balance hint — shown when no balance available on any source */}
+              {address && available === 0 && !apiBalancesLoading && (
                 <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
                   {side === "buy"
-                    ? `No ${quote} in wallet. Buy or bridge ${quote} to trade.`
-                    : `No ${base} in wallet. Buy or bridge ${base} to trade.`
+                    ? `No ${quote} available. Deposit or swap ${quote} to fund your trading balance.`
+                    : `No ${base} available. Buy ${base} first or deposit to your exchange balance.`
                   }
                 </div>
               )}
