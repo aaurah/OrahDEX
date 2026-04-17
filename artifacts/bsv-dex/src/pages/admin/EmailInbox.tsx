@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Mail, Inbox, Send, Star, Trash2, RefreshCw, Search, Plus,
   X, ChevronLeft, ChevronDown, Eye, EyeOff, ArrowUp, Circle,
   CheckCircle2, AlertCircle, Settings, Zap, Shield,
   Copy, Check, ExternalLink,
-  Server, Lock, User, AtSign, Info,
+  Server, Lock, User, AtSign, Info, Webhook, FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -66,7 +66,9 @@ export function AdminEmailInbox() {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
   const [showMailSetup, setShowMailSetup] = useState(false);
+  const [showInboundSetup, setShowInboundSetup] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const copyField = (key: string, value: string) => {
     navigator.clipboard?.writeText(value);
@@ -137,6 +139,30 @@ export function AdminEmailInbox() {
     },
   });
 
+  const testWebhook = useMutation({
+    mutationFn: () =>
+      fetch(`${BASE}/api/webhook/email-inbound`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "test@example.com",
+          to: "inbox@orahdex.org",
+          subject: "✅ Webhook Test — Inbound Email Working",
+          text: "This is a test email sent directly to your inbound webhook to verify it is working correctly. If you can see this message in your inbox, the webhook endpoint is live and ready to receive emails from your chosen email provider.",
+        }),
+      }).then(r => r.json()),
+    onSuccess: (data) => {
+      if (data?.id) {
+        setTestResult({ ok: true, msg: "Test email delivered to inbox successfully." });
+        qc.invalidateQueries({ queryKey: ["admin-mail"] });
+        setFolder("inbox");
+      } else {
+        setTestResult({ ok: false, msg: data?.error ?? "Webhook responded but no email was created." });
+      }
+    },
+    onError: (e: any) => setTestResult({ ok: false, msg: e?.message ?? "Could not reach webhook endpoint." }),
+  });
+
   const openEmail = async (email: Email) => {
     setSelected(email);
     setMobilePanel("detail");
@@ -192,6 +218,13 @@ export function AdminEmailInbox() {
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
+            onClick={() => { setShowInboundSetup(true); setTestResult(null); }}
+            className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
+            title="Inbound email webhook setup"
+          >
+            <Webhook className="w-4 h-4" />
+          </button>
+          <button
             onClick={() => setShowMailSetup(true)}
             className="p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all"
             title="Mail client setup (Thunderbird / Apple Mail)"
@@ -208,6 +241,146 @@ export function AdminEmailInbox() {
         </div>
       </div>
 
+
+      {/* Inbound Email Webhook Setup Modal */}
+      {showInboundSetup && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl shadow-black/40 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                  <Webhook className="w-4 h-4 text-orange-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Inbound Email Setup</h3>
+                  <p className="text-[10px] text-muted-foreground">Connect Mailgun · Postmark · SendGrid · ImprovMX</p>
+                </div>
+              </div>
+              <button onClick={() => setShowInboundSetup(false)} className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 space-y-5">
+
+              {/* Status banner */}
+              <div className="flex items-start gap-3 p-3.5 bg-orange-500/8 border border-orange-500/25 rounded-xl">
+                <AlertCircle className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-orange-200/90 leading-relaxed">
+                  <p className="font-semibold text-orange-300 mb-1">No provider connected yet</p>
+                  <p>The webhook endpoint is live and ready. You just need to point an email provider at it. Any email sent to your domain will then appear in this inbox automatically.</p>
+                </div>
+              </div>
+
+              {/* Webhook URL */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-2 flex items-center gap-2">
+                  <Webhook className="w-3 h-3" /> Your Webhook URL
+                </p>
+                <div className="flex items-center gap-2 p-3 bg-secondary/60 border border-border rounded-xl">
+                  <code className="flex-1 min-w-0 text-xs font-mono text-primary break-all">{webhookUrl}</code>
+                  <button
+                    onClick={copyWebhook}
+                    className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                  >
+                    {copiedWebhook ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5">Paste this URL into your email provider's inbound routing / forwarding settings.</p>
+              </div>
+
+              {/* Test button */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-2 flex items-center gap-2">
+                  <FlaskConical className="w-3 h-3" /> Test the Webhook
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { setTestResult(null); testWebhook.mutate(); }}
+                    disabled={testWebhook.isPending}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 border border-primary/20 text-primary rounded-xl text-sm font-semibold hover:bg-primary/20 transition-all disabled:opacity-50"
+                  >
+                    {testWebhook.isPending
+                      ? <><div className="w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />Testing…</>
+                      : <><FlaskConical className="w-3.5 h-3.5" />Send test email to inbox</>}
+                  </button>
+                  {testResult && (
+                    <span className={cn(
+                      "flex items-center gap-1.5 text-xs font-medium",
+                      testResult.ok ? "text-green-400" : "text-red-400"
+                    )}>
+                      {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                      {testResult.msg}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Provider instructions */}
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground mb-3 flex items-center gap-2">
+                  <Info className="w-3 h-3" /> How to Connect a Provider
+                </p>
+
+                <div className="space-y-3">
+                  {/* ImprovMX — easiest free option */}
+                  <div className="p-4 bg-secondary/40 border border-border rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-black bg-green-500/10 border border-green-500/20 text-green-400 px-2 py-0.5 rounded-full">Easiest · Free</span>
+                      <span className="text-sm font-bold text-foreground">ImprovMX</span>
+                    </div>
+                    <ol className="space-y-1.5 text-xs text-muted-foreground">
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Go to <a href="https://improvmx.com" target="_blank" rel="noreferrer" className="text-primary underline">improvmx.com</a> → add your domain (e.g. <code className="font-mono">orahdex.org</code>)</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">2.</span>Add the MX records they provide to your domain registrar (Cloudflare / Namecheap / etc.)</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>In ImprovMX, create an alias: <code className="font-mono text-foreground">*@orahdex.org</code> → enable "forward to webhook"</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">4.</span>Paste your webhook URL above → Save</li>
+                    </ol>
+                  </div>
+
+                  {/* Mailgun */}
+                  <div className="p-4 bg-secondary/40 border border-border rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-black bg-blue-500/10 border border-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">Free tier · Popular</span>
+                      <span className="text-sm font-bold text-foreground">Mailgun</span>
+                    </div>
+                    <ol className="space-y-1.5 text-xs text-muted-foreground">
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Sign up at <a href="https://mailgun.com" target="_blank" rel="noreferrer" className="text-primary underline">mailgun.com</a> → Add Domain → enter your domain</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">2.</span>Follow their DNS setup (MX + SPF + DKIM records)</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>Go to <strong>Receiving</strong> → <strong>Routes</strong> → <strong>Create Route</strong></li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">4.</span>Filter: <code className="font-mono text-foreground">catch_all()</code> → Action: <code className="font-mono text-foreground">forward("{webhookUrl}")</code></li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">5.</span>Save — all inbound mail now posts to your webhook</li>
+                    </ol>
+                  </div>
+
+                  {/* Postmark */}
+                  <div className="p-4 bg-secondary/40 border border-border rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-black bg-violet-500/10 border border-violet-500/20 text-violet-400 px-2 py-0.5 rounded-full">Paid · Reliable</span>
+                      <span className="text-sm font-bold text-foreground">Postmark</span>
+                    </div>
+                    <ol className="space-y-1.5 text-xs text-muted-foreground">
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Sign up at <a href="https://postmarkapp.com" target="_blank" rel="noreferrer" className="text-primary underline">postmarkapp.com</a> → Inbound → Add Inbound Domain</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">2.</span>Set the MX record they provide on your domain</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>Set Webhook URL to your URL above → Save</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              {/* DNS summary */}
+              <div className="p-3.5 bg-primary/5 border border-primary/15 rounded-xl">
+                <p className="text-xs font-semibold text-foreground mb-2 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-primary" /> DNS Records Required
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Each provider will give you specific MX records to add at your domain registrar. Without MX records, email cannot be delivered to your domain. DNS changes typically take 5–30 minutes to propagate. You can verify MX records are live at <a href="https://mxtoolbox.com" target="_blank" rel="noreferrer" className="text-primary underline">mxtoolbox.com</a>.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mail Client Setup Modal */}
       {showMailSetup && (
