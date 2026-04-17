@@ -529,7 +529,7 @@ export function LandingPage() {
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-12">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {[
             {
               label: "Settlement",
@@ -554,6 +554,12 @@ export function LandingPage() {
               pill: "Leaders & followers",
               pillColor: "#c084fc",
               desc: "ERC4626-style vaults mirror leader trades on-chain, with BSV proof chains and high-water-mark performance fees — no pooled custody, no opaque risk.",
+            },
+            {
+              label: "Prediction",
+              pill: "Live now",
+              pillColor: "#38bdf8",
+              desc: "Binary UP/DOWN prediction markets with 5-minute rounds, 1×–100× leverage, and parimutuel payouts — powered by live BSV, BTC, ETH, BNB, and SOL price feeds.",
             },
           ].map(({ label, pill, pillColor, desc }) => (
             <div key={label}

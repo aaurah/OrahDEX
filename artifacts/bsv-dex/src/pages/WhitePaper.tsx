@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.4.0";
-const PUBLISH_DATE = "12 April 2026";
+const VERSION = "4.5.0";
+const PUBLISH_DATE = "17 April 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -1911,9 +1911,31 @@ If any authority requests user identity data:
             {/* ── 20. ROADMAP ── */}
             <Section id="roadmap" title="21. Roadmap">
 
-              {/* v4.3.0 Changelog */}
+              {/* v4.5.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.4.0 · 12 April 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.5.0 · 17 April 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orahdex.org.",
+                    "Sitewide domain rebrand — all contact addresses, support links, and API fallbacks updated from .com to orahdex.org (support@orahdex.org, legal@orahdex.org).",
+                    "Inbound email routing — ImprovMX MX records added to orahdex.org DNS (mx1/mx2.improvmx.com). Inbound mail to support@, legal@, and admin@ forwarded externally.",
+                    "Admin Integrations page wired into navigation — accessible via Plug icon in the admin sidebar. Covers SMTP configuration, connection tests, and third-party service management.",
+                    "Admin Email Inbox enhanced — SMTP status badge shows live connection state and test-account warning; send results display real delivery confirmation or SMTP error detail.",
+                    "Internal wallet balance display fixed — Orah wallet users now always read balance from the OrahDEX internal ledger rather than on-chain RPC. Balance correctly deducts after every trade without requiring a page refresh.",
+                    "Prediction Trading added to Landing page feature strip — live binary markets now featured alongside Settlement, Liquidity, OrahNFT, and CopyVault.",
+                    "WhitePaper v4.5.0 — version, publish date, and roadmap changelog updated to reflect infrastructure, email, and balance display improvements.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.4.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.4.0 · 12 April 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
                     "Prediction Trading launched — pool-based binary options (UP/DOWN) with 5-minute rounds, 1x–100x leverage, parimutuel payouts across 5 pairs (BSV/BTC/ETH/BNB/SOL).",
