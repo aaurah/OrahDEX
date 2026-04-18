@@ -14,7 +14,7 @@ import { createPublicClient, http } from "viem";
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { or, eq, desc } from "drizzle-orm";
-import { settleSwap, getBalances, seedInitialBalances, creditAvailable } from "../lib/ledger.js";
+import { settleSwap, getBalances, creditAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
@@ -388,8 +388,6 @@ router.post("/trade/exchange", async (req, res) => {
   }
 
   try {
-    await seedInitialBalances(walletAddress);
-
     const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {
       res.status(422).json({ error: "No price available for this pair" });

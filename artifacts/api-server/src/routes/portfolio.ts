@@ -5,7 +5,6 @@ import { inArray } from "drizzle-orm";
 import { generateWalletTransactions } from "../lib/mockData.js";
 import {
   getBalances,
-  seedInitialBalances,
   getLpPositions,
 } from "../lib/ledger.js";
 
@@ -22,9 +21,6 @@ router.get("/portfolio", async (req, res) => {
   }
 
   try {
-    // Always seed to fill in any missing assets (ON CONFLICT DO NOTHING keeps existing values intact).
-    // This ensures wallets seeded with an older, smaller asset list get the full current set.
-    await seedInitialBalances(walletAddress);
     const balances = await getBalances(walletAddress);
 
     // Gather symbols for price lookup — DB stores symbols with slash (BTC/USDT)
@@ -129,8 +125,6 @@ router.get("/balances", async (req, res) => {
     return;
   }
   try {
-    // Always seed to fill in any missing assets (ON CONFLICT DO NOTHING — safe for existing wallets).
-    await seedInitialBalances(walletAddress);
     const balances = await getBalances(walletAddress);
     res.json({ walletAddress, balances });
   } catch (err) {

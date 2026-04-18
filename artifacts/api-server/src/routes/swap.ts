@@ -18,7 +18,6 @@ import { or, eq } from "drizzle-orm";
 import {
   settleSwap,
   getBalances,
-  seedInitialBalances,
 } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 
@@ -73,9 +72,7 @@ router.post("/swap", async (req, res) => {
   }
 
   try {
-    // Seed balances for first-time user
     const existing = await getBalances(walletAddress);
-    if (existing.length === 0) await seedInitialBalances(walletAddress);
 
     const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {

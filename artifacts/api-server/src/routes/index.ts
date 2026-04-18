@@ -586,26 +586,7 @@ router.post("/users/ping", async (req, res) => {
       })
       .returning({ address: walletsTable.address });
 
-    // Seed initial exchange balances for wallets that have never had any
-    // (runs in background — non-blocking, so ping response stays fast)
     const isNewEntry = inserted.length > 0;
-    if (isNewEntry) {
-      (async () => {
-        try {
-          const { rows } = await pool.query(
-            `SELECT 1 FROM user_balances WHERE wallet_address = $1 LIMIT 1`,
-            [addr],
-          );
-          if (rows.length === 0) {
-            const { seedInitialBalances } = await import("../lib/ledger.js");
-            await seedInitialBalances(addr);
-            logger.info({ address: addr }, "Seeded initial exchange balances for new wallet");
-          }
-        } catch (err: any) {
-          logger.error({ err: err?.message, address: addr }, "Failed to seed initial balances");
-        }
-      })();
-    }
 
     res.json({ success: true, address: addr, isNew: isNewEntry });
   } catch (err: any) {
