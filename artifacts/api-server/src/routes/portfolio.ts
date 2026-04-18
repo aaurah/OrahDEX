@@ -7,6 +7,7 @@ import {
   getBalances,
   getLpPositions,
 } from "../lib/ledger.js";
+import { pool } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -142,9 +143,23 @@ router.get("/balances/:asset", async (req, res) => {
     return;
   }
   try {
-    const all = await getBalances(walletAddress);
-    const row = all.find(b => b.asset === asset) ?? { asset, available: "0", locked: "0" };
-    res.json(row);
+    const { rows } = await pool.query<{ available: string; locked: string; seeded: string }>(
+      `SELECT available, locked, COALESCE(seeded, 0) AS seeded
+         FROM user_balances
+        WHERE LOWER(wallet_address) = LOWER($1) AND asset_symbol = $2`,
+      [walletAddress, asset],
+    );
+    const row = rows[0] ?? { available: "0", locked: "0", seeded: "0" };
+    const available    = parseFloat(row.available);
+    const seeded       = parseFloat(row.seeded);
+    const withdrawable = Math.max(0, available - seeded);
+    res.json({
+      asset,
+      available:    available.toString(),
+      locked:       row.locked,
+      seeded:       seeded.toString(),
+      withdrawable: withdrawable.toString(),
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch balance");
     res.status(500).json({ error: "Failed to fetch balance" });

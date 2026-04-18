@@ -33,18 +33,26 @@ router.post("/withdrawals", async (req, res) => {
     await client.query("BEGIN");
 
     // Check current available balance (lock the row for the transaction)
-    const { rows: balRows } = await client.query<{ available: string }>(
-      `SELECT available FROM user_balances
+    const { rows: balRows } = await client.query<{ available: string; seeded: string }>(
+      `SELECT available, seeded FROM user_balances
        WHERE wallet_address = $1 AND asset_symbol = $2
        FOR UPDATE`,
       [walletAddress, asset],
     );
 
     const available = parseFloat(balRows[0]?.available ?? "0");
-    if (available < parsed) {
+    // `seeded` is platform-owned liquidity — users may trade with it but cannot withdraw it.
+    // Only admin withdrawals bypass this check.
+    const seeded      = parseFloat(balRows[0]?.seeded ?? "0");
+    const withdrawable = Math.max(0, available - seeded);
+
+    if (withdrawable < parsed) {
       await client.query("ROLLBACK");
+      const realBalance = withdrawable.toFixed(8);
       res.status(400).json({
-        error: `Insufficient balance. Available: ${available} ${asset}, requested: ${parsed} ${asset}`,
+        error: withdrawable <= 0
+          ? `Your ${asset} balance is platform liquidity and cannot be withdrawn. Deposit real ${asset} to withdraw.`
+          : `Insufficient withdrawable balance. You can withdraw up to ${realBalance} ${asset} (your deposited/earned balance).`,
       });
       return;
     }

@@ -211,9 +211,11 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     for (let i = 0; i < SEED_ASSETS.length; i++) {
       const a = SEED_ASSETS[i]!;
       const amount = between(walletAddress, i * 3, a.min, a.max).toFixed(a.dec);
+      // Record `seeded` amount so the withdrawal layer can block platform funds.
+      // Users may trade with seeded balance but may NOT withdraw it — only admin can.
       await client.query(
-        `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
-         VALUES ($1, $2, $3, '0', now())
+        `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, seeded, updated_at)
+         VALUES ($1, $2, $3, '0', $3, now())
          ON CONFLICT (wallet_address, asset_symbol) DO NOTHING`,
         [walletAddress, a.asset, amount],
       );
