@@ -150,15 +150,12 @@ router.get("/balances/:asset", async (req, res) => {
       [walletAddress, asset],
     );
     const row = rows[0] ?? { available: "0", locked: "0", seeded: "0" };
-    const available    = parseFloat(row.available);
-    const seeded       = parseFloat(row.seeded);
-    const withdrawable = Math.max(0, available - seeded);
+    // Show only real (non-seeded) balance to the user
+    const realAvailable = Math.max(0, parseFloat(row.available) - parseFloat(row.seeded));
     res.json({
       asset,
-      available:    available.toString(),
-      locked:       row.locked,
-      seeded:       seeded.toString(),
-      withdrawable: withdrawable.toString(),
+      available: realAvailable.toString(),
+      locked:    row.locked,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to fetch balance");
