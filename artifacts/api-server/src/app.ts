@@ -7,6 +7,7 @@ import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
+import { startArbBot } from "./lib/arbBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
 import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.js";
 import { startRouteCache } from "./lib/routeCache.js";
@@ -134,6 +135,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 /* ── Background services — each wrapped so one failure can't crash others ──── */
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
+try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
 try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
 try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
