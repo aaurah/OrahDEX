@@ -352,10 +352,13 @@ function Router() {
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
 
-      {/* ── Landing page — sovereign gate, standalone (no nav wrapper) ── */}
-      <Route path="/">
+      {/* ── Landing page — moved to /home ── */}
+      <Route path="/home">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
       </Route>
+
+      {/* ── Root redirect: go straight to swap ── */}
+      <Route path="/"><RedirectTo href="/swap" /></Route>
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>

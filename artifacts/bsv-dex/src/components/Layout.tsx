@@ -24,19 +24,22 @@ const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
 const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
-  { href: "/markets", label: "Markets", icon: Activity },
-  { href: "/swap", label: "Swap", icon: ArrowUpDown },
-  { href: "/trade/BSV-USDT", label: "Spot", icon: ArrowRightLeft },
-  { href: "/futures/BSV-USDT-PERP", label: "Futures", icon: LineChart },
-  { href: "/prediction", label: "Prediction", icon: Target },
-  { href: "/dex", label: "Market Hub", icon: Layers },
-  { href: "/p2p", label: "P2P", icon: Users },
-  { href: "/bridge", label: "Bridge", icon: Link2 },
-  { href: "/copy", label: "CopyVault", icon: Copy },
-  { href: "/nft", label: "NFT", icon: Sparkles },
-  { href: "/keeper", label: "Keepers", icon: Shield },
-  { href: "/fees", label: "Fees", icon: TrendingUp },
-  { href: "/portfolio", label: "Portfolio", icon: LayoutDashboard },
+  { href: "/swap",          label: "Swap",      icon: ArrowUpDown },
+  { href: "/trade/BSV-USDT", label: "Trade",   icon: ArrowRightLeft },
+  { href: "/markets",       label: "Markets",   icon: Activity },
+  { href: "/portfolio",     label: "Portfolio", icon: LayoutDashboard },
+];
+
+const NAV_MORE = [
+  { href: "/futures/BSV-USDT-PERP", label: "Futures",    icon: LineChart },
+  { href: "/dex",                   label: "DEX Hub",     icon: Layers },
+  { href: "/p2p",                   label: "P2P",         icon: Users },
+  { href: "/bridge",                label: "Bridge",      icon: Link2 },
+  { href: "/copy",                  label: "CopyVault",   icon: Copy },
+  { href: "/nft",                   label: "NFT",         icon: Sparkles },
+  { href: "/keeper",                label: "Keepers",     icon: Shield },
+  { href: "/fees",                  label: "Revenue",     icon: TrendingUp },
+  { href: "/prediction",            label: "Prediction",  icon: Target },
 ];
 
 const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
@@ -155,6 +158,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { theme, setTheme } = useThemeStore();
   const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [bsvPopover, setBsvPopover] = useState(false);
   const bsvPopoverRef = useRef<HTMLDivElement>(null);
@@ -335,7 +339,7 @@ export function Layout({ children }: { children: ReactNode }) {
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
           {/* Brand */}
-          <Link href="/" className="flex items-center group">
+          <Link href="/swap" className="flex items-center group">
             <BrandLogo textSize="text-lg" />
           </Link>
         </div>
@@ -647,7 +651,7 @@ export function Layout({ children }: { children: ReactNode }) {
           >
             {/* Drawer header */}
             <div className="flex items-center justify-between px-4 h-16 border-b border-border shrink-0">
-              <Link href="/" onClick={() => setIsMobileMenuOpen(false)}>
+              <Link href="/swap" onClick={() => setIsMobileMenuOpen(false)}>
                 <BrandLogo textSize="text-lg" />
               </Link>
               <button
@@ -661,7 +665,7 @@ export function Layout({ children }: { children: ReactNode }) {
             {/* Nav links */}
             <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
               {NAV_LINKS.map((link) => {
-                const isActive = link.href === "/" ? location === "/" : location.startsWith("/" + link.href.split("/")[1]);
+                const isActive = location.startsWith("/" + link.href.split("/")[1]);
                 return (
                   <Link
                     key={link.href}
@@ -680,6 +684,40 @@ export function Layout({ children }: { children: ReactNode }) {
                   </Link>
                 );
               })}
+
+              {/* More section */}
+              <button
+                onClick={() => setShowMoreNav(v => !v)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all"
+              >
+                <Gauge className="w-5 h-5 shrink-0" />
+                <span className="text-sm">More</span>
+                <ChevronRight className={cn("w-4 h-4 ml-auto transition-transform", showMoreNav && "rotate-90")} />
+              </button>
+
+              {showMoreNav && (
+                <div className="pl-2 space-y-0.5 border-l border-border ml-4">
+                  {NAV_MORE.map((link) => {
+                    const isActive = location.startsWith("/" + link.href.split("/")[1]);
+                    return (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2 rounded-xl font-medium transition-all text-sm",
+                          isActive
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                        )}
+                      >
+                        <link.icon className="w-4 h-4 shrink-0" />
+                        {link.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </nav>
 
             {/* Bottom: Settings + wallet CTA */}
