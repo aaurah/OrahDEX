@@ -126,6 +126,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/fee-wallet",   label: "Fee Wallet",         icon: Wallet },
       { href: "/admin/bot-profit",   label: "Bot Profit",         icon: Bot },
       { href: "/admin/arb-bot",      label: "Arb Bot",            icon: Bot },
+      { href: "/admin/seeded-pool",  label: "Seeded Pool",        icon: Database },
       { href: "/admin/transactions", label: "On-Chain Txns",      icon: Activity },
     ],
   },

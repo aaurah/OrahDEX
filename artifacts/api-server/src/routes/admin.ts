@@ -2720,5 +2720,93 @@ router.post("/arb-bot/reset-stats", requireAdminToken, async (req, res) => {
   }
 });
 
+/* ── GET /admin/seeded-pool ───────────────────────────────────────────────────
+   Returns the total seeded (platform-owned) balance across all user wallets,
+   grouped by asset. This is money the platform controls — users can trade with
+   it but cannot withdraw it.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/seeded-pool", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      asset_symbol: string;
+      total_seeded: string;
+      total_available: string;
+      wallet_count: string;
+    }>(
+      `SELECT
+         asset_symbol,
+         SUM(seeded)    AS total_seeded,
+         SUM(available) AS total_available,
+         COUNT(*)       AS wallet_count
+       FROM user_balances
+       WHERE seeded > 0
+       GROUP BY asset_symbol
+       ORDER BY total_seeded::numeric DESC`,
+    );
+    res.json({ pool: rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── GET /admin/seeded-pool/summary ──────────────────────────────────────────
+   High-level counts for dashboard display.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      total_wallets: string;
+      total_assets: string;
+      total_seeded_usdt_equiv: string;
+    }>(
+      `SELECT
+         COUNT(DISTINCT wallet_address) AS total_wallets,
+         COUNT(DISTINCT asset_symbol)   AS total_assets,
+         SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN seeded ELSE 0 END) AS total_seeded_usdt_equiv
+       FROM user_balances
+       WHERE seeded > 0`,
+    );
+    res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_seeded_usdt_equiv: "0" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── POST /admin/seeded-pool/reclaim ─────────────────────────────────────────
+   Remove a specific seeded asset balance from all user wallets (platform
+   reclaims). Supply { asset } to reclaim one asset, or leave blank for all.
+   This reduces available balance by the seeded amount and clears the seeded
+   column — effectively the platform pulling back its liquidity.
+──────────────────────────────────────────────────────────────────────────────── */
+router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
+  try {
+    const { asset } = req.body ?? {};
+    let result;
+    if (asset) {
+      const sym = (asset as string).toUpperCase();
+      result = await pool.query(
+        `UPDATE user_balances
+            SET available   = GREATEST(0, available - seeded),
+                seeded      = 0,
+                updated_at  = now()
+          WHERE asset_symbol = $1 AND seeded > 0`,
+        [sym],
+      );
+    } else {
+      result = await pool.query(
+        `UPDATE user_balances
+            SET available   = GREATEST(0, available - seeded),
+                seeded      = 0,
+                updated_at  = now()
+          WHERE seeded > 0`,
+      );
+    }
+    req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
+    res.json({ success: true, rowsAffected: result.rowCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 export default router;
 
