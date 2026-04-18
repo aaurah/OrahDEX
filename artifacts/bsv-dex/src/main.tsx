@@ -1,3 +1,4 @@
+import "./polyfills";
 import { createRoot } from "react-dom/client";
 import { createElement, Component, type ReactNode } from "react";
 import App from "./App";
