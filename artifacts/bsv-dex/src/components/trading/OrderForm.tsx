@@ -621,7 +621,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         toast({
           title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
           description: isInsufficient
-            ? "No exchange balance yet. Go to Swap → Exchange tab to get started with demo funds instantly — no deposit needed."
+            ? "Insufficient balance. Deposit funds to your exchange balance to start trading."
             : `Could not place order${serverMsg ? `: ${serverMsg}` : ""}. Please try again.`,
           variant: "destructive",
         });
