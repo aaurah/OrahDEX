@@ -340,6 +340,9 @@ importers:
       '@workspace/integrations-openai-ai-react':
         specifier: workspace:*
         version: link:../../lib/integrations-openai-ai-react
+      buffer:
+        specifier: ^6.0.3
+        version: 6.0.3
       jsqr:
         specifier: ^1.4.0
         version: 1.4.0
