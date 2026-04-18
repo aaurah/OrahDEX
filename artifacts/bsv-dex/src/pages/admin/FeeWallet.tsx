@@ -117,7 +117,7 @@ function ExchangeHotWalletCard() {
   const { data, isLoading, refetch, isFetching } = useQuery<HotWalletData>({
     queryKey: ["admin-exchange-wallet"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/admin/exchange-wallet`);
+      const r = await adminFetch(`/api/admin/exchange-wallet`);
       if (!r.ok) throw new Error("Failed to load wallet");
       return r.json();
     },

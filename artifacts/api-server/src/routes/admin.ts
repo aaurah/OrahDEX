@@ -2300,10 +2300,10 @@ router.delete("/ledger-wipe-all", requireAdminToken, async (req, res) => {
   }
 });
 
-// ── GET /admin/exchange-wallet ────────────────────────────────────────────────
+// ── GET /exchange-wallet ───────────────────────────────────────────────────────
 // Returns the exchange hot wallet addresses and on-chain balances.
 // These are the addresses the operator must fund to enable auto-withdrawals.
-router.get("/admin/exchange-wallet", requireAdminToken, async (req, res) => {
+router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
   try {
     const evmAddress = await getEvmHotWalletAddress();
 
