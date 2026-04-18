@@ -11,18 +11,11 @@ import { ChatWidget } from "@/components/ChatWidget";
 const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
 const NAV_TABS = [
-  { path: "/markets", matchPrefix: "/markets", label: "Markets", Icon: BarChart2 },
-  { path: "/trade/BSV-USDT", matchPrefix: "/trade", label: "Trade", Icon: ArrowRightLeft },
-  { path: "/futures/BSV-USDT-PERP", matchPrefix: "/futures", label: "Futures", Icon: TrendingUp },
-  { path: "/dex", matchPrefix: "/dex", label: "Hub", Icon: Layers },
-  { path: "/swap", matchPrefix: "/swap", label: "Swap", Icon: ArrowUpDown },
-  { path: "/prediction", matchPrefix: "/prediction", label: "Predict", Icon: Target },
-  { path: "/nft", matchPrefix: "/nft", label: "NFT", Icon: Image },
-  { path: "/bridge", matchPrefix: "/bridge", label: "Bridge", Icon: Cable },
-  { path: "/copy", matchPrefix: "/copy", label: "Copy", Icon: Copy },
-  { path: "/p2p", matchPrefix: "/p2p", label: "P2P", Icon: Repeat },
-  { path: "/portfolio", matchPrefix: "/portfolio", label: "Portfolio", Icon: Briefcase },
-  { path: "/settings", matchPrefix: "/settings", label: "Settings", Icon: Settings },
+  { path: "/swap",           matchPrefix: "/swap",       label: "Swap",      Icon: ArrowUpDown },
+  { path: "/trade/BSV-USDT", matchPrefix: "/trade",      label: "Trade",     Icon: ArrowRightLeft },
+  { path: "/markets",        matchPrefix: "/markets",    label: "Markets",   Icon: BarChart2 },
+  { path: "/portfolio",      matchPrefix: "/portfolio",  label: "Portfolio", Icon: Briefcase },
+  { path: "/settings",       matchPrefix: "/settings",   label: "Settings",  Icon: Settings },
 ];
 
 const THEME_CYCLE: Theme[] = ["dark", "light", "amoled", "system"];
@@ -79,7 +72,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       <div className="shrink-0 bg-card">
         <div className="flex items-center h-12">
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/swap")}
             className="flex items-center h-full px-2 active:opacity-70 transition-opacity shrink-0"
           >
             <BrandLogo textSize="text-2xl" />
