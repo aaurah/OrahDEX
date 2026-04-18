@@ -119,21 +119,29 @@ interface Props {
   onClose: () => void;
   currentSymbol?: string;
   defaultCat?: Cat;
+  mode?: "spot" | "futures";
 }
 
-export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat }: Props) {
+// Categories shown in spot mode (no futures)
+const SPOT_CATS = CATS.filter(c => c.id !== "futures");
+// Categories shown in futures mode (only futures)
+const FUTURES_CATS: { id: Cat; label: string }[] = [{ id: "futures", label: "Futures" }];
+
+export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat, mode }: Props) {
   const [, navigate] = useLocation();
-  const [cat, setCat]         = useState<Cat>(defaultCat ?? "usd");
+  const effectiveCats = mode === "futures" ? FUTURES_CATS : mode === "spot" ? SPOT_CATS : CATS;
+  const resolvedDefault: Cat = mode === "futures" ? "futures" : (defaultCat ?? "usd");
+  const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Reset to defaultCat every time the selector opens
+  // Reset to correct default every time the selector opens
   useEffect(() => {
-    if (open) setCat(defaultCat ?? "usd");
-  }, [open]);
+    if (open) setCat(mode === "futures" ? "futures" : (defaultCat ?? "usd"));
+  }, [open, mode, defaultCat]);
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
@@ -213,7 +221,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat 
       >
         {/* Drawer header */}
         <div className="flex items-center justify-between px-4 pt-safe-top pt-4 pb-3 border-b border-border shrink-0">
-          <span className="text-base font-bold">Markets</span>
+          <span className="text-base font-bold">{mode === "futures" ? "Futures Pairs" : "Markets"}</span>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
             <X size={18} />
           </button>
@@ -237,7 +245,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat 
 
         {/* Category tabs — horizontal scroll */}
         <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
-          {CATS.map(c => (
+          {effectiveCats.map(c => (
             <button
               key={c.id}
               onClick={() => { setCat(c.id); setSearch(""); }}
