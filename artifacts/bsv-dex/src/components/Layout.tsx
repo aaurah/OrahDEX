@@ -29,6 +29,7 @@ const NAV_LINKS = [
   { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
   { href: "/markets",                label: "Markets",    icon: Activity },
   { href: "/prediction",             label: "Predict",    icon: Target },
+  { href: "/nft",                    label: "NFT",        icon: Sparkles },
   { href: "/portfolio",              label: "Portfolio",  icon: LayoutDashboard },
 ];
 
@@ -37,7 +38,6 @@ const NAV_MORE = [
   { href: "/p2p",     label: "P2P",       icon: Users },
   { href: "/bridge",  label: "Bridge",    icon: Link2 },
   { href: "/copy",    label: "CopyVault", icon: Copy },
-  { href: "/nft",     label: "NFT",       icon: Sparkles },
   { href: "/keeper",  label: "Keepers",   icon: Shield },
   { href: "/fees",    label: "Revenue",   icon: TrendingUp },
 ];

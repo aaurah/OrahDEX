@@ -16,6 +16,7 @@ const NAV_TABS = [
   { path: "/futures/BSV-USDT-PERP",      matchPrefix: "/futures",    label: "Futures",    Icon: TrendingUp },
   { path: "/markets",                    matchPrefix: "/markets",    label: "Markets",    Icon: BarChart2 },
   { path: "/prediction",                 matchPrefix: "/prediction", label: "Predict",    Icon: Target },
+  { path: "/nft",                        matchPrefix: "/nft",        label: "NFT",        Icon: Image },
   { path: "/portfolio",                  matchPrefix: "/portfolio",  label: "Portfolio",  Icon: Briefcase },
   { path: "/settings",                   matchPrefix: "/settings",   label: "Settings",   Icon: Settings },
 ];
