@@ -52,8 +52,6 @@ import crypto from "node:crypto";
 import { pool } from "@workspace/db";
 import {
   lockForOrder,
-  seedInitialBalances,
-  ensureSeedForAsset,
   getBalances,
 } from "./ledger.js";
 import {
@@ -114,13 +112,8 @@ async function verifySpotFunding(
   }
 
   // ── Orah internal ledger ────────────────────────────────────────────────
-  // Seed on first use, then lock funds from user_balances.
+  // Lock funds from user_balances — returns INSUFFICIENT_FUNDS if balance is too low.
   try {
-    const balances = await getBalances(walletAddress);
-    if (balances.length === 0) {
-      await seedInitialBalances(walletAddress);
-    }
-    await ensureSeedForAsset(walletAddress, asset, amount);
     await lockForOrder({ walletAddress, asset, amount });
     return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
   } catch (err: any) {
