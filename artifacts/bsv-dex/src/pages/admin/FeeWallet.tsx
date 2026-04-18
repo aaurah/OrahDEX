@@ -3,8 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Wallet, Save, Copy, Check, AlertTriangle, ShieldCheck,
   ExternalLink, Info, DollarSign, Percent, Zap, RefreshCw,
+  ArrowUpRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { adminFetch } from "@/lib/adminFetch";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -72,8 +74,45 @@ type HotWalletData = {
   };
 };
 
+const RESCUE_CHAINS = [
+  { id: 8453,  label: "Base",            explorer: "https://basescan.org/tx/" },
+  { id: 1,     label: "Ethereum",        explorer: "https://etherscan.io/tx/" },
+  { id: 42161, label: "Arbitrum",        explorer: "https://arbiscan.io/tx/" },
+  { id: 10,    label: "Optimism",        explorer: "https://optimistic.etherscan.io/tx/" },
+  { id: 56,    label: "BNB Chain",       explorer: "https://bscscan.com/tx/" },
+  { id: 137,   label: "Polygon",         explorer: "https://polygonscan.com/tx/" },
+];
+
 function ExchangeHotWalletCard() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [rescueDest, setRescueDest] = useState("");
+  const [rescueChain, setRescueChain] = useState(8453);
+  const [rescueResult, setRescueResult] = useState<{ txHash: string; ethSent: string; explorer: string } | null>(null);
+  const [rescueError, setRescueError] = useState<string | null>(null);
+
+  const rescue = useMutation({
+    mutationFn: async () => {
+      setRescueResult(null);
+      setRescueError(null);
+      const r = await adminFetch(`/api/admin/rescue-evm-wallet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          evmAddress: data?.evm.address,
+          toAddress: rescueDest.trim(),
+          chainId: rescueChain,
+        }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error ?? "Rescue failed");
+      return json as { txHash: string; ethSent: string; gasCostEth: string };
+    },
+    onSuccess: (result) => {
+      const chain = RESCUE_CHAINS.find(c => c.id === rescueChain);
+      setRescueResult({ txHash: result.txHash, ethSent: result.ethSent, explorer: (chain?.explorer ?? "") + result.txHash });
+    },
+    onError: (err: Error) => setRescueError(err.message),
+  });
 
   const { data, isLoading, refetch, isFetching } = useQuery<HotWalletData>({
     queryKey: ["admin-exchange-wallet"],
@@ -198,6 +237,70 @@ function ExchangeHotWalletCard() {
                   WhatsOnChain
                 </a>
               </div>
+            </div>
+
+            {/* ── Rescue Funds ──────────────────────────────────────────────── */}
+            <div className="border-t border-border/60 pt-4 space-y-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                Rescue EVM Funds
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Send the entire balance of the EVM hot wallet on a given chain to any destination address. Useful when the hot wallet has excess ETH or funds need to be recovered.
+              </p>
+
+              <div className="flex gap-2">
+                <select
+                  value={rescueChain}
+                  onChange={e => setRescueChain(Number(e.target.value))}
+                  className="shrink-0 bg-background border border-border rounded-xl px-3 py-2.5 text-xs text-foreground"
+                >
+                  {RESCUE_CHAINS.map(c => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+                <input
+                  value={rescueDest}
+                  onChange={e => setRescueDest(e.target.value)}
+                  placeholder="Destination 0x address…"
+                  className="flex-1 bg-background border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 min-w-0"
+                />
+              </div>
+
+              <button
+                disabled={rescue.isPending || !rescueDest.trim().startsWith("0x") || rescueDest.trim().length < 40}
+                onClick={() => rescue.mutate()}
+                className={cn(
+                  "w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all border",
+                  rescue.isPending
+                    ? "opacity-60 border-red-500/30 bg-red-500/10 text-red-400"
+                    : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20",
+                  (!rescueDest.trim().startsWith("0x") || rescueDest.trim().length < 40) && "opacity-40 cursor-not-allowed",
+                )}
+              >
+                {rescue.isPending
+                  ? <><RefreshCw className="w-4 h-4 animate-spin" /> Sending…</>
+                  : <><ArrowUpRight className="w-4 h-4" /> Rescue All Funds</>}
+              </button>
+
+              {rescueResult && (
+                <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-green-400">✓ Rescue successful — {rescueResult.ethSent} ETH sent</p>
+                  <a
+                    href={rescueResult.explorer}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1 text-xs text-emerald-400 hover:underline font-mono"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    {rescueResult.txHash.slice(0, 18)}…
+                  </a>
+                </div>
+              )}
+              {rescueError && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+                  <p className="text-xs text-red-400">{rescueError}</p>
+                </div>
+              )}
             </div>
           </>
         )}
