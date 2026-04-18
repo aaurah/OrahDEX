@@ -54,7 +54,7 @@ interface WithdrawHistoryItem {
 function summariseNote(raw: string): string {
   if (!raw) return raw;
   // Viem "total cost exceeds balance" pattern
-  if (raw.includes("total cost") && raw.includes("gas fee")) return "Insufficient gas — account needs more ETH to cover the transaction fee.";
+  if (raw.includes("total cost") && raw.includes("gas fee")) return "Insufficient gas — the exchange hot wallet needs ETH to cover the network fee. Your request is queued and will auto-process once funded.";
   // Insufficient funds generic
   if (/insufficient funds/i.test(raw)) return "Insufficient funds to complete the transaction.";
   // Nonce-related
@@ -64,6 +64,13 @@ function summariseNote(raw: string): string {
   // Just return the first sentence / first 120 chars
   const firstSentence = raw.split(/\.\s/)[0];
   return firstSentence.length <= 120 ? firstSentence : firstSentence.slice(0, 117) + "…";
+}
+
+/** Returns true if this note is a gas-shortage failure */
+function isGasError(note: string | null | undefined): boolean {
+  if (!note) return false;
+  return (note.includes("total cost") && note.includes("gas fee")) ||
+    /insufficient funds for transfer/i.test(note);
 }
 
 export interface WithdrawSheetProps {
@@ -343,6 +350,31 @@ export function WithdrawSheet({
         {/* ── HISTORY TAB ──────────────────────────────────────────────── */}
         {tab === "history" && (
           <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-0.5">
+
+            {/* Gas-shortage alert banner */}
+            {history.some(h => isGasError(h.note) && (h.status === "cancelled" || h.status === "pending")) && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  Exchange wallet needs gas to send your funds
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Send a small amount of ETH (≥ 0.002 ETH) to the exchange hot wallet on <strong className="text-foreground">Base</strong> to cover the network fee. Your withdrawal will process automatically once funded.
+                </p>
+                <div className="flex items-center gap-1.5 bg-background/60 rounded-lg px-2.5 py-1.5 font-mono text-xs text-amber-300 border border-amber-500/20">
+                  <span className="truncate flex-1 select-all">0x7Dc8d1A90A058f697c5A163e7e933cb8325E7e4b</span>
+                  <button
+                    onClick={() => copy("0x7Dc8d1A90A058f697c5A163e7e933cb8325E7e4b", "hot-wallet")}
+                    className="shrink-0 p-0.5 hover:text-white transition-colors"
+                  >
+                    {copiedId === "hot-wallet"
+                      ? <Check className="w-3 h-3 text-green-400" />
+                      : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {history.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-12 text-muted-foreground">
                 <History className="w-10 h-10 opacity-30" />
