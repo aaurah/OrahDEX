@@ -109,6 +109,13 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - Fixed: now uses atomic transaction with raw SQL that deducts original margin from locked and credits full returnedMargin (including profit) to available
 - Also fixed: position read + status check + margin update + position close all run on the same DB client inside one transaction (prevents double-close and ensures atomicity)
 
+## Mobile Loading Fix (2026-04-18)
+Three issues combined to prevent the app loading on mobile Safari (orahdex.org):
+1. **manualChunks in vite.config.ts** forced Rolldown to statically import 4.4MB of JS (modals 2.8MB + pages-mobile 826KB + pages-admin 792KB) from the entry chunk — removed entirely, letting Rolldown auto-split.
+2. **AdminLayout and MobileLayout** were statically imported in App.tsx, pulling in all admin navigation icons at startup — converted to `lazy()` imports with Suspense wrappers.
+3. **`Buffer` global missing in mobile Safari** — crypto and wallet libraries (WalletConnect, secp256k1, bip39) assume Node.js `Buffer` exists. Fixed by adding `src/polyfills.ts` (using the `buffer` npm package) imported as the very first line of `main.tsx`. Also polyfills `global` and `process`.
+Result: startup JS reduced from 4.4MB to ~570KB (87% smaller). App now loads correctly on mobile.
+
 ## Exchange Revenue & Fee System (2026-04-17)
 - **`artifacts/api-server/src/lib/feeCollector.ts`** — Central fee accumulation library. `recordPlatformFee(source, amount, asset)` inserts into `keeper_earnings` table under wallet `EXCHANGE_TREASURY`. All routes call this after successful fee events.
 - **Fee sources wired**: `swap.ts` (0.3% on output), `orders.ts` (0.1% on fill total), `copyTrading.ts` (10% of vault performance fee)
