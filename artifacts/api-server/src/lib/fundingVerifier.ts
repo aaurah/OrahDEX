@@ -101,6 +101,7 @@ async function verifySpotFunding(
   params: VerifyFundingParams,
 ): Promise<FundingVerificationResult> {
   const { walletAddress, walletSource, asset, amount, signature, utxoRef, reportedBalance } = params;
+  const needed = parseFloat(amount);
 
   // ── External BSV UTXO wallet ────────────────────────────────────────────
   if (walletSource === "external" && utxoRef) {
@@ -109,6 +110,39 @@ async function verifySpotFunding(
       return { valid: false, fundingRef: "", error: "Invalid utxoRef format", code: "INVALID_UTXO_REF" };
     }
     return { valid: true, fundingRef: utxoFundingRef(txid, parseInt(vout, 10)) };
+  }
+
+  // ── External EVM / non-UTXO wallet ───────────────────────────────────────
+  // These wallets hold funds on-chain. They may also have accumulated internal
+  // exchange balance from previous trades (e.g. bought BSV, now selling).
+  // Strategy: try the internal ledger first (zero-friction if balance is there),
+  // then fall back to on-chain reportedBalance so trades work from the wallet directly.
+  if (walletSource === "external") {
+    // 1. Try internal ledger — covers exchange-accumulated balance
+    try {
+      await lockForOrder({ walletAddress, asset, amount });
+      return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
+    } catch {
+      // Not enough internal balance — fall through to on-chain check
+    }
+
+    // 2. Accept on-chain balance as proof of funding
+    // reportedBalance is sent by the client from useEvmBalances / on-chain polling.
+    // We trust it as a good-faith representation (non-custodial model).
+    const onChain = reportedBalance ?? 0;
+    if (onChain >= needed) {
+      const sigHash = signature
+        ? crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16)
+        : crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
+    }
+
+    return {
+      valid:      false,
+      fundingRef: "",
+      error:      `Insufficient ${asset} balance`,
+      code:       "INSUFFICIENT_FUNDS",
+    };
   }
 
   // ── Orah internal ledger ────────────────────────────────────────────────
