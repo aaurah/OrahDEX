@@ -6,6 +6,10 @@ import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tra
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
+import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
+import { createPublicClient, createWalletClient, http as viemHttp, parseEther, formatEther } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { base } from "viem/chains";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
@@ -2505,6 +2509,79 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ── POST /admin/rescue-evm-wallet ─────────────────────────────────────────────
+// Sweeps ETH from a custodial internal EVM wallet back to a specified destination.
+// Requires admin auth. Used when a user funded their internal EVM sub-wallet
+// directly and needs funds returned to their main wallet.
+router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
+  const { evmAddress, toAddress, chainId: rawChainId } = req.body ?? {};
+
+  if (!evmAddress?.startsWith("0x") || !toAddress?.startsWith("0x")) {
+    res.status(400).json({ error: "evmAddress and toAddress are required (must be 0x…)" });
+    return;
+  }
+
+  const chainId = parseInt(String(rawChainId ?? 8453), 10);
+  const RPC_URLS: Record<number, string> = {
+    1:     process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",
+    8453:  process.env.BASE_RPC_URL    ?? "https://mainnet.base.org",
+    42161: process.env.ARB_RPC_URL     ?? "https://arb1.arbitrum.io/rpc",
+    10:    process.env.OP_RPC_URL      ?? "https://mainnet.optimism.io",
+    56:    process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",
+    137:   process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+  };
+  const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[1]!;
+
+  try {
+    const { rows } = await pool.query<{ encrypted_key: string; bsv_address: string }>(
+      `SELECT encrypted_key, bsv_address FROM internal_evm_wallets WHERE LOWER(evm_address) = LOWER($1)`,
+      [evmAddress],
+    );
+    if (!rows[0]) {
+      res.status(404).json({ error: `No internal wallet found for ${evmAddress}` });
+      return;
+    }
+
+    const privKeyHex = decryptEvmKey(rows[0].encrypted_key) as `0x${string}`;
+    const account    = privateKeyToAccount(privKeyHex);
+
+    const publicClient = createPublicClient({ transport: viemHttp(rpcUrl) });
+    const balanceWei   = await publicClient.getBalance({ address: account.address as `0x${string}` });
+
+    if (balanceWei === 0n) {
+      res.status(400).json({ error: "Wallet has zero balance — nothing to rescue." });
+      return;
+    }
+
+    const gasPrice   = await publicClient.getGasPrice();
+    const gasLimit   = 21000n;
+    const gasCost    = gasPrice * gasLimit;
+    const sendAmount = balanceWei - gasCost;
+
+    if (sendAmount <= 0n) {
+      res.status(400).json({ error: "Balance too small to cover gas cost." });
+      return;
+    }
+
+    const walletClient = createWalletClient({ account, transport: viemHttp(rpcUrl) });
+    const txHash = await walletClient.sendTransaction({
+      to:       toAddress as `0x${string}`,
+      value:    sendAmount,
+      gas:      gasLimit,
+      gasPrice,
+    });
+
+    const ethSent = formatEther(sendAmount);
+    req.log.info({ evmAddress, toAddress, txHash, ethSent, chainId }, "admin: rescue-evm-wallet sent");
+
+    res.json({ success: true, txHash, from: account.address, to: toAddress, ethSent, gasCostEth: formatEther(gasCost), chainId });
+  } catch (err: any) {
+    req.log.error({ err: err?.message }, "admin: rescue-evm-wallet failed");
+    res.status(500).json({ error: err?.message ?? "Rescue failed" });
   }
 });
 
