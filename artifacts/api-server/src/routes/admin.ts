@@ -2258,6 +2258,43 @@ router.get("/ledger-audit", requireAdminToken, async (req, res) => {
   }
 });
 
+// ── GET /admin/ledger-stats ───────────────────────────────────────────────────
+router.get("/ledger-stats", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        COUNT(DISTINCT wallet_address) AS total_wallets,
+        COUNT(*)                       AS total_rows,
+        COALESCE(SUM(available::numeric + locked::numeric), 0) AS total_value_raw
+      FROM user_balances
+    `);
+    const r = rows[0];
+    res.json({
+      totalWallets: parseInt(r.total_wallets ?? "0"),
+      totalRows:    parseInt(r.total_rows ?? "0"),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /admin/ledger-wipe-all ─────────────────────────────────────────────
+// Wipes ALL internal ledger balances. Requires confirmation token in body.
+router.delete("/ledger-wipe-all", requireAdminToken, async (req, res) => {
+  const { confirm } = req.body as { confirm?: string };
+  if (confirm !== "WIPE_ALL_BALANCES") {
+    res.status(400).json({ error: "Send { confirm: 'WIPE_ALL_BALANCES' } to confirm." });
+    return;
+  }
+  try {
+    const result = await pool.query("DELETE FROM user_balances");
+    req.log.warn({ rowsDeleted: result.rowCount }, "admin: ledger-wipe-all executed");
+    res.json({ success: true, rowsDeleted: result.rowCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── GET /admin/exchange-wallet ────────────────────────────────────────────────
 // Returns the exchange hot wallet addresses and on-chain balances.
 // These are the addresses the operator must fund to enable auto-withdrawals.
