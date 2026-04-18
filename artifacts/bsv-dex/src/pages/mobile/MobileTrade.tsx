@@ -817,25 +817,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {change >= 0 ? "+" : ""}{change.toFixed(2)}%
             </span>
           </div>
-          {/* Quote currency + cross rates */}
-          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-            <p className="text-xs text-muted-foreground">
-              {convertedPrice !== null
-                ? `≈${quoteSym}${fmt(convertedPrice)}`
-                : `≈$${fmt(priceUSD)}`}
-            </p>
-            {crossBTC > 0 && !isBTCBase && (
-              <span className="text-[11px] text-orange-400 tabular-nums font-medium">
-                ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
-              </span>
-            )}
-            {crossBSV > 0 && !isBSVBase && (
-              <span className="text-[11px] text-yellow-400 tabular-nums font-medium">
-                ⚡ {crossBSV < 0.001 ? crossBSV.toFixed(6) : crossBSV < 1 ? crossBSV.toFixed(4) : crossBSV.toFixed(2)}
-              </span>
-            )}
-          </div>
-          <ContractAddressBadge baseAsset={base} variant="inline" className="mt-1" />
+          {/* Quote currency + cross rates — spot only */}
+          {!isFutures && (
+            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+              <p className="text-xs text-muted-foreground">
+                {convertedPrice !== null
+                  ? `≈${quoteSym}${fmt(convertedPrice)}`
+                  : `≈$${fmt(priceUSD)}`}
+              </p>
+              {crossBTC > 0 && !isBTCBase && (
+                <span className="text-[11px] text-orange-400 tabular-nums font-medium">
+                  ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                </span>
+              )}
+              {crossBSV > 0 && !isBSVBase && (
+                <span className="text-[11px] text-yellow-400 tabular-nums font-medium">
+                  ⚡ {crossBSV < 0.001 ? crossBSV.toFixed(6) : crossBSV < 1 ? crossBSV.toFixed(4) : crossBSV.toFixed(2)}
+                </span>
+              )}
+            </div>
+          )}
+          {!isFutures && <ContractAddressBadge baseAsset={base} variant="inline" className="mt-1" />}
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-2">
@@ -905,20 +907,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           />
         </div>
 
-        {/* ── PERFORMANCE ROW ── */}
-        <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
-          {PERIODS.map(({ label }) => {
-            const pct = (Math.random() * 20 - 10);
-            return (
-              <div key={label} className="shrink-0 text-center">
-                <p className="text-[10px] text-muted-foreground">{label}</p>
-                <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
-                  {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        {/* ── PERFORMANCE ROW — spot only ── */}
+        {!isFutures && (
+          <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
+            {PERIODS.map(({ label }) => {
+              const pct = (Math.random() * 20 - 10);
+              return (
+                <div key={label} className="shrink-0 text-center">
+                  <p className="text-[10px] text-muted-foreground">{label}</p>
+                  <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
+                    {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES / MY ORDERS ── */}
         <div className="flex border-b border-border">
@@ -1841,6 +1845,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         onClose={() => setSelectorOpen(false)}
         currentSymbol={symbol}
         defaultCat={isFutures ? "futures" : "usd"}
+        mode={isFutures ? "futures" : "spot"}
       />
 
       {/* ── NOTIFICATIONS DRAWER ── */}
