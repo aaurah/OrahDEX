@@ -109,11 +109,39 @@
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation:spin 1.2s linear infinite">
           <circle cx="24" cy="24" r="20" stroke="#7c3aed" stroke-width="4" stroke-dasharray="90 30" stroke-linecap="round"/>
         </svg>
-        <span style="font-size:14px;font-weight:600;letter-spacing:.05em;opacity:.8">Loading OrahDEX…</span>
+        <span id="boot-msg" style="font-size:14px;font-weight:600;letter-spacing:.05em;opacity:.8">Loading OrahDEX…</span>
+        <pre id="boot-err" style="display:none;font-size:11px;color:#f87171;background:#1a0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:12px;max-width:90vw;overflow:auto;white-space:pre-wrap;text-align:left;line-height:1.5"></pre>
         <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       </div>
     </div>
     <div id="modal-root" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;"></div>
+
+    <!-- Diagnostic: catch JS errors before React mounts and display them on-screen -->
+    <script>
+      (function(){
+        var shown = false;
+        function showErr(msg, src, line) {
+          if (shown) return;
+          var el = document.getElementById('boot-err');
+          var msgEl = document.getElementById('boot-msg');
+          if (!el) return;
+          shown = true;
+          el.style.display = 'block';
+          el.textContent = (msg || 'Unknown error') + (src ? '\n' + src + (line ? ':' + line : '') : '');
+          if (msgEl) msgEl.textContent = 'Load error — please screenshot this:';
+          var spinEl = document.querySelector('#boot-screen svg');
+          if (spinEl) spinEl.style.display = 'none';
+        }
+        window.addEventListener('error', function(e){ showErr(e.message, e.filename, e.lineno); });
+        window.addEventListener('unhandledrejection', function(e){ showErr(String(e.reason || e), '', ''); });
+        // Timeout: if React hasn't mounted after 12s, show a timeout message
+        setTimeout(function(){
+          if (document.getElementById('boot-screen') && !shown) {
+            showErr('Timed out — app failed to initialize within 12 seconds.\nUA: ' + navigator.userAgent, '', '');
+          }
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
