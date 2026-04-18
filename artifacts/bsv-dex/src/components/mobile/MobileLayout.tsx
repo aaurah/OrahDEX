@@ -11,11 +11,13 @@ import { ChatWidget } from "@/components/ChatWidget";
 const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
 const NAV_TABS = [
-  { path: "/swap",           matchPrefix: "/swap",       label: "Swap",      Icon: ArrowUpDown },
-  { path: "/trade/BSV-USDT", matchPrefix: "/trade",      label: "Trade",     Icon: ArrowRightLeft },
-  { path: "/markets",        matchPrefix: "/markets",    label: "Markets",   Icon: BarChart2 },
-  { path: "/portfolio",      matchPrefix: "/portfolio",  label: "Portfolio", Icon: Briefcase },
-  { path: "/settings",       matchPrefix: "/settings",   label: "Settings",  Icon: Settings },
+  { path: "/swap",                       matchPrefix: "/swap",       label: "Swap",       Icon: ArrowUpDown },
+  { path: "/trade/BSV-USDT",             matchPrefix: "/trade",      label: "Trade",      Icon: ArrowRightLeft },
+  { path: "/futures/BSV-USDT-PERP",      matchPrefix: "/futures",    label: "Futures",    Icon: TrendingUp },
+  { path: "/markets",                    matchPrefix: "/markets",    label: "Markets",    Icon: BarChart2 },
+  { path: "/prediction",                 matchPrefix: "/prediction", label: "Predict",    Icon: Target },
+  { path: "/portfolio",                  matchPrefix: "/portfolio",  label: "Portfolio",  Icon: Briefcase },
+  { path: "/settings",                   matchPrefix: "/settings",   label: "Settings",   Icon: Settings },
 ];
 
 const THEME_CYCLE: Theme[] = ["dark", "light", "amoled", "system"];

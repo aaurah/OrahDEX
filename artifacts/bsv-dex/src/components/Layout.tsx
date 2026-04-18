@@ -24,22 +24,22 @@ const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
 const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
-  { href: "/swap",          label: "Swap",      icon: ArrowUpDown },
-  { href: "/trade/BSV-USDT", label: "Trade",   icon: ArrowRightLeft },
-  { href: "/markets",       label: "Markets",   icon: Activity },
-  { href: "/portfolio",     label: "Portfolio", icon: LayoutDashboard },
+  { href: "/swap",                   label: "Swap",       icon: ArrowUpDown },
+  { href: "/trade/BSV-USDT",         label: "Trade",      icon: ArrowRightLeft },
+  { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
+  { href: "/markets",                label: "Markets",    icon: Activity },
+  { href: "/prediction",             label: "Predict",    icon: Target },
+  { href: "/portfolio",              label: "Portfolio",  icon: LayoutDashboard },
 ];
 
 const NAV_MORE = [
-  { href: "/futures/BSV-USDT-PERP", label: "Futures",    icon: LineChart },
-  { href: "/dex",                   label: "DEX Hub",     icon: Layers },
-  { href: "/p2p",                   label: "P2P",         icon: Users },
-  { href: "/bridge",                label: "Bridge",      icon: Link2 },
-  { href: "/copy",                  label: "CopyVault",   icon: Copy },
-  { href: "/nft",                   label: "NFT",         icon: Sparkles },
-  { href: "/keeper",                label: "Keepers",     icon: Shield },
-  { href: "/fees",                  label: "Revenue",     icon: TrendingUp },
-  { href: "/prediction",            label: "Prediction",  icon: Target },
+  { href: "/dex",     label: "DEX Hub",   icon: Layers },
+  { href: "/p2p",     label: "P2P",       icon: Users },
+  { href: "/bridge",  label: "Bridge",    icon: Link2 },
+  { href: "/copy",    label: "CopyVault", icon: Copy },
+  { href: "/nft",     label: "NFT",       icon: Sparkles },
+  { href: "/keeper",  label: "Keepers",   icon: Shield },
+  { href: "/fees",    label: "Revenue",   icon: TrendingUp },
 ];
 
 const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
