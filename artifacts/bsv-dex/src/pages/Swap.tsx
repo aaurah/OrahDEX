@@ -954,12 +954,6 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
       </div>
 
-      {isNewUser && address && (
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300">
-          <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5 text-violet-400" />
-          <span>First swap unlocks your <b>demo balance</b> — trade instantly with no deposit needed.</span>
-        </div>
-      )}
 
       {/* From */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
