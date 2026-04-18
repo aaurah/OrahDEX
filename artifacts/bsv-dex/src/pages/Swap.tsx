@@ -1071,8 +1071,6 @@ export function Swap() {
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
   // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
-  // Exchange mode (internal ledger) is still available for gas-free instant swaps.
-  const [mode, setMode] = useState<"dex" | "exchange">("dex");
   const [chainId,   setChainId]   = useState<SupportedChainId>(1);
   const tokens = TOKENS[chainId];
 
@@ -1133,10 +1131,6 @@ export function Swap() {
     if (txSuccess) refreshBalances();
   }, [txSuccess, refreshBalances]);
 
-  // Auto-switch to DEX mode when a non-Orah wallet connects
-  useEffect(() => {
-    if (!isOrahWallet) setMode("dex");
-  }, [isOrahWallet]);
 
   // Re-init tokens when chain changes
   useEffect(() => {
@@ -1210,11 +1204,10 @@ export function Swap() {
           const msg: string = authErr?.message ?? "";
           if (msg.startsWith("NO_PASSKEY_WALLET")) {
             toast({
-              title: "Passkey wallet required",
-              description: "On-chain swaps require a passkey wallet. Switching to Exchange mode for instant ledger swaps.",
+              title: "Authentication failed",
+              description: "On-chain swaps require a connected wallet. Please connect your wallet and try again.",
               variant: "destructive",
             });
-            setMode("exchange");
           } else {
             toast({ title: "Authentication failed", description: msg, variant: "destructive" });
           }
@@ -1289,32 +1282,7 @@ export function Swap() {
           <p className="text-sm text-muted-foreground">Trade tokens on-chain or via the OrahDEX exchange</p>
         </div>
 
-        {/* Mode toggle */}
-        <div className="flex rounded-xl border border-border overflow-hidden">
-          <button
-            onClick={() => setMode("dex")}
-            className={cn(
-              "flex-1 py-2 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5",
-              mode === "dex" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Zap className="w-3.5 h-3.5" />
-            On-Chain DEX
-          </button>
-          <button
-            onClick={() => setMode("exchange")}
-            className={cn(
-              "flex-1 py-2 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5",
-              mode === "exchange" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Exchange
-          </button>
-        </div>
-
-        {mode === "dex" ? (
-          <>
+        <>
             {/* Chain selector + Gas top-up */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
@@ -1516,10 +1484,6 @@ export function Swap() {
               </span>
             </div>
           </>
-        ) : (
-          /* ── Exchange mode — real internal AMM swap ── */
-          <ExchangeSwapPanel address={address ?? null} onOpenWallet={openWalletModal} />
-        )}
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
