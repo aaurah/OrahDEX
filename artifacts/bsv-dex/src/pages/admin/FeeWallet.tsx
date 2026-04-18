@@ -98,7 +98,6 @@ function ExchangeHotWalletCard() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          evmAddress: data?.evm.address,
           toAddress: rescueDest.trim(),
           chainId: rescueChain,
         }),

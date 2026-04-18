@@ -5,7 +5,7 @@ import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
-import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
+import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
 import { createPublicClient, createWalletClient, http as viemHttp, parseEther, formatEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -2519,42 +2519,34 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
 // Requires admin auth. Used when a user funded their internal EVM sub-wallet
 // directly and needs funds returned to their main wallet.
 router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
-  const { evmAddress, toAddress, chainId: rawChainId } = req.body ?? {};
+  const { toAddress, chainId: rawChainId } = req.body ?? {};
 
-  if (!evmAddress?.startsWith("0x") || !toAddress?.startsWith("0x")) {
-    res.status(400).json({ error: "evmAddress and toAddress are required (must be 0x…)" });
+  if (!toAddress?.startsWith("0x")) {
+    res.status(400).json({ error: "toAddress is required (must be 0x…)" });
     return;
   }
 
   const chainId = parseInt(String(rawChainId ?? 8453), 10);
   const RPC_URLS: Record<number, string> = {
-    1:     process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",
-    8453:  process.env.BASE_RPC_URL    ?? "https://mainnet.base.org",
-    42161: process.env.ARB_RPC_URL     ?? "https://arb1.arbitrum.io/rpc",
-    10:    process.env.OP_RPC_URL      ?? "https://mainnet.optimism.io",
-    56:    process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",
-    137:   process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+    1:     process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
+    8453:  process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
+    42161: process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
+    10:    process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
+    56:    process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
+    137:   process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
   };
-  const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[1]!;
+  const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[8453]!;
 
   try {
-    const { rows } = await pool.query<{ encrypted_key: string; bsv_address: string }>(
-      `SELECT encrypted_key, bsv_address FROM internal_evm_wallets WHERE LOWER(evm_address) = LOWER($1)`,
-      [evmAddress],
-    );
-    if (!rows[0]) {
-      res.status(404).json({ error: `No internal wallet found for ${evmAddress}` });
-      return;
-    }
-
-    const privKeyHex = decryptEvmKey(rows[0].encrypted_key) as `0x${string}`;
-    const account    = privateKeyToAccount(privKeyHex);
+    // Use the exchange hot wallet key stored in platform_settings (not user wallets table)
+    const hotWallet = await getOrCreateEvmHotWallet();
+    const account   = privateKeyToAccount(hotWallet.privKeyHex);
 
     const publicClient = createPublicClient({ transport: viemHttp(rpcUrl) });
     const balanceWei   = await publicClient.getBalance({ address: account.address as `0x${string}` });
 
     if (balanceWei === 0n) {
-      res.status(400).json({ error: "Wallet has zero balance — nothing to rescue." });
+      res.status(400).json({ error: "Hot wallet has zero balance on this chain — nothing to rescue." });
       return;
     }
 
@@ -2577,7 +2569,7 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
     });
 
     const ethSent = formatEther(sendAmount);
-    req.log.info({ evmAddress, toAddress, txHash, ethSent, chainId }, "admin: rescue-evm-wallet sent");
+    req.log.info({ from: account.address, toAddress, txHash, ethSent, chainId }, "admin: rescue-evm-wallet sent");
 
     res.json({ success: true, txHash, from: account.address, to: toAddress, ethSent, gasCostEth: formatEther(gasCost), chainId });
   } catch (err: any) {
