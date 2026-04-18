@@ -1,16 +1,40 @@
 import { createRoot } from "react-dom/client";
-import { createElement } from "react";
+import { createElement, Component, type ReactNode } from "react";
 import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
 
 applyStoredTheme();
 
+/* ── Root-level error boundary that keeps the app alive even if WagmiProvider crashes ── */
+class RootErrorBoundary extends Component<
+  { children: ReactNode },
+  { crashed: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { crashed: false };
+  }
+  static getDerivedStateFromError() {
+    return { crashed: true };
+  }
+  componentDidCatch(err: Error) {
+    console.warn("[OrahDEX] Root boundary caught error, re-rendering without WagmiProvider:", err.message);
+    /* Fall back to plain App on next tick */
+    setTimeout(() => root.render(createElement(App)), 0);
+  }
+  render() {
+    if (this.state.crashed) return null; /* Briefly blank; App re-renders on next tick */
+    return this.props.children;
+  }
+}
+
 const root = createRoot(document.getElementById("root")!);
 
 /* ── Step 1: Render immediately — fast first paint ── */
 root.render(createElement(App));
 
+/* ── Suppress benign resize-observer noise ── */
 window.addEventListener("error", (e) => {
   if (e.message === "ResizeObserver loop limit exceeded" || e.message === "") {
     e.stopImmediatePropagation();
@@ -19,8 +43,8 @@ window.addEventListener("error", (e) => {
 });
 
 /* ── Step 2: Load Reown/Wagmi asynchronously, then re-render with WagmiProvider ──
-   Admin pages use Wagmi hooks so WagmiProvider must be available, but it's only
-   needed after the user navigates to /admin. We get it ready within ~100ms. */
+   If WagmiProvider throws for any reason (mobile Safari quirks, Wagmi init failure, etc.)
+   the RootErrorBoundary catches it and falls back to the plain App render. ── */
 const reownProjectId = import.meta.env.VITE_REOWN_PROJECT_ID ?? "";
 if (reownProjectId) {
   const initReown = async () => {
@@ -32,17 +56,20 @@ if (reownProjectId) {
       setupReown(reownProjectId);
       const cfg = getWagmiConfig();
       if (cfg) {
-        /* Re-render the whole tree with WagmiProvider — React reconciles, not a full remount */
         root.render(
-          createElement(WagmiProvider, { config: cfg }, createElement(App))
+          createElement(
+            RootErrorBoundary,
+            null,
+            createElement(WagmiProvider, { config: cfg }, createElement(App))
+          )
         );
       }
     } catch (e) {
-      console.warn("[OrahDEX] Reown init failed:", e);
+      console.warn("[OrahDEX] Reown init failed — running without WagmiProvider:", e);
+      /* App is already rendered from Step 1, nothing to do */
     }
   };
 
-  /* Defer until after first paint — but not too long */
   if ("requestIdleCallback" in window) {
     (window as any).requestIdleCallback(initReown, { timeout: 2000 });
   } else {
