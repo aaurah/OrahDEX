@@ -2644,5 +2644,81 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
   }
 });
 
+/* ── GET /admin/arb-bot ───────────────────────────────────────────────────────
+   Returns arb bot status + profit stats.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/arb-bot", requireAdminToken, async (req, res) => {
+  try {
+    const keys = [
+      "arb_bot_enabled", "arb_bot_total_profit", "arb_bot_total_trades",
+      "arb_bot_total_cycles", "arb_bot_last_run", "arb_bot_start_time",
+      "arb_bot_last_cycle_profit", "arb_bot_last_opps_found",
+    ];
+    const { rows } = await pool.query(
+      `SELECT key, value FROM platform_settings WHERE key = ANY($1)`,
+      [keys],
+    );
+    const s: Record<string, string> = {};
+    for (const r of rows) s[r.key] = r.value;
+
+    res.json({
+      enabled:          s["arb_bot_enabled"] === "true",
+      totalProfitUSDT:  parseFloat(s["arb_bot_total_profit"]    ?? "0"),
+      totalTrades:      parseInt(s["arb_bot_total_trades"]      ?? "0"),
+      totalCycles:      parseInt(s["arb_bot_total_cycles"]      ?? "0"),
+      lastRun:          s["arb_bot_last_run"]                   ?? null,
+      startTime:        s["arb_bot_start_time"]                 ?? null,
+      lastCycleProfit:  parseFloat(s["arb_bot_last_cycle_profit"] ?? "0"),
+      lastOppsFound:    parseInt(s["arb_bot_last_opps_found"]   ?? "0"),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── POST /admin/arb-bot/toggle ───────────────────────────────────────────────
+   Enable or disable the arbitrage bot.
+──────────────────────────────────────────────────────────────────────────────── */
+router.post("/arb-bot/toggle", requireAdminToken, async (req, res) => {
+  try {
+    const { enabled } = req.body ?? {};
+    const val = enabled ? "true" : "false";
+    await pool.query(
+      `INSERT INTO platform_settings (key, value, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ["arb_bot_enabled", val],
+    );
+    req.log.info({ enabled }, "admin: arb-bot toggled");
+    res.json({ success: true, enabled });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── POST /admin/arb-bot/reset-stats ─────────────────────────────────────────
+   Reset accumulated profit counters to zero.
+──────────────────────────────────────────────────────────────────────────────── */
+router.post("/arb-bot/reset-stats", requireAdminToken, async (req, res) => {
+  try {
+    const keys = ["arb_bot_total_profit", "arb_bot_total_trades", "arb_bot_total_cycles",
+                  "arb_bot_last_cycle_profit", "arb_bot_start_time", "arb_bot_last_run", "arb_bot_last_opps_found"];
+    for (const key of keys) {
+      const val = key === "arb_bot_start_time" || key === "arb_bot_last_run" ? new Date().toISOString()
+                : key.includes("trades") || key.includes("cycles") || key.includes("opps") ? "0" : "0";
+      await pool.query(
+        `INSERT INTO platform_settings (key, value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        [key, val],
+      );
+    }
+    req.log.info("admin: arb-bot stats reset");
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 export default router;
 
