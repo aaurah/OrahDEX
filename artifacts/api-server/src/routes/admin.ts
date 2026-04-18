@@ -14,6 +14,7 @@ import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
 import { updateMarketPrices } from "../lib/priceUpdater.js";
+import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export const serviceState = {
@@ -2582,6 +2583,72 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin: rescue-evm-wallet failed");
     res.status(500).json({ error: err?.message ?? "Rescue failed" });
+  }
+});
+
+/* ── POST /admin/retry-pending-withdrawals ────────────────────────────────────
+   Retry all pending withdrawal requests. Useful after funding the hot wallet.
+──────────────────────────────────────────────────────────────────────────────── */
+router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      id: string; asset: string; amount: string; network: string; recipient: string; wallet_address: string;
+    }>(
+      `SELECT id, asset, amount, network, recipient, wallet_address
+         FROM withdrawal_requests
+        WHERE status = 'pending'
+        ORDER BY created_at ASC
+        LIMIT 50`,
+    );
+
+    if (rows.length === 0) {
+      res.json({ message: "No pending withdrawals to retry.", processed: 0, succeeded: 0, failed: 0 });
+      return;
+    }
+
+    let succeeded = 0;
+    let failed = 0;
+    const results: { id: string; status: string; txid?: string; error?: string }[] = [];
+
+    for (const row of rows) {
+      try {
+        await pool.query(`UPDATE withdrawal_requests SET status = 'processing' WHERE id = $1`, [row.id]);
+        const result = await processWithdrawal({
+          asset:     row.asset,
+          amount:    parseFloat(row.amount),
+          network:   row.network,
+          recipient: row.recipient,
+        });
+        if (result.status === "completed") {
+          await pool.query(
+            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin' WHERE id = $2`,
+            [result.txid, row.id],
+          );
+          succeeded++;
+          results.push({ id: row.id, status: "completed", txid: result.txid });
+        } else {
+          await pool.query(
+            `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
+            [result.note, row.id],
+          );
+          failed++;
+          results.push({ id: row.id, status: "pending", error: result.note });
+        }
+      } catch (err: any) {
+        await pool.query(
+          `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
+          [err?.message ?? "Retry failed", row.id],
+        );
+        failed++;
+        results.push({ id: row.id, status: "pending", error: err?.message });
+      }
+    }
+
+    req.log.info({ total: rows.length, succeeded, failed }, "admin: retry-pending-withdrawals complete");
+    res.json({ message: `Retried ${rows.length} withdrawal(s).`, processed: rows.length, succeeded, failed, results });
+  } catch (err: any) {
+    req.log.error({ err: err?.message }, "admin: retry-pending-withdrawals error");
+    res.status(500).json({ error: err?.message ?? "Retry failed" });
   }
 });
 

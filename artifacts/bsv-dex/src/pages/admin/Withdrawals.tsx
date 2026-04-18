@@ -443,6 +443,15 @@ export function AdminWithdrawals() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }),
   });
 
+  const retryAll = useMutation({
+    mutationFn: async () => {
+      const r = await adminFetch(`/api/admin/retry-pending-withdrawals`, { method: "POST" });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Retry failed"); }
+      return r.json() as Promise<{ message: string; processed: number; succeeded: number; failed: number }>;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }),
+  });
+
   const displayed = filter === "all" ? withdrawals : withdrawals.filter(w => w.status === filter);
 
   const counts = {
@@ -467,12 +476,29 @@ export function AdminWithdrawals() {
               <p className="text-sm text-muted-foreground">Review, process, and cancel user withdrawal requests</p>
             </div>
           </div>
-          <button
-            onClick={() => refetch()}
-            className={cn("flex items-center gap-2 text-sm border border-border rounded-lg px-3 py-2 hover:bg-muted", isFetching && "opacity-60")}
-          >
-            <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {counts.pending > 0 && (
+              <button
+                onClick={() => retryAll.mutate()}
+                disabled={retryAll.isPending}
+                className={cn("flex items-center gap-2 text-sm border border-amber-500/30 rounded-lg px-3 py-2 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20", retryAll.isPending && "opacity-60")}
+              >
+                <RefreshCw className={cn("w-4 h-4", retryAll.isPending && "animate-spin")} />
+                {retryAll.isPending ? "Retrying…" : `Retry ${counts.pending} Pending`}
+              </button>
+            )}
+            {retryAll.isSuccess && retryAll.data && (
+              <span className="text-xs text-green-400 font-medium">
+                ✓ {(retryAll.data as any).succeeded}/{(retryAll.data as any).processed} sent
+              </span>
+            )}
+            <button
+              onClick={() => refetch()}
+              className={cn("flex items-center gap-2 text-sm border border-border rounded-lg px-3 py-2 hover:bg-muted", isFetching && "opacity-60")}
+            >
+              <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} /> Refresh
+            </button>
+          </div>
         </div>
 
         {isError && (
