@@ -11,11 +11,12 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
   Zap, ExternalLink, AlertTriangle, CheckCircle2,
-  RefreshCw, ArrowRight, Info, Wallet, X,
+  RefreshCw, ArrowRight, Info, Wallet, X, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -1063,6 +1064,7 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
 
 export function Swap() {
   useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
+  const [, setLocation] = useLocation();
 
   const { address, chainId: walletChainId, provider } = useWalletStore();
   const isOrahWallet = provider === "orah-wallet";
@@ -1276,10 +1278,21 @@ export function Swap() {
     <div className="min-h-screen bg-background flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* Header */}
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-extrabold tracking-tight">Swap</h1>
-          <p className="text-sm text-muted-foreground">Trade tokens on-chain or via the OrahDEX exchange</p>
+        {/* Swap / Bridge tab selector */}
+        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40">
+          <button
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-background border border-border/60 shadow-sm text-foreground"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            Swap
+          </button>
+          <button
+            onClick={() => setLocation("/bridge")}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            Bridge
+          </button>
         </div>
 
         <>

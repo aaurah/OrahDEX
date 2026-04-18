@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { useSearch } from "wouter";
+import { useSearch, useLocation } from "wouter";
 import { DepositSheet } from "@/components/trading/DepositSheet";
 import { useSEO } from "@/hooks/useSEO";
 import {
@@ -1508,6 +1508,7 @@ export function BridgePage() {
   const { address: evmAddress, network, chainId } = useWalletStore();
   const { toast } = useToast();
   const searchStr = useSearch();
+  const [, setLocation] = useLocation();
 
   const { data: bsvChain } = useBsvChain();
   const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">(() => {
@@ -1726,12 +1727,25 @@ export function BridgePage() {
         />
       )}
 
+      {/* Swap / Bridge tab selector */}
+      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40 mb-6 max-w-md">
+        <button
+          onClick={() => setLocation("/swap")}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
+        >
+          <ArrowLeftRight className="w-3.5 h-3.5" />
+          Swap
+        </button>
+        <button
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-background border border-border/60 shadow-sm text-foreground"
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          Bridge
+        </button>
+      </div>
+
       {/* ── Header ── */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <Link2 className="w-5 h-5 text-primary" />
-          <span className="text-primary font-semibold text-sm uppercase tracking-widest">Bridge</span>
-        </div>
         <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-1">
           Deposit, Withdraw &amp; Bridge
         </h1>
