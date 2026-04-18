@@ -29,7 +29,7 @@ export function setupReown(projectId: string): void {
         name: "OrahDEX",
         description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
         url: window.location.origin,
-        icons: [`${window.location.origin}/favicon.ico`],
+        icons: [`${window.location.origin}/favicon.svg`, `${window.location.origin}/logo.png`],
       },
       features: {
         analytics: false,
