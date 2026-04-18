@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Layout } from "@/components/Layout";
 import { BiometricLockScreen } from "@/components/BiometricLockScreen";
 import { useBiometricStore } from "@/store/useBiometricStore";
-import { AdminLayout } from "@/components/AdminLayout";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -16,7 +15,9 @@ import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
-import { MobileLayout } from "@/components/mobile/MobileLayout";
+
+const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
+const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
@@ -186,9 +187,11 @@ function RedirectTo({ href }: { href: string }) {
 function AdminRoute({ children }: { children: ReactNode }) {
   return (
     <RequireAdminAuth>
-      <AdminLayout>
-        <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
-      </AdminLayout>
+      <Suspense fallback={<PageSkeleton />}>
+        <AdminLayout>
+          <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
+        </AdminLayout>
+      </Suspense>
     </RequireAdminAuth>
   );
 }
@@ -383,6 +386,7 @@ function Router() {
       {/* ── Mobile layout ── */}
       {isMobile && (
         <Route>
+          <Suspense fallback={<PageSkeleton />}>
           <MobileLayout>
             <Suspense fallback={<PageSkeleton />}>
               <Switch>
@@ -414,6 +418,7 @@ function Router() {
               </Switch>
             </Suspense>
           </MobileLayout>
+          </Suspense>
         </Route>
       )}
 
