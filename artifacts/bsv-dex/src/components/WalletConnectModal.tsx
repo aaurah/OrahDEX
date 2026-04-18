@@ -13,7 +13,7 @@ import { useWalletStore, type WalletNetwork } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
 import { generateMnemonic, deriveAllAddresses, validateMnemonic, type HdWalletAddresses } from "@/lib/seedPhrase";
-import { privateKeyToAccount } from "viem/accounts";
+/* privateKeyToAccount loaded on-demand so viem stays in vendor-wallet chunk */
 import {
   isPasskeySupported,
   registerPasskeyWallet,
@@ -1022,7 +1022,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   /* ── Import wallet — EVM private key ─────────────────────────────────────── */
-  const handleImportPrivateKey = () => {
+  const handleImportPrivateKey = async () => {
     const raw = importPrivKey.trim();
     const pk = raw.startsWith("0x") ? raw : `0x${raw}`;
     if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) {
@@ -1032,6 +1032,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setImportError(null);
     let addr: string;
     try {
+      const { privateKeyToAccount } = await import("viem/accounts");
       addr = privateKeyToAccount(pk as `0x${string}`).address;
     } catch {
       setImportError("Invalid private key — could not derive address");
