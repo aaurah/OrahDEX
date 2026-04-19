@@ -450,7 +450,7 @@ function TokenPicker({
   );
   return (
     <div className="relative">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      {label && <p className="text-xs text-muted-foreground mb-1">{label}</p>}
       <button
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/60 hover:bg-muted border border-border/40 transition-colors min-w-[120px]"
@@ -1169,16 +1169,18 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
 
       {/* From */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>You pay</span>
+        {/* Label + balance */}
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground font-medium">Sell</span>
           {fromBal != null && (
-            <button onClick={() => handleAmountChange(fromBal.toFixed(6))}
-              className="flex items-center gap-1 text-primary font-medium hover:text-primary/80 transition-colors">
-              Balance: <span className="font-mono">{fromBal.toFixed(4)}</span>
-              <span className="text-[10px] px-1 py-0.5 rounded bg-primary/15 font-bold">MAX</span>
-            </button>
+            <span className="text-muted-foreground">
+              Balance:{" "}
+              <span className="font-mono text-foreground font-semibold">{fromBal.toFixed(4)}</span>{" "}
+              {fromAsset}
+            </span>
           )}
         </div>
+        {/* Asset + amount row */}
         <div className="flex items-center gap-2">
           <ExchangeAssetPicker
             value={fromAsset}
@@ -1186,9 +1188,35 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
             exclude={toAsset}
             label="You pay"
           />
-          <input type="number" min="0" placeholder="0.0" value={amount} onChange={e => handleAmountChange(e.target.value)}
-            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40" />
+          <input
+            type="number" min="0" placeholder="0.0" value={amount}
+            onChange={e => handleAmountChange(e.target.value)}
+            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+          />
         </div>
+        {/* Percentage quick-fill */}
+        {fromBal != null && fromBal > 0 && (
+          <div className="flex items-center gap-1.5">
+            {[25, 50, 75].map(pct => (
+              <button
+                key={pct}
+                onClick={() => {
+                  const val = (fromBal * pct / 100).toFixed(6).replace(/\.?0+$/, "") || "0";
+                  handleAmountChange(val);
+                }}
+                className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/40 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+              >
+                {pct}%
+              </button>
+            ))}
+            <button
+              onClick={() => handleAmountChange(fromBal.toFixed(6))}
+              className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-primary/30 text-primary hover:bg-primary/15 transition-colors"
+            >
+              MAX
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Flip */}
@@ -1200,10 +1228,18 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
 
       {/* To */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>You receive</span>
-          {balFor(toAsset) != null && <span className="font-mono">Balance: {balFor(toAsset)!.toFixed(4)}</span>}
+        {/* Label + balance */}
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground font-medium">Buy</span>
+          {balFor(toAsset) != null && (
+            <span className="text-muted-foreground">
+              Balance:{" "}
+              <span className="font-mono text-foreground font-semibold">{balFor(toAsset)!.toFixed(4)}</span>{" "}
+              {toAsset}
+            </span>
+          )}
         </div>
+        {/* Asset + amount row */}
         <div className="flex items-center gap-2">
           <ExchangeAssetPicker
             value={toAsset}
@@ -1211,8 +1247,8 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
             exclude={fromAsset}
             label="You receive"
           />
-          <div className="flex-1 text-2xl font-bold">
-            {quoting ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          <div className="flex-1 text-2xl font-bold text-right">
+            {quoting ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground ml-auto" />
               : <span className={quote ? "text-foreground" : "text-muted-foreground/40"}>
                   {quote ? parseFloat(quote.amountOut).toFixed(6) : "0.0"}
                 </span>}
@@ -1537,33 +1573,65 @@ export function Swap() {
             <div className="rounded-2xl border border-border bg-card shadow-lg space-y-2 p-4">
 
               {/* From */}
-              <div className="rounded-xl bg-muted/40 p-3 space-y-1">
-                <div className="flex items-center justify-between">
+              <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+                {/* Label + balance */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground font-medium">Sell</span>
+                  {fromTokenBalance != null && (
+                    <span className="text-muted-foreground">
+                      Balance:{" "}
+                      <span className="font-mono text-foreground font-semibold">
+                        {fromTokenBalance < 0.0001 && fromTokenBalance > 0
+                          ? fromTokenBalance.toFixed(8)
+                          : fromTokenBalance.toFixed(4)}
+                      </span>{" "}
+                      {fromToken.symbol}
+                    </span>
+                  )}
+                </div>
+                {/* Token + amount row */}
+                <div className="flex items-center gap-2">
                   <TokenPicker
                     tokens={tokens}
                     selected={fromToken}
                     onChange={t => { setFromToken(t); setQuote(null); setAmountIn(""); }}
-                    label="You pay"
+                    label=""
                   />
-                  {fromTokenBalance != null && (
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0.0"
+                    value={amountIn}
+                    onChange={e => handleAmountChange(e.target.value)}
+                    className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+                  />
+                </div>
+                {/* Percentage quick-fill (only when balance is known) */}
+                {fromTokenBalance != null && fromTokenBalance > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    {[25, 50, 75].map(pct => (
+                      <button
+                        key={pct}
+                        onClick={() => {
+                          const raw = fromToken.isNative
+                            ? Math.max(0, fromTokenBalance - 0.002) * pct / 100
+                            : fromTokenBalance * pct / 100;
+                          const val = raw.toFixed(6).replace(/\.?0+$/, "") || "0";
+                          handleAmountChange(val);
+                        }}
+                        className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/40 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                      >
+                        {pct}%
+                      </button>
+                    ))}
                     <button
                       onClick={handleMax}
-                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors ml-2 shrink-0"
+                      className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-primary/30 text-primary bg-primary/8 hover:bg-primary/15 transition-colors"
                     >
-                      <span className="text-muted-foreground">Balance:</span>
-                      <span className="font-mono">{fromTokenBalance < 0.0001 && fromTokenBalance > 0 ? fromTokenBalance.toFixed(8) : fromTokenBalance.toFixed(4)}</span>
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-primary/15 text-primary font-bold">MAX</span>
+                      MAX
                     </button>
-                  )}
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="0.0"
-                  value={amountIn}
-                  onChange={e => handleAmountChange(e.target.value)}
-                  className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 mt-1"
-                />
+                  </div>
+                )}
               </div>
 
               {/* Flip button */}
@@ -1577,26 +1645,39 @@ export function Swap() {
               </div>
 
               {/* To */}
-              <div className="rounded-xl bg-muted/40 p-3 space-y-1">
-                <TokenPicker
-                  tokens={tokens}
-                  selected={toToken}
-                  onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
-                  label="You receive"
-                />
-                {toTokenBalance != null && (
-                  <p className="text-xs text-muted-foreground">
-                    Balance: <span className="font-mono">{toTokenBalance < 0.0001 && toTokenBalance > 0 ? toTokenBalance.toFixed(8) : toTokenBalance.toFixed(4)}</span> {toToken.symbol}
-                  </p>
-                )}
-                <div className="flex items-center gap-2 mt-1">
-                  {quoting ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                  ) : (
-                    <span className={cn("text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
-                      {amountOut ? parseFloat(amountOut).toFixed(6) : "0.0"}
+              <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+                {/* Label + balance */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground font-medium">Buy</span>
+                  {toTokenBalance != null && (
+                    <span className="text-muted-foreground">
+                      Balance:{" "}
+                      <span className="font-mono text-foreground font-semibold">
+                        {toTokenBalance < 0.0001 && toTokenBalance > 0
+                          ? toTokenBalance.toFixed(8)
+                          : toTokenBalance.toFixed(4)}
+                      </span>{" "}
+                      {toToken.symbol}
                     </span>
                   )}
+                </div>
+                {/* Token + amount row */}
+                <div className="flex items-center gap-2">
+                  <TokenPicker
+                    tokens={tokens}
+                    selected={toToken}
+                    onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
+                    label=""
+                  />
+                  <div className="flex-1 text-right">
+                    {quoting ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
+                    ) : (
+                      <span className={cn("text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
+                        {amountOut ? parseFloat(amountOut).toFixed(6) : "0.0"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
