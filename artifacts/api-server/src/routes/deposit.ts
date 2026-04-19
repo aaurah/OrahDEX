@@ -404,6 +404,88 @@ router.post("/deposit/bsv-verify", async (req, res) => {
   }
 });
 
+// ── GET /deposit/altchain-address ─────────────────────────────────────────────
+// Generic handler for any non-EVM, non-BSV, non-SOL chain.
+// Looks up platform_settings for key `{network}_deposit_address`.
+// Admins configure an address by setting e.g. `xrp_deposit_address` in platform_settings.
+router.get("/deposit/altchain-address", async (req, res) => {
+  const network = ((req.query.network as string | undefined) ?? "").toLowerCase().trim();
+  if (!network) {
+    res.status(400).json({ error: "network is required" });
+    return;
+  }
+
+  // Lookup table for human-readable metadata per chain
+  const CHAIN_META: Record<string, { symbol: string; label: string; minDeposit: string; explorerBase: string; addrPrefix?: string }> = {
+    btc:    { symbol: "BTC",   label: "Bitcoin",           minDeposit: "0.0001",  explorerBase: "https://mempool.space",       addrPrefix: "bc1…, 1…, or 3…" },
+    bch:    { symbol: "BCH",   label: "Bitcoin Cash",      minDeposit: "0.001",   explorerBase: "https://explorer.bitcoin.com/bch" },
+    ltc:    { symbol: "LTC",   label: "Litecoin",          minDeposit: "0.01",    explorerBase: "https://blockchair.com/litecoin" },
+    doge:   { symbol: "DOGE",  label: "Dogecoin",          minDeposit: "10",      explorerBase: "https://blockchair.com/dogecoin" },
+    dash:   { symbol: "DASH",  label: "Dash",              minDeposit: "0.01",    explorerBase: "https://blockchair.com/dash" },
+    zec:    { symbol: "ZEC",   label: "Zcash",             minDeposit: "0.01",    explorerBase: "https://blockchair.com/zcash" },
+    xmr:    { symbol: "XMR",   label: "Monero",            minDeposit: "0.01",    explorerBase: "https://xmrchain.net" },
+    xrp:    { symbol: "XRP",   label: "XRP Ledger",        minDeposit: "1",       explorerBase: "https://xrpscan.com" },
+    ada:    { symbol: "ADA",   label: "Cardano",           minDeposit: "2",       explorerBase: "https://cardanoscan.io" },
+    dot:    { symbol: "DOT",   label: "Polkadot",          minDeposit: "0.1",     explorerBase: "https://polkadot.subscan.io" },
+    cosmos: { symbol: "ATOM",  label: "Cosmos Hub",        minDeposit: "0.1",     explorerBase: "https://www.mintscan.io/cosmos" },
+    xlm:    { symbol: "XLM",   label: "Stellar",           minDeposit: "1",       explorerBase: "https://stellar.expert/explorer/public" },
+    near:   { symbol: "NEAR",  label: "NEAR Protocol",     minDeposit: "0.1",     explorerBase: "https://nearblocks.io" },
+    algo:   { symbol: "ALGO",  label: "Algorand",          minDeposit: "1",       explorerBase: "https://algoexplorer.io" },
+    tron:   { symbol: "TRX",   label: "TRON Network",      minDeposit: "1",       explorerBase: "https://tronscan.org" },
+    ton:    { symbol: "TON",   label: "The Open Network",  minDeposit: "0.1",     explorerBase: "https://tonscan.org" },
+    hbar:   { symbol: "HBAR",  label: "Hedera",            minDeposit: "1",       explorerBase: "https://hashscan.io" },
+    vet:    { symbol: "VET",   label: "VeChain",           minDeposit: "100",     explorerBase: "https://vechainstats.com" },
+    icp:    { symbol: "ICP",   label: "Internet Computer", minDeposit: "0.01",    explorerBase: "https://dashboard.internetcomputer.org" },
+    fil:    { symbol: "FIL",   label: "Filecoin",          minDeposit: "0.1",     explorerBase: "https://filfox.info" },
+    sui:    { symbol: "SUI",   label: "Sui Network",       minDeposit: "0.1",     explorerBase: "https://suiscan.xyz" },
+    apt:    { symbol: "APT",   label: "Aptos",             minDeposit: "0.1",     explorerBase: "https://aptoscan.com" },
+    kas:    { symbol: "KAS",   label: "Kaspa",             minDeposit: "10",      explorerBase: "https://explorer.kaspa.org" },
+    stx:    { symbol: "STX",   label: "Stacks",            minDeposit: "1",       explorerBase: "https://explorer.stacks.co" },
+    eos:    { symbol: "EOS",   label: "EOS Network",       minDeposit: "0.1",     explorerBase: "https://bloks.io" },
+    egld:   { symbol: "EGLD",  label: "MultiversX",        minDeposit: "0.01",    explorerBase: "https://explorer.multiversx.com" },
+  };
+
+  const meta = CHAIN_META[network];
+
+  try {
+    const settingKey = `${network}_deposit_address`;
+    const envKey = `${network.toUpperCase()}_DEPOSIT_ADDRESS`;
+
+    const overrideRows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, settingKey));
+
+    const address = overrideRows.length
+      ? overrideRows[0].value
+      : (process.env[envKey] ?? null);
+
+    if (!address) {
+      res.json({
+        network,
+        supported: false,
+        symbol:  meta?.symbol ?? network.toUpperCase(),
+        label:   meta?.label  ?? network.toUpperCase(),
+        message: `${meta?.symbol ?? network.toUpperCase()} exchange deposits are being set up. Please check back soon or contact support.`,
+      });
+      return;
+    }
+
+    res.json({
+      network,
+      supported:       true,
+      address,
+      symbol:          meta?.symbol     ?? network.toUpperCase(),
+      label:           meta?.label      ?? network.toUpperCase(),
+      minDeposit:      meta?.minDeposit ?? "0",
+      explorerAddress: meta?.explorerBase ? `${meta.explorerBase}/address/${address}` : null,
+    });
+  } catch (err) {
+    req.log.error({ err }, `deposit/altchain-address (${network}): failed`);
+    res.status(500).json({ error: "Failed to load deposit address" });
+  }
+});
+
 // ── GET /deposit/solana-address ───────────────────────────────────────────────
 // Returns the platform's Solana deposit address (from platform_settings or env).
 router.get("/deposit/solana-address", async (req, res) => {

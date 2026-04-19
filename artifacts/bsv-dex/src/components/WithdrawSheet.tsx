@@ -35,6 +35,7 @@ import {
   ChevronDown,
   Wallet,
   ArrowRight,
+  Clock,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { CHAIN_RPC_URLS } from "@/lib/reown";
@@ -161,6 +162,54 @@ interface SolanaDepositResponse {
   message?:         string;
 }
 
+interface AltChainDepositResponse {
+  network:          string;
+  supported:        boolean;
+  symbol:           string;
+  label?:           string;
+  address?:         string;
+  minDeposit?:      string;
+  explorerAddress?: string;
+  message?:         string;
+}
+
+// ── per-network address validation ───────────────────────────────────────────
+function validateAltChainAddress(net: string, addr: string): boolean {
+  const n = net.toLowerCase();
+  const a = addr.trim();
+  if (!a || a.length < 4) return false;
+
+  if (n === "xrp")                                             return /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a);
+  if (n === "tron" || n === "trx")                             return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(a);
+  if (n === "ltc")                                             return /^[LMltc][a-km-zA-HJ-NP-Z1-9]{25,40}$|^ltc1[a-z0-9]{39,87}$/.test(a);
+  if (n === "doge")                                            return /^D[5-9A-HJ-NP-Za-km-z]{33}$/.test(a);
+  if (n === "dash")                                            return /^X[1-9A-HJ-NP-Za-km-z]{33}$/.test(a);
+  if (n === "zec")                                             return /^t[13][a-km-zA-HJ-NP-Z1-9]{33}$|^zs[a-z0-9]{76}$/.test(a);
+  if (n === "xmr")                                             return /^4[0-9AB][1-9A-HJ-NP-Za-km-z]{93}$/.test(a);
+  if (n === "xlm")                                             return /^G[A-Z2-7]{55}$/.test(a);
+  if (n === "ton")                                             return /^(EQ|UQ)[a-zA-Z0-9_-]{46}$|^0:[0-9a-fA-F]{64}$/.test(a);
+  if (n === "hbar")                                            return /^\d+\.\d+\.\d+$/.test(a);
+  if (n === "eos")                                             return /^[a-z1-5.]{1,12}$/.test(a);
+  if (n === "near")                                            return /^[a-zA-Z0-9_-]{2,64}(\.near)?$/.test(a) || /^[0-9a-fA-F]{64}$/.test(a);
+  if (n === "ada")                                             return /^addr1[a-z0-9]{98}$|^stake1[a-z0-9]{53}$|^[A-Z][a-zA-Z0-9]{58,103}$/.test(a);
+  if (n === "algo")                                            return /^[A-Z2-7]{58}$/.test(a);
+  if (n === "dot" || n === "ksm")                              return /^[1-9A-HJ-NP-Za-km-z]{46,50}$/.test(a);
+  if (n === "fil")                                             return /^[ft][0-9][a-zA-Z0-9]{38,}$/.test(a);
+  if (n === "kas")                                             return /^kaspa:[a-z0-9]+$/.test(a);
+  if (n === "stx")                                             return /^S[MPT][A-Z0-9]{39}$/.test(a);
+  if (n === "vet")                                             return /^0x[0-9a-fA-F]{40}$/.test(a);
+  if (n === "sui" || n === "apt")                              return /^0x[0-9a-fA-F]{1,64}$/.test(a);
+  if (n === "egld")                                            return /^erd1[a-z0-9]{58}$/.test(a);
+  if (n === "icp")                                             return a.length >= 5 && a.length <= 64;
+  if (["cosmos","atom","osmo","inj","sei","tia","dydx","rune","rune_n"].includes(n))
+    return /^[a-z]{1,20}1[a-z0-9]{38,45}$/.test(a);
+  // BTC — segwit (bc1), legacy (1), P2SH (3)
+  if (n === "btc")                                             return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(a);
+  if (n === "bch")                                             return /^(bitcoincash:)?(q|p)[a-z0-9]{41}$|^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(a);
+  // Permissive fallback — length > 5, no spaces
+  return a.length >= 5 && !/\s/.test(a);
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function summariseNote(raw: string): string {
   if (!raw) return raw;
@@ -224,7 +273,10 @@ export function WithdrawSheet({
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
-  const isNonEvm      = isBitcoinFork || isSolana;
+  const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
+  const isAltChain    = !isBitcoinFork && !isSolana && !isEvmNetwork; // LTC, DOGE, XRP, ADA, TRON, TON, etc.
+  const isNonEvm      = isBitcoinFork || isSolana || isAltChain;
+  const isManualWithdraw = !isEvmNetwork && network.toLowerCase() !== "bsv" && network.toLowerCase() !== "bch";
 
   const [tab,          setTab]          = useState<"deposit" | "withdraw" | "history">(initialTab);
   const [amount,       setAmount]       = useState("");
@@ -351,6 +403,19 @@ export function WithdrawSheet({
     }
   };
 
+  // ── AltChain deposit address ─────────────────────────────────────────────
+  const { data: altchainData, isLoading: altchainLoading } =
+    useQuery<AltChainDepositResponse>({
+      queryKey: ["altchain-deposit-address", network],
+      queryFn: async () => {
+        const r = await fetch(`${API_BASE}/deposit/altchain-address?network=${network.toLowerCase()}`);
+        if (!r.ok) throw new Error("Failed to load");
+        return r.json();
+      },
+      enabled: isAltChain && open && tab === "deposit",
+      staleTime: 300_000,
+    });
+
   // ── BSV tx verify ────────────────────────────────────────────────────────
   const handleBsvVerify = async () => {
     if (!bsvTxHash.trim() || bsvVerifying || !walletAddress) return;
@@ -401,14 +466,9 @@ export function WithdrawSheet({
   const isValidRecipient = (() => {
     const r = recipient.trim();
     if (!r) return false;
-    if (isSolana) {
-      // Solana base58 public key: 32-44 base58 characters
-      return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
-    }
-    if (isBitcoinFork) {
-      // BSV/BTC/BCH P2PKH (starts with 1 or m/n for testnet), or P2SH (starts with 3)
-      return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
-    }
+    if (isSolana)     return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
+    if (isBitcoinFork) return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
+    if (isAltChain)   return validateAltChainAddress(network, r);
     // EVM: 0x + 40 hex chars
     return /^0x[0-9a-fA-F]{40}$/.test(r);
   })();
@@ -944,7 +1004,85 @@ export function WithdrawSheet({
               </div>
             )}
 
-            {/* ── EVM MODE TOGGLE (non-Bitcoin, non-Solana assets) ── */}
+            {/* ── ALTCHAIN: loading ── */}
+            {isAltChain && altchainLoading && (
+              <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading deposit address…</span>
+              </div>
+            )}
+
+            {/* ── ALTCHAIN: exchange address + 24hr credit notice ── */}
+            {isAltChain && !altchainLoading && altchainData?.supported && altchainData.address && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-400" />
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-wide">
+                      OrahDEX {altchainData.symbol} Deposit Address
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    Send <strong className="text-foreground">{altchainData.symbol}</strong> to this address. Your OrahDEX trading balance is credited within <strong className="text-foreground">24 hours</strong> after network confirmation.
+                  </p>
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                      <QRCodeCanvas value={altchainData.address} size={148} level="M" includeMargin={false} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{altchainData.label ?? networkLabel}</p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-blue-500/20">
+                    <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
+                      {altchainData.address}
+                    </span>
+                    <button onClick={() => copy(altchainData.address!, "alt-dep-addr")} className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors">
+                      {copiedId === "alt-dep-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+                  </div>
+                  {altchainData.minDeposit && (
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                        <p className="text-muted-foreground">Accepted asset</p>
+                        <p className="font-bold">{altchainData.symbol} (native)</p>
+                      </div>
+                      <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                        <p className="text-muted-foreground">Min deposit</p>
+                        <p className="font-bold">{altchainData.minDeposit} {altchainData.symbol}</p>
+                      </div>
+                    </div>
+                  )}
+                  {altchainData.explorerAddress && (
+                    <a href={altchainData.explorerAddress} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-[11px] text-blue-400 hover:text-blue-300 transition-colors">
+                      <ExternalLink className="w-3 h-3" /> View address on explorer
+                    </a>
+                  )}
+                </div>
+                <div className="flex gap-2.5 p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
+                  <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    After sending, your deposit will be automatically detected and credited to your OrahDEX balance within 24 hours. No manual verification needed.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── ALTCHAIN: not yet supported ── */}
+            {isAltChain && !altchainLoading && !altchainData?.supported && (
+              <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0" />
+                  <p className="text-xs font-bold text-yellow-400 uppercase tracking-wide">
+                    {altchainData?.symbol ?? network.toUpperCase()} Exchange Deposits Coming Soon
+                  </p>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {altchainData?.message ?? `${network.toUpperCase()} exchange deposits are being set up. Please check back soon or contact support.`}
+                </p>
+              </div>
+            )}
+
+            {/* ── EVM MODE TOGGLE (non-Bitcoin, non-Solana, non-AltChain assets) ── */}
             {!isNonEvm && (<>
 
             {/* Mode toggle: Exchange Address vs Wallet Address */}
@@ -1391,7 +1529,9 @@ export function WithdrawSheet({
                         ? "Invalid Solana address — must be a 32–44 character base58 public key."
                         : isBitcoinFork
                           ? `Invalid ${network.toUpperCase()} address — expected a P2PKH address starting with 1 or 3.`
-                          : "Invalid EVM address — must start with 0x followed by 40 hex characters."}
+                          : isAltChain
+                            ? `Invalid ${networkLabel} address format. Double-check the address from your wallet.`
+                            : "Invalid EVM address — must start with 0x followed by 40 hex characters."}
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
@@ -1402,18 +1542,15 @@ export function WithdrawSheet({
                   )}
                 </div>
 
-                {/* Solana processing notice */}
-                {isSolana && (
-                  <div className="flex gap-2.5 p-3 rounded-xl bg-purple-500/8 border border-purple-500/20">
-                    <AlertCircle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                {/* Processing notice */}
+                {isManualWithdraw ? (
+                  <div className="flex gap-2.5 p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/20">
+                    <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Solana withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your SOL balance will be deducted immediately and the transaction will be broadcast by the OrahDEX team.
+                      {networkLabel} withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your OrahDEX balance is debited immediately upon request.
                     </p>
                   </div>
-                )}
-
-                {/* Processing notice */}
-                {!isSolana && (
+                ) : (
                   <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
                     <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-muted-foreground leading-relaxed">
