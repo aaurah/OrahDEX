@@ -245,6 +245,7 @@ export function MobilePortfolio() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
   const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
+  const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
   const queryClient = useQueryClient();
 
   const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
@@ -643,6 +644,7 @@ export function MobilePortfolio() {
             addressPlaceholder={assetNet.placeholder}
             color={withdrawAsset.color}
             initialTab={withdrawInitialTab}
+            visibleTabs={withdrawVisibleTabs}
           />
         );
       })()}
@@ -741,6 +743,8 @@ export function MobilePortfolio() {
                           <button
                             onClick={() => {
                               setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
+                              setWithdrawInitialTab("withdraw");
+                              setWithdrawVisibleTabs(undefined);
                               setWithdrawOpen(true);
                             }}
                             className="px-2 py-1 rounded-lg text-[10px] font-bold bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 shrink-0"
@@ -928,6 +932,7 @@ export function MobilePortfolio() {
               onClick={() => {
                 setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
                 setWithdrawInitialTab("deposit");
+                setWithdrawVisibleTabs(["deposit"]);
                 setWithdrawOpen(true);
               }}
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-green-600/25 active:opacity-90"
@@ -945,6 +950,7 @@ export function MobilePortfolio() {
                   setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
                 }
                 setWithdrawInitialTab("withdraw");
+                setWithdrawVisibleTabs(["withdraw", "history"]);
                 setWithdrawOpen(true);
               }}
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-600/25 active:opacity-90"
@@ -1119,6 +1125,8 @@ export function MobilePortfolio() {
                           <button
                             onClick={() => {
                               setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
+                              setWithdrawInitialTab("withdraw");
+                              setWithdrawVisibleTabs(undefined);
                               setWithdrawOpen(true);
                             }}
                             className="px-3 py-1.5 rounded-xl text-xs font-bold bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors shrink-0"

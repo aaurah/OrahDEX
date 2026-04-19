@@ -108,6 +108,8 @@ export interface WithdrawSheetProps {
   color?:              string;
   /** Open directly on a specific tab */
   initialTab?:         "deposit" | "withdraw" | "history";
+  /** Restrict which tabs are visible in the tab bar. Defaults to all three. */
+  visibleTabs?:        ("deposit" | "withdraw" | "history")[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,6 +125,7 @@ export function WithdrawSheet({
   addressPlaceholder = "Destination wallet address",
   color = "#6B7280",
   initialTab = "withdraw",
+  visibleTabs,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -259,39 +262,50 @@ export function WithdrawSheet({
             >
               {asset[0]}
             </div>
-            <span>{asset} — Deposit &amp; Withdraw</span>
+            <span>
+              {asset} —{" "}
+              {!visibleTabs || visibleTabs.length === 3
+                ? "Deposit & Withdraw"
+                : visibleTabs.includes("deposit") && !visibleTabs.includes("withdraw")
+                  ? "Deposit"
+                  : visibleTabs.includes("withdraw") && !visibleTabs.includes("deposit")
+                    ? "Withdraw"
+                    : "Deposit & Withdraw"}
+            </span>
           </DialogTitle>
         </DialogHeader>
 
-        {/* Tab bar */}
-        <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
-          {([
-            { key: "deposit",  label: "Deposit",  icon: <Download className="w-3.5 h-3.5" /> },
-            { key: "withdraw", label: "Withdraw", icon: <Upload    className="w-3.5 h-3.5" /> },
-            { key: "history",  label: "History",  icon: <History   className="w-3.5 h-3.5" />, badge: history.length },
-          ] as const).map(t => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all",
-                tab === t.key
-                  ? "bg-primary text-primary-foreground shadow"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <span className="flex items-center justify-center gap-1.5">
-                {t.icon}
-                {t.label}
-                {"badge" in t && t.badge > 0 && (
-                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
-                    {t.badge}
-                  </span>
+        {/* Tab bar — hidden when only one tab is shown */}
+        {(!visibleTabs || visibleTabs.length > 1) && (
+          <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
+            {([
+              { key: "deposit",  label: "Deposit",  icon: <Download className="w-3.5 h-3.5" /> },
+              { key: "withdraw", label: "Withdraw", icon: <Upload    className="w-3.5 h-3.5" /> },
+              { key: "history",  label: "History",  icon: <History   className="w-3.5 h-3.5" />, badge: history.length },
+            ] as const).filter(t => !visibleTabs || visibleTabs.includes(t.key)).map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all",
+                  tab === t.key
+                    ? "bg-primary text-primary-foreground shadow"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
-              </span>
-            </button>
-          ))}
-        </div>
+              >
+                <span className="flex items-center justify-center gap-1.5">
+                  {t.icon}
+                  {t.label}
+                  {"badge" in t && t.badge > 0 && (
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+                      {t.badge}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ── DEPOSIT TAB ──────────────────────────────────────────────────── */}
         {tab === "deposit" && (
