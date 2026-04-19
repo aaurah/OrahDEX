@@ -1557,11 +1557,14 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true); setError("");
     try {
       const image_url = mediaMode === "url" ? form.imageUrl : fileData;
+      const profileRes = await fetch(`${API}/social/creators/${address}`).catch(() => null);
+      const profileData = profileRes?.ok ? await profileRes.json() : null;
+      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(address);
       const res = await fetch(`${API}/social/posts`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           creator: address,
-          creator_name: shortAddr(address),
+          creator_name: creatorName,
           title: form.title,
           description: form.description,
           image_url,
