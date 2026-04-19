@@ -931,7 +931,7 @@ export function MobilePortfolio() {
             </button>
             <button onClick={handleWithdrawAction} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-[11px] active:bg-orange-500/20 transition-colors">
               <Upload size={14} />
-              Withdraw
+              <span className="leading-tight text-center">Deposit &amp; Withdraw</span>
             </button>
             <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-[11px] active:bg-green-500/20 transition-colors">
               <ArrowLeftRight size={14} />
