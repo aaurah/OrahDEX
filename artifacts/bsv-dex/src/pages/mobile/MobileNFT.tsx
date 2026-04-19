@@ -476,10 +476,10 @@ function CreatorProfileSheet({
           <div className="flex items-center gap-4 mb-3">
             <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
             <div className="flex-1 grid grid-cols-3 text-center">
-              <div>
+              <button className="active:opacity-60" onClick={() => setGridTab("posts")}>
                 <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.post_count, posts.length))}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Posts</div>
-              </div>
+              </button>
               <button className="active:opacity-60" onClick={() => openStatSheet("holders")}>
                 <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.holder_count ?? 0)}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
