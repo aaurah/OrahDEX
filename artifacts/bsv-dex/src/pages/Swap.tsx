@@ -1065,7 +1065,8 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
   const [swapping,  setSwapping]  = useState(false);
   const [result,    setResult]    = useState<ExchangeQuote | null>(null);
   const [swapErr,   setSwapErr]   = useState<string | null>(null);
-  const [balances,  setBalances]  = useState<ExBalance[]>([]);
+  const [balances,       setBalances]       = useState<ExBalance[]>([]);
+  const [balancesLoaded, setBalancesLoaded] = useState(false);
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadBalances = useCallback(async () => {
@@ -1075,15 +1076,22 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
       if (r.ok) {
         const data = await r.json();
         setBalances(Array.isArray(data) ? data : (data.balances ?? []));
+        setBalancesLoaded(true);
       }
     } catch { /* ignore */ }
   }, [address]);
 
-  useEffect(() => { loadBalances(); }, [loadBalances]);
+  useEffect(() => {
+    setBalancesLoaded(false);
+    loadBalances();
+  }, [loadBalances]);
 
+  // Returns 0 (not null) once balances have loaded, so percentage buttons always
+  // appear for connected wallets — buttons are disabled when balance is 0.
   const balFor = (asset: string) => {
     const row = balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
-    return row ? parseFloat(row.available) : null;
+    if (row) return parseFloat(row.available);
+    return balancesLoaded ? 0 : null;
   };
 
   const fetchQuote = useCallback(async (val: string) => {
@@ -1194,24 +1202,26 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
             className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
           />
         </div>
-        {/* Percentage quick-fill */}
-        {fromBal != null && fromBal > 0 && (
+        {/* Percentage quick-fill — show whenever balance is loaded (even 0) */}
+        {fromBal != null && (
           <div className="flex items-center gap-1.5">
             {[25, 50, 75].map(pct => (
               <button
                 key={pct}
                 onClick={() => {
-                  const val = (fromBal * pct / 100).toFixed(6).replace(/\.?0+$/, "") || "0";
+                  const val = (fromBal * pct / 100).toFixed(8).replace(/\.?0+$/, "") || "0";
                   handleAmountChange(val);
                 }}
-                className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/40 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                disabled={fromBal <= 0}
+                className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/10 active:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
                 {pct}%
               </button>
             ))}
             <button
-              onClick={() => handleAmountChange(fromBal.toFixed(6))}
-              className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-primary/30 text-primary hover:bg-primary/15 transition-colors"
+              onClick={() => handleAmountChange(fromBal.toFixed(8))}
+              disabled={fromBal <= 0}
+              className="flex-1 py-1 rounded-lg text-[11px] font-bold bg-primary/15 border border-primary/40 text-primary hover:bg-primary/25 active:bg-primary/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               MAX
             </button>
@@ -1613,20 +1623,18 @@ export function Swap() {
                       <button
                         key={pct}
                         onClick={() => {
-                          const raw = fromToken.isNative
-                            ? Math.max(0, fromTokenBalance - 0.002) * pct / 100
-                            : fromTokenBalance * pct / 100;
-                          const val = raw.toFixed(6).replace(/\.?0+$/, "") || "0";
+                          // No gas reserve for partial %; user manages gas themselves
+                          const val = (fromTokenBalance * pct / 100).toFixed(8).replace(/\.?0+$/, "") || "0";
                           handleAmountChange(val);
                         }}
-                        className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/40 text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
+                        className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-border/50 text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/10 active:bg-primary/20 transition-colors"
                       >
                         {pct}%
                       </button>
                     ))}
                     <button
                       onClick={handleMax}
-                      className="flex-1 py-1 rounded-lg text-[11px] font-bold border border-primary/30 text-primary bg-primary/8 hover:bg-primary/15 transition-colors"
+                      className="flex-1 py-1 rounded-lg text-[11px] font-bold bg-primary/15 border border-primary/40 text-primary hover:bg-primary/25 active:bg-primary/30 transition-colors"
                     >
                       MAX
                     </button>
