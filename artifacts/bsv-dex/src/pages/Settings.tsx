@@ -5,7 +5,7 @@ import {
   Fingerprint, AlertCircle, CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
-  Settings as SettingsIcon, Key,
+  Settings as SettingsIcon, Key, Trash2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -18,6 +18,8 @@ import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/st
 import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
+
+const API = import.meta.env.VITE_API_URL ?? "/api";
 
 const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
   { id: "dark",   label: "Dark",   Icon: Moon,       color: "#6366f1" },
@@ -108,6 +110,10 @@ export function WebSettings() {
   const [bioToast, setBioToast] = useState<BiometricToastState>({ show: false });
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const supported = isBiometricSupported();
 
@@ -141,6 +147,28 @@ export function WebSettings() {
     if (window.confirm("Disconnect your wallet?")) {
       if (provider === "reown") await disconnectReown();
       disconnect();
+    }
+  };
+
+  const handleDeleteProfile = async () => {
+    if (!address || deleteConfirmText !== "DELETE") return;
+    setDeleteLoading(true); setDeleteError("");
+    try {
+      const res = await fetch(`${API}/social/creators/${address}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Failed to delete profile");
+      setShowDeleteConfirm(false);
+      if (provider === "reown") await disconnectReown();
+      disconnect();
+      navigate("/");
+    } catch (err: any) {
+      setDeleteError(err.message);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -315,6 +343,82 @@ export function WebSettings() {
           <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
           <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
         </Section>
+
+        {address && (
+          <Section title="Danger Zone">
+            <Row
+              icon={Trash2}
+              iconColor="#ef4444"
+              label="Delete Profile"
+              value="Permanently remove your profile and posts"
+              onClick={() => { setShowDeleteConfirm(true); setDeleteConfirmText(""); setDeleteError(""); }}
+              danger
+            />
+          </Section>
+        )}
+
+        {/* Delete Profile Confirmation Dialog */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md flex flex-col gap-5 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-2xl bg-red-500/10 flex items-center justify-center">
+                  <Trash2 size={18} className="text-red-500" />
+                </div>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-8 h-8 rounded-xl bg-secondary/50 flex items-center justify-center"
+                >
+                  <X size={16} className="text-foreground" />
+                </button>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Delete Profile</h2>
+                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                  This will permanently delete your profile, all posts, mints, follows, and coin data. This action cannot be undone.
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-widest">
+                  Type DELETE to confirm
+                </p>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={e => setDeleteConfirmText(e.target.value.toUpperCase())}
+                  placeholder="DELETE"
+                  className="w-full bg-secondary/40 border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none font-mono"
+                  autoFocus
+                />
+              </div>
+              {deleteError && (
+                <p className="text-sm text-red-400 flex items-center gap-2">
+                  <AlertCircle size={14} /> {deleteError}
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold bg-secondary/40 text-foreground hover:bg-secondary/60 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteProfile}
+                  disabled={deleteConfirmText !== "DELETE" || deleteLoading}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl text-sm font-bold transition-all",
+                    deleteConfirmText === "DELETE" && !deleteLoading
+                      ? "bg-red-500 text-white hover:bg-red-600"
+                      : "bg-secondary/40 text-muted-foreground cursor-not-allowed"
+                  )}
+                >
+                  {deleteLoading ? "Deleting..." : "Delete Permanently"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Branding footer */}
         <div className="flex flex-col items-center py-10 gap-1.5">
