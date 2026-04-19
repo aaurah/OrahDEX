@@ -137,6 +137,18 @@ interface DepositAddressResponse {
   ledgerBalances: Record<string, string>;
 }
 
+interface BitcoinDepositResponse {
+  network:          string;
+  supported:        boolean;
+  symbol:           string;
+  label:            string;
+  address?:         string;
+  minDeposit?:      string;
+  explorerTx?:      string;
+  explorerAddress?: string;
+  message?:         string;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function summariseNote(raw: string): string {
   if (!raw) return raw;
@@ -198,6 +210,8 @@ export function WithdrawSheet({
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
 
+  const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
+
   const [tab,          setTab]          = useState<"deposit" | "withdraw" | "history">(initialTab);
   const [amount,       setAmount]       = useState("");
   const [recipient,    setRecipient]    = useState(defaultRecipient ?? "");
@@ -210,6 +224,8 @@ export function WithdrawSheet({
   const [txHash,       setTxHash]       = useState("");
   const [verifying,    setVerifying]    = useState(false);
   const [showGasCard,  setShowGasCard]  = useState(false);
+  const [bsvTxHash,    setBsvTxHash]    = useState("");
+  const [bsvVerifying, setBsvVerifying] = useState(false);
 
   // ── deposit-from-wallet state ────────────────────────────────────────────
   const [depFromWalletBalance,  setDepFromWalletBalance]  = useState<number | null>(null);
@@ -247,6 +263,7 @@ export function WithdrawSheet({
       setDepFromWalletError(null);
       setDepFromWalletAmount("");
       setDepFromWalletBalance(null);
+      setBsvTxHash("");
     }
   }, [open, defaultRecipient, initialTab]);
 
@@ -265,6 +282,44 @@ export function WithdrawSheet({
       enabled: !!walletAddress && open && tab === "deposit",
       staleTime: 60_000,
     });
+
+  // ── bitcoin (BSV/BTC/BCH) deposit address ────────────────────────────────
+  const { data: bitcoinDepositData, isLoading: bitcoinDepositLoading } =
+    useQuery<BitcoinDepositResponse>({
+      queryKey: ["bitcoin-deposit-address", network],
+      queryFn: async () => {
+        const r = await fetch(`${API_BASE}/deposit/bitcoin-address?network=${network.toLowerCase()}`);
+        if (!r.ok) throw new Error("Failed to load");
+        return r.json();
+      },
+      enabled: isBitcoinFork && open && tab === "deposit",
+      staleTime: 300_000,
+    });
+
+  // ── BSV tx verify ────────────────────────────────────────────────────────
+  const handleBsvVerify = async () => {
+    if (!bsvTxHash.trim() || bsvVerifying || !walletAddress) return;
+    setBsvVerifying(true);
+    try {
+      const r = await fetch(`${API_BASE}/deposit/bsv-verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress, txHash: bsvTxHash.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast({ title: "Verification failed", description: data.error ?? "Could not verify transaction", variant: "destructive" });
+      } else {
+        toast({ title: "BSV deposit credited!", description: `${data.amount} BSV has been added to your trading balance.` });
+        addNotification({ type: "deposit", title: "BSV Deposit Credited", body: `${data.amount} BSV added to your exchange balance.` });
+        setBsvTxHash("");
+      }
+    } catch {
+      toast({ title: "Verification failed", description: "Network error — please try again.", variant: "destructive" });
+    } finally {
+      setBsvVerifying(false);
+    }
+  };
 
   // ── withdrawal history ───────────────────────────────────────────────────
   const { data: history = [], refetch: refetchHistory } = useQuery<WithdrawHistoryItem[]>({
@@ -571,6 +626,169 @@ export function WithdrawSheet({
         {tab === "deposit" && (
           <div className="space-y-4">
 
+            {/* ── BITCOIN FORK DEPOSIT UI (BSV / BTC / BCH) ── */}
+            {isBitcoinFork && bitcoinDepositLoading && (
+              <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading deposit address…</span>
+              </div>
+            )}
+
+            {isBitcoinFork && !bitcoinDepositLoading && bitcoinDepositData?.supported && (
+              <div className="space-y-3">
+                    {/* Mode toggle */}
+                    <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
+                      <button
+                        onClick={() => setDepositMode("exchange")}
+                        className={cn("flex-1 py-2 rounded-lg text-xs font-bold transition-all",
+                          depositMode === "exchange" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >Exchange Address</button>
+                      <button
+                        onClick={() => setDepositMode("wallet")}
+                        className={cn("flex-1 py-2 rounded-lg text-xs font-bold transition-all",
+                          depositMode === "wallet" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >Wallet Address</button>
+                    </div>
+
+                    {depositMode === "exchange" && bitcoinDepositData.address && (
+                      <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-orange-400" />
+                          <p className="text-xs font-bold text-orange-400 uppercase tracking-wide">OrahDEX {bitcoinDepositData.symbol} Deposit Address</p>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground -mt-1">
+                          Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong>.
+                        </p>
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="p-3 bg-white rounded-xl shadow-sm">
+                            <QRCodeCanvas value={bitcoinDepositData.address} size={148} level="M" includeMargin={false} />
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">{bitcoinDepositData.label} Network</p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-orange-500/20">
+                          <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
+                            {bitcoinDepositData.address}
+                          </span>
+                          <button onClick={() => copy(bitcoinDepositData.address!, "btc-dep-addr")} className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors">
+                            {copiedId === "btc-dep-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                            <p className="text-muted-foreground">Accepted asset</p>
+                            <p className="font-bold">{bitcoinDepositData.symbol} (native)</p>
+                          </div>
+                          <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                            <p className="text-muted-foreground">Min deposit</p>
+                            <p className="font-bold">{bitcoinDepositData.minDeposit} {bitcoinDepositData.symbol}</p>
+                          </div>
+                        </div>
+
+                        {/* BSV verify TX */}
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold">I've sent funds — verify deposit</label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={bsvTxHash}
+                              onChange={e => setBsvTxHash(e.target.value.trim())}
+                              placeholder="BSV transaction ID (txid)"
+                              className="font-mono text-xs flex-1"
+                            />
+                            <Button onClick={handleBsvVerify} disabled={!bsvTxHash.trim() || bsvVerifying} size="sm" className="shrink-0 gap-1.5">
+                              {bsvVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                              Verify
+                            </Button>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground">
+                            Paste the transaction ID from your BSV wallet after sending. Funds are credited instantly upon confirmation.
+                          </p>
+                        </div>
+
+                        {bitcoinDepositData.explorerAddress && (
+                          <a href={bitcoinDepositData.explorerAddress} target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-[11px] text-orange-400 hover:text-orange-300 transition-colors">
+                            <ExternalLink className="w-3 h-3" /> View address on explorer
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {depositMode === "wallet" && (
+                      <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-green-400" />
+                          <p className="text-xs font-bold text-green-400 uppercase tracking-wide">Your Personal {bitcoinDepositData.symbol} Wallet Address</p>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground -mt-2">
+                          Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your OrahDEX trading balance. Use this for personal receives.
+                        </p>
+                        {walletAddress && /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress) ? (
+                          <>
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="p-3 bg-white rounded-xl shadow-sm">
+                                <QRCodeCanvas value={walletAddress} size={148} level="M" includeMargin={false} />
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">{bitcoinDepositData.label} · P2PKH</p>
+                            </div>
+                            <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-green-500/20">
+                              <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">{walletAddress}</span>
+                              <button onClick={() => copy(walletAddress, "bsv-wallet-addr")} className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors">
+                                {copiedId === "bsv-wallet-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 py-6 text-muted-foreground">
+                            <AlertCircle className="w-8 h-8 opacity-40" />
+                            <p className="text-sm text-center">Connect a {bitcoinDepositData.symbol} wallet to see your personal address.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+              </div>
+            )}
+
+            {/* ── BTC/BCH: coming soon ── */}
+            {isBitcoinFork && !bitcoinDepositLoading && !bitcoinDepositData?.supported && (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0" />
+                    <p className="text-xs font-bold text-yellow-400 uppercase tracking-wide">Exchange Deposit Coming Soon</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {bitcoinDepositData?.message ?? `${network.toUpperCase()} exchange deposits are not yet available. You can still receive ${network.toUpperCase()} to your personal wallet address below.`}
+                  </p>
+                </div>
+
+                {walletAddress && (
+                  <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-400" />
+                      <p className="text-xs font-bold text-green-400 uppercase tracking-wide">Your Personal Wallet Address</p>
+                    </div>
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="p-3 bg-white rounded-xl shadow-sm">
+                        <QRCodeCanvas value={walletAddress} size={148} level="M" includeMargin={false} />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{networkLabel}</p>
+                    </div>
+                    <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-green-500/20">
+                      <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">{walletAddress}</span>
+                      <button onClick={() => copy(walletAddress, "btc-wallet-addr")} className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors">
+                        {copiedId === "btc-wallet-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── EVM MODE TOGGLE (non-Bitcoin assets) ── */}
+            {!isBitcoinFork && (<>
+
             {/* Mode toggle: Exchange Address vs Wallet Address */}
             <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
               <button
@@ -863,8 +1081,10 @@ export function WithdrawSheet({
               </div>
             )}
 
-            {/* Gas top-up card — collapsible */}
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
+            </>)}
+
+            {/* Gas top-up card — collapsible (EVM only) */}
+            {!isBitcoinFork && (<div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
               <button
                 onClick={() => setShowGasCard(v => !v)}
                 className="w-full flex items-center gap-2.5 px-3.5 py-3 text-sm font-semibold text-amber-400 hover:bg-amber-500/5 transition-colors"
@@ -904,7 +1124,7 @@ export function WithdrawSheet({
                   </div>
                 </div>
               )}
-            </div>
+            </div>)}
           </div>
         )}
 

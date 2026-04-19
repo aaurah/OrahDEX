@@ -16,6 +16,11 @@ import {
 } from "../lib/depositAddresses.js";
 import { creditAvailable, getBalances } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
+import { getOrCreateWallet } from "../lib/bsvWallet.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { db } from "@workspace/db";
+import { platformSettingsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 
 const router = Router();
 
@@ -286,6 +291,116 @@ router.get("/deposit/history", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "deposit/history: failed");
     res.status(500).json({ error: "Failed to fetch deposit history" });
+  }
+});
+
+// ── GET /deposit/bitcoin-address?network=bsv|btc|bch ─────────────────────────
+// Returns the exchange deposit address for BSV (and info for BTC/BCH).
+// BSV uses the platform settlement wallet; BTC/BCH returns supported: false.
+router.get("/deposit/bitcoin-address", async (req, res) => {
+  const network = ((req.query.network as string) ?? "bsv").toLowerCase();
+
+  if (network !== "bsv") {
+    res.json({
+      network,
+      supported: false,
+      symbol: network.toUpperCase(),
+      label: network === "btc" ? "Bitcoin" : "Bitcoin Cash",
+      message: `${network.toUpperCase()} exchange deposits are coming soon. Use your personal wallet address to receive.`,
+    });
+    return;
+  }
+
+  try {
+    const wallet = await getOrCreateWallet();
+    const overrideRows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+    const address = overrideRows.length ? overrideRows[0].value : wallet.address;
+
+    res.json({
+      network:         "bsv",
+      supported:       true,
+      address,
+      symbol:          "BSV",
+      label:           "Bitcoin SV",
+      minDeposit:      "0.001",
+      explorerTx:      `${BSV_NET.explorerBase}/tx/`,
+      explorerAddress: `${BSV_NET.explorerBase}/address/${address}`,
+    });
+  } catch (err) {
+    req.log.error({ err }, "deposit/bitcoin-address: failed");
+    res.status(500).json({ error: "Failed to load BSV deposit address" });
+  }
+});
+
+// ── POST /deposit/bsv-verify ──────────────────────────────────────────────────
+// Verifies a BSV on-chain transaction and credits the internal ledger.
+// Body: { walletAddress, txHash }
+router.post("/deposit/bsv-verify", async (req, res) => {
+  const { walletAddress, txHash } = req.body ?? {};
+
+  if (!walletAddress || !txHash) {
+    res.status(400).json({ error: "walletAddress and txHash are required" });
+    return;
+  }
+
+  try {
+    const wallet = await getOrCreateWallet();
+    const overrideRows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
+    const depositAddress = overrideRows.length ? overrideRows[0].value : wallet.address;
+
+    // Guard: double-credit check (use chainId=0 for BSV)
+    const alreadyCredited = await isDepositAlreadyCredited(txHash, 0);
+    if (alreadyCredited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
+
+    // Fetch tx from WhatsOnChain
+    const txRes = await fetch(`${BSV_NET.wocBase}/tx/hash/${txHash}`);
+    if (!txRes.ok) {
+      res.status(400).json({ error: "Transaction not found on BSV chain. Please wait for confirmation and try again." });
+      return;
+    }
+
+    const tx = await txRes.json() as { vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[] };
+
+    // Find output paying to deposit address
+    const output = tx.vout?.find(o =>
+      o.scriptPubKey?.addresses?.some(a => a.toLowerCase() === depositAddress.toLowerCase())
+    );
+
+    if (!output) {
+      res.status(400).json({ error: "Transaction does not send BSV to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      return;
+    }
+
+    const bsvAmount = output.value;
+    if (bsvAmount < 0.001) {
+      res.status(400).json({ error: `Deposit amount ${bsvAmount} BSV is below the minimum of 0.001 BSV.` });
+      return;
+    }
+
+    // Credit and record
+    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
+    await recordVerifiedDeposit({
+      txHash,
+      chainId:    0,
+      userWallet: walletAddress,
+      asset:      "BSV",
+      amount:     String(bsvAmount),
+    });
+
+    req.log.info({ walletAddress, txHash, bsvAmount }, "BSV deposit credited");
+    res.json({ success: true, asset: "BSV", amount: bsvAmount, txHash });
+  } catch (err) {
+    req.log.error({ err }, "deposit/bsv-verify: failed");
+    res.status(500).json({ error: "Failed to verify BSV transaction" });
   }
 });
 
