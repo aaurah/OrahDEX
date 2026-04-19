@@ -490,4 +490,27 @@ router.get("/social/trending-coins", async (req, res) => {
   }
 });
 
+/* ── DELETE /social/creators/:address ────────────────────────────────────── */
+router.delete("/social/creators/:address", async (req, res) => {
+  try {
+    const { address } = req.params;
+    const { confirm } = req.body as Record<string, string>;
+    if (confirm !== "DELETE") {
+      res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
+      return;
+    }
+    await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
+    await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
+    await pool.query("DELETE FROM post_comments   WHERE author = $1",                       [address]);
+    await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
+    await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
+    await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
+    await pool.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
+    await pool.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 export default router;
