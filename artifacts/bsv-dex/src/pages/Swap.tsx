@@ -1378,11 +1378,13 @@ export function Swap() {
 
   const handleMax = () => {
     if (fromTokenBalance == null) return;
-    // Leave a small gas buffer for native asset swaps
-    const maxAmt = fromToken.isNative
-      ? Math.max(0, fromTokenBalance - 0.002)
+    // Reserve gas for native swaps only when balance is comfortably above the buffer.
+    // If balance ≤ 0.002 ETH, use the full amount — the wallet will warn on gas.
+    const gasBuffer = 0.002;
+    const maxAmt = fromToken.isNative && fromTokenBalance > gasBuffer
+      ? fromTokenBalance - gasBuffer
       : fromTokenBalance;
-    const val = maxAmt.toFixed(6).replace(/\.?0+$/, "") || "0";
+    const val = maxAmt.toFixed(8).replace(/\.?0+$/, "") || "0";
     setAmountIn(val);
     setTxHash(null); setTxSuccess(false);
     if (debounceRef.current) clearTimeout(debounceRef.current);
