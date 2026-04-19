@@ -645,6 +645,7 @@ export function MobilePortfolio() {
             color={withdrawAsset.color}
             initialTab={withdrawInitialTab}
             visibleTabs={withdrawVisibleTabs}
+            isOrahWallet={provider === "orah-wallet"}
           />
         );
       })()}

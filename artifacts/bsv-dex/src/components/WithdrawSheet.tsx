@@ -9,7 +9,7 @@
  * History tab  — past withdrawals with status badges, gas-shortage banner.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,8 +33,12 @@ import {
   RefreshCw,
   Fuel,
   ChevronDown,
+  Wallet,
+  ArrowRight,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { CHAIN_RPC_URLS } from "@/lib/reown";
+import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -48,6 +52,67 @@ const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: strin
   { id: 8453, label: "Base",             short: "Base",     color: "#0052FF" },
   { id: 56,   label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
 ];
+
+// ── wallet-send chain & token registry ───────────────────────────────────────
+interface WalletChain  { id: number; name: string; symbol: string; color: string; explorer: string }
+interface WalletToken  { symbol: string; decimals: number; isNative: boolean; address: string | null; color: string }
+
+const WALLET_CHAINS: WalletChain[] = [
+  { id: 8453,  name: "Base",      symbol: "ETH",  color: "#0052FF", explorer: "https://basescan.org/tx/" },
+  { id: 1,     name: "Ethereum",  symbol: "ETH",  color: "#627EEA", explorer: "https://etherscan.io/tx/" },
+  { id: 56,    name: "BSC",       symbol: "BNB",  color: "#F0B90B", explorer: "https://bscscan.com/tx/" },
+  { id: 42161, name: "Arbitrum",  symbol: "ETH",  color: "#28A0F0", explorer: "https://arbiscan.io/tx/" },
+  { id: 10,    name: "Optimism",  symbol: "ETH",  color: "#FF0420", explorer: "https://optimistic.etherscan.io/tx/" },
+  { id: 137,   name: "Polygon",   symbol: "POL",  color: "#8247E5", explorer: "https://polygonscan.com/tx/" },
+  { id: 43114, name: "Avalanche", symbol: "AVAX", color: "#E84142", explorer: "https://snowtrace.io/tx/" },
+];
+
+const WALLET_TOKENS: Record<number, WalletToken[]> = {
+  8453:  [
+    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", color: "#3B82F6" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", color: "#22C55E" },
+    { symbol: "WETH", decimals: 18, isNative: false, address: "0x4200000000000000000000000000000000000006", color: "#8B5CF6" },
+  ],
+  1:     [
+    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", color: "#22C55E" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", color: "#3B82F6" },
+    { symbol: "WBTC", decimals: 8,  isNative: false, address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", color: "#F97316" },
+  ],
+  56:    [
+    { symbol: "BNB",  decimals: 18, isNative: true,  address: null,                                       color: "#F0B90B" },
+    { symbol: "USDT", decimals: 18, isNative: false, address: "0x55d398326f99059fF775485246999027B3197955", color: "#22C55E" },
+    { symbol: "USDC", decimals: 18, isNative: false, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", color: "#3B82F6" },
+  ],
+  42161: [
+    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", color: "#3B82F6" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", color: "#22C55E" },
+  ],
+  10:    [
+    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", color: "#3B82F6" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", color: "#22C55E" },
+  ],
+  137:   [
+    { symbol: "POL",  decimals: 18, isNative: true,  address: null,                                       color: "#8247E5" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", color: "#22C55E" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", color: "#3B82F6" },
+  ],
+  43114: [
+    { symbol: "AVAX", decimals: 18, isNative: true,  address: null,                                       color: "#E84142" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", color: "#3B82F6" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", color: "#22C55E" },
+  ],
+};
+
+// minimal ERC-20 transfer ABI
+const ERC20_TRANSFER_ABI = [{
+  name: "transfer", type: "function", stateMutability: "nonpayable",
+  inputs:  [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }],
+  outputs: [{ name: "", type: "bool" }],
+}] as const;
 
 // ── types ────────────────────────────────────────────────────────────────────
 interface WithdrawHistoryItem {
@@ -110,6 +175,8 @@ export interface WithdrawSheetProps {
   initialTab?:         "deposit" | "withdraw" | "history";
   /** Restrict which tabs are visible in the tab bar. Defaults to all three. */
   visibleTabs?:        ("deposit" | "withdraw" | "history")[];
+  /** Whether this is a passkey / orah-wallet — enables "Send from Wallet" mode */
+  isOrahWallet?:       boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +193,7 @@ export function WithdrawSheet({
   color = "#6B7280",
   initialTab = "withdraw",
   visibleTabs,
+  isOrahWallet = false,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -143,6 +211,18 @@ export function WithdrawSheet({
   const [verifying,    setVerifying]    = useState(false);
   const [showGasCard,  setShowGasCard]  = useState(false);
 
+  // ── wallet send state ────────────────────────────────────────────────────
+  const [withdrawSource,      setWithdrawSource]      = useState<"exchange" | "wallet">("exchange");
+  const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(WALLET_CHAINS[0]); // Base default
+  const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(WALLET_TOKENS[WALLET_CHAINS[0].id][0]);
+  const [walletSendBalance,   setWalletSendBalance]   = useState<number | null>(null);
+  const [walletSendBalFetch,  setWalletSendBalFetch]  = useState(false);
+  const [walletSendAmount,    setWalletSendAmount]    = useState("");
+  const [walletSendRecipient, setWalletSendRecipient] = useState("");
+  const [walletSending,       setWalletSending]       = useState(false);
+  const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
+  const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
+
   useEffect(() => {
     if (open) {
       setTab(initialTab);
@@ -150,6 +230,11 @@ export function WithdrawSheet({
       setRecipient(defaultRecipient ?? "");
       setSubmitted(false);
       setTxHash("");
+      setWithdrawSource("exchange");
+      setWalletSendTxHash(null);
+      setWalletSendError(null);
+      setWalletSendAmount("");
+      setWalletSendRecipient("");
     }
   }, [open, defaultRecipient, initialTab]);
 
@@ -211,6 +296,105 @@ export function WithdrawSheet({
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ── wallet send: balance fetch ───────────────────────────────────────────
+  const fetchWalletBalance = useCallback(async (chain: WalletChain, token: WalletToken) => {
+    if (!walletAddress) return;
+    setWalletSendBalance(null);
+    setWalletSendBalFetch(true);
+    try {
+      const rpc = CHAIN_RPC_URLS[chain.id];
+      if (!rpc) return;
+
+      if (token.isNative) {
+        const res = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [walletAddress, "latest"] }),
+        });
+        const { result } = await res.json();
+        setWalletSendBalance(Number(BigInt(result ?? "0x0")) / 1e18);
+      } else if (token.address) {
+        // balanceOf(address) → 0x70a08231 + padded address
+        const data = "0x70a08231" + walletAddress.toLowerCase().replace("0x", "").padStart(64, "0");
+        const res = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: token.address, data }, "latest"] }),
+        });
+        const { result } = await res.json();
+        const raw = BigInt(result ?? "0x0");
+        setWalletSendBalance(Number(raw) / Math.pow(10, token.decimals));
+      }
+    } catch {
+      setWalletSendBalance(null);
+    } finally {
+      setWalletSendBalFetch(false);
+    }
+  }, [walletAddress]);
+
+  useEffect(() => {
+    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet) {
+      fetchWalletBalance(walletSendChain, walletSendToken);
+    }
+  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahWallet, fetchWalletBalance]);
+
+  // ── wallet send: broadcast ───────────────────────────────────────────────
+  const handleWalletSend = async () => {
+    const parsedWalletAmount = parseFloat(walletSendAmount);
+    if (!parsedWalletAmount || !walletSendRecipient.trim() || walletSending) return;
+    setWalletSending(true);
+    setWalletSendError(null);
+    try {
+      toast({ title: "Biometric authentication", description: "Authenticate with Face ID / Touch ID to sign the transfer…" });
+      const account = await getViemAccountForOrahWallet(walletAddress);
+
+      const { createWalletClient, http, parseEther, parseUnits } = await import("viem");
+      // build minimal chain object viem needs
+      const chainDef = {
+        id:         walletSendChain.id,
+        name:       walletSendChain.name,
+        nativeCurrency: { name: walletSendChain.symbol, symbol: walletSendChain.symbol, decimals: 18 },
+        rpcUrls:    { default: { http: [CHAIN_RPC_URLS[walletSendChain.id]] } },
+      } as const;
+
+      const walletClient = createWalletClient({ account, chain: chainDef as any, transport: http(CHAIN_RPC_URLS[walletSendChain.id]) });
+
+      let hash: `0x${string}`;
+      if (walletSendToken.isNative) {
+        hash = await walletClient.sendTransaction({
+          to:    walletSendRecipient.trim() as `0x${string}`,
+          value: parseEther(walletSendAmount),
+        });
+      } else {
+        hash = await walletClient.writeContract({
+          address:      walletSendToken.address as `0x${string}`,
+          abi:          ERC20_TRANSFER_ABI,
+          functionName: "transfer",
+          args: [
+            walletSendRecipient.trim() as `0x${string}`,
+            parseUnits(walletSendAmount, walletSendToken.decimals),
+          ],
+        });
+      }
+
+      setWalletSendTxHash(hash);
+      toast({ title: "Transaction sent!", description: `${walletSendAmount} ${walletSendToken.symbol} is being confirmed on-chain.` });
+      addNotification({
+        type: "withdrawal",
+        title: "On-Chain Transfer Sent",
+        body: `${walletSendAmount} ${walletSendToken.symbol} sent on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
+      });
+      // refresh balance after a short delay
+      setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken), 4000);
+    } catch (err: any) {
+      const msg = err.shortMessage ?? err.message ?? "Transaction failed";
+      setWalletSendError(msg);
+      toast({ title: "Transfer failed", description: msg, variant: "destructive" });
+    } finally {
+      setWalletSending(false);
     }
   };
 
@@ -554,87 +738,314 @@ export function WithdrawSheet({
         {tab === "withdraw" && !submitted && (
           <div className="space-y-4">
 
-            {/* Gas warning banner (if previous withdrawals failed due to gas) */}
-            {hasGasError && (
-              <button
-                onClick={() => { setTab("deposit"); setShowGasCard(true); }}
-                className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
-              >
-                <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-amber-400">Withdrawal pending — gas needed</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Tap to see how to fund the exchange gas wallet →</p>
-                </div>
-              </button>
-            )}
-
-            {/* Balance summary */}
-            <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-1.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">OrahDEX Balance</span>
-                <span className="font-bold font-mono" style={{ color }}>
-                  {available.toLocaleString(undefined, { maximumFractionDigits: available < 0.0001 ? 8 : 6 })} {asset}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Destination network</span>
-                <span className="font-medium">{networkLabel}</span>
-              </div>
-            </div>
-
-            {/* Amount */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold">Amount to withdraw</label>
-              <div className="relative">
-                <Input
-                  value={amount}
-                  onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                  placeholder="0.00"
-                  className={cn("pr-16 font-mono text-base", exceedsBalance && "border-red-500/60 focus-visible:ring-red-500/30")}
-                />
+            {/* Source toggle — only for passkey wallet users */}
+            {isOrahWallet && (
+              <div className="flex rounded-xl bg-secondary/40 border border-border p-1 gap-1">
                 <button
-                  type="button"
-                  onClick={() => setAmount(available.toFixed(available < 0.0001 ? 8 : 6))}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                  onClick={() => setWithdrawSource("exchange")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                    withdrawSource === "exchange"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  MAX
+                  <Upload className="w-3.5 h-3.5" />
+                  Exchange Balance
+                </button>
+                <button
+                  onClick={() => setWithdrawSource("wallet")}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                    withdrawSource === "wallet"
+                      ? "bg-green-600 text-white shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  My Wallet
                 </button>
               </div>
-              {exceedsBalance && (
-                <p className="text-xs text-red-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> Exceeds available OrahDEX balance
-                </p>
-              )}
-            </div>
+            )}
 
-            {/* Recipient */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold">Withdrawal address</label>
-              <Input
-                value={recipient}
-                onChange={e => setRecipient(e.target.value)}
-                placeholder={addressPlaceholder}
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                {walletAddress
-                  ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
-                  : `Enter a valid ${networkLabel} address.`}
-              </p>
-            </div>
+            {/* ── EXCHANGE SOURCE ── */}
+            {withdrawSource === "exchange" && (
+              <>
+                {/* Gas warning banner */}
+                {hasGasError && (
+                  <button
+                    onClick={() => { setTab("deposit"); setShowGasCard(true); }}
+                    className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
+                  >
+                    <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-amber-400">Withdrawal pending — gas needed</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Tap to see how to fund the exchange gas wallet →</p>
+                    </div>
+                  </button>
+                )}
 
-            {/* Processing notice */}
-            <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-              <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
-              </p>
-            </div>
+                {/* Balance summary */}
+                <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">OrahDEX Balance</span>
+                    <span className="font-bold font-mono" style={{ color }}>
+                      {available.toLocaleString(undefined, { maximumFractionDigits: available < 0.0001 ? 8 : 6 })} {asset}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Destination network</span>
+                    <span className="font-medium">{networkLabel}</span>
+                  </div>
+                </div>
 
-            <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full gap-2 h-11">
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              {submitting ? "Submitting…" : `Withdraw${parsedAmount > 0 ? ` ${parsedAmount}` : ""} ${asset}`}
-            </Button>
+                {/* Amount */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Amount to withdraw</label>
+                  <div className="relative">
+                    <Input
+                      value={amount}
+                      onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                      placeholder="0.00"
+                      className={cn("pr-16 font-mono text-base", exceedsBalance && "border-red-500/60 focus-visible:ring-red-500/30")}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAmount(available.toFixed(available < 0.0001 ? 8 : 6))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                    >
+                      MAX
+                    </button>
+                  </div>
+                  {exceedsBalance && (
+                    <p className="text-xs text-red-400 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> Exceeds available OrahDEX balance
+                    </p>
+                  )}
+                </div>
+
+                {/* Recipient */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Withdrawal address</label>
+                  <Input
+                    value={recipient}
+                    onChange={e => setRecipient(e.target.value)}
+                    placeholder={addressPlaceholder}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {walletAddress
+                      ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
+                      : `Enter a valid ${networkLabel} address.`}
+                  </p>
+                </div>
+
+                {/* Processing notice */}
+                <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+                  <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
+                  </p>
+                </div>
+
+                <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full gap-2 h-11">
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {submitting ? "Submitting…" : `Withdraw${parsedAmount > 0 ? ` ${parsedAmount}` : ""} ${asset}`}
+                </Button>
+              </>
+            )}
+
+            {/* ── WALLET SOURCE (passkey wallet direct on-chain send) ── */}
+            {withdrawSource === "wallet" && (
+              <>
+                {/* Chain selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Network</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {WALLET_CHAINS.slice(0, 4).map(ch => (
+                      <button
+                        key={ch.id}
+                        onClick={() => {
+                          setWalletSendChain(ch);
+                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendBalance(null);
+                          setWalletSendAmount("");
+                        }}
+                        className={cn(
+                          "py-2 rounded-xl text-[11px] font-bold border transition-all text-center",
+                          walletSendChain.id === ch.id
+                            ? "border-2 text-white"
+                            : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
+                        )}
+                        style={walletSendChain.id === ch.id ? { borderColor: ch.color, backgroundColor: ch.color + "22", color: ch.color } : {}}
+                      >
+                        {ch.name}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {WALLET_CHAINS.slice(4).map(ch => (
+                      <button
+                        key={ch.id}
+                        onClick={() => {
+                          setWalletSendChain(ch);
+                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendBalance(null);
+                          setWalletSendAmount("");
+                        }}
+                        className={cn(
+                          "py-2 rounded-xl text-[11px] font-bold border transition-all text-center",
+                          walletSendChain.id === ch.id
+                            ? "border-2 text-white"
+                            : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
+                        )}
+                        style={walletSendChain.id === ch.id ? { borderColor: ch.color, backgroundColor: ch.color + "22", color: ch.color } : {}}
+                      >
+                        {ch.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Token selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Token</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(WALLET_TOKENS[walletSendChain.id] ?? []).map(tok => (
+                      <button
+                        key={tok.symbol}
+                        onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                          walletSendToken.symbol === tok.symbol
+                            ? "text-white border-2"
+                            : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
+                        )}
+                        style={walletSendToken.symbol === tok.symbol ? { borderColor: tok.color, backgroundColor: tok.color + "22", color: tok.color } : {}}
+                      >
+                        {tok.symbol}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Wallet balance display */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Wallet Balance</p>
+                    <p className="text-sm font-bold font-mono text-foreground">
+                      {walletSendBalFetch
+                        ? "Loading…"
+                        : walletSendBalance !== null
+                          ? `${walletSendBalance.toLocaleString(undefined, { maximumFractionDigits: walletSendBalance < 0.001 ? 8 : 6 })} ${walletSendToken.symbol}`
+                          : "—"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => fetchWalletBalance(walletSendChain, walletSendToken)}
+                    disabled={walletSendBalFetch}
+                    className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-40"
+                  >
+                    <RefreshCw className={cn("w-3.5 h-3.5 text-muted-foreground", walletSendBalFetch && "animate-spin")} />
+                  </button>
+                </div>
+
+                {/* Amount */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Amount</label>
+                  <div className="relative">
+                    <Input
+                      value={walletSendAmount}
+                      onChange={e => setWalletSendAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                      placeholder="0.00"
+                      className={cn(
+                        "pr-16 font-mono text-base",
+                        walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance
+                          ? "border-red-500/60 focus-visible:ring-red-500/30" : ""
+                      )}
+                    />
+                    {walletSendBalance !== null && (
+                      <button
+                        type="button"
+                        onClick={() => setWalletSendAmount(walletSendBalance.toFixed(walletSendBalance < 0.001 ? 8 : 6))}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-green-400 hover:text-green-300 px-2 py-0.5 rounded bg-green-400/10 hover:bg-green-400/20 transition-colors"
+                      >
+                        MAX
+                      </button>
+                    )}
+                  </div>
+                  {walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance && (
+                    <p className="text-xs text-red-400 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> Exceeds wallet balance
+                    </p>
+                  )}
+                </div>
+
+                {/* Recipient */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Send to address</label>
+                  <Input
+                    value={walletSendRecipient}
+                    onChange={e => setWalletSendRecipient(e.target.value)}
+                    placeholder="0x… recipient address"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                {/* Biometric notice */}
+                <div className="flex gap-2.5 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
+                  <Zap className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    This sends funds <strong className="text-foreground">directly from your passkey wallet</strong> on-chain. Face ID / Touch ID will authenticate the transaction — no exchange involved.
+                  </p>
+                </div>
+
+                {/* Error */}
+                {walletSendError && (
+                  <div className="flex gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/25">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-300 leading-relaxed">{walletSendError}</p>
+                  </div>
+                )}
+
+                {/* Success */}
+                {walletSendTxHash && (
+                  <div className="flex gap-2.5 p-3.5 rounded-xl bg-green-500/10 border border-green-500/25">
+                    <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-xs font-semibold text-green-400">Transaction sent!</p>
+                      <div className="flex items-center gap-1.5 bg-background/40 rounded-lg px-2 py-1.5 border border-green-500/20">
+                        <span className="font-mono text-[10px] text-green-300 flex-1 truncate">{walletSendTxHash}</span>
+                        <button onClick={() => copy(walletSendTxHash, "wallet-tx")} className="shrink-0 p-0.5">
+                          {copiedId === "wallet-tx" ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+                        </button>
+                      </div>
+                      <a
+                        href={walletSendChain.explorer + walletSendTxHash}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 transition-colors"
+                      >
+                        <ExternalLink className="w-3 h-3" /> View on {walletSendChain.name} explorer
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleWalletSend}
+                  disabled={
+                    !walletSendAmount || !walletSendRecipient.trim() || walletSending ||
+                    (walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance)
+                  }
+                  className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
+                >
+                  {walletSending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating…</>
+                    : <><ArrowRight className="w-4 h-4" /> Send {walletSendAmount ? `${walletSendAmount} ` : ""}{walletSendToken.symbol} from Wallet</>}
+                </Button>
+              </>
+            )}
           </div>
         )}
 
