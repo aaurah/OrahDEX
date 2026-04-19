@@ -115,6 +115,37 @@ const ASSET_NETWORK_MAP: Record<string, { network: string; networkLabel: string;
   VET:   { network: "vet",  networkLabel: "VeChain",            placeholder: "0x... (VeChain address)" },
   ICP:   { network: "icp",  networkLabel: "Internet Computer",  placeholder: "ICP principal or account ID" },
   HBAR:  { network: "hbar", networkLabel: "Hedera",             placeholder: "0.0.XXXXX (Hedera ID)" },
+  // Additional non-EVM chains
+  TON:   { network: "ton",  networkLabel: "The Open Network",   placeholder: "EQ... or UQ... (TON address)" },
+  NOT:   { network: "ton",  networkLabel: "TON (Jetton)",       placeholder: "EQ... or UQ... (TON address)" },
+  SUI:   { network: "sui",  networkLabel: "Sui Network",        placeholder: "0x... (Sui address)" },
+  APT:   { network: "apt",  networkLabel: "Aptos",              placeholder: "0x... (Aptos address)" },
+  DASH:  { network: "dash", networkLabel: "Dash",               placeholder: "X... (Dash address)" },
+  ZEC:   { network: "zec",  networkLabel: "Zcash",              placeholder: "t1... or t3... (Zcash address)" },
+  XMR:   { network: "xmr",  networkLabel: "Monero",             placeholder: "4... (Monero address)" },
+  ORDI:  { network: "btc",  networkLabel: "Bitcoin (Ordinals)", placeholder: "bc1... or 1... (Bitcoin address)" },
+  FIL:   { network: "fil",  networkLabel: "Filecoin",           placeholder: "f1... or f3... (Filecoin address)" },
+  KAS:   { network: "kas",  networkLabel: "Kaspa",              placeholder: "kaspa:... (Kaspa address)" },
+  STX:   { network: "stx",  networkLabel: "Stacks",             placeholder: "SP... or SM... (Stacks address)" },
+  EOS:   { network: "eos",  networkLabel: "EOS Network",        placeholder: "accountname (EOS account)" },
+  EGLD:  { network: "egld", networkLabel: "MultiversX",         placeholder: "erd1... (MultiversX address)" },
+  // Cosmos ecosystem
+  OSMO:  { network: "cosmos", networkLabel: "Osmosis",          placeholder: "osmo1... address" },
+  INJ:   { network: "cosmos", networkLabel: "Injective",        placeholder: "inj1... address" },
+  SEI:   { network: "cosmos", networkLabel: "Sei Network",      placeholder: "sei1... address" },
+  TIA:   { network: "cosmos", networkLabel: "Celestia",         placeholder: "celestia1... address" },
+  DYDX:  { network: "cosmos", networkLabel: "dYdX Chain",       placeholder: "dydx1... address" },
+  // EVM L2s
+  ARB:   { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" },
+  GMX:   { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" },
+  RDNT:  { network: "evm",  networkLabel: "Arbitrum One",       placeholder: "0x... (Arbitrum address)" },
+  OP:    { network: "evm",  networkLabel: "Optimism",           placeholder: "0x... (Optimism address)" },
+  SNX_OP: { network: "evm", networkLabel: "Optimism",           placeholder: "0x... (Optimism address)" },
+  STRK:  { network: "evm",  networkLabel: "Starknet",           placeholder: "0x... (Starknet address)" },
+  ZK:    { network: "evm",  networkLabel: "zkSync Era",         placeholder: "0x... (zkSync address)" },
+  ETC:   { network: "evm",  networkLabel: "Ethereum Classic",   placeholder: "0x... (ETC address)" },
+  ONE:   { network: "evm",  networkLabel: "Harmony ONE",        placeholder: "0x... (Harmony address)" },
+  METIS: { network: "evm",  networkLabel: "Metis Andromeda",    placeholder: "0x... (Metis address)" },
 };
 
 function getAssetNetworkInfo(asset: string, connectedNetwork: string | null, chainId: number | null):
