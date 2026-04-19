@@ -1316,20 +1316,6 @@ export function Swap() {
                 ))}
               </div>
 
-              {/* Rabby-style Gas Top-Up */}
-              <GasTopUpPanel
-                chainId={chainId}
-                chainName={chainConfig.name}
-                nativeSymbol={chainConfig.nativeSymbol}
-                gasBalance={(() => {
-                  const native = onChainBalances.find(b => b.isNative);
-                  return native ? native.amount : null;
-                })()}
-                address={address ?? null}
-                isOrahWallet={isOrahWallet}
-                onSuccess={refreshBalances}
-                tokens={tokens}
-              />
             </div>
 
             {/* Swap card */}

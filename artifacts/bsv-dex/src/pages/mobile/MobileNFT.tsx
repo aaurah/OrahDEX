@@ -371,6 +371,7 @@ function CreatorProfileSheet({
   onOpenPost: (p: Post) => void;
 }) {
   const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(null);
+  const [mints, setMints] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [gridTab, setGridTab] = useState<"posts" | "collected" | "activity">("posts");
   const [isFollowing, setIsFollowing] = useState(false);
@@ -384,6 +385,10 @@ function CreatorProfileSheet({
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
+    fetch(`${API}/social/profile/${creatorAddress}`)
+      .then(r => r.json())
+      .then(d => setMints(d.mints ?? []))
+      .catch(() => {});
   }, [creatorAddress]);
 
   async function toggleFollow() {
@@ -616,7 +621,21 @@ function CreatorProfileSheet({
           )}
 
           {gridTab === "collected" && (
-            <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No collectibles yet</div>
+            mints.length === 0 ? (
+              <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No collectibles yet</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-0.5">
+                {mints.map((m: any) => (
+                  <div key={m.id} className="relative group" style={{ aspectRatio: "1/1", overflow: "hidden" }}>
+                    <img src={m.image_url} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 text-[9px] font-semibold truncate"
+                      style={{ background: "rgba(0,0,0,0.6)", color: "#fff" }}>
+                      {m.title}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           )}
 
           {gridTab === "activity" && (
@@ -931,8 +950,8 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
 }
 
 /* ─── POST DETAIL SHEET ──────────────────────────────────────────────────────── */
-function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
-  post: Post; onClose: () => void; onMint: (p: Post) => void;
+function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreator }: {
+  post: Post; onClose: () => void; onMint: (p: Post) => void; onSell?: (p: Post) => void;
   onLike: (id: string) => void; liked: boolean; onCreator: (a: string) => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
@@ -1014,11 +1033,18 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
       </div>
       <div className="border-t px-3 pt-3 shrink-0"
         style={{ borderColor: "var(--color-border)", background: "var(--color-bg)", paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))" }}>
-        <button onClick={() => !soldOut && onMint(post)} disabled={soldOut}
-          className="w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 mb-3 active:opacity-80 transition-all"
-          style={{ background: soldOut ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: soldOut ? "var(--color-text-secondary)" : "#000", opacity: soldOut ? 0.4 : 1 }}>
-          <Zap size={16} />{soldOut ? "Sold Out" : `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`}
-        </button>
+        <div className="flex gap-2 mb-3">
+          <button onClick={() => !soldOut && onMint(post)} disabled={soldOut}
+            className="flex-1 py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 transition-all"
+            style={{ background: soldOut ? "rgba(255,255,255,0.08)" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: soldOut ? "var(--color-text-secondary)" : "#000", opacity: soldOut ? 0.4 : 1 }}>
+            <Zap size={16} />{soldOut ? "Sold Out" : "Buy"}
+          </button>
+          <button onClick={() => onSell?.(post)}
+            className="flex-1 py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 transition-all"
+            style={{ background: "#ff4444", color: "#fff" }}>
+            Sell
+          </button>
+        </div>
         <div className="flex items-center gap-2">
           <button onClick={() => onLike(post.id)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl justify-center active:scale-90 transition-all shrink-0"
             style={{ background: liked ? "rgba(255,60,60,0.15)" : "rgba(255,255,255,0.06)", color: liked ? "#ff4444" : "var(--color-text-secondary)", border: liked ? "1px solid rgba(255,60,60,0.3)" : "1px solid var(--color-border)" }}>
@@ -1044,10 +1070,12 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
 }
 
 /* ─── MINT SHEET ─────────────────────────────────────────────────────────────── */
-function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
-  const [minted, setMinted] = useState(false);
+function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose: () => void; initialMode?: "buy" | "sell" }) {
+  const [mode, setMode] = useState<"buy" | "sell">(initialMode);
+  const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [listPrice, setListPrice] = useState("");
   const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
@@ -1063,7 +1091,7 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
   const isBsvMint = !isEvm || post.mint_currency === "BSV";
-  const insufficientFunds = !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
   const [, navigate] = useLocation();
 
   async function doMint() {
@@ -1074,7 +1102,21 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
       const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: address }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Mint failed");
-      setMinted(true);
+      setDone(true);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function doList() {
+    if (!address) { navigate("/settings"); return; }
+    const price = parseFloat(listPrice);
+    if (!price || price <= 0) { setError("Enter a valid price"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${API}/nft/listings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Failed to list");
+      setDone(true);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
   }
@@ -1083,17 +1125,17 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
     <Portal>
     <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.7)" }} onClick={onClose}>
       <div className="w-full rounded-t-3xl p-5 pb-8" style={{ background: "var(--color-bg)", maxHeight: "85vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-        {minted ? (
+        {done ? (
           <div className="text-center py-8">
-            <div className="text-5xl mb-3">🎉</div>
-            <h3 className="text-xl font-bold mb-1" style={{ color: "var(--color-text)" }}>Collected!</h3>
-            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{post.title} is permanently on BSV.</p>
-            <div className="text-xs font-mono px-3 py-1.5 rounded-xl inline-block mb-4" style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}>{post.inscription_id.slice(0, 24)}…</div>
+            <div className="text-5xl mb-3">{mode === "buy" ? "🎉" : "🏷️"}</div>
+            <h3 className="text-xl font-bold mb-1" style={{ color: "var(--color-text)" }}>{mode === "buy" ? "Collected!" : "Listed!"}</h3>
+            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${post.title} is permanently on BSV.` : `${post.title} is now listed for sale.`}</p>
+            {mode === "buy" && <div className="text-xs font-mono px-3 py-1.5 rounded-xl inline-block mb-4" style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}>{post.inscription_id.slice(0, 24)}…</div>}
             <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>Done</button>
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-4">
               <div className="w-14 h-14 rounded-xl overflow-hidden" style={{ background: "var(--color-surface)" }}><img src={post.image_url} alt="" className="w-full h-full object-cover" /></div>
               <div className="flex-1">
                 <h3 className="font-bold text-base" style={{ color: "var(--color-text)" }}>{post.title}</h3>
@@ -1101,29 +1143,66 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
               </div>
               <button onClick={onClose}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
             </div>
-            {[["Chain", "BSV (on-chain inscription)"], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
-              <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
-                <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
-                <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
-              </div>
-            ))}
-            {availableLabel && (
-              <div className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
-                <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Your balance</span>
-                <span className="text-sm font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
-              </div>
+
+            {/* Buy / Sell toggle */}
+            <div className="flex rounded-xl overflow-hidden mb-4" style={{ background: "var(--color-surface)" }}>
+              {(["buy", "sell"] as const).map(m => (
+                <button key={m} onClick={() => { setMode(m); setError(""); }} className="flex-1 py-2.5 font-bold text-sm capitalize transition-all"
+                  style={{ background: mode === m ? (m === "buy" ? "var(--color-accent)" : "#ff4444") : "transparent", color: mode === m ? "#000" : "var(--color-text-secondary)" }}>
+                  {m === "buy" ? "Buy" : "Sell"}
+                </button>
+              ))}
+            </div>
+
+            {mode === "buy" ? (
+              <>
+                {[["Chain", "BSV (on-chain inscription)"], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
+                  <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
+                    <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
+                    <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
+                  </div>
+                ))}
+                {availableLabel && (
+                  <div className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
+                    <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Your balance</span>
+                    <span className="text-sm font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
+                  </div>
+                )}
+                <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
+                {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
+                {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
+                {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+                <button onClick={doMint} disabled={loading || insufficientFunds}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
+                  style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
+                  {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
+                    insufficientFunds ? "Insufficient Balance" :
+                    <><Zap size={16} />{address ? `Buy for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
+                  <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>Set a price to list your copy of this NFT on the OrahDEX marketplace. Buyers pay you directly.</p>
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+                    <input type="number" min="0" step="0.0001" placeholder="0.0000"
+                      className="flex-1 bg-transparent text-sm font-mono outline-none"
+                      style={{ color: "var(--color-text)" }}
+                      value={listPrice} onChange={e => setListPrice(e.target.value)} />
+                    <span className="text-xs font-bold shrink-0" style={{ color: "var(--color-text-secondary)" }}>{post.mint_currency}</span>
+                  </div>
+                  <p className="text-[11px] mt-1.5" style={{ color: "var(--color-text-secondary)" }}>Current floor: {safePrice(post.mint_price)} {post.mint_currency}</p>
+                </div>
+                {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to list</span></div>}
+                {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+                <button onClick={doList} disabled={loading || !listPrice}
+                  className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
+                  style={{ background: loading || !listPrice ? "#555" : "#ff4444", color: "#fff" }}>
+                  {loading ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> :
+                    <>{address ? `List for ${listPrice || "…"} ${post.mint_currency}` : "Connect Wallet"}</>}
+                </button>
+              </>
             )}
-            <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
-            {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
-            {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
-            {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-            <button onClick={doMint} disabled={loading || insufficientFunds}
-              className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
-              style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
-              {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
-                insufficientFunds ? "Insufficient Balance" :
-                <><Zap size={16} />{address ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
-            </button>
           </>
         )}
       </div>
@@ -1640,7 +1719,7 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
 export function MobileNFT() {
   const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "profile">("feed");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [mintPost, setMintPost] = useState<Post | null>(null);
+  const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
   const { address } = useWalletStore();
@@ -1692,7 +1771,7 @@ export function MobileNFT() {
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === "feed"    && <FeedTab    likedIds={likedIds} onLike={handleLike} onMint={setMintPost} onOpen={openPost} onCreator={openCreator} />}
+        {activeTab === "feed"    && <FeedTab    likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab  onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab  onSuccess={() => setActiveTab("feed")} />}
         {activeTab === "profile" && <MyProfileTab onOpenCreator={openCreator} onOpenPost={openPost} />}
@@ -1716,13 +1795,14 @@ export function MobileNFT() {
         <PostDetailSheet
           post={detailPost}
           onClose={() => setDetailPost(null)}
-          onMint={p => { setDetailPost(null); setMintPost(p); }}
+          onMint={p => { setDetailPost(null); setMintPost({ post: p, mode: "buy" }); }}
+          onSell={p => { setDetailPost(null); setMintPost({ post: p, mode: "sell" }); }}
           onLike={handleLike}
           liked={likedIds.has(detailPost.id)}
           onCreator={a => { setDetailPost(null); openCreator(a); }}
         />
       )}
-      {mintPost && <MintSheet post={mintPost} onClose={() => setMintPost(null)} />}
+      {mintPost && <MintSheet post={mintPost.post} initialMode={mintPost.mode} onClose={() => setMintPost(null)} />}
     </div>
   );
 }
