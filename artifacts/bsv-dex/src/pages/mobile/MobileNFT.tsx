@@ -378,6 +378,7 @@ function CreatorProfileSheet({
   const [showTrade, setShowTrade] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [imgErr, setImgErr] = useState(false);
+  const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -400,6 +401,12 @@ function CreatorProfileSheet({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
     }).catch(() => setIsFollowing(prev));
+  }
+
+  async function openFollowList(type: "followers" | "following") {
+    const res = await fetch(`${API}/social/creators/${creatorAddress}/${type}`).catch(() => null);
+    const items = res?.ok ? await res.json() : [];
+    setFollowList({ type, items });
   }
 
   const profile = data?.profile;
@@ -480,8 +487,8 @@ function CreatorProfileSheet({
                 {fmtNum(profile.follower_count)}
               </span>
             )}
-            {profile.instagram && <a href="#" className="active:opacity-60"><Camera size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
-            {profile.twitter && <a href="#" className="active:opacity-60"><AtSign size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
+            {profile.instagram && <a href={`https://instagram.com/${profile.instagram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="active:opacity-60"><Camera size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
+            {profile.twitter && <a href={`https://twitter.com/${profile.twitter.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="active:opacity-60"><AtSign size={13} style={{ color: "var(--color-text-secondary)" }} /></a>}
             <button onClick={() => navigator.clipboard.writeText(profile.address).catch(() => {})}>
               <Copy size={12} style={{ color: "var(--color-text-secondary)" }} />
             </button>
@@ -494,22 +501,24 @@ function CreatorProfileSheet({
 
           {/* ── Website ── */}
           {profile.website && (
-            <div className="flex items-center gap-1 mb-2">
+            <a href={profile.website.startsWith("http") ? profile.website : `https://${profile.website}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 mb-2 active:opacity-60">
               <Globe size={11} style={{ color: "var(--color-accent)" }} />
-              <span className="text-xs font-medium" style={{ color: "var(--color-accent)" }}>{profile.website}</span>
-            </div>
+              <span className="text-xs font-medium underline underline-offset-2" style={{ color: "var(--color-accent)" }}>{profile.website}</span>
+            </a>
           )}
 
           {/* ── Followers / Following ── */}
           <div className="flex items-center gap-3 mb-4 text-xs">
-            <span>
+            <button className="active:opacity-60" onClick={() => openFollowList("followers")}>
               <strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.follower_count)}</strong>{" "}
               <span style={{ color: "var(--color-text-secondary)" }}>Followers</span>
-            </span>
-            <span>
+            </button>
+            <button className="active:opacity-60" onClick={() => openFollowList("following")}>
               <strong style={{ color: "var(--color-text)" }}>{fmtNum(profile.following_count)}</strong>{" "}
               <span style={{ color: "var(--color-text-secondary)" }}>Following</span>
-            </span>
+            </button>
           </div>
 
           {/* ── Market cap + Top holders (side by side) ── */}
@@ -675,6 +684,32 @@ function CreatorProfileSheet({
             setShowEdit(false);
           }}
         />
+      )}
+      {followList && (
+        <Portal>
+          <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setFollowList(null)}>
+            <div className="w-full rounded-t-3xl" style={{ background: "var(--color-bg)", maxHeight: "70vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-4 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <h3 className="font-bold text-base capitalize" style={{ color: "var(--color-text)" }}>{followList.type}</h3>
+                <button onClick={() => setFollowList(null)}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {followList.items.length === 0 ? (
+                  <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {followList.type} yet</div>
+                ) : followList.items.map((u: any) => (
+                  <div key={u.address} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                    <Avatar src={u.avatar_url} name={u.username ?? u.address} size={36} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{u.username ?? shortAddr(u.address)}</p>
+                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(u.address)}</p>
+                    </div>
+                    {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Portal>
       )}
     </div>
     </Portal>
