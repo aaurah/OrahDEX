@@ -135,6 +135,7 @@ export function WithdrawSheet({
   const [copiedId,     setCopiedId]     = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const [depositChain, setDepositChain] = useState(SUPPORTED_CHAINS[1]); // Base default
+  const [depositMode,  setDepositMode]  = useState<"exchange" | "wallet">("exchange");
   const [txHash,       setTxHash]       = useState("");
   const [verifying,    setVerifying]    = useState(false);
   const [showGasCard,  setShowGasCard]  = useState(false);
@@ -296,121 +297,197 @@ export function WithdrawSheet({
         {tab === "deposit" && (
           <div className="space-y-4">
 
-            {/* Chain selector */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold">Network</label>
-              <div className="flex gap-2">
-                {SUPPORTED_CHAINS.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setDepositChain(c)}
-                    className={cn(
-                      "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
-                      depositChain.id === c.id
-                        ? "border-primary/60 bg-primary/10 text-primary"
-                        : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
-                    )}
-                  >
-                    {c.short}
-                  </button>
-                ))}
-              </div>
+            {/* Mode toggle: Exchange Address vs Wallet Address */}
+            <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
+              <button
+                onClick={() => setDepositMode("exchange")}
+                className={cn(
+                  "flex-1 py-2 rounded-lg text-xs font-bold transition-all",
+                  depositMode === "exchange"
+                    ? "bg-primary text-primary-foreground shadow"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Exchange Address
+              </button>
+              <button
+                onClick={() => setDepositMode("wallet")}
+                className={cn(
+                  "flex-1 py-2 rounded-lg text-xs font-bold transition-all",
+                  depositMode === "wallet"
+                    ? "bg-primary text-primary-foreground shadow"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Wallet Address
+              </button>
             </div>
 
-            {/* Deposit address + QR */}
-            {depositLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : depositData ? (
+            {/* ── EXCHANGE ADDRESS MODE ── */}
+            {depositMode === "exchange" && (
               <>
-                <div className="rounded-xl border border-border bg-secondary/20 p-4 space-y-4">
-                  {/* QR code */}
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="p-3 bg-white rounded-xl shadow-sm">
-                      <QRCodeCanvas
-                        value={depositData.depositAddress}
-                        size={160}
-                        level="M"
-                        includeMargin={false}
-                      />
-                    </div>
-                    <div className="text-center space-y-0.5">
-                      <p className="text-xs font-semibold text-foreground">Your OrahDEX Deposit Address</p>
-                      <p className="text-[11px] text-muted-foreground">{depositChain.label}</p>
-                    </div>
-                  </div>
-
-                  {/* Address row */}
-                  <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-border/40">
-                    <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
-                      {depositData.depositAddress}
-                    </span>
-                    <button
-                      onClick={() => copy(depositData.depositAddress, "dep-addr")}
-                      className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors"
-                    >
-                      {copiedId === "dep-addr"
-                        ? <Check className="w-4 h-4 text-green-400" />
-                        : <Copy className="w-4 h-4 text-muted-foreground" />}
-                    </button>
-                  </div>
-
-                  {/* Info pills */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Accepted asset</p>
-                      <p className="font-bold text-foreground">{depositData.nativeSymbol} (native)</p>
-                    </div>
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Min deposit</p>
-                      <p className="font-bold text-foreground">0.001 {depositData.nativeSymbol}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Instructions */}
-                <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-                  <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
-                    <p>Send <strong className="text-foreground">{depositData.nativeSymbol}</strong> on <strong className="text-foreground">{depositChain.label}</strong> to the address above. After your transaction confirms, paste your TX hash below to credit your OrahDEX balance instantly.</p>
-                  </div>
-                </div>
-
-                {/* Verify TX */}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">I've sent funds — verify deposit</label>
+                {/* Chain selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-muted-foreground font-medium">Select network</label>
                   <div className="flex gap-2">
-                    <Input
-                      value={txHash}
-                      onChange={e => setTxHash(e.target.value.trim())}
-                      placeholder="0x… transaction hash"
-                      className="font-mono text-xs flex-1"
-                    />
-                    <Button
-                      onClick={handleVerify}
-                      disabled={!txHash.trim() || verifying}
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                    >
-                      {verifying
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <CheckCircle2 className="w-3.5 h-3.5" />}
-                      Verify
+                    {SUPPORTED_CHAINS.map(c => (
+                      <button
+                        key={c.id}
+                        onClick={() => setDepositChain(c)}
+                        className={cn(
+                          "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
+                          depositChain.id === c.id
+                            ? "border-primary/60 bg-primary/10 text-primary"
+                            : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
+                        )}
+                      >
+                        {c.short}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Exchange deposit address + QR */}
+                {depositLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : depositData ? (
+                  <>
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                        <p className="text-xs font-bold text-primary uppercase tracking-wide">OrahDEX Exchange Address</p>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground -mt-2">
+                        Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong> — use this to deposit and trade.
+                      </p>
+
+                      {/* QR code */}
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="p-3 bg-white rounded-xl shadow-sm">
+                          <QRCodeCanvas
+                            value={depositData.depositAddress}
+                            size={148}
+                            level="M"
+                            includeMargin={false}
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">{depositChain.label}</p>
+                      </div>
+
+                      {/* Address row */}
+                      <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-border/40">
+                        <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
+                          {depositData.depositAddress}
+                        </span>
+                        <button
+                          onClick={() => copy(depositData.depositAddress, "dep-addr")}
+                          className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors"
+                        >
+                          {copiedId === "dep-addr"
+                            ? <Check className="w-4 h-4 text-green-400" />
+                            : <Copy className="w-4 h-4 text-muted-foreground" />}
+                        </button>
+                      </div>
+
+                      {/* Info pills */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                          <p className="text-muted-foreground">Accepted asset</p>
+                          <p className="font-bold text-foreground">{depositData.nativeSymbol} (native)</p>
+                        </div>
+                        <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                          <p className="text-muted-foreground">Min deposit</p>
+                          <p className="font-bold text-foreground">0.001 {depositData.nativeSymbol}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Verify TX */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold">I've sent funds — verify deposit</label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={txHash}
+                          onChange={e => setTxHash(e.target.value.trim())}
+                          placeholder="0x… transaction hash"
+                          className="font-mono text-xs flex-1"
+                        />
+                        <Button
+                          onClick={handleVerify}
+                          disabled={!txHash.trim() || verifying}
+                          size="sm"
+                          className="shrink-0 gap-1.5"
+                        >
+                          {verifying
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          Verify
+                        </Button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Paste the transaction hash from your wallet after sending to the exchange address above.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
+                    <AlertCircle className="w-8 h-8 opacity-40" />
+                    <p className="text-sm">Could not load deposit address</p>
+                    <Button variant="outline" size="sm" onClick={() => refetchDeposit()} className="gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" /> Retry
                     </Button>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Paste the transaction hash from your wallet after sending to the address above.
+                )}
+              </>
+            )}
+
+            {/* ── WALLET ADDRESS MODE ── */}
+            {depositMode === "wallet" && walletAddress && (
+              <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-green-400" />
+                  <p className="text-xs font-bold text-green-400 uppercase tracking-wide">Your Personal Wallet Address</p>
+                </div>
+                <p className="text-[11px] text-muted-foreground -mt-2">
+                  Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your OrahDEX trading balance. Use this for personal receives.
+                </p>
+
+                {/* QR code */}
+                <div className="flex flex-col items-center gap-3">
+                  <div className="p-3 bg-white rounded-xl shadow-sm">
+                    <QRCodeCanvas
+                      value={walletAddress}
+                      size={148}
+                      level="M"
+                      includeMargin={false}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">EVM · Ethereum / Base / BNB Chain / all L2s</p>
+                </div>
+
+                {/* Address row */}
+                <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-green-500/20">
+                  <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
+                    {walletAddress}
+                  </span>
+                  <button
+                    onClick={() => copy(walletAddress, "wallet-addr")}
+                    className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors"
+                  >
+                    {copiedId === "wallet-addr"
+                      ? <Check className="w-4 h-4 text-green-400" />
+                      : <Copy className="w-4 h-4 text-muted-foreground" />}
+                  </button>
+                </div>
+
+                <div className="flex gap-2.5 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
+                  <Zap className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    This is your OrahDEX passkey wallet address. Anyone can send EVM tokens here. To use received funds for trading, go to <strong className="text-foreground">Exchange Address</strong> tab and deposit from your wallet.
                   </p>
                 </div>
-              </>
-            ) : (
-              <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
-                <AlertCircle className="w-8 h-8 opacity-40" />
-                <p className="text-sm">Could not load deposit address</p>
-                <Button variant="outline" size="sm" onClick={() => refetchDeposit()} className="gap-1.5">
-                  <RefreshCw className="w-3.5 h-3.5" /> Retry
-                </Button>
               </div>
             )}
 
@@ -518,7 +595,7 @@ export function WithdrawSheet({
 
             {/* Recipient */}
             <div className="space-y-1.5">
-              <label className="text-sm font-semibold">Recipient address</label>
+              <label className="text-sm font-semibold">Withdrawal address</label>
               <Input
                 value={recipient}
                 onChange={e => setRecipient(e.target.value)}
