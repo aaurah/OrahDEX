@@ -491,19 +491,6 @@ export function MobilePortfolio() {
   // exchange ledger balances (covers edge cases where provider string differs).
   const showTradingBalance = isOrahWallet || exchNonZero.length > 0;
 
-  const handleWithdrawAction = () => {
-    const firstAsset = exchNonZero[0];
-    if (firstAsset) {
-      const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
-      setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color: ASSET_COLORS[firstAsset.asset] ?? "#6B7280" });
-      setWithdrawInitialTab("withdraw");
-    } else {
-      setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
-      setWithdrawInitialTab("deposit");
-    }
-    setWithdrawOpen(true);
-  };
-
   const handleCopy = () => {
     if (!address) return;
     navigator.clipboard?.writeText(address);
@@ -919,23 +906,51 @@ export function MobilePortfolio() {
             </div>
           )}
 
-          {/* Buy / Receive / Withdraw / Bridge */}
-          <div className="grid grid-cols-4 gap-2">
-            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-[11px] shadow-lg shadow-green-600/20 active:opacity-90">
-              <CreditCard size={14} />
+          {/* Buy / Receive / Bridge */}
+          <div className="grid grid-cols-3 gap-2">
+            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
+              <CreditCard size={15} />
               Buy
             </button>
-            <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-[11px] shadow-lg shadow-primary/20 active:opacity-90">
-              <ArrowDownToLine size={14} />
+            <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
+              <ArrowDownToLine size={15} />
               Receive
             </button>
-            <button onClick={handleWithdrawAction} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-[11px] active:bg-orange-500/20 transition-colors">
-              <Upload size={14} />
-              <span className="leading-tight text-center">Deposit &amp; Withdraw</span>
-            </button>
-            <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-[11px] active:bg-green-500/20 transition-colors">
-              <ArrowLeftRight size={14} />
+            <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-secondary border border-border text-muted-foreground font-bold text-xs active:opacity-80 transition-colors">
+              <ArrowLeftRight size={15} />
               Bridge
+            </button>
+          </div>
+
+          {/* Deposit / Withdraw */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
+                setWithdrawInitialTab("deposit");
+                setWithdrawOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-green-600/25 active:opacity-90"
+            >
+              <ArrowDownToLine size={16} />
+              Deposit
+            </button>
+            <button
+              onClick={() => {
+                const firstAsset = exchNonZero[0];
+                if (firstAsset) {
+                  const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
+                  setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color: ASSET_COLORS[firstAsset.asset] ?? "#6B7280" });
+                } else {
+                  setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
+                }
+                setWithdrawInitialTab("withdraw");
+                setWithdrawOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-600/25 active:opacity-90"
+            >
+              <Upload size={16} />
+              Withdraw
             </button>
           </div>
 
