@@ -404,4 +404,166 @@ router.post("/deposit/bsv-verify", async (req, res) => {
   }
 });
 
+// ── GET /deposit/solana-address ───────────────────────────────────────────────
+// Returns the platform's Solana deposit address (from platform_settings or env).
+router.get("/deposit/solana-address", async (req, res) => {
+  try {
+    const overrideRows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "solana_deposit_address"));
+
+    const address = overrideRows.length
+      ? overrideRows[0].value
+      : (process.env.SOLANA_DEPOSIT_ADDRESS ?? null);
+
+    if (!address) {
+      res.json({
+        network:   "sol",
+        supported: false,
+        symbol:    "SOL",
+        message:   "Solana exchange deposits are being configured. Please check back soon.",
+      });
+      return;
+    }
+
+    res.json({
+      network:         "sol",
+      supported:       true,
+      address,
+      symbol:          "SOL",
+      label:           "Solana",
+      minDeposit:      "0.01",
+      explorerTx:      "https://solscan.io/tx/",
+      explorerAddress: `https://solscan.io/account/${address}`,
+    });
+  } catch (err) {
+    req.log.error({ err }, "deposit/solana-address: failed");
+    res.status(500).json({ error: "Failed to load Solana deposit address" });
+  }
+});
+
+// ── POST /deposit/solana-verify ───────────────────────────────────────────────
+// Verifies a Solana transaction signature and credits the internal ledger.
+// Body: { walletAddress, txHash (Solana signature) }
+router.post("/deposit/solana-verify", async (req, res) => {
+  const { walletAddress, txHash } = req.body ?? {};
+
+  if (!walletAddress || !txHash) {
+    res.status(400).json({ error: "walletAddress and txHash are required" });
+    return;
+  }
+
+  // Basic Solana signature format check (base58, ~87-88 chars)
+  if (!/^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(txHash.trim())) {
+    res.status(400).json({ error: "Invalid Solana transaction signature format" });
+    return;
+  }
+
+  try {
+    // Get deposit address
+    const overrideRows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "solana_deposit_address"));
+
+    const depositAddress = overrideRows.length
+      ? overrideRows[0].value
+      : (process.env.SOLANA_DEPOSIT_ADDRESS ?? null);
+
+    if (!depositAddress) {
+      res.status(503).json({ error: "Solana deposits are not yet configured. Please contact support." });
+      return;
+    }
+
+    // Guard: double-credit (chainId = -1 for Solana)
+    const alreadyCredited = await isDepositAlreadyCredited(txHash.trim(), -1);
+    if (alreadyCredited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
+
+    // Fetch tx from Solana mainnet RPC
+    const rpcRes = await fetch("https://api.mainnet-beta.solana.com", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransaction",
+        params: [
+          txHash.trim(),
+          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
+        ],
+      }),
+    });
+
+    if (!rpcRes.ok) {
+      res.status(400).json({ error: "Could not reach Solana network. Please try again." });
+      return;
+    }
+
+    const rpcData = await rpcRes.json() as {
+      result?: {
+        meta?: { err: unknown; preBalances: number[]; postBalances: number[] };
+        transaction?: { message?: { accountKeys?: { pubkey: string; signer: boolean }[] } };
+      };
+    };
+
+    const tx = rpcData.result;
+    if (!tx) {
+      res.status(400).json({ error: "Transaction not found on Solana. Please wait for confirmation and try again." });
+      return;
+    }
+
+    if (tx.meta?.err) {
+      res.status(400).json({ error: "Transaction failed on-chain and cannot be credited." });
+      return;
+    }
+
+    // Find deposit address index in account keys
+    const accountKeys = tx.transaction?.message?.accountKeys ?? [];
+    const depIdx = accountKeys.findIndex(
+      k => k.pubkey.toLowerCase() === depositAddress.toLowerCase()
+    );
+
+    if (depIdx === -1) {
+      res.status(400).json({ error: "Transaction does not send SOL to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      return;
+    }
+
+    const pre  = tx.meta?.preBalances?.[depIdx]  ?? 0;
+    const post = tx.meta?.postBalances?.[depIdx] ?? 0;
+    const lamports = post - pre;
+
+    if (lamports <= 0) {
+      res.status(400).json({ error: "No SOL received at the deposit address in this transaction." });
+      return;
+    }
+
+    const solAmount = lamports / 1e9; // lamports → SOL
+
+    if (solAmount < 0.01) {
+      res.status(400).json({ error: `Deposit amount ${solAmount.toFixed(6)} SOL is below the minimum of 0.01 SOL.` });
+      return;
+    }
+
+    // Credit and record
+    await creditAvailable(walletAddress, "SOL", String(solAmount));
+    await recordVerifiedDeposit({
+      txHash:     txHash.trim(),
+      chainId:    -1,
+      userWallet: walletAddress,
+      asset:      "SOL",
+      amount:     String(solAmount),
+    });
+
+    req.log.info({ walletAddress, txHash, solAmount }, "SOL deposit credited");
+    res.json({ success: true, asset: "SOL", amount: solAmount, txHash });
+  } catch (err) {
+    req.log.error({ err }, "deposit/solana-verify: failed");
+    res.status(500).json({ error: "Failed to verify Solana transaction" });
+  }
+});
+
 export default router;
