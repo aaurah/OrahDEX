@@ -1057,13 +1057,13 @@ interface ExBalance { asset: string; available: string }
 function ExchangeSwapPanel({
   address,
   onOpenWallet,
-  walletBalances = [],
 }: {
   address: string | null;
   onOpenWallet: () => void;
-  walletBalances?: { symbol: string; amount: number; isNative?: boolean }[];
 }) {
   const { toast } = useToast();
+  // Use the wallet's actual connected chainId (not the on-chain DEX chain picker)
+  const { chainId: walletChainId } = useWalletStore();
   const [fromAsset, setFromAsset] = useState("ETH");
   const [toAsset,   setToAsset]   = useState("USDT");
   const [amount,    setAmount]    = useState("");
@@ -1076,6 +1076,9 @@ function ExchangeSwapPanel({
   const [balances,       setBalances]       = useState<ExBalance[]>([]);
   const [balancesLoaded, setBalancesLoaded] = useState(false);
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch the wallet's actual on-chain balance (uses the real connected chain, not DEX chain picker)
+  const { balances: onChainWalletBals } = useEvmBalances(address ?? null, walletChainId ?? null);
 
   const loadBalances = useCallback(async () => {
     if (!address) return;
@@ -1102,9 +1105,9 @@ function ExchangeSwapPanel({
     return balancesLoaded ? 0 : null;
   };
 
-  // On-chain wallet balance for the selected asset (passed in from parent)
+  // On-chain wallet balance — fetched directly from the user's real connected chain
   const walletBalFor = (asset: string) => {
-    const row = walletBalances.find(b => b.symbol.toUpperCase() === asset.toUpperCase());
+    const row = onChainWalletBals.find(b => b.symbol.toUpperCase() === asset.toUpperCase());
     return row ? row.amount : null;
   };
 
@@ -1843,11 +1846,7 @@ export function Swap() {
         </div>
 
         {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
-        <ExchangeSwapPanel
-          address={address}
-          onOpenWallet={openWalletModal}
-          walletBalances={onChainBalances.map(b => ({ symbol: b.symbol, amount: b.amount, isNative: b.isNative }))}
-        />
+        <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
