@@ -1054,7 +1054,15 @@ interface ExchangeQuote {
 }
 interface ExBalance { asset: string; available: string }
 
-function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; onOpenWallet: () => void }) {
+function ExchangeSwapPanel({
+  address,
+  onOpenWallet,
+  walletBalances = [],
+}: {
+  address: string | null;
+  onOpenWallet: () => void;
+  walletBalances?: { symbol: string; amount: number; isNative?: boolean }[];
+}) {
   const { toast } = useToast();
   const [fromAsset, setFromAsset] = useState("ETH");
   const [toAsset,   setToAsset]   = useState("USDT");
@@ -1092,6 +1100,12 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
     const row = balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
     if (row) return parseFloat(row.available);
     return balancesLoaded ? 0 : null;
+  };
+
+  // On-chain wallet balance for the selected asset (passed in from parent)
+  const walletBalFor = (asset: string) => {
+    const row = walletBalances.find(b => b.symbol.toUpperCase() === asset.toUpperCase());
+    return row ? row.amount : null;
   };
 
   const fetchQuote = useCallback(async (val: string) => {
@@ -1177,16 +1191,33 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
 
       {/* From */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
-        {/* Label + balance */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground font-medium">Sell</span>
-          {fromBal != null && (
-            <span className="text-muted-foreground">
-              Balance:{" "}
-              <span className="font-mono text-foreground font-semibold">{fromBal.toFixed(4)}</span>{" "}
-              {fromAsset}
-            </span>
-          )}
+        {/* Label + balances row */}
+        <div className="flex items-start justify-between text-xs gap-2">
+          <span className="text-muted-foreground font-medium shrink-0 pt-0.5">Sell</span>
+          <div className="flex flex-col items-end gap-0.5">
+            {fromBal != null && (
+              <span className="text-muted-foreground">
+                Exch. balance:{" "}
+                <span className="font-mono text-foreground font-semibold">{fromBal.toFixed(4)}</span>{" "}
+                {fromAsset}
+              </span>
+            )}
+            {(() => {
+              const wb = walletBalFor(fromAsset);
+              return wb != null ? (
+                <span className="text-muted-foreground/70">
+                  Wallet:{" "}
+                  <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
+                    {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
+                  </span>{" "}
+                  {fromAsset}
+                  {fromBal === 0 && wb > 0 && (
+                    <span className="ml-1 text-amber-400 font-medium">(deposit to trade)</span>
+                  )}
+                </span>
+              ) : null;
+            })()}
+          </div>
         </div>
         {/* Asset + amount row */}
         <div className="flex items-center gap-2">
@@ -1238,16 +1269,30 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
 
       {/* To */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
-        {/* Label + balance */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground font-medium">Buy</span>
-          {balFor(toAsset) != null && (
-            <span className="text-muted-foreground">
-              Balance:{" "}
-              <span className="font-mono text-foreground font-semibold">{balFor(toAsset)!.toFixed(4)}</span>{" "}
-              {toAsset}
-            </span>
-          )}
+        {/* Label + balances row */}
+        <div className="flex items-start justify-between text-xs gap-2">
+          <span className="text-muted-foreground font-medium shrink-0 pt-0.5">Buy</span>
+          <div className="flex flex-col items-end gap-0.5">
+            {balFor(toAsset) != null && (
+              <span className="text-muted-foreground">
+                Exch. balance:{" "}
+                <span className="font-mono text-foreground font-semibold">{balFor(toAsset)!.toFixed(4)}</span>{" "}
+                {toAsset}
+              </span>
+            )}
+            {(() => {
+              const wb = walletBalFor(toAsset);
+              return wb != null ? (
+                <span className="text-muted-foreground/70">
+                  Wallet:{" "}
+                  <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
+                    {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
+                  </span>{" "}
+                  {toAsset}
+                </span>
+              ) : null;
+            })()}
+          </div>
         </div>
         {/* Asset + amount row */}
         <div className="flex items-center gap-2">
@@ -1798,7 +1843,11 @@ export function Swap() {
         </div>
 
         {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
-        <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
+        <ExchangeSwapPanel
+          address={address}
+          onOpenWallet={openWalletModal}
+          walletBalances={onChainBalances.map(b => ({ symbol: b.symbol, amount: b.amount, isNative: b.isNative }))}
+        />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
