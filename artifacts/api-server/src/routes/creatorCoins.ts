@@ -13,100 +13,6 @@ const INIT_VIRTUAL_BSV = 30;
 const TOTAL_SUPPLY = 1_000_000_000;
 const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
 
-/* ── Seed data ──────────────────────────────────────────────────────────────── */
-const SEED_CREATORS = [
-  {
-    address: "0x1a2b3c4d5e6f7890abcdef1234567890abcdef12",
-    username: "SatoshiArt", bio: "Aura is the presence you feel before the words arrive — calm power, quiet confidence. I build sovereign art on BSV, each one a trace of who I am and who I'm becoming.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=satoshi",
-    cover_url: "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=800&q=60",
-    website: "OrahDEX.org", twitter: "satoshiart", instagram: "satoshiart.bsv", is_verified: true,
-    follower_count: 12400, following_count: 318, post_count: 521,
-    coin: { symbol: "SART", name: "SatoshiArt Coin", circ: 42_000_000, vbsv: 31.8, vtok: 1_031_000_191, price_usd: 0.00014, mcap: 5890, ath: 34100, holders: 135, trades: 2418, vol: 8820 },
-  },
-  {
-    address: "0x2b3c4d5e6f7890abcdef1234567890abcdef1234",
-    username: "CipherPunk", bio: "Neon prophet. AI signal weaver. Every oracle sees a different future. BSV inscription artist.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=cipher",
-    cover_url: "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&q=60",
-    website: "", twitter: "cipherpunkbsv", instagram: "", is_verified: true,
-    follower_count: 8920, following_count: 241, post_count: 312,
-    coin: { symbol: "CIPHR", name: "CipherPunk Coin", circ: 28_500_000, vbsv: 30.9, vtok: 1_044_500_191, price_usd: 0.000088, mcap: 2508, ath: 12200, holders: 88, trades: 1102, vol: 3410 },
-  },
-  {
-    address: "0x3c4d5e6f7890abcdef1234567890abcdef123456",
-    username: "KeepR_", bio: "Threshold keeper. AMM guardian. Governance sigil crafter on the immutable BSV chain.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=keeper",
-    cover_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=60",
-    website: "keepr.bsv", twitter: "keepr_bsv", instagram: "keepr.bsv", is_verified: true,
-    follower_count: 21700, following_count: 89, post_count: 188,
-    coin: { symbol: "KEEPR", name: "KeepR Coin", circ: 71_200_000, vbsv: 34.2, vtok: 1_001_800_191, price_usd: 0.00051, mcap: 36312, ath: 89400, holders: 312, trades: 5821, vol: 42100 },
-  },
-  {
-    address: "0x4d5e6f7890abcdef1234567890abcdef12345678",
-    username: "PixelSeer", bio: "On-chain watcher. I track every block, every tx. Pixel by pixel, I paint the truth of the chain.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=pixel",
-    cover_url: "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800&q=60",
-    website: "", twitter: "pixelseer", instagram: "", is_verified: false,
-    follower_count: 3840, following_count: 512, post_count: 94,
-    coin: { symbol: "PXLSR", name: "PixelSeer Coin", circ: 8_100_000, vbsv: 30.22, vtok: 1_064_900_191, price_usd: 0.0000285, mcap: 231, ath: 1880, holders: 29, trades: 341, vol: 510 },
-  },
-  {
-    address: "0x5e6f7890abcdef1234567890abcdef1234567890",
-    username: "ChromaVault", bio: "Generative art. Fluid simulation. Infinite forms. Each piece an inscription, each inscription a breath.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=chroma",
-    cover_url: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=60",
-    website: "chromavault.art", twitter: "chromavault", instagram: "chromavault.nft", is_verified: true,
-    follower_count: 16200, following_count: 156, post_count: 407,
-    coin: { symbol: "CHRMA", name: "ChromaVault Coin", circ: 55_400_000, vbsv: 32.7, vtok: 1_017_600_191, price_usd: 0.00032, mcap: 17728, ath: 44100, holders: 201, trades: 3912, vol: 22800 },
-  },
-  {
-    address: "0x6f7890abcdef1234567890abcdef123456789012",
-    username: "NakamotoGhost", bio: "I am the ghost in the genesis. Lineage artifact builder. My works evolve as the chain grows.",
-    avatar_url: "https://api.dicebear.com/7.x/avataaars/svg?seed=nakamoto",
-    cover_url: "https://images.unsplash.com/photo-1614728263952-84ea256f9d1d?w=800&q=60",
-    website: "", twitter: "nakamotoghost", instagram: "", is_verified: true,
-    follower_count: 34100, following_count: 44, post_count: 77,
-    coin: { symbol: "NKGST", name: "NakamotoGhost Coin", circ: 88_700_000, vbsv: 38.1, vtok: 984_300_191, price_usd: 0.00122, mcap: 108214, ath: 312000, holders: 521, trades: 9210, vol: 88400 },
-  },
-];
-
-let creatorsSeeded = false;
-
-async function ensureCreatorsSeeded() {
-  if (creatorsSeeded) return;
-  try {
-    const r = await pool.query("SELECT address FROM creator_profiles LIMIT 1");
-    if (r.rows.length > 0) { creatorsSeeded = true; return; }
-    for (const c of SEED_CREATORS) {
-      await pool.query(
-        `INSERT INTO creator_profiles (address, username, bio, avatar_url, cover_url, website, twitter, instagram, is_verified, follower_count, following_count, post_count)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
-        [c.address, c.username, c.bio, c.avatar_url, c.cover_url, c.website, c.twitter, c.instagram, c.is_verified, c.follower_count, c.following_count, c.post_count],
-      );
-      const cn = c.coin;
-      const mcap = (cn.circ * cn.price_usd).toFixed(2);
-      await pool.query(
-        `INSERT INTO creator_coins (creator_address, symbol, name, circulating_supply, virtual_bsv, virtual_tokens, price_bsv, price_usd, market_cap_usd, ath_usd, volume_24h_usd, holder_count, trade_count)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING`,
-        [c.address, cn.symbol, cn.name, cn.circ, cn.vbsv, cn.vtok, (cn.price_usd / BSV_USD).toFixed(12), cn.price_usd, mcap, cn.ath / BSV_USD, cn.vol, cn.holders, cn.trades],
-      );
-      // seed top holders
-      for (let i = 0; i < 3; i++) {
-        const fakeHolder = `0x${Math.random().toString(16).slice(2).padEnd(40, "0")}`;
-        const pct = [0.08, 0.05, 0.03][i];
-        await pool.query(
-          `INSERT INTO coin_holdings (id, coin_creator, holder, amount, avg_buy_price_bsv) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
-          [uid(), c.address, fakeHolder, Math.floor(cn.circ * pct), (cn.price_usd / BSV_USD * 0.7).toFixed(12)],
-        );
-      }
-    }
-    creatorsSeeded = true;
-    logger.info("Creator coins seeded");
-  } catch (err: any) {
-    logger.warn({ err: err?.message }, "Creator seed failed");
-  }
-}
 
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
 function calcBuy(vBsv: number, vTok: number, bsvIn: number) {
@@ -133,7 +39,7 @@ function calcSell(vBsv: number, vTok: number, tokensIn: number) {
 
 /* ── GET /social/creators ─────────────────────────────────────────────────── */
 router.get("/social/creators", async (req, res) => {
-  await ensureCreatorsSeeded();
+
   try {
     const { q, sort = "market_cap" } = req.query as Record<string, string>;
     const offset = parseInt((req.query.offset as string) ?? "0", 10);
@@ -164,7 +70,7 @@ router.get("/social/creators", async (req, res) => {
 
 /* ── GET /social/creators/:address ───────────────────────────────────────── */
 router.get("/social/creators/:address", async (req, res) => {
-  await ensureCreatorsSeeded();
+
   try {
     const { address } = req.params;
     const { rows: profiles } = await pool.query(
@@ -451,7 +357,7 @@ router.get("/social/holdings/:holderAddress/coin/:creatorAddress", async (req, r
 
 /* ── GET /social/search ───────────────────────────────────────────────────── */
 router.get("/social/search", async (req, res) => {
-  await ensureCreatorsSeeded();
+
   try {
     const { q = "" } = req.query as Record<string, string>;
     const term = `%${q}%`;
@@ -476,7 +382,7 @@ router.get("/social/search", async (req, res) => {
 
 /* ── GET /social/trending-coins ──────────────────────────────────────────── */
 router.get("/social/trending-coins", async (req, res) => {
-  await ensureCreatorsSeeded();
+
   try {
     const { rows } = await pool.query(
       `SELECT cp.address, cp.username, cp.avatar_url, cp.is_verified,
