@@ -386,6 +386,38 @@ router.get("/social/creators/:address/holders", async (req, res) => {
   }
 });
 
+/* ── GET /social/creators/:address/followers ─────────────────────────────── */
+router.get("/social/creators/:address/followers", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sf.follower as address, cp.username, cp.avatar_url, cp.is_verified
+       FROM social_follows sf
+       LEFT JOIN creator_profiles cp ON sf.follower = cp.address
+       WHERE sf.following = $1
+       ORDER BY sf.created_at DESC LIMIT 100`, [req.params.address],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── GET /social/creators/:address/following ─────────────────────────────── */
+router.get("/social/creators/:address/following", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sf.following as address, cp.username, cp.avatar_url, cp.is_verified
+       FROM social_follows sf
+       LEFT JOIN creator_profiles cp ON sf.following = cp.address
+       WHERE sf.follower = $1
+       ORDER BY sf.created_at DESC LIMIT 100`, [req.params.address],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 /* ── GET /social/holdings/:address ───────────────────────────────────────── */
 router.get("/social/holdings/:address", async (req, res) => {
   try {
