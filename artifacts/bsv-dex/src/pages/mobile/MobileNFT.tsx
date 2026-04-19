@@ -379,6 +379,7 @@ function CreatorProfileSheet({
   const [showEdit, setShowEdit] = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
+  const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -407,6 +408,16 @@ function CreatorProfileSheet({
     const res = await fetch(`${API}/social/creators/${creatorAddress}/${type}`).catch(() => null);
     const items = res?.ok ? await res.json() : [];
     setFollowList({ type, items });
+  }
+
+  async function openStatSheet(type: "holders" | "holding") {
+    if (type === "holders") {
+      setStatSheet({ type, items: topHolders });
+    } else {
+      const res = await fetch(`${API}/social/holdings/${creatorAddress}`).catch(() => null);
+      const d = res?.ok ? await res.json() : {};
+      setStatSheet({ type, items: d.holdings ?? [] });
+    }
   }
 
   const profile = data?.profile;
@@ -465,16 +476,18 @@ function CreatorProfileSheet({
           <div className="flex items-center gap-4 mb-3">
             <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
             <div className="flex-1 grid grid-cols-3 text-center">
-              {[
-                { label: "Posts",   value: fmtNum(Math.max(profile.post_count, posts.length)) },
-                { label: "Holders", value: fmtNum(profile.holder_count ?? 0) },
-                { label: "Holding", value: fmtNum(profile.trade_count ?? 0) },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{value}</div>
-                  <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{label}</div>
-                </div>
-              ))}
+              <div>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.post_count, posts.length))}</div>
+                <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Posts</div>
+              </div>
+              <button className="active:opacity-60" onClick={() => openStatSheet("holders")}>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.holder_count ?? 0)}</div>
+                <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
+              </button>
+              <button className="active:opacity-60" onClick={() => openStatSheet("holding")}>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.trade_count ?? 0)}</div>
+                <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holding</div>
+              </button>
             </div>
           </div>
 
@@ -704,6 +717,42 @@ function CreatorProfileSheet({
                       <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(u.address)}</p>
                     </div>
                     {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+      {statSheet && (
+        <Portal>
+          <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setStatSheet(null)}>
+            <div className="w-full rounded-t-3xl" style={{ background: "var(--color-bg)", maxHeight: "70vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-4 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <h3 className="font-bold text-base" style={{ color: "var(--color-text)" }}>{statSheet.type === "holders" ? "Top Holders" : "Holdings"}</h3>
+                <button onClick={() => setStatSheet(null)}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {statSheet.items.length === 0 ? (
+                  <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {statSheet.type === "holders" ? "holders" : "holdings"} yet</div>
+                ) : statSheet.type === "holders" ? statSheet.items.map((h: any, i: number) => (
+                  <div key={h.holder ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                    <div className="w-6 text-center text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>#{i + 1}</div>
+                    <Avatar src={undefined} name={h.username ?? h.holder} size={32} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.holder)}</p>
+                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(h.holder)}</p>
+                    </div>
+                    <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
+                  </div>
+                )) : statSheet.items.map((h: any, i: number) => (
+                  <div key={h.coin_creator ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0" style={{ background: "var(--color-accent)", color: "#000" }}>{h.symbol?.slice(0, 3)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.coin_creator)}</p>
+                      <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{h.symbol} · ${parseFloat(h.price_usd || "0").toFixed(4)}</p>
+                    </div>
+                    <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
                   </div>
                 ))}
               </div>
