@@ -844,8 +844,99 @@ function SlippageSettings({ slippage, onChange }: { slippage: number; onChange: 
 // ─── Exchange Swap Panel — real internal AMM swap ─────────────────────────────
 
 const EXCHANGE_ASSETS = [
-  "ETH","BTC","BSV","USDT","USDC","BNB","SOL","AVAX","MATIC","LINK","DOGE","XRP","ADA","DOT","BCH","LTC","UNI","AAVE",
+  "1INCH","AAVE","ADA","AERO","AGIX","AKT","ALFA","ALGO","ALICE","ALPACA","ALT","APT","ARB","ARKM",
+  "ATOM","AVAX","AXS","BABYDOGE","BAKE","BAL","BALD","BAND","BASED","BB","BCH","BEAM","BGB","BIGTIME",
+  "BNB","BOBA","BOME","BONK","BRETT","BSV","BTC","BUILD","BUSD","CAKE","CATI","CBBTC","CBETH","CELO",
+  "CFG","CFX","COINAGE","COMP","CORE","CRO","CRV","CTXC","CVX","DAI","DASH","DEGEN","DOGE","DOGINME",
+  "DOGS","DOT","DYDX","DYM","EGLD","EIGEN","ENJ","ENJOY","ENS","EOS","ETC","ETH","EVMOS","FET","FIL",
+  "FLOKI","FLR","FRAX","FRIEND","FTM","FWOG","FXS","GALA","GHST","GIGA","GLM","GMT","GMX","GODS",
+  "GRT","GT","HBAR","HIGHER","HMSTR","HNT","HT","ICP","ICX","ILV","IMAGINE","IMX","INJ","IOTX","JUNO",
+  "KAS","KAVA","KCS","KDA","LDO","LINEA","LINK","LISTA","LPT","LTC","LUNA","LUNC","LUSD","MAGA",
+  "MAGIC","MANA","MATIC","MC","METIS","MEW","MICHI","MINT","MKR","MNT","MOCHI","MOG","MOONWELL",
+  "MORPHO","MPL","NEAR","NEIRO","NMR","NOMAD","NORMIE","NOT","NOTES","NTRN","OCEAN","OKB","ONCHAIN",
+  "ONDO","ONE","OP","ORAI","ORDI","OSMO","PAXG","PENDLE","PEPE","PERP","PIXEL","PONKE","POPCAT",
+  "POST","POWR","PRIME","RAINBOW","RATS","RBTC","RETH","REZ","RNDR","RON","ROSE","RPL","RUNE","SAND",
+  "SATS","SCR","SCRT","SEAM","SEI","SHIB","SLERF","SLP","SNX","SOL","SPELL","SSV","STARS","STORJ",
+  "STRD","STRK","STX","SUI","SUSHI","TAO","TBTC","THETA","TIA","TLM","TNSR","TON","TOSHI","TRUMP",
+  "TRX","TURBO","TWT","UNI","USDC","USDT","VET","VIRAL","W","WAXP","WBNB","WBT","WBTC","WELL",
+  "WETH","WIF","WLD","WSTETH","XAUT","XLM","XMR","XRP","YFI","ZEC","ZEN","ZK","ZORA","ZRO",
 ];
+
+// Searchable asset picker for the exchange panel
+function ExchangeAssetPicker({
+  value, onChange, exclude, label,
+}: {
+  value: string; onChange: (v: string) => void; exclude: string; label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    const list = EXCHANGE_ASSETS.filter(a => a !== exclude);
+    if (!q) return list;
+    // Put prefix matches first, then substring
+    const prefix = list.filter(a => a.toLowerCase().startsWith(q));
+    const rest   = list.filter(a => !a.toLowerCase().startsWith(q) && a.toLowerCase().includes(q));
+    return [...prefix, ...rest];
+  }, [search, exclude]);
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+    else setSearch("");
+  }, [open]);
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted border border-border/60 hover:border-border font-bold text-sm transition-colors min-w-[90px]"
+      >
+        <CoinLogo symbol={value} size={16} />
+        <span>{value}</span>
+        <ChevronDown className="w-3 h-3 text-muted-foreground ml-auto" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 left-0 w-56 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 300 }}>
+          <div className="p-2 border-b border-border/60 flex items-center gap-1.5">
+            <X className="w-3.5 h-3.5 text-muted-foreground shrink-0 cursor-pointer" onClick={() => setOpen(false)} />
+            <input
+              ref={inputRef}
+              placeholder={`Search ${EXCHANGE_ASSETS.length} assets…`}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+          <div className="overflow-y-auto flex-1 py-1">
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">No assets found</p>
+            )}
+            {filtered.map(a => (
+              <button
+                key={a}
+                onClick={() => { onChange(a); setOpen(false); }}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/60 transition-colors text-sm",
+                  a === value && "bg-primary/5 text-primary",
+                )}
+              >
+                <CoinLogo symbol={a} size={20} />
+                <span className="font-semibold">{a}</span>
+                {a === value && <CheckCircle2 className="w-3.5 h-3.5 ml-auto" />}
+              </button>
+            ))}
+          </div>
+          <div className="px-3 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60 text-center">
+            {filtered.length} of {EXCHANGE_ASSETS.length - 1} assets
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ExchangeQuote {
   assetIn: string; assetOut: string;
@@ -969,10 +1060,12 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select value={fromAsset} onChange={e => { setFromAsset(e.target.value); setQuote(null); setAmount(""); }}
-            className="shrink-0 bg-muted border border-border rounded-lg px-2 py-1.5 text-sm font-bold text-foreground focus:outline-none">
-            {EXCHANGE_ASSETS.filter(a => a !== toAsset).map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <ExchangeAssetPicker
+            value={fromAsset}
+            onChange={v => { setFromAsset(v); setQuote(null); setAmount(""); }}
+            exclude={toAsset}
+            label="You pay"
+          />
           <input type="number" min="0" placeholder="0.0" value={amount} onChange={e => handleAmountChange(e.target.value)}
             className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40" />
         </div>
@@ -992,10 +1085,12 @@ function ExchangeSwapPanel({ address, onOpenWallet }: { address: string | null; 
           {balFor(toAsset) != null && <span className="font-mono">Balance: {balFor(toAsset)!.toFixed(4)}</span>}
         </div>
         <div className="flex items-center gap-2">
-          <select value={toAsset} onChange={e => { setToAsset(e.target.value); setQuote(null); setAmount(""); }}
-            className="shrink-0 bg-muted border border-border rounded-lg px-2 py-1.5 text-sm font-bold text-foreground focus:outline-none">
-            {EXCHANGE_ASSETS.filter(a => a !== fromAsset).map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          <ExchangeAssetPicker
+            value={toAsset}
+            onChange={v => { setToAsset(v); setQuote(null); setAmount(""); }}
+            exclude={fromAsset}
+            label="You receive"
+          />
           <div className="flex-1 text-2xl font-bold">
             {quoting ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               : <span className={quote ? "text-foreground" : "text-muted-foreground/40"}>
@@ -1483,6 +1578,16 @@ export function Swap() {
               </span>
             </div>
           </>
+
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border/40" />
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap via OrahDEX Exchange</span>
+          <div className="flex-1 h-px bg-border/40" />
+        </div>
+
+        {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
+        <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
