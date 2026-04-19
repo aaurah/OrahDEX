@@ -43,7 +43,8 @@ const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ defau
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
-const MobilePortfolio = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobilePortfolio  = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobileCoinWallet = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
 const UserApiKeys     = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
 const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
@@ -416,6 +417,9 @@ function Router() {
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
+                <Route path="/portfolio/:coin">
+                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
+                </Route>
                 <Route path="/settings"           component={MobileSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
