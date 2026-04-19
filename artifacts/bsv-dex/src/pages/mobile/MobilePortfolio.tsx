@@ -3,7 +3,7 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History,
+  ArrowDownLeft, ArrowUpRight, History, Upload,
 } from "lucide-react";
 
 import { useWalletStore } from "@/store/useWalletStore";
@@ -244,6 +244,7 @@ export function MobilePortfolio() {
   const [sweepMsg, setSweepMsg] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
+  const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
   const queryClient = useQueryClient();
 
   const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
@@ -490,6 +491,19 @@ export function MobilePortfolio() {
   // exchange ledger balances (covers edge cases where provider string differs).
   const showTradingBalance = isOrahWallet || exchNonZero.length > 0;
 
+  const handleWithdrawAction = () => {
+    const firstAsset = exchNonZero[0];
+    if (firstAsset) {
+      const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
+      setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color: ASSET_COLORS[firstAsset.asset] ?? "#6B7280" });
+      setWithdrawInitialTab("withdraw");
+    } else {
+      setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
+      setWithdrawInitialTab("deposit");
+    }
+    setWithdrawOpen(true);
+  };
+
   const handleCopy = () => {
     if (!address) return;
     navigator.clipboard?.writeText(address);
@@ -641,6 +655,7 @@ export function MobilePortfolio() {
             networkLabel={assetNet.networkLabel}
             addressPlaceholder={assetNet.placeholder}
             color={withdrawAsset.color}
+            initialTab={withdrawInitialTab}
           />
         );
       })()}
@@ -904,18 +919,22 @@ export function MobilePortfolio() {
             </div>
           )}
 
-          {/* Buy / Receive / Bridge */}
-          <div className="grid grid-cols-3 gap-2">
-            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
-              <CreditCard size={15} />
+          {/* Buy / Receive / Withdraw / Bridge */}
+          <div className="grid grid-cols-4 gap-2">
+            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-[11px] shadow-lg shadow-green-600/20 active:opacity-90">
+              <CreditCard size={14} />
               Buy
             </button>
-            <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
-              <ArrowDownToLine size={15} />
+            <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-[11px] shadow-lg shadow-primary/20 active:opacity-90">
+              <ArrowDownToLine size={14} />
               Receive
             </button>
-            <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-xs active:bg-green-500/20 transition-colors">
-              <ArrowLeftRight size={15} />
+            <button onClick={handleWithdrawAction} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-orange-400 font-bold text-[11px] active:bg-orange-500/20 transition-colors">
+              <Upload size={14} />
+              Withdraw
+            </button>
+            <button onClick={() => navigate("/deposit-bsv")} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-green-500/10 border border-green-500/30 text-green-400 font-bold text-[11px] active:bg-green-500/20 transition-colors">
+              <ArrowLeftRight size={14} />
               Bridge
             </button>
           </div>
