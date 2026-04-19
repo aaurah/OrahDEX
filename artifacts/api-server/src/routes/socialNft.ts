@@ -186,18 +186,27 @@ router.get("/social/feed", async (req, res) => {
     const offset = parseInt((req.query.offset as string) ?? "0", 10);
     const limit  = Math.min(parseInt((req.query.limit  as string) ?? "20", 10), 50);
 
-    let where = "WHERE status = 'active'";
+    let where = "WHERE sp.status = 'active'";
     const params: any[] = [];
 
-    if (category) { params.push(category); where += ` AND category = $${params.length}`; }
-    if (q)        { params.push(`%${q}%`);  where += ` AND (title ILIKE $${params.length} OR description ILIKE $${params.length})`; }
-    if (creator)  { params.push(creator);   where += ` AND creator = $${params.length}`; }
+    if (category) { params.push(category); where += ` AND sp.category = $${params.length}`; }
+    if (q)        { params.push(`%${q}%`);  where += ` AND (sp.title ILIKE $${params.length} OR sp.description ILIKE $${params.length})`; }
+    if (creator)  { params.push(creator);   where += ` AND sp.creator = $${params.length}`; }
 
-    const orderBy = sort === "new" ? "created_at DESC" : sort === "top" ? "like_count DESC" : "mint_count DESC";
+    const orderBy = sort === "new" ? "sp.created_at DESC" : sort === "top" ? "sp.like_count DESC" : "sp.mint_count DESC";
     params.push(limit, offset);
 
     const result = await pool.query(
-      `SELECT * FROM social_posts ${where} ORDER BY ${orderBy} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      `SELECT sp.*,
+         CASE
+           WHEN sp.creator_name !~ '^0x[0-9a-fA-F]' THEN sp.creator_name
+           WHEN cp.username IS NOT NULL AND cp.username !~ '^0x[0-9a-fA-F]' THEN cp.username
+           ELSE sp.creator_name
+         END AS creator_name,
+         COALESCE(NULLIF(cp.avatar_url, ''), sp.creator_avatar) AS creator_avatar
+       FROM social_posts sp
+       LEFT JOIN creator_profiles cp ON sp.creator = cp.address
+       ${where} ORDER BY ${orderBy} LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
 
