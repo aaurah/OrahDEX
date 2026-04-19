@@ -149,6 +149,18 @@ interface BitcoinDepositResponse {
   message?:         string;
 }
 
+interface SolanaDepositResponse {
+  network:          string;
+  supported:        boolean;
+  symbol:           string;
+  label?:           string;
+  address?:         string;
+  minDeposit?:      string;
+  explorerTx?:      string;
+  explorerAddress?: string;
+  message?:         string;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function summariseNote(raw: string): string {
   if (!raw) return raw;
@@ -211,6 +223,8 @@ export function WithdrawSheet({
   const { addNotification } = useNotificationStore();
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
+  const isSolana      = network.toLowerCase() === "sol";
+  const isNonEvm      = isBitcoinFork || isSolana;
 
   const [tab,          setTab]          = useState<"deposit" | "withdraw" | "history">(initialTab);
   const [amount,       setAmount]       = useState("");
@@ -226,6 +240,8 @@ export function WithdrawSheet({
   const [showGasCard,  setShowGasCard]  = useState(false);
   const [bsvTxHash,    setBsvTxHash]    = useState("");
   const [bsvVerifying, setBsvVerifying] = useState(false);
+  const [solTxHash,    setSolTxHash]    = useState("");
+  const [solVerifying, setSolVerifying] = useState(false);
 
   // ── deposit-from-wallet state ────────────────────────────────────────────
   const [depFromWalletBalance,  setDepFromWalletBalance]  = useState<number | null>(null);
@@ -264,6 +280,7 @@ export function WithdrawSheet({
       setDepFromWalletAmount("");
       setDepFromWalletBalance(null);
       setBsvTxHash("");
+      setSolTxHash("");
     }
   }, [open, defaultRecipient, initialTab]);
 
@@ -279,7 +296,7 @@ export function WithdrawSheet({
         if (!r.ok) throw new Error("Failed to load deposit address");
         return r.json();
       },
-      enabled: !!walletAddress && open && tab === "deposit",
+      enabled: !!walletAddress && open && tab === "deposit" && !isNonEvm,
       staleTime: 60_000,
     });
 
@@ -295,6 +312,44 @@ export function WithdrawSheet({
       enabled: isBitcoinFork && open && tab === "deposit",
       staleTime: 300_000,
     });
+
+  // ── Solana deposit address ───────────────────────────────────────────────
+  const { data: solanaDepositData, isLoading: solanaDepositLoading } =
+    useQuery<SolanaDepositResponse>({
+      queryKey: ["solana-deposit-address"],
+      queryFn: async () => {
+        const r = await fetch(`${API_BASE}/deposit/solana-address`);
+        if (!r.ok) throw new Error("Failed to load");
+        return r.json();
+      },
+      enabled: isSolana && open && tab === "deposit",
+      staleTime: 300_000,
+    });
+
+  // ── Solana tx verify ─────────────────────────────────────────────────────
+  const handleSolVerify = async () => {
+    if (!solTxHash.trim() || solVerifying || !walletAddress) return;
+    setSolVerifying(true);
+    try {
+      const r = await fetch(`${API_BASE}/deposit/solana-verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress, txHash: solTxHash.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast({ title: "Verification failed", description: data.error ?? "Could not verify transaction", variant: "destructive" });
+      } else {
+        toast({ title: "SOL deposit credited!", description: `${data.amount} SOL has been added to your trading balance.` });
+        addNotification({ type: "deposit", title: "SOL Deposit Credited", body: `${data.amount} SOL added to your exchange balance.` });
+        setSolTxHash("");
+      }
+    } catch {
+      toast({ title: "Verification failed", description: "Network error — please try again.", variant: "destructive" });
+    } finally {
+      setSolVerifying(false);
+    }
+  };
 
   // ── BSV tx verify ────────────────────────────────────────────────────────
   const handleBsvVerify = async () => {
@@ -342,7 +397,23 @@ export function WithdrawSheet({
   // ── withdraw logic ───────────────────────────────────────────────────────
   const parsedAmount    = parseFloat(amount) || 0;
   const exceedsBalance  = parsedAmount > available;
-  const canSubmit       = parsedAmount > 0 && !exceedsBalance && recipient.trim().length > 4 && !submitting;
+
+  const isValidRecipient = (() => {
+    const r = recipient.trim();
+    if (!r) return false;
+    if (isSolana) {
+      // Solana base58 public key: 32-44 base58 characters
+      return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
+    }
+    if (isBitcoinFork) {
+      // BSV/BTC/BCH P2PKH (starts with 1 or m/n for testnet), or P2SH (starts with 3)
+      return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
+    }
+    // EVM: 0x + 40 hex chars
+    return /^0x[0-9a-fA-F]{40}$/.test(r);
+  })();
+
+  const canSubmit = parsedAmount > 0 && !exceedsBalance && isValidRecipient && !submitting;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -786,8 +857,95 @@ export function WithdrawSheet({
               </div>
             )}
 
-            {/* ── EVM MODE TOGGLE (non-Bitcoin assets) ── */}
-            {!isBitcoinFork && (<>
+            {/* ── SOLANA: loading ── */}
+            {isSolana && solanaDepositLoading && (
+              <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">Loading Solana deposit address…</span>
+              </div>
+            )}
+
+            {/* ── SOLANA: exchange address + verify TX ── */}
+            {isSolana && !solanaDepositLoading && solanaDepositData?.supported && solanaDepositData.address && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-purple-400" />
+                    <p className="text-xs font-bold text-purple-400 uppercase tracking-wide">OrahDEX Solana Deposit Address</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground -mt-1">
+                    Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong>. Send only SOL (native) to this address.
+                  </p>
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                      <QRCodeCanvas value={solanaDepositData.address} size={148} level="M" includeMargin={false} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Solana Mainnet</p>
+                  </div>
+                  <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-purple-500/20">
+                    <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
+                      {solanaDepositData.address}
+                    </span>
+                    <button onClick={() => copy(solanaDepositData.address!, "sol-dep-addr")} className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors">
+                      {copiedId === "sol-dep-addr" ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                      <p className="text-muted-foreground">Accepted asset</p>
+                      <p className="font-bold">SOL (native)</p>
+                    </div>
+                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
+                      <p className="text-muted-foreground">Min deposit</p>
+                      <p className="font-bold">{solanaDepositData.minDeposit} SOL</p>
+                    </div>
+                  </div>
+
+                  {/* Solana verify TX */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold">I've sent SOL — verify deposit</label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={solTxHash}
+                        onChange={e => setSolTxHash(e.target.value.trim())}
+                        placeholder="Solana transaction signature"
+                        className="font-mono text-xs flex-1"
+                      />
+                      <Button onClick={handleSolVerify} disabled={!solTxHash.trim() || solVerifying} size="sm" className="shrink-0 gap-1.5">
+                        {solVerifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                        Verify
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Paste the transaction signature from your Solana wallet after sending. Funds are credited instantly upon on-chain confirmation.
+                    </p>
+                  </div>
+
+                  {solanaDepositData.explorerAddress && (
+                    <a href={solanaDepositData.explorerAddress} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-[11px] text-purple-400 hover:text-purple-300 transition-colors">
+                      <ExternalLink className="w-3 h-3" /> View address on Solscan
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── SOLANA: not yet supported ── */}
+            {isSolana && !solanaDepositLoading && !solanaDepositData?.supported && (
+              <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-yellow-400 shrink-0" />
+                  <p className="text-xs font-bold text-yellow-400 uppercase tracking-wide">Exchange Deposit Coming Soon</p>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {solanaDepositData?.message ?? "Solana exchange deposits are being configured. Please check back soon."}
+                </p>
+              </div>
+            )}
+
+            {/* ── EVM MODE TOGGLE (non-Bitcoin, non-Solana assets) ── */}
+            {!isNonEvm && (<>
 
             {/* Mode toggle: Exchange Address vs Wallet Address */}
             <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
@@ -1084,7 +1242,7 @@ export function WithdrawSheet({
             </>)}
 
             {/* Gas top-up card — collapsible (EVM only) */}
-            {!isBitcoinFork && (<div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
+            {!isNonEvm && (<div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
               <button
                 onClick={() => setShowGasCard(v => !v)}
                 className="w-full flex items-center gap-2.5 px-3.5 py-3 text-sm font-semibold text-amber-400 hover:bg-amber-500/5 transition-colors"
@@ -1225,22 +1383,44 @@ export function WithdrawSheet({
                     value={recipient}
                     onChange={e => setRecipient(e.target.value)}
                     placeholder={addressPlaceholder}
-                    className="font-mono text-xs"
+                    className={cn("font-mono text-xs", recipient.trim() && !isValidRecipient && "border-destructive focus-visible:ring-destructive")}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    {walletAddress
-                      ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
-                      : `Enter a valid ${networkLabel} address.`}
-                  </p>
+                  {recipient.trim() && !isValidRecipient ? (
+                    <p className="text-xs text-destructive">
+                      {isSolana
+                        ? "Invalid Solana address — must be a 32–44 character base58 public key."
+                        : isBitcoinFork
+                          ? `Invalid ${network.toUpperCase()} address — expected a P2PKH address starting with 1 or 3.`
+                          : "Invalid EVM address — must start with 0x followed by 40 hex characters."}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {walletAddress
+                        ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
+                        : `Enter a valid ${networkLabel} address.`}
+                    </p>
+                  )}
                 </div>
 
+                {/* Solana processing notice */}
+                {isSolana && (
+                  <div className="flex gap-2.5 p-3 rounded-xl bg-purple-500/8 border border-purple-500/20">
+                    <AlertCircle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Solana withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your SOL balance will be deducted immediately and the transaction will be broadcast by the OrahDEX team.
+                    </p>
+                  </div>
+                )}
+
                 {/* Processing notice */}
-                <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-                  <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
-                  </p>
-                </div>
+                {!isSolana && (
+                  <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+                    <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
+                    </p>
+                  </div>
+                )}
 
                 <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full gap-2 h-11">
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
