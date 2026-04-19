@@ -1106,7 +1106,7 @@ export function MobilePortfolio() {
                           className={`flex items-center gap-3 px-4 py-3.5 ${i < exchBalancesWithValue.length - 1 ? "border-b border-border" : ""}`}
                         >
                           <button
-                            onClick={() => setCoinHistoryOpen(b.asset)}
+                            onClick={() => setLocation(`${BASE}/portfolio/${b.asset}`)}
                             className="flex items-center gap-3 flex-1 min-w-0 text-left active:bg-muted/30 transition-colors rounded-lg -ml-1 pl-1"
                           >
                             <div
