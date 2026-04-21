@@ -559,10 +559,29 @@ export async function signWithPasskey(
 
   if (!assertion) throw new Error("Passkey authentication cancelled");
 
-  const privateKey = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+
   const { privateKeyToAccount } = await import("viem/accounts");
-  const account    = privateKeyToAccount(privateKey as `0x${string}`);
-  const sig        = await account.signMessage({ message });
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+  let privateKey: `0x${string}`;
+
+  if (isMnemonic) {
+    // New wallet format: BIP39 mnemonic → derive EVM private key at m/44'/60'/0'/0/0
+    const { HDKey } = await import("@scure/bip32");
+    const { mnemonicToSeedSync } = await import("@scure/bip39");
+    const seed    = mnemonicToSeedSync(secret.trim());
+    const root    = HDKey.fromMasterSeed(seed);
+    const derived = root.derive("m/44'/60'/0'/0/0");
+    if (!derived.privateKey) throw new Error("Key derivation failed");
+    const hex = Array.from(derived.privateKey).map(b => b.toString(16).padStart(2, "0")).join("");
+    privateKey = `0x${hex}` as `0x${string}`;
+  } else {
+    // Legacy wallet format: raw EVM private key (0x…)
+    privateKey = secret as `0x${string}`;
+  }
+
+  const account = privateKeyToAccount(privateKey);
+  const sig     = await account.signMessage({ message });
 
   return { signature: sig, address: account.address };
 }
