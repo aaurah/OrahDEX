@@ -73,6 +73,17 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
+// Protect all /admin routes — allow only the public auth endpoints through without a token.
+const ADMIN_OPEN_METHODS_PATHS = new Set([
+  "POST:/auth",
+  "POST:/auth/totp",
+  "POST:/auth/wallet-challenge",
+  "POST:/auth/wallet",
+]);
+router.use("/admin", (req, res, next) => {
+  if (ADMIN_OPEN_METHODS_PATHS.has(`${req.method}:${req.path}`)) return next();
+  return requireAdminToken(req, res, next);
+});
 router.use("/admin", adminRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
