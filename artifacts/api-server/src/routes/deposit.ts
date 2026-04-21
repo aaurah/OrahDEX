@@ -150,8 +150,7 @@ router.post("/deposit/verify", async (req, res) => {
 
     const amountStr = valueEth.toFixed(18);
 
-    // Step 7: Record + credit atomically
-    await creditAvailable(walletAddress, asset, amountStr);
+    // Step 7: Record first (prevents double-credit on failure), then credit balance
     await recordVerifiedDeposit({
       txHash,
       chainId,
@@ -159,6 +158,7 @@ router.post("/deposit/verify", async (req, res) => {
       asset,
       amount: amountStr,
     });
+    await creditAvailable(walletAddress, asset, amountStr);
 
     req.log.info(
       { walletAddress, txHash, chainId, asset, amount: amountStr },
@@ -227,7 +227,6 @@ router.post("/deposit/sweep-wallet", async (req, res) => {
     const asset     = chain.nativeSymbol;
     const amountStr = balanceNative.toFixed(18);
 
-    await creditAvailable(walletAddress, asset, amountStr);
     await recordVerifiedDeposit({
       txHash:     sweepRef,
       chainId,
@@ -235,6 +234,7 @@ router.post("/deposit/sweep-wallet", async (req, res) => {
       asset,
       amount:     amountStr,
     });
+    await creditAvailable(walletAddress, asset, amountStr);
 
     req.log.info({ walletAddress, chainId, asset, amount: amountStr }, "deposit/sweep-wallet: credited");
 
@@ -386,8 +386,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       return;
     }
 
-    // Credit and record
-    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
+    // Record first (prevents double-credit if credit step fails), then credit
     await recordVerifiedDeposit({
       txHash,
       chainId:    0,
@@ -395,6 +394,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       asset:      "BSV",
       amount:     String(bsvAmount),
     });
+    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
 
     req.log.info({ walletAddress, txHash, bsvAmount }, "BSV deposit credited");
     res.json({ success: true, asset: "BSV", amount: bsvAmount, txHash });
@@ -630,8 +630,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
       return;
     }
 
-    // Credit and record
-    await creditAvailable(walletAddress, "SOL", String(solAmount));
+    // Record first (prevents double-credit if credit step fails), then credit
     await recordVerifiedDeposit({
       txHash:     txHash.trim(),
       chainId:    -1,
@@ -639,6 +638,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
       asset:      "SOL",
       amount:     String(solAmount),
     });
+    await creditAvailable(walletAddress, "SOL", String(solAmount));
 
     req.log.info({ walletAddress, txHash, solAmount }, "SOL deposit credited");
     res.json({ success: true, asset: "SOL", amount: solAmount, txHash });

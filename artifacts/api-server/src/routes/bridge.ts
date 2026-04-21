@@ -65,8 +65,8 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     const totalSat = utxos.reduce((s, u) => s + (u.value ?? 0), 0);
     const totalBsv = totalSat / 1e8;
 
-    // Consider funded if ≥ 95% of expected amount (allow minor fee rounding)
-    if (totalBsv >= expectedBsv * 0.95) {
+    // Allow a small tolerance for network fees (0.1%) but reject clear under-funding
+    if (totalBsv >= expectedBsv * 0.999) {
       return {
         funded: true,
         txid: utxos[0].tx_hash,

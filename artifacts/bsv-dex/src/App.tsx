@@ -442,7 +442,6 @@ function Router() {
           <Layout>
             <Suspense fallback={<PageSkeleton />}>
               <Switch>
-                <Route path="/"               component={Markets} />
                 <Route path="/markets"        component={Markets} />
                 <Route path="/trade/:symbol"  component={SpotTrading} />
                 <Route path="/futures/:symbol" component={FuturesTrading} />
@@ -456,6 +455,9 @@ function Router() {
                 <Route path="/fees"           component={RevenuePage} />
                 <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
+                <Route path="/portfolio/:coin">
+                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
+                </Route>
                 <Route path="/nft"            component={NFTPage} />
                 <Route path="/prediction"     component={PredictionTrading} />
                 <Route path="/sovereign"      component={SovereignOverviewPage} />
