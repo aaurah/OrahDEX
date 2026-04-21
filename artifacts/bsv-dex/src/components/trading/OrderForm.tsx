@@ -738,7 +738,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     // Orah internal wallets use the API ledger and do not need a separate sign step.
     let evmSignature: string | undefined;
     if (isExternalEvm) {
-      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${Date.now()}`;
+      // Build a random nonce using crypto.getRandomValues to prevent signature replay.
+      const nonceBytes = new Uint8Array(16);
+      crypto.getRandomValues(nonceBytes);
+      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
       try {
         setSigningOrder(true);
         evmSignature = await signMessageAsync({ message: orderMsg });

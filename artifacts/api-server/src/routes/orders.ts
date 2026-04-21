@@ -294,7 +294,9 @@ router.post("/orders", async (req, res) => {
           // contract (lockETH / lockToken → reveal). The HTLC watcher calls
           // reveal() once both parties have locked, completing the trade.
           fillResult = {
-            txid:             "0x" + crypto.createHash("sha256").update(tradeId).digest("hex"),
+            // Placeholder txid until the HTLC reveal transaction settles on-chain.
+            // Prefixed so auditing tools can distinguish it from real broadcast txids.
+            txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
             wasRealBroadcast: false,
             settlementType:   "evm_htlc",
             isCrossChain:     false,
