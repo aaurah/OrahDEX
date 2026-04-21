@@ -13,11 +13,13 @@ router.post("/support/contact", async (req, res) => {
   try {
     const { name, email, subject, category = "general", message } = req.body ?? {};
     if (!name?.trim() || !email?.trim() || !subject?.trim() || !message?.trim()) {
-      return res.status(400).json({ error: "name, email, subject and message are required" });
+      res.status(400).json({ error: "name, email, subject and message are required" });
+      return;
     }
     const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRx.test(email)) {
-      return res.status(400).json({ error: "Invalid email address" });
+      res.status(400).json({ error: "Invalid email address" });
+      return;
     }
 
     const [ticket] = await db.insert(supportTicketsTable).values({
@@ -36,6 +38,7 @@ router.post("/support/contact", async (req, res) => {
 
     try {
       await sendMail({
+        from: supportEmail,
         to: supportEmail,
         subject: `[Support Ticket #${ticket.id}] ${ticket.subject}`,
         text: `New support ticket from ${ticket.name} <${ticket.email}>\n\nCategory: ${ticket.category}\n\nMessage:\n${ticket.message}`,
@@ -68,10 +71,10 @@ router.post("/support/contact", async (req, res) => {
 router.get("/support/tickets/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!id || isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
+    if (!id || isNaN(id)) { res.status(400).json({ error: "Invalid ticket ID" }); return; }
     const [ticket] = await db.select().from(supportTicketsTable)
       .where(eq(supportTicketsTable.id, id));
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) { res.status(404).json({ error: "Ticket not found" }); return; }
     res.json(ticket);
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -119,7 +122,7 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
       .where(eq(supportTicketsTable.id, id))
       .returning();
 
-    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (!ticket) { res.status(404).json({ error: "Ticket not found" }); return; }
 
     if (adminReply && ticket.email) {
       try {
@@ -127,6 +130,7 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
         const siteName = settings.find(r => r.key === "site_name")?.value || "OrahDEX";
         const supportEmail = settings.find(r => r.key === "support_email")?.value || "support@orahdex.org";
         await sendMail({
+          from: supportEmail,
           to: ticket.email,
           subject: `Re: [Ticket #${ticket.id}] ${ticket.subject}`,
           text: `Hi ${ticket.name},\n\n${adminReply}\n\nBest regards,\n${siteName} Support Team\n${supportEmail}`,
@@ -170,7 +174,8 @@ router.post("/admin/support/faqs", async (req, res) => {
   try {
     const { question, answer, category = "general", isPublished = true } = req.body ?? {};
     if (!question?.trim() || !answer?.trim()) {
-      return res.status(400).json({ error: "question and answer are required" });
+      res.status(400).json({ error: "question and answer are required" });
+      return;
     }
     const [faq] = await db.insert(supportFaqsTable).values({
       question: question.trim(),
@@ -195,7 +200,7 @@ router.put("/admin/support/faqs/:id", async (req, res) => {
     if (category !== undefined) updates.category = category;
     if (isPublished !== undefined) updates.isPublished = isPublished;
     const [faq] = await db.update(supportFaqsTable).set(updates).where(eq(supportFaqsTable.id, id)).returning();
-    if (!faq) return res.status(404).json({ error: "FAQ not found" });
+    if (!faq) { res.status(404).json({ error: "FAQ not found" }); return; }
     res.json(faq);
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -270,7 +275,7 @@ router.post("/admin/support/settings", async (req, res) => {
 router.post("/admin/support/notifications/test", async (req, res) => {
   try {
     const { channel, ...settings } = req.body ?? {};
-    if (!channel) return res.status(400).json({ error: "channel is required" });
+    if (!channel) { res.status(400).json({ error: "channel is required" }); return; }
     const result = await sendTestNotification(channel, settings);
     res.json(result);
   } catch (err: any) {

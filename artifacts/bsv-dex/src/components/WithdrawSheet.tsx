@@ -509,7 +509,7 @@ export function WithdrawSheet({
       const hash = await walletClient.sendTransaction({
         to:    depositAddress as `0x${string}`,
         value: parseEther(depFromWalletAmount),
-      });
+      } as any);
       setDepFromWalletTxHash(hash);
       // Auto-fill the TX verify field so user can verify in one tap
       setTxHash(hash);

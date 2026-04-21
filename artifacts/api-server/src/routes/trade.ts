@@ -413,7 +413,7 @@ router.post("/trade/exchange", async (req, res) => {
       amountIn:  amtIn.toFixed(8),
       amountOut: amtOut.toFixed(8),
     });
-    await recordPlatformFee(fee, assetOut.toUpperCase(), "exchange-swap");
+    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase() });
 
     // Record exchange-mode trade in trades table
     const tradeId = crypto.randomUUID();
@@ -549,7 +549,7 @@ router.post("/withdraw", async (req, res) => {
           await vaultWithdraw({ asset, amount: parsed, recipient, chainId: vaultChain });
           logger.info({ id, asset, amount: parsed, recipient, vault: vaultAddr }, "withdraw: vault.withdraw() succeeded");
         } else {
-          await processWithdrawal({ id, walletAddress, asset, amount: parsed.toString(), network, recipient });
+          await processWithdrawal({ asset, amount: parsed, network, recipient });
         }
         // Mark completed in DB
         await client.query(

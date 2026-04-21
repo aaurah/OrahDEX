@@ -206,17 +206,17 @@ router.post("/prediction/bet", async (req, res) => {
     };
 
     if (!roundId || !symbol || !wallet || !position || !amount) {
-      return res.status(400).json({ error: "Missing required fields" });
+      res.status(400).json({ error: "Missing required fields" }); return;
     }
-    if (amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
-    if (leverage < 1 || leverage > 100) return res.status(400).json({ error: "Leverage must be 1-100x" });
+    if (amount <= 0) { res.status(400).json({ error: "Amount must be positive" }); return; }
+    if (leverage < 1 || leverage > 100) { res.status(400).json({ error: "Leverage must be 1-100x" }); return; }
 
     const sym = symbol.toUpperCase();
     await tickRounds(sym);
     const arr = getSymbolRounds(sym);
     const round = arr.find(r => r.id === roundId);
-    if (!round) return res.status(404).json({ error: "Round not found" });
-    if (round.status !== "live") return res.status(400).json({ error: "Round is locked or closed — wait for next round" });
+    if (!round) { res.status(404).json({ error: "Round not found" }); return; }
+    if (round.status !== "live") { res.status(400).json({ error: "Round is locked or closed — wait for next round" }); return; }
 
     {
       const wAddr = wallet.toLowerCase();
@@ -226,7 +226,7 @@ router.post("/prediction/bet", async (req, res) => {
       );
       const available = parseFloat(balRes.rows[0]?.available ?? "0");
       if (available < amount) {
-        return res.status(400).json({ error: `Insufficient USDT balance. Available: ${available.toFixed(2)}` });
+        res.status(400).json({ error: `Insufficient USDT balance. Available: ${available.toFixed(2)}` }); return;
       }
       await pool.query(
         `UPDATE user_balances SET available = available - $1 WHERE LOWER(wallet_address) = $2 AND asset_symbol = 'USDT'`,
@@ -270,12 +270,12 @@ router.post("/prediction/claim", async (req, res) => {
     await tickRounds(sym);
     const arr = getSymbolRounds(sym);
     const round = arr.find(r => r.id === roundId);
-    if (!round) return res.status(404).json({ error: "Round not found" });
-    if (round.status !== "closed") return res.status(400).json({ error: "Round not finished" });
+    if (!round) { res.status(404).json({ error: "Round not found" }); return; }
+    if (round.status !== "closed") { res.status(400).json({ error: "Round not finished" }); return; }
 
     const betList = getSymbolBets(sym);
     const userBets = betList.filter(b => b.roundId === roundId && b.wallet === wallet && !b.claimed);
-    if (userBets.length === 0) return res.status(400).json({ error: "No unclaimed bets for this round" });
+    if (userBets.length === 0) { res.status(400).json({ error: "No unclaimed bets for this round" }); return; }
 
     let totalPayout = 0;
     for (const bet of userBets) {

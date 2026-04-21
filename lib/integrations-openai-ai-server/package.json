@@ -13,5 +13,8 @@
     "openai": "^6.33.0",
     "p-limit": "^7.3.0",
     "p-retry": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
   }
 }

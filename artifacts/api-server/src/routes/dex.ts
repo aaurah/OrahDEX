@@ -126,7 +126,7 @@ async function fetchKeyPrices() {
 
 /* ── GET /api/dex/prices ───────────────────────────────────────────────────── */
 router.get("/dex/prices", async (_req, res) => {
-  if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) return res.json(priceCache.data);
+  if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) { res.json(priceCache.data); return; }
   const p  = await fetchKeyPrices();
   const data = {
     BTC:  { usd: p["BTC"]!.usd,  change24h: p["BTC"]!.change24h },
@@ -141,7 +141,7 @@ router.get("/dex/prices", async (_req, res) => {
 /* ── GET /api/dex/exchanges ────────────────────────────────────────────────── */
 router.get("/dex/exchanges", async (_req, res) => {
   if (exchangeCache && Date.now() - exchangeCache.ts < EXCHANGE_CACHE_MS) {
-    return res.json(exchangeCache.data);
+    res.json(exchangeCache.data); return;
   }
 
   const btcPrice = await fetchBtcUsd();

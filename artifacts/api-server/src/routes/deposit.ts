@@ -326,8 +326,8 @@ router.get("/deposit/bitcoin-address", async (req, res) => {
       symbol:          "BSV",
       label:           "Bitcoin SV",
       minDeposit:      "0.001",
-      explorerTx:      `${BSV_NET.explorerBase}/tx/`,
-      explorerAddress: `${BSV_NET.explorerBase}/address/${address}`,
+      explorerTx:      `${BSV_NET.explorer}/tx/`,
+      explorerAddress: `${BSV_NET.explorer}/address/${address}`,
     });
   } catch (err) {
     req.log.error({ err }, "deposit/bitcoin-address: failed");
