@@ -35,11 +35,12 @@ const NAV_LINKS = [
 ];
 
 const NAV_MORE = [
-  { href: "/p2p",     label: "P2P",       icon: Users },
-  { href: "/bridge",  label: "Bridge",    icon: Link2 },
-  { href: "/copy",    label: "CopyVault", icon: Copy },
-  { href: "/keeper",  label: "Keepers",   icon: Shield },
-  { href: "/fees",    label: "Revenue",   icon: TrendingUp },
+  { href: "/p2p",       label: "P2P",       icon: Users },
+  { href: "/bridge",    label: "Bridge",    icon: Link2 },
+  { href: "/copy",      label: "CopyVault", icon: Copy },
+  { href: "/keeper",    label: "Keepers",   icon: Shield },
+  { href: "/fees",      label: "Revenue",   icon: TrendingUp },
+  { href: "/sovereign", label: "Sovereign", icon: Zap },
 ];
 
 const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
