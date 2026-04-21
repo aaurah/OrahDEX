@@ -126,14 +126,20 @@ async function verifySpotFunding(
       // Not enough internal balance — fall through to on-chain check
     }
 
-    // 2. Accept on-chain balance as proof of funding
-    // reportedBalance is sent by the client from useEvmBalances / on-chain polling.
-    // We trust it as a good-faith representation (non-custodial model).
+    // 2. Require wallet signature + accept on-chain balance as proof of funding.
+    // External EVM wallets must sign the order intent (personal_sign) to authorise
+    // on-chain settlement via the OrahDEX HTLC contract.
     const onChain = reportedBalance ?? 0;
     if (onChain >= needed) {
-      const sigHash = signature
-        ? crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16)
-        : crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      if (!signature) {
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      "Wallet signature required for on-chain order placement. Please sign the order in your wallet.",
+          code:       "SIGNATURE_REQUIRED",
+        };
+      }
+      const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
       return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
     }
 

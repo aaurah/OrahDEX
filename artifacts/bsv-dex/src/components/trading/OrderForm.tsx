@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -330,6 +330,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
+
+  // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
+  const { signMessageAsync } = useSignMessage();
+  const [signingOrder, setSigningOrder] = useState(false);
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -719,19 +723,41 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
     // Limit and stop orders don't execute on-chain immediately — they sit in the
-    // order book. Wallet signing is unreliable on mobile (especially Reown /
-    // WalletConnect) and unnecessary since balance is enforced server-side.
-    // Instead we show a clear confirmation modal that tells the user exactly what
-    // they're placing, then submit directly to the API.
+    // order book. Limit and stop orders show a confirmation modal first.
     if (type !== "market" && !confirmRef.current) {
       setShowConfirm(true);
       return; // Wait for user to confirm in the modal
     }
     confirmRef.current = false; // Reset for next submission
 
-    // ── Place the order — no wallet signing required ───────────────────────
-    // OrahDEX is an order-book DEX: orders are matched server-side and settled
-    // on BSV chain. No ERC-20 approval or wallet transaction is ever needed.
+    // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
+    // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
+    // must sign the order intent with personal_sign to prove authorization.
+    // The signature is stored on the order row (fundingRef: "evm-sig:…") and is
+    // required by the server before the order enters the matching engine.
+    // Orah internal wallets use the API ledger and do not need a separate sign step.
+    let evmSignature: string | undefined;
+    if (isExternalEvm) {
+      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${Date.now()}`;
+      try {
+        setSigningOrder(true);
+        evmSignature = await signMessageAsync({ message: orderMsg });
+      } catch (signErr: any) {
+        setSigningOrder(false);
+        const msg: string = signErr?.message ?? "";
+        // User rejected the signature prompt
+        if (msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")) {
+          toast({ title: "Signature rejected", description: "You must sign the order to proceed.", variant: "destructive" });
+        } else {
+          toast({ title: "Signing failed", description: msg || "Could not sign the order.", variant: "destructive" });
+        }
+        return;
+      } finally {
+        setSigningOrder(false);
+      }
+    }
+
+    // ── Place the order ────────────────────────────────────────────────────────
     placeOrder.mutate(
       {
         data: {
@@ -747,6 +773,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
+          // EVM signature — authorises the order for on-chain settlement via HTLC
+          evmSignature,
+          chainId: isEvm ? chainId : undefined,
         } as any,
       },
       {
@@ -821,7 +850,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
-  const isPending = placeOrder.isPending;
+  const isPending = placeOrder.isPending || signingOrder;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
@@ -1466,9 +1495,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             )}
           >
             {isPending ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
+              signingOrder
+                ? <><PenLine className="w-4 h-4 animate-pulse" /> Sign in wallet…</>
+                : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`
+            ) : isExternalEvm ? (
+              `Sign & ${side === "buy" ? "Buy" : "Sell"} ${base}`
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
