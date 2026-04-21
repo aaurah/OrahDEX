@@ -236,7 +236,11 @@ router.post("/trade/wallet/settle", async (req, res) => {
       return;
     }
 
-    if (!receipt || receipt.status !== "success") {
+    if (!receipt) {
+      res.status(404).json({ error: "Transaction not found on-chain. It may still be pending.", txHash });
+      return;
+    }
+    if (receipt.status !== "success") {
       res.status(422).json({ error: "Transaction reverted on-chain", txHash });
       return;
     }
