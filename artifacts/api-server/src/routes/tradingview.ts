@@ -74,7 +74,7 @@ router.get("/symbols", async (req, res) => {
   res.set("Access-Control-Allow-Origin", "*");
 
   const rawSymbol = (req.query.symbol as string ?? "").toUpperCase().trim();
-  if (!rawSymbol) return res.status(400).json({ s: "error", errmsg: "symbol required" });
+  if (!rawSymbol) { res.status(400).json({ s: "error", errmsg: "symbol required" }); return; }
 
   try {
     // Normalize: "BSVUSDT" → "BSV/USDT"
@@ -90,7 +90,7 @@ router.get("/symbols", async (req, res) => {
     const quote = parts[1] ?? "USDT";
 
     const pricescale = quote === "USDT" || quote === "USDC"
-      ? (market?.tickSize ? Math.round(1 / market.tickSize) : 10000)
+      ? (market?.tickSize ? Math.round(1 / Number(market.tickSize)) : 10000)
       : 100000000;
 
     tvMetrics.lastSymbolsLatencyMs = Date.now() - t0;
@@ -164,7 +164,7 @@ router.get("/history", async (req, res) => {
   const from       = parseInt(req.query.from as string ?? "0");
   const to         = parseInt(req.query.to   as string ?? String(Math.floor(Date.now() / 1000)));
 
-  if (!symbol) return res.json({ s: "error", errmsg: "symbol required" });
+  if (!symbol) { res.json({ s: "error", errmsg: "symbol required" }); return; }
 
   const interval = RESOLUTION_MAP[resolution] ?? "1h";
 
@@ -179,11 +179,11 @@ router.get("/history", async (req, res) => {
 
     const resp = await fetch(candleUrl, { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) {
-      return res.json({ s: "no_data" });
+      res.json({ s: "no_data" }); return;
     }
 
-    const raw = await resp.json() as any[];
-    const candles: any[] = Array.isArray(raw) ? raw : raw?.candles ?? [];
+    const raw = await resp.json() as { candles?: any[] } | any[];
+    const candles: any[] = Array.isArray(raw) ? raw : (raw as { candles?: any[] })?.candles ?? [];
 
     // Filter by time range
     const filtered = candles.filter(c => {
@@ -192,7 +192,7 @@ router.get("/history", async (req, res) => {
     });
 
     if (filtered.length === 0) {
-      return res.json({ s: "no_data", nextTime: to });
+      res.json({ s: "no_data", nextTime: to }); return;
     }
 
     // Convert to UDF array format
