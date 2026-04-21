@@ -34,6 +34,53 @@ const VERIFY_RPC: Record<number, string> = {
   43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
 };
 
+// ── Well-known ERC-20 token registry per chain ─────────────────────────────────
+// Maps chainId → { symbol (uppercase) → { address (lowercase), decimals } }
+// Used to validate that Transfer logs come from the expected token contract and
+// to scale raw BigInt amounts correctly.
+const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals: number }>> = {
+  1: { // Ethereum
+    USDT:  { address: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6  },
+    USDC:  { address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", decimals: 6  },
+    DAI:   { address: "0x6b175474e89094c44da98b954eedeac495271d0f", decimals: 18 },
+    WETH:  { address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", decimals: 18 },
+    WBTC:  { address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", decimals: 8  },
+    LINK:  { address: "0x514910771af9ca656af840dff83e8264ecf986ca", decimals: 18 },
+    UNI:   { address: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", decimals: 18 },
+  },
+  56: { // BNB Chain
+    USDT:  { address: "0x55d398326f99059ff775485246999027b3197955", decimals: 18 },
+    USDC:  { address: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", decimals: 18 },
+    WBNB:  { address: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", decimals: 18 },
+  },
+  137: { // Polygon
+    USDT:  { address: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", decimals: 6  },
+    USDC:  { address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", decimals: 6  },
+    WMATIC:{ address: "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270", decimals: 18 },
+    WETH:  { address: "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619", decimals: 18 },
+  },
+  8453: { // Base
+    USDC:  { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", decimals: 6  },
+    WETH:  { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  },
+  42161: { // Arbitrum One
+    USDT:  { address: "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", decimals: 6  },
+    USDC:  { address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", decimals: 6  },
+    WETH:  { address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", decimals: 18 },
+    WBTC:  { address: "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f", decimals: 8  },
+  },
+  10: { // Optimism
+    USDC:  { address: "0x0b2c639c533813f4aa9d7837caf62653d097ff85", decimals: 6  },
+    USDT:  { address: "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58", decimals: 6  },
+    WETH:  { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  },
+  43114: { // Avalanche C-Chain
+    USDT:  { address: "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", decimals: 6  },
+    USDC:  { address: "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", decimals: 6  },
+    WETH:  { address: "0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", decimals: 18 },
+  },
+};
+
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
@@ -249,61 +296,91 @@ router.post("/trade/wallet/settle", async (req, res) => {
     // caller's wallet, rather than trusting the client-supplied amountOut.
     // ERC-20 Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
     const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-    const walletLower = walletAddress.toLowerCase();
-    let verifiedAmountOut = 0;
+    const walletLower    = walletAddress.toLowerCase();
+    const assetOutUpper  = assetOut.toUpperCase();
+
+    // Look up the expected token contract address and decimals for assetOut on this chain
+    const tokenInfo = TOKEN_REGISTRY[numChain]?.[assetOutUpper];
+
+    let rawTransferAmount = 0n; // raw BigInt sum before decimal scaling
 
     for (const log of (receipt.logs ?? [])) {
       // Standard ERC-20 Transfer: topics[0]=sig, topics[1]=from, topics[2]=to
       if (
-        log.topics[0]?.toLowerCase() === TRANSFER_TOPIC &&
-        log.topics.length >= 3 &&
-        log.topics[2]?.slice(-40).toLowerCase() === walletLower.replace("0x", "")
-      ) {
-        // data is the uint256 amount in hex; divide by 1e18 for 18-decimal tokens
-        const raw = BigInt(log.data || "0x0");
-        verifiedAmountOut += Number(raw) / 1e18;
-      }
+        log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC ||
+        log.topics.length < 3 ||
+        log.topics[2]?.slice(-40).toLowerCase() !== walletLower.replace("0x", "")
+      ) continue;
+
+      // Reject transfers from unrecognised token contracts if we have a registry entry.
+      // Unknown tokens (not in the registry) are accepted for forward compatibility but
+      // assumed 18 decimals — operators should add them to TOKEN_REGISTRY as needed.
+      if (tokenInfo && log.address?.toLowerCase() !== tokenInfo.address) continue;
+
+      rawTransferAmount += BigInt(log.data || "0x0");
     }
+
+    // Scale using the correct decimal count for the token
+    const tokenDecimals   = tokenInfo?.decimals ?? 18;
+    let   verifiedAmount  = Number(rawTransferAmount) / 10 ** tokenDecimals;
 
     // If no ERC-20 Transfer to the user was found, fall back to the tx's native
     // ETH value (for ETH-in / ETH-out swaps where there are no Transfer events).
     // If still zero, reject — we cannot verify what the user received.
-    if (verifiedAmountOut <= 0) {
+    if (verifiedAmount <= 0) {
       // For native ETH output there are no Transfer logs. Accept client amountOut
       // only for native-asset-out swaps where assetOut matches the chain's native symbol.
       const NATIVE_SYMBOLS: Record<number, string> = { 1:"ETH", 56:"BNB", 137:"MATIC", 8453:"ETH", 42161:"ETH", 10:"ETH", 43114:"AVAX" };
-      if (assetOut.toUpperCase() === (NATIVE_SYMBOLS[numChain] ?? "")) {
-        verifiedAmountOut = parseFloat(amountOut);
+      if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "")) {
+        verifiedAmount = parseFloat(amountOut);
       } else {
         res.status(422).json({ error: "Could not verify received amount from on-chain logs. Settlement rejected.", txHash });
         return;
       }
     }
 
-    const amtIn   = parseFloat(amountIn);
-    const amtOut  = verifiedAmountOut;
-    const fee     = amtIn * FEE_PCT;
-    const price   = amtIn > 0 ? amtOut / amtIn : 0;
-    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    const amtIn  = parseFloat(amountIn);
+    const amtOut = verifiedAmount;
+    const fee    = amtIn * FEE_PCT;
+    const price  = amtIn > 0 ? amtOut / amtIn : 0;
+    const symbol = `${assetIn.toUpperCase()}/${assetOutUpper}`;
 
     const tradeId = crypto.randomUUID();
 
-    // Insert trade record
-    await db.insert(tradesTable).values({
-      id:            tradeId,
-      symbol,
-      side:          "buy",
-      price:         price.toFixed(8),
-      quantity:      amtIn.toFixed(8),
-      total:         amtOut.toFixed(8),
-      fee:           fee.toFixed(8),
-      feeAsset:      assetIn.toUpperCase(),
-      walletAddress,
-      txid:          txHash,
-    });
+    // Insert trade record and credit balance atomically. Without a shared transaction,
+    // a failure in creditAvailable after the trade is inserted would prevent retries
+    // (the dedup guard above would reject them as already settled).
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query("BEGIN");
 
-    // Credit the verified received amount to the user's internal balance
-    await creditAvailable(walletAddress, assetOut.toUpperCase(), amtOut.toFixed(8));
+      await dbClient.query(
+        `INSERT INTO trades
+           (id, symbol, side, price, quantity, total, fee, fee_asset, wallet_address, txid)
+         VALUES ($1,$2,'buy',$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          tradeId, symbol, price.toFixed(8), amtIn.toFixed(8),
+          amtOut.toFixed(8), fee.toFixed(8), assetIn.toUpperCase(),
+          walletAddress, txHash,
+        ],
+      );
+
+      // Credit the verified received amount to the user's internal balance
+      await dbClient.query(
+        `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+         VALUES ($1, $2, $3, '0', now())
+         ON CONFLICT (wallet_address, asset_symbol)
+         DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
+        [walletAddress, assetOutUpper, amtOut.toFixed(8)],
+      );
+
+      await dbClient.query("COMMIT");
+    } catch (err) {
+      await dbClient.query("ROLLBACK");
+      throw err;
+    } finally {
+      dbClient.release();
+    }
 
     logger.info({ tradeId, txHash, walletAddress, assetOut, amtOut }, "On-chain swap settled");
 
@@ -313,11 +390,11 @@ router.post("/trade/wallet/settle", async (req, res) => {
       txHash,
       chainId:   numChain,
       assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
+      assetOut:  assetOutUpper,
       amountIn:  amtIn.toFixed(8),
       amountOut: amtOut.toFixed(8),
       fee:       fee.toFixed(8),
-      message:   `${amtOut.toFixed(6)} ${assetOut.toUpperCase()} credited to your exchange balance`,
+      message:   `${amtOut.toFixed(6)} ${assetOutUpper} credited to your exchange balance`,
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/wallet/settle failed");

@@ -14,6 +14,7 @@ import {
   isDepositAlreadyCredited,
   recordVerifiedDeposit,
   recordAndCreditDeposit,
+  sweepAndCreditDeposit,
 } from "../lib/depositAddresses.js";
 import { creditAvailable, getBalances } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
@@ -221,49 +222,26 @@ router.post("/deposit/sweep-wallet", async (req, res) => {
       return;
     }
 
-    // Determine the previously-swept amount for this wallet+chain so we credit
-    // only the delta. Using a canonical sweep key (no balance in the key) means
-    // the record survives balance increases without re-crediting the full amount.
+    const asset    = chain.nativeSymbol;
     const sweepKey = `sweep:${walletAddress.toLowerCase()}:${chainId}`;
-    const { rows: sweepRows } = await pool.query<{ amount: string }>(
-      `SELECT amount::text FROM evm_deposits_verified
-       WHERE tx_hash = $1 AND chain_id = $2`,
-      [sweepKey, chainId],
-    );
-    const previouslyCredited = sweepRows[0] ? parseFloat(sweepRows[0].amount) : 0;
 
-    const deltaBalance = balanceNative - previouslyCredited;
-    if (deltaBalance <= 0) {
+    // Atomically read previous total, compute delta, upsert record, and credit delta.
+    // This handles repeated sweeps correctly — only the incremental increase is credited.
+    const result = await sweepAndCreditDeposit({
+      sweepKey,
+      chainId,
+      userWallet: walletAddress,
+      asset,
+      balanceNative,
+    });
+
+    if (!result.ok) {
       res.status(409).json({ error: "This balance has already been credited to your trading account." });
       return;
     }
 
-    const asset     = chain.nativeSymbol;
+    const { delta: deltaBalance } = result;
     const amountStr = deltaBalance.toFixed(18);
-    const newTotal  = balanceNative.toFixed(18);
-
-    // Atomically credit the delta and update (or insert) the sweep record to the
-    // new total so future sweeps will only credit incremental additions.
-    const creditedOk = await recordAndCreditDeposit({
-      txHash:     sweepKey,
-      chainId,
-      userWallet: walletAddress,
-      asset,
-      amount:     amountStr,
-    });
-
-    if (!creditedOk) {
-      // Already being processed concurrently — treat as already credited
-      res.status(409).json({ error: "Sweep already in progress or completed." });
-      return;
-    }
-
-    // Update the sweep record to reflect the new total on-chain balance seen
-    await pool.query(
-      `UPDATE evm_deposits_verified SET amount = $1, verified_at = now()
-       WHERE tx_hash = $2 AND chain_id = $3`,
-      [newTotal, sweepKey, chainId],
-    );
 
     req.log.info({ walletAddress, chainId, asset, amount: amountStr }, "deposit/sweep-wallet: credited");
 

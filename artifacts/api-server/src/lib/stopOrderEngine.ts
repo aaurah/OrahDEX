@@ -147,8 +147,8 @@ export async function triggerStopOrders(): Promise<void> {
         const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
         const buyerAddress  = order.side === "buy"  ? order.walletAddress : match.walletAddress;
         const sellerAddress = order.side === "sell" ? order.walletAddress : match.walletAddress;
-        // Skip ledger settlement for bot orders (bot uses simulated balances)
-        if (match.walletAddress !== BOT_ADDRESS) {
+        // Skip ledger settlement if either side is the bot (bot uses simulated balances)
+        if (order.walletAddress !== BOT_ADDRESS && match.walletAddress !== BOT_ADDRESS) {
           try {
             await settleTrade({
               buyerAddress,
