@@ -185,15 +185,18 @@ router.get("/htlc/:id", async (req, res) => {
 
         logger.info({ lockId: id, txid: check.txid, amountBsv: check.amountBsv }, "HTLC funded — triggering wBSV mint");
 
-        // In production: relay to bridge contract → mint wBSV on EVM.
-        // For now: simulate mint after 5 seconds by scheduling a status update.
-        // This would be replaced by an on-chain relayer calling mint(to, amount, lockId).
+        // NOTE: Real EVM minting (calling mint(to, amount, lockId) on the bridge contract)
+        // is not yet implemented. The status transitions below are SIMULATED to allow
+        // end-to-end UI testing. No wBSV is actually minted on-chain.
+        // Replace this block with an on-chain relayer call before production deployment.
+        logger.warn({ lockId: id }, "Bridge: wBSV mint is SIMULATED — no EVM transaction will be submitted. Do not use in production.");
+
         setTimeout(async () => {
           try {
-            // Simulate EVM mint tx hash
-            const fakeMintHash = "0x" + lock.secretHash.slice(0, 64);
+            // Status-only update — mintTxHash is intentionally left null to avoid
+            // showing a fake tx hash that would mislead the user into thinking minting occurred.
             await db.update(htlcLocksTable)
-              .set({ status: "minting", mintTxHash: fakeMintHash, updatedAt: new Date() })
+              .set({ status: "minting", updatedAt: new Date() })
               .where(eq(htlcLocksTable.id, id));
 
             // Simulate confirmation after another 3s
@@ -201,10 +204,10 @@ router.get("/htlc/:id", async (req, res) => {
               await db.update(htlcLocksTable)
                 .set({ status: "complete", updatedAt: new Date() })
                 .where(eq(htlcLocksTable.id, id));
-              logger.info({ lockId: id }, "HTLC complete — wBSV minted (simulated)");
+              logger.warn({ lockId: id }, "Bridge: HTLC status set to complete (SIMULATED — no real mint)");
             }, 3000);
           } catch (e: any) {
-            logger.error({ lockId: id, err: e?.message }, "Simulated mint failed");
+            logger.error({ lockId: id, err: e?.message }, "Simulated mint status update failed");
           }
         }, 5000);
       }

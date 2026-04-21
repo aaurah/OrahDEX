@@ -160,3 +160,53 @@ export async function recordVerifiedDeposit(params: {
     [params.txHash, params.chainId, params.userWallet, params.asset, params.amount],
   );
 }
+
+/**
+ * Atomically record the deposit dedup row AND credit the user's available balance
+ * in a single transaction. Using the unique constraint on (tx_hash, chain_id) as a
+ * guard: if the INSERT fails due to a duplicate, the whole transaction rolls back and
+ * creditAvailable is never called, preventing double-credit.
+ */
+export async function recordAndCreditDeposit(params: {
+  txHash:     string;
+  chainId:    number;
+  userWallet: string;
+  asset:      string;
+  amount:     string;
+}): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Try to insert the dedup row — will fail with duplicate-key if already credited
+    const { rowCount } = await client.query(
+      `INSERT INTO evm_deposits_verified (tx_hash, chain_id, user_wallet, asset, amount)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (tx_hash, chain_id) DO NOTHING`,
+      [params.txHash, params.chainId, params.userWallet, params.asset, params.amount],
+    );
+
+    if (!rowCount) {
+      // Already credited — nothing to do
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    // Credit the user's balance in the same transaction
+    await client.query(
+      `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+       VALUES ($1, $2, $3, '0', now())
+       ON CONFLICT (wallet_address, asset_symbol)
+       DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
+      [params.userWallet, params.asset, params.amount],
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

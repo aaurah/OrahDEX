@@ -225,22 +225,64 @@ router.post("/trade/wallet/settle", async (req, res) => {
   }
 
   try {
-    // Verify the tx on-chain
+    // Verify the tx on-chain — require the receipt; do NOT proceed optimistically
     const client = createPublicClient({ transport: http(VERIFY_RPC[numChain]) });
-    let receipt: { status: string } | null = null;
+    let receipt: { status: string; logs: { topics: string[]; data: string; address: string }[] } | null = null;
     try {
-      receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` }) as any;
     } catch (rpcErr: any) {
-      logger.warn({ txHash, chainId, err: rpcErr?.message }, "RPC receipt fetch failed — proceeding with optimistic settlement");
+      logger.warn({ txHash, chainId, err: rpcErr?.message }, "RPC receipt fetch failed — rejecting settlement");
+      res.status(503).json({ error: "Unable to verify transaction on-chain. Please retry shortly." });
+      return;
     }
 
-    if (receipt && receipt.status !== "success") {
+    if (!receipt) {
+      res.status(404).json({ error: "Transaction receipt not found. It may not be confirmed yet." });
+      return;
+    }
+
+    if (receipt.status !== "success") {
       res.status(422).json({ error: "Transaction reverted on-chain", txHash });
       return;
     }
 
+    // Derive the credited amount from the ERC-20 Transfer logs destined to the
+    // caller's wallet, rather than trusting the client-supplied amountOut.
+    // ERC-20 Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
+    const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const walletLower = walletAddress.toLowerCase();
+    let verifiedAmountOut = 0;
+
+    for (const log of (receipt.logs ?? [])) {
+      // Standard ERC-20 Transfer: topics[0]=sig, topics[1]=from, topics[2]=to
+      if (
+        log.topics[0]?.toLowerCase() === TRANSFER_TOPIC &&
+        log.topics.length >= 3 &&
+        log.topics[2]?.slice(-40).toLowerCase() === walletLower.replace("0x", "")
+      ) {
+        // data is the uint256 amount in hex; divide by 1e18 for 18-decimal tokens
+        const raw = BigInt(log.data || "0x0");
+        verifiedAmountOut += Number(raw) / 1e18;
+      }
+    }
+
+    // If no ERC-20 Transfer to the user was found, fall back to the tx's native
+    // ETH value (for ETH-in / ETH-out swaps where there are no Transfer events).
+    // If still zero, reject — we cannot verify what the user received.
+    if (verifiedAmountOut <= 0) {
+      // For native ETH output there are no Transfer logs. Accept client amountOut
+      // only for native-asset-out swaps where assetOut matches the chain's native symbol.
+      const NATIVE_SYMBOLS: Record<number, string> = { 1:"ETH", 56:"BNB", 137:"MATIC", 8453:"ETH", 42161:"ETH", 10:"ETH", 43114:"AVAX" };
+      if (assetOut.toUpperCase() === (NATIVE_SYMBOLS[numChain] ?? "")) {
+        verifiedAmountOut = parseFloat(amountOut);
+      } else {
+        res.status(422).json({ error: "Could not verify received amount from on-chain logs. Settlement rejected.", txHash });
+        return;
+      }
+    }
+
     const amtIn   = parseFloat(amountIn);
-    const amtOut  = parseFloat(amountOut);
+    const amtOut  = verifiedAmountOut;
     const fee     = amtIn * FEE_PCT;
     const price   = amtIn > 0 ? amtOut / amtIn : 0;
     const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
@@ -261,12 +303,8 @@ router.post("/trade/wallet/settle", async (req, res) => {
       txid:          txHash,
     });
 
-    // Credit the received asset to the user's internal balance
-    try {
-      await creditAvailable(walletAddress, assetOut.toUpperCase(), amtOut.toFixed(8));
-    } catch (creditErr: any) {
-      logger.warn({ creditErr: creditErr?.message }, "Balance credit failed after on-chain settlement (trade still recorded)");
-    }
+    // Credit the verified received amount to the user's internal balance
+    await creditAvailable(walletAddress, assetOut.toUpperCase(), amtOut.toFixed(8));
 
     logger.info({ tradeId, txHash, walletAddress, assetOut, amtOut }, "On-chain swap settled");
 

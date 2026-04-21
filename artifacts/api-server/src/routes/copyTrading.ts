@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import {
   copyVaultsTable,
   copyVaultPositionsTable,
@@ -9,6 +9,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { buildSettlement, type TradeSettlement } from "../lib/settlement.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { debitAvailable, creditAvailable } from "../lib/ledger.js";
 
 // OrahDEX takes 10% of the vault manager's performance fee as platform revenue
 const PLATFORM_COPY_FEE_SHARE = 0.10;
@@ -113,6 +114,18 @@ router.post("/copy/vaults/:id/deposit", async (req, res) => {
     }
     if (vault.maxCapacity && (Number(vault.tvl) + amount) > Number(vault.maxCapacity)) {
       res.status(400).json({ error: "Vault is at maximum capacity" });
+      return;
+    }
+
+    // Debit the follower's USDT before allocating shares
+    try {
+      await debitAvailable(followerWallet.toLowerCase(), "USDT", String(amount));
+    } catch (err: any) {
+      if (err?.message?.startsWith("INSUFFICIENT_FUNDS")) {
+        res.status(400).json({ error: "Insufficient USDT balance" });
+      } else {
+        res.status(500).json({ error: "Failed to debit deposit" });
+      }
       return;
     }
 
@@ -221,6 +234,11 @@ router.post("/copy/vaults/:id/withdraw", async (req, res) => {
     if (performanceFee > 0) {
       const platformCut = performanceFee * PLATFORM_COPY_FEE_SHARE;
       recordPlatformFee({ source: "copy_trade", amount: platformCut, asset: "USDT", txRef: vault.id });
+    }
+
+    // Credit the follower's internal USDT balance with the net payout
+    if (netPayout > 0) {
+      await creditAvailable(followerWallet.toLowerCase(), "USDT", netPayout.toFixed(8));
     }
 
     logger.info({ vaultId: vault.id, followerWallet, netPayout, performanceFee }, "CopyVault withdraw");

@@ -206,10 +206,8 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     { asset: "WIN",   min: 10000,   max: 500000,     dec: 0 },
     { asset: "JST",   min: 1000,    max: 30000,      dec: 0 },
     // ── Other notable coins ──────────────────────────────────────────────────
-    { asset: "FIL",   min: 5,       max: 150,        dec: 4 },
     { asset: "CAKE",  min: 10,      max: 300,        dec: 4 },
     { asset: "ORDI",  min: 1,       max: 30,         dec: 4 },
-    { asset: "DYDX",  min: 10,      max: 300,        dec: 4 },
   ];
 
   const client = await pool.connect();
@@ -290,26 +288,50 @@ export async function ensureSeedForAsset(
   asset:         string,
   neededAmount:  string,
 ): Promise<void> {
-  // Read current available
-  const { rows } = await pool.query<{ available: string }>(
-    `SELECT available FROM user_balances
-     WHERE wallet_address = $1 AND asset_symbol = $2`,
-    [walletAddress, asset],
-  );
-  const current = rows[0] ? parseFloat(rows[0].available) : 0;
-  const needed  = parseFloat(neededAmount);
-  if (current >= needed) return;  // already sufficient
+  const needed = parseFloat(neededAmount);
+  // Run inside a transaction with a row lock so two concurrent callers
+  // cannot both read the same balance and both decide to seed.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  // Credit the difference (or a default seed amount, whichever is larger)
-  const defaultSeed = parseFloat(ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000");
-  const credit = Math.max(needed - current + defaultSeed * 0.5, defaultSeed).toFixed(8);
-  await pool.query(
-    `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
-     VALUES ($1, $2, $3, '0', now())
-     ON CONFLICT (wallet_address, asset_symbol)
-     DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
-    [walletAddress, asset, credit],
-  );
+    // Upsert so the row always exists before we lock it
+    await client.query(
+      `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+       VALUES ($1, $2, '0', '0', now())
+       ON CONFLICT (wallet_address, asset_symbol) DO NOTHING`,
+      [walletAddress, asset],
+    );
+
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const current = rows[0] ? parseFloat(rows[0].available) : 0;
+    if (current >= needed) {
+      await client.query("ROLLBACK");
+      return;  // already sufficient — no seeding required
+    }
+
+    // Credit the difference (or a default seed amount, whichever is larger)
+    const defaultSeed = parseFloat(ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000");
+    const credit = Math.max(needed - current + defaultSeed * 0.5, defaultSeed).toFixed(8);
+    await client.query(
+      `UPDATE user_balances
+       SET available = available + $1, updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [credit, walletAddress, asset],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Credit (direct add to available — e.g. on deposit) ──────────────────────
@@ -461,12 +483,14 @@ export async function settleTrade(params: {
       [buyerAddress, sellerAddress, baseAsset, quoteAsset],
     );
 
-    // Buyer: clear full locked amount for quote, refund excess (limit price vs fill price),
-    // and credit base asset. This handles "buy at limit 50, filled at 15" correctly.
+    // Buyer: deduct only the fill cost from locked (not the entire locked balance).
+    // Any over-locked amount (price improvement on a limit order) stays locked
+    // until the order is fully filled or cancelled — the cancel handler returns
+    // any remaining locked balance via unlockFunds().
+    // Separately credit the received base asset.
     await client.query(
       `UPDATE user_balances
-       SET available  = available + GREATEST(locked - $1::numeric, '0'),
-           locked     = 0,
+       SET locked     = GREATEST(locked - $1::numeric, 0),
            updated_at = now()
        WHERE wallet_address = $2 AND asset_symbol = $3`,
       [cost, buyerAddress, quoteAsset],
@@ -577,16 +601,25 @@ export async function addLiquidity(params: {
     await ensureBalance(client, walletAddress, assetA);
     await ensureBalance(client, walletAddress, assetB);
 
+    // Lock both rows in a single query ordered by asset_symbol to prevent deadlocks.
+    // Two concurrent transactions locking the same two rows always acquire them in
+    // the same order, so no circular wait can form.
+    await client.query(
+      `SELECT asset_symbol FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol IN ($2, $3)
+       ORDER BY asset_symbol
+       FOR UPDATE`,
+      [walletAddress, assetA, assetB],
+    );
+
     const { rows: rowsA } = await client.query<{ available: string }>(
       `SELECT available FROM user_balances
-       WHERE wallet_address = $1 AND asset_symbol = $2
-       FOR UPDATE`,
+       WHERE wallet_address = $1 AND asset_symbol = $2`,
       [walletAddress, assetA],
     );
     const { rows: rowsB } = await client.query<{ available: string }>(
       `SELECT available FROM user_balances
-       WHERE wallet_address = $1 AND asset_symbol = $2
-       FOR UPDATE`,
+       WHERE wallet_address = $1 AND asset_symbol = $2`,
       [walletAddress, assetB],
     );
 

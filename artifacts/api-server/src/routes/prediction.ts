@@ -24,27 +24,90 @@ interface PredictionRound {
 }
 
 const rounds: Map<string, PredictionRound[]> = new Map();
-const bets: Map<string, Array<{
-  roundId: string;
-  wallet: string;
-  position: "bull" | "bear";
-  amount: number;
-  leverage: number;
-  claimed: boolean;
-  payout: number;
-  ts: number;
-}>> = new Map();
 
 let epochCounter = 1000;
+
+// ── DB helpers ────────────────────────────────────────────────────────────────
+
+async function ensureBetsTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prediction_bets (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      round_id    TEXT        NOT NULL,
+      symbol      TEXT        NOT NULL,
+      wallet      TEXT        NOT NULL,
+      position    TEXT        NOT NULL,
+      amount      NUMERIC(36,18) NOT NULL,
+      leverage    INT         NOT NULL DEFAULT 1,
+      claimed     BOOLEAN     NOT NULL DEFAULT FALSE,
+      payout      NUMERIC(36,18) NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS prediction_bets_wallet_idx
+    ON prediction_bets (wallet, round_id)
+  `);
+}
+
+async function insertBet(params: {
+  roundId:  string;
+  symbol:   string;
+  wallet:   string;
+  position: "bull" | "bear";
+  amount:   number;
+  leverage: number;
+}): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO prediction_bets (round_id, symbol, wallet, position, amount, leverage)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id`,
+    [params.roundId, params.symbol, params.wallet, params.position, params.amount, params.leverage],
+  );
+  return rows[0]!.id;
+}
+
+async function getUnclaimedBets(roundId: string, wallet: string, symbol: string) {
+  const { rows } = await pool.query<{
+    id: string; round_id: string; position: string; amount: string;
+    leverage: number; claimed: boolean; payout: string; created_at: Date;
+  }>(
+    `SELECT id, round_id, position, amount, leverage, claimed, payout, created_at
+     FROM prediction_bets
+     WHERE round_id = $1 AND wallet = $2 AND symbol = $3 AND claimed = FALSE`,
+    [roundId, wallet.toLowerCase(), symbol],
+  );
+  return rows;
+}
+
+async function claimBets(ids: string[], payout: number): Promise<void> {
+  if (!ids.length) return;
+  await pool.query(
+    `UPDATE prediction_bets SET claimed = TRUE, payout = $1 WHERE id = ANY($2::uuid[])`,
+    [payout, ids],
+  );
+}
+
+async function getWalletBets(wallet: string) {
+  const { rows } = await pool.query<{
+    id: string; round_id: string; symbol: string; position: string;
+    amount: string; leverage: number; claimed: boolean; payout: string; created_at: Date;
+  }>(
+    `SELECT id, round_id, symbol, position, amount, leverage, claimed, payout, created_at
+     FROM prediction_bets
+     WHERE wallet = $1
+     ORDER BY created_at DESC
+     LIMIT 50`,
+    [wallet.toLowerCase()],
+  );
+  return rows;
+}
+
+// ── Round helpers (unchanged) ─────────────────────────────────────────────────
 
 function getSymbolRounds(symbol: string): PredictionRound[] {
   if (!rounds.has(symbol)) rounds.set(symbol, []);
   return rounds.get(symbol)!;
-}
-
-function getSymbolBets(symbol: string) {
-  if (!bets.has(symbol)) bets.set(symbol, []);
-  return bets.get(symbol)!;
 }
 
 async function getCurrentPrice(symbol: string): Promise<number> {
@@ -196,6 +259,8 @@ router.get("/prediction/rounds/:symbol", async (req, res) => {
 
 router.post("/prediction/bet", async (req, res) => {
   try {
+    await ensureBetsTable();
+
     const { roundId, symbol, wallet, position, amount, leverage = 1 } = req.body as {
       roundId: string;
       symbol: string;
@@ -218,20 +283,38 @@ router.post("/prediction/bet", async (req, res) => {
     if (!round) { res.status(404).json({ error: "Round not found" }); return; }
     if (round.status !== "live") { res.status(400).json({ error: "Round is locked or closed — wait for next round" }); return; }
 
-    {
-      const wAddr = wallet.toLowerCase();
-      const balRes = await pool.query(
-        `SELECT available FROM user_balances WHERE LOWER(wallet_address) = $1 AND asset_symbol = 'USDT'`,
+    const wAddr = wallet.toLowerCase();
+
+    // Debit USDT and insert persistent bet record in a single transaction so a
+    // server restart cannot lose a bet that has already debited the balance.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const balRes = await client.query<{ available: string }>(
+        `SELECT available FROM user_balances WHERE LOWER(wallet_address) = $1 AND asset_symbol = 'USDT' FOR UPDATE`,
         [wAddr],
       );
       const available = parseFloat(balRes.rows[0]?.available ?? "0");
       if (available < amount) {
+        await client.query("ROLLBACK");
         res.status(400).json({ error: `Insufficient USDT balance. Available: ${available.toFixed(2)}` }); return;
       }
-      await pool.query(
+      await client.query(
         `UPDATE user_balances SET available = available - $1 WHERE LOWER(wallet_address) = $2 AND asset_symbol = 'USDT'`,
         [amount.toString(), wAddr],
       );
+      await client.query(
+        `INSERT INTO prediction_bets (round_id, symbol, wallet, position, amount, leverage)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [roundId, sym, wAddr, position, amount, Math.min(leverage, 100)],
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
 
     if (position === "bull") {
@@ -240,18 +323,6 @@ router.post("/prediction/bet", async (req, res) => {
       round.bearAmount += amount;
     }
     round.totalAmount = round.bullAmount + round.bearAmount;
-
-    const betList = getSymbolBets(sym);
-    betList.push({
-      roundId,
-      wallet,
-      position,
-      amount,
-      leverage: Math.min(leverage, 100),
-      claimed: false,
-      payout: 0,
-      ts: Date.now(),
-    });
 
     res.json({
       success: true,
@@ -265,6 +336,8 @@ router.post("/prediction/bet", async (req, res) => {
 
 router.post("/prediction/claim", async (req, res) => {
   try {
+    await ensureBetsTable();
+
     const { roundId, symbol, wallet } = req.body as { roundId: string; symbol: string; wallet: string };
     const sym = (symbol ?? "BSV-USDT").toUpperCase();
     await tickRounds(sym);
@@ -273,25 +346,35 @@ router.post("/prediction/claim", async (req, res) => {
     if (!round) { res.status(404).json({ error: "Round not found" }); return; }
     if (round.status !== "closed") { res.status(400).json({ error: "Round not finished" }); return; }
 
-    const betList = getSymbolBets(sym);
-    const userBets = betList.filter(b => b.roundId === roundId && b.wallet === wallet && !b.claimed);
+    const userBets = await getUnclaimedBets(roundId, wallet, sym);
     if (userBets.length === 0) { res.status(400).json({ error: "No unclaimed bets for this round" }); return; }
 
     let totalPayout = 0;
+    const claimIds: string[] = [];
+
     for (const bet of userBets) {
+      const betAmount = parseFloat(bet.amount);
+      const betLeverage = bet.leverage;
+
       if (round.winner === bet.position) {
-        const pool_ = bet.position === "bull" ? round.bearAmount : round.bullAmount;
         const ownSide = bet.position === "bull" ? round.bullAmount : round.bearAmount;
         const multiplier = ownSide > 0 ? (round.totalAmount / ownSide) : 2;
-        const rawPayout = bet.amount * multiplier * (1 + (bet.leverage - 1) * 0.5);
-        bet.payout = parseFloat(rawPayout.toFixed(2));
-        totalPayout += bet.payout;
+
+        // Cap leverage bonus at 5x additional multiplier (leverage 1-100 → max 6x total)
+        // and cap the total payout to the round's total pool so money cannot be created.
+        const leverageBonus = Math.min((betLeverage - 1) * 0.05, 5);
+        const rawPayout = betAmount * multiplier * (1 + leverageBonus);
+        // Hard cap: winner's payout cannot exceed the full pool
+        const cappedPayout = Math.min(rawPayout, round.totalAmount);
+        totalPayout += cappedPayout;
       } else if (round.winner === null) {
-        bet.payout = bet.amount;
-        totalPayout += bet.payout;
+        totalPayout += betAmount;
       }
-      bet.claimed = true;
+      claimIds.push(bet.id);
     }
+
+    // Cap total payout across all bets to the round pool
+    totalPayout = Math.min(totalPayout, round.totalAmount);
 
     if (totalPayout > 0) {
       await pool.query(
@@ -299,8 +382,9 @@ router.post("/prediction/claim", async (req, res) => {
         [totalPayout.toString(), wallet.toLowerCase()],
       );
     }
+    await claimBets(claimIds, totalPayout);
 
-    res.json({ success: true, payout: totalPayout, bets: userBets.length });
+    res.json({ success: true, payout: totalPayout, bets: claimIds.length });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
@@ -308,27 +392,33 @@ router.post("/prediction/claim", async (req, res) => {
 
 router.get("/prediction/history/:wallet", async (req, res) => {
   try {
+    await ensureBetsTable();
+
     const wallet = req.params.wallet;
-    const allBets: any[] = [];
-    for (const [sym, betList] of bets.entries()) {
+    const dbBets = await getWalletBets(wallet);
+    const result = dbBets.map(b => {
+      const sym = b.symbol;
       const arr = getSymbolRounds(sym);
-      for (const b of betList) {
-        if (b.wallet !== wallet) continue;
-        const round = arr.find(r => r.id === b.roundId);
-        allBets.push({
-          ...b,
-          symbol: sym,
-          epoch: round?.epoch,
-          winner: round?.winner,
-          lockPrice: round?.lockPrice,
-          closePrice: round?.closePrice,
-          status: round?.status,
-          won: round?.status === "closed" && round?.winner === b.position,
-        });
-      }
-    }
-    allBets.sort((a, b) => b.ts - a.ts);
-    res.json({ bets: allBets.slice(0, 50) });
+      const round = arr.find(r => r.id === b.round_id);
+      return {
+        id:         b.id,
+        roundId:    b.round_id,
+        symbol:     sym,
+        position:   b.position,
+        amount:     parseFloat(b.amount),
+        leverage:   b.leverage,
+        claimed:    b.claimed,
+        payout:     parseFloat(b.payout),
+        ts:         new Date(b.created_at).getTime(),
+        epoch:      round?.epoch,
+        winner:     round?.winner,
+        lockPrice:  round?.lockPrice,
+        closePrice: round?.closePrice,
+        status:     round?.status,
+        won:        round?.status === "closed" && round?.winner === b.position,
+      };
+    });
+    res.json({ bets: result });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }

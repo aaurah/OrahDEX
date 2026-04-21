@@ -17,6 +17,7 @@ import { eq, and, ne, lte, gte } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { buildSettlement } from "./settlement.js";
+import { settleTrade } from "./ledger.js";
 import { BOT_ADDRESS } from "./liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "./bsvWallet.js";
 import { broadcastSettlement } from "./bsvBroadcaster.js";
@@ -140,6 +141,27 @@ export async function triggerStopOrders(): Promise<void> {
                  price: fillPrice.toString(), total: fillTotal,
                  txid: broadcastTxid, matchedOrderId: match.id, updatedAt: new Date() })
           .where(eq(ordersTable.id, order.id));
+
+        // Settle balances: move quote from buyer's locked to seller's available
+        // and base from seller's locked to buyer's available.
+        const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
+        const buyerAddress  = order.side === "buy"  ? order.walletAddress : match.walletAddress;
+        const sellerAddress = order.side === "sell" ? order.walletAddress : match.walletAddress;
+        // Skip ledger settlement for bot orders (bot uses simulated balances)
+        if (match.walletAddress !== BOT_ADDRESS) {
+          try {
+            await settleTrade({
+              buyerAddress,
+              sellerAddress,
+              baseAsset:  baseAsset!,
+              quoteAsset,
+              amount:     quantity.toString(),
+              price:      fillPrice.toString(),
+            });
+          } catch (settleErr) {
+            logger.warn({ settleErr, orderId: order.id }, "Stop order: settleTrade failed after fill");
+          }
+        }
 
         const base = order.symbol.split("/")[0] ?? order.symbol;
         pushNotification(order.walletAddress, {
