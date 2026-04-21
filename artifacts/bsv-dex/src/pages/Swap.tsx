@@ -1507,7 +1507,7 @@ export function Swap() {
 
       let hash: `0x${string}`;
 
-      if (isOrahWallet && mode === "dex") {
+      if (isOrahWallet) {
         // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
         toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
         let account: Account;
@@ -1561,7 +1561,7 @@ export function Swap() {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
-            txHash,
+            txHash: hash,
             chainId,
             walletAddress:  address,
             assetIn:        fromToken.symbol,
