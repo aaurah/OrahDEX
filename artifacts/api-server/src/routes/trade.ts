@@ -231,16 +231,15 @@ router.post("/trade/wallet/settle", async (req, res) => {
     try {
       receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` }) as any;
     } catch (rpcErr: any) {
-      logger.warn({ txHash, chainId, err: rpcErr?.message }, "RPC receipt fetch failed — rejecting settlement");
-      res.status(503).json({ error: "Unable to verify transaction on-chain. Please retry shortly." });
+      logger.warn({ txHash, chainId, err: rpcErr?.message }, "RPC receipt fetch failed");
+      res.status(503).json({ error: "Could not verify transaction on-chain. Please try again later." });
       return;
     }
 
     if (!receipt) {
-      res.status(404).json({ error: "Transaction receipt not found. It may not be confirmed yet." });
+      res.status(404).json({ error: "Transaction not found on-chain. It may still be pending.", txHash });
       return;
     }
-
     if (receipt.status !== "success") {
       res.status(422).json({ error: "Transaction reverted on-chain", txHash });
       return;

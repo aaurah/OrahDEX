@@ -155,7 +155,11 @@ router.post("/auth/totp", async (req, res) => {
     res.status(400).json({ error: "A 6-digit code is required." });
     return;
   }
-  const secret = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+  const secret = process.env.ADMIN_TOTP_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
+    return;
+  }
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
     const token = generateAdminToken();
@@ -169,8 +173,12 @@ router.post("/auth/totp", async (req, res) => {
  * GET /admin/auth/totp-uri
  * Returns the otpauth URI for QR-code generation (uses server-side secret).
  */
-router.get("/auth/totp-uri", (_req, res) => {
-  const secret  = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
+  const secret  = process.env.ADMIN_TOTP_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
+    return;
+  }
   const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });

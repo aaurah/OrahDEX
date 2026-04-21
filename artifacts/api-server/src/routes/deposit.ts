@@ -415,8 +415,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       return;
     }
 
-    // Credit and record
-    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
+    // Record first (prevents double-credit if credit step fails), then credit
     await recordVerifiedDeposit({
       txHash,
       chainId:    0,
@@ -424,6 +423,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       asset:      "BSV",
       amount:     String(bsvAmount),
     });
+    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
 
     req.log.info({ walletAddress, txHash, bsvAmount }, "BSV deposit credited");
     res.json({ success: true, asset: "BSV", amount: bsvAmount, txHash });
@@ -659,8 +659,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
       return;
     }
 
-    // Credit and record
-    await creditAvailable(walletAddress, "SOL", String(solAmount));
+    // Record first (prevents double-credit if credit step fails), then credit
     await recordVerifiedDeposit({
       txHash:     txHash.trim(),
       chainId:    -1,
@@ -668,6 +667,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
       asset:      "SOL",
       amount:     String(solAmount),
     });
+    await creditAvailable(walletAddress, "SOL", String(solAmount));
 
     req.log.info({ walletAddress, txHash, solAmount }, "SOL deposit credited");
     res.json({ success: true, asset: "SOL", amount: solAmount, txHash });
