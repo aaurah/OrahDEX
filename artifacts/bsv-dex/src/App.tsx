@@ -32,6 +32,7 @@ const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default
 const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
+const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
@@ -425,6 +426,7 @@ function Router() {
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
                 <Route path="/nft"        component={MobileNFT} />
                 <Route path="/prediction" component={PredictionTrading} />
+                <Route path="/sovereign"  component={SovereignOverviewPage} />
                 <Route path="/qr-scan"    component={MobileQRScanner} />
                 <Route component={MobileMarkets} />
               </Switch>
@@ -456,6 +458,7 @@ function Router() {
                 <Route path="/portfolio"      component={Portfolio} />
                 <Route path="/nft"            component={NFTPage} />
                 <Route path="/prediction"     component={PredictionTrading} />
+                <Route path="/sovereign"      component={SovereignOverviewPage} />
                 <Route path="/settings"           component={WebSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route component={NotFound} />
