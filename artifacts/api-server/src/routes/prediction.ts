@@ -360,8 +360,9 @@ router.post("/prediction/claim", async (req, res) => {
         const ownSide = bet.position === "bull" ? round.bullAmount : round.bearAmount;
         const multiplier = ownSide > 0 ? (round.totalAmount / ownSide) : 2;
 
-        // Cap leverage bonus at 5x additional multiplier (leverage 1-100 → max 6x total)
-        // and cap the total payout to the round's total pool so money cannot be created.
+        // Cap leverage bonus: leverage 1-100 gives 0–4.95x additional multiplier
+        // (formula: (leverage-1) * 0.05), capped at 5. Total effective multiplier
+        // is at most multiplier * 6, and the hard pool cap below prevents creation of funds.
         const leverageBonus = Math.min((betLeverage - 1) * 0.05, 5);
         const rawPayout = betAmount * multiplier * (1 + leverageBonus);
         // Hard cap: winner's payout cannot exceed the full pool

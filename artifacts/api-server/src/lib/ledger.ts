@@ -606,7 +606,7 @@ export async function addLiquidity(params: {
     // the same order, so no circular wait can form.
     await client.query(
       `SELECT asset_symbol FROM user_balances
-       WHERE wallet_address = $1 AND asset_symbol IN ($2, $3)
+       WHERE wallet_address = $1 AND asset_symbol = ANY(ARRAY[$2, $3]::text[])
        ORDER BY asset_symbol
        FOR UPDATE`,
       [walletAddress, assetA, assetB],
