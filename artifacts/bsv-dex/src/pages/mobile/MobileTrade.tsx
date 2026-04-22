@@ -335,10 +335,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const myOrders: any[] = useMemo(() => {
     const primary = Array.isArray(myOrdersData)
-      ? myOrdersData.map((o: any) => ({ ...o, _ownerWalletAddress: o.walletAddress || address || "" }))
+      ? myOrdersData.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || address || "" }))
       : [];
     const alt = Array.isArray(altOrdersData)
-      ? altOrdersData.map((o: any) => ({ ...o, _ownerWalletAddress: o.walletAddress || altAddress || "" }))
+      ? altOrdersData.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || altAddress || "" }))
       : [];
     const seen    = new Set<string>();
     return [...primary, ...alt].filter(o => {
@@ -364,7 +364,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const getOrderWalletAddress = useCallback((order: any) => (
-    String(order?.walletAddress || order?._ownerWalletAddress || address || altAddress || "")
+    String(order?.walletAddress || order?.ownerWalletAddress || address || altAddress || "")
   ), [address, altAddress]);
 
   const cancelMutation = useMutation({
@@ -411,7 +411,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
-        fetchApiBalances(base, quote, address);
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
     },
@@ -504,7 +504,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
-        fetchApiBalances(base, quote, address);
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
       setTimeout(() => setOrderResult(null), 10000);
