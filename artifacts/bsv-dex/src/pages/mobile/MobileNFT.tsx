@@ -84,6 +84,21 @@ function safePrice(v: unknown, decimals = 4) {
   const n = Number(v);
   return isFinite(n) ? n.toFixed(decimals) : "0.0000";
 }
+function getNftProfileAddress({
+  address,
+  provider,
+  network,
+  internalEvmAddress,
+}: {
+  address: string | null;
+  provider: string | null;
+  network: string | null;
+  internalEvmAddress: string | null;
+}) {
+  if (!address) return null;
+  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
+  return address;
+}
 
 function timeAgo(iso: string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -1825,9 +1840,10 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── MY PROFILE TAB ─────────────────────────────────────────────────────────── */
 function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
-  if (!address) return (
+  if (!profileAddress) return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
       <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}><User size={28} style={{ color: "var(--color-text-secondary)" }} /></div>
       <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Connect your wallet to see your profile and creator coin</p>
@@ -1835,7 +1851,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
     </div>
   );
   // Redirect to full creator profile view
-  useEffect(() => { if (address) onOpenCreator(address); }, [address]);
+  useEffect(() => { if (profileAddress) onOpenCreator(profileAddress); }, [profileAddress, onOpenCreator]);
   return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>;
 }
 
@@ -1906,7 +1922,8 @@ export function MobileNFT() {
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -1933,7 +1950,7 @@ export function MobileNFT() {
         </div>
         <div className="flex items-center gap-2">
           {address && (
-            <button onClick={() => openCreator(address)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
+            <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
               <Avatar src={undefined} name={address} size={18} />
               <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(address)}</span>
             </button>
@@ -1965,7 +1982,7 @@ export function MobileNFT() {
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
-          currentUserAddress={address ?? undefined}
+          currentUserAddress={profileAddress ?? undefined}
           onClose={() => {
             setCreatorAddress(null);
             // If the profile tab triggered this sheet, return to feed
