@@ -94,6 +94,7 @@ const CAT_ICONS: Record<string, string> = {
 };
 const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
 const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
+const HIGH_PRICE_IMPACT_THRESHOLD = 3;
 
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
   const [err, setErr] = useState(false);
@@ -279,7 +280,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
                 <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
-                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (Number(quote.priceImpact ?? 0)) > 3 ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
+                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (Number(quote.priceImpact ?? 0)) > HIGH_PRICE_IMPACT_THRESHOLD ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
@@ -1056,6 +1057,17 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
+  const sellDisabled = mode === "sell" && !listPrice;
+  const actionDisabled = loading || insufficientFunds || sellDisabled;
+  const actionBg = actionDisabled ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444";
+  const actionColor = actionDisabled ? "#fff" : mode === "buy" ? "#000" : "#fff";
+  const actionLabel = loading
+    ? (mode === "buy" ? "Minting…" : "Listing…")
+    : insufficientFunds
+      ? "Insufficient Balance"
+      : mode === "buy"
+        ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`
+        : `List for ${listPrice || "…"} ${post.mint_currency}`;
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
@@ -1157,10 +1169,10 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
             {!address ? (
               <p className="text-xs text-center text-muted-foreground mt-4">{mode === "buy" ? "Connect wallet to collect" : "Connect wallet to list"}</p>
             ) : (
-              <button onClick={mode === "buy" ? doMint : doList} disabled={loading || insufficientFunds || (mode === "sell" && !listPrice)}
+              <button onClick={mode === "buy" ? doMint : doList} disabled={actionDisabled}
                 className="w-full mt-4 py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
-                style={{ background: insufficientFunds || (mode === "sell" && !listPrice) ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444", color: insufficientFunds || (mode === "sell" && !listPrice) ? "#fff" : mode === "buy" ? "#000" : "#fff" }}>
-                {loading ? (mode === "buy" ? "Minting…" : "Listing…") : insufficientFunds ? "Insufficient Balance" : mode === "buy" ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}` : `List for ${listPrice || "…"} ${post.mint_currency}`}
+                style={{ background: actionBg, color: actionColor }}>
+                {actionLabel}
               </button>
             )}
           </>
