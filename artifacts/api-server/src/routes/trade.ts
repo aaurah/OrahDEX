@@ -31,8 +31,6 @@ import {
   verifyBsvWithdrawSignature,
   issueSolWithdrawChallenge,
   verifySolWithdrawSignature,
-  buildExchangeAuthMessage,
-  verifyEvmSignature,
   issueExchangeChallenge,
   verifyExchangeSignature,
 } from "../lib/walletAuth.js";
@@ -73,6 +71,19 @@ import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
+
+function normalizeAssetSymbol(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const sym = value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,20}$/.test(sym)) return null;
+  return sym;
+}
+
+function parsePositiveAmount(value: unknown): number | null {
+  const n = typeof value === "number" ? value : parseFloat(String(value));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
 
 // ── POST /withdraw/challenge ───────────────────────────────────────────────────
 // Issues a server-side nonce that the wallet must sign before calling
@@ -485,15 +496,22 @@ router.post("/trade/exchange/challenge", (req, res) => {
     res.status(400).json({ error: "Valid EVM address required (0x…)" });
     return;
   }
-  if (!assetIn || !assetOut || !amountIn) {
-    res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
+  const assetInNorm = normalizeAssetSymbol(assetIn);
+  const assetOutNorm = normalizeAssetSymbol(assetOut);
+  const amountInNorm = parsePositiveAmount(amountIn);
+  if (!assetInNorm || !assetOutNorm || !amountInNorm) {
+    res.status(400).json({ error: "Valid assetIn, assetOut, amountIn are required" });
+    return;
+  }
+  if (assetInNorm === assetOutNorm) {
+    res.status(400).json({ error: "assetIn and assetOut must be different" });
     return;
   }
   const challenge = issueExchangeChallenge({
     walletAddress,
-    assetIn:  assetIn.toUpperCase(),
-    assetOut: assetOut.toUpperCase(),
-    amountIn: String(parseFloat(amountIn)),
+    assetIn:  assetInNorm,
+    assetOut: assetOutNorm,
+    amountIn: String(amountInNorm),
   });
   res.json(challenge);
 });
@@ -501,27 +519,33 @@ router.post("/trade/exchange/challenge", (req, res) => {
 // ── POST /trade/exchange/quote ─────────────────────────────────────────────────
 router.post("/trade/exchange/quote", async (req, res) => {
   const { assetIn, assetOut, amountIn } = req.body ?? {};
-  if (!assetIn || !assetOut || !amountIn) {
-    res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
+  const assetInNorm = normalizeAssetSymbol(assetIn);
+  const assetOutNorm = normalizeAssetSymbol(assetOut);
+  const amtIn = parsePositiveAmount(amountIn);
+  if (!assetInNorm || !assetOutNorm || !amtIn) {
+    res.status(400).json({ error: "Valid assetIn, assetOut, amountIn are required" });
+    return;
+  }
+  if (assetInNorm === assetOutNorm) {
+    res.status(400).json({ error: "assetIn and assetOut must be different" });
     return;
   }
 
   try {
-    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
+    const rate = await resolveRate(assetInNorm, assetOutNorm);
     if (!rate) {
       res.status(422).json({ error: "No price available for this pair" });
       return;
     }
 
-    const amtIn    = parseFloat(amountIn);
     const grossOut = amtIn * rate;
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
     res.json({
       mode:      "exchange",
-      assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
+      assetIn:   assetInNorm,
+      assetOut:  assetOutNorm,
       amountIn:  amtIn.toFixed(8),
       amountOut: amtOut.toFixed(8),
       fee:       fee.toFixed(8),
@@ -548,9 +572,19 @@ router.post("/trade/exchange", async (req, res) => {
     return;
   }
 
-  const amtIn = parseFloat(amountIn);
-  if (isNaN(amtIn) || amtIn <= 0) {
-    res.status(400).json({ error: "amountIn must be a positive number" });
+  const assetInNorm = normalizeAssetSymbol(assetIn);
+  const assetOutNorm = normalizeAssetSymbol(assetOut);
+  const amtIn = parsePositiveAmount(amountIn);
+  if (!assetInNorm || !assetOutNorm) {
+    res.status(400).json({ error: "assetIn and assetOut must be valid symbols" });
+    return;
+  }
+  if (assetInNorm === assetOutNorm) {
+    res.status(400).json({ error: "assetIn and assetOut must be different" });
+    return;
+  }
+  if (!amtIn) {
+    res.status(400).json({ error: "amountIn must be a finite positive number" });
     return;
   }
 
@@ -567,7 +601,11 @@ router.post("/trade/exchange", async (req, res) => {
       return;
     }
     try {
-      verifyExchangeSignature(walletAddress, String(nonce), signature);
+      verifyExchangeSignature(walletAddress, String(nonce), signature, {
+        assetIn: assetInNorm,
+        assetOut: assetOutNorm,
+        amountIn: String(amtIn),
+      });
     } catch (authErr: any) {
       res.status(401).json({ error: authErr.message });
       return;
@@ -575,7 +613,7 @@ router.post("/trade/exchange", async (req, res) => {
   }
 
   try {
-    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
+    const rate = await resolveRate(assetInNorm, assetOutNorm);
     if (!rate) {
       res.status(422).json({ error: "No price available for this pair" });
       return;
@@ -585,7 +623,12 @@ router.post("/trade/exchange", async (req, res) => {
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
-    if (minAmountOut && amtOut < parseFloat(minAmountOut)) {
+    const minOut = minAmountOut == null ? null : parsePositiveAmount(minAmountOut);
+    if (minAmountOut != null && minOut == null) {
+      res.status(400).json({ error: "minAmountOut must be a finite positive number" });
+      return;
+    }
+    if (minOut != null && amtOut < minOut) {
       res.status(422).json({
         error: `Slippage exceeded: expected at least ${minAmountOut}, got ${amtOut.toFixed(8)}`,
         amountOut: amtOut.toFixed(8),
@@ -595,17 +638,17 @@ router.post("/trade/exchange", async (req, res) => {
 
     await settleSwap({
       walletAddress,
-      assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
+      assetIn:   assetInNorm,
+      assetOut:  assetOutNorm,
       amountIn:  amtIn.toFixed(8),
       amountOut: amtOut.toFixed(8),
     });
-    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase() });
+    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOutNorm });
 
     // Record exchange-mode trade in trades table
     const tradeId = crypto.randomUUID();
     const price   = amtIn > 0 ? amtOut / amtIn : 0;
-    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    const symbol  = `${assetInNorm}/${assetOutNorm}`;
     try {
       await db.insert(tradesTable).values({
         id:           tradeId,
@@ -615,7 +658,7 @@ router.post("/trade/exchange", async (req, res) => {
         quantity:     amtIn.toFixed(8),
         total:        amtOut.toFixed(8),
         fee:          fee.toFixed(8),
-        feeAsset:     assetIn.toUpperCase(),
+        feeAsset:     assetInNorm,
         walletAddress,
         txid:         `exchange:${tradeId}`,
       });
@@ -634,8 +677,8 @@ router.post("/trade/exchange", async (req, res) => {
       success:    true,
       tradeId,
       walletAddress,
-      assetIn:    assetIn.toUpperCase(),
-      assetOut:   assetOut.toUpperCase(),
+      assetIn:    assetInNorm,
+      assetOut:   assetOutNorm,
       amountIn:   amtIn.toFixed(8),
       amountOut:  amtOut.toFixed(8),
       fee:        fee.toFixed(8),
