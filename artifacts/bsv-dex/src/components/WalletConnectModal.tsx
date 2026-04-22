@@ -191,8 +191,8 @@ type ConnectTab = "reown" | "bsv" | "tron" | "ledger";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "done";
 
-const CONNECT_TABS: { id: ConnectTab; label: string; emoji: string }[] = [
-  { id: "reown",  label: "EVM Wallets", emoji: "ð" },
+const CONNECT_TABS: { id: ConnectTab; label: string; emoji?: string }[] = [
+  { id: "reown",  label: "EVM Wallets" },
   { id: "ledger", label: "Ledger",      emoji: "ð" },
   { id: "tron",   label: "TRON",        emoji: "ð´" },
   { id: "bsv",    label: "Bitcoin SV",  emoji: "â¡" },
@@ -1652,7 +1652,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 ? "border-primary text-primary"
                                 : "border-transparent text-muted-foreground hover:text-foreground"
                             )}>
-                            <span>{tab.emoji}</span>
+                            {tab.emoji && <span>{tab.emoji}</span>}
                             {tab.label}
                           </button>
                         ))}
