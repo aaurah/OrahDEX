@@ -2,7 +2,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
+  LogOut, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
   ArrowDownLeft, ArrowUpRight, History, Upload,
 } from "lucide-react";
 
@@ -16,7 +16,7 @@ import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
-import { useSettingsStore, formatQuoteAmount, getCurrencySymbol } from "@/store/useSettingsStore";
+import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
@@ -240,34 +240,11 @@ export function MobilePortfolio() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
-  const [sweeping, setSweeping] = useState(false);
-  const [sweepMsg, setSweepMsg] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
   const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
   const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
-  const [recovering, setRecovering] = useState(false);
-  const [recoverMsg, setRecoverMsg] = useState<string | null>(null);
   const queryClient = useQueryClient();
-
-  const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
-    queryKey: ["mobile-exchange-balances", ledgerAddress],
-    queryFn: async () => {
-      if (!ledgerAddress) return [];
-      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(ledgerAddress)}`);
-      if (!r.ok) return [];
-      const data = await r.json();
-      return Array.isArray(data) ? data : (data.balances ?? []);
-    },
-    enabled: !!ledgerAddress,
-    refetchInterval: 10_000,
-    staleTime: 0,
-    refetchOnMount: true,
-  });
-
-  const exchBalancesWithValue = exchangeBalances
-    .map(b => ({ ...b, free: parseFloat(b.available), locked: parseFloat(b.locked) }))
-    .filter(b => b.free > 0 || b.locked > 0);
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
   const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
@@ -369,62 +346,6 @@ export function MobilePortfolio() {
     },
   });
 
-  const handleSweepToLedger = async () => {
-    if (!address || sweeping) return;
-    setSweeping(true);
-    setSweepMsg(null);
-    try {
-      const res = await fetch(`${BASE}/api/deposit/sweep-wallet`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, chainId: chainId ?? 1 }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSweepMsg(data.error ?? "Sweep failed");
-      } else {
-        setSweepMsg(data.message ?? "Credited to trading account");
-        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
-      }
-    } catch {
-      setSweepMsg("Network error. Please try again.");
-    } finally {
-      setSweeping(false);
-    }
-  };
-
-  const handleRecoverLocked = async () => {
-    if (!ledgerAddress || recovering) return;
-    setRecovering(true);
-    setRecoverMsg(null);
-    try {
-      const { internalBsvAddress, internalEvmAddress: iEvm } = useWalletStore.getState();
-      const altAddress = (iEvm && iEvm !== ledgerAddress) ? iEvm
-        : (internalBsvAddress && internalBsvAddress !== ledgerAddress) ? internalBsvAddress
-        : undefined;
-      const res = await fetch(`${BASE}/api/orders/recover-locked`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: ledgerAddress, altAddress }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setRecoverMsg(data.error ?? "Recovery failed");
-      } else if (data.count === 0) {
-        setRecoverMsg("No orphaned locked funds found.");
-      } else {
-        const summary = data.recovered.map((r: any) => `${r.amount} ${r.asset}`).join(", ");
-        setRecoverMsg(`Recovered: ${summary}`);
-        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", ledgerAddress] });
-        queryClient.invalidateQueries({ queryKey: ["portfolio-orders", ledgerAddress] });
-      }
-    } catch {
-      setRecoverMsg("Network error. Please try again.");
-    } finally {
-      setRecovering(false);
-    }
-  };
-
   // Build rows from real on-chain data where available
   const rows = (() => {
     // EVM: use all tokens returned by useEvmBalances (includes native + ERC-20)
@@ -504,34 +425,6 @@ export function MobilePortfolio() {
   const totalChange = tokensTotal > 0 && nonZero.length > 0
     ? nonZero.reduce((s, r) => s + (r.value * r.change) / 100, 0) / tokensTotal * 100
     : 0;
-
-  // ── Orah Wallet: exchange balance is the primary trading balance ───────────
-  const isOrahWallet = provider === "orah-wallet";
-
-  const exchTotalUsd = exchBalancesWithValue.reduce((sum, b) => {
-    const p = STABLES.has(b.asset) ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
-    return sum + (b.free + b.locked) * p;
-  }, 0);
-
-  const exchNonZero = exchBalancesWithValue.map(b => {
-    const p = STABLES.has(b.asset) ? 1 : (prices?.[b.asset]?.lastPrice ?? 0);
-    const change = STABLES.has(b.asset) ? 0 : (prices?.[b.asset]?.priceChangePercent24h ?? 0);
-    return { ...b, price: p, value: (b.free + b.locked) * p, change };
-  }).filter(b => b.free > 0 || b.locked > 0);
-
-  // On-chain native asset price (e.g. ETH, BNB, BSV) from the live price feed
-  const nativeAssetPriceUsd = (() => {
-    const isStable = ["USDT","USDC","DAI","BUSD"].includes(nativeAsset);
-    return isStable ? 1 : (prices?.[nativeAsset]?.lastPrice ?? 0);
-  })();
-  const nativeBalanceUsd = nativeBalance * nativeAssetPriceUsd;
-
-  // Combined total: exchange ledger + on-chain native balance
-  const combinedTotalUsd = exchTotalUsd + nativeBalanceUsd;
-
-  // Show Trading Balance card if Orah/Reown wallet OR if the address has any
-  // exchange ledger balances (covers edge cases where provider string differs).
-  const showTradingBalance = isOrahWallet || exchNonZero.length > 0;
 
   const handleCopy = () => {
     if (!address) return;
@@ -725,191 +618,77 @@ export function MobilePortfolio() {
 
         <div className="px-4 space-y-4">
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
-          {showTradingBalance ? (
-            /* ── Orah Wallet / any user with exchange balances: Trading Balance is primary ── */
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5">
-                  <Zap size={12} className="text-primary" />
-                  <p className="text-xs text-muted-foreground font-medium">Trading Balance</p>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-primary/10 text-primary border-primary/25">
-                  Orah Wallet
-                </span>
-              </div>
-
-              {pricesLoading && combinedTotalUsd === 0 ? (
-                <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
-              ) : (
-                <p className="text-3xl font-bold text-foreground tracking-tight">
-                  {formatQuoteAmount(combinedTotalUsd, quoteCurrency)}
-                </p>
-              )}
-
-              <p className="text-[10px] text-muted-foreground mt-1 mb-4">
-                Exchange trading account + on-chain wallet balance
+          {/* On-chain balance card */}
+          <div className="bg-card border border-border rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
+              <span className={cn(
+                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
+                  : network === "evm" ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
+                  : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
+                  : "bg-secondary text-muted-foreground border-border"
+              )}>
+                {provider ? getProviderLabel(provider) : (network ?? "").toUpperCase()}
+              </span>
+            </div>
+            {pricesLoading && total === 0 ? (
+              <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
+            ) : (
+              <p className="text-3xl font-bold text-foreground tracking-tight">
+                {formatQuoteAmount(total, quoteCurrency)}
               </p>
+            )}
 
-              {/* Exchange token rows */}
-              {exchNonZero.length > 0 && (
-                <div className="space-y-2.5">
-                  {exchNonZero.map(b => {
-                    const color = ASSET_COLORS[b.asset] ?? "#6B7280";
-                    const assetNet = getAssetNetworkInfo(b.asset, network);
-                    return (
-                      <div key={b.asset} className="flex items-center gap-3">
-                        <div
-                          className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
-                          style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
-                        >
-                          {b.asset[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground">
-                            {b.asset} <span className="text-[10px] text-muted-foreground font-normal">(trading)</span>
-                          </p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.001 ? 8 : 4 })}
-                            {b.locked > 0 && (
-                              <span className="text-orange-400/70"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>
-                            )}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-foreground">{formatQuoteAmount(b.value, quoteCurrency)}</p>
-                            {b.change !== 0 && (
-                              <p className={`text-xs mt-0.5 ${b.change >= 0 ? "text-green-500" : "text-red-500"}`}>
-                                {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
-                              </p>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => {
-                              setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
-                              setWithdrawInitialTab("withdraw");
-                              setWithdrawVisibleTabs(undefined);
-                              setWithdrawOpen(true);
-                            }}
-                            className="px-2 py-1 rounded-lg text-[10px] font-bold bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 shrink-0"
-                          >
-                            Withdraw
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+            {total > 0 && (() => {
+              const pnlUsd = total * totalChange / 100;
+              return (
+                <div className="flex items-center gap-3 mt-1.5">
+                  <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
+                    {totalChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    <span className="text-sm font-bold">{totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%</span>
+                  </div>
+                  <span className="text-muted-foreground/40 text-xs">·</span>
+                  <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
+                    {pnlUsd >= 0 ? "+" : "−"}{formatQuoteAmount(Math.abs(pnlUsd), quoteCurrency)} today
+                  </span>
                 </div>
-              )}
+              );
+            })()}
 
-              {/* On-chain balance row — included in combined total above */}
-              {nativeBalance > 0 && (
-                <div className={cn("flex items-center gap-3", exchNonZero.length > 0 && "mt-2.5")}>
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
-                    style={{ backgroundColor: (ASSET_COLORS[nativeAsset] ?? "#6B7280") + "22", borderColor: (ASSET_COLORS[nativeAsset] ?? "#6B7280") + "44", color: ASSET_COLORS[nativeAsset] ?? "#6B7280" }}
-                  >
-                    {nativeAsset[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{nativeAsset} <span className="text-[10px] text-muted-foreground font-normal">(on-chain)</span></p>
-                    <p className="text-xs text-muted-foreground font-mono">
-                      {nativeBalance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-foreground">{formatQuoteAmount(nativeBalanceUsd, quoteCurrency)}</p>
-                    </div>
-                    <button
-                      onClick={handleSweepToLedger}
-                      disabled={sweeping}
-                      className="px-2 py-1 rounded-lg text-[10px] font-bold bg-primary/10 border border-primary/25 text-primary active:bg-primary/20 disabled:opacity-50 shrink-0"
-                    >
-                      {sweeping ? "…" : "Deposit"}
-                    </button>
-                  </div>
+            {/* Available vs Locked breakdown */}
+            {lockedTotalUsd > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">Available</p>
+                  <p className="text-sm font-bold text-green-400">{formatQuoteAmount(Math.max(0, total - lockedTotalUsd), quoteCurrency)}</p>
                 </div>
-              )}
-              {sweepMsg && (
-                <p className={cn("text-[10px] mt-1", sweepMsg.includes("+") ? "text-green-400" : "text-red-400")}>
-                  {sweepMsg}
-                </p>
-              )}
-            </div>
-          ) : (
-            /* ── External wallet: on-chain balance is primary ── */
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground font-medium">Wallet Balance</p>
-                <span className={cn(
-                  "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                  network === "bsv" ? "bg-green-500/10 text-green-400 border-green-500/25"
-                    : network === "evm" ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
-                    : network === "sol" ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
-                    : "bg-secondary text-muted-foreground border-border"
-                )}>
-                  {provider ? getProviderLabel(provider) : (network ?? "").toUpperCase()}
-                </span>
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
+                  <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
+                </div>
               </div>
-              {pricesLoading && total === 0 ? (
-                <div className="h-9 w-44 bg-muted/40 rounded-lg animate-pulse mb-2" />
-              ) : (
-                <p className="text-3xl font-bold text-foreground tracking-tight">
-                  {formatQuoteAmount(total, quoteCurrency)}
-                </p>
-              )}
+            )}
 
-              {total > 0 && (() => {
-                const pnlUsd = total * totalChange / 100;
-                return (
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <div className={cn("flex items-center gap-1.5", totalChange >= 0 ? "text-green-500" : "text-red-500")}>
-                      {totalChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                      <span className="text-sm font-bold">{totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}%</span>
-                    </div>
-                    <span className="text-muted-foreground/40 text-xs">·</span>
-                    <span className={cn("text-sm font-semibold", totalChange >= 0 ? "text-green-400/80" : "text-red-400/80")}>
-                      {pnlUsd >= 0 ? "+" : "−"}{formatQuoteAmount(Math.abs(pnlUsd), quoteCurrency)} today
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* Available vs Locked breakdown */}
-              {lockedTotalUsd > 0 && (
-                <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[10px] text-muted-foreground mb-0.5">Available</p>
-                    <p className="text-sm font-bold text-green-400">{formatQuoteAmount(Math.max(0, total - lockedTotalUsd), quoteCurrency)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground mb-0.5">Busy in Trade</p>
-                    <p className="text-sm font-bold text-orange-400">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</p>
-                  </div>
+            {/* Allocation bar */}
+            {total > 0 && nonZero.length > 0 && (
+              <>
+                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
+                  {nonZero.map(r => (
+                    <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
+                  ))}
                 </div>
-              )}
-
-              {/* Allocation bar */}
-              {total > 0 && nonZero.length > 0 && (
-                <>
-                  <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                    {nonZero.map(r => (
-                      <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
-                    ))}
-                  </div>
-                  <div className="flex gap-3 mt-2 flex-wrap">
-                    {nonZero.map(r => (
-                      <div key={r.asset} className="flex items-center gap-1">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
-                        <span className="text-[10px] text-muted-foreground">{r.asset}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+                <div className="flex gap-3 mt-2 flex-wrap">
+                  {nonZero.map(r => (
+                    <div key={r.asset} className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
+                      <span className="text-[10px] text-muted-foreground">{r.asset}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
           {/* ── BUCKET 2: Busy in Trade (locked in open limit/stop orders) ───── */}
           {lockedEntries.length > 0 && (
@@ -986,10 +765,10 @@ export function MobilePortfolio() {
             </button>
             <button
               onClick={() => {
-                const firstAsset = exchNonZero[0];
+                const firstAsset = nonZero[0];
                 if (firstAsset) {
                   const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
-                  setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color: ASSET_COLORS[firstAsset.asset] ?? "#6B7280" });
+                  setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.amount, network: assetNet.network, networkLabel: assetNet.networkLabel, color: firstAsset.color });
                 } else {
                   setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
                 }
