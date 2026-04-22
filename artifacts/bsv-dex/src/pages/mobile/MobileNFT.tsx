@@ -1930,8 +1930,8 @@ export function MobileNFT() {
     if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
   }
 
-  function openCreator(addr: string) { setCreatorAddress(addr); }
-  function openPost(p: Post) { setDetailPost(p); }
+  const openCreator = useCallback((addr: string) => setCreatorAddress(addr), []);
+  const openPost = useCallback((p: Post) => setDetailPost(p), []);
 
   const INNER_TABS = [
     { key: "feed"    as const, label: "Feed",    Icon: Layers },
