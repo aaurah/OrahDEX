@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSignMessage } from "wagmi";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -207,8 +208,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
+  const isExternalEvm = isEvm && !isOrahWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
@@ -660,12 +663,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // (e.g. BSV bought on BSV/USDT pair stays in internal ledger).
   const internalBaseBalance  = apiBalances[base]  ?? 0;
   const internalQuoteBalance = apiBalances[quote] ?? 0;
-  const grossSellBalance = usesApiBalance
-    ? internalBaseBalance
-    : Math.max(walletBaseBalance, internalBaseBalance);
-  const grossBuyBalance  = usesApiBalance
-    ? internalQuoteBalance
-    : Math.max(walletQuoteBalance, internalQuoteBalance);
+  const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
+  const grossBuyBalance  = usesApiBalance ? internalQuoteBalance : walletQuoteBalance;
   const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
   const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
 
@@ -703,7 +702,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setAmount(Math.max(0, cur + delta * step).toFixed(3));
   }
 
-  function handlePlaceOrder() {
+  async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
 
     // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
@@ -760,6 +759,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
 
+    let evmSignature: string | undefined;
+    if (isExternalEvm) {
+      const nonceBytes = new Uint8Array(16);
+      crypto.getRandomValues(nonceBytes);
+      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      try {
+        evmSignature = await signMessageAsync({ message: orderMsg });
+      } catch (signErr: any) {
+        const msg: string = signErr?.message ?? "";
+        toast({
+          title: "Signature required",
+          description: msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")
+            ? "You must sign the order in your wallet for on-chain settlement."
+            : (msg || "Could not sign order in wallet."),
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        lastOrderFingerprintRef.current = null;
+        return;
+      }
+    }
+
     orderMutation.mutate({
       symbol,
       walletAddress: address,
@@ -772,6 +795,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       walletSource:   isOrahWallet ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
+      evmSignature,
     } as any);
   }
 
@@ -1529,9 +1553,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       : available > 0
                         ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
                         : "0.0000"}&nbsp;{availableSym}
-                    {isEvm && (
+                    {isExternalEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                        Exchange
+                        On-chain
                       </span>
                     )}
                     {!isEvm && side === "sell" && isNativeBase && chainInfo?.l2Label && (
@@ -1553,8 +1577,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {address && available === 0 && !apiBalancesLoading && (
                 <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
                   {side === "buy"
-                    ? `No ${quote} available. Deposit or swap ${quote} to fund your trading balance.`
-                    : `No ${base} available. Buy ${base} first or deposit to your exchange balance.`
+                    ? `No ${quote} available in wallet. Deposit or swap ${quote} on-chain.`
+                    : `No ${base} available in wallet. Buy ${base} first or deposit on-chain.`
                   }
                 </div>
               )}
