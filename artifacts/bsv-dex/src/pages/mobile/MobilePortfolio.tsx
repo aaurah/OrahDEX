@@ -713,7 +713,7 @@ export function MobilePortfolio() {
               )}
 
               <p className="text-[10px] text-muted-foreground mt-1 mb-4">
-                Trading account + on-chain balance
+                Exchange trading account + on-chain wallet balance
               </p>
 
               {/* Exchange token rows */}
@@ -731,7 +731,9 @@ export function MobilePortfolio() {
                           {b.asset[0]}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-foreground">{b.asset}</p>
+                          <p className="text-sm font-semibold text-foreground">
+                            {b.asset} <span className="text-[10px] text-muted-foreground font-normal">(trading)</span>
+                          </p>
                           <p className="text-xs text-muted-foreground font-mono">
                             {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.001 ? 8 : 4 })}
                             {b.locked > 0 && (
