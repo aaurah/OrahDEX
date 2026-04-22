@@ -49,7 +49,7 @@ function tradeExplorerUrl(txid: string | null | undefined, chainId?: number | nu
   if (!txid) return null;
   if (txid.startsWith("htlc-pending-")) return null;
   if (txid.startsWith("0x")) {
-    const base = (chainId ? EVM_EXPLORERS[chainId] : null) ?? EVM_EXPLORERS[1];
+    const base = (chainId ? EVM_EXPLORERS[chainId] : null) ?? EVM_EXPLORERS[1] ?? "https://etherscan.io";
     return `${base}/tx/${txid}`;
   }
   return `${BSV_NET.explorer}/tx/${txid}`;

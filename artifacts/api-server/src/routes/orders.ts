@@ -32,7 +32,8 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
 
   if (txid.startsWith("0x")) {
     const cfg = chainId ? EVM_CHAINS[chainId] : null;
-    return `${(cfg ?? EVM_CHAINS[1]!).blockExplorer}/tx/${txid}`;
+    const explorerBase = cfg?.blockExplorer ?? "https://etherscan.io";
+    return `${explorerBase}/tx/${txid}`;
   }
 
   return `${BSV_NET.explorer}/tx/${txid}`;
