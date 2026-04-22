@@ -12,6 +12,7 @@ const INIT_VIRTUAL_BSV = 30;
 // (matches pump.fun-style initialisation — this is NOT a credential)
 const TOTAL_SUPPLY = 1_000_000_000;
 const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
+const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 
 
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
@@ -489,6 +490,8 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
+  const client = await pool.connect();
+  let inTx = false;
   try {
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
@@ -496,17 +499,57 @@ router.delete("/social/creators/:address", async (req, res) => {
       res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
       return;
     }
-    await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
-    await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await pool.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
-    await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
-    await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
-    await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
-    await pool.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
-    await pool.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("BEGIN");
+    inTx = true;
+    await client.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
+    await client.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
+    await client.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
+    await client.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
+
+    const { rows: postRows } = await client.query("SELECT id FROM social_posts WHERE creator = $1", [address]);
+    const postIds = postRows.map((row: { id: string }) => row.id).filter(Boolean);
+    if (postIds.length > 0) {
+      await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
+      await client.query("DELETE FROM post_comments WHERE post_id = ANY($1::text[])", [postIds]);
+      await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
+    }
+    try {
+      await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
+    } catch (err: any) {
+      if (err?.code !== POSTGRES_UNDEFINED_COLUMN_ERROR) throw err;
+      const { rows: statusColumnRows } = await client.query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'social_posts' AND column_name = 'status'
+         LIMIT 1`,
+      );
+      if (statusColumnRows.length > 0) {
+        await client.query(
+          `UPDATE social_posts
+           SET status = 'deleted', creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
+           WHERE creator = $1`,
+          [address],
+        );
+      } else {
+        await client.query(
+          `UPDATE social_posts
+           SET creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
+           WHERE creator = $1`,
+          [address],
+        );
+      }
+    }
+
+    await client.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
+    await client.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
+    await client.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("COMMIT");
+    inTx = false;
     res.json({ ok: true });
   } catch (err: any) {
+    if (inTx) await client.query("ROLLBACK").catch(() => {});
     res.status(500).json({ error: err?.message });
+  } finally {
+    client.release();
   }
 });
 
