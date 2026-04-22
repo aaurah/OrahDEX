@@ -74,7 +74,10 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
 
-      <div className="shrink-0 bg-card">
+      <div
+        className="shrink-0 bg-card"
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
         <div className="flex items-center h-12">
           <button
             onClick={() => navigate("/swap")}
