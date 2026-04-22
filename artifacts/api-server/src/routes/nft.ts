@@ -316,22 +316,50 @@ router.get("/nft/listings", async (req, res) => {
 /* POST /nft/listings — create listing */
 router.post("/nft/listings", async (req, res) => {
   try {
-    const { nftId, collectionId, seller, chain, price, currency } = req.body as Record<string, string>;
-    if (!nftId || !seller || !price) {
+    const {
+      nftId,
+      post_id,
+      collectionId,
+      seller,
+      chain,
+      price,
+      price_bsv,
+      currency,
+      mint_currency,
+    } = req.body as Record<string, string>;
+    const normalizedNftId = nftId ?? post_id;
+    const normalizedCollectionId = collectionId ?? (post_id ? "social-posts" : undefined);
+    const normalizedPrice = price ?? price_bsv;
+    const normalizedCurrency = (currency ?? mint_currency ?? "BSV").toUpperCase();
+    if (!normalizedNftId || !seller || !normalizedPrice) {
       res.status(400).json({ error: "nftId, seller, price are required" }); return;
     }
 
-    const ethUsd = FALLBACK_PRICES["ETH"] ?? 1800;
-    const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
+    const quoteUsd = FALLBACK_PRICES[normalizedCurrency] ?? 1;
+    const priceUsd = String((parseFloat(normalizedPrice) * quoteUsd).toFixed(2));
 
     const [listing] = await db.insert(nftListingsTable).values({
-      id: uid(), nftId, collectionId, seller, chain: chain ?? "ETH",
-      price, currency: currency ?? "ETH", priceUsd, status: "active",
+      id: uid(),
+      nftId: normalizedNftId,
+      collectionId: normalizedCollectionId ?? "uncategorized",
+      seller,
+      chain: chain ?? "BSV",
+      price: normalizedPrice,
+      currency: normalizedCurrency,
+      priceUsd,
+      status: "active",
     }).returning();
 
     await db.insert(nftActivityTable).values({
-      id: uid(), nftId, collectionId, type: "listing", fromAddress: seller,
-      price, currency, priceUsd, chain: chain ?? "ETH",
+      id: uid(),
+      nftId: normalizedNftId,
+      collectionId: normalizedCollectionId ?? "uncategorized",
+      type: "listing",
+      fromAddress: seller,
+      price: normalizedPrice,
+      currency: normalizedCurrency,
+      priceUsd,
+      chain: chain ?? "BSV",
     });
 
     res.json({ success: true, listing });

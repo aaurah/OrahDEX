@@ -11,6 +11,7 @@ import {
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
+import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { useLocation } from "wouter";
 
 const API = "/api";
@@ -1060,22 +1061,22 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
-  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
-    : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
-  const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
-    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances();
+  const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
+    isEvm,
+    isOrahWallet,
+    storeBalance,
+    evmBalances,
+    evmBalancesLoading,
+    mintCurrency: post.mint_currency,
+  });
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const isBsvMint = !isEvm || post.mint_currency === "BSV";
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && mintPrice > 0 && availableNum < mintPrice;
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
   const [listPriceInput, setListPriceInput] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const sellDisabled = mode === "sell" && !listPriceInput;
   const actionDisabled = loading || insufficientFunds || sellDisabled;
   const actionBg = actionDisabled ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444";
@@ -1120,7 +1121,14 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
       const r = await fetch(`${API}/nft/listings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }),
+        body: JSON.stringify({
+          nftId: post.id,
+          collectionId: "social-posts",
+          seller: address,
+          chain: post.chain,
+          price: String(price),
+          currency: post.mint_currency || "BSV",
+        }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Failed to list");
@@ -1138,8 +1146,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
             <div className="text-5xl mb-3">{mode === "buy" ? "⚡" : "🏷️"}</div>
             <h3 className="text-xl font-bold text-foreground mb-1">{mode === "buy" ? "Collected!" : "Listed!"}</h3>
             <p className="text-sm text-muted-foreground mb-2">{post.title}</p>
-            {mode === "buy" && success.inscription_id && (
-              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {success.inscription_id.slice(0, 20)}…</p>
+            {mode === "buy" && success.inscriptionId && (
+              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {success.inscriptionId.slice(0, 20)}…</p>
             )}
             <button onClick={onClose} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
           </div>
@@ -1192,6 +1200,23 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 <p id="nft-list-price-help" className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
               </div>
             )}
+            <div className="mt-3 rounded-xl border border-border overflow-hidden">
+              <button
+                onClick={() => setShowAdvanced(v => !v)}
+                className="w-full px-3 py-2 text-xs font-bold flex items-center justify-between bg-muted/20 text-foreground"
+              >
+                <span>Advanced NFT Details</span>
+                <ChevronRight size={14} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
+              </button>
+              {showAdvanced && (
+                <div className="p-3 space-y-1.5 text-[11px] text-muted-foreground">
+                  <div className="flex justify-between gap-3"><span>Post ID</span><span className="font-mono text-foreground truncate">{post.id}</span></div>
+                  <div className="flex justify-between gap-3"><span>Creator</span><span className="font-mono text-foreground truncate">{post.creator}</span></div>
+                  <div className="flex justify-between gap-3"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] ?? "#9ca3af" }}>{post.chain}</span></div>
+                  <div className="flex justify-between gap-3"><span>Currency</span><span className="text-foreground">{post.mint_currency}</span></div>
+                </div>
+              )}
+            </div>
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
             {!address ? (
               <p className="text-xs text-center text-muted-foreground mt-4">{mode === "buy" ? "Connect wallet to collect" : "Connect wallet to list"}</p>
