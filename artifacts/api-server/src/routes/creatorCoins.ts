@@ -12,6 +12,7 @@ const INIT_VIRTUAL_BSV = 30;
 // (matches pump.fun-style initialisation — this is NOT a credential)
 const TOTAL_SUPPLY = 1_000_000_000;
 const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
+const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 
 
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
@@ -515,13 +516,27 @@ router.delete("/social/creators/:address", async (req, res) => {
     try {
       await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
     } catch (err: any) {
-      if (err?.code !== "42703" || !/author/i.test(String(err?.message ?? ""))) throw err;
-      await client.query(
-        `UPDATE social_posts
-         SET status = 'deleted', creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
-         WHERE creator = $1`,
-        [address],
+      if (err?.code !== POSTGRES_UNDEFINED_COLUMN_ERROR) throw err;
+      const { rows: statusColumnRows } = await client.query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'social_posts' AND column_name = 'status'
+         LIMIT 1`,
       );
+      if (statusColumnRows.length > 0) {
+        await client.query(
+          `UPDATE social_posts
+           SET status = 'deleted', creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
+           WHERE creator = $1`,
+          [address],
+        );
+      } else {
+        await client.query(
+          `UPDATE social_posts
+           SET creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
+           WHERE creator = $1`,
+          [address],
+        );
+      }
     }
 
     await client.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);

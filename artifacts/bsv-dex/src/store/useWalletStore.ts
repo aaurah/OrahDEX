@@ -122,12 +122,13 @@ export const useWalletStore = create<WalletState>()(
           const sameProvider = s.provider === wallet.provider;
           const sameAddress  = s.address  === wallet.address;
           const sameNetwork = s.network === wallet.network;
+          const isNetworkSwitchOnSameWallet = sameProvider && sameAddress && !sameNetwork;
           return {
             address:   wallet.address,
             provider:  wallet.provider,
             network:   wallet.network,
             chainId:   wallet.chainId ?? null,
-            balance:   sameProvider && sameAddress && !sameNetwork ? null : (wallet.balance ?? null),
+            balance:   isNetworkSwitchOnSameWallet ? null : (wallet.balance ?? null),
             isConnecting: false,
             // Preserve internals on same-provider reconnect (chain switch); reset on new wallet
             internalEvmAddress: sameProvider && sameAddress ? s.internalEvmAddress : null,

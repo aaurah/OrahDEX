@@ -1964,8 +1964,6 @@ export function MobileNFT() {
 
   useEffect(() => {
     setCreatorAddress(null);
-    setDetailPost(null);
-    setMintPost(null);
     if (!profileAddress) {
       setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
     }
