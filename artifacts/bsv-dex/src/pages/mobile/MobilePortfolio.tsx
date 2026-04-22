@@ -277,14 +277,14 @@ export function MobilePortfolio() {
   );
 
   const nativeAsset = getNativeAsset(network, chainId);
-  const storedNativeBalance = Number.isFinite(Number(balance)) ? Number(balance) : 0;
+  const walletStoreNativeBalance = Number.isFinite(Number(balance)) ? Number(balance) : 0;
   const liveNativeBalance =
     network === "evm"
       ? (evmBalances.find((b) => b.isNative)?.amount ?? null)
       : network === "tron"
         ? (tronBalances.find((b) => b.isNative)?.amount ?? null)
         : null;
-  const nativeBalance = liveNativeBalance ?? storedNativeBalance;
+  const nativeBalance = liveNativeBalance ?? walletStoreNativeBalance;
 
   const { data: ordersData } = useQuery({
     queryKey: ["portfolio-orders", ledgerAddress],
