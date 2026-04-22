@@ -18,6 +18,26 @@ import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
 
+function settlementExplorerUrl(txid: string | null | undefined, chainId?: number | null): string | null {
+  if (!txid) return null;
+
+  // Pending EVM HTLC sessions do not have a final settlement tx yet.
+  if (txid.startsWith("htlc-pending-")) {
+    const cfg = chainId ? EVM_CHAINS[chainId] : null;
+    if (!cfg) return null;
+    return cfg.contractAddress
+      ? `${cfg.blockExplorer}/address/${cfg.contractAddress}`
+      : cfg.blockExplorer;
+  }
+
+  if (txid.startsWith("0x")) {
+    const cfg = chainId ? EVM_CHAINS[chainId] : null;
+    return `${(cfg ?? EVM_CHAINS[1]!).blockExplorer}/tx/${txid}`;
+  }
+
+  return `${BSV_NET.explorer}/tx/${txid}`;
+}
+
 // ── Helper: serialize an order row for API response ──────────────────────────
 function serializeOrder(o: typeof ordersTable.$inferSelect) {
   return {
@@ -468,7 +488,7 @@ router.post("/orders", async (req, res) => {
       matched:        !!settlementTxid,
       settlementTxid,
       quoteSymbol,
-      explorerUrl:    settlementTxid ? `${BSV_NET.explorer}/tx/${settlementTxid}` : null,
+      explorerUrl:    settlementExplorerUrl(settlementTxid, lastEvmHtlcSession?.chainId ?? null),
       // BSV Core DEX v2 settlement metadata
       settlement: settlementTxid ? {
         type:              lastSettlementType,
@@ -526,7 +546,7 @@ router.get("/orders/:orderId", async (req, res) => {
     }
     res.json({
       ...serializeOrder(order),
-      explorerUrl: order.txid ? `${BSV_NET.explorer}/tx/${order.txid}` : null,
+      explorerUrl: settlementExplorerUrl(order.txid, null),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get order");
@@ -716,7 +736,7 @@ router.get("/settlements", async (req, res) => {
       .map(o => ({
         id:          o.id,
         txid:        o.txid!,
-        explorerUrl: `${BSV_NET.explorer}/tx/${o.txid}`,
+        explorerUrl: settlementExplorerUrl(o.txid, null),
         symbol:      o.symbol,
         side:        o.side,
         price:       parseFloat(o.price ?? "0"),

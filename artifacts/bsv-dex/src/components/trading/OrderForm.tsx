@@ -269,6 +269,11 @@ function SettlementBanner({
 }) {
   if (!matched) return null;
   const isHtlc = settlementType === "utxo_htlc" || crossChain;
+  const txLabel = txid?.startsWith("0x")
+    ? "EVM tx"
+    : txid?.startsWith("htlc-pending-")
+      ? "HTLC session"
+      : "Settlement tx";
   return (
     <div className={`mx-4 mb-3 p-3 rounded-xl flex flex-col gap-1.5 ${
       isHtlc
@@ -284,7 +289,7 @@ function SettlementBanner({
       {txid && (
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground font-mono break-all leading-relaxed">
-            BSV txid: {txid.slice(0, 16)}…{txid.slice(-8)}
+            {txLabel}: {txid.slice(0, 16)}…{txid.slice(-8)}
           </span>
           {explorerUrl && (
             <a
@@ -599,6 +604,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
+            href: url ?? undefined,
           });
         } else {
           toast({
@@ -788,16 +794,19 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           const txid    = data?.settlementTxid ?? data?.txid ?? null;
           const url     = data?.explorerUrl ?? null;
 
-          if (matched && txid) {
+          if (matched && txid && !txid.startsWith("htlc-pending-")) {
+            const fallbackExplorer = txid.startsWith("0x")
+              ? `https://etherscan.io/tx/${txid}`
+              : `https://whatsonchain.com/tx/${txid}`;
             addTx({
               hash:                 txid,
               chainId:              0,
-              label:                `BSV Settlement · ${side.toUpperCase()} ${amount} ${base}`,
+              label:                `Settlement · ${side.toUpperCase()} ${amount} ${base}`,
               status:               "confirmed",
               confirmations:        1,
               requiredConfirmations: 1,
               timestamp:            Date.now(),
-              explorerUrl:          url ?? `https://whatsonchain.com/tx/${txid}`,
+              explorerUrl:          url ?? fallbackExplorer,
             });
           }
 
