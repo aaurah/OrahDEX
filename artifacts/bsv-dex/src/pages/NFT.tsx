@@ -1098,7 +1098,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   async function doList() {
     if (!ensureAddress()) return;
     const price = parseFloat(listPriceInput);
-    if (!price || price <= 0) { setError("Enter a valid price"); return; }
+    if (!price || price <= 0) { setError("Price must be greater than 0"); return; }
     setLoading(true); setError("");
     try {
       const r = await fetch(`${API}/nft/listings`, {
