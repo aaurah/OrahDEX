@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, LogOut, Info, FileText, ChevronRight,
-  Fingerprint, AlertCircle, CheckCircle2,
+  AlertCircle, CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
   Settings as SettingsIcon, Key, Trash2,
@@ -12,10 +12,8 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useBiometricStore } from "@/store/useBiometricStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
-import { registerBiometric, isBiometricSupported } from "@/hooks/useBiometricAuth";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -95,53 +93,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-type BiometricToastState = { show: false } | { show: true; success: boolean; message: string };
-
 export function WebSettings() {
   const { address, provider, network, disconnect } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
-  const { isEnabled, setEnabled } = useBiometricStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
   const [, navigate] = useLocation();
   const [notifications, setNotifications] = useState(true);
   const [haptics, setHaptics] = useState(true);
-  const [bioLoading, setBioLoading] = useState(false);
-  const [bioToast, setBioToast] = useState<BiometricToastState>({ show: false });
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-
-  const supported = isBiometricSupported();
-
-  const showToast = (success: boolean, message: string) => {
-    setBioToast({ show: true, success, message });
-    setTimeout(() => setBioToast({ show: false }), 3500);
-  };
-
-  const handleBiometricToggle = async (newValue: boolean) => {
-    if (newValue) {
-      if (!supported) {
-        showToast(false, "Biometrics not supported in this browser. Try Chrome/Safari on a device with a sensor.");
-        return;
-      }
-      setBioLoading(true);
-      const result = await registerBiometric();
-      setBioLoading(false);
-      if (result.success) {
-        setEnabled(true, result.credentialId);
-        showToast(true, "Biometric lock enabled! The app will lock when you leave.");
-      } else {
-        showToast(false, result.error);
-      }
-    } else {
-      setEnabled(false, null);
-      showToast(true, "Biometric lock disabled.");
-    }
-  };
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
@@ -273,23 +238,6 @@ export function WebSettings() {
             label="Haptic Feedback"
             value="Vibration on interactions (mobile)"
             rightEl={<Toggle value={haptics} onChange={setHaptics} />}
-          />
-          <Row
-            icon={Fingerprint}
-            iconColor={isEnabled ? "#7c3aed" : "#EAB308"}
-            label="Biometric Lock"
-            value={
-              !supported ? "Not supported on this device/browser" :
-              isEnabled ? "Enabled — app locks when you leave" :
-              "Protect app with fingerprint / face ID"
-            }
-            rightEl={
-              <Toggle
-                value={isEnabled}
-                onChange={handleBiometricToggle}
-                loading={bioLoading}
-              />
-            }
           />
         </Section>
 
@@ -436,22 +384,6 @@ export function WebSettings() {
           </div>
         </div>
       </div>
-
-      {/* Toast notification */}
-      {bioToast.show && (
-        <div className={cn(
-          "fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-start gap-3 p-4 rounded-2xl border shadow-xl transition-all max-w-sm w-full mx-4",
-          bioToast.success
-            ? "bg-green-950/90 border-green-500/30 text-green-300"
-            : "bg-red-950/90 border-red-500/30 text-red-300"
-        )}>
-          {bioToast.success
-            ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
-            : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-          }
-          <p className="text-sm leading-snug">{bioToast.message}</p>
-        </div>
-      )}
 
       {/* Quote Currency Picker Modal */}
       {showCurrencyPicker && (() => {

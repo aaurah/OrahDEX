@@ -1,12 +1,10 @@
-import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
+import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { Layout } from "@/components/Layout";
-import { BiometricLockScreen } from "@/components/BiometricLockScreen";
-import { useBiometricStore } from "@/store/useBiometricStore";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -473,31 +471,9 @@ function Router() {
   );
 }
 
-const AUTO_LOCK_MS = 30_000;
-
 function AppContent() {
-  const { isEnabled, isLocked, lock } = useBiometricStore();
   useInternalEvmWallet();
   useInternalBsvWallet();
-  const hiddenAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!isEnabled) return;
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt.current = Date.now();
-      } else if (document.visibilityState === "visible") {
-        if (hiddenAt.current !== null && Date.now() - hiddenAt.current >= AUTO_LOCK_MS) {
-          lock();
-        }
-        hiddenAt.current = null;
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [isEnabled, lock]);
 
   return (
     <>
@@ -505,7 +481,6 @@ function AppContent() {
         <Router />
       </WouterRouter>
       <Toaster />
-      {isEnabled && isLocked && <BiometricLockScreen />}
     </>
   );
 }
