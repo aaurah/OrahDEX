@@ -115,6 +115,7 @@ const CCTP_CHAIN_IDS: Record<string, number> = {
   base: 8453,
   poly: 137,
 };
+const CCTP_POLL_INTERVAL_MS = 4000;
 const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
@@ -304,10 +305,17 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           asset: "USDC",
         }),
       });
-      const data = await res.json().catch(() => ({})) as { id?: string; status?: CctpIntentStatus; error?: string };
+      let data: { id?: string; status?: CctpIntentStatus; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        const parseMessage = parseErr instanceof Error ? parseErr.message : "Invalid JSON response";
+        throw new Error(`Failed to parse CCTP response: ${parseMessage}`);
+      }
       if (!res.ok || !data.id) throw new Error(data.error ?? "Failed to create CCTP transfer intent");
 
-      setCctpIntentId(data.id);
+      const intentId = data.id;
+      setCctpIntentId(intentId);
       const nextStatus = data.status ?? "created";
       setCctpStatus(nextStatus);
       if (nextStatus === "created") setStep(1);
@@ -319,10 +327,11 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
       }
 
       cctpPollRef.current = setInterval(() => {
-        void pollCctpStatus(data.id!);
-      }, 4000);
-    } catch (err: any) {
-      setCctpError(err?.message ?? "Failed to start CCTP transfer.");
+        void pollCctpStatus(intentId);
+      }, CCTP_POLL_INTERVAL_MS);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to start CCTP transfer.";
+      setCctpError(message);
       setRunning(false);
       setStep(0);
     }
