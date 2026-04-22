@@ -61,6 +61,19 @@ interface Creator {
 interface Holding { coin_creator: string; holder: string; amount: number; username: string; symbol: string; price_usd: number; market_cap_usd: number; }
 
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+const MIN_ADDRESS_LIKE_LENGTH = 24;
+function isAddressLike(value: string) {
+  const v = value.trim();
+  if (!v) return false;
+  if (v.includes("…")) return true;
+  if (v.startsWith("0x")) return true;
+  return new RegExp(`^[A-Za-z0-9]{${MIN_ADDRESS_LIKE_LENGTH},}$`).test(v);
+}
+function commentHandle(comment: Comment) {
+  const displayName = comment.display_name?.trim();
+  if (displayName && !isAddressLike(displayName)) return displayName;
+  return "user";
+}
 function fmtNum(raw: unknown) {
   const n = Number(raw);
   if (!n || !isFinite(n)) return "0";
@@ -1031,9 +1044,9 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
               <h4 className="text-xs font-bold text-foreground">Comments ({comments.length})</h4>
               {comments.map(c => (
                 <div key={c.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/10">
-                  <Avatar name={c.display_name || c.wallet_address} size={24} />
+                  <Avatar name={commentHandle(c)} size={24} />
                   <div>
-                    <span className="text-[10px] font-bold text-foreground">{c.display_name || shortAddr(c.wallet_address)}</span>
+                    <span className="text-[10px] font-bold text-foreground">{commentHandle(c)}</span>
                     <p className="text-xs text-muted-foreground">{c.content}</p>
                   </div>
                 </div>
