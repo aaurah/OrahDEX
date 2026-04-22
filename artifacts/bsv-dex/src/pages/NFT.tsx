@@ -536,7 +536,8 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 }
 
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -551,13 +552,14 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   async function publish() {
     if (!address) { navigate("/settings"); return; }
     if (!title.trim()) { setError("Title required"); return; }
+    const creatorAddress = actorAddress ?? address;
     setLoading(true); setError("");
     try {
       const res = await fetch(`${API}/social/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          creator: address, title, description: desc, image_url: imageUrl,
+          creator: creatorAddress, title, description: desc, image_url: imageUrl,
           category: cat, chain, mint_price: mintPrice, mint_currency: "BSV",
           max_supply: maxSupply ? parseInt(maxSupply) : null, tags: "",
         }),
@@ -951,23 +953,24 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
   useEffect(() => {
     fetch(`${API}/social/posts/${post.id}`).then(r => r.ok ? r.json() : null).then(d => setComments(d?.comments ?? [])).catch(() => {});
   }, [post.id]);
 
   async function submitComment() {
-    if (!commentText.trim() || !address) return;
+    if (!commentText.trim() || !actorAddress) return;
     try {
       const r = await fetch(`${API}/social/posts/${post.id}/comment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: address, content: commentText }),
+        body: JSON.stringify({ wallet_address: actorAddress, content: commentText }),
       });
       if (r.ok) {
         const c = await r.json();
-        setComments(prev => [...prev, c]);
+        setComments(c?.comments ?? []);
         setCommentText("");
       }
     } catch {}
@@ -1056,7 +1059,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
 
 function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose: () => void; initialMode?: "buy" | "sell" }) {
   const [mode, setMode] = useState<"buy" | "sell">(initialMode);
-  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
@@ -1097,13 +1101,14 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
   async function doMint() {
     if (!ensureAddress()) return;
+    if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
       const r = await fetch(`${API}/social/posts/${post.id}/mint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ minter: address }),
+        body: JSON.stringify({ minter: actorAddress }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Mint failed");
@@ -1248,8 +1253,8 @@ export function NFTPage() {
 
   const handleLike = useCallback((id: string) => {
     setLikedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
-  }, [address]);
+    if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
+  }, [profileAddress]);
 
   const openPost = useCallback((p: Post) => setDetailPost(p), []);
   const openCreator = useCallback((a: string) => setCreatorAddress(a), []);
