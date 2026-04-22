@@ -489,24 +489,50 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
+    client = await pool.connect();
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
       res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
       return;
     }
-    await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
-    await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await pool.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
-    await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
-    await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
-    await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
-    await pool.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
-    await pool.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("BEGIN");
+    await client.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
+    await client.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
+    await client.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
+    await client.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
+
+    const { rows: postRows } = await client.query("SELECT id FROM social_posts WHERE creator = $1", [address]);
+    const postIds = postRows.map((row: { id: string }) => row.id).filter(Boolean);
+    if (postIds.length > 0) {
+      await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
+      await client.query("DELETE FROM post_comments WHERE post_id = ANY($1::text[])", [postIds]);
+      await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
+    }
+    try {
+      await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
+    } catch (err: any) {
+      if (err?.code !== "42703" || !/author/i.test(String(err?.message ?? ""))) throw err;
+      await client.query(
+        `UPDATE social_posts
+         SET status = 'deleted', creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
+         WHERE creator = $1`,
+        [address],
+      );
+    }
+
+    await client.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
+    await client.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
+    await client.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (err: any) {
+    if (client) await client.query("ROLLBACK");
     res.status(500).json({ error: err?.message });
+  } finally {
+    client?.release();
   }
 });
 

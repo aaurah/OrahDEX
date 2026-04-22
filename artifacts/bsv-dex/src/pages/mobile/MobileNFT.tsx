@@ -1962,6 +1962,15 @@ export function MobileNFT() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
+  useEffect(() => {
+    setCreatorAddress(null);
+    setDetailPost(null);
+    setMintPost(null);
+    if (!profileAddress) {
+      setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
+    }
+  }, [profileAddress]);
+
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
     if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
