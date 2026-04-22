@@ -1162,7 +1162,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                   placeholder="0.0000"
                   className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
                 />
-                <p className="text-xs text-muted-foreground">Current floor: {safePrice(post.mint_price)} {post.mint_currency}</p>
+                <p className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
