@@ -94,6 +94,7 @@ const authBuckets = new Map<string, AuthBucket>();
 
 setInterval(() => {
   const now = Date.now();
+  // Remove buckets that are neither currently blocked nor within an active window
   for (const [k, v] of authBuckets.entries()) {
     if (v.blockedUntil < now && v.windowStart + AUTH_WINDOW_MS < now) authBuckets.delete(k);
   }

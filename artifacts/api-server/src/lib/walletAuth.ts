@@ -37,13 +37,13 @@ export function recoverEthAddress(message: string, sigHex: string): string {
 
   const msgHash = hashPersonalMessage(message);
 
-  // noble-secp256k1 v3 recovered format: [recovery_bit(1), r(32), s(32)]
+  // noble-secp256k1 recovered format: [recovery_bit(1), r(32), s(32)]
   const recoveredSig = new Uint8Array(65);
   recoveredSig[0] = recovery;
   recoveredSig.set(rBytes, 1);
   recoveredSig.set(sBytes, 33);
 
-  // Returns compressed pubkey (33 bytes); prehash:false because msgHash is keccak256 already
+  // Returns compressed pubkey (33 bytes); prehash: false because msgHash is keccak256 already
   const compressedPubKey   = secp.recoverPublicKey(recoveredSig, msgHash, { prehash: false });
   // Expand to uncompressed (65 bytes: 0x04 + x + y)
   const uncompressedPubKey = secp.Point.fromBytes(compressedPubKey).toBytes(false);

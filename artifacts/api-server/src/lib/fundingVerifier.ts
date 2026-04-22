@@ -51,6 +51,7 @@
 import crypto from "node:crypto";
 import { createPublicClient, http } from "viem";
 import { pool } from "@workspace/db";
+import { logger } from "./logger.js";
 import {
   lockForOrder,
   getBalances,
@@ -197,8 +198,15 @@ async function verifySpotFunding(
               code:       "INSUFFICIENT_FUNDS",
             };
           }
-        } catch {
-          // RPC failure — fall through and accept the signed order (best-effort)
+        } catch (rpcErr: any) {
+          // Log the RPC failure — this is unexpected and may indicate an
+          // unavailable endpoint. Fall through and accept the signed order
+          // (signature already proves ownership; on-chain settlement is
+          // best-effort). Operators should monitor for repeated failures.
+          logger.warn(
+            { walletAddress, chainId, err: rpcErr?.message },
+            "fundingVerifier: on-chain RPC balance check failed — falling through",
+          );
         }
       }
     }

@@ -453,6 +453,14 @@ export async function unlockFunds(params: {
 
 // ── Settle a matched trade (locked → available for both parties) ──────────────
 
+/**
+ * Tolerance for accumulated floating-point rounding across multiple partial
+ * fills on the same limit order. Values within 1e-9 of zero are treated as
+ * sufficient — this prevents spurious INSUFFICIENT_LOCK failures caused by
+ * IEEE-754 rounding errors while still catching real balance deficits.
+ */
+const SETTLE_EPSILON = 1e-9;
+
 export async function settleTrade(params: {
   buyerAddress:  string;
   sellerAddress: string;
@@ -499,12 +507,11 @@ export async function settleTrade(params: {
     // Strict invariant: locked funds must cover the settlement amounts.
     // GREATEST(locked - x, 0) is explicitly prohibited here — it silently
     // creates ledger value from nothing when locked < debit amount.
-    // A small epsilon (1e-9) tolerates accumulated floating-point rounding
-    // across multiple partial fills on the same limit order.
-    const EPSILON = 1e-9;
+    // SETTLE_EPSILON tolerates accumulated floating-point rounding across
+    // multiple partial fills on the same limit order.
 
     const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
-    if (buyerLockedQuote < parseFloat(cost) - EPSILON) {
+    if (buyerLockedQuote < parseFloat(cost) - SETTLE_EPSILON) {
       throw new Error(
         `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
         `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
@@ -512,7 +519,7 @@ export async function settleTrade(params: {
     }
 
     const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
-    if (sellerLockedBase < parseFloat(amount) - EPSILON) {
+    if (sellerLockedBase < parseFloat(amount) - SETTLE_EPSILON) {
       throw new Error(
         `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
         `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
