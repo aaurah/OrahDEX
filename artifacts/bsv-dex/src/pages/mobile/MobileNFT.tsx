@@ -6,12 +6,13 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
+import { disconnectReown } from "@/lib/reown";
 
 const API = "/api";
 
@@ -772,6 +773,8 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   onClose: () => void;
   onSave: (updated: Partial<Creator>) => void;
 }) {
+  const { provider, disconnect } = useWalletStore();
+  const [, navigate] = useLocation();
   const [form, setForm] = useState({
     username: profile.username || "",
     bio: profile.bio || "",
@@ -787,6 +790,10 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -824,6 +831,29 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteProfile() {
+    if (deleteConfirmText !== "DELETE") return;
+    setDeleteLoading(true); setDeleteError("");
+    try {
+      const res = await fetch(`${API}/social/creators/${address}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Failed to delete profile");
+      setShowDeleteConfirm(false);
+      if (provider === "reown") await disconnectReown();
+      disconnect();
+      onClose();
+      navigate("/");
+    } catch (err: any) {
+      setDeleteError(err.message);
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -944,12 +974,79 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
         </div>
 
+        <div className="rounded-2xl p-3.5 border" style={{ background: "rgba(255,68,68,0.08)", borderColor: "rgba(255,68,68,0.25)" }}>
+          <p className="text-[10px] font-bold mb-1 tracking-widest" style={{ color: "#ff6b6b" }}>DANGER ZONE</p>
+          <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>
+            Delete Profile — Permanently remove your profile and posts.
+          </p>
+          <button
+            onClick={() => { setShowDeleteConfirm(true); setDeleteConfirmText(""); setDeleteError(""); }}
+            className="w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+            style={{ background: "rgba(255,68,68,0.18)", color: "#ff6b6b" }}
+          >
+            <Trash2 size={13} />
+            Delete Profile
+          </button>
+        </div>
+
         {error && (
           <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>
         )}
 
         <div className="h-8" />
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl p-5 flex flex-col gap-4" style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: "rgba(255,68,68,0.2)" }}>
+                <Trash2 size={18} style={{ color: "#ff6b6b" }} />
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: "var(--color-surface)" }}
+              >
+                <X size={16} style={{ color: "var(--color-text)" }} />
+              </button>
+            </div>
+            <div>
+              <h3 className="text-base font-bold" style={{ color: "var(--color-text)" }}>Delete Profile</h3>
+              <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                This will permanently delete your profile and posts. This action cannot be undone.
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold mb-2 uppercase tracking-widest" style={{ color: "var(--color-text-secondary)" }}>
+                Type DELETE to confirm
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value.toUpperCase())}
+                placeholder="DELETE"
+                className="w-full rounded-xl px-3 py-2.5 text-sm font-mono outline-none"
+                style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                autoFocus
+              />
+            </div>
+            {deleteError && (
+              <p className="text-xs flex items-center gap-1.5" style={{ color: "#ff6b6b" }}>
+                <AlertCircle size={13} /> {deleteError}
+              </p>
+            )}
+            <button
+              onClick={handleDeleteProfile}
+              disabled={deleteConfirmText !== "DELETE" || deleteLoading}
+              className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-60"
+              style={{ background: "#ff4444", color: "#fff" }}
+            >
+              {deleteLoading ? "Deleting..." : "Delete Profile Permanently"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     </Portal>
   );
