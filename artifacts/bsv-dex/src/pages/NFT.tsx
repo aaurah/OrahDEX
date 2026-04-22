@@ -94,6 +94,7 @@ const CAT_ICONS: Record<string, string> = {
 };
 const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
 const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
+const HIGH_PRICE_IMPACT_THRESHOLD_PERCENT = 3;
 
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
   const [err, setErr] = useState(false);
@@ -225,9 +226,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <div className="text-5xl mb-3">{mode === "buy" ? "🚀" : "💸"}</div>
             <h3 className="text-xl font-bold mb-1 text-foreground">{mode === "buy" ? "Bought!" : "Sold!"}</h3>
             <p className="text-sm mb-4 text-muted-foreground">
-              {mode === "buy" ? `+${fmtNum(success.tokens_received)} $${creator.symbol}` : `+${safePrice(success.bsv_received)} BSV`}
+              {mode === "buy" ? `+${fmtNum(success.tokensExchanged)} $${creator.symbol}` : `+${safePrice(success.bsvExchanged)} BSV`}
             </p>
-            <p className="text-[10px] text-muted-foreground mb-4 font-mono break-all">TX: {success.bsv_txid?.slice(0, 16)}…</p>
+            <p className="text-[10px] text-muted-foreground mb-4">New market cap: {fmtUsd(success.newMarketCap)}</p>
             <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
           </div>
         ) : (
@@ -278,9 +279,8 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             )}
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.estimated_tokens)} $${creator.symbol}` : `${safePrice(quote.estimated_bsv)} BSV`}</span></div>
-                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.price_impact ?? 0) > 3 ? "#ff4444" : "#00ff88" }}>{safePrice(quote.price_impact, 2)}%</span></div>
-                <div className="flex justify-between"><span>New price</span><span className="font-mono">{safePrice(quote.new_price_bsv, 6)} BSV</span></div>
+                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
+                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD_PERCENT ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
@@ -762,8 +762,12 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"posts" | "holders" | "trades">("posts");
   const [showTrade, setShowTrade] = useState(false);
+  const [createForm, setCreateForm] = useState({ username: "", bio: "", avatar_url: "", website: "" });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const isViewingOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
 
-  useEffect(() => {
+  const loadProfileData = useCallback(() => {
     setLoading(true);
     Promise.all([
       fetch(`${API}/social/creators/${creatorAddress}`).then(r => r.ok ? r.json() : null),
@@ -772,6 +776,36 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
     ]).then(([c, p, h]) => { setCreator(c); setPosts(p); setHolders(h); })
       .finally(() => setLoading(false));
   }, [creatorAddress]);
+
+  useEffect(() => {
+    loadProfileData();
+  }, [loadProfileData]);
+
+  async function createProfile() {
+    if (!isViewingOwnProfile) return;
+    if (!createForm.username.trim()) { setCreateError("Username is required"); return; }
+    setCreateLoading(true);
+    setCreateError("");
+    try {
+      const res = await fetch(`${API}/social/creators/${creatorAddress}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: createForm.username.trim(),
+          bio: createForm.bio.trim(),
+          avatar_url: createForm.avatar_url.trim(),
+          website: createForm.website.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to create profile");
+      loadProfileData();
+    } catch (err: any) {
+      setCreateError(err.message ?? "Failed to create profile");
+    } finally {
+      setCreateLoading(false);
+    }
+  }
 
   return (
     <Portal>
@@ -785,7 +819,47 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
           {loading ? (
             <div className="flex justify-center py-16"><RefreshCw className="animate-spin text-muted-foreground" size={20} /></div>
           ) : !creator ? (
-            <div className="text-center py-16 text-muted-foreground">Creator not found</div>
+            isViewingOwnProfile ? (
+              <div className="p-4 space-y-3">
+                <h4 className="text-sm font-bold text-foreground">Create your profile</h4>
+                <input
+                  value={createForm.username}
+                  onChange={e => setCreateForm(prev => ({ ...prev, username: e.target.value }))}
+                  placeholder="Username"
+                  className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
+                />
+                <textarea
+                  value={createForm.bio}
+                  onChange={e => setCreateForm(prev => ({ ...prev, bio: e.target.value }))}
+                  placeholder="Bio"
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary resize-none"
+                />
+                <input
+                  value={createForm.avatar_url}
+                  onChange={e => setCreateForm(prev => ({ ...prev, avatar_url: e.target.value }))}
+                  placeholder="Avatar URL"
+                  className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
+                />
+                <input
+                  value={createForm.website}
+                  onChange={e => setCreateForm(prev => ({ ...prev, website: e.target.value }))}
+                  placeholder="Website"
+                  className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
+                />
+                {createError && <p className="text-xs text-red-400">{createError}</p>}
+                <button
+                  onClick={createProfile}
+                  disabled={createLoading}
+                  className="w-full px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-50"
+                  style={{ background: "#00ff88", color: "#000" }}
+                >
+                  {createLoading ? "Saving…" : "Create Profile"}
+                </button>
+              </div>
+            ) : (
+              <div className="text-center py-16 text-muted-foreground">Creator not found</div>
+            )
           ) : (
             <>
               <div className="p-4">
@@ -854,8 +928,8 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   );
 }
 
-function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
-  post: Post; onClose: () => void; onMint: (p: Post) => void;
+function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreator }: {
+  post: Post; onClose: () => void; onMint: (p: Post) => void; onSell?: (p: Post) => void;
   onLike: (id: string) => void; liked: boolean; onCreator: (a: string) => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
@@ -919,6 +993,14 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
                 style={{ background: "rgba(0,255,136,0.15)", color: "#00ff88" }}>
                 <Zap size={14} /> Collect · {safePrice(post.mint_price)} {post.mint_currency}
               </button>
+              {onSell && (
+                <button onClick={() => onSell(post)}
+                  aria-label="Sell"
+                  className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold"
+                  style={{ background: "#ff4444", color: "#fff" }}>
+                  Sell
+                </button>
+              )}
             </div>
             {post.inscription_id && (
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono p-2 rounded-lg bg-muted/20">
@@ -955,8 +1037,10 @@ function PostDetailSheet({ post, onClose, onMint, onLike, liked, onCreator }: {
   );
 }
 
-function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
+function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose: () => void; initialMode?: "buy" | "sell" }) {
+  const [mode, setMode] = useState<"buy" | "sell">(initialMode);
   const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const [, navigate] = useLocation();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
@@ -971,23 +1055,59 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
   const isBsvMint = !isEvm || post.mint_currency === "BSV";
-  const insufficientFunds = !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
+  const [listPriceInput, setListPriceInput] = useState("");
+  const sellDisabled = mode === "sell" && !listPriceInput;
+  const actionDisabled = loading || insufficientFunds || sellDisabled;
+  const actionBg = actionDisabled ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444";
+  const actionColor = actionDisabled ? "#fff" : mode === "buy" ? "#000" : "#fff";
+  const actionLabel = loading
+    ? (mode === "buy" ? "Minting…" : "Listing…")
+    : insufficientFunds
+      ? "Insufficient Balance"
+      : mode === "buy"
+        ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`
+        : `List for ${listPriceInput || "…"} ${post.mint_currency}`;
+
+  function ensureAddress() {
+    if (address) return true;
+    navigate("/settings");
+    return false;
+  }
 
   async function doMint() {
-    if (!address) return;
+    if (!ensureAddress()) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
       const r = await fetch(`${API}/social/posts/${post.id}/mint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: address }),
+        body: JSON.stringify({ minter: address }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Mint failed");
+      setSuccess(d);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function doList() {
+    if (!ensureAddress()) return;
+    const price = parseFloat(listPriceInput);
+    if (!price || price <= 0) { setError("Price must be greater than 0"); return; }
+    setLoading(true); setError("");
+    try {
+      const r = await fetch(`${API}/nft/listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed to list");
       setSuccess(d);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
@@ -999,10 +1119,10 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
       <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "hsl(var(--card))" }} onClick={e => e.stopPropagation()}>
         {success ? (
           <div className="text-center py-6">
-            <div className="text-5xl mb-3">⚡</div>
-            <h3 className="text-xl font-bold text-foreground mb-1">Collected!</h3>
+            <div className="text-5xl mb-3">{mode === "buy" ? "⚡" : "🏷️"}</div>
+            <h3 className="text-xl font-bold text-foreground mb-1">{mode === "buy" ? "Collected!" : "Listed!"}</h3>
             <p className="text-sm text-muted-foreground mb-2">{post.title}</p>
-            {success.inscription_id && (
+            {mode === "buy" && success.inscription_id && (
               <p className="text-[10px] text-muted-foreground font-mono">Inscription: {success.inscription_id.slice(0, 20)}…</p>
             )}
             <button onClick={onClose} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
@@ -1010,32 +1130,60 @@ function MintSheet({ post, onClose }: { post: Post; onClose: () => void }) {
         ) : (
           <>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-bold text-foreground">Collect NFT</h3>
+              <h3 className="text-sm font-bold text-foreground">{mode === "buy" ? "Collect NFT" : "List NFT for Sale"}</h3>
               <button onClick={onClose}><X size={18} className="text-muted-foreground" /></button>
+            </div>
+            <div className="flex gap-1 mb-4 p-1 rounded-xl bg-muted/30">
+              {(["buy", "sell"] as const).map(m => (
+                <button key={m} onClick={() => { setMode(m); setError(""); }}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${mode === m ? (m === "buy" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400") : "text-muted-foreground"}`}>
+                  {m.toUpperCase()}
+                </button>
+              ))}
             </div>
             {post.image_url && <img src={post.image_url} alt={post.title} className="w-full h-48 object-cover rounded-xl mb-3" />}
             <h4 className="font-bold text-foreground">{post.title}</h4>
             <p className="text-xs text-muted-foreground mt-1">by {post.creator_name || shortAddr(post.creator)}</p>
-            <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
-              <div className="flex justify-between"><span>Price</span><span className="font-bold text-foreground">{safePrice(post.mint_price)} {post.mint_currency}</span></div>
-              {availableLabel && (
-                <div className="flex justify-between">
-                  <span>Your balance</span>
-                  <span className={`font-mono font-bold ${insufficientFunds ? "text-red-400" : "text-foreground"}`}>{availableLabel}</span>
+            {mode === "buy" ? (
+              <>
+                <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
+                  <div className="flex justify-between"><span>Price</span><span className="font-bold text-foreground">{safePrice(post.mint_price)} {post.mint_currency}</span></div>
+                  {availableLabel && (
+                    <div className="flex justify-between">
+                      <span>Your balance</span>
+                      <span className={`font-mono font-bold ${insufficientFunds ? "text-red-400" : "text-foreground"}`}>{availableLabel}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] }}>{post.chain}</span></div>
+                  <div className="flex justify-between"><span>Minted</span><span>{fmtNum(post.mint_count)}{post.max_supply ? ` / ${fmtNum(post.max_supply)}` : ""}</span></div>
                 </div>
-              )}
-              <div className="flex justify-between"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] }}>{post.chain}</span></div>
-              <div className="flex justify-between"><span>Minted</span><span>{fmtNum(post.mint_count)}{post.max_supply ? ` / ${fmtNum(post.max_supply)}` : ""}</span></div>
-            </div>
-            {insufficientFunds && <p className="text-xs text-red-400 mt-2">Insufficient balance to collect this NFT</p>}
+                {insufficientFunds && <p className="text-xs text-red-400 mt-2">Insufficient balance to collect this NFT</p>}
+              </>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <label htmlFor="nft-list-price-input" className="text-xs text-muted-foreground font-semibold">Listing Price ({post.mint_currency})</label>
+                <input
+                  id="nft-list-price-input"
+                  aria-describedby="nft-list-price-help"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={listPriceInput}
+                  onChange={e => setListPriceInput(e.target.value)}
+                  placeholder="0.0000"
+                  className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
+                />
+                <p id="nft-list-price-help" className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
+              </div>
+            )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
             {!address ? (
-              <p className="text-xs text-center text-muted-foreground mt-4">Connect wallet to collect</p>
+              <p className="text-xs text-center text-muted-foreground mt-4">{mode === "buy" ? "Connect wallet to collect" : "Connect wallet to list"}</p>
             ) : (
-              <button onClick={doMint} disabled={loading || insufficientFunds}
+              <button onClick={mode === "buy" ? doMint : doList} disabled={actionDisabled}
                 className="w-full mt-4 py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
-                style={{ background: insufficientFunds ? "#555" : "#00ff88", color: insufficientFunds ? "#fff" : "#000" }}>
-                {loading ? "Minting…" : insufficientFunds ? "Insufficient Balance" : `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`}
+                style={{ background: actionBg, color: actionColor }}>
+                {actionLabel}
               </button>
             )}
           </>
@@ -1052,7 +1200,7 @@ export function NFTPage() {
   const { address } = useWalletStore();
   const [activeTab, setActiveTab] = useState<ActiveTab>("feed");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
-  const [mintPost, setMintPost] = useState<Post | null>(null);
+  const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
 
@@ -1100,7 +1248,7 @@ export function NFTPage() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {activeTab === "feed"    && <FeedTab likedIds={likedIds} onLike={handleLike} onMint={setMintPost} onOpen={openPost} onCreator={openCreator} />}
+        {activeTab === "feed"    && <FeedTab likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab onSuccess={() => setActiveTab("feed")} />}
         {activeTab === "profile" && <MyProfileTab onOpenCreator={openCreator} onOpenPost={openPost} />}
@@ -1118,13 +1266,14 @@ export function NFTPage() {
         <PostDetailSheet
           post={detailPost}
           onClose={() => setDetailPost(null)}
-          onMint={p => { setDetailPost(null); setMintPost(p); }}
+          onMint={p => { setDetailPost(null); setMintPost({ post: p, mode: "buy" }); }}
+          onSell={p => { setDetailPost(null); setMintPost({ post: p, mode: "sell" }); }}
           onLike={handleLike}
           liked={likedIds.has(detailPost.id)}
           onCreator={a => { setDetailPost(null); openCreator(a); }}
         />
       )}
-      {mintPost && <MintSheet post={mintPost} onClose={() => setMintPost(null)} />}
+      {mintPost && <MintSheet post={mintPost.post} initialMode={mintPost.mode} onClose={() => setMintPost(null)} />}
     </div>
   );
 }
