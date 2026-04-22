@@ -1542,9 +1542,10 @@ export function Swap() {
       });
       setTxSuccess(true);
 
-      const amtOut = parseFloat(formatUnits(quote.amountOut, toToken.decimals));
-
-      toast({ title: "Swap confirmed!", description: `${amountIn} ${fromToken.symbol} → ${amtOut.toFixed(6)} ${toToken.symbol}` });
+      toast({
+        title: "Swap confirmed!",
+        description: `${amountIn} ${fromToken.symbol} → ${parseFloat(formatUnits(quote.amountOut, toToken.decimals)).toFixed(6)} ${toToken.symbol}`,
+      });
     } catch (e: any) {
       toast({ title: "Swap failed", description: e.shortMessage ?? e.message ?? "Transaction rejected.", variant: "destructive" });
     }
