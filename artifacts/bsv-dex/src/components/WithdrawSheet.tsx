@@ -277,7 +277,6 @@ export function WithdrawSheet({
   useEffect(() => {
     if (open) {
       setTab(initialTab);
-      setDepositMode(isNonEvm ? "exchange" : "wallet");
       setAmount("");
       setRecipient(defaultRecipient ?? "");
       setSubmitted(false);
@@ -294,7 +293,7 @@ export function WithdrawSheet({
       setBsvTxHash("");
       setSolTxHash("");
     }
-  }, [open, defaultRecipient, initialTab, isNonEvm]);
+  }, [open, defaultRecipient, initialTab]);
 
   // ── deposit address ──────────────────────────────────────────────────────
   const { data: depositData, isLoading: depositLoading, refetch: refetchDeposit } =
@@ -308,7 +307,7 @@ export function WithdrawSheet({
         if (!r.ok) throw new Error("Failed to load deposit address");
         return r.json();
       },
-      enabled: !!walletAddress && open && tab === "deposit" && !isNonEvm && depositMode === "exchange",
+      enabled: !!walletAddress && open && tab === "deposit" && !isNonEvm,
       staleTime: 60_000,
     });
 
@@ -1044,7 +1043,7 @@ export function WithdrawSheet({
 
             {/* ── EVM WALLET ADDRESS (non-Bitcoin, non-Solana, non-AltChain assets) ── */}
             {!isNonEvm && (<>
-            {/* ── WALLET ADDRESS MODE ── */}
+            {/* ── WALLET ADDRESS ── */}
             {walletAddress && (
               <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
