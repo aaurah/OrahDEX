@@ -498,7 +498,7 @@ router.delete("/social/creators/:address", async (req, res) => {
     }
     await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
     await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await pool.query("DELETE FROM post_comments   WHERE author = $1",                       [address]);
+    await pool.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
     await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
     await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
     await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
