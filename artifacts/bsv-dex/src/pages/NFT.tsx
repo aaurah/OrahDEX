@@ -81,6 +81,21 @@ function safePrice(v: unknown, decimals = 4) {
   const n = Number(v);
   return isFinite(n) ? n.toFixed(decimals) : "0.0000";
 }
+function getNftProfileAddress({
+  address,
+  provider,
+  network,
+  internalEvmAddress,
+}: {
+  address: string | null;
+  provider: string | null;
+  network: string | null;
+  internalEvmAddress: string | null;
+}) {
+  if (!address) return null;
+  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
+  return address;
+}
 function timeAgo(iso: string) {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s / 60)}m`;
@@ -625,7 +640,8 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
   const [creator, setCreator] = useState<Creator | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -634,17 +650,17 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
   const [tab, setTab] = useState<"portfolio" | "posts" | "settings">("portfolio");
 
   useEffect(() => {
-    if (!address) { setLoading(false); return; }
+    if (!profileAddress) { setLoading(false); return; }
     setLoading(true);
     Promise.all([
-      fetch(`${API}/social/creators/${address}`).then(r => r.ok ? r.json() : null),
-      fetch(`${API}/social/holdings/${address}`).then(r => r.ok ? r.json().then(d => d.holdings ?? d) : []),
-      fetch(`${API}/social/feed?creator=${address}`).then(r => r.ok ? r.json().then(d => d.posts ?? d) : []),
+      fetch(`${API}/social/creators/${profileAddress}`).then(r => r.ok ? r.json() : null),
+      fetch(`${API}/social/holdings/${profileAddress}`).then(r => r.ok ? r.json().then(d => d.holdings ?? d) : []),
+      fetch(`${API}/social/feed?creator=${profileAddress}`).then(r => r.ok ? r.json().then(d => d.posts ?? d) : []),
     ]).then(([c, h, p]) => { setCreator(c); setHoldings(h); setMyPosts(p); })
       .finally(() => setLoading(false));
-  }, [address]);
+  }, [profileAddress]);
 
-  if (!address) {
+  if (!profileAddress) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center p-8">
@@ -685,7 +701,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
         ) : (
           <div className="mb-6 p-4 rounded-2xl border border-border bg-card text-center">
             <p className="text-sm text-muted-foreground mb-3">You haven't created a profile yet</p>
-            <button onClick={() => onOpenCreator(address)} className="px-4 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Create Profile</button>
+            <button onClick={() => onOpenCreator(profileAddress)} className="px-4 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Create Profile</button>
           </div>
         )}
         <div className="flex gap-1 mb-4 p-0.5 rounded-lg bg-muted/30 w-fit">
@@ -1197,7 +1213,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 type ActiveTab = "feed" | "search" | "create" | "profile";
 
 export function NFTPage() {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [activeTab, setActiveTab] = useState<ActiveTab>("feed");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
@@ -1238,7 +1255,7 @@ export function NFTPage() {
         </div>
         <div className="flex items-center gap-3">
           {address && (
-            <button onClick={() => openCreator(address)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
+            <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
               <Avatar src={undefined} name={address} size={20} />
               <span className="text-xs font-mono text-muted-foreground">{shortAddr(address)}</span>
             </button>
@@ -1257,7 +1274,7 @@ export function NFTPage() {
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
-          currentUserAddress={address ?? undefined}
+          currentUserAddress={profileAddress ?? undefined}
           onClose={() => setCreatorAddress(null)}
           onOpenPost={p => { setCreatorAddress(null); openPost(p); }}
         />
