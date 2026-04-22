@@ -64,6 +64,18 @@ interface Holding { coin_creator: string; holder: string; amount: number; userna
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+function isAddressLike(value: string) {
+  const v = value.trim();
+  if (!v) return false;
+  if (v.includes("…")) return true;
+  if (v.startsWith("0x")) return true;
+  return /^[A-Za-z0-9]{24,}$/.test(v);
+}
+function commentHandle(comment: Comment) {
+  const displayName = comment.display_name?.trim();
+  if (displayName && !isAddressLike(displayName)) return displayName;
+  return "user";
+}
 function fmtNum(raw: unknown) {
   const n = Number(raw);
   if (!n || !isFinite(n)) return "0";
@@ -1173,7 +1185,7 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   async function submitComment() {
     if (!commentText.trim() || !actorAddress) return;
     const txt = commentText; setCommentText("");
-    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: actorAddress, content: txt, display_name: shortAddr(actorAddress) }) }).catch(() => {});
+    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: actorAddress, content: txt }) }).catch(() => {});
     const d = await fetch(`${API}/social/posts/${post.id}`).then(r => r.json()).catch(() => ({}));
     setComments(d.comments ?? []);
   }
@@ -1228,8 +1240,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
             : comments.length === 0 ? <div className="text-center py-6 text-xs" style={{ color: "var(--color-text-secondary)" }}>Be the first to comment</div>
             : comments.map(c => (
               <div key={c.id} className="flex gap-2.5 mb-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{c.display_name?.[0]?.toUpperCase() ?? "?"}</div>
-                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{c.display_name}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{commentHandle(c)[0]?.toUpperCase() ?? "?"}</div>
+                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{commentHandle(c)}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
                   <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{c.content}</p></div>
               </div>
             ))}
