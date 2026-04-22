@@ -79,6 +79,7 @@ overrides:
   axios: 1.15.1
   cookie: 0.7.2
   follow-redirects: 1.16.0
+  elliptic: 6.6.1
   nodemailer: 8.0.5
   tmp: 0.2.4
   '@esbuild-kit/core-utils>esbuild': 0.25.12
