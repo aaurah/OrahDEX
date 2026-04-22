@@ -280,7 +280,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
                 <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
-                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (Number(quote.priceImpact ?? 0)) > HIGH_PRICE_IMPACT_THRESHOLD ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
+                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
@@ -993,12 +993,14 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
                 style={{ background: "rgba(0,255,136,0.15)", color: "#00ff88" }}>
                 <Zap size={14} /> Collect · {safePrice(post.mint_price)} {post.mint_currency}
               </button>
-              <button onClick={() => onSell?.(post)}
-                aria-label="Sell NFT"
-                className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold"
-                style={{ background: "#ff4444", color: "#fff" }}>
-                Sell
-              </button>
+              {onSell && (
+                <button onClick={() => onSell(post)}
+                  aria-label="Sell NFT"
+                  className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold"
+                  style={{ background: "#ff4444", color: "#fff" }}>
+                  Sell
+                </button>
+              )}
             </div>
             {post.inscription_id && (
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono p-2 rounded-lg bg-muted/20">
