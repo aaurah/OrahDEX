@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -319,7 +319,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 2000,
   });
 
-  const myOrders: any[] = Array.isArray(myOrdersData) ? myOrdersData : [];
+  // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
+  const altAddress = (internalEvmAddress && internalEvmAddress !== address)
+    ? internalEvmAddress
+    : (internalBsvAddress && internalBsvAddress !== address)
+      ? internalBsvAddress
+      : null;
+
+  const { data: altOrdersData } = useQuery({
+    queryKey: ["orders", altAddress],
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
+    enabled: !!altAddress,
+    refetchInterval: 2000,
+  });
+
+  const myOrders: any[] = useMemo(() => {
+    const primary = Array.isArray(myOrdersData) ? myOrdersData : [];
+    const alt     = Array.isArray(altOrdersData) ? altOrdersData : [];
+    const seen    = new Set<string>();
+    return [...primary, ...alt].filter(o => {
+      const key = String(o.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [myOrdersData, altOrdersData]);
   const openOrders = myOrders.filter(o => o.status === "open");
   const historyOrders = myOrders.filter(o => o.status !== "open");
 
@@ -337,16 +361,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const cancelMutation = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
-    onMutate: async (orderId) => {
+    onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["orders", address] });
       const prev = queryClient.getQueryData(["orders", address]);
@@ -357,7 +381,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       );
       return { prev };
     },
-    onError: (_err, _id, context: any) => {
+    onError: (_err, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
       }
@@ -365,6 +389,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       if (usesApiBalance && address) {
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
@@ -1243,7 +1268,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(o => cancelMutation.mutate(String(o.id)))}
+                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") }))}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1266,7 +1291,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => cancelMutation.mutate(String(o.id))}
+                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") })}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
