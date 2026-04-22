@@ -88,7 +88,16 @@ function normalise(m: any) {
 
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
-  const { address } = useWalletStore();
+  const { address, internalBsvAddress, internalEvmAddress } = useWalletStore();
+  // Alt address: Orah wallet users have both a BSV and an EVM address.
+  // Orders placed on the BSV network are stored against the BSV address, and
+  // orders placed on the EVM network are stored against the EVM address.
+  // We must query both so orders don't disappear when the user switches networks.
+  const altAddress = (internalEvmAddress && internalEvmAddress !== address)
+    ? internalEvmAddress
+    : (internalBsvAddress && internalBsvAddress !== address)
+      ? internalBsvAddress
+      : null;
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
   // Resolve the current pair's quote asset from the URL for smart tab initialisation
   const urlQuote = (() => {
@@ -144,6 +153,11 @@ export function SpotTrading() {
     { walletAddress: address || '' },
     { query: { enabled: !!address, refetchInterval: 5000 } }
   );
+  // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
+  const { data: altOrders, refetch: refetchAltOrders } = useGetOrders(
+    { walletAddress: altAddress || '' },
+    { query: { enabled: !!altAddress, refetchInterval: 5000 } }
+  );
   const { data: apiMarkets } = useGetMarkets();
 
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
@@ -184,11 +198,23 @@ export function SpotTrading() {
 
   const cancelOrder = useCancelOrder({
     mutation: {
-      onSuccess: () => { refetchOrders(); },
+      onSuccess: () => { refetchOrders(); refetchAltOrders(); },
     },
   });
 
-  const allOrders    = (apiOrders as any[]) || [];
+  // Merge orders from both addresses, deduplicated by id, so BSV-network orders
+  // remain visible even when the user's active network is EVM (and vice versa).
+  const allOrders = useMemo(() => {
+    const primary = (apiOrders as any[]) || [];
+    const alt     = (altOrders  as any[]) || [];
+    const seen    = new Set<string>();
+    return [...primary, ...alt].filter(o => {
+      const key = String(o.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [apiOrders, altOrders]);
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
@@ -501,7 +527,7 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right">{unfilled.toFixed(4)}</td>
                             <td className="px-3 py-1.5 text-right">
                               <button
-                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: String(o.walletAddress || address || "") } })}
                                 disabled={cancelOrder.isPending}
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
                               >
