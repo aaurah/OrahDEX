@@ -99,7 +99,15 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
                 {n.txid && (
-                  <p className="text-[10px] text-primary font-mono mt-0.5">{n.txid.slice(0, 10)}…</p>
+                  <a
+                    href={n.href ?? (n.txid.startsWith("0x") ? `https://etherscan.io/tx/${n.txid}` : `https://whatsonchain.com/tx/${n.txid}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-primary font-mono mt-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {n.txid.slice(0, 10)}… <Link2 size={10} />
+                  </a>
                 )}
                 <p className="text-[10px] text-muted-foreground/50 mt-1">{relTime(n.timestamp)}</p>
               </div>
@@ -332,6 +340,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     tradeId: string | null;
     matched: boolean;
     txid?: string;
+    explorerUrl?: string | null;
     side: string;
     base: string;
     quoteSymbol: string;
@@ -367,6 +376,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setOrderError(null);
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
+      const explorerUrl = data?.explorerUrl ?? null;
       const tradeId  = data?.id ?? null;
       const ordSide  = variables?.side ?? side;
       const ordBase  = data?.symbol?.split("/")[0] ?? base;
@@ -393,7 +403,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
 
-      setOrderResult({ tradeId, matched, txid, side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee });
+      setOrderResult({
+        tradeId, matched, txid, explorerUrl,
+        side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee,
+      });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
@@ -428,6 +441,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
+          href: explorerUrl ?? undefined,
         });
       } else {
         // Unmatched: use quantity and price from the API-confirmed order record
@@ -1590,6 +1604,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
                   }
                 </p>
+                {orderResult.matched && orderResult.txid && orderResult.explorerUrl && (
+                  <a
+                    href={orderResult.explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 font-medium"
+                  >
+                    View on chain <Link2 size={12} />
+                  </a>
+                )}
               </div>
             )}
 

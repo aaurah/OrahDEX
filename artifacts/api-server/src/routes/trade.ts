@@ -22,6 +22,7 @@ import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 // ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
@@ -33,6 +34,26 @@ const VERIFY_RPC: Record<number, string> = {
   10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
   43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
 };
+
+const EVM_EXPLORERS: Record<number, string> = {
+  1: "https://etherscan.io",
+  56: "https://bscscan.com",
+  137: "https://polygonscan.com",
+  8453: "https://basescan.org",
+  42161: "https://arbiscan.io",
+  10: "https://optimistic.etherscan.io",
+  43114: "https://snowtrace.io",
+};
+
+function tradeExplorerUrl(txid: string | null | undefined, chainId?: number | null): string | null {
+  if (!txid) return null;
+  if (txid.startsWith("htlc-pending-")) return null;
+  if (txid.startsWith("0x")) {
+    const base = (chainId ? EVM_EXPLORERS[chainId] : null) ?? EVM_EXPLORERS[1] ?? "https://etherscan.io";
+    return `${base}/tx/${txid}`;
+  }
+  return `${BSV_NET.explorer}/tx/${txid}`;
+}
 
 // ── Well-known ERC-20 token registry per chain ─────────────────────────────────
 // Maps chainId → { symbol (uppercase) → { address (lowercase), decimals } }
@@ -420,8 +441,8 @@ router.get("/trade/settlements/:walletAddress", async (req, res) => {
       .orderBy(desc(tradesTable.timestamp))
       .limit(limit);
 
-    const onChain   = settlements.filter(t => t.txid && t.txid.startsWith("0x"));
-    const exchange  = settlements.filter(t => !t.txid || !t.txid.startsWith("0x"));
+    const onChain   = settlements.filter(t => !!t.txid);
+    const exchange  = settlements.filter(t => !t.txid);
 
     res.json({
       walletAddress,
@@ -438,7 +459,8 @@ router.get("/trade/settlements/:walletAddress", async (req, res) => {
         fee:       parseFloat(t.fee),
         feeAsset:  t.feeAsset,
         txid:      t.txid ?? null,
-        mode:      t.txid?.startsWith("0x") ? "on-chain" : "exchange",
+        mode:      t.txid ? "on-chain" : "exchange",
+        explorerUrl: tradeExplorerUrl(t.txid, null),
         timestamp: t.timestamp,
       })),
     });
