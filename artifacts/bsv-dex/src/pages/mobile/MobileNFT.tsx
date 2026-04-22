@@ -835,7 +835,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   }
 
   async function handleDeleteProfile() {
-    if (deleteConfirmText !== "DELETE") return;
+    if (!address || deleteConfirmText !== "DELETE") return;
     setDeleteLoading(true); setDeleteError("");
     try {
       const res = await fetch(`${API}/social/creators/${address}`, {
