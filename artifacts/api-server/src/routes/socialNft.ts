@@ -56,9 +56,8 @@ router.get("/social/posts/:id", async (req, res) => {
          pc.post_id,
          pc.wallet_address,
          CASE
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~ '^0x[0-9a-fA-F]' THEN pc.display_name
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~ '^0x[0-9a-fA-F]' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' THEN pc.display_name
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]' THEN pc.display_name
            ELSE pc.wallet_address
          END AS display_name,
          pc.content,
@@ -169,9 +168,12 @@ router.post("/social/posts/:id/comment", async (req, res) => {
       [wallet_address],
     );
     const profileUsername = creatorRows[0]?.username?.trim();
-    const resolvedDisplayName = (profileUsername && !/^0x[0-9a-fA-F]/.test(profileUsername))
+    const submittedDisplayName = display_name?.trim();
+    const resolvedDisplayName = (profileUsername && !/^0x[0-9a-f]/i.test(profileUsername))
       ? profileUsername
-      : (display_name?.trim() || wallet_address.slice(0, 8));
+      : (submittedDisplayName && !/^0x[0-9a-f]/i.test(submittedDisplayName)
+        ? submittedDisplayName
+        : wallet_address.slice(0, 8));
 
     await pool.query(
       "INSERT INTO post_comments (id, post_id, wallet_address, display_name, content) VALUES ($1,$2,$3,$4,$5)",
@@ -185,9 +187,8 @@ router.post("/social/posts/:id/comment", async (req, res) => {
          pc.post_id,
          pc.wallet_address,
          CASE
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~ '^0x[0-9a-fA-F]' THEN pc.display_name
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~ '^0x[0-9a-fA-F]' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' THEN pc.display_name
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]' THEN pc.display_name
            ELSE pc.wallet_address
          END AS display_name,
          pc.content,
