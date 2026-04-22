@@ -164,7 +164,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   if (search) {
     const q = search.toUpperCase();
-    rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    const globalRows = Array.from(new Map(
+      [
+        ...(Array.isArray(apiData) ? apiData : []).map(normalise),
+        ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites)),
+      ].map((m: ReturnType<typeof normalise>) => [m.symbol, m])
+    ).values());
+    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
   }
 
   rows = [...rows].sort((a, b) => {

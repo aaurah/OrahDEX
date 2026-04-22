@@ -210,7 +210,13 @@ export function MobileMarkets() {
 
   if (search) {
     const q = search.toUpperCase();
-    rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    const globalRows = Array.from(new Map(
+      [
+        ...(Array.isArray(apiData) ? apiData : []).map(normalise),
+        ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites)),
+      ].map((m: MktRow) => [m.symbol, m])
+    ).values());
+    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
   }
 
   rows = [...rows].sort((a, b) => {

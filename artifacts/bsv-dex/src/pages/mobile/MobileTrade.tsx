@@ -477,9 +477,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       toast({
         title:       "Order Failed",
         description: code === "DEPOSIT_REQUIRED"
-          ? "Deposit funds to your OrahDEX trading balance before trading."
+          ? (usesApiBalance
+            ? "Deposit funds to your OrahDEX trading balance before trading."
+            : "Deposit funds to your wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
-          ? "Insufficient balance. Check your trading balance."
+          ? (usesApiBalance
+            ? "Insufficient balance. Check your trading balance."
+            : "Insufficient wallet balance. Check your on-chain funds.")
           : msg,
         variant: "destructive",
       });
@@ -670,10 +674,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
+  const fundingAsset = (side === "sell" ? base : quote).toUpperCase();
+  const coinWalletHref = `/portfolio/${encodeURIComponent(fundingAsset)}`;
 
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
   const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
   const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
+  const minOrderQty = 0.001;
 
   // Click available → fill max amount (exact balance — no shave factor)
   const handleFillMax = () => {
@@ -683,6 +690,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setAmount((buyBalance / effectivePrice).toFixed(6));
     } else {
       setAmount(sellBalance.toFixed(6));
+    }
+  };
+  const handleFillMin = () => {
+    if (!address || available <= 0) return;
+    if (side === "buy") {
+      if (effectivePrice <= 0) return;
+      const maxQty = buyBalance / effectivePrice;
+      const minQty = Math.min(maxQty, minOrderQty);
+      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+    } else {
+      const minQty = Math.min(sellBalance, minOrderQty);
+      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
     }
   };
 
@@ -1544,6 +1563,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={handleFillMin}
+                    disabled={!address || available <= 0 || balancesPending}
+                    className="text-[10px] font-bold px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50"
+                  >
+                    MIN
+                  </button>
+                  <button
+                    onClick={handleFillMax}
+                    disabled={!address || available <= 0 || balancesPending}
+                    className="text-[10px] font-bold px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    MAX
+                  </button>
+                  <button
                     onClick={handleFillMax}
                     disabled={!address || available <= 0 || balancesPending}
                     className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
@@ -1650,23 +1683,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     {orderError.code === "DEPOSIT_REQUIRED"
                       ? "Deposit required to trade"
                       : orderError.code === "INSUFFICIENT_FUNDS"
-                      ? "Insufficient trading balance"
+                      ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
                       : "Order failed"}
                   </span>
                 </div>
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
-                    ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                    ? (usesApiBalance
+                      ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                      : `Deposit ${side === "sell" ? base : quote} to your wallet first. On-chain funds are required before placing orders.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
-                    ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
+                    ? (usesApiBalance
+                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
+                      : `Not enough ${side === "sell" ? base : quote} in your wallet. Check your on-chain balance.`)
                     : orderError.message}
                 </p>
                 {orderError.code === "DEPOSIT_REQUIRED" && (
                   <a
-                    href="/bridge"
+                    href={coinWalletHref}
                     className="ml-6 mt-0.5 text-xs font-bold text-primary underline underline-offset-2"
                   >
-                    Go to Deposit →
+                    Open Wallet →
                   </a>
                 )}
               </div>
@@ -1820,14 +1857,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {
                 icon: <ArrowLeftRight size={20} />,
                 label: "Transfer",
-                desc: "Move funds between your OrahDEX accounts",
-                href: "/portfolio",
+                desc: "Wallet-to-wallet transfer using your coin wallet",
+                href: coinWalletHref,
               },
               {
                 icon: <Download size={20} />,
                 label: "Deposit",
-                desc: "Transfer in crypto from your on-chain wallet or exchange",
-                href: "/portfolio",
+                desc: "Receive funds directly to your wallet address",
+                href: coinWalletHref,
+              },
+              {
+                icon: <CreditCard size={20} />,
+                label: "Withdraw",
+                desc: "Send funds directly from your wallet to another wallet",
+                href: coinWalletHref,
               },
               {
                 icon: <Users2 size={20} />,
