@@ -8,6 +8,7 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
+const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
 
 function uid(): string {
   return crypto.randomUUID();
@@ -332,10 +333,15 @@ router.post("/nft/listings", async (req, res) => {
     const normalizedPrice = price ?? price_bsv;
     const normalizedCurrency = (currency ?? mint_currency ?? "BSV").toUpperCase();
     if (!normalizedNftId || !seller || !normalizedPrice) {
-      res.status(400).json({ error: "nftId, seller, price are required" }); return;
+      res.status(400).json({ error: "seller plus (nftId or post_id) and (price or price_bsv) are required" }); return;
     }
 
-    const quoteUsd = FALLBACK_PRICES[normalizedCurrency] ?? 1;
+    // Stablecoins are treated as $1 when no live quote is cached.
+    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
+      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null);
+    if (!quoteUsd) {
+      res.status(400).json({ error: `Unsupported listing currency: ${normalizedCurrency}` }); return;
+    }
     const priceUsd = String((parseFloat(normalizedPrice) * quoteUsd).toFixed(2));
 
     const [listing] = await db.insert(nftListingsTable).values({

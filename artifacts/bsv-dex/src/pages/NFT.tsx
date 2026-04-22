@@ -1147,7 +1147,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
             <h3 className="text-xl font-bold text-foreground mb-1">{mode === "buy" ? "Collected!" : "Listed!"}</h3>
             <p className="text-sm text-muted-foreground mb-2">{post.title}</p>
             {mode === "buy" && success.inscriptionId && (
-              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {success.inscriptionId.slice(0, 20)}…</p>
+              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {String(success.inscriptionId).slice(0, 20)}…</p>
             )}
             <button onClick={onClose} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
           </div>

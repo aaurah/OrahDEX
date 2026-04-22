@@ -15,7 +15,7 @@ interface ResolveNftBalanceOutput {
   availableLabel: string | null;
 }
 
-const NATIVE_ALIASES = new Set(["ETH", "WETH", "BNB", "MATIC", "AVAX", "BASE"]);
+const NATIVE_CURRENCY_SYMBOLS = new Set(["ETH", "WETH", "BNB", "MATIC", "AVAX"]);
 
 export function resolveNftSpendBalance({
   isEvm,
@@ -40,7 +40,7 @@ export function resolveNftSpendBalance({
   const balances = evmBalances ?? [];
   const fallbackNative = balances.find((b) => b.isNative);
   const exact = balances.find((b) => b.symbol.toUpperCase() === currency);
-  const selected = exact ?? (NATIVE_ALIASES.has(currency) ? fallbackNative : undefined);
+  const selected = exact ?? (NATIVE_CURRENCY_SYMBOLS.has(currency) ? fallbackNative : undefined);
   const amount = Number(selected?.amount ?? 0) || 0;
   const labelSymbol = selected?.symbol ?? currency;
 
