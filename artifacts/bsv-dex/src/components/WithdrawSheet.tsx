@@ -4,7 +4,7 @@
  * Three-tab dialog: Deposit · Withdraw · History
  *
  * Deposit tab  — unique per-user deposit address + QR, network selector,
- *                TX-hash verifier, and gas top-up card.
+ *                and TX-hash verifier.
  * Withdraw tab — amount + recipient form, instant on-chain settlement.
  * History tab  — past withdrawals with status badges, gas-shortage banner.
  */
@@ -31,8 +31,6 @@ import {
   ExternalLink,
   Download,
   RefreshCw,
-  Fuel,
-  ChevronDown,
   Wallet,
   ArrowRight,
   Clock,
@@ -47,8 +45,6 @@ import { useNotificationStore } from "@/store/useNotificationStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
-const GAS_HOT_WALLET = "0x7Dc8d1A90A058f697c5A163e7e933cb8325E7e4b";
-
 const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: string }[] = [
   { id: 1,    label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
   { id: 8453, label: "Base",             short: "Base",     color: "#0052FF" },
@@ -178,7 +174,7 @@ interface AltChainDepositResponse {
 function summariseNote(raw: string): string {
   if (!raw) return raw;
   if (raw.includes("total cost") && raw.includes("gas fee"))
-    return "Insufficient gas — the exchange hot wallet needs ETH to cover the network fee. Your request is queued and will auto-process once funded.";
+    return "Your withdrawal is queued and will be processed automatically.";
   if (/insufficient funds/i.test(raw)) return "Insufficient funds to complete the transaction.";
   if (/nonce/i.test(raw)) return "Transaction nonce conflict — please retry.";
   if (/execution reverted/i.test(raw)) return "Transaction reverted by the contract.";
@@ -253,7 +249,6 @@ export function WithdrawSheet({
   const [depositMode,  setDepositMode]  = useState<"exchange" | "wallet">("exchange");
   const [txHash,       setTxHash]       = useState("");
   const [verifying,    setVerifying]    = useState(false);
-  const [showGasCard,  setShowGasCard]  = useState(false);
   const [bsvTxHash,    setBsvTxHash]    = useState("");
   const [bsvVerifying, setBsvVerifying] = useState(false);
   const [solTxHash,    setSolTxHash]    = useState("");
@@ -1343,48 +1338,6 @@ export function WithdrawSheet({
 
             </>)}
 
-            {/* Gas top-up card — collapsible (EVM only) */}
-            {!isNonEvm && (<div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
-              <button
-                onClick={() => setShowGasCard(v => !v)}
-                className="w-full flex items-center gap-2.5 px-3.5 py-3 text-sm font-semibold text-amber-400 hover:bg-amber-500/5 transition-colors"
-              >
-                <Fuel className="w-4 h-4 shrink-0" />
-                <span className="flex-1 text-left">Fund gas for withdrawals</span>
-                <ChevronDown className={cn("w-4 h-4 transition-transform", showGasCard && "rotate-180")} />
-              </button>
-
-              {showGasCard && (
-                <div className="px-3.5 pb-3.5 space-y-2.5">
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    The OrahDEX hot wallet on <strong className="text-foreground">Base</strong> needs ETH to pay gas when sending your withdrawals. Send ≥ 0.002 ETH to this address — pending withdrawals process automatically once funded.
-                  </p>
-                  <div className="flex items-center gap-2 bg-background/60 rounded-lg px-2.5 py-2 border border-amber-500/20">
-                    <span className="font-mono text-xs text-amber-300 flex-1 break-all select-all">
-                      {GAS_HOT_WALLET}
-                    </span>
-                    <button
-                      onClick={() => copy(GAS_HOT_WALLET, "gas-wallet")}
-                      className="shrink-0 p-0.5 hover:text-white transition-colors"
-                    >
-                      {copiedId === "gas-wallet"
-                        ? <Check className="w-3.5 h-3.5 text-green-400" />
-                        : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Network</p>
-                      <p className="font-bold text-foreground">Base</p>
-                    </div>
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Min amount</p>
-                      <p className="font-bold text-foreground">0.002 ETH</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>)}
           </div>
         )}
 
@@ -1425,18 +1378,15 @@ export function WithdrawSheet({
             {/* ── EXCHANGE SOURCE ── */}
             {withdrawSource === "exchange" && (
               <>
-                {/* Gas warning banner */}
+                {/* Queued withdrawal notice */}
                 {hasGasError && (
-                  <button
-                    onClick={() => { setTab("deposit"); setShowGasCard(true); }}
-                    className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
-                  >
-                    <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-secondary/40 border border-border text-left">
+                    <Clock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-amber-400">Withdrawal pending — gas needed</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Tap to see how to fund the exchange gas wallet →</p>
+                      <p className="text-xs font-semibold text-foreground">Withdrawal queued</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Your withdrawal is queued and will be processed automatically.</p>
                     </div>
-                  </button>
+                  </div>
                 )}
 
                 {/* Balance summary */}
@@ -1748,35 +1698,17 @@ export function WithdrawSheet({
         {tab === "history" && (
           <div className="space-y-3 max-h-[420px] overflow-y-auto pr-0.5">
 
-            {/* Gas banner */}
+            {/* Queued withdrawal notice */}
             {hasGasError && (
-              <button
-                onClick={() => { setTab("deposit"); setShowGasCard(true); }}
-                className="w-full flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
-              >
-                <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="w-full flex items-start gap-2.5 p-3.5 rounded-xl bg-secondary/40 border border-border text-left">
+                <Clock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-amber-400">Exchange wallet needs gas</p>
+                  <p className="text-sm font-semibold text-foreground">Withdrawal queued</p>
                   <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
-                    Your withdrawal is queued — send ≥ 0.002 ETH to the exchange hot wallet on Base and it will auto-process.
+                    Your withdrawal is queued and will be processed automatically.
                   </p>
-                  <div className="flex items-center gap-1.5 mt-2 bg-background/60 rounded-lg px-2.5 py-1.5 border border-amber-500/20">
-                    <span className="font-mono text-xs text-amber-300 flex-1 truncate">{shortAddr(GAS_HOT_WALLET)}</span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={e => { e.stopPropagation(); copy(GAS_HOT_WALLET, "gas-hist"); }}
-                      onKeyDown={e => e.key === "Enter" && copy(GAS_HOT_WALLET, "gas-hist")}
-                      className="shrink-0 p-0.5 hover:text-white transition-colors"
-                    >
-                      {copiedId === "gas-hist"
-                        ? <Check className="w-3 h-3 text-green-400" />
-                        : <Copy className="w-3 h-3 text-amber-400" />}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-primary mt-1.5 font-semibold">Tap for full gas funding guide →</p>
                 </div>
-              </button>
+              </div>
             )}
 
             {history.length === 0 ? (
