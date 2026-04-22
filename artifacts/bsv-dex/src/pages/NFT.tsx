@@ -94,7 +94,7 @@ function getNftProfileAddress({
   internalEvmAddress: string | null;
 }) {
   if (!address) return null;
-  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
+  if (provider === "orah-wallet" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 function timeAgo(iso: string) {
