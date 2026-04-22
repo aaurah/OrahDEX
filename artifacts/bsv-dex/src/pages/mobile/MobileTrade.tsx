@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
+import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -661,10 +662,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const walletQuoteBalance = evmTokenBalances.length > 0 ? erc20QuoteBalance : (isNativeQuote ? walletBal  : 0);
 
   // Orah Wallet users use the API ledger balance.
-  // External wallets use on-chain balance minus open order locks.
-  // For external wallets: merge on-chain and internal exchange balance.
-  // This allows selling assets received via internal exchange trades
-  // (e.g. BSV bought on BSV/USDT pair stays in internal ledger).
+  // External wallets are on-chain-first: availability comes from wallet balances,
+  // then open-order locks are subtracted client-side for accurate remaining size.
   const internalBaseBalance  = apiBalances[base]  ?? 0;
   const internalQuoteBalance = apiBalances[quote] ?? 0;
   const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
@@ -680,7 +679,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
   const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
   const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
-  const minOrderQty = 0.001;
 
   // Click available → fill max amount (exact balance — no shave factor)
   const handleFillMax = () => {
@@ -697,10 +695,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (side === "buy") {
       if (effectivePrice <= 0) return;
       const maxQty = buyBalance / effectivePrice;
-      const minQty = Math.min(maxQty, minOrderQty);
+      const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
       setAmount(minQty > 0 ? minQty.toFixed(6) : "");
     } else {
-      const minQty = Math.min(sellBalance, minOrderQty);
+      const minQty = Math.min(sellBalance, MIN_QUICK_FILL_QTY);
       setAmount(minQty > 0 ? minQty.toFixed(6) : "");
     }
   };
@@ -1576,11 +1574,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   >
                     MAX
                   </button>
-                  <button
-                    onClick={handleFillMax}
-                    disabled={!address || available <= 0 || balancesPending}
-                    className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
-                  >
+                  <span className="text-xs font-semibold tabular-nums text-primary flex items-center gap-1">
                     {balancesPending
                       ? "—"
                       : available > 0
@@ -1596,7 +1590,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         {chainInfo.l2Label}
                       </span>
                     )}
-                  </button>
+                  </span>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
                     className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors"

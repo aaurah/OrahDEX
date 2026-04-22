@@ -10,6 +10,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getNativeSymbol } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
+import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
 
@@ -501,7 +502,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     : Math.max(walletQuote, internalQuote);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
-  const minOrderQty = 0.001;
 
   // ── Locked amount for open orders (from API ledger) ────────────────────────
   const apiLockedAmt = usesApiBalance
@@ -1166,11 +1166,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                       const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
                       if (px > 0) {
                         const maxQty = availableAmt / px;
-                        const minQty = Math.min(maxQty, minOrderQty);
+                        const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
                         setAmount(minQty > 0 ? minQty.toFixed(6) : "");
                       }
                     } else {
-                      const minQty = Math.min(availableAmt, minOrderQty);
+                      const minQty = Math.min(availableAmt, MIN_QUICK_FILL_QTY);
                       setAmount(minQty > 0 ? minQty.toFixed(6) : "");
                     }
                     return;
