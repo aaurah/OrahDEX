@@ -1220,11 +1220,12 @@ function ExchangeSwapPanel({
         setSwapErr(msg);
         toast({ title: "Swap failed", description: msg, variant: "destructive" });
       } else {
-        setResult(data as ExchangeQuote);
+        const swapResult = data as ExchangeQuote;
+        setResult(swapResult);
         setAmount(""); setQuote(null);
         toast({
           title: "Swap complete!",
-          description: `${(data as any).amountIn} ${(data as any).assetIn} → ${parseFloat((data as any).amountOut).toFixed(6)} ${(data as any).assetOut}`,
+          description: `${swapResult.amountIn} ${swapResult.assetIn} → ${parseFloat(swapResult.amountOut).toFixed(6)} ${swapResult.assetOut}`,
         });
         setTimeout(loadBalances, 600);
       }
