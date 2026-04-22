@@ -300,7 +300,7 @@ function bsvPubKeyToAddress(pubKey: Uint8Array, compressed: boolean): string {
 const B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 function base58Encode(buf: Buffer): string {
-  let n = BigInt("0x" + buf.toString("hex") || "00");
+  let n = buf.length ? BigInt("0x" + buf.toString("hex")) : 0n;
   let s = "";
   while (n > 0n) { s = B58_ALPHABET[Number(n % 58n)] + s; n /= 58n; }
   for (let i = 0; i < buf.length && buf[i] === 0; i++) s = "1" + s;
