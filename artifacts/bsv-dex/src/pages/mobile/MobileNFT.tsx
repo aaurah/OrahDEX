@@ -1162,7 +1162,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   const [commentText, setCommentText] = useState("");
   const [loadingC, setLoadingC] = useState(true);
   const [imgErr, setImgErr] = useState(false);
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const soldOut = post.max_supply !== null && post.mint_count >= post.max_supply;
 
   useEffect(() => {
@@ -1170,9 +1171,9 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   }, [post.id]);
 
   async function submitComment() {
-    if (!commentText.trim() || !address) return;
+    if (!commentText.trim() || !actorAddress) return;
     const txt = commentText; setCommentText("");
-    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address, content: txt, display_name: shortAddr(address) }) }).catch(() => {});
+    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: actorAddress, content: txt, display_name: shortAddr(actorAddress) }) }).catch(() => {});
     const d = await fetch(`${API}/social/posts/${post.id}`).then(r => r.json()).catch(() => ({}));
     setComments(d.comments ?? []);
   }
@@ -1281,7 +1282,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
@@ -1300,10 +1302,11 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
+    if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: address }) });
+      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Mint failed");
       setDone(true);
@@ -1655,7 +1658,8 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 
 /* ─── CREATE TAB ─────────────────────────────────────────────────────────────── */
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [form, setForm] = useState({
     title: "", description: "", imageUrl: "", ticker: "",
     mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "",
@@ -1703,16 +1707,17 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   async function submit() {
     if (!address) { setError("Connect your wallet first"); return; }
     if (!canSubmit) { setError("Title and media are required"); return; }
+    const creatorAddress = actorAddress ?? address;
     setLoading(true); setError("");
     try {
       const image_url = mediaMode === "url" ? form.imageUrl : fileData;
-      const profileRes = await fetch(`${API}/social/creators/${address}`).catch(() => null);
+      const profileRes = await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => null);
       const profileData = profileRes?.ok ? await profileRes.json() : null;
-      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(address);
+      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(creatorAddress);
       const res = await fetch(`${API}/social/posts`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          creator: address,
+          creator: creatorAddress,
           creator_name: creatorName,
           title: form.title,
           description: form.description,
@@ -1726,7 +1731,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed");
-      await fetch(`${API}/social/creators/${address}`).catch(() => {});
+      await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => {});
       setSuccess(true);
       setTimeout(() => { setSuccess(false); onSuccess(); }, 2200);
     } catch (err: any) { setError(err.message); }
@@ -1971,7 +1976,7 @@ export function MobileNFT() {
 
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-    if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
+    if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
   }
 
   const openCreator = useCallback((addr: string) => setCreatorAddress(addr), []);
