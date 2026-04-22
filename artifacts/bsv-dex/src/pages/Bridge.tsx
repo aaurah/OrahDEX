@@ -116,6 +116,7 @@ const CCTP_CHAIN_IDS: Record<string, number> = {
   poly: 137,
 };
 const CCTP_POLL_INTERVAL_MS = 4000;
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
@@ -259,18 +260,23 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   }, [clearCctpPolling]);
 
   const pollCctpStatus = useCallback(async (id: string) => {
+    if (!isMountedRef.current) return;
     try {
       const res = await fetch(`/api/bridge/cctp/intent/${id}`);
       if (!res.ok) {
         console.warn("CCTP polling returned non-OK status", res.status);
         return;
       }
-      const data = await res.json() as { status?: CctpIntentStatus };
-      if (!data?.status) return;
-      setCctpStatus(data.status);
-      if (data.status === "created") setStep(1);
-      if (data.status === "attested") setStep(2);
-      if (data.status === "completed") {
+      const data = await res.json() as unknown;
+      if (!data || typeof data !== "object" || !("status" in data)) return;
+      const status = (data as { status?: unknown }).status;
+      if (status !== "created" && status !== "attested" && status !== "completed") return;
+      if (!isMountedRef.current) return;
+
+      setCctpStatus(status);
+      if (status === "created") setStep(1);
+      if (status === "attested") setStep(2);
+      if (status === "completed") {
         setStep(4);
         setRunning(false);
         clearCctpPolling();
@@ -288,7 +294,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
       setCctpError("Selected route is not supported for CCTP yet.");
       return;
     }
-    if (!address.startsWith("0x")) {
+    if (!EVM_ADDRESS_REGEX.test(address)) {
       setCctpError("Connect an EVM wallet address to use CCTP.");
       return;
     }
@@ -315,9 +321,18 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           asset: "USDC",
         }),
       });
-      let data: { id?: string; status?: CctpIntentStatus; error?: string } = {};
+      let data: { id?: string; status?: CctpIntentStatus; error?: string };
       try {
-        data = await res.json();
+        const parsed = await res.json() as unknown;
+        if (!parsed || typeof parsed !== "object") {
+          throw new Error("Unexpected response shape");
+        }
+        const obj = parsed as { id?: unknown; status?: unknown; error?: unknown };
+        data = {
+          id: typeof obj.id === "string" ? obj.id : undefined,
+          status: obj.status === "created" || obj.status === "attested" || obj.status === "completed" ? obj.status : undefined,
+          error: typeof obj.error === "string" ? obj.error : undefined,
+        };
       } catch (parseErr) {
         const parseMessage = parseErr instanceof Error ? parseErr.message : "Invalid JSON response";
         throw new Error(`Failed to parse CCTP response: ${parseMessage}`);
