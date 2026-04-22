@@ -142,161 +142,178 @@ router.post("/social/creators/:address/update", async (req, res) => {
 
 /* ── POST /social/creators/:address/trade ─────────────────────────────────── */
 router.post("/social/creators/:address/trade", async (req, res) => {
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-    const { address } = req.params;
-    const { trader, trade_type, bsv_amount, token_amount } = req.body as Record<string, any>;
-    if (!trader || !trade_type) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { address } = req.params;
+      const { trader, trade_type, bsv_amount, token_amount } = req.body as Record<string, any>;
+      if (!trader || !trade_type) {
+        await client.query("ROLLBACK");
+        res.status(400).json({ error: "trader and trade_type required" });
+        return;
+      }
+      if (trade_type !== "buy" && trade_type !== "sell") {
+        await client.query("ROLLBACK");
+        res.status(400).json({ error: "Invalid trade_type" });
+        return;
+      }
+
+      const { rows: coins } = await client.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
+      if (!coins.length) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Coin not found" });
+        return;
+      }
+      const coin = coins[0];
+
+      const vBsv = parseFloat(coin.virtual_bsv);
+      const vTok = parseFloat(coin.virtual_tokens);
+      const circulating = parseFloat(coin.circulating_supply);
+
+      let newVBsv: number, newVTok: number, tokensExchanged: number, bsvExchanged: number, pricePerToken: number;
+
+      if (trade_type === "buy") {
+        const bsvIn = parseFloat(String(bsv_amount));
+        if (!Number.isFinite(bsvIn) || bsvIn <= 0) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "bsv_amount must be greater than 0" });
+          return;
+        }
+
+        const { rows: bsvRows } = await client.query(
+          // Seeded funds are demo liquidity and should not be spendable by users.
+          `SELECT GREATEST(0, available - COALESCE(seeded, 0)) AS available
+           FROM user_balances
+           WHERE wallet_address = $1 AND asset_symbol = 'BSV'
+          FOR UPDATE`,
+          [trader],
+        );
+        if (!bsvRows.length) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient BSV balance" });
+          return;
+        }
+        const availableBsv = parseFloat((bsvRows[0] as { available?: string } | undefined)?.available ?? "0");
+        if (availableBsv < bsvIn) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient BSV balance" });
+          return;
+        }
+
+        const calc = calcBuy(vBsv, vTok, bsvIn);
+        newVBsv = calc.newVBsv; newVTok = calc.newVTok;
+        tokensExchanged = calc.tokensOut; bsvExchanged = bsvIn;
+        pricePerToken = calc.pricePerToken;
+
+        await client.query(
+          `UPDATE user_balances
+           SET available = available - $1, updated_at = NOW()
+           WHERE wallet_address = $2 AND asset_symbol = 'BSV'`,
+          [bsvIn.toFixed(8), trader],
+        );
+
+        // update holding
+        await client.query(
+          `INSERT INTO coin_holdings (id, coin_creator, holder, amount, avg_buy_price_bsv)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (coin_creator, holder) DO UPDATE SET
+             amount = coin_holdings.amount + EXCLUDED.amount,
+             avg_buy_price_bsv = (coin_holdings.avg_buy_price_bsv * coin_holdings.amount + EXCLUDED.avg_buy_price_bsv * EXCLUDED.amount) / (coin_holdings.amount + EXCLUDED.amount),
+             updated_at = NOW()`,
+          [uid(), address, trader, tokensExchanged, pricePerToken.toFixed(12)],
+        );
+      } else {
+        const tokensIn = parseFloat(String(token_amount));
+        if (!Number.isFinite(tokensIn) || tokensIn <= 0) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "token_amount must be greater than 0" });
+          return;
+        }
+
+        const { rows: holdingRows } = await client.query(
+          `SELECT amount
+           FROM coin_holdings
+           WHERE coin_creator = $1 AND holder = $2
+          FOR UPDATE`,
+          [address, trader],
+        );
+        if (!holdingRows.length) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient token balance" });
+          return;
+        }
+        const held = parseFloat((holdingRows[0] as { amount?: string } | undefined)?.amount ?? "0");
+        if (held < tokensIn) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient token balance" });
+          return;
+        }
+
+        const calc = calcSell(vBsv, vTok, tokensIn);
+        newVBsv = calc.newVBsv; newVTok = calc.newVTok;
+        tokensExchanged = tokensIn; bsvExchanged = calc.bsvOut;
+        pricePerToken = calc.pricePerToken;
+
+        await client.query(
+          `UPDATE coin_holdings SET amount = amount - $1, updated_at = NOW()
+            WHERE coin_creator = $2 AND holder = $3`,
+          [tokensExchanged, address, trader],
+        );
+
+        await client.query(
+          `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+           VALUES ($1, 'BSV', $2, '0', NOW())
+           ON CONFLICT (wallet_address, asset_symbol)
+           DO UPDATE SET available = user_balances.available + $2, updated_at = NOW()`,
+          [trader, bsvExchanged.toFixed(8)],
+        );
+      }
+
+      const newPrice = newVBsv / newVTok;
+      const newPriceUsd = newPrice * BSV_USD;
+      const newCirculating = trade_type === "buy" ? circulating + tokensExchanged : circulating - tokensExchanged;
+      const newMcap = (newPriceUsd * newCirculating).toFixed(2);
+      const newAth = Math.max(parseFloat(coin.ath_usd ?? "0"), newPriceUsd);
+
+      const { rows: holdersCount } = await client.query(
+        "SELECT COUNT(*) as cnt FROM coin_holdings WHERE coin_creator = $1 AND amount > 0", [address],
+      );
+
+      await client.query(
+        `UPDATE creator_coins SET virtual_bsv = $1, virtual_tokens = $2, price_bsv = $3, price_usd = $4,
+         market_cap_usd = $5, ath_usd = $6, circulating_supply = $7,
+         volume_24h_usd = volume_24h_usd + $8, trade_count = trade_count + 1,
+         holder_count = $9 WHERE creator_address = $10`,
+        [newVBsv.toFixed(8), Math.floor(newVTok), newPrice.toFixed(12), newPriceUsd.toFixed(8),
+         newMcap, newAth.toFixed(8), Math.max(0, newCirculating), (bsvExchanged * BSV_USD).toFixed(2),
+         holdersCount[0].cnt, address],
+      );
+
+      await client.query(
+        `INSERT INTO coin_trades (id, coin_creator, trader, trade_type, bsv_amount, token_amount, price_bsv, price_usd)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [uid(), address, trader, trade_type, bsvExchanged.toFixed(8), tokensExchanged, newPrice.toFixed(12), newPriceUsd.toFixed(8)],
+      );
+
+      await client.query("COMMIT");
+      res.json({
+        success: true,
+        tokensExchanged,
+        bsvExchanged: bsvExchanged.toFixed(8),
+        newPrice: newPriceUsd,
+        newMarketCap: newMcap,
+      });
+    } catch (err: any) {
       await client.query("ROLLBACK");
-      res.status(400).json({ error: "trader and trade_type required" });
-      return;
+      logger.error({ err, address: req.params.address }, "Creator coin trade failed");
+      res.status(500).json({ error: "Trade failed" });
+    } finally {
+      client.release();
     }
-    if (trade_type !== "buy" && trade_type !== "sell") {
-      await client.query("ROLLBACK");
-      res.status(400).json({ error: "Invalid trade_type" });
-      return;
-    }
-
-    const { rows: coins } = await client.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
-    if (!coins.length) {
-      await client.query("ROLLBACK");
-      res.status(404).json({ error: "Coin not found" });
-      return;
-    }
-    const coin = coins[0];
-
-    const vBsv = parseFloat(coin.virtual_bsv);
-    const vTok = parseFloat(coin.virtual_tokens);
-    const circulating = parseFloat(coin.circulating_supply);
-
-    let newVBsv: number, newVTok: number, tokensExchanged: number, bsvExchanged: number, pricePerToken: number;
-
-    if (trade_type === "buy") {
-      const bsvIn = parseFloat(String(bsv_amount));
-      if (!Number.isFinite(bsvIn) || bsvIn <= 0) {
-        await client.query("ROLLBACK");
-        res.status(400).json({ error: "bsv_amount must be greater than 0" });
-        return;
-      }
-
-      const { rows: bsvRows } = await client.query<{ available: string }>(
-        `SELECT GREATEST(0, available - COALESCE(seeded, 0)) AS available
-         FROM user_balances
-         WHERE wallet_address = $1 AND asset_symbol = 'BSV'
-         FOR UPDATE`,
-        [trader],
-      );
-      const availableBsv = parseFloat(bsvRows[0]?.available ?? "0");
-      if (availableBsv < bsvIn) {
-        await client.query("ROLLBACK");
-        res.status(400).json({ error: "Insufficient BSV balance" });
-        return;
-      }
-
-      const calc = calcBuy(vBsv, vTok, bsvIn);
-      newVBsv = calc.newVBsv; newVTok = calc.newVTok;
-      tokensExchanged = calc.tokensOut; bsvExchanged = bsvIn;
-      pricePerToken = calc.pricePerToken;
-
-      await client.query(
-        `UPDATE user_balances
-         SET available = available - $1, updated_at = NOW()
-         WHERE wallet_address = $2 AND asset_symbol = 'BSV'`,
-        [bsvIn.toFixed(8), trader],
-      );
-
-      // update holding
-      await client.query(
-        `INSERT INTO coin_holdings (id, coin_creator, holder, amount, avg_buy_price_bsv)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (coin_creator, holder) DO UPDATE SET
-           amount = coin_holdings.amount + EXCLUDED.amount,
-           avg_buy_price_bsv = (coin_holdings.avg_buy_price_bsv * coin_holdings.amount + EXCLUDED.avg_buy_price_bsv * EXCLUDED.amount) / (coin_holdings.amount + EXCLUDED.amount),
-           updated_at = NOW()`,
-        [uid(), address, trader, tokensExchanged, pricePerToken.toFixed(12)],
-      );
-    } else {
-      const tokensIn = parseFloat(String(token_amount));
-      if (!Number.isFinite(tokensIn) || tokensIn <= 0) {
-        await client.query("ROLLBACK");
-        res.status(400).json({ error: "token_amount must be greater than 0" });
-        return;
-      }
-
-      const { rows: holdingRows } = await client.query<{ amount: string }>(
-        `SELECT amount
-         FROM coin_holdings
-         WHERE coin_creator = $1 AND holder = $2
-         FOR UPDATE`,
-        [address, trader],
-      );
-      const held = parseFloat(holdingRows[0]?.amount ?? "0");
-      if (held < tokensIn) {
-        await client.query("ROLLBACK");
-        res.status(400).json({ error: "Insufficient token balance" });
-        return;
-      }
-
-      const calc = calcSell(vBsv, vTok, tokensIn);
-      newVBsv = calc.newVBsv; newVTok = calc.newVTok;
-      tokensExchanged = tokensIn; bsvExchanged = calc.bsvOut;
-      pricePerToken = calc.pricePerToken;
-
-      await client.query(
-        `UPDATE coin_holdings SET amount = amount - $1, updated_at = NOW()
-          WHERE coin_creator = $2 AND holder = $3`,
-        [tokensExchanged, address, trader],
-      );
-
-      await client.query(
-        `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
-         VALUES ($1, 'BSV', $2, '0', NOW())
-         ON CONFLICT (wallet_address, asset_symbol)
-         DO UPDATE SET available = user_balances.available + $2, updated_at = NOW()`,
-        [trader, bsvExchanged.toFixed(8)],
-      );
-    }
-
-    const newPrice = newVBsv / newVTok;
-    const newPriceUsd = newPrice * BSV_USD;
-    const newCirculating = trade_type === "buy" ? circulating + tokensExchanged : circulating - tokensExchanged;
-    const newMcap = (newPriceUsd * newCirculating).toFixed(2);
-    const newAth = Math.max(parseFloat(coin.ath_usd ?? "0"), newPriceUsd);
-
-    const { rows: holdersCount } = await client.query(
-      "SELECT COUNT(*) as cnt FROM coin_holdings WHERE coin_creator = $1 AND amount > 0", [address],
-    );
-
-    await client.query(
-      `UPDATE creator_coins SET virtual_bsv = $1, virtual_tokens = $2, price_bsv = $3, price_usd = $4,
-       market_cap_usd = $5, ath_usd = $6, circulating_supply = $7,
-       volume_24h_usd = volume_24h_usd + $8, trade_count = trade_count + 1,
-       holder_count = $9 WHERE creator_address = $10`,
-      [newVBsv.toFixed(8), Math.floor(newVTok), newPrice.toFixed(12), newPriceUsd.toFixed(8),
-       newMcap, newAth.toFixed(8), Math.max(0, newCirculating), (bsvExchanged * BSV_USD).toFixed(2),
-       holdersCount[0].cnt, address],
-    );
-
-    await client.query(
-      `INSERT INTO coin_trades (id, coin_creator, trader, trade_type, bsv_amount, token_amount, price_bsv, price_usd)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [uid(), address, trader, trade_type, bsvExchanged.toFixed(8), tokensExchanged, newPrice.toFixed(12), newPriceUsd.toFixed(8)],
-    );
-
-    await client.query("COMMIT");
-    res.json({
-      success: true,
-      tokensExchanged,
-      bsvExchanged: bsvExchanged.toFixed(8),
-      newPrice: newPriceUsd,
-      newMarketCap: newMcap,
-    });
   } catch (err: any) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: err?.message });
-  } finally {
-    client.release();
+    logger.error({ err, address: req.params.address }, "Creator coin trade connection failed");
+    res.status(500).json({ error: "Trade failed" });
   }
 });
 
