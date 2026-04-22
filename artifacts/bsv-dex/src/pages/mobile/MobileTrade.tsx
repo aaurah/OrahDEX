@@ -1513,7 +1513,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     {balancesPending
                       ? "—"
                       : available > 0
-                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6 })
+                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
                         : "0.0000"}&nbsp;{availableSym}
                     {isEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
