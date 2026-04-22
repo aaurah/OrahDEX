@@ -61,12 +61,13 @@ interface Creator {
 interface Holding { coin_creator: string; holder: string; amount: number; username: string; symbol: string; price_usd: number; market_cap_usd: number; }
 
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+const MIN_ADDRESS_LIKE_LENGTH = 24;
 function isAddressLike(value: string) {
   const v = value.trim();
   if (!v) return false;
   if (v.includes("…")) return true;
   if (v.startsWith("0x")) return true;
-  return /^[A-Za-z0-9]{24,}$/.test(v);
+  return new RegExp(`^[A-Za-z0-9]{${MIN_ADDRESS_LIKE_LENGTH},}$`).test(v);
 }
 function commentHandle(comment: Comment) {
   const displayName = comment.display_name?.trim();
