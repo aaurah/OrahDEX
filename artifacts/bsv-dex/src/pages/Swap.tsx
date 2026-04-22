@@ -1203,7 +1203,7 @@ function ExchangeSwapPanel({
               const wb = walletBalFor(fromAsset);
               return wb != null ? (
                 <span className="text-muted-foreground/70">
-                  Balance:{" "}
+                  Wallet balance:{" "}
                   <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
@@ -1274,7 +1274,7 @@ function ExchangeSwapPanel({
               const wb = walletBalFor(toAsset);
               return wb != null ? (
                 <span className="text-muted-foreground/70">
-                  Balance:{" "}
+                  Wallet balance:{" "}
                   <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
