@@ -13,6 +13,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
 import { disconnectReown } from "@/lib/reown";
+import { resolveNftSpendBalance } from "@/lib/nftBalance";
 
 const API = "/api";
 
@@ -168,22 +169,22 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
+  const { balances: evmBalances } = useEvmBalances(isEvm ? address : null, chainId ?? null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
   const availableBsvNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    ? (nativeEvmBalance ? Number(nativeEvmBalance.amount) || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
   const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -1272,22 +1273,22 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
-  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
-    : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
-  const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
-    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(isEvm ? address : null, chainId ?? null);
+  const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
+    isEvm,
+    isOrahWallet,
+    storeBalance,
+    evmBalances,
+    evmBalancesLoading,
+    mintCurrency: post.mint_currency,
+  });
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const isBsvMint = !isEvm || post.mint_currency === "BSV";
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && mintPrice > 0 && availableNum < mintPrice;
   const [, navigate] = useLocation();
 
   async function doMint() {
@@ -1309,7 +1310,18 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
     if (!price || price <= 0) { setError("Enter a valid price"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/nft/listings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }) });
+      const res = await fetch(`${API}/nft/listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nftId: post.id,
+          collectionId: "social-posts",
+          seller: address,
+          chain: post.chain,
+          price: String(price),
+          currency: post.mint_currency || "BSV",
+        }),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to list");
       setDone(true);
@@ -1368,6 +1380,24 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
                 {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
                 {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+                <div className="mt-4 rounded-xl overflow-hidden" style={{ border: "1px solid var(--color-border)" }}>
+                  <button
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="w-full px-3 py-2.5 text-xs font-bold flex items-center justify-between"
+                    style={{ background: "var(--color-surface)", color: "var(--color-text)" }}
+                  >
+                    <span>Advanced NFT Details</span>
+                    <ChevronRight size={14} style={{ transform: showAdvanced ? "rotate(90deg)" : undefined, transition: "transform 0.2s ease" }} />
+                  </button>
+                  {showAdvanced && (
+                    <div className="px-3 py-2.5 text-[11px] space-y-1.5" style={{ background: "rgba(255,255,255,0.02)", color: "var(--color-text-secondary)" }}>
+                      <div className="flex justify-between gap-2"><span>Post ID</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.id}</span></div>
+                      <div className="flex justify-between gap-2"><span>Creator</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.creator}</span></div>
+                      <div className="flex justify-between gap-2"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-text)" }}>{post.chain}</span></div>
+                      <div className="flex justify-between gap-2"><span>Currency</span><span style={{ color: "var(--color-text)" }}>{post.mint_currency}</span></div>
+                    </div>
+                  )}
+                </div>
                 <button onClick={doMint} disabled={loading || insufficientFunds}
                   className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
                   style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
