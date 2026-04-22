@@ -415,9 +415,6 @@ function base58Decode(str: string): Buffer {
 interface ExchangeNonce {
   nonce:     string;
   message:   string;
-  assetIn:   string;
-  assetOut:  string;
-  amountIn:  string;
   expiresAt: number;
 }
 
@@ -456,9 +453,6 @@ export function issueExchangeChallenge(params: {
   exchangeNonces.set(params.walletAddress.toLowerCase(), {
     nonce,
     message,
-    assetIn: params.assetIn.toUpperCase(),
-    assetOut: params.assetOut.toUpperCase(),
-    amountIn: String(params.amountIn),
     expiresAt: Date.now() + EXCHANGE_NONCE_TTL_MS,
   });
 
@@ -475,11 +469,6 @@ export function verifyExchangeSignature(
   walletAddress: string,
   nonce:         string,
   signature:     string,
-  expectedTrade?: {
-    assetIn: string;
-    assetOut: string;
-    amountIn: string;
-  },
 ): void {
   const addr   = walletAddress.toLowerCase();
   const stored = exchangeNonces.get(addr);
@@ -496,22 +485,6 @@ export function verifyExchangeSignature(
       "Exchange nonce mismatch. " +
       "Use the nonce returned by POST /trade/exchange/challenge.",
     );
-  }
-
-  if (expectedTrade) {
-    const expectedAssetIn = expectedTrade.assetIn.toUpperCase();
-    const expectedAssetOut = expectedTrade.assetOut.toUpperCase();
-    const expectedAmountIn = String(expectedTrade.amountIn);
-    if (
-      stored.assetIn !== expectedAssetIn ||
-      stored.assetOut !== expectedAssetOut ||
-      stored.amountIn !== expectedAmountIn
-    ) {
-      throw new Error(
-        "Exchange challenge does not match submitted trade parameters. " +
-        "Request a fresh challenge for this exact trade.",
-      );
-    }
   }
 
   // verifyEvmSignature throws on mismatch
