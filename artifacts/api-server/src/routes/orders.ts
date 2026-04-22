@@ -15,7 +15,7 @@ import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { buildOrderAuthMessage, verifyEvmSignature } from "../lib/walletAuth.js";
+import { buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
@@ -132,6 +132,20 @@ router.post("/orders", async (req, res) => {
       // nonce defaults to the order id; expiry defaults to 5 minutes from now
       const orderNonce  = body.nonce  ? String(body.nonce)  : id;
       const orderExpiry = body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Enforce expiry: reject if the order's expiry timestamp is in the past.
+      const expiryUnixSec = parseInt(orderExpiry, 10);
+      if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
+        res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
+        return;
+      }
+
+      // Reject replayed nonces: each (walletAddress, nonce) pair is single-use.
+      if (isOrderNonceConsumed(body.walletAddress, orderNonce)) {
+        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+        return;
+      }
+
       const authMsg = buildOrderAuthMessage({
         walletAddress: body.walletAddress,
         symbol:        body.symbol,
@@ -146,7 +160,21 @@ router.post("/orders", async (req, res) => {
         res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
         return;
       }
+
+      // Consume the nonce after successful verification (single-use enforcement).
+      recordConsumedOrderNonce(body.walletAddress, orderNonce, expiryUnixSec);
     }
+
+    // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
+    // When provided, enables on-chain RPC balance verification in fundingVerifier.
+    // Must be a numeric value in the supported set; unknown values are silently ignored.
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const chainId = body.chainId != null
+      ? (() => {
+          const n = parseInt(String(body.chainId), 10);
+          return SUPPORTED_CHAIN_IDS.has(n) ? n : undefined;
+        })()
+      : undefined;
 
     // ── Acquire funding lock BEFORE inserting the order (No funding → No order) ──
     // fundingVerifier enforces balance-bucket isolation:
@@ -175,6 +203,7 @@ router.post("/orders", async (req, res) => {
         asset:           lockAsset!,
         amount:          lockAmount,
         signature:       body.evmSignature ?? body.signedTx,
+        chainId,
         reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
       });
       if (!fundingVerif.valid) {

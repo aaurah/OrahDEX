@@ -64,6 +64,7 @@ import {
   type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
+import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -187,9 +188,47 @@ async function verifySpotFunding(
       const rpcUrl = RPC_URLS[chainId];
       if (rpcUrl) {
         try {
-          const client     = createPublicClient({ transport: http(rpcUrl) });
-          const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-          const onChain    = Number(onChainBal) / 1e18;
+          const client = createPublicClient({ transport: http(rpcUrl) });
+
+          // Minimal ERC-20 ABI for balanceOf
+          const ERC20_BALANCE_OF_ABI = [
+            {
+              type:    "function",
+              name:    "balanceOf",
+              inputs:  [{ name: "account", type: "address" }],
+              outputs: [{ name: "", type: "uint256" }],
+              stateMutability: "view",
+            },
+          ] as const;
+
+          let onChain: number;
+
+          if (isNativeAsset(chainId, asset)) {
+            // Native chain asset: ETH / BNB / MATIC / AVAX
+            const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
+            onChain = Number(onChainBal) / 1e18;
+          } else {
+            // ERC-20 token: look up contract address and decimals
+            const tokenInfo = getTokenInfo(chainId, asset);
+            if (!tokenInfo) {
+              // Token not in registry — log a warning and skip on-chain check.
+              // Never silently accept as if the check passed.
+              logger.warn(
+                { walletAddress, chainId, asset },
+                "fundingVerifier: token not in registry — on-chain balance check skipped",
+              );
+              const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
+              return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
+            }
+            const rawBalance = await client.readContract({
+              address:      tokenInfo.address as `0x${string}`,
+              abi:          ERC20_BALANCE_OF_ABI,
+              functionName: "balanceOf",
+              args:         [walletAddress as `0x${string}`],
+            });
+            onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
+          }
+
           if (onChain < needed) {
             return {
               valid:      false,

@@ -99,6 +99,9 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@noble/ed25519':
+        specifier: ^2.2.3
+        version: 2.3.0
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
@@ -2323,6 +2326,9 @@ packages:
   '@noble/curves@2.0.1':
     resolution: {integrity: sha512-vs1Az2OOTBiP4q0pwjW5aF0xp9n4MxVrmkFBxc6EKZc6ddYx5gaZiAsZoq0uRRXWbi3AT/sBqn05eRPtn1JCPw==}
     engines: {node: '>= 20.19.0'}
+
+  '@noble/ed25519@2.3.0':
+    resolution: {integrity: sha512-M7dvXL2B92/M7dw9+gzuydL8qn/jiqNHaoR3Q+cb1q1GHV7uwE17WCyFMG+Y+TZb5izcaXk5TdJRrDUxHXL78A==}
 
   '@noble/hashes@1.2.0':
     resolution: {integrity: sha512-FZfhjEDbT5GRswV3C6uvLPHMiVD6lQBmpoX5+eSiPaMTXte/IKqI5dykDxzZB/WBeK/CDuQRBWarPdi3FNY2zQ==}
@@ -10137,6 +10143,8 @@ snapshots:
   '@noble/curves@2.0.1':
     dependencies:
       '@noble/hashes': 2.0.1
+
+  '@noble/ed25519@2.3.0': {}
 
   '@noble/hashes@1.2.0': {}
 

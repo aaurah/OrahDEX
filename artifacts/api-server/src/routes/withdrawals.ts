@@ -5,21 +5,36 @@ import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { issueWithdrawChallenge, verifyWithdrawSignature } from "../lib/walletAuth.js";
+import {
+  issueWithdrawChallenge,
+  verifyWithdrawSignature,
+  issueBsvWithdrawChallenge,
+  verifyBsvWithdrawSignature,
+  issueSolWithdrawChallenge,
+  verifySolWithdrawSignature,
+} from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
 // ── POST /withdraw/challenge ───────────────────────────────────────────────────
-// Returns a server-issued nonce that the EVM wallet must sign before calling
+// Returns a server-issued nonce that the wallet must sign before calling
 // POST /withdrawals. The signed challenge proves the caller owns the wallet.
+// Supports EVM (0x…), BSV (1…/3…), and Solana (base58) addresses.
 router.post("/withdraw/challenge", (req, res) => {
   const { walletAddress } = req.body as { walletAddress?: string };
-  if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    res.status(400).json({ error: "Valid EVM address required (0x…)" });
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
     return;
   }
-  const challenge = issueWithdrawChallenge(walletAddress);
-  res.json(challenge);
+  if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    res.json(issueWithdrawChallenge(walletAddress));
+  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
+    res.json(issueBsvWithdrawChallenge(walletAddress));
+  } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
+    res.json(issueSolWithdrawChallenge(walletAddress));
+  } else {
+    res.status(400).json({ error: "Unsupported wallet address format. Supported: EVM (0x…), BSV (1…/3…), Solana (base58)." });
+  }
 });
 
 // ── POST /withdrawals ─────────────────────────────────────────────────────────
@@ -42,10 +57,9 @@ router.post("/withdrawals", async (req, res) => {
     return;
   }
 
-  // Require wallet ownership proof for EVM addresses.
-  // Non-EVM wallets (e.g. BSV p2pkh) use a different auth mechanism handled
-  // by the on-chain withdrawal flow.
+  // Require wallet ownership proof for all external wallet types.
   if (walletAddress.startsWith("0x")) {
+    // EVM wallet
     if (!signature) {
       res.status(401).json({
         error: "signature is required for EVM wallet withdrawals. " +
@@ -60,6 +74,43 @@ router.post("/withdrawals", async (req, res) => {
       res.status(401).json({ error: authErr.message });
       return;
     }
+  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
+    // BSV P2PKH / P2SH wallet
+    if (!signature) {
+      res.status(401).json({
+        error: "signature is required for BSV wallet withdrawals. " +
+               "Request a challenge via POST /withdraw/challenge, sign it with your BSV wallet, " +
+               "and include the base64 signature in this request.",
+      });
+      return;
+    }
+    try {
+      verifyBsvWithdrawSignature(walletAddress, signature);
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
+  } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
+    // Solana base58 public key
+    if (!signature) {
+      res.status(401).json({
+        error: "signature is required for Solana wallet withdrawals. " +
+               "Request a challenge via POST /withdraw/challenge, sign it with your Solana wallet, " +
+               "and include the signature in this request.",
+      });
+      return;
+    }
+    try {
+      verifySolWithdrawSignature(walletAddress, signature);
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
+  } else {
+    res.status(400).json({
+      error: "Unsupported wallet address format. Supported: EVM (0x…), BSV (1…/3…), Solana (base58).",
+    });
+    return;
   }
 
   const id = crypto.randomUUID();
