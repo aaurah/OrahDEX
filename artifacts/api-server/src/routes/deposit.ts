@@ -7,16 +7,12 @@
  */
 
 import { Router } from "express";
-import { createPublicClient, http, type Hex } from "viem";
 import { EVM_CHAINS } from "../lib/evmHtlc.js";
 import {
-  getOrCreateDepositAddress,
   isDepositAlreadyCredited,
   recordVerifiedDeposit,
-  recordAndCreditDeposit,
-  sweepAndCreditDeposit,
 } from "../lib/depositAddresses.js";
-import { creditAvailable, getBalances } from "../lib/ledger.js";
+import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
 import { getOrCreateWallet } from "../lib/bsvWallet.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
@@ -33,39 +29,15 @@ const router = Router();
 
 router.get("/deposit/address", async (req, res) => {
   const walletAddress = (req.query.walletAddress as string | undefined)?.trim();
-  const chainId = parseInt((req.query.chainId as string | undefined) ?? "1", 10);
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required (must be 0x…)" });
     return;
   }
 
-  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
-
-  try {
-    const { depositAddress, isNew } = await getOrCreateDepositAddress(walletAddress);
-
-    const balances = await getBalances(walletAddress);
-    const assetRow = (asset: string) =>
-      balances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
-
-    res.json({
-      depositAddress,
-      isNew,
-      chainId:       chain.chainId,
-      chainName:     chain.name,
-      nativeSymbol:  chain.nativeSymbol,
-      blockExplorer: chain.blockExplorer,
-      ledgerBalances: {
-        [chain.nativeSymbol]: assetRow(chain.nativeSymbol)?.available ?? "0",
-        USDC: assetRow("USDC")?.available ?? "0",
-        USDT: assetRow("USDT")?.available ?? "0",
-      },
-    });
-  } catch (err) {
-    req.log.error({ err }, "deposit/address: failed");
-    res.status(500).json({ error: "Failed to provision deposit address" });
-  }
+  res.status(410).json({
+    error: "Exchange deposit addresses are removed. Use direct wallet-to-wallet contract settlement (HTLC/CCTP).",
+  });
 });
 
 // ── POST /deposit/verify ──────────────────────────────────────────────────────
@@ -82,8 +54,7 @@ router.get("/deposit/address", async (req, res) => {
 //   6. Credit the ledger with ETH value from tx
 
 router.post("/deposit/verify", async (req, res) => {
-  const { walletAddress, txHash, chainId: rawChainId } = req.body ?? {};
-  const chainId = parseInt(String(rawChainId ?? 1), 10);
+  const { walletAddress, txHash } = req.body ?? {};
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required" });
@@ -94,101 +65,9 @@ router.post("/deposit/verify", async (req, res) => {
     return;
   }
 
-  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
-
-  try {
-    // Step 1: Get deposit address
-    const { depositAddress } = await getOrCreateDepositAddress(walletAddress);
-
-    // Step 2: Guard double-credit
-    const alreadyCredited = await isDepositAlreadyCredited(txHash, chainId);
-    if (alreadyCredited) {
-      res.status(409).json({ error: "This transaction has already been credited." });
-      return;
-    }
-
-    // Step 3: Fetch tx from RPC
-    const client = createPublicClient({ transport: http(chain.rpcUrl) });
-    let tx: Awaited<ReturnType<typeof client.getTransaction>> | null = null;
-    try {
-      tx = await client.getTransaction({ hash: txHash as Hex });
-    } catch {
-      res.status(404).json({ error: "Transaction not found on-chain. It may not be mined yet." });
-      return;
-    }
-
-    if (!tx) {
-      res.status(404).json({ error: "Transaction not found on-chain." });
-      return;
-    }
-
-    // Step 4: Ensure mined
-    if (tx.blockNumber == null) {
-      res.status(202).json({ error: "Transaction is still pending. Please wait for confirmation." });
-      return;
-    }
-
-    // Step 5: Verify destination
-    const txTo = (tx.to ?? "").toLowerCase();
-    const depAddr = depositAddress.toLowerCase();
-    if (txTo !== depAddr) {
-      res.status(400).json({
-        error: `Transaction destination mismatch. Expected ${depositAddress}, got ${tx.to ?? "(null)"}.`,
-      });
-      return;
-    }
-
-    // Step 6: Extract ETH value (in wei, convert to ETH)
-    const valueWei   = tx.value ?? 0n;
-    const valueEth   = Number(valueWei) / 1e18;
-    const asset      = chain.nativeSymbol; // ETH / MATIC / BNB
-
-    if (valueEth <= 0) {
-      res.status(400).json({
-        error: "Transaction carries zero native value. ERC-20 token deposits are not yet supported — send native ETH only.",
-      });
-      return;
-    }
-
-    const amountStr = valueEth.toFixed(18);
-
-    // Step 7: Atomically record dedup row AND credit balance in one transaction.
-    // If the dedup row already exists the INSERT is a no-op, the credit is skipped,
-    // and we return 409. This prevents double-credit on retries.
-    const credited = await recordAndCreditDeposit({
-      txHash,
-      chainId,
-      userWallet: walletAddress,
-      asset,
-      amount: amountStr,
-    });
-    if (!credited) {
-      res.status(409).json({ error: "This transaction has already been credited." });
-      return;
-    }
-
-    req.log.info(
-      { walletAddress, txHash, chainId, asset, amount: amountStr },
-      "deposit/verify: credited",
-    );
-
-    const updatedBalances = await getBalances(walletAddress);
-    const creditedBalance = updatedBalances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
-
-    res.json({
-      success:    true,
-      asset,
-      amount:     valueEth,
-      amountStr,
-      newBalance: creditedBalance?.available ?? amountStr,
-      txHash,
-      chainId,
-      message:    `+${valueEth.toFixed(6)} ${asset} credited to your OrahDEX balance`,
-    });
-  } catch (err) {
-    req.log.error({ err }, "deposit/verify: failed");
-    res.status(500).json({ error: "Deposit verification failed. Please try again." });
-  }
+  res.status(410).json({
+    error: "Exchange deposit verification is removed. Use direct wallet-to-wallet contract settlement (HTLC/CCTP).",
+  });
 });
 
 // ── POST /deposit/sweep-wallet ───────────────────────────────────────────────
@@ -200,66 +79,16 @@ router.post("/deposit/verify", async (req, res) => {
 // Uses walletAddress as the on-chain address to read, not a separate deposit addr.
 
 router.post("/deposit/sweep-wallet", async (req, res) => {
-  const { walletAddress, chainId: rawChainId } = req.body ?? {};
-  const chainId = parseInt(String(rawChainId ?? 1), 10);
+  const { walletAddress } = req.body ?? {};
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required (must be 0x…)" });
     return;
   }
 
-  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
-
-  try {
-    const client = createPublicClient({ transport: http(chain.rpcUrl) });
-
-    // Read current on-chain balance
-    const balanceWei = await client.getBalance({ address: walletAddress as Hex });
-    const balanceNative = Number(balanceWei) / 1e18;
-
-    if (balanceNative <= 0) {
-      res.status(400).json({ error: "No on-chain balance to sweep." });
-      return;
-    }
-
-    const asset    = chain.nativeSymbol;
-    const sweepKey = `sweep:${walletAddress.toLowerCase()}:${chainId}`;
-
-    // Atomically read previous total, compute delta, upsert record, and credit delta.
-    // This handles repeated sweeps correctly — only the incremental increase is credited.
-    const result = await sweepAndCreditDeposit({
-      sweepKey,
-      chainId,
-      userWallet: walletAddress,
-      asset,
-      balanceNative,
-    });
-
-    if (!result.ok) {
-      res.status(409).json({ error: "This balance has already been credited to your trading account." });
-      return;
-    }
-
-    const { delta: deltaBalance } = result;
-    const amountStr = deltaBalance.toFixed(18);
-
-    req.log.info({ walletAddress, chainId, asset, amount: amountStr }, "deposit/sweep-wallet: credited");
-
-    const updatedBalances = await getBalances(walletAddress);
-    const credited = updatedBalances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
-
-    res.json({
-      success:    true,
-      asset,
-      amount:     deltaBalance,
-      amountStr,
-      newBalance: credited?.available ?? amountStr,
-      message:    `+${deltaBalance.toFixed(6)} ${asset} credited to your trading account`,
-    });
-  } catch (err) {
-    req.log.error({ err }, "deposit/sweep-wallet: failed");
-    res.status(500).json({ error: "Sweep failed. Please try again." });
-  }
+  res.status(410).json({
+    error: "Ledger sweep is removed for non-custodial mode. Use direct wallet-to-wallet contract settlement.",
+  });
 });
 
 // ── GET /deposit/history ──────────────────────────────────────────────────────
