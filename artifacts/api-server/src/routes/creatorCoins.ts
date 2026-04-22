@@ -489,9 +489,9 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  const client = await pool.connect();
+  let inTx = false;
   try {
-    client = await pool.connect();
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
@@ -499,6 +499,7 @@ router.delete("/social/creators/:address", async (req, res) => {
       return;
     }
     await client.query("BEGIN");
+    inTx = true;
     await client.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
     await client.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
     await client.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
@@ -527,12 +528,13 @@ router.delete("/social/creators/:address", async (req, res) => {
     await client.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
     await client.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
     await client.query("COMMIT");
+    inTx = false;
     res.json({ ok: true });
   } catch (err: any) {
-    if (client) await client.query("ROLLBACK");
+    if (inTx) await client.query("ROLLBACK").catch(() => {});
     res.status(500).json({ error: err?.message });
   } finally {
-    client?.release();
+    client.release();
   }
 });
 
