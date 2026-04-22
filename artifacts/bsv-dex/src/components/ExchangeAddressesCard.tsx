@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  Wallet, ChevronDown, ChevronUp, Copy, Check, ArrowDownToLine,
+  Wallet, ChevronDown, ChevronUp, Copy, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +57,7 @@ interface Props {
 
 export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Props) {
   const [expanded,  setExpanded]  = useState(defaultOpen);
-  const [evmAddr,   setEvmAddr]   = useState<string | null>(null);
+  const [evmAddr,   setEvmAddr]   = useState<string | null>(walletAddress || null);
   const [bsvAddr,   setBsvAddr]   = useState<string | null>(null);
   const [loading,   setLoading]   = useState(false);
   const [copiedEvm, setCopiedEvm] = useState(false);
@@ -65,26 +65,21 @@ export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Pr
 
   useEffect(() => {
     if (!expanded || !walletAddress) return;
-    if (evmAddr && bsvAddr) return;
+    setEvmAddr(walletAddress);
+    if (bsvAddr) return;
     setLoading(true);
-    Promise.all([
-      fetch(`${BASE}/api/deposit/address?walletAddress=${encodeURIComponent(walletAddress)}&chainId=1`)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => d?.depositAddress ?? null)
-        .catch(() => null),
-      fetch(`${BASE}/api/user/bsv-wallet`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ evmAddress: walletAddress }),
-      }).then(r => r.ok ? r.json() : null)
-        .then(d => d?.bsvAddress ?? null)
-        .catch(() => null),
-    ]).then(([evm, bsv]) => {
-      setEvmAddr(evm);
+    fetch(`${BASE}/api/user/bsv-wallet`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ evmAddress: walletAddress }),
+    }).then(r => r.ok ? r.json() : null)
+      .then(d => d?.bsvAddress ?? null)
+      .catch(() => null)
+      .then((bsv) => {
       setBsvAddr(bsv);
       setLoading(false);
     });
-  }, [expanded, walletAddress, evmAddr, bsvAddr]);
+  }, [expanded, walletAddress, bsvAddr]);
 
   const copyEvm = () => {
     if (!evmAddr) return;
@@ -109,7 +104,7 @@ export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Pr
       >
         <div className="flex items-center gap-2">
           <Wallet size={13} className="text-primary" />
-          <span className="text-xs font-semibold text-foreground">Exchange Addresses</span>
+          <span className="text-xs font-semibold text-foreground">Wallet Settlement Addresses</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">EVM · BSV</span>
@@ -123,7 +118,7 @@ export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Pr
       {expanded && (
         <div className="px-4 pb-4 space-y-3 border-t border-border/50 pt-3">
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Your personal deposit addresses — send funds here to credit your OrahDEX exchange balance.
+            Non-custodial wallet addresses used for direct wallet-to-wallet settlement.
           </p>
 
           {loading ? (
@@ -149,13 +144,6 @@ export function ExchangeAddressesCard({ walletAddress, defaultOpen = false }: Pr
                 copied={copiedBsv}
                 onCopy={copyBsv}
               />
-              <a
-                href="/bridge?tab=deposit"
-                className="flex items-center justify-center gap-1.5 w-full py-2 rounded-xl text-xs font-semibold border border-primary/30 text-primary hover:bg-primary/5 transition-colors"
-              >
-                <ArrowDownToLine size={12} />
-                Deposit Funds
-              </a>
             </div>
           )}
         </div>

@@ -33,13 +33,18 @@ const router = Router();
 
 router.get("/deposit/address", async (req, res) => {
   const walletAddress = (req.query.walletAddress as string | undefined)?.trim();
-  const chainId = parseInt((req.query.chainId as string | undefined) ?? "1", 10);
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required (must be 0x…)" });
     return;
   }
 
+  res.status(410).json({
+    error: "Exchange deposit addresses are removed. Use direct wallet-to-wallet contract settlement (HTLC/CCTP).",
+  });
+  return;
+
+  const chainId = parseInt((req.query.chainId as string | undefined) ?? "1", 10);
   const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
   try {
@@ -83,7 +88,6 @@ router.get("/deposit/address", async (req, res) => {
 
 router.post("/deposit/verify", async (req, res) => {
   const { walletAddress, txHash, chainId: rawChainId } = req.body ?? {};
-  const chainId = parseInt(String(rawChainId ?? 1), 10);
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required" });
@@ -94,6 +98,12 @@ router.post("/deposit/verify", async (req, res) => {
     return;
   }
 
+  res.status(410).json({
+    error: "Exchange deposit verification is removed. Use direct wallet-to-wallet contract settlement (HTLC/CCTP).",
+  });
+  return;
+
+  const chainId = parseInt(String(rawChainId ?? 1), 10);
   const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
   try {
@@ -201,13 +211,18 @@ router.post("/deposit/verify", async (req, res) => {
 
 router.post("/deposit/sweep-wallet", async (req, res) => {
   const { walletAddress, chainId: rawChainId } = req.body ?? {};
-  const chainId = parseInt(String(rawChainId ?? 1), 10);
 
   if (!walletAddress || !walletAddress.startsWith("0x")) {
     res.status(400).json({ error: "walletAddress is required (must be 0x…)" });
     return;
   }
 
+  res.status(410).json({
+    error: "Ledger sweep is removed for non-custodial mode. Use direct wallet-to-wallet contract settlement.",
+  });
+  return;
+
+  const chainId = parseInt(String(rawChainId ?? 1), 10);
   const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
   try {
