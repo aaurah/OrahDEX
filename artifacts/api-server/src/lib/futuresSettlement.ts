@@ -178,22 +178,56 @@ export async function releaseFuturesMargin(
 }
 
 /**
- * Deposit USDT into a wallet's futures margin account from the spot bucket.
+ * Transfer USDT from the spot wallet into the futures margin account.
  * This is the ONLY authorised pathway that crosses between buckets, and it
  * must be an explicit user action (not automatic).
+ *
+ * Both the spot debit and futures credit run inside a single transaction
+ * so neither can succeed without the other.
  */
 export async function depositToFuturesMargin(
   walletAddress: string,
   amount:        number,
   asset:         string = "USDT",
 ): Promise<void> {
-  await pool.query(
-    `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
-     VALUES ($1, $2, $3, 0, now())
-     ON CONFLICT (wallet_address, asset)
-     DO UPDATE SET available = futures_margin_accounts.available + $3, updated_at = now()`,
-    [walletAddress, asset, amount.toFixed(8)],
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Debit spot balance (with row-lock to prevent race)
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const avail = parseFloat(rows[0]?.available ?? "0");
+    if (avail < amount) {
+      throw new Error(`INSUFFICIENT_FUNDS:${asset}`);
+    }
+    await client.query(
+      `UPDATE user_balances
+       SET available = available - $1, updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [amount.toFixed(8), walletAddress, asset],
+    );
+
+    // Credit futures margin
+    await client.query(
+      `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
+       VALUES ($1, $2, $3, 0, now())
+       ON CONFLICT (wallet_address, asset)
+       DO UPDATE SET available = futures_margin_accounts.available + $3, updated_at = now()`,
+      [walletAddress, asset, amount.toFixed(8)],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**

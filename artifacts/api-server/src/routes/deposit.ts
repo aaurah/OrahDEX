@@ -13,6 +13,8 @@ import {
   getOrCreateDepositAddress,
   isDepositAlreadyCredited,
   recordVerifiedDeposit,
+  recordAndCreditDeposit,
+  sweepAndCreditDeposit,
 } from "../lib/depositAddresses.js";
 import { creditAvailable, getBalances } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
@@ -150,15 +152,20 @@ router.post("/deposit/verify", async (req, res) => {
 
     const amountStr = valueEth.toFixed(18);
 
-    // Step 7: Record first (prevents double-credit on failure), then credit balance
-    await recordVerifiedDeposit({
+    // Step 7: Atomically record dedup row AND credit balance in one transaction.
+    // If the dedup row already exists the INSERT is a no-op, the credit is skipped,
+    // and we return 409. This prevents double-credit on retries.
+    const credited = await recordAndCreditDeposit({
       txHash,
       chainId,
       userWallet: walletAddress,
       asset,
       amount: amountStr,
     });
-    await creditAvailable(walletAddress, asset, amountStr);
+    if (!credited) {
+      res.status(409).json({ error: "This transaction has already been credited." });
+      return;
+    }
 
     req.log.info(
       { walletAddress, txHash, chainId, asset, amount: amountStr },
@@ -166,14 +173,14 @@ router.post("/deposit/verify", async (req, res) => {
     );
 
     const updatedBalances = await getBalances(walletAddress);
-    const credited = updatedBalances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
+    const creditedBalance = updatedBalances.find(b => b.asset.toUpperCase() === asset.toUpperCase());
 
     res.json({
       success:    true,
       asset,
       amount:     valueEth,
       amountStr,
-      newBalance: credited?.available ?? amountStr,
+      newBalance: creditedBalance?.available ?? amountStr,
       txHash,
       chainId,
       message:    `+${valueEth.toFixed(6)} ${asset} credited to your OrahDEX balance`,
@@ -215,26 +222,26 @@ router.post("/deposit/sweep-wallet", async (req, res) => {
       return;
     }
 
-    // Use a deterministic reference to prevent double-crediting the same balance
-    // Key: wallet + chain + truncated balance to 6dp (prevents re-sweeping same snapshot)
-    const sweepRef = `sweep:${walletAddress.toLowerCase()}:${chainId}:${balanceNative.toFixed(6)}`;
-    const alreadyCredited = await isDepositAlreadyCredited(sweepRef, chainId);
-    if (alreadyCredited) {
+    const asset    = chain.nativeSymbol;
+    const sweepKey = `sweep:${walletAddress.toLowerCase()}:${chainId}`;
+
+    // Atomically read previous total, compute delta, upsert record, and credit delta.
+    // This handles repeated sweeps correctly — only the incremental increase is credited.
+    const result = await sweepAndCreditDeposit({
+      sweepKey,
+      chainId,
+      userWallet: walletAddress,
+      asset,
+      balanceNative,
+    });
+
+    if (!result.ok) {
       res.status(409).json({ error: "This balance has already been credited to your trading account." });
       return;
     }
 
-    const asset     = chain.nativeSymbol;
-    const amountStr = balanceNative.toFixed(18);
-
-    await recordVerifiedDeposit({
-      txHash:     sweepRef,
-      chainId,
-      userWallet: walletAddress,
-      asset,
-      amount:     amountStr,
-    });
-    await creditAvailable(walletAddress, asset, amountStr);
+    const { delta: deltaBalance } = result;
+    const amountStr = deltaBalance.toFixed(18);
 
     req.log.info({ walletAddress, chainId, asset, amount: amountStr }, "deposit/sweep-wallet: credited");
 
@@ -244,10 +251,10 @@ router.post("/deposit/sweep-wallet", async (req, res) => {
     res.json({
       success:    true,
       asset,
-      amount:     balanceNative,
+      amount:     deltaBalance,
       amountStr,
       newBalance: credited?.available ?? amountStr,
-      message:    `+${balanceNative.toFixed(6)} ${asset} credited to your trading account`,
+      message:    `+${deltaBalance.toFixed(6)} ${asset} credited to your trading account`,
     });
   } catch (err) {
     req.log.error({ err }, "deposit/sweep-wallet: failed");

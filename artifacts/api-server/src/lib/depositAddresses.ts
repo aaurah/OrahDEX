@@ -160,3 +160,124 @@ export async function recordVerifiedDeposit(params: {
     [params.txHash, params.chainId, params.userWallet, params.asset, params.amount],
   );
 }
+
+/**
+ * Atomically record a one-time deposit dedup row AND credit the user's available
+ * balance in a single transaction. The INSERT uses ON CONFLICT DO NOTHING so that
+ * if (tx_hash, chain_id) already exists the rowCount is 0, the transaction is rolled
+ * back and false is returned — preventing double-credit on retried requests.
+ * Returns true the first (and only) time a credit is applied.
+ *
+ * Note: for recurring sweep credits (where the same key is reused across multiple
+ * sweeps), use sweepAndCreditDeposit() instead — it upserts the running total.
+ */
+export async function recordAndCreditDeposit(params: {
+  txHash:     string;
+  chainId:    number;
+  userWallet: string;
+  asset:      string;
+  amount:     string;
+}): Promise<boolean> {
+  await ensureTable();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Insert the dedup row — ON CONFLICT DO NOTHING returns rowCount 0 if already present
+    const { rowCount } = await client.query(
+      `INSERT INTO evm_deposits_verified (tx_hash, chain_id, user_wallet, asset, amount)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (tx_hash, chain_id) DO NOTHING`,
+      [params.txHash, params.chainId, params.userWallet, params.asset, params.amount],
+    );
+
+    if (!rowCount) {
+      // Already credited — nothing to do
+      await client.query("ROLLBACK");
+      return false;
+    }
+
+    // Credit the user's balance in the same transaction
+    await client.query(
+      `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+       VALUES ($1, $2, $3, '0', now())
+       ON CONFLICT (wallet_address, asset_symbol)
+       DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
+      [params.userWallet, params.asset, params.amount],
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Atomically handle a sweep-wallet credit.
+ * Reads the previously-credited sweep amount, computes the delta, credits the delta,
+ * and upserts the sweep record to the new total — all in one transaction.
+ * Returns { ok: false } if the on-chain balance has not increased since the last sweep.
+ * Returns { ok: true, delta } when a new credit was applied.
+ */
+export async function sweepAndCreditDeposit(params: {
+  sweepKey:   string;
+  chainId:    number;
+  userWallet: string;
+  asset:      string;
+  balanceNative: number;
+}): Promise<{ ok: false } | { ok: true; delta: number }> {
+  await ensureTable();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Lock the existing sweep row (if any) so concurrent sweeps serialize
+    const { rows } = await client.query<{ amount: string }>(
+      `SELECT amount::text FROM evm_deposits_verified
+       WHERE tx_hash = $1 AND chain_id = $2
+       FOR UPDATE`,
+      [params.sweepKey, params.chainId],
+    );
+
+    const previouslyCredited = rows[0] ? parseFloat(rows[0].amount) : 0;
+    const delta = params.balanceNative - previouslyCredited;
+
+    if (delta <= 0) {
+      await client.query("ROLLBACK");
+      return { ok: false };
+    }
+
+    const newTotal = params.balanceNative.toFixed(18);
+    const deltaStr = delta.toFixed(18);
+
+    // Upsert the sweep record with the new total balance
+    await client.query(
+      `INSERT INTO evm_deposits_verified (tx_hash, chain_id, user_wallet, asset, amount)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (tx_hash, chain_id) DO UPDATE
+         SET amount = EXCLUDED.amount, verified_at = now()`,
+      [params.sweepKey, params.chainId, params.userWallet, params.asset, newTotal],
+    );
+
+    // Credit only the incremental delta to the user's balance
+    await client.query(
+      `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+       VALUES ($1, $2, $3, '0', now())
+       ON CONFLICT (wallet_address, asset_symbol)
+       DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
+      [params.userWallet, params.asset, deltaStr],
+    );
+
+    await client.query("COMMIT");
+    return { ok: true, delta };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

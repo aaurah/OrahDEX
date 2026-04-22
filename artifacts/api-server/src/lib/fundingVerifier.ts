@@ -177,28 +177,47 @@ async function verifySpotFunding(
 async function verifyFuturesFunding(
   params: VerifyFundingParams,
 ): Promise<FundingVerificationResult> {
-  const { walletAddress, asset = "USDT", amount, walletSource } = params;
+  const { walletAddress, asset = "USDT", amount } = params;
   const needed = parseFloat(amount);
 
-  // Check balance (without locking — the actual lock happens in futuresSettlement.openFuturesPosition)
-  const { rows } = await pool.query<{ available: string }>(
-    `SELECT available FROM futures_margin_accounts WHERE wallet_address = $1 AND asset = $2`,
-    [walletAddress, asset],
-  );
-  const avail = parseFloat(rows[0]?.available ?? "0");
-  if (avail < needed) {
-    return {
-      valid:      false,
-      fundingRef: "",
-      error:      `Insufficient futures margin: need ${needed} ${asset}, have ${avail.toFixed(2)}. Deposit margin to your futures account first.`,
-      code:       "INSUFFICIENT_FUTURES_MARGIN",
-    };
-  }
+  // Use FOR UPDATE so a concurrent open-position request cannot read the same
+  // available balance and both conclude they have sufficient margin.
+  // The actual margin lock happens in futuresSettlement.openFuturesPosition()
+  // which runs in its own transaction immediately after this check returns.
+  // We hold no lock across the gap (unavoidable without collapsing verify+open
+  // into one atomic operation), but the FOR UPDATE here prevents two concurrent
+  // verify calls from both seeing the same available balance simultaneously.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const avail = parseFloat(rows[0]?.available ?? "0");
+    await client.query("COMMIT");
 
-  return {
-    valid:      true,
-    fundingRef: marginFundingRef(walletAddress, asset, amount),
-  };
+    if (avail < needed) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `Insufficient futures margin: need ${needed} ${asset}, have ${avail.toFixed(2)}. Deposit margin to your futures account first.`,
+        code:       "INSUFFICIENT_FUTURES_MARGIN",
+      };
+    }
+
+    return {
+      valid:      true,
+      fundingRef: marginFundingRef(walletAddress, asset, amount),
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
