@@ -295,7 +295,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
       return;
     }
     if (!EVM_ADDRESS_REGEX.test(address)) {
-      setCctpError("Connect an EVM wallet address to use CCTP.");
+      setCctpError("Invalid EVM wallet address format. Please connect a valid EVM wallet.");
       return;
     }
 
@@ -321,22 +321,18 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           asset: "USDC",
         }),
       });
-      let data: { id?: string; status?: CctpIntentStatus; error?: string };
-      try {
+      const data = await (async (): Promise<{ id?: string; status?: CctpIntentStatus; error?: string }> => {
         const parsed = await res.json() as unknown;
         if (!parsed || typeof parsed !== "object") {
           throw new Error("Unexpected response shape");
         }
         const obj = parsed as { id?: unknown; status?: unknown; error?: unknown };
-        data = {
+        return {
           id: typeof obj.id === "string" ? obj.id : undefined,
           status: obj.status === "created" || obj.status === "attested" || obj.status === "completed" ? obj.status : undefined,
           error: typeof obj.error === "string" ? obj.error : undefined,
         };
-      } catch (parseErr) {
-        const parseMessage = parseErr instanceof Error ? parseErr.message : "Invalid JSON response";
-        throw new Error(`Failed to parse CCTP response: ${parseMessage}`);
-      }
+      })();
       if (!res.ok || !data.id) throw new Error(data.error ?? "Failed to create CCTP transfer intent");
 
       const intentId = data.id;
