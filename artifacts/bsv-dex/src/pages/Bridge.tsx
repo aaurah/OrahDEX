@@ -212,6 +212,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [cctpError, setCctpError] = useState<string | null>(null);
   const { address, chainId: walletChainId } = useWalletStore();
   const cctpPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMountedRef = useRef(true);
 
   const asset = CANONICAL_ASSETS[coin];
   const l2Options = asset.l2;
@@ -249,7 +250,13 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
     }
   }, []);
 
-  useEffect(() => () => clearCctpPolling(), [clearCctpPolling]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      clearCctpPolling();
+    };
+  }, [clearCctpPolling]);
 
   const pollCctpStatus = useCallback(async (id: string) => {
     try {
@@ -268,8 +275,8 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         setRunning(false);
         clearCctpPolling();
       }
-    } catch {
-      console.warn("CCTP polling failed; retrying");
+    } catch (err) {
+      console.warn("CCTP polling failed; retrying", err);
     }
   }, [clearCctpPolling]);
 
@@ -329,14 +336,14 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         return;
       }
 
-      if (nextStatus !== "completed") {
+      if (nextStatus !== "completed" && isMountedRef.current) {
         cctpPollRef.current = setInterval(() => {
           void pollCctpStatus(intentId);
         }, CCTP_POLL_INTERVAL_MS);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to start CCTP transfer.";
-      setCctpError(message);
+      setCctpError(`${message} Please try again, or contact support if this keeps happening.`);
       setRunning(false);
       setStep(0);
     }
