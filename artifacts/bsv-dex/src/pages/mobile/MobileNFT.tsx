@@ -1014,7 +1014,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
             <div>
               <h3 className="text-base font-bold" style={{ color: "var(--color-text)" }}>Delete Profile</h3>
               <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-                This will permanently delete your profile and posts. This action cannot be undone.
+                This will permanently delete your profile, all posts, mints, follows, and coin data. This action cannot be undone.
               </p>
             </div>
             <div>
