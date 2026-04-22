@@ -765,7 +765,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   const [createForm, setCreateForm] = useState({ username: "", bio: "", avatar_url: "", website: "" });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
-  const isOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
+  const isViewingOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
 
   const loadProfileData = useCallback(() => {
     setLoading(true);
@@ -782,7 +782,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   }, [loadProfileData]);
 
   async function createProfile() {
-    if (!isOwnProfile) return;
+    if (!isViewingOwnProfile) return;
     if (!createForm.username.trim()) { setCreateError("Username is required"); return; }
     setCreateLoading(true);
     setCreateError("");
@@ -819,7 +819,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
           {loading ? (
             <div className="flex justify-center py-16"><RefreshCw className="animate-spin text-muted-foreground" size={20} /></div>
           ) : !creator ? (
-            isOwnProfile ? (
+            isViewingOwnProfile ? (
               <div className="p-4 space-y-3">
                 <h4 className="text-sm font-bold text-foreground">Create your profile</h4>
                 <input
@@ -1056,8 +1056,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const [listPrice, setListPrice] = useState("");
-  const sellDisabled = mode === "sell" && !listPrice;
+  const [listPriceInput, setListPriceInput] = useState("");
+  const sellDisabled = mode === "sell" && !listPriceInput;
   const actionDisabled = loading || insufficientFunds || sellDisabled;
   const actionBg = actionDisabled ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444";
   const actionColor = actionDisabled ? "#fff" : mode === "buy" ? "#000" : "#fff";
@@ -1067,7 +1067,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
       ? "Insufficient Balance"
       : mode === "buy"
         ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`
-        : `List for ${listPrice || "…"} ${post.mint_currency}`;
+        : `List for ${listPriceInput || "…"} ${post.mint_currency}`;
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
@@ -1088,7 +1088,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
   async function doList() {
     if (!address) { navigate("/settings"); return; }
-    const price = parseFloat(listPrice);
+    const price = parseFloat(listPriceInput);
     if (!price || price <= 0) { setError("Enter a valid price"); return; }
     setLoading(true); setError("");
     try {
@@ -1157,8 +1157,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                   type="number"
                   min="0"
                   step="0.0001"
-                  value={listPrice}
-                  onChange={e => setListPrice(e.target.value)}
+                  value={listPriceInput}
+                  onChange={e => setListPriceInput(e.target.value)}
                   placeholder="0.0000"
                   className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
                 />
