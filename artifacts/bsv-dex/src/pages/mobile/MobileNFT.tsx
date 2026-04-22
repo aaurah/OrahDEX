@@ -397,6 +397,7 @@ function CreatorProfileSheet({
   const [imgErr, setImgErr] = useState(false);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
+  const [holdingItems, setHoldingItems] = useState<any[]>([]);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -408,6 +409,10 @@ function CreatorProfileSheet({
       .then(r => r.json())
       .then(d => setMints(d.mints ?? []))
       .catch(() => {});
+    fetch(`${API}/social/holdings/${creatorAddress}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(d => setHoldingItems(Array.isArray(d.holdings) ? d.holdings : []))
+      .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 
   async function toggleFollow() {
@@ -433,7 +438,9 @@ function CreatorProfileSheet({
     } else {
       const res = await fetch(`${API}/social/holdings/${creatorAddress}`).catch(() => null);
       const d = res?.ok ? await res.json() : {};
-      setStatSheet({ type, items: d.holdings ?? [] });
+      const holdings = Array.isArray(d.holdings) ? d.holdings : [];
+      setHoldingItems(holdings);
+      setStatSheet({ type, items: holdings });
     }
   }
 
@@ -502,7 +509,7 @@ function CreatorProfileSheet({
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
               </button>
               <button className="active:opacity-60" onClick={() => openStatSheet("holding")}>
-                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.trade_count ?? 0)}</div>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(holdingItems.length)}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holding</div>
               </button>
             </div>
