@@ -32,7 +32,8 @@ import type { Account } from "viem";
 import { writeContract as coreWriteContract } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
-import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
+import { getViemAccountForOrahWallet, signWithPasskey, listPasskeyWallets } from "@/lib/passkeyWallet";
+import { useSignMessage } from "wagmi";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
@@ -1064,7 +1065,9 @@ function ExchangeSwapPanel({
 }) {
   const { toast } = useToast();
   // Use the wallet's actual connected chainId (not the on-chain DEX chain picker)
-  const { chainId: walletChainId } = useWalletStore();
+  const { chainId: walletChainId, provider } = useWalletStore();
+  const isOrahWallet = provider === "orah-wallet";
+  const { signMessageAsync } = useSignMessage();
   const [fromAsset, setFromAsset] = useState("ETH");
   const [toAsset,   setToAsset]   = useState("USDT");
   const [amount,    setAmount]    = useState("");
@@ -1145,25 +1148,101 @@ function ExchangeSwapPanel({
     if (!address || !amount || !quote || swapping) return;
     setSwapping(true); setSwapErr(null); setResult(null);
     try {
+      const amtInNum = parseFloat(amount);
       const minOut = (parseFloat(quote.amountOut) * 0.995).toFixed(8);
-      const r = await fetch(`${API_BASE}/swap`, {
+
+      let signature: string | undefined;
+      let nonce: string | undefined;
+
+      // EVM wallets (0x…) must prove ownership via challenge → sign → execute.
+      // Non-EVM wallets (BSV, BTC, SOL) call the endpoint without a signature.
+      if (address.startsWith("0x")) {
+        const challengeRes = await fetch(`${API_BASE}/trade/exchange/challenge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            walletAddress: address,
+            assetIn:  fromAsset,
+            assetOut: toAsset,
+            amountIn: String(amtInNum),
+          }),
+        });
+        if (!challengeRes.ok) {
+          const cd = await challengeRes.json().catch(() => ({}));
+          throw new Error((cd as any).error ?? "Failed to get swap challenge");
+        }
+        const { nonce: challengeNonce, message } = await challengeRes.json() as {
+          nonce: string; message: string;
+        };
+        nonce = challengeNonce;
+
+        if (isOrahWallet) {
+          // Orah passkey wallet: authenticate biometrically, then sign locally
+          const wallets = listPasskeyWallets();
+          const wallet  = wallets.find(
+            w => w.address.toLowerCase() === address.toLowerCase(),
+          );
+          if (!wallet) {
+            throw new Error(
+              "Passkey wallet not found — please reconnect your wallet",
+            );
+          }
+          toast({
+            title: "Biometric authentication",
+            description: "Authenticate with your passkey to authorize this swap…",
+          });
+          const { signature: sig } = await signWithPasskey(
+            wallet.credentialId,
+            message,
+          );
+          signature = sig;
+        } else {
+          // External EVM wallet (MetaMask, WalletConnect, Rabby, …)
+          signature = await signMessageAsync({ message });
+        }
+      }
+
+      const r = await fetch(`${API_BASE}/trade/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, assetIn: fromAsset, assetOut: toAsset, amountIn: amount, minAmountOut: minOut }),
+        body: JSON.stringify({
+          walletAddress: address,
+          assetIn:      fromAsset,
+          assetOut:     toAsset,
+          amountIn:     amount,
+          minAmountOut: minOut,
+          ...(signature && nonce ? { signature, nonce } : {}),
+        }),
       });
       const data = await r.json();
       if (!r.ok) {
-        const msg = data.error ?? "Swap failed";
+        const msg = (data as any).error ?? "Swap failed";
         setSwapErr(msg);
         toast({ title: "Swap failed", description: msg, variant: "destructive" });
       } else {
-        setResult(data);
+        const swapResult = data as ExchangeQuote;
+        setResult(swapResult);
         setAmount(""); setQuote(null);
-        toast({ title: "Swap complete!", description: `${data.amountIn} ${data.assetIn} → ${parseFloat(data.amountOut).toFixed(6)} ${data.assetOut}` });
+        toast({
+          title: "Swap complete!",
+          description: `${swapResult.amountIn} ${swapResult.assetIn} → ${parseFloat(swapResult.amountOut).toFixed(6)} ${swapResult.assetOut}`,
+        });
         setTimeout(loadBalances, 600);
       }
     } catch (err: any) {
-      setSwapErr(err.message ?? "Network error");
+      const msg: string = err?.message ?? "Network error";
+      const isRejection =
+        msg.includes("rejected") ||
+        msg.includes("denied") ||
+        msg.includes("cancel") ||
+        msg.includes("4001");
+      const displayMsg = isRejection
+        ? "Signature rejected — you must sign to authorize the swap."
+        : msg;
+      setSwapErr(displayMsg);
+      if (!isRejection) {
+        toast({ title: "Swap failed", description: displayMsg, variant: "destructive" });
+      }
     }
     setSwapping(false);
   };
