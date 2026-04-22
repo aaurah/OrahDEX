@@ -18,16 +18,32 @@ import { logger } from "../lib/logger.js";
 const router = Router();
 
 // ── Encryption helpers ─────────────────────────────────────────────────────
-// Key derived from DATABASE_URL so it's stable across restarts without needing
-// an extra env var. For production, set CEX_ENCRYPT_KEY in environment instead.
-const ENCRYPT_KEY = (() => {
-  const raw = process.env.CEX_ENCRYPT_KEY ?? process.env.DATABASE_URL ?? "orahdex-fallback-key";
+// Key MUST be supplied via the CEX_ENCRYPT_KEY environment variable.
+// Falling back to DATABASE_URL or a hardcoded string is explicitly prohibited:
+// both are observable by anyone with container/DB access and would expose all
+// stored CEX API credentials.
+// If the key is absent the module still loads (so other admin routes keep
+// working) but any encrypt/decrypt operation returns a 503.
+const ENCRYPT_KEY: Buffer | null = (() => {
+  const raw = process.env.CEX_ENCRYPT_KEY;
+  if (!raw) return null;
   return crypto.createHash("sha256").update(raw).digest();
 })();
 
+function requireEncryptKey(): Buffer {
+  if (!ENCRYPT_KEY) {
+    throw new Error(
+      "CEX_ENCRYPT_KEY is not configured. " +
+      "Set this environment secret before using CEX account management.",
+    );
+  }
+  return ENCRYPT_KEY;
+}
+
 function encrypt(plain: string): string {
+  const key = requireEncryptKey();
   const iv  = crypto.randomBytes(12);
-  const cip = crypto.createCipheriv("aes-256-gcm", ENCRYPT_KEY, iv);
+  const cip = crypto.createCipheriv("aes-256-gcm", key, iv);
   const enc = Buffer.concat([cip.update(plain, "utf8"), cip.final()]);
   const tag = cip.getAuthTag();
   // iv(12) | tag(16) | ciphertext — base64-encoded
@@ -35,11 +51,12 @@ function encrypt(plain: string): string {
 }
 
 function decrypt(b64: string): string {
+  const key = requireEncryptKey();
   const buf = Buffer.from(b64, "base64");
   const iv  = buf.subarray(0, 12);
   const tag = buf.subarray(12, 28);
   const enc = buf.subarray(28);
-  const dec = crypto.createDecipheriv("aes-256-gcm", ENCRYPT_KEY, iv, { authTagLength: 16 });
+  const dec = crypto.createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
   dec.setAuthTag(tag);
   return Buffer.concat([dec.update(enc), dec.final()]).toString("utf8");
 }
@@ -153,6 +170,10 @@ router.get("/cex-accounts", async (_req, res) => {
 
 // ── POST /admin/cex-accounts — add new exchange connection ────────────────
 router.post("/cex-accounts", async (req, res) => {
+  if (!ENCRYPT_KEY) {
+    res.status(503).json({ error: "CEX_ENCRYPT_KEY is not configured. Set this environment secret to enable CEX account management." });
+    return;
+  }
   try {
     const { exchange, label, apiKey, apiSecret, passphrase } = req.body as {
       exchange?: string;

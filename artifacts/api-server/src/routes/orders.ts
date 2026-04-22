@@ -15,6 +15,7 @@ import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { buildOrderAuthMessage, verifyEvmSignature } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
@@ -86,9 +87,11 @@ router.get("/orders", async (req, res) => {
 });
 
 // ── POST /orders ───────────────────────────────────────────────────────────────
-// Accepts an optional `evmSignature` field (MetaMask personal_sign) that proves
-// the trader authorised this order. On match, a BSV OP_RETURN settlement
-// transaction is generated and both orders are marked filled with the txid.
+// Accepts a required `evmSignature` field (MetaMask personal_sign) for external
+// EVM wallets that proves the trader authorised this specific order.
+// The canonical message is built server-side from the order parameters.
+// On match, a BSV OP_RETURN settlement transaction is generated and both orders
+// are marked filled with the txid.
 router.post("/orders", async (req, res) => {
   try {
     const body = req.body;
@@ -111,6 +114,39 @@ router.post("/orders", async (req, res) => {
       : "orah";
 
     const isExternalWallet = walletSource === "external";
+
+    // ── Verify wallet ownership for external EVM wallets ─────────────────────
+    // The evmSignature must have been produced by the private key of walletAddress
+    // over the canonical order-authorisation message. This prevents any caller who
+    // merely knows a walletAddress from placing orders on its behalf.
+    if (body.walletAddress.startsWith("0x") && walletSource === "external") {
+      const evmSig = body.evmSignature ?? body.signedTx;
+      if (!evmSig) {
+        res.status(401).json({
+          error: "evmSignature is required for external EVM wallet orders. " +
+                 "Sign the canonical order message with personal_sign and include it in the request.",
+          code: "SIGNATURE_REQUIRED",
+        });
+        return;
+      }
+      // nonce defaults to the order id; expiry defaults to 5 minutes from now
+      const orderNonce  = body.nonce  ? String(body.nonce)  : id;
+      const orderExpiry = body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60);
+      const authMsg = buildOrderAuthMessage({
+        walletAddress: body.walletAddress,
+        symbol:        body.symbol,
+        side:          body.side,
+        quantity:      quantity.toString(),
+        nonce:         orderNonce,
+        expiry:        orderExpiry,
+      });
+      try {
+        verifyEvmSignature(body.walletAddress, authMsg, evmSig);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+        return;
+      }
+    }
 
     // ── Acquire funding lock BEFORE inserting the order (No funding → No order) ──
     // fundingVerifier enforces balance-bucket isolation:

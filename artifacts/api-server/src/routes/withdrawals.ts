@@ -5,15 +5,31 @@ import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { issueWithdrawChallenge, verifyWithdrawSignature } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── POST /withdraw/challenge ───────────────────────────────────────────────────
+// Returns a server-issued nonce that the EVM wallet must sign before calling
+// POST /withdrawals. The signed challenge proves the caller owns the wallet.
+router.post("/withdraw/challenge", (req, res) => {
+  const { walletAddress } = req.body as { walletAddress?: string };
+  if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    res.status(400).json({ error: "Valid EVM address required (0x…)" });
+    return;
+  }
+  const challenge = issueWithdrawChallenge(walletAddress);
+  res.json(challenge);
+});
 
 // ── POST /withdrawals ─────────────────────────────────────────────────────────
 // Creates a withdrawal request AND immediately deducts the amount from the
 // user's available internal balance. If the balance is insufficient the
 // request is rejected so the user cannot over-withdraw.
+// EVM wallet callers (0x…) must supply a `signature` obtained via
+// POST /withdraw/challenge to prove ownership of `walletAddress`.
 router.post("/withdrawals", async (req, res) => {
-  const { walletAddress, asset, amount, network, networkLabel, recipient, fee } = req.body;
+  const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature } = req.body;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "Missing required fields: walletAddress, asset, amount, network, recipient" });
@@ -24,6 +40,26 @@ router.post("/withdrawals", async (req, res) => {
   if (isNaN(parsed) || parsed <= 0) {
     res.status(400).json({ error: "Amount must be a positive number" });
     return;
+  }
+
+  // Require wallet ownership proof for EVM addresses.
+  // Non-EVM wallets (e.g. BSV p2pkh) use a different auth mechanism handled
+  // by the on-chain withdrawal flow.
+  if (walletAddress.startsWith("0x")) {
+    if (!signature) {
+      res.status(401).json({
+        error: "signature is required for EVM wallet withdrawals. " +
+               "Request a challenge via POST /withdraw/challenge, sign it with your wallet, " +
+               "and include the signature in this request.",
+      });
+      return;
+    }
+    try {
+      verifyWithdrawSignature(walletAddress, signature);
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   const id = crypto.randomUUID();

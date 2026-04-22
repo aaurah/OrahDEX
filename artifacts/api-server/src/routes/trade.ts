@@ -7,6 +7,7 @@
  * POST /trade/exchange/quote — internal AMM quote
  * POST /trade/exchange       — settle internal ledger trade (proxies /swap)
  * POST /withdraw             — withdraw from internal balance to wallet (proxies /withdrawals)
+ * POST /withdraw/challenge   — issue a nonce the EVM wallet must sign before /withdraw
  */
 
 import { Router, type IRouter } from "express";
@@ -23,6 +24,12 @@ import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import {
+  issueWithdrawChallenge,
+  verifyWithdrawSignature,
+  buildExchangeAuthMessage,
+  verifyEvmSignature,
+} from "../lib/walletAuth.js";
 
 // ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
@@ -105,6 +112,19 @@ const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals:
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
+
+// ── POST /withdraw/challenge ───────────────────────────────────────────────────
+// Issues a server-side nonce that the EVM wallet must sign before calling
+// POST /withdraw. This proves the caller owns the walletAddress.
+router.post("/withdraw/challenge", (req, res) => {
+  const { walletAddress } = req.body as { walletAddress?: string };
+  if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    res.status(400).json({ error: "Valid EVM address required (0x…)" });
+    return;
+  }
+  const challenge = issueWithdrawChallenge(walletAddress);
+  res.json(challenge);
+});
 
 // ── Shared: resolve mid-market rate from DB ────────────────────────────────────
 async function resolveRate(assetIn: string, assetOut: string): Promise<number | null> {
@@ -295,7 +315,11 @@ router.post("/trade/wallet/settle", async (req, res) => {
   try {
     // Verify the tx on-chain — require the receipt; do NOT proceed optimistically
     const client = createPublicClient({ transport: http(VERIFY_RPC[numChain]) });
-    let receipt: { status: string; logs: { topics: string[]; data: string; address: string }[] } | null = null;
+    let receipt: {
+      status: string;
+      logs: { topics: string[]; data: string; address: string }[];
+      blockNumber: bigint;
+    } | null = null;
     try {
       receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` }) as any;
     } catch (rpcErr: any) {
@@ -345,16 +369,26 @@ router.post("/trade/wallet/settle", async (req, res) => {
     const tokenDecimals   = tokenInfo?.decimals ?? 18;
     let   verifiedAmount  = Number(rawTransferAmount) / 10 ** tokenDecimals;
 
-    // If no ERC-20 Transfer to the user was found, fall back to the tx's native
-    // ETH value (for ETH-in / ETH-out swaps where there are no Transfer events).
-    // If still zero, reject — we cannot verify what the user received.
+    // If no ERC-20 Transfer to the user was found, attempt to measure the
+    // native-asset balance change for the caller's address between the block
+    // before the tx and the tx block. This correctly captures ETH/BNB/MATIC
+    // output swaps that arrive as internal transfers rather than ERC-20 events.
+    // Trusting the client-supplied amountOut is explicitly prohibited here.
     if (verifiedAmount <= 0) {
-      // For native ETH output there are no Transfer logs. Accept client amountOut
-      // only for native-asset-out swaps where assetOut matches the chain's native symbol.
       const NATIVE_SYMBOLS: Record<number, string> = { 1:"ETH", 56:"BNB", 137:"MATIC", 8453:"ETH", 42161:"ETH", 10:"ETH", 43114:"AVAX" };
-      if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "")) {
-        verifiedAmount = parseFloat(amountOut);
-      } else {
+      if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "") && receipt.blockNumber > 0n) {
+        try {
+          const [balBefore, balAfter] = await Promise.all([
+            client.getBalance({ address: walletAddress as `0x${string}`, blockNumber: receipt.blockNumber - 1n }),
+            client.getBalance({ address: walletAddress as `0x${string}`, blockNumber: receipt.blockNumber }),
+          ]);
+          const delta = balAfter > balBefore ? balAfter - balBefore : 0n;
+          verifiedAmount = Number(delta) / 1e18;
+        } catch (balErr: any) {
+          logger.warn({ txHash, err: balErr?.message }, "Native balance delta query failed");
+        }
+      }
+      if (verifiedAmount <= 0) {
         res.status(422).json({ error: "Could not verify received amount from on-chain logs. Settlement rejected.", txHash });
         return;
       }
@@ -509,8 +543,11 @@ router.post("/trade/exchange/quote", async (req, res) => {
 
 // ── POST /trade/exchange ───────────────────────────────────────────────────────
 // Settle a trade on the internal ledger. Seeds balances for new users.
+// EVM wallet callers (0x…) must supply `signature` + `nonce` to prove they
+// authorised this swap. Obtain the canonical message from
+// buildExchangeAuthMessage and sign it with personal_sign in MetaMask/ethers.
 router.post("/trade/exchange", async (req, res) => {
-  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut } = req.body ?? {};
+  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut, signature, nonce } = req.body ?? {};
 
   if (!walletAddress || !assetIn || !assetOut || !amountIn) {
     res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
@@ -521,6 +558,31 @@ router.post("/trade/exchange", async (req, res) => {
   if (isNaN(amtIn) || amtIn <= 0) {
     res.status(400).json({ error: "amountIn must be a positive number" });
     return;
+  }
+
+  // Require wallet signature for EVM wallets to prove the caller owns walletAddress.
+  if (walletAddress.startsWith("0x")) {
+    if (!signature || !nonce) {
+      res.status(401).json({
+        error: "signature and nonce are required for EVM wallet exchange swaps. " +
+               "Build the canonical message with buildExchangeAuthMessage, sign it, " +
+               "and include signature + nonce in the request.",
+      });
+      return;
+    }
+    const authMsg = buildExchangeAuthMessage({
+      walletAddress,
+      assetIn:  assetIn.toUpperCase(),
+      assetOut: assetOut.toUpperCase(),
+      amountIn: String(amtIn),
+      nonce:    String(nonce),
+    });
+    try {
+      verifyEvmSignature(walletAddress, authMsg, signature);
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   try {
@@ -617,8 +679,10 @@ router.post("/trade/exchange", async (req, res) => {
 // Deducts the internal balance atomically, then attempts on-chain broadcast
 // via the hot wallet. If a Vault contract address is configured, it will be
 // used instead (set VAULT_CONTRACT_ADDRESS env var + deploy the contract first).
+// EVM wallet callers (0x…) must supply a `signature` obtained via
+// POST /withdraw/challenge to prove ownership of walletAddress.
 router.post("/withdraw", async (req, res) => {
-  const { walletAddress, asset, amount, network, recipient, networkLabel } = req.body ?? {};
+  const { walletAddress, asset, amount, network, recipient, networkLabel, signature } = req.body ?? {};
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "walletAddress, asset, amount, network, recipient are required" });
@@ -629,6 +693,24 @@ router.post("/withdraw", async (req, res) => {
   if (isNaN(parsed) || parsed <= 0) {
     res.status(400).json({ error: "amount must be a positive number" });
     return;
+  }
+
+  // Require wallet ownership proof for EVM wallets.
+  if (walletAddress.startsWith("0x")) {
+    if (!signature) {
+      res.status(401).json({
+        error: "signature is required for EVM wallet withdrawals. " +
+               "Request a challenge via POST /withdraw/challenge, sign it with your wallet, " +
+               "and include the signature in this request.",
+      });
+      return;
+    }
+    try {
+      verifyWithdrawSignature(walletAddress, signature);
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   // If a Vault contract is configured, note it in the response (wiring deferred until contract is deployed)

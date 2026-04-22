@@ -473,15 +473,51 @@ export async function settleTrade(params: {
   try {
     await client.query("BEGIN");
 
-    // Lock all four rows at once (ORDER BY to prevent deadlocks)
-    await client.query(
-      `SELECT id FROM user_balances
+    // Lock all four rows at once (ORDER BY to prevent deadlocks) and read
+    // current locked balances so we can assert sufficiency before crediting.
+    const { rows: lockedRows } = await client.query<{
+      wallet_address: string;
+      asset_symbol:   string;
+      locked:         string;
+    }>(
+      `SELECT wallet_address, asset_symbol, locked FROM user_balances
        WHERE (wallet_address = $1 OR wallet_address = $2)
          AND asset_symbol IN ($3, $4)
        ORDER BY wallet_address, asset_symbol
        FOR UPDATE`,
       [buyerAddress, sellerAddress, baseAsset, quoteAsset],
     );
+
+    // Helper: find the locked value for a specific (wallet, asset) pair
+    const lockedOf = (addr: string, asset: string): number => {
+      const row = lockedRows.find(
+        r => r.wallet_address === addr && r.asset_symbol === asset,
+      );
+      return parseFloat(row?.locked ?? "0");
+    };
+
+    // Strict invariant: locked funds must cover the settlement amounts.
+    // GREATEST(locked - x, 0) is explicitly prohibited here — it silently
+    // creates ledger value from nothing when locked < debit amount.
+    // A small epsilon (1e-9) tolerates accumulated floating-point rounding
+    // across multiple partial fills on the same limit order.
+    const EPSILON = 1e-9;
+
+    const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
+    if (buyerLockedQuote < parseFloat(cost) - EPSILON) {
+      throw new Error(
+        `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
+        `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
+      );
+    }
+
+    const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
+    if (sellerLockedBase < parseFloat(amount) - EPSILON) {
+      throw new Error(
+        `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
+        `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
+      );
+    }
 
     // Buyer: deduct only the fill cost from locked (not the entire locked balance).
     // Any over-locked amount (price improvement on a limit order) stays locked
@@ -490,7 +526,7 @@ export async function settleTrade(params: {
     // Separately credit the received base asset.
     await client.query(
       `UPDATE user_balances
-       SET locked     = GREATEST(locked - $1::numeric, 0),
+       SET locked     = locked - $1::numeric,
            updated_at = now()
        WHERE wallet_address = $2 AND asset_symbol = $3`,
       [cost, buyerAddress, quoteAsset],
@@ -506,7 +542,7 @@ export async function settleTrade(params: {
     // Seller: locked_base -= amount, available_quote += netQuote
     await client.query(
       `UPDATE user_balances
-       SET locked     = GREATEST(locked - $1, 0),
+       SET locked     = locked - $1,
            updated_at = now()
        WHERE wallet_address = $2 AND asset_symbol = $3`,
       [amount, sellerAddress, baseAsset],
