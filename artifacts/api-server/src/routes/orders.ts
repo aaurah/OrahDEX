@@ -607,6 +607,87 @@ router.delete("/orders/:orderId", async (req, res) => {
   }
 });
 
+// ── POST /orders/recover-locked ───────────────────────────────────────────────
+// Scans the ledger for locked balances that exceed what open orders actually
+// require, and moves the excess back to available.
+// This recovers funds that were orphaned when a cancel request previously
+// failed silently (e.g. wallet-address mismatch across BSV/EVM networks).
+// Accepts optional `altAddress` for cross-network Orah wallet users.
+router.post("/orders/recover-locked", async (req, res) => {
+  try {
+    const { walletAddress, altAddress } = req.body ?? {};
+    if (!walletAddress) {
+      res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    const addresses: string[] = [walletAddress];
+    if (altAddress && altAddress !== walletAddress) addresses.push(altAddress);
+
+    // 1. Gather all open orders across all wallet addresses
+    const openOrders = await db
+      .select()
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.status, "open"),
+        // drizzle `inArray` for two values
+        ...(addresses.length === 1
+          ? [eq(ordersTable.walletAddress, addresses[0]!)]
+          : [eq(ordersTable.walletAddress, addresses[0]!)] // handled below via merge
+        ),
+      ));
+
+    // If there's a second address, fetch its open orders too and merge
+    let openOrdersAll = [...openOrders];
+    if (addresses.length > 1) {
+      const alt = await db
+        .select()
+        .from(ordersTable)
+        .where(and(eq(ordersTable.status, "open"), eq(ordersTable.walletAddress, addresses[1]!)));
+      openOrdersAll = [...openOrders, ...alt];
+    }
+
+    // 2. Calculate expected locked amount per (walletAddress, asset) from open orders
+    const expectedLocked: Record<string, Record<string, number>> = {};
+    for (const o of openOrdersAll) {
+      const [baseAsset, quoteAsset = "USDT"] = o.symbol.split("/");
+      const lockAsset = o.side === "buy" ? quoteAsset : baseAsset;
+      const remaining = parseFloat(o.remainingQuantity ?? o.quantity);
+      const lockPrice = parseFloat(o.price ?? "0");
+      const lockAmount = o.side === "buy"
+        ? lockPrice * remaining
+        : remaining;
+
+      if (!lockAsset || lockAmount <= 0) continue;
+      if (!expectedLocked[o.walletAddress]) expectedLocked[o.walletAddress] = {};
+      expectedLocked[o.walletAddress][lockAsset] = (expectedLocked[o.walletAddress][lockAsset] ?? 0) + lockAmount;
+    }
+
+    // 3. For each address, get actual locked balances and unlock any orphaned amount
+    const recovered: { walletAddress: string; asset: string; amount: string }[] = [];
+
+    for (const addr of addresses) {
+      const balances = await getBalances(addr);
+      for (const bal of balances) {
+        const actualLocked = parseFloat(bal.locked);
+        if (actualLocked <= 0) continue;
+        const expectedForAsset = expectedLocked[addr]?.[bal.asset] ?? 0;
+        const orphaned = actualLocked - expectedForAsset;
+        if (orphaned > 0.000001) {
+          await unlockFunds({ walletAddress: addr, asset: bal.asset, amount: orphaned.toFixed(8) });
+          recovered.push({ walletAddress: addr, asset: bal.asset, amount: orphaned.toFixed(8) });
+          req.log.info({ addr, asset: bal.asset, orphaned }, "recover-locked: unlocked orphaned funds");
+        }
+      }
+    }
+
+    res.json({ recovered, count: recovered.length });
+  } catch (err) {
+    req.log.error({ err }, "Failed to recover locked funds");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── POST /orders/precheck ─────────────────────────────────────────────────────
 // Validates a potential order WITHOUT creating any DB record or transaction.
 // Returns: { ok, errors[], warnings[], priceImpactPct, minReceived, route }

@@ -246,6 +246,8 @@ export function MobilePortfolio() {
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
   const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
   const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
+  const [recovering, setRecovering] = useState(false);
+  const [recoverMsg, setRecoverMsg] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: exchangeBalances = [] } = useQuery<{ asset: string; available: string; locked: string }[]>({
@@ -335,16 +337,16 @@ export function MobilePortfolio() {
   })();
 
   const cancelMutation = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: ledgerAddress }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
-    onMutate: async (orderId) => {
+    onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["portfolio-orders", ledgerAddress] });
       const prev = queryClient.getQueryData(["portfolio-orders", ledgerAddress]);
@@ -355,7 +357,7 @@ export function MobilePortfolio() {
       );
       return { prev };
     },
-    onError: (_err, _id, context: any) => {
+    onError: (_err, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["portfolio-orders", ledgerAddress], context.prev);
       }
@@ -388,6 +390,38 @@ export function MobilePortfolio() {
       setSweepMsg("Network error. Please try again.");
     } finally {
       setSweeping(false);
+    }
+  };
+
+  const handleRecoverLocked = async () => {
+    if (!ledgerAddress || recovering) return;
+    setRecovering(true);
+    setRecoverMsg(null);
+    try {
+      const { internalBsvAddress, internalEvmAddress: iEvm } = useWalletStore.getState();
+      const altAddress = (iEvm && iEvm !== ledgerAddress) ? iEvm
+        : (internalBsvAddress && internalBsvAddress !== ledgerAddress) ? internalBsvAddress
+        : undefined;
+      const res = await fetch(`${BASE}/api/orders/recover-locked`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: ledgerAddress, altAddress }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRecoverMsg(data.error ?? "Recovery failed");
+      } else if (data.count === 0) {
+        setRecoverMsg("No orphaned locked funds found.");
+      } else {
+        const summary = data.recovered.map((r: any) => `${r.amount} ${r.asset}`).join(", ");
+        setRecoverMsg(`Recovered: ${summary}`);
+        queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", ledgerAddress] });
+        queryClient.invalidateQueries({ queryKey: ["portfolio-orders", ledgerAddress] });
+      }
+    } catch {
+      setRecoverMsg("Network error. Please try again.");
+    } finally {
+      setRecovering(false);
     }
   };
 
@@ -1291,7 +1325,7 @@ export function MobilePortfolio() {
                     </div>
                     {o.status === "open" ? (
                       <button
-                        onClick={() => cancelMutation.mutate(String(o.id))}
+                        onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
                         disabled={cancellingId === String(o.id)}
                         className="shrink-0 px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                       >
