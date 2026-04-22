@@ -267,7 +267,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
-        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`);
+        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`, { cache: "no-store" });
         if (!r.ok) return { available: 0 };
         const j = await r.json();
         return { available: parseFloat(j.available ?? "0") || 0 };
@@ -314,7 +314,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`, { cache: "no-store" }).then(r => r.json()),
     enabled: !!address,
     refetchInterval: 2000,
   });
@@ -328,14 +328,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: altOrdersData } = useQuery({
     queryKey: ["orders", altAddress],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`, { cache: "no-store" }).then(r => r.json()),
     enabled: !!altAddress,
     refetchInterval: 2000,
   });
 
+  const withOwnerWallet = (rows: any, fallbackWallet: string | null | undefined) => (
+    Array.isArray(rows)
+      ? rows.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || fallbackWallet || "" }))
+      : []
+  );
+
   const myOrders: any[] = useMemo(() => {
-    const primary = Array.isArray(myOrdersData) ? myOrdersData : [];
-    const alt     = Array.isArray(altOrdersData) ? altOrdersData : [];
+    const primary = withOwnerWallet(myOrdersData, address);
+    const alt = withOwnerWallet(altOrdersData, altAddress);
     const seen    = new Set<string>();
     return [...primary, ...alt].filter(o => {
       const key = String(o.id);
@@ -343,7 +349,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       seen.add(key);
       return true;
     });
-  }, [myOrdersData, altOrdersData]);
+  }, [myOrdersData, altOrdersData, address, altAddress]);
   const openOrders = myOrders.filter(o => o.status === "open");
   const historyOrders = myOrders.filter(o => o.status !== "open");
 
@@ -359,6 +365,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const getOrderWalletAddress = (order: any) => (
+    String(order?.walletAddress || order?.ownerWalletAddress || "")
+  );
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
@@ -373,29 +382,54 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["orders", address] });
+      if (altAddress) await queryClient.cancelQueries({ queryKey: ["orders", altAddress] });
       const prev = queryClient.getQueryData(["orders", address]);
+      const prevAlt = altAddress ? queryClient.getQueryData(["orders", altAddress]) : undefined;
       queryClient.setQueryData(["orders", address], (old: any) =>
         Array.isArray(old)
           ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
           : old
       );
-      return { prev };
+      if (altAddress) {
+        queryClient.setQueryData(["orders", altAddress], (old: any) =>
+          Array.isArray(old)
+            ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
+            : old
+        );
+      }
+      return { prev, prevAlt };
     },
     onError: (_err, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
+      }
+      if (altAddress && context?.prevAlt !== undefined) {
+        queryClient.setQueryData(["orders", altAddress], context.prevAlt);
       }
     },
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
     },
   });
+  const handleCancelOrder = useCallback((order: any) => {
+    const walletAddress = getOrderWalletAddress(order);
+    if (!walletAddress) {
+      toast({
+        title: "Cancel failed",
+        description: "Order owner wallet is missing. Refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
+  }, [cancelMutation, toast]);
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
@@ -481,9 +515,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
-        fetchApiBalances(base, quote, address);
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
       setTimeout(() => setOrderResult(null), 10000);
@@ -1268,7 +1303,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") }))}
+                        onClick={() => openOrders.forEach(handleCancelOrder)}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1291,7 +1326,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") })}
+                          onClick={() => handleCancelOrder(o)}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
