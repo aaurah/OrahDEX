@@ -333,13 +333,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 2000,
   });
 
+  const withOwnerWallet = (rows: any, fallbackWallet: string | null | undefined) => (
+    Array.isArray(rows)
+      ? rows.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || fallbackWallet || "" }))
+      : []
+  );
+
   const myOrders: any[] = useMemo(() => {
-    const primary = Array.isArray(myOrdersData)
-      ? myOrdersData.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || address || "" }))
-      : [];
-    const alt = Array.isArray(altOrdersData)
-      ? altOrdersData.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || altAddress || "" }))
-      : [];
+    const primary = withOwnerWallet(myOrdersData, address);
+    const alt = withOwnerWallet(altOrdersData, altAddress);
     const seen    = new Set<string>();
     return [...primary, ...alt].filter(o => {
       const key = String(o.id);
@@ -363,9 +365,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const getOrderWalletAddress = useCallback((order: any) => (
-    String(order?.walletAddress || order?.ownerWalletAddress || address || altAddress || "")
-  ), [address, altAddress]);
+  const getOrderWalletAddress = (order: any) => (
+    String(order?.walletAddress || order?.ownerWalletAddress || "")
+  );
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
@@ -416,6 +418,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       }
     },
   });
+  const handleCancelOrder = useCallback((order: any) => {
+    const walletAddress = getOrderWalletAddress(order);
+    if (!walletAddress) {
+      toast({
+        title: "Cancel failed",
+        description: "Order owner wallet is missing. Refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
+  }, [cancelMutation, toast]);
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
@@ -1289,7 +1303,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: getOrderWalletAddress(o) }))}
+                        onClick={() => openOrders.forEach(handleCancelOrder)}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1312,7 +1326,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: getOrderWalletAddress(o) })}
+                          onClick={() => handleCancelOrder(o)}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
