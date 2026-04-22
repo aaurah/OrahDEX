@@ -2,7 +2,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
+  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
   ArrowDownLeft, ArrowUpRight, History, Upload,
 } from "lucide-react";
 
@@ -910,61 +910,6 @@ export function MobilePortfolio() {
                   </div>
                 ))}
               </div>
-
-              {/* OrahDEX Exchange Balances — hidden when Trading Balance card is shown above */}
-              {!showTradingBalance && exchBalancesWithValue.length > 0 && (
-                <div className="mt-2">
-                  <div className="flex items-center gap-2 px-1 mb-2">
-                    <Zap size={12} className="text-primary" />
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">OrahDEX Exchange</span>
-                  </div>
-                  <div className="bg-card border border-primary/20 rounded-2xl overflow-hidden">
-                    {exchBalancesWithValue.map((b, i) => {
-                      const color = ASSET_COLORS[b.asset] ?? "#6B7280";
-                      const assetNet = getAssetNetworkInfo(b.asset, network);
-                      return (
-                        <div
-                          key={b.asset}
-                          className={`flex items-center gap-3 px-4 py-3.5 ${i < exchBalancesWithValue.length - 1 ? "border-b border-border" : ""}`}
-                        >
-                          <button
-                            onClick={() => setLocation(`${BASE}/portfolio/${b.asset}`)}
-                            className="flex items-center gap-3 flex-1 min-w-0 text-left active:bg-muted/30 transition-colors rounded-lg -ml-1 pl-1"
-                          >
-                            <div
-                              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
-                            >
-                              {b.asset[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold">{b.asset}</p>
-                              <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                                {b.free.toLocaleString(undefined, { maximumFractionDigits: b.free < 0.0001 ? 8 : 6 })}
-                                {b.locked > 0 && <span className="text-muted-foreground/50"> · {b.locked.toLocaleString(undefined, { maximumFractionDigits: 4 })} locked</span>}
-                              </p>
-                            </div>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setWithdrawAsset({ asset: b.asset, available: b.free, network: assetNet.network, networkLabel: assetNet.networkLabel, color });
-                              setWithdrawInitialTab("withdraw");
-                              setWithdrawVisibleTabs(undefined);
-                              setWithdrawOpen(true);
-                            }}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-primary/10 border border-primary/25 text-primary hover:bg-primary/20 transition-colors shrink-0"
-                          >
-                            Withdraw
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground px-1 mt-1.5">
-                    Post-trade balances credited to your OrahDEX account. Withdraw to your wallet anytime.
-                  </p>
-                </div>
-              )}
             </>
           )}
 
