@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
@@ -39,13 +40,45 @@ function relTime(ts: number) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
+  if (n.href) return n.href;
+  const { type, pair } = n;
+  if (pair) {
+    const urlPair = pair.replace("/", "-");
+    const isFutures = urlPair.includes("PERP");
+    if (["order_placed", "order_filled", "order_cancelled", "order_partial", "trade", "price_alert", "error"].includes(type)) {
+      return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
+    }
+  }
+  if (type === "bridge") return "/bridge";
+  if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
+  if (type === "withdrawal" || type === "deposit") return "/portfolio";
+  if (type === "liquidity") return "/liquidity";
+  if (type === "support") return "/admin/support/inbox";
+  if (type === "order_placed" || type === "order_cancelled" || type === "order_filled" || type === "order_partial") return "/portfolio";
+  return null;
+}
+
 function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { notifications, markAllRead, clearAll, markRead } = useNotificationStore();
+  const [, navigate] = useLocation();
   const unread = notifications.filter(n => !n.read).length;
 
   const handleMarkAll = () => markAllRead();
   const dismiss = (id: string) => {
     markRead(id);
+  };
+
+  const handleNotifClick = (n: { id: string; type: string; pair?: string; href?: string }) => {
+    markRead(n.id);
+    const dest = getNotifPath(n);
+    if (!dest) return;
+    onClose();
+    if (dest.startsWith("http")) {
+      window.open(dest, "_blank", "noopener,noreferrer");
+      return;
+    }
+    navigate(dest);
   };
 
   return (
@@ -86,8 +119,18 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
               <p className="text-sm">No notifications yet</p>
               <p className="text-xs text-center px-6 opacity-70">Place an order to see trade updates here</p>
             </div>
-          ) : notifications.map(n => (
-            <div key={n.id} className={cn("flex gap-3 px-4 py-3.5 relative", !n.read && "bg-primary/4")}>
+          ) : notifications.map(n => {
+            const dest = getNotifPath(n);
+            return (
+            <div
+              key={n.id}
+              onClick={() => handleNotifClick(n)}
+              className={cn(
+                "flex gap-3 px-4 py-3.5 relative transition-colors",
+                !n.read && "bg-primary/4",
+                dest ? "cursor-pointer hover:bg-secondary/50 active:bg-secondary/70" : "cursor-default",
+              )}
+            >
               {!n.read && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full" />}
               <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
                 {TYPE_ICON[n.type] ?? <Info size={15} className="text-blue-400" />}
@@ -95,7 +138,7 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-1">
                   <p className={cn("text-[13px] font-semibold leading-snug", !n.read ? "text-foreground" : "text-muted-foreground")}>{n.title}</p>
-                  <button onClick={() => dismiss(n.id)} className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground">
+                  <button onClick={(e) => { e.stopPropagation(); dismiss(n.id); }} className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground">
                     <X size={11} />
                   </button>
                 </div>
@@ -114,7 +157,7 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
                 <p className="text-[10px] text-muted-foreground/50 mt-1">{relTime(n.timestamp)}</p>
               </div>
             </div>
-          ))}
+          )})}
         </div>
 
         {/* Footer */}
