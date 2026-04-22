@@ -107,6 +107,14 @@ interface CanonicalAsset {
   l1: { chainId: string; chain: string; symbol: string; color: string; icon: string };
   l2: CanonicalL2[];
 }
+type CctpIntentStatus = "created" | "attested" | "completed";
+const CCTP_CHAIN_IDS: Record<string, number> = {
+  eth: 1,
+  op: 10,
+  arb: 42161,
+  base: 8453,
+  poly: 137,
+};
 const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
@@ -198,7 +206,11 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [running, setRunning] = useState(false);
   const [withdrawTx, setWithdrawTx] = useState<{ txid: string; explorer?: string } | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [cctpIntentId, setCctpIntentId] = useState<string | null>(null);
+  const [cctpStatus, setCctpStatus] = useState<CctpIntentStatus | null>(null);
+  const [cctpError, setCctpError] = useState<string | null>(null);
   const { address, chainId: walletChainId } = useWalletStore();
+  const cctpPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const asset = CANONICAL_ASSETS[coin];
   const l2Options = asset.l2;
@@ -208,7 +220,14 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
 
   // deposit steps: lock → detect → mint → trade
   // withdraw steps: burn → verify → unlock → received
-  const STEPS = mode === "deposit"
+  const STEPS = mode === "deposit" && l2.type === "cctp"
+    ? [
+        { icon: <Flame className="w-4 h-4" />,       label: `Burn ${coin} on ${asset.l1.chain}`, detail: `Approve and burn ${coin} on ${asset.l1.chain} with Circle CCTP contracts` },
+        { icon: <Shield className="w-4 h-4" />,      label: "Circle attestation",                  detail: "Circle verifies burn event and generates cross-chain attestation" },
+        { icon: <Coins className="w-4 h-4" />,       label: `Mint ${l2.symbol} on ${l2.chain}`,   detail: `${l2.symbol} is minted on ${l2.chain} to your recipient wallet` },
+        { icon: <CheckCircle2 className="w-4 h-4" />, label: `${l2.symbol} ready`,                 detail: `Transfer complete — funds are available on ${l2.chain}` },
+      ]
+    : mode === "deposit"
     ? [
         { icon: <Lock className="w-4 h-4" />,        label: `Lock ${coin} on ${asset.l1.chain}`,  detail: `Send ${coin} to the canonical bridge contract — funds locked as collateral` },
         { icon: <Shield className="w-4 h-4" />,      label: "Bridge verifies deposit",             detail: `${l2.bridge} detects your L1 ${coin} within 1 confirmation` },
@@ -221,6 +240,93 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         { icon: <Unlock className="w-4 h-4" />,      label: `Unlock ${coin} on ${asset.l1.chain}`, detail: `Canonical bridge contract releases your locked ${coin}` },
         { icon: <CheckCircle2 className="w-4 h-4" />, label: `${coin} received on L1`,             detail: `Real ${coin} in your wallet — fully on-chain, non-custodial` },
       ];
+
+  const clearCctpPolling = useCallback(() => {
+    if (cctpPollRef.current) {
+      clearInterval(cctpPollRef.current);
+      cctpPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearCctpPolling(), [clearCctpPolling]);
+
+  const pollCctpStatus = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/bridge/cctp/intent/${id}`);
+      if (!res.ok) return;
+      const data = await res.json() as { status?: CctpIntentStatus };
+      if (!data?.status) return;
+      setCctpStatus(data.status);
+      if (data.status === "created") setStep(1);
+      if (data.status === "attested") setStep(3);
+      if (data.status === "completed") {
+        setStep(4);
+        setRunning(false);
+        clearCctpPolling();
+      }
+    } catch {
+      // keep polling on transient network errors
+    }
+  }, [clearCctpPolling]);
+
+  const handleStartCctp = async () => {
+    if (running || !amount || parseFloat(amount) <= 0 || !address) return;
+    const sourceChainId = CCTP_CHAIN_IDS[asset.l1.chainId];
+    const destinationChainId = CCTP_CHAIN_IDS[l2.chainId];
+    if (!sourceChainId || !destinationChainId) {
+      setCctpError("Selected route is not supported for CCTP yet.");
+      return;
+    }
+    if (!address.startsWith("0x")) {
+      setCctpError("Connect an EVM wallet address to use CCTP.");
+      return;
+    }
+
+    setRunning(true);
+    setStep(1);
+    setCctpError(null);
+    setWithdrawError(null);
+    setWithdrawTx(null);
+    setCctpIntentId(null);
+    setCctpStatus(null);
+    clearCctpPolling();
+
+    try {
+      const res = await fetch("/api/bridge/cctp/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceChainId,
+          destinationChainId,
+          amount,
+          sender: address,
+          recipient: address,
+          asset: "USDC",
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { id?: string; status?: CctpIntentStatus; error?: string };
+      if (!res.ok || !data.id) throw new Error(data.error ?? "Failed to create CCTP transfer intent");
+
+      setCctpIntentId(data.id);
+      const nextStatus = data.status ?? "created";
+      setCctpStatus(nextStatus);
+      if (nextStatus === "created") setStep(1);
+      if (nextStatus === "attested") setStep(3);
+      if (nextStatus === "completed") {
+        setStep(4);
+        setRunning(false);
+        return;
+      }
+
+      cctpPollRef.current = setInterval(() => {
+        void pollCctpStatus(data.id!);
+      }, 4000);
+    } catch (err: any) {
+      setCctpError(err?.message ?? "Failed to start CCTP transfer.");
+      setRunning(false);
+      setStep(0);
+    }
+  };
 
   const handleRun = async () => {
     if (running || !amount || parseFloat(amount) <= 0 || !address) return;
@@ -364,19 +470,60 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
                 : `No exchange deposit address is used. Settlement is contract-based and wallet-to-wallet (HTLC/canonical bridge), keeping flow non-custodial.`}
             </p>
             {address ? (
-              <a
-                href="/spot"
-                className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
-              >
-                <ArrowLeftRight className="w-4 h-4" />
-                Continue with Contract Settlement
-              </a>
+              l2.type === "cctp" ? (
+                <button
+                  onClick={handleStartCctp}
+                  disabled={!amount || parseFloat(amount) <= 0 || running}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-blue-500 to-cyan-500 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {running ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      {cctpStatus === "attested" ? "Minting on destination…" : "Waiting for attestation…"}
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-4 h-4" />
+                      Start CCTP Transfer
+                    </>
+                  )}
+                </button>
+              ) : (
+                <a
+                  href="/spot"
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  Continue with Contract Settlement
+                </a>
+              )
             ) : (
               <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 Connect your wallet to continue with contract-based wallet settlement.
               </div>
             )}
+          </div>
+        )}
+
+        {cctpIntentId && (
+          <div className="rounded-2xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-blue-300">CCTP transfer intent</span>
+              <span className={cn(
+                "px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide",
+                cctpStatus === "completed"
+                  ? "border-green-500/40 bg-green-500/10 text-green-400"
+                  : cctpStatus === "attested"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                    : "border-blue-500/40 bg-blue-500/10 text-blue-300"
+              )}>
+                {cctpStatus ?? "created"}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground break-all">
+              Intent ID: <span className="font-mono text-foreground">{cctpIntentId}</span>
+            </div>
           </div>
         )}
 
@@ -451,6 +598,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-400">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{withdrawError}</span>
+          </div>
+        )}
+        {cctpError && (
+          <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-400">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{cctpError}</span>
           </div>
         )}
       </div>
