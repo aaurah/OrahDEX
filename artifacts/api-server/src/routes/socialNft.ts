@@ -3,7 +3,6 @@ import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
-const ADDRESS_LIKE_SQL = "^0x[0-9a-f]+$";
 const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
 
 function uid(): string { return crypto.randomUUID(); }
@@ -58,8 +57,8 @@ router.get("/social/posts/:id", async (req, res) => {
          pc.post_id,
          pc.wallet_address,
          CASE
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '${ADDRESS_LIKE_SQL}' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '${ADDRESS_LIKE_SQL}' THEN pc.display_name
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
            ELSE pc.wallet_address
          END AS display_name,
          pc.content,
@@ -189,8 +188,8 @@ router.post("/social/posts/:id/comment", async (req, res) => {
          pc.post_id,
          pc.wallet_address,
          CASE
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '${ADDRESS_LIKE_SQL}' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '${ADDRESS_LIKE_SQL}' THEN pc.display_name
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
            ELSE pc.wallet_address
          END AS display_name,
          pc.content,
