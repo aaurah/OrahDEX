@@ -169,22 +169,22 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
+  const { balances: evmBalances } = useEvmBalances(isEvm ? address : null, chainId ?? null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
   const availableBsvNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    ? (nativeEvmBalance ? Number(nativeEvmBalance.amount) || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
   const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -1274,11 +1274,11 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances();
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(isEvm ? address : null, chainId ?? null);
   const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
     isEvm,
     isOrahWallet,
