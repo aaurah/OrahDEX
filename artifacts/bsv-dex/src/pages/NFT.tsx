@@ -94,7 +94,7 @@ const CAT_ICONS: Record<string, string> = {
 };
 const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
 const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
-const HIGH_PRICE_IMPACT_THRESHOLD = 3;
+const HIGH_PRICE_IMPACT_THRESHOLD_PERCENT = 3;
 
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
   const [err, setErr] = useState(false);
@@ -280,7 +280,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
                 <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
-                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
+                <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD_PERCENT ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
@@ -995,7 +995,7 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
               </button>
               {onSell && (
                 <button onClick={() => onSell(post)}
-                  aria-label="Sell NFT"
+                  aria-label="Sell"
                   className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold"
                   style={{ background: "#ff4444", color: "#fff" }}>
                   Sell
@@ -1072,8 +1072,14 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
         ? `Collect for ${safePrice(post.mint_price)} ${post.mint_currency}`
         : `List for ${listPriceInput || "…"} ${post.mint_currency}`;
 
+  function ensureAddress() {
+    if (address) return true;
+    navigate("/settings");
+    return false;
+  }
+
   async function doMint() {
-    if (!address) { navigate("/settings"); return; }
+    if (!ensureAddress()) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
@@ -1090,7 +1096,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   }
 
   async function doList() {
-    if (!address) { navigate("/settings"); return; }
+    if (!ensureAddress()) return;
     const price = parseFloat(listPriceInput);
     if (!price || price <= 0) { setError("Enter a valid price"); return; }
     setLoading(true); setError("");
@@ -1158,6 +1164,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 <label htmlFor="nft-list-price-input" className="text-xs text-muted-foreground font-semibold">Listing Price ({post.mint_currency})</label>
                 <input
                   id="nft-list-price-input"
+                  aria-describedby="nft-list-price-help"
                   type="number"
                   min="0"
                   step="0.0001"
@@ -1166,7 +1173,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                   placeholder="0.0000"
                   className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
                 />
-                <p className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
+                <p id="nft-list-price-help" className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
               </div>
             )}
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
