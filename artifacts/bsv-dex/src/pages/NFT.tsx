@@ -994,6 +994,7 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
                 <Zap size={14} /> Collect · {safePrice(post.mint_price)} {post.mint_currency}
               </button>
               <button onClick={() => onSell?.(post)}
+                aria-label="Sell NFT"
                 className="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold"
                 style={{ background: "#ff4444", color: "#fff" }}>
                 Sell
@@ -1152,8 +1153,9 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
               </>
             ) : (
               <div className="mt-3 space-y-2">
-                <label className="text-xs text-muted-foreground font-semibold">Listing Price ({post.mint_currency})</label>
+                <label htmlFor="nft-list-price-input" className="text-xs text-muted-foreground font-semibold">Listing Price ({post.mint_currency})</label>
                 <input
+                  id="nft-list-price-input"
                   type="number"
                   min="0"
                   step="0.0001"
