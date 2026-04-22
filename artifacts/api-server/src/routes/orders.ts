@@ -50,6 +50,7 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     remainingQuantity: parseFloat(o.remainingQuantity),
     total:             o.total             ? parseFloat(o.total)             : undefined,
     fee:               parseFloat(o.fee),
+    explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
 }
 
@@ -255,6 +256,25 @@ router.post("/orders", async (req, res) => {
         return body.side === "buy" ? pa - pb : pb - pa;
       });
 
+      // External EVM orders must match only against external EVM counterparties
+      // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
+      const requiresDefiWalletToWallet = walletSource === "external" && networkType === "evm";
+      const eligibleMatches = requiresDefiWalletToWallet
+        ? sorted.filter((candidate) => {
+            const isBot = candidate.walletAddress === BOT_ADDRESS;
+            if (isBot) return false;
+            const ref = candidate.fundingRef ?? "";
+            return (
+              ref.startsWith("evm-sig:") ||
+              ref.startsWith("evm-balance:") ||
+              (candidate.walletAddress.startsWith("0x") &&
+                (candidate.networkType ?? "evm") === "evm" &&
+                !ref.startsWith("ledger:") &&
+                !ref.startsWith("margin:"))
+            );
+          })
+        : sorted;
+
       // ── Multi-fill loop: consume counter-orders until qty is satisfied ───────
       // This correctly handles large orders that span multiple counter-orders,
       // and does partial consumption of bot orders (instead of deleting the
@@ -268,7 +288,7 @@ router.post("/orders", async (req, res) => {
 
       const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
 
-      for (const match of sorted) {
+      for (const match of eligibleMatches) {
         if (remainingQty <= 0.000001) break;
 
         // Use remainingQuantity directly — it is always kept up-to-date by

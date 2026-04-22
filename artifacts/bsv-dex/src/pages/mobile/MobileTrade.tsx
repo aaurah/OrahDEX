@@ -40,6 +40,25 @@ function relTime(ts: number) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function formatDateTime(value: string | Date | number) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function getOrderExplorerUrl(order: any): string | null {
+  if (order?.explorerUrl) return String(order.explorerUrl);
+  if (!order?.txid) return null;
+  return String(order.txid).startsWith("0x")
+    ? `https://etherscan.io/tx/${order.txid}`
+    : `https://whatsonchain.com/tx/${order.txid}`;
+}
+
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
   if (n.href) return n.href;
   const { type, pair } = n;
@@ -1351,19 +1370,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       <span className="w-16 text-right">Status</span>
                     </div>
                     {historyOrders.map((o: any) => (
-                      <div key={o.id} className="flex items-center px-4 py-2 border-b border-border/20">
-                        <div className="flex-1 min-w-0 flex items-center gap-1">
-                          <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
-                          <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                      <div key={o.id} className="px-4 py-2 border-b border-border/20">
+                        <div className="flex items-center">
+                          <div className="flex-1 min-w-0 flex items-center gap-1">
+                            <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
+                            <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                          </div>
+                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
+                          <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
+                          <span className={cn(
+                            "w-16 text-right text-[10px] font-semibold",
+                            o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                          )}>
+                            {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                          </span>
                         </div>
-                        <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
-                        <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
-                        <span className={cn(
-                          "w-16 text-right text-[10px] font-semibold",
-                          o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
-                        )}>
-                          {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                        </span>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                          <span className="font-mono">#{String(o.id).slice(0, 10)}</span>
+                          <span>{formatDateTime(o.updatedAt ?? o.createdAt)}</span>
+                          {o.txid && getOrderExplorerUrl(o) && (
+                            <a
+                              href={getOrderExplorerUrl(o)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-primary font-mono"
+                            >
+                              {o.txid.slice(0, 12)}… <Link2 size={10} />
+                            </a>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </>
