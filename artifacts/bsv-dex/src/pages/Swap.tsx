@@ -1634,7 +1634,7 @@ export function Swap() {
                     placeholder="0.0"
                     value={amountIn}
                     onChange={e => handleAmountChange(e.target.value)}
-                    className="flex-1 min-w-0 w-0 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+                    className="flex-1 min-w-0 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
                   />
                 </div>
                 {/* Percentage quick-fill (only when balance is known) */}
