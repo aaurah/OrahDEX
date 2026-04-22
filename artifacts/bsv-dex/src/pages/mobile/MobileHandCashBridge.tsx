@@ -452,7 +452,7 @@ function WithdrawWizard({ onBack }: { onBack: () => void }) {
           Min: <span className="font-bold">{minBsv} BSV</span>
           <span className="mx-2 text-muted-foreground/40">·</span>
           Max: <span className="font-bold text-green-400">{maxBsv.toLocaleString()} BSV</span>
-          {address && <span className="ml-2 text-muted-foreground/50">You have: <span className="text-muted-foreground">—</span></span>}
+          {address && <span className="ml-2 text-muted-foreground/50">Deposit BSV gas to continue</span>}
         </p>
       </div>
 

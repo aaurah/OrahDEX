@@ -1444,7 +1444,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
               )}
               {isInsuf && (
                 <div className="text-[11px] text-red-400 mt-1">
-                  Insufficient — Min: {minBsv} BSV, Max: {maxBsv.toLocaleString()} BSV. You have: 9.3e-7 BSV
+                  Insufficient — Min: {minBsv} BSV, Max: {maxBsv.toLocaleString()} BSV. Deposit BSV gas to continue.
                 </div>
               )}
             </div>
