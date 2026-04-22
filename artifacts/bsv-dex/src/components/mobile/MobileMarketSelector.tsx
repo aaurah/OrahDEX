@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
@@ -154,17 +154,24 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     refetchInterval: 15_000,
   });
 
-  const livePrice = new Map(
+  const livePrice = useMemo(() => new Map(
     (apiData && Array.isArray(apiData) ? apiData : [])
       .map(normalise)
       .map((m: ReturnType<typeof normalise>) => [m.symbol, m])
-  );
+  ), [apiData]);
+
+  const globalRows = useMemo(() => Array.from(new Map(
+    [
+      ...(Array.isArray(apiData) ? apiData : []).map(normalise),
+      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites)),
+    ].map((m: ReturnType<typeof normalise>) => [m.symbol, m])
+  ).values()), [apiData, usdSub, livePrice, favorites]);
 
   let rows = getRows(cat, usdSub, livePrice, favorites);
 
   if (search) {
     const q = search.toUpperCase();
-    rows = rows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
   }
 
   rows = [...rows].sort((a, b) => {

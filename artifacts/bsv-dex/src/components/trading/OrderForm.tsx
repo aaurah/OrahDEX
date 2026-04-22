@@ -10,6 +10,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getNativeSymbol } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
+import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
 
@@ -1149,18 +1150,32 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
           {/* % shortcuts */}
           <div className="flex justify-between gap-1">
-            {[25, 50, 75, 100].map((pct) => (
+            {(["MIN", 25, 50, 75, "MAX"] as const).map((opt) => (
               <button
-                key={pct}
+                key={String(opt)}
                 type="button"
                 className={cn(
                   "flex-1 py-1.5 text-xs font-semibold border rounded-md transition-all",
-                  pct === 100
+                  opt === "MAX"
                     ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
                     : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => {
-                  const portion = availableAmt * (pct / 100);
+                  if (opt === "MIN") {
+                    if (side === "buy") {
+                      const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+                      if (px > 0) {
+                        const maxQty = availableAmt / px;
+                        const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
+                        setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+                      }
+                    } else {
+                      const minQty = Math.min(availableAmt, MIN_QUICK_FILL_QTY);
+                      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+                    }
+                    return;
+                  }
+                  const portion = opt === "MAX" ? availableAmt : availableAmt * (opt / 100);
                   if (side === "buy") {
                     // available is in quote (USDT) — divide by price to get base token qty
                     const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
@@ -1171,7 +1186,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   }
                 }}
               >
-                {pct === 100 ? "MAX" : `${pct}%`}
+                {typeof opt === "number" ? `${opt}%` : opt}
               </button>
             ))}
           </div>

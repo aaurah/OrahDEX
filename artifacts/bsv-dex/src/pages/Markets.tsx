@@ -337,7 +337,8 @@ export function Markets() {
   }
 
   const markets  = getMarkets();
-  const filtered = markets.filter(m =>
+  const searchPool = search ? tradeable(raw) : markets;
+  const filtered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
