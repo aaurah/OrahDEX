@@ -231,13 +231,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // All EVM wallets (Orah or external) use the internal exchange ledger as source of truth
-  // for the "Available" balance shown in the Trade screen. The backend fundingVerifier
-  // already tries the internal ledger first for external wallets, so the UI should match.
-  // Non-EVM wallets (BSV/BTC/SOL) are truly on-chain and use wallet balance as primary.
-  const usesApiBalance = isEvm;
-  // True while we're still waiting for the ledger fetch to complete.
-  const balancesPending = isEvm && apiBalancesLoading;
+  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
+  // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
+  // internal exchange balances for assets accumulated via exchange trades.
+  const usesApiBalance = isOrahWallet;
+  // Show pending state only when the current mode depends on ledger balances.
+  const balancesPending = usesApiBalance && apiBalancesLoading;
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
@@ -1511,7 +1510,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     disabled={!address || available <= 0 || balancesPending}
                     className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
                   >
-                    {balancesPending ? "—" : available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{availableSym}
+                    {balancesPending
+                      ? "—"
+                      : available > 0
+                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
+                        : "0.0000"}&nbsp;{availableSym}
                     {isEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         Exchange
