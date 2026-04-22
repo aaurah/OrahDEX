@@ -254,19 +254,22 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const pollCctpStatus = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/bridge/cctp/intent/${id}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn("CCTP polling returned non-OK status", res.status);
+        return;
+      }
       const data = await res.json() as { status?: CctpIntentStatus };
       if (!data?.status) return;
       setCctpStatus(data.status);
       if (data.status === "created") setStep(1);
-      if (data.status === "attested") setStep(3);
+      if (data.status === "attested") setStep(2);
       if (data.status === "completed") {
         setStep(4);
         setRunning(false);
         clearCctpPolling();
       }
     } catch {
-      // keep polling on transient network errors
+      console.warn("CCTP polling failed; retrying");
     }
   }, [clearCctpPolling]);
 
@@ -319,16 +322,18 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
       const nextStatus = data.status ?? "created";
       setCctpStatus(nextStatus);
       if (nextStatus === "created") setStep(1);
-      if (nextStatus === "attested") setStep(3);
+      if (nextStatus === "attested") setStep(2);
       if (nextStatus === "completed") {
         setStep(4);
         setRunning(false);
         return;
       }
 
-      cctpPollRef.current = setInterval(() => {
-        void pollCctpStatus(intentId);
-      }, CCTP_POLL_INTERVAL_MS);
+      if (nextStatus !== "completed") {
+        cctpPollRef.current = setInterval(() => {
+          void pollCctpStatus(intentId);
+        }, CCTP_POLL_INTERVAL_MS);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to start CCTP transfer.";
       setCctpError(message);
