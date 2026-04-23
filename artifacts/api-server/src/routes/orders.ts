@@ -119,11 +119,11 @@ router.post("/orders", async (req, res) => {
     }
 
     const stopPrice = body.stopPrice != null ? parseFloat(body.stopPrice) : undefined;
-    if (type === "stop" && (!Number.isFinite(stopPrice) || (stopPrice ?? 0) <= 0)) {
+    if (type === "stop" && (!Number.isFinite(stopPrice) || stopPrice! <= 0)) {
       res.status(400).json({ error: "Stop orders require a valid stopPrice" });
       return;
     }
-    if (type === "limit" && (!Number.isFinite(rawPrice) || (rawPrice ?? 0) <= 0)) {
+    if (type === "limit" && (!Number.isFinite(rawPrice) || rawPrice! <= 0)) {
       res.status(400).json({ error: "Limit orders require a valid price" });
       return;
     }
@@ -155,7 +155,7 @@ router.post("/orders", async (req, res) => {
       const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
       lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
     }
-    if (side === "buy" && (!Number.isFinite(lockPrice) || (lockPrice ?? 0) <= 0)) {
+    if (side === "buy" && (!Number.isFinite(lockPrice) || lockPrice! <= 0)) {
       res.status(400).json({ error: "Unable to determine buy price for funding lock" });
       return;
     }
