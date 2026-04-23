@@ -141,11 +141,13 @@ export async function triggerStopOrders(): Promise<void> {
         }
 
         // Mark the stop order (fully or partially filled)
+        const prevStopFilled   = parseFloat(order.filledQuantity ?? "0");
+        const newStopFilled    = prevStopFilled + fillQty;
         const newStopRemaining = Math.max(0, quantity - fillQty);
         const stopFullyFilled  = newStopRemaining <= 0.000001;
         await db.update(ordersTable)
           .set({ status: stopFullyFilled ? "filled" : "open",
-                 filledQuantity: fillQty.toString(),
+                 filledQuantity: newStopFilled.toString(),
                  remainingQuantity: newStopRemaining.toString(),
                  price: fillPrice.toString(), total: fillTotal,
                  txid: broadcastTxid, matchedOrderId: match.id, updatedAt: new Date() })

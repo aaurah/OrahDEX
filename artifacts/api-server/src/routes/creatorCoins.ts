@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
