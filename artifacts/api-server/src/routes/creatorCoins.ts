@@ -37,6 +37,26 @@ function calcSell(vBsv: number, vTok: number, tokensIn: number) {
   return { bsvOut, newVBsv, newVTok, fee, pricePerToken };
 }
 
+async function resolveColumn(
+  client: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> },
+  table: string,
+  candidates: string[],
+): Promise<string | null> {
+  const { rows } = await client.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = $1
+        AND column_name = ANY($2::text[])`,
+    [table, candidates],
+  );
+  const available = new Set(rows.map((r: any) => r.column_name));
+  for (const col of candidates) {
+    if (available.has(col)) return col;
+  }
+  return null;
+}
+
 /* ── GET /social/creators ─────────────────────────────────────────────────── */
 router.get("/social/creators", async (req, res) => {
 
@@ -489,6 +509,7 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
+  const client = await pool.connect();
   try {
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
@@ -496,17 +517,44 @@ router.delete("/social/creators/:address", async (req, res) => {
       res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
       return;
     }
-    await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
-    await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await pool.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
-    await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
-    await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
-    await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
-    await pool.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
-    await pool.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("BEGIN");
+
+    const postOwnerColumn = await resolveColumn(client, "social_posts", ["creator", "author"]);
+    const commentAuthorColumn = await resolveColumn(client, "post_comments", ["wallet_address", "author"]);
+
+    await client.query("DELETE FROM social_follows WHERE follower = $1 OR following = $1", [address]);
+    await client.query("DELETE FROM post_likes WHERE wallet_address = $1", [address]);
+    await client.query("DELETE FROM post_mints WHERE minter = $1", [address]);
+
+    if (commentAuthorColumn) {
+      await client.query(`DELETE FROM post_comments WHERE ${commentAuthorColumn} = $1`, [address]);
+    }
+
+    if (postOwnerColumn) {
+      const { rows: ownedPosts } = await client.query(
+        `SELECT id FROM social_posts WHERE ${postOwnerColumn} = $1`,
+        [address],
+      );
+      const postIds = ownedPosts.map((r: any) => r.id).filter(Boolean);
+      if (postIds.length > 0) {
+        await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
+        await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
+        await client.query("DELETE FROM post_comments WHERE post_id = ANY($1::text[])", [postIds]);
+      }
+      await client.query(`DELETE FROM social_posts WHERE ${postOwnerColumn} = $1`, [address]);
+    }
+
+    await client.query("DELETE FROM coin_holdings WHERE holder = $1 OR coin_creator = $1", [address]);
+    await client.query("DELETE FROM creator_coins WHERE creator_address = $1", [address]);
+    await client.query("DELETE FROM creator_profiles WHERE address = $1", [address]);
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (err: any) {
+    await client.query("ROLLBACK");
+    logger.error({ err }, "delete creator profile failed");
     res.status(500).json({ error: err?.message });
+  } finally {
+    client.release();
   }
 });
 
