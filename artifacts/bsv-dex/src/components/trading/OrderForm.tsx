@@ -692,9 +692,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
-    const required = parseFloat(amount);
-    const pxForBuy = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
-    const total    = pxForBuy > 0 ? pxForBuy * required : 0;
+    const required     = parseFloat(amount);
+    const effectivePrice = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+    const total        = effectivePrice > 0 ? effectivePrice * required : 0;
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
     if (side === "sell" && required > availableAmt + 1e-9) {
