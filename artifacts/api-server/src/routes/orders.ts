@@ -105,7 +105,13 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
-    const symbol = String(body.symbol).replace(/-/g, "/");
+    const symbol = typeof body.symbol === "string" && body.symbol.length > 0
+      ? body.symbol.replace(/-/g, "/")
+      : null;
+    if (!symbol) {
+      res.status(400).json({ error: "Invalid symbol" });
+      return;
+    }
     const quantity = parseFloat(body.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       res.status(400).json({ error: "Invalid quantity" });
@@ -450,8 +456,11 @@ router.post("/orders", async (req, res) => {
         // reveal() once both locks are confirmed, completing the atomic swap.
         // Internal ledger settlement is skipped for this path (funds stay on-chain).
         if (bothEvmExternal && !lastEvmHtlcSession) {
-          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum)
-          const chainId = body.chainId ? Number(body.chainId) : 1;
+          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum).
+          // Validate chainId: must be a positive integer present in EVM_CHAINS.
+          const rawChainId = body.chainId ? Number(body.chainId) : 1;
+          const chainId = Number.isInteger(rawChainId) && rawChainId > 0 && rawChainId in EVM_CHAINS
+            ? rawChainId : 1;
           const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
           // Resolve token addresses from pair
