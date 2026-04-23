@@ -129,11 +129,14 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   }
 
   // ── 3. Build OP_RETURN settlement payload ────────────────────────────────
+  // Determine which ID is the buy order vs sell order.
+  // The incoming order (newOrderId) is the buyer's order when the match counter-order is on the sell side.
+  const incomingIsBuy = matchOrder.walletAddress === sellerAddress;
   const fallback = buildSettlement({
     tradeId,
     pair,
-    buyOrderId:         buyerAddress === params.buyerAddress ? newOrderId : matchOrder.id,
-    sellOrderId:        sellerAddress === params.sellerAddress ? newOrderId : matchOrder.id,
+    buyOrderId:         incomingIsBuy ? newOrderId : matchOrder.id,
+    sellOrderId:        incomingIsBuy ? matchOrder.id : newOrderId,
     buyerAddress,
     sellerAddress,
     buyerNetwork,

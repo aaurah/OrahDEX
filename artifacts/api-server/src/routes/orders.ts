@@ -387,7 +387,7 @@ router.post("/orders", async (req, res) => {
             tradeId,
             newOrderId:    id,
             matchOrder:    match,
-            pair:          body.symbol,
+            pair:          symbol,
             fillQty,
             fillPrice,
             buyerAddress,
@@ -455,7 +455,7 @@ router.post("/orders", async (req, res) => {
           const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
           // Resolve token addresses from pair
-          const [base, quot] = body.symbol.split("/");
+          const [base, quot] = symbol.split("/");
           const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
           const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
 
@@ -468,7 +468,7 @@ router.post("/orders", async (req, res) => {
           try {
             lastEvmHtlcSession = await initiateEvmHtlcSession({
               tradeId:       tradeId,
-              pair:          body.symbol,
+              pair:          symbol,
               chainId,
               sellerAddress: sellerAddress as `0x${string}`,
               buyerAddress:  buyerAddress  as `0x${string}`,
@@ -499,7 +499,7 @@ router.post("/orders", async (req, res) => {
         const isFullyFilled   = remainingQty <= 0.000001;
         const correctFee      = (totalFillValue * 0.001).toFixed(8);
         // Record exchange revenue from the order book fill fee (0.1%)
-        const feeAssetSymbol = (body.symbol as string).split("/")[1] ?? "USDT";
+        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 
         await db.update(ordersTable)
@@ -517,7 +517,7 @@ router.post("/orders", async (req, res) => {
           .where(eq(ordersTable.id, id));
 
         /* Push order-filled notification */
-        const fillSymbol = body.symbol as string;
+        const fillSymbol = symbol;
         const fillBase   = fillSymbol.split("/")[0];
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
@@ -525,7 +525,7 @@ router.post("/orders", async (req, res) => {
           body:  `${totalFilled.toFixed(4)} ${fillBase} @ $${avgFillPrice.toFixed(4)} avg · BSV settled on-chain`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
-          side:  body.side,
+          side,
         });
       }
     }
