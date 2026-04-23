@@ -37,8 +37,13 @@ function calcSell(vBsv: number, vTok: number, tokensIn: number) {
   return { bsvOut, newVBsv, newVTok, fee, pricePerToken };
 }
 
+type SqlClient = {
+  query: (sql: string, params?: any[]) => Promise<{ rows: any[] }>;
+  release: () => void;
+};
+
 async function resolveColumn(
-  client: { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> },
+  client: SqlClient,
   table: string,
   candidates: string[],
 ): Promise<string | null> {
@@ -50,7 +55,7 @@ async function resolveColumn(
         AND column_name = ANY($2::text[])`,
     [table, candidates],
   );
-  const available = new Set(rows.map((r: any) => r.column_name));
+  const available = new Set((rows as Array<{ column_name: string }>).map((r) => r.column_name));
   for (const col of candidates) {
     if (available.has(col)) return col;
   }
@@ -509,8 +514,9 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
-  const client = await pool.connect();
+  let client: SqlClient | null = null;
   try {
+    client = await pool.connect() as SqlClient;
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
@@ -527,21 +533,43 @@ router.delete("/social/creators/:address", async (req, res) => {
     await client.query("DELETE FROM post_mints WHERE minter = $1", [address]);
 
     if (commentAuthorColumn) {
-      await client.query(`DELETE FROM post_comments WHERE ${commentAuthorColumn} = $1`, [address]);
+      if (commentAuthorColumn === "wallet_address") {
+        await client.query("DELETE FROM post_comments WHERE wallet_address = $1", [address]);
+      } else if (commentAuthorColumn === "author") {
+        await client.query("DELETE FROM post_comments WHERE author = $1", [address]);
+      }
     }
 
     if (postOwnerColumn) {
-      const { rows: ownedPosts } = await client.query(
-        `SELECT id FROM social_posts WHERE ${postOwnerColumn} = $1`,
-        [address],
-      );
-      const postIds = ownedPosts.map((r: any) => r.id);
-      if (postIds.length > 0) {
-        await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
-        await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
-        await client.query("DELETE FROM post_comments WHERE post_id = ANY($1::text[])", [postIds]);
+      if (postOwnerColumn === "creator") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
+      } else if (postOwnerColumn === "author") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE author = $1", [address]);
       }
-      await client.query(`DELETE FROM social_posts WHERE ${postOwnerColumn} = $1`, [address]);
     }
 
     await client.query("DELETE FROM coin_holdings WHERE holder = $1 OR coin_creator = $1", [address]);
@@ -550,11 +578,11 @@ router.delete("/social/creators/:address", async (req, res) => {
     await client.query("COMMIT");
     res.json({ ok: true });
   } catch (err: any) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK");
     logger.error({ err }, "delete creator profile failed");
     res.status(500).json({ error: err?.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
