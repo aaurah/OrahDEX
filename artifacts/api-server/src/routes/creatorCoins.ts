@@ -535,7 +535,7 @@ router.delete("/social/creators/:address", async (req, res) => {
         `SELECT id FROM social_posts WHERE ${postOwnerColumn} = $1`,
         [address],
       );
-      const postIds = ownedPosts.map((r: any) => r.id).filter(Boolean);
+      const postIds = ownedPosts.map((r: any) => r.id);
       if (postIds.length > 0) {
         await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
         await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
