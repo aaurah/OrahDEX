@@ -17,6 +17,7 @@ import { eq, and, ne, lte, gte } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { buildSettlement } from "./settlement.js";
+import { settleTrade } from "./ledger.js";
 import { BOT_ADDRESS } from "./liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "./bsvWallet.js";
 import { broadcastSettlement } from "./bsvBroadcaster.js";
@@ -75,34 +76,29 @@ export async function triggerStopOrders(): Promise<void> {
       });
 
       const match = sorted[0];
-      const quantity = parseFloat(order.quantity);
+      // Use remainingQuantity so a partially-consumed stop order fills the correct amount
+      const quantity = parseFloat(order.remainingQuantity ?? order.quantity);
 
       if (match) {
+        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
+        const fillQty   = Math.min(quantity, matchAvail);
         const fillPrice = parseFloat(match.price ?? marketPrice.toString());
-        const fillTotal = (quantity * fillPrice).toFixed(8);
+        const fillTotal = (fillQty * fillPrice).toFixed(8);
         const tradeId   = crypto.randomUUID();
 
-        const opReturnPayload = [
-          "ORAH", "v1",
-          tradeId.replace(/-/g, "").slice(0, 16),
-          order.symbol,
-          (order.side === "buy" ? order.walletAddress : match.walletAddress).slice(0, 20) + "…",
-          (order.side === "sell" ? order.walletAddress : match.walletAddress).slice(0, 20) + "…",
-          quantity.toString(),
-          fillPrice.toString(),
-          Date.now().toString(),
-        ].join("|");
+        const buyerAddress  = order.side === "buy"  ? order.walletAddress : match.walletAddress;
+        const sellerAddress = order.side === "sell" ? order.walletAddress : match.walletAddress;
 
         const fallbackSettlement = buildSettlement({
           tradeId,
           pair:          order.symbol,
-          buyOrderId:    order.side === "buy" ? order.id : match.id,
+          buyOrderId:    order.side === "buy"  ? order.id : match.id,
           sellOrderId:   order.side === "sell" ? order.id : match.id,
-          buyerAddress:  order.side === "buy" ? order.walletAddress : match.walletAddress,
-          sellerAddress: order.side === "sell" ? order.walletAddress : match.walletAddress,
-          buyerNetwork:  order.side === "buy" ? (order.networkType ?? "evm") : (match.networkType ?? "evm"),
+          buyerAddress,
+          sellerAddress,
+          buyerNetwork:  order.side === "buy"  ? (order.networkType ?? "evm") : (match.networkType ?? "evm"),
           sellerNetwork: order.side === "sell" ? (order.networkType ?? "evm") : (match.networkType ?? "evm"),
-          amount:        quantity.toString(),
+          amount:        fillQty.toString(),
           price:         fillPrice.toString(),
           total:         fillTotal,
           timestamp:     Date.now(),
@@ -118,34 +114,69 @@ export async function triggerStopOrders(): Promise<void> {
               privKeyHex:    wallet.privKeyHex,
               changeAddress: wallet.address,
               utxo:          best,
-              opReturnPayload,
+              opReturnPayload: fallbackSettlement.opReturnData,
             });
             if (result.broadcast) broadcastTxid = result.txid;
           }
         } catch (_) { /* fall back to deterministic txid */ }
 
-        // Mark counter-order (if not bot) as filled
+        // Mark counter-order (partially or fully consumed)
+        const newMatchFilled    = parseFloat(match.filledQuantity ?? "0") + fillQty;
+        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
+        const matchFullyFilled  = newMatchRemaining <= 0.000001;
         if (match.walletAddress === BOT_ADDRESS) {
-          await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+          if (matchFullyFilled) {
+            await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+          } else {
+            await db.update(ordersTable)
+              .set({ filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(), updatedAt: new Date() })
+              .where(eq(ordersTable.id, match.id));
+          }
         } else {
           await db.update(ordersTable)
-            .set({ status: "filled", filledQuantity: match.quantity, remainingQuantity: "0",
+            .set({ status: matchFullyFilled ? "filled" : "open",
+                   filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(),
                    txid: broadcastTxid, matchedOrderId: order.id, updatedAt: new Date() })
             .where(eq(ordersTable.id, match.id));
         }
 
-        // Mark the stop order as filled
+        // Mark the stop order (fully or partially filled)
+        const prevStopFilled   = parseFloat(order.filledQuantity ?? "0");
+        const newStopFilled    = prevStopFilled + fillQty;
+        const newStopRemaining = Math.max(0, quantity - fillQty);
+        const stopFullyFilled  = newStopRemaining <= 0.000001;
         await db.update(ordersTable)
-          .set({ status: "filled", filledQuantity: quantity.toString(), remainingQuantity: "0",
+          .set({ status: stopFullyFilled ? "filled" : "open",
+                 filledQuantity: newStopFilled.toString(),
+                 remainingQuantity: newStopRemaining.toString(),
                  price: fillPrice.toString(), total: fillTotal,
                  txid: broadcastTxid, matchedOrderId: match.id, updatedAt: new Date() })
           .where(eq(ordersTable.id, order.id));
 
+        // Settle balances: move quote from buyer's locked to seller's available
+        // and base from seller's locked to buyer's available.
+        const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
+        // Skip ledger settlement if either side is the bot (bot uses simulated balances)
+        if (order.walletAddress !== BOT_ADDRESS && match.walletAddress !== BOT_ADDRESS) {
+          try {
+            await settleTrade({
+              buyerAddress,
+              sellerAddress,
+              baseAsset:  baseAsset!,
+              quoteAsset,
+              amount:     fillQty.toString(),
+              price:      fillPrice.toString(),
+            });
+          } catch (settleErr) {
+            logger.warn({ settleErr, orderId: order.id }, "Stop order: settleTrade failed after fill");
+          }
+        }
+
         const base = order.symbol.split("/")[0] ?? order.symbol;
         pushNotification(order.walletAddress, {
-          type:  "order_filled",
-          title: `Stop Order Triggered ✓`,
-          body:  `${quantity} ${base} stop-${order.side} @ $${fillPrice.toFixed(4)} · executed on-chain`,
+          type:  stopFullyFilled ? "order_filled" : "order_partial",
+          title: stopFullyFilled ? `Stop Order Triggered ✓` : `Stop Order Partial Fill`,
+          body:  `${fillQty} ${base} stop-${order.side} @ $${fillPrice.toFixed(4)} · executed on-chain`,
           pair:  order.symbol,
           txid:  broadcastTxid ?? undefined,
           side:  order.side,

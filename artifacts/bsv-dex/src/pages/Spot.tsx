@@ -76,6 +76,26 @@ function fmtLiq(n: number): string {
   return "$" + n.toFixed(2);
 }
 
+function formatDateTime(value: string | Date) {
+  const dt = new Date(value);
+  return dt.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function getOrderExplorerUrl(order: any): string | null {
+  if (order?.explorerUrl) return String(order.explorerUrl);
+  if (!order?.txid) return null;
+  return String(order.txid).startsWith("0x")
+    ? `https://etherscan.io/tx/${order.txid}`
+    : `https://whatsonchain.com/tx/${order.txid}`;
+}
+
 function normalise(m: any) {
   const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
   const quote = m.quoteAsset ?? m.quote ?? "USDT";
@@ -88,7 +108,16 @@ function normalise(m: any) {
 
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
-  const { address } = useWalletStore();
+  const { address, internalBsvAddress, internalEvmAddress } = useWalletStore();
+  // Alt address: Orah wallet users have both a BSV and an EVM address.
+  // Orders placed on the BSV network are stored against the BSV address, and
+  // orders placed on the EVM network are stored against the EVM address.
+  // We must query both so orders don't disappear when the user switches networks.
+  const altAddress = (internalEvmAddress && internalEvmAddress !== address)
+    ? internalEvmAddress
+    : (internalBsvAddress && internalBsvAddress !== address)
+      ? internalBsvAddress
+      : null;
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
   // Resolve the current pair's quote asset from the URL for smart tab initialisation
   const urlQuote = (() => {
@@ -144,6 +173,11 @@ export function SpotTrading() {
     { walletAddress: address || '' },
     { query: { enabled: !!address, refetchInterval: 5000 } }
   );
+  // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
+  const { data: altOrders, refetch: refetchAltOrders } = useGetOrders(
+    { walletAddress: altAddress || '' },
+    { query: { enabled: !!altAddress, refetchInterval: 5000 } }
+  );
   const { data: apiMarkets } = useGetMarkets();
 
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
@@ -184,11 +218,23 @@ export function SpotTrading() {
 
   const cancelOrder = useCancelOrder({
     mutation: {
-      onSuccess: () => { refetchOrders(); },
+      onSuccess: () => { refetchOrders(); refetchAltOrders(); },
     },
   });
 
-  const allOrders    = (apiOrders as any[]) || [];
+  // Merge orders from both addresses, deduplicated by id, so BSV-network orders
+  // remain visible even when the user's active network is EVM (and vice versa).
+  const allOrders = useMemo(() => {
+    const primary = (apiOrders as any[]) || [];
+    const alt     = (altOrders  as any[]) || [];
+    const seen    = new Set<string>();
+    return [...primary, ...alt].filter(o => {
+      const key = String(o.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [apiOrders, altOrders]);
   const openOrders   = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
@@ -470,7 +516,7 @@ export function SpotTrading() {
                   <table className="w-full text-left text-[11px] font-mono">
                     <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-muted-foreground font-sans border-b border-border">
-                        <th className="px-3 py-1.5 font-medium">Time</th>
+                        <th className="px-3 py-1.5 font-medium">Date & Time</th>
                         <th className="px-3 py-1.5 font-medium">Pair</th>
                         <th className="px-3 py-1.5 font-medium">Type</th>
                         <th className="px-3 py-1.5 font-medium">Side</th>
@@ -501,7 +547,7 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right">{unfilled.toFixed(4)}</td>
                             <td className="px-3 py-1.5 text-right">
                               <button
-                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: String(o.walletAddress || address || "") } })}
                                 disabled={cancelOrder.isPending}
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
                               >
@@ -529,7 +575,7 @@ export function SpotTrading() {
                   <table className="w-full text-left text-[11px] font-mono">
                     <thead className="sticky top-0 bg-card z-10">
                       <tr className="text-muted-foreground font-sans border-b border-border">
-                        <th className="px-3 py-1.5 font-medium">Time</th>
+                        <th className="px-3 py-1.5 font-medium">Date & Time</th>
                         <th className="px-3 py-1.5 font-medium">Pair</th>
                         <th className="px-3 py-1.5 font-medium">Type</th>
                         <th className="px-3 py-1.5 font-medium">Side</th>
@@ -537,7 +583,7 @@ export function SpotTrading() {
                         <th className="px-3 py-1.5 font-medium text-right">Amount</th>
                         <th className="px-3 py-1.5 font-medium text-right">Total</th>
                         <th className="px-3 py-1.5 font-medium">Status</th>
-                        <th className="px-3 py-1.5 font-medium">BSV Settlement</th>
+                        <th className="px-3 py-1.5 font-medium">Tx / ID</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -546,7 +592,7 @@ export function SpotTrading() {
                         const total = Number(o.price ?? 0) * qty;
                         return (
                           <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
-                            <td className="px-3 py-1.5 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                            <td className="px-3 py-1.5 text-muted-foreground">{formatDateTime(o.updatedAt ?? o.createdAt)}</td>
                             <td className="px-3 py-1.5">{o.symbol}</td>
                             <td className="px-3 py-1.5 capitalize text-muted-foreground">{o.type ?? "limit"}</td>
                             <td className={cn("px-3 py-1.5 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
@@ -555,15 +601,18 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
                             <td className={cn("px-3 py-1.5 capitalize font-semibold text-[10px]", o.status === "filled" ? "text-buy" : "text-muted-foreground")}>{o.status}</td>
                             <td className="px-3 py-1.5">
-                              {o.txid ? (
-                                <a href={`https://whatsonchain.com/tx/${o.txid}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
-                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                  <span className="text-[10px] font-mono">{o.txid.slice(0, 8)}…</span>
-                                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                </a>
-                              ) : (
-                                <span className="text-muted-foreground text-[10px]">—</span>
-                              )}
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] font-mono text-muted-foreground">#{String(o.id).slice(0, 8)}</span>
+                                {o.txid && getOrderExplorerUrl(o) ? (
+                                  <a href={getOrderExplorerUrl(o)!} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    <span className="text-[10px] font-mono">{o.txid.slice(0, 12)}…</span>
+                                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground text-[10px]">—</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -594,7 +643,7 @@ export function SpotTrading() {
                         <th className="px-3 py-1.5 font-medium text-right">Fill Price</th>
                         <th className="px-3 py-1.5 font-medium text-right">Amount</th>
                         <th className="px-3 py-1.5 font-medium text-right">Total</th>
-                        <th className="px-3 py-1.5 font-medium">BSV Settlement</th>
+                        <th className="px-3 py-1.5 font-medium">Tx / ID</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/50">
@@ -604,7 +653,7 @@ export function SpotTrading() {
                         const total = px * qty;
                         return (
                           <tr key={o.id ?? i} className="hover:bg-white/5 transition-colors">
-                            <td className="px-3 py-1.5 text-muted-foreground">{new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                            <td className="px-3 py-1.5 text-muted-foreground">{formatDateTime(o.updatedAt ?? o.createdAt)}</td>
                             <td className="px-3 py-1.5">{o.symbol}</td>
                             <td className="px-3 py-1.5 capitalize text-muted-foreground">{o.type ?? "limit"}</td>
                             <td className={cn("px-3 py-1.5 font-semibold capitalize", o.side === "buy" ? "text-buy" : "text-sell")}>{o.side}</td>
@@ -612,15 +661,18 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right">{qty.toFixed(4)}</td>
                             <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
                             <td className="px-3 py-1.5">
-                              {o.txid ? (
-                                <a href={`https://whatsonchain.com/tx/${o.txid}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
-                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                  <span className="text-[10px] font-mono">{o.txid.slice(0, 8)}…</span>
-                                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                                </a>
-                              ) : (
-                                <span className="text-muted-foreground text-[10px]">pending</span>
-                              )}
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] font-mono text-muted-foreground">#{String(o.id).slice(0, 8)}</span>
+                                {o.txid && getOrderExplorerUrl(o) ? (
+                                  <a href={getOrderExplorerUrl(o)!} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    <span className="text-[10px] font-mono">{o.txid.slice(0, 12)}…</span>
+                                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground text-[10px]">pending</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import {
   copyVaultsTable,
   copyVaultPositionsTable,
@@ -9,6 +9,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { buildSettlement, type TradeSettlement } from "../lib/settlement.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { debitAvailable } from "../lib/ledger.js";
 
 // OrahDEX takes 10% of the vault manager's performance fee as platform revenue
 const PLATFORM_COPY_FEE_SHARE = 0.10;
@@ -116,6 +117,18 @@ router.post("/copy/vaults/:id/deposit", async (req, res) => {
       return;
     }
 
+    // Debit the follower's USDT before allocating shares
+    try {
+      await debitAvailable(followerWallet.toLowerCase(), "USDT", String(amount));
+    } catch (err: any) {
+      if (err?.message?.startsWith("INSUFFICIENT_FUNDS")) {
+        res.status(400).json({ error: "Insufficient USDT balance" });
+      } else {
+        res.status(500).json({ error: "Failed to debit deposit" });
+      }
+      return;
+    }
+
     const currentSharePrice = Number(vault.sharePrice) || 1;
     const sharesIssued = amount / currentSharePrice;
     const newTvl = Number(vault.tvl) + amount;
@@ -192,32 +205,51 @@ router.post("/copy/vaults/:id/withdraw", async (req, res) => {
     const netPayout = redeemValue - performanceFee;
     const realizedPnl = netPayout - entryValue;
 
-    await db
-      .update(copyVaultPositionsTable)
-      .set({
-        status: "withdrawn",
-        realizedPnl: String(realizedPnl),
-        feesPaid: String(performanceFee),
-        withdrawnAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(copyVaultPositionsTable.id, positionId));
-
     const newTvl = Math.max(0, Number(vault.tvl) - redeemValue);
     const newTotalShares = Math.max(0, Number(vault.totalShares) - shares);
     const newFollowers = Math.max(0, vault.followers - 1);
 
-    await db
-      .update(copyVaultsTable)
-      .set({
-        tvl: String(newTvl),
-        totalShares: String(newTotalShares),
-        followers: newFollowers,
-        updatedAt: new Date(),
-      })
-      .where(eq(copyVaultsTable.id, vault.id));
+    // All three mutations (position status, vault TVL, follower credit) must succeed
+    // or fail atomically — a partial commit would leave the vault in an inconsistent state
+    // (e.g. position marked withdrawn but user never paid, or TVL reduced but no credit).
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query("BEGIN");
 
-    // Record platform's share of the performance fee as exchange revenue
+      await dbClient.query(
+        `UPDATE copy_vault_positions
+         SET status = 'withdrawn', realized_pnl = $1, fees_paid = $2,
+             withdrawn_at = now(), updated_at = now()
+         WHERE id = $3`,
+        [String(realizedPnl), String(performanceFee), positionId],
+      );
+
+      await dbClient.query(
+        `UPDATE copy_vaults
+         SET tvl = $1, total_shares = $2, followers = $3, updated_at = now()
+         WHERE id = $4`,
+        [String(newTvl), String(newTotalShares), newFollowers, vault.id],
+      );
+
+      if (netPayout > 0) {
+        await dbClient.query(
+          `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+           VALUES ($1, 'USDT', $2, '0', now())
+           ON CONFLICT (wallet_address, asset_symbol)
+           DO UPDATE SET available = user_balances.available + $2, updated_at = now()`,
+          [followerWallet.toLowerCase(), netPayout.toFixed(8)],
+        );
+      }
+
+      await dbClient.query("COMMIT");
+    } catch (err) {
+      await dbClient.query("ROLLBACK");
+      throw err;
+    } finally {
+      dbClient.release();
+    }
+
+    // Record platform's share of the performance fee as exchange revenue (fire-and-forget)
     if (performanceFee > 0) {
       const platformCut = performanceFee * PLATFORM_COPY_FEE_SHARE;
       recordPlatformFee({ source: "copy_trade", amount: platformCut, asset: "USDT", txRef: vault.id });

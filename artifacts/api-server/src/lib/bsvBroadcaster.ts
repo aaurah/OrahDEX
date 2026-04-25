@@ -205,7 +205,7 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
     sigHashType: SIGHASH_ALL_FORKID,
   });
 
-  const rawSig = await secp.signAsync(sighash, privKey, { lowS: true });
+  const rawSig = await secp.signAsync(sighash, privKey, { lowS: true }) as unknown as { r: bigint; s: bigint };
   const der    = derEncode({ r: rawSig.r, s: rawSig.s });
   const scriptSig = Buffer.concat([
     varint(der.length + 1), der, Buffer.from([SIGHASH_ALL_FORKID]),

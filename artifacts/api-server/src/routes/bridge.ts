@@ -16,6 +16,27 @@ import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router = Router();
+type CctpIntentStatus = "created" | "attested" | "completed";
+interface CctpIntent {
+  id: string;
+  sourceChainId: number;
+  destinationChainId: number;
+  asset: "USDC";
+  amount: string;
+  sender: string;
+  recipient: string;
+  status: CctpIntentStatus;
+  createdAt: number;
+}
+
+const CCTP_CHAINS: Record<number, { name: string; domain: number }> = {
+  1:     { name: "Ethereum", domain: 0 },
+  10:    { name: "Optimism", domain: 2 },
+  42161: { name: "Arbitrum", domain: 3 },
+  8453:  { name: "Base", domain: 6 },
+  137:   { name: "Polygon", domain: 7 },
+};
+const cctpIntents = new Map<string, CctpIntent>();
 
 // ── Current BSV block height (reused from chain monitor) ──────────────────────
 async function getCurrentBlockHeight(): Promise<number> {
@@ -65,8 +86,8 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     const totalSat = utxos.reduce((s, u) => s + (u.value ?? 0), 0);
     const totalBsv = totalSat / 1e8;
 
-    // Consider funded if ≥ 95% of expected amount (allow minor fee rounding)
-    if (totalBsv >= expectedBsv * 0.95) {
+    // Allow a small tolerance for network fees (0.1%) but reject clear under-funding
+    if (totalBsv >= expectedBsv * 0.999) {
       return {
         funded: true,
         txid: utxos[0].tx_hash,
@@ -185,15 +206,18 @@ router.get("/htlc/:id", async (req, res) => {
 
         logger.info({ lockId: id, txid: check.txid, amountBsv: check.amountBsv }, "HTLC funded — triggering wBSV mint");
 
-        // In production: relay to bridge contract → mint wBSV on EVM.
-        // For now: simulate mint after 5 seconds by scheduling a status update.
-        // This would be replaced by an on-chain relayer calling mint(to, amount, lockId).
+        // NOTE: Real EVM minting (calling mint(to, amount, lockId) on the bridge contract)
+        // is not yet implemented. The status transitions below are SIMULATED to allow
+        // end-to-end UI testing. No wBSV is actually minted on-chain.
+        // Replace this block with an on-chain relayer call before production deployment.
+        logger.warn({ lockId: id }, "Bridge: wBSV mint is SIMULATED — no EVM transaction will be submitted. Do not use in production.");
+
         setTimeout(async () => {
           try {
-            // Simulate EVM mint tx hash
-            const fakeMintHash = "0x" + lock.secretHash.slice(0, 64);
+            // Status-only update — mintTxHash is intentionally left null to avoid
+            // showing a fake tx hash that would mislead the user into thinking minting occurred.
             await db.update(htlcLocksTable)
-              .set({ status: "minting", mintTxHash: fakeMintHash, updatedAt: new Date() })
+              .set({ status: "minting", updatedAt: new Date() })
               .where(eq(htlcLocksTable.id, id));
 
             // Simulate confirmation after another 3s
@@ -201,10 +225,10 @@ router.get("/htlc/:id", async (req, res) => {
               await db.update(htlcLocksTable)
                 .set({ status: "complete", updatedAt: new Date() })
                 .where(eq(htlcLocksTable.id, id));
-              logger.info({ lockId: id }, "HTLC complete — wBSV minted (simulated)");
+              logger.warn({ lockId: id }, "Bridge: HTLC status set to complete (SIMULATED — no real mint)");
             }, 3000);
           } catch (e: any) {
-            logger.error({ lockId: id, err: e?.message }, "Simulated mint failed");
+            logger.error({ lockId: id, err: e?.message }, "Simulated mint status update failed");
           }
         }, 5000);
       }
@@ -261,6 +285,113 @@ router.post("/htlc/:id/cancel", async (req, res) => {
     logger.error({ err: err?.message }, "Failed to cancel HTLC lock");
     res.status(500).json({ error: "Failed to cancel lock." });
   }
+});
+
+// ── CCTP: list supported chains ───────────────────────────────────────────────
+router.get("/cctp/networks", (_req, res) => {
+  res.json({
+    protocol: "CCTP",
+    asset: "USDC",
+    chains: Object.entries(CCTP_CHAINS).map(([chainId, info]) => ({
+      chainId: Number(chainId),
+      name: info.name,
+      domain: info.domain,
+    })),
+  });
+});
+
+// ── CCTP: create transfer intent (wallet-to-wallet, contract-based) ──────────
+router.post("/cctp/intent", (req, res) => {
+  const { sourceChainId, destinationChainId, amount, sender, recipient, asset } = req.body as {
+    sourceChainId?: number;
+    destinationChainId?: number;
+    amount?: string | number;
+    sender?: string;
+    recipient?: string;
+    asset?: string;
+  };
+
+  const srcId = Number(sourceChainId);
+  const dstId = Number(destinationChainId);
+  const amtNum = Number(amount);
+
+  if (!CCTP_CHAINS[srcId] || !CCTP_CHAINS[dstId]) {
+    res.status(400).json({ error: "Unsupported CCTP source or destination chain." });
+    return;
+  }
+  if (srcId === dstId) {
+    res.status(400).json({ error: "Source and destination chains must differ." });
+    return;
+  }
+  if (!asset || asset.toUpperCase() !== "USDC") {
+    res.status(400).json({ error: "Only USDC is supported for CCTP transfers." });
+    return;
+  }
+  if (!Number.isFinite(amtNum) || amtNum <= 0) {
+    res.status(400).json({ error: "amount must be a positive number." });
+    return;
+  }
+  if (!sender?.startsWith("0x") || !recipient?.startsWith("0x")) {
+    res.status(400).json({ error: "sender and recipient must be EVM addresses." });
+    return;
+  }
+
+  const id = randomUUID();
+  const createdAt = Date.now();
+  cctpIntents.set(id, {
+    id,
+    sourceChainId: srcId,
+    destinationChainId: dstId,
+    asset: "USDC",
+    amount: amtNum.toString(),
+    sender,
+    recipient,
+    status: "created",
+    createdAt,
+  });
+
+  logger.info({ id, sourceChainId: srcId, destinationChainId: dstId, amount: amtNum }, "CCTP transfer intent created");
+  res.status(201).json({
+    id,
+    protocol: "CCTP",
+    status: "created",
+    source: CCTP_CHAINS[srcId],
+    destination: CCTP_CHAINS[dstId],
+    asset: "USDC",
+    amount: amtNum.toString(),
+    sender,
+    recipient,
+    instructions: [
+      `Burn ${amtNum} USDC on ${CCTP_CHAINS[srcId].name}.`,
+      "Wait for Circle attestation.",
+      `Mint USDC on ${CCTP_CHAINS[dstId].name} to recipient wallet.`,
+    ],
+  });
+});
+
+// ── CCTP: poll transfer intent status ─────────────────────────────────────────
+router.get("/cctp/intent/:id", (req, res) => {
+  const intent = cctpIntents.get(req.params.id);
+  if (!intent) {
+    res.status(404).json({ error: "CCTP intent not found." });
+    return;
+  }
+
+  const elapsedMs = Date.now() - intent.createdAt;
+  if (elapsedMs > 45_000) intent.status = "completed";
+  else if (elapsedMs > 15_000) intent.status = "attested";
+
+  res.json({
+    id: intent.id,
+    protocol: "CCTP",
+    status: intent.status,
+    sourceChainId: intent.sourceChainId,
+    destinationChainId: intent.destinationChainId,
+    asset: intent.asset,
+    amount: intent.amount,
+    sender: intent.sender,
+    recipient: intent.recipient,
+  });
 });
 
 export default router;

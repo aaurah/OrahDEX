@@ -36,8 +36,8 @@ router.get("/futures/funding-rates", (_req, res) => {
     FUNDING_RATES.map((r) => ({
       ...r,
       nextFundingTime: nextFunding.toISOString(),
-      lastFundingRate: r.fundingRate * (1 + (Math.random() - 0.5) * 0.2),
-      predictedFundingRate: r.fundingRate * (1 + (Math.random() - 0.5) * 0.1),
+      lastFundingRate: r.fundingRate,
+      predictedFundingRate: r.fundingRate,
     }))
   );
 });

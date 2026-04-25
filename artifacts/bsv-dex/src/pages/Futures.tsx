@@ -1,7 +1,7 @@
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
@@ -120,11 +120,18 @@ export function FuturesTrading() {
   const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
-  const { address, network, balance, chainId: walletChainId, provider } = useWalletStore();
+  const { address, network, balance, chainId: walletChainId, provider, internalBsvAddress, internalEvmAddress } = useWalletStore();
   const isOrahWallet = provider === 'orah-wallet';
   const usesApiBalance = isOrahWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
+
+  // Alt address for cross-network order visibility (BSV ↔ EVM Orah wallet users)
+  const altAddress = (internalEvmAddress && internalEvmAddress !== address)
+    ? internalEvmAddress
+    : (internalBsvAddress && internalBsvAddress !== address)
+      ? internalBsvAddress
+      : null;
 
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
@@ -174,11 +181,25 @@ export function FuturesTrading() {
     { walletAddress: address || "" },
     { query: { enabled: !!address, refetchInterval: 5000 } }
   );
+  const { data: altOrders, refetch: refetchAltOrders } = useGetOrders(
+    { walletAddress: altAddress || "" },
+    { query: { enabled: !!altAddress, refetchInterval: 5000 } }
+  );
   const cancelOrder = useCancelOrder({
-    mutation: { onSuccess: () => refetchOrders() },
+    mutation: { onSuccess: () => { refetchOrders(); refetchAltOrders(); } },
   });
 
-  const allOrders = (apiOrders as any[]) || [];
+  const allOrders = useMemo(() => {
+    const primary = (apiOrders as any[]) || [];
+    const alt     = (altOrders  as any[]) || [];
+    const seen    = new Set<string>();
+    return [...primary, ...alt].filter(o => {
+      const key = String(o.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [apiOrders, altOrders]);
   const openOrders = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
@@ -560,7 +581,7 @@ export function FuturesTrading() {
                             <td className="p-2 text-right">{Number(o.quantity).toFixed(4)}</td>
                             <td className="p-2 text-right">
                               <button
-                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: address || "" } })}
+                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: String(o.walletAddress || address || "") } })}
                                 disabled={cancelOrder.isPending}
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
                               >

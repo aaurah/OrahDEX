@@ -155,7 +155,11 @@ router.post("/auth/totp", async (req, res) => {
     res.status(400).json({ error: "A 6-digit code is required." });
     return;
   }
-  const secret = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+  const secret = process.env.ADMIN_TOTP_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
+    return;
+  }
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
     const token = generateAdminToken();
@@ -169,8 +173,12 @@ router.post("/auth/totp", async (req, res) => {
  * GET /admin/auth/totp-uri
  * Returns the otpauth URI for QR-code generation (uses server-side secret).
  */
-router.get("/auth/totp-uri", (_req, res) => {
-  const secret  = process.env.ADMIN_TOTP_SECRET || "JBSWY3DPEHPK3PXP";
+router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
+  const secret  = process.env.ADMIN_TOTP_SECRET;
+  if (!secret) {
+    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
+    return;
+  }
   const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
@@ -753,7 +761,7 @@ router.patch("/users/:id/status", async (req, res) => {
   const { status } = req.body;
   const users = await buildRealUserList();
   const user = users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: "User not found" });
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
   /* Persist to DB */
   await db.update(walletsTable)
     .set({ status })
@@ -765,7 +773,7 @@ router.patch("/users/:id/status", async (req, res) => {
 router.patch("/users/:id", async (req, res) => {
   const users = await buildRealUserList();
   const user = users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: "User not found" });
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
   const { status, country, verified, balance, network, provider } = req.body;
   /* Persist to DB */
   const dbPatch: Record<string, any> = {};
@@ -805,14 +813,14 @@ router.post("/admins", (req, res) => {
 
 router.delete("/admins/:id", (req, res) => {
   const idx = mockAdmins.findIndex(a => a.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Admin not found" });
+  if (idx === -1) { res.status(404).json({ error: "Admin not found" }); return; }
   mockAdmins.splice(idx, 1);
   res.json({ success: true });
 });
 
 router.patch("/admins/:id", (req, res) => {
   const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
   const { name, email, role, permissions, status } = req.body;
   if (name !== undefined) admin.name = name;
   if (email !== undefined) admin.email = email;
@@ -824,14 +832,14 @@ router.patch("/admins/:id", (req, res) => {
 
 router.patch("/admins/:id/password", (req, res) => {
   const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
   // In production this would hash the password; here we just acknowledge
   res.json({ success: true });
 });
 
 router.patch("/admins/:id/2fa", (req, res) => {
   const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
   const { twoFa } = req.body;
   if (typeof twoFa === "boolean") admin.twoFa = twoFa;
   res.json({ success: true, admin });
@@ -893,7 +901,7 @@ router.post("/api-keys", (req, res) => {
 
 router.delete("/api-keys/:id", (req, res) => {
   const key = mockApiKeys.find(k => k.id === req.params.id);
-  if (!key) return res.status(404).json({ error: "Key not found" });
+  if (!key) { res.status(404).json({ error: "Key not found" }); return; }
   key.status = "revoked";
   res.json({ success: true });
 });
@@ -1221,15 +1229,15 @@ router.get("/bot-profit", async (_req, res) => {
 router.post("/bot-profit/withdraw", async (req, res) => {
   try {
     const { amount, address, network } = req.body as { amount: number; address: string; network: string };
-    if (!amount || amount <= 0) return res.status(400).json({ error: "Invalid amount" });
-    if (!address)               return res.status(400).json({ error: "Destination address required" });
+    if (!amount || amount <= 0) { res.status(400).json({ error: "Invalid amount" }); return; }
+    if (!address)               { res.status(400).json({ error: "Destination address required" }); return; }
 
     const net = (network || "BSV").trim();
 
     // ── BSV on-chain broadcast ──────────────────────────────────────────────
     if (net === "BSV") {
       if (!isBsvAddress(address)) {
-        return res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" });
+        { res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" }); return; }
       }
 
       // Get current BSV price in USD from the spot market
@@ -1241,7 +1249,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 
       const satoshis = Math.round((amount / bsvPriceUsd) * 1e8);
       if (satoshis < 546) {
-        return res.status(400).json({ error: `Amount too small. Minimum is $${((546 * bsvPriceUsd) / 1e8).toFixed(4)} (546 sat dust limit)` });
+        { res.status(400).json({ error: `Amount too small. Minimum is $${((546 * bsvPriceUsd) / 1e8).toFixed(4)} (546 sat dust limit)` }); return; }
       }
 
       const wallet  = await getOrCreateWallet();
@@ -1249,9 +1257,10 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 
       if (balance.confirmedSatoshis < satoshis + 500) {
         const maxUsd = ((balance.confirmedSatoshis - 500) / 1e8 * bsvPriceUsd).toFixed(4);
-        return res.status(400).json({
+        res.status(400).json({
           error: `Settlement wallet has insufficient BSV. Available: ${balance.bsv.toFixed(8)} BSV (~$${maxUsd}). Fund ${wallet.address} to enable withdrawals.`,
         });
+        return;
       }
 
       const { txid } = await buildAndBroadcastBsvTx(address, satoshis, wallet, balance.utxos);
@@ -1259,7 +1268,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
       const cumulative = parseFloat((await getBotSetting("bot_cumulative_profit")) ?? "0") || 0;
       const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
       if (amount > cumulative - withdrawn) {
-        return res.status(400).json({ error: `Insufficient profit balance. Available: $${(cumulative - withdrawn).toFixed(4)}` });
+        { res.status(400).json({ error: `Insufficient profit balance. Available: $${(cumulative - withdrawn).toFixed(4)}` }); return; }
       }
       const newWithdrawn = withdrawn + amount;
       const historyRaw = await getBotSetting("bot_withdrawal_history");
@@ -1268,7 +1277,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
       await setBotSetting("bot_total_withdrawn", newWithdrawn.toFixed(6));
       await setBotSetting("bot_withdrawal_history", JSON.stringify(history.slice(0, 100)));
 
-      return res.json({ success: true, txid, satoshis, bsvPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) });
+      res.json({ success: true, txid, satoshis, bsvPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)) }); return;
     }
 
     // ── Non-BSV: create a real pending withdrawal request ──────────────────────
@@ -1276,7 +1285,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
     const withdrawn  = parseFloat((await getBotSetting("bot_total_withdrawn"))   ?? "0") || 0;
     const available  = cumulative - withdrawn;
 
-    if (amount > available) return res.status(400).json({ error: `Insufficient balance. Available: $${available.toFixed(4)}` });
+    if (amount > available) { res.status(400).json({ error: `Insufficient balance. Available: $${available.toFixed(4)}` }); return; }
 
     // Get ETH price to convert USD amount → ETH amount
     const ethMarket = await db.select({ lastPrice: marketsTable.lastPrice })
@@ -1465,7 +1474,7 @@ router.get("/mail/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const [row] = await db.select().from(adminEmailsTable).where(eq(adminEmailsTable.id, id));
-    if (!row) return res.status(404).json({ error: "Email not found" });
+    if (!row) { res.status(404).json({ error: "Email not found" }); return; }
     await db.update(adminEmailsTable).set({ isRead: true }).where(eq(adminEmailsTable.id, id));
     res.json({ ...row, isRead: true });
   } catch (err: any) {
@@ -1482,7 +1491,7 @@ router.post("/mail", async (req, res) => {
       subject: string; body: string; category?: string;
     };
     if (!fromAddress || !toAddress || !subject || !body) {
-      return res.status(400).json({ error: "fromAddress, toAddress, subject, body are required" });
+      { res.status(400).json({ error: "fromAddress, toAddress, subject, body are required" }); return; }
     }
 
     // Save to DB first
@@ -1491,7 +1500,7 @@ router.post("/mail", async (req, res) => {
     }).returning();
 
     // If composing an outbound email (folder=sent), attempt real SMTP delivery
-    let smtpResult = { success: false, error: "Not attempted" };
+    let smtpResult: { success: boolean; error?: string } = { success: false, error: "Not attempted" };
     if (folder === "sent") {
       smtpResult = await sendMail({ from: fromAddress, to: toAddress, subject, text: body });
     }
@@ -1511,9 +1520,9 @@ router.patch("/mail/:id", async (req, res) => {
     if (isRead   !== undefined) update.isRead   = isRead;
     if (isStarred!== undefined) update.isStarred = isStarred;
     if (folder)                 update.folder    = folder;
-    if (!Object.keys(update).length) return res.status(400).json({ error: "Nothing to update" });
+    if (!Object.keys(update).length) { res.status(400).json({ error: "Nothing to update" }); return; }
     const [updated] = await db.update(adminEmailsTable).set(update).where(eq(adminEmailsTable.id, id)).returning();
-    if (!updated) return res.status(404).json({ error: "Email not found" });
+    if (!updated) { res.status(404).json({ error: "Email not found" }); return; }
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to update email" });
@@ -1575,20 +1584,21 @@ router.put("/site-settings", async (req, res) => {
 router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
   try {
     const { toAddress, bsv: bsvAmount } = req.body as { toAddress: string; bsv: number };
-    if (!toAddress)                             return res.status(400).json({ error: "Destination address required" });
-    if (!isBsvAddress(toAddress))              return res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" });
-    if (!bsvAmount || bsvAmount <= 0)          return res.status(400).json({ error: "Enter a valid BSV amount" });
+    if (!toAddress)                             { res.status(400).json({ error: "Destination address required" }); return; }
+    if (!isBsvAddress(toAddress))              { res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" }); return; }
+    if (!bsvAmount || bsvAmount <= 0)          { res.status(400).json({ error: "Enter a valid BSV amount" }); return; }
 
     const satoshis = Math.round(bsvAmount * 1e8);
-    if (satoshis < 546)                        return res.status(400).json({ error: "Amount below dust limit (546 sat)" });
+    if (satoshis < 546)                        { res.status(400).json({ error: "Amount below dust limit (546 sat)" }); return; }
 
     const wallet  = await getOrCreateWallet();
     const balance = await fetchWalletBalance(wallet.address);
 
     if (balance.confirmedSatoshis < satoshis + 500) {
-      return res.status(400).json({
+      res.status(400).json({
         error: `Insufficient balance. Wallet has ${balance.bsv.toFixed(8)} BSV confirmed; need ${(bsvAmount + 0.000005).toFixed(8)} BSV (including fee).`,
       });
+      return;
     }
 
     const { txid } = await buildAndBroadcastBsvTx(toAddress, satoshis, wallet, balance.utxos);
@@ -1930,7 +1940,7 @@ router.patch("/markets/:symbol/precision", async (req, res) => {
     if (makerFee     !== undefined) updates.makerFee      = makerFee;
     if (takerFee     !== undefined) updates.takerFee      = takerFee;
 
-    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "No fields" });
+    if (Object.keys(updates).length === 0) { res.status(400).json({ error: "No fields" }); return; }
 
     await db.update(marketsTable).set(updates).where(eq(marketsTable.symbol, symbol));
     res.json({ success: true, symbol, updates });
@@ -1944,7 +1954,7 @@ router.patch("/markets/:symbol/status", async (req, res) => {
     const symbol = decodeURIComponent(req.params.symbol);
     const { status } = req.body ?? {};
     if (!["active", "inactive", "maintenance"].includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
+      { res.status(400).json({ error: "Invalid status" }); return; }
     }
     await db.update(marketsTable).set({ status }).where(eq(marketsTable.symbol, symbol));
     pushAdminLog("info", `Market ${symbol} set to ${status}`, "admin");
@@ -2110,13 +2120,13 @@ router.post("/mint-burn", requireAdminToken, async (req, res) => {
   const SUPPORTED_STABLES = ["USDT","USDC","BUSD","DAI","oUSD"];
 
   if (!action || !["mint","burn"].includes(action))
-    return res.status(400).json({ error: "action must be 'mint' or 'burn'" });
+    { res.status(400).json({ error: "action must be 'mint' or 'burn'" }); return; }
   if (!SUPPORTED_STABLES.includes(asset))
-    return res.status(400).json({ error: `Unsupported asset. Allowed: ${SUPPORTED_STABLES.join(", ")}` });
+    { res.status(400).json({ error: `Unsupported asset. Allowed: ${SUPPORTED_STABLES.join(", ")}` }); return; }
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0)
-    return res.status(400).json({ error: "amount must be a positive number" });
+    { res.status(400).json({ error: "amount must be a positive number" }); return; }
   if (!walletAddress)
-    return res.status(400).json({ error: "walletAddress is required" });
+    { res.status(400).json({ error: "walletAddress is required" }); return; }
 
   try {
     const { creditAvailable, debitAvailable } = await import("../lib/ledger.js");
@@ -2163,14 +2173,14 @@ router.post("/ledger-adjust", requireAdminToken, async (req, res) => {
   const { action, walletAddress, asset, amount, note } = req.body ?? {};
 
   if (!action || !["deposit","withdraw"].includes(action))
-    return res.status(400).json({ error: "action must be 'deposit' or 'withdraw'" });
+    { res.status(400).json({ error: "action must be 'deposit' or 'withdraw'" }); return; }
   if (!walletAddress?.trim())
-    return res.status(400).json({ error: "walletAddress is required" });
+    { res.status(400).json({ error: "walletAddress is required" }); return; }
   if (!asset?.trim())
-    return res.status(400).json({ error: "asset is required" });
+    { res.status(400).json({ error: "asset is required" }); return; }
   const numAmount = Number(amount);
   if (!amount || isNaN(numAmount) || numAmount <= 0)
-    return res.status(400).json({ error: "amount must be a positive number" });
+    { res.status(400).json({ error: "amount must be a positive number" }); return; }
 
   try {
     const { creditAvailable, debitAvailable } = await import("../lib/ledger.js");
@@ -2365,7 +2375,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
  */
 router.get("/db-health", requireAdminToken, async (req, res) => {
   try {
-    const run = (sql, params = []) =>
+    const run = (sql: string, params: unknown[] = []): Promise<any[]> =>
       pool.query(sql, params).then(r => r.rows);
 
     const [
@@ -2424,7 +2434,7 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
       topBalanceWallets,
       recentMintBurn,
     });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2435,7 +2445,7 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
  */
 router.post("/db-sync", requireAdminToken, async (req, res) => {
   try {
-    const run = (sql) => pool.query(sql).then(r => r.rowCount ?? 0);
+    const run = (sql: string) => pool.query(sql).then(r => r.rowCount ?? 0);
 
     const [fromBalances, fromOrders, fromTrades, fromDeposits] = await Promise.all([
       run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
@@ -2469,7 +2479,7 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
       totalWallets: parseInt(tw[0]?.cnt ?? "0"),
       message: `Reconciled ${totalInserted} wallet(s). Total registered: ${tw[0]?.cnt}`,
     });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2479,8 +2489,8 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
  * Returns full detail for one wallet: balances, orders, trades, deposits, withdrawals.
  */
 router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
-  const addr = req.params.address?.trim().toLowerCase();
-  if (!addr) return res.status(400).json({ error: "address is required" });
+  const addr = String(req.params.address ?? "").trim().toLowerCase();
+  if (!addr) { res.status(400).json({ error: "address is required" }); return; }
 
   try {
     const [wallet, balances, recentOrders, recentTrades, deposits, withdrawals] = await Promise.all([
@@ -2508,7 +2518,7 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
       deposits: deposits.rows,
       withdrawals: withdrawals.rows,
     });
-  } catch (err) {
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2566,7 +2576,7 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
       value:    sendAmount,
       gas:      gasLimit,
       gasPrice,
-    });
+    } as any);
 
     const ethSent = formatEther(sendAmount);
     req.log.info({ from: account.address, toAddress, txHash, ethSent, chainId }, "admin: rescue-evm-wallet sent");

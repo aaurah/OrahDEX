@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
@@ -35,6 +36,31 @@ function calcSell(vBsv: number, vTok: number, tokensIn: number) {
   const bsvOut = rawBsv - fee;
   const pricePerToken = rawBsv / tokensIn;
   return { bsvOut, newVBsv, newVTok, fee, pricePerToken };
+}
+
+type SqlClient = {
+  query: (sql: string, params?: any[]) => Promise<{ rows: any[] }>;
+  release: () => void;
+};
+
+async function resolveColumn(
+  client: SqlClient,
+  table: string,
+  candidates: string[],
+): Promise<string | null> {
+  const { rows } = await client.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = $1
+        AND column_name = ANY($2::text[])`,
+    [table, candidates],
+  );
+  const available = new Set((rows as Array<{ column_name: string }>).map((r) => r.column_name));
+  for (const col of candidates) {
+    if (available.has(col)) return col;
+  }
+  return null;
 }
 
 /* ── GET /social/creators ─────────────────────────────────────────────────── */
@@ -143,86 +169,177 @@ router.post("/social/creators/:address/update", async (req, res) => {
 /* ── POST /social/creators/:address/trade ─────────────────────────────────── */
 router.post("/social/creators/:address/trade", async (req, res) => {
   try {
-    const { address } = req.params;
-    const { trader, trade_type, bsv_amount, token_amount } = req.body as Record<string, any>;
-    if (!trader || !trade_type) { res.status(400).json({ error: "trader and trade_type required" }); return; }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { address } = req.params;
+      const { trader, trade_type, bsv_amount, token_amount } = req.body as Record<string, any>;
+      if (!trader || !trade_type) {
+        await client.query("ROLLBACK");
+        res.status(400).json({ error: "trader and trade_type required" });
+        return;
+      }
+      if (trade_type !== "buy" && trade_type !== "sell") {
+        await client.query("ROLLBACK");
+        res.status(400).json({ error: "Invalid trade_type" });
+        return;
+      }
 
-    const { rows: coins } = await pool.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
-    if (!coins.length) { res.status(404).json({ error: "Coin not found" }); return; }
-    const coin = coins[0];
+      const { rows: coins } = await client.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
+      if (!coins.length) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Coin not found" });
+        return;
+      }
+      const coin = coins[0];
 
-    const vBsv = parseFloat(coin.virtual_bsv);
-    const vTok = parseFloat(coin.virtual_tokens);
-    const circulating = parseFloat(coin.circulating_supply);
+      const vBsv = parseFloat(coin.virtual_bsv);
+      const vTok = parseFloat(coin.virtual_tokens);
+      const circulating = parseFloat(coin.circulating_supply);
 
-    let newVBsv: number, newVTok: number, tokensExchanged: number, bsvExchanged: number, pricePerToken: number;
+      let newVBsv: number, newVTok: number, tokensExchanged: number, bsvExchanged: number, pricePerToken: number;
 
-    if (trade_type === "buy") {
-      const bsvIn = parseFloat(bsv_amount) || 0.01;
-      const calc = calcBuy(vBsv, vTok, bsvIn);
-      newVBsv = calc.newVBsv; newVTok = calc.newVTok;
-      tokensExchanged = calc.tokensOut; bsvExchanged = bsvIn;
-      pricePerToken = calc.pricePerToken;
+      if (trade_type === "buy") {
+        const bsvIn = parseFloat(String(bsv_amount));
+        if (!Number.isFinite(bsvIn) || bsvIn <= 0) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "bsv_amount must be greater than 0" });
+          return;
+        }
 
-      // update holding
-      await pool.query(
-        `INSERT INTO coin_holdings (id, coin_creator, holder, amount, avg_buy_price_bsv)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (coin_creator, holder) DO UPDATE SET
-           amount = coin_holdings.amount + EXCLUDED.amount,
-           avg_buy_price_bsv = (coin_holdings.avg_buy_price_bsv * coin_holdings.amount + EXCLUDED.avg_buy_price_bsv * EXCLUDED.amount) / (coin_holdings.amount + EXCLUDED.amount),
-           updated_at = NOW()`,
-        [uid(), address, trader, tokensExchanged, pricePerToken.toFixed(12)],
+        const { rows: bsvRows } = await client.query(
+          // Seeded funds are demo liquidity and should not be spendable by users.
+          `SELECT GREATEST(0, available - COALESCE(seeded, 0)) AS available
+           FROM user_balances
+           WHERE wallet_address = $1 AND asset_symbol = 'BSV'
+          FOR UPDATE`,
+          [trader],
+        );
+        if (!bsvRows.length) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient BSV balance" });
+          return;
+        }
+        const availableBsv = parseFloat((bsvRows[0] as { available?: string } | undefined)?.available ?? "0");
+        if (availableBsv < bsvIn) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient BSV balance" });
+          return;
+        }
+
+        const calc = calcBuy(vBsv, vTok, bsvIn);
+        newVBsv = calc.newVBsv; newVTok = calc.newVTok;
+        tokensExchanged = calc.tokensOut; bsvExchanged = bsvIn;
+        pricePerToken = calc.pricePerToken;
+
+        await client.query(
+          `UPDATE user_balances
+           SET available = available - $1, updated_at = NOW()
+           WHERE wallet_address = $2 AND asset_symbol = 'BSV'`,
+          [bsvIn.toFixed(8), trader],
+        );
+
+        // update holding
+        await client.query(
+          `INSERT INTO coin_holdings (id, coin_creator, holder, amount, avg_buy_price_bsv)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (coin_creator, holder) DO UPDATE SET
+             amount = coin_holdings.amount + EXCLUDED.amount,
+             avg_buy_price_bsv = (coin_holdings.avg_buy_price_bsv * coin_holdings.amount + EXCLUDED.avg_buy_price_bsv * EXCLUDED.amount) / (coin_holdings.amount + EXCLUDED.amount),
+             updated_at = NOW()`,
+          [uid(), address, trader, tokensExchanged, pricePerToken.toFixed(12)],
+        );
+      } else {
+        const tokensIn = parseFloat(String(token_amount));
+        if (!Number.isFinite(tokensIn) || tokensIn <= 0) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "token_amount must be greater than 0" });
+          return;
+        }
+
+        const { rows: holdingRows } = await client.query(
+          `SELECT amount
+           FROM coin_holdings
+           WHERE coin_creator = $1 AND holder = $2
+          FOR UPDATE`,
+          [address, trader],
+        );
+        if (!holdingRows.length) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient token balance" });
+          return;
+        }
+        const held = parseFloat((holdingRows[0] as { amount?: string } | undefined)?.amount ?? "0");
+        if (held < tokensIn) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: "Insufficient token balance" });
+          return;
+        }
+
+        const calc = calcSell(vBsv, vTok, tokensIn);
+        newVBsv = calc.newVBsv; newVTok = calc.newVTok;
+        tokensExchanged = tokensIn; bsvExchanged = calc.bsvOut;
+        pricePerToken = calc.pricePerToken;
+
+        await client.query(
+          `UPDATE coin_holdings SET amount = amount - $1, updated_at = NOW()
+            WHERE coin_creator = $2 AND holder = $3`,
+          [tokensExchanged, address, trader],
+        );
+
+        await client.query(
+          `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+           VALUES ($1, 'BSV', $2, '0', NOW())
+           ON CONFLICT (wallet_address, asset_symbol)
+           DO UPDATE SET available = user_balances.available + $2, updated_at = NOW()`,
+          [trader, bsvExchanged.toFixed(8)],
+        );
+      }
+
+      const newPrice = newVBsv / newVTok;
+      const newPriceUsd = newPrice * BSV_USD;
+      const newCirculating = trade_type === "buy" ? circulating + tokensExchanged : circulating - tokensExchanged;
+      const newMcap = (newPriceUsd * newCirculating).toFixed(2);
+      const newAth = Math.max(parseFloat(coin.ath_usd ?? "0"), newPriceUsd);
+
+      const { rows: holdersCount } = await client.query(
+        "SELECT COUNT(*) as cnt FROM coin_holdings WHERE coin_creator = $1 AND amount > 0", [address],
       );
-    } else {
-      const tokensIn = parseFloat(token_amount) || 1000;
-      const calc = calcSell(vBsv, vTok, tokensIn);
-      newVBsv = calc.newVBsv; newVTok = calc.newVTok;
-      tokensExchanged = tokensIn; bsvExchanged = calc.bsvOut;
-      pricePerToken = calc.pricePerToken;
 
-      await pool.query(
-        `UPDATE coin_holdings SET amount = GREATEST(0, amount - $1), updated_at = NOW()
-         WHERE coin_creator = $2 AND holder = $3`,
-        [tokensExchanged, address, trader],
+      await client.query(
+        `UPDATE creator_coins SET virtual_bsv = $1, virtual_tokens = $2, price_bsv = $3, price_usd = $4,
+         market_cap_usd = $5, ath_usd = $6, circulating_supply = $7,
+         volume_24h_usd = volume_24h_usd + $8, trade_count = trade_count + 1,
+         holder_count = $9 WHERE creator_address = $10`,
+        [newVBsv.toFixed(8), Math.floor(newVTok), newPrice.toFixed(12), newPriceUsd.toFixed(8),
+         newMcap, newAth.toFixed(8), Math.max(0, newCirculating), (bsvExchanged * BSV_USD).toFixed(2),
+         holdersCount[0].cnt, address],
       );
+
+      await client.query(
+        `INSERT INTO coin_trades (id, coin_creator, trader, trade_type, bsv_amount, token_amount, price_bsv, price_usd)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [uid(), address, trader, trade_type, bsvExchanged.toFixed(8), tokensExchanged, newPrice.toFixed(12), newPriceUsd.toFixed(8)],
+      );
+
+      await client.query("COMMIT");
+      res.json({
+        success: true,
+        tokensExchanged,
+        bsvExchanged: bsvExchanged.toFixed(8),
+        newPrice: newPriceUsd,
+        newMarketCap: newMcap,
+      });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      logger.error({ err, address: req.params.address }, "Creator coin trade failed");
+      res.status(500).json({ error: "Trade failed" });
+    } finally {
+      client.release();
     }
-
-    const newPrice = newVBsv / newVTok;
-    const newPriceUsd = newPrice * BSV_USD;
-    const newCirculating = trade_type === "buy" ? circulating + tokensExchanged : circulating - tokensExchanged;
-    const newMcap = (newPriceUsd * newCirculating).toFixed(2);
-    const newAth = Math.max(parseFloat(coin.ath_usd ?? "0"), newPriceUsd);
-
-    const { rows: holdersCount } = await pool.query(
-      "SELECT COUNT(*) as cnt FROM coin_holdings WHERE coin_creator = $1 AND amount > 0", [address],
-    );
-
-    await pool.query(
-      `UPDATE creator_coins SET virtual_bsv = $1, virtual_tokens = $2, price_bsv = $3, price_usd = $4,
-       market_cap_usd = $5, ath_usd = $6, circulating_supply = $7,
-       volume_24h_usd = volume_24h_usd + $8, trade_count = trade_count + 1,
-       holder_count = $9 WHERE creator_address = $10`,
-      [newVBsv.toFixed(8), Math.floor(newVTok), newPrice.toFixed(12), newPriceUsd.toFixed(8),
-       newMcap, newAth.toFixed(8), Math.max(0, newCirculating), (bsvExchanged * BSV_USD).toFixed(2),
-       holdersCount[0].cnt, address],
-    );
-
-    await pool.query(
-      `INSERT INTO coin_trades (id, coin_creator, trader, trade_type, bsv_amount, token_amount, price_bsv, price_usd)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [uid(), address, trader, trade_type, bsvExchanged.toFixed(8), tokensExchanged, newPrice.toFixed(12), newPriceUsd.toFixed(8)],
-    );
-
-    res.json({
-      success: true,
-      tokensExchanged,
-      bsvExchanged: bsvExchanged.toFixed(8),
-      newPrice: newPriceUsd,
-      newMarketCap: newMcap,
-    });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    logger.error({ err, address: req.params.address }, "Creator coin trade connection failed");
+    res.status(500).json({ error: "Trade failed" });
   }
 });
 
@@ -398,24 +515,75 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
+  let client: SqlClient | null = null;
   try {
+    client = await pool.connect() as SqlClient;
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
       res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
       return;
     }
-    await pool.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
-    await pool.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await pool.query("DELETE FROM post_comments   WHERE author = $1",                       [address]);
-    await pool.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
-    await pool.query("DELETE FROM social_posts    WHERE creator = $1",                      [address]);
-    await pool.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
-    await pool.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
-    await pool.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    await client.query("BEGIN");
+
+    const postOwnerColumn = await resolveColumn(client, "social_posts", ["creator", "author"]);
+    const commentAuthorColumn = await resolveColumn(client, "post_comments", ["wallet_address", "author"]);
+
+    await client.query("DELETE FROM social_follows WHERE follower = $1 OR following = $1", [address]);
+    await client.query("DELETE FROM post_likes WHERE wallet_address = $1", [address]);
+    await client.query("DELETE FROM post_mints WHERE minter = $1", [address]);
+
+    if (commentAuthorColumn) {
+      if (commentAuthorColumn === "wallet_address") {
+        await client.query("DELETE FROM post_comments WHERE wallet_address = $1", [address]);
+      } else if (commentAuthorColumn === "author") {
+        await client.query("DELETE FROM post_comments WHERE author = $1", [address]);
+      }
+    }
+
+    if (postOwnerColumn) {
+      if (postOwnerColumn === "creator") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
+      } else if (postOwnerColumn === "author") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE author = $1", [address]);
+      }
+    }
+
+    await client.query("DELETE FROM coin_holdings WHERE holder = $1 OR coin_creator = $1", [address]);
+    await client.query("DELETE FROM creator_coins WHERE creator_address = $1", [address]);
+    await client.query("DELETE FROM creator_profiles WHERE address = $1", [address]);
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (err: any) {
+    if (client) await client.query("ROLLBACK");
+    logger.error({ err }, "delete creator profile failed");
     res.status(500).json({ error: err?.message });
+  } finally {
+    client?.release();
   }
 });
 

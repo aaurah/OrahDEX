@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -1198,18 +1199,11 @@ function ExchangeSwapPanel({
         <div className="flex items-start justify-between text-xs gap-2">
           <span className="text-muted-foreground font-medium shrink-0 pt-0.5">Sell</span>
           <div className="flex flex-col items-end gap-0.5">
-            {fromBal != null && (
-              <span className="text-muted-foreground">
-                Exch. balance:{" "}
-                <span className="font-mono text-foreground font-semibold">{fromBal.toFixed(4)}</span>{" "}
-                {fromAsset}
-              </span>
-            )}
             {(() => {
               const wb = walletBalFor(fromAsset);
               return wb != null ? (
                 <span className="text-muted-foreground/70">
-                  Wallet:{" "}
+                  Wallet balance:{" "}
                   <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
@@ -1276,18 +1270,11 @@ function ExchangeSwapPanel({
         <div className="flex items-start justify-between text-xs gap-2">
           <span className="text-muted-foreground font-medium shrink-0 pt-0.5">Buy</span>
           <div className="flex flex-col items-end gap-0.5">
-            {balFor(toAsset) != null && (
-              <span className="text-muted-foreground">
-                Exch. balance:{" "}
-                <span className="font-mono text-foreground font-semibold">{balFor(toAsset)!.toFixed(4)}</span>{" "}
-                {toAsset}
-              </span>
-            )}
             {(() => {
               const wb = walletBalFor(toAsset);
               return wb != null ? (
                 <span className="text-muted-foreground/70">
-                  Wallet:{" "}
+                  Wallet balance:{" "}
                   <span className={`font-mono font-semibold ${wb > 0 ? "text-emerald-400" : "text-muted-foreground"}`}>
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
@@ -1374,6 +1361,7 @@ function ExchangeSwapPanel({
 export function Swap() {
   useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
   const [, setLocation] = useLocation();
+  const isMobile = useIsMobile();
 
   const { address, chainId: walletChainId, provider } = useWalletStore();
   const isOrahWallet = provider === "orah-wallet";
@@ -1507,7 +1495,7 @@ export function Swap() {
 
       let hash: `0x${string}`;
 
-      if (isOrahWallet && mode === "dex") {
+      if (isOrahWallet) {
         // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
         toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
         let account: Account;
@@ -1554,27 +1542,10 @@ export function Swap() {
       });
       setTxSuccess(true);
 
-      // Post-confirmation settlement: record on backend & credit internal balance
-      const amtOut = parseFloat(formatUnits(quote.amountOut, toToken.decimals));
-      try {
-        await fetch("/api/trade/wallet/settle", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({
-            txHash,
-            chainId,
-            walletAddress:  address,
-            assetIn:        fromToken.symbol,
-            assetOut:       toToken.symbol,
-            amountIn,
-            amountOut:      amtOut.toFixed(toToken.decimals > 6 ? 8 : 6),
-          }),
-        });
-      } catch {
-        // Non-blocking — swap succeeded, settlement recording is best-effort
-      }
-
-      toast({ title: "Swap confirmed!", description: `${amountIn} ${fromToken.symbol} → ${amtOut.toFixed(6)} ${toToken.symbol}` });
+      toast({
+        title: "Swap confirmed!",
+        description: `${amountIn} ${fromToken.symbol} → ${parseFloat(formatUnits(quote.amountOut, toToken.decimals)).toFixed(6)} ${toToken.symbol}`,
+      });
     } catch (e: any) {
       toast({ title: "Swap failed", description: e.shortMessage ?? e.message ?? "Transaction rejected.", variant: "destructive" });
     }
@@ -1598,7 +1569,7 @@ export function Swap() {
             Swap
           </button>
           <button
-            onClick={() => setLocation("/bridge")}
+            onClick={() => setLocation(isMobile ? "/deposit-bsv" : "/bridge")}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
           >
             <Link2 className="w-3.5 h-3.5" />
@@ -1650,7 +1621,7 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={fromToken}
@@ -1663,7 +1634,7 @@ export function Swap() {
                     placeholder="0.0"
                     value={amountIn}
                     onChange={e => handleAmountChange(e.target.value)}
-                    className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+                    className="flex-1 min-w-0 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
                   />
                 </div>
                 {/* Percentage quick-fill (only when balance is known) */}
@@ -1720,18 +1691,18 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={toToken}
                     onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
                     label=""
                   />
-                  <div className="flex-1 text-right">
+                  <div className="flex-1 min-w-0 text-right overflow-hidden">
                     {quoting ? (
                       <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
                     ) : (
-                      <span className={cn("text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
+                      <span className={cn("block truncate text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
                         {amountOut ? parseFloat(amountOut).toFixed(6) : "0.0"}
                       </span>
                     )}

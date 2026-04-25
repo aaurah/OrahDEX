@@ -97,10 +97,9 @@ async function mirrorTradeToVault(
     });
 
     let newTvl = vaultTvl;
-    if (event.side === "sell") {
-      const simulatedPnl = copyTotal * 0.003;
-      newTvl = vaultTvl + simulatedPnl;
-    }
+    // TVL changes only when followers deposit or withdraw — mirrored trades
+    // record the activity but do not inflate TVL with simulated profits.
+    // Share price is updated by the sync-price endpoint once real P&L is known.
 
     const totalShares = Number(vault.totalShares) || 1;
     const newSharePrice = newTvl / totalShares;

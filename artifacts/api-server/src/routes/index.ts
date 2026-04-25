@@ -73,6 +73,17 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
+// Protect all /admin routes — allow only the public auth endpoints through without a token.
+const ADMIN_OPEN_METHODS_PATHS = new Set([
+  "POST:/auth",
+  "POST:/auth/totp",
+  "POST:/auth/wallet-challenge",
+  "POST:/auth/wallet",
+]);
+router.use("/admin", (req, res, next) => {
+  if (ADMIN_OPEN_METHODS_PATHS.has(`${req.method}:${req.path}`)) return next();
+  return requireAdminToken(req, res, next);
+});
 router.use("/admin", adminRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
@@ -772,7 +783,7 @@ router.post("/connect-session", (_req, res) => {
 router.get("/connect-session/:token", (req, res) => {
   const session = connectSessions.get(req.params.token);
   if (!session || session.expiresAt < Date.now()) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    res.status(404).json({ error: "Session not found or expired" }); return;
   }
   res.json({ status: session.status, address: session.address, chain: session.chain, walletType: session.walletType });
 });
@@ -781,10 +792,10 @@ router.get("/connect-session/:token", (req, res) => {
 router.put("/connect-session/:token", (req, res) => {
   const session = connectSessions.get(req.params.token);
   if (!session || session.expiresAt < Date.now()) {
-    return res.status(404).json({ error: "Session not found or expired" });
+    res.status(404).json({ error: "Session not found or expired" }); return;
   }
   const { address, chain, walletType } = req.body as { address?: string; chain?: string; walletType?: string };
-  if (!address) return res.status(400).json({ error: "address is required" });
+  if (!address) { res.status(400).json({ error: "address is required" }); return; }
   session.status = "connected";
   session.address = address;
   session.chain = chain ?? "BSV";

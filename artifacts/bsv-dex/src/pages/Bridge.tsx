@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
-import { DepositSheet } from "@/components/trading/DepositSheet";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -102,31 +101,26 @@ const SLIPPAGE_PRESETS = [0.1, 0.5, 1.0, 2.0];
 // ─── Canonical L1 → L2 asset mapping ─────────────────────────────────────────
 interface CanonicalL2 {
   chainId: string; chain: string; symbol: string; label: string;
-  type: "canonical" | "wrapped" | "exchange"; bridge: string; time: string; color: string; bg: string;
+  type: "canonical" | "wrapped" | "cctp"; bridge: string; time: string; color: string; bg: string;
 }
 interface CanonicalAsset {
   l1: { chainId: string; chain: string; symbol: string; color: string; icon: string };
   l2: CanonicalL2[];
 }
-// OrahDEX Exchange direct-deposit entry prepended to every coin's l2 list
-function exchangeEntry(coin: string, nativeChain: string): CanonicalL2 {
-  return {
-    chainId: "orah-exchange",
-    chain:   `${nativeChain} → OrahDEX`,
-    symbol:  coin,
-    label:   `${coin} direct deposit`,
-    type:    "exchange",
-    bridge:  "OrahDEX Exchange",
-    time:    "~5 min",
-    color:   "text-green-400",
-    bg:      "bg-green-500/10 border-green-500/30",
-  };
-}
-
+type CctpIntentStatus = "created" | "attested" | "completed";
+const CCTP_CHAIN_IDS: Record<string, number> = {
+  eth: 1,
+  op: 10,
+  arb: 42161,
+  base: 8453,
+  poly: 137,
+};
+const CCTP_POLL_INTERVAL_MS = 4000;
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
-    l2: [exchangeEntry("BSV", "BSV Mainnet"),
+    l2: [
       { chainId: "eth",      chain: "Ethereum",   symbol: "wBSV", label: "wBSV (ERC-20)",        type: "wrapped",   bridge: "OrahDEX HTLC",          time: "~5 min",  color: "text-violet-400",  bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "base",     chain: "Base",        symbol: "wBSV", label: "wBSV on Base",         type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "arb",      chain: "Arbitrum",    symbol: "wBSV", label: "wBSV on Arbitrum",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/30" },
@@ -152,7 +146,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   BTC: {
     l1: { chainId: "btc", chain: "Bitcoin", symbol: "BTC", color: "text-orange-400", icon: "₿" },
-    l2: [exchangeEntry("BTC", "Bitcoin Mainnet"),
+    l2: [
       { chainId: "eth",  chain: "Ethereum", symbol: "WBTC",  label: "WBTC (ERC-20)",  type: "wrapped",   bridge: "BitGo WBTC DAO",   time: "~6 hrs",  color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
       { chainId: "base", chain: "Base",     symbol: "cbBTC", label: "cbBTC on Base",  type: "wrapped",   bridge: "Coinbase cbBTC",   time: "~1 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "bnb",  chain: "BNB Chain",symbol: "BTCB",  label: "BTCB (BEP-20)",  type: "wrapped",   bridge: "Binance Bridge",   time: "~10 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
@@ -161,7 +155,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   ETH: {
     l1: { chainId: "eth", chain: "Ethereum", symbol: "ETH", color: "text-violet-400", icon: "⬡" },
-    l2: [exchangeEntry("ETH", "Ethereum Mainnet"),
+    l2: [
       { chainId: "base",   chain: "Base",       symbol: "ETH", label: "ETH on Base (canonical)",    type: "canonical", bridge: "Base Canonical Bridge",    time: "~7 min",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "arb",    chain: "Arbitrum",   symbol: "ETH", label: "ETH on Arbitrum (canonical)", type: "canonical", bridge: "Arbitrum Canonical Bridge", time: "~10 min", color: "text-sky-400",    bg: "bg-sky-500/10 border-sky-500/30" },
       { chainId: "op",     chain: "Optimism",   symbol: "ETH", label: "ETH on Optimism (canonical)", type: "canonical", bridge: "OP Canonical Bridge",       time: "~1 min",  color: "text-red-400",    bg: "bg-red-500/10 border-red-500/30" },
@@ -178,7 +172,7 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   SOL: {
     l1: { chainId: "sol", chain: "Solana", symbol: "SOL", color: "text-cyan-400", icon: "◎" },
-    l2: [exchangeEntry("SOL", "Solana Mainnet"),
+    l2: [
       { chainId: "eth",  chain: "Ethereum", symbol: "wSOL",  label: "wSOL (ERC-20)",   type: "wrapped", bridge: "Wormhole Bridge",   time: "~15 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "base", chain: "Base",     symbol: "wSOL",  label: "wSOL on Base",    type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
       { chainId: "bnb",  chain: "BNB Chain",symbol: "wSOL",  label: "wSOL (BEP-20)",   type: "wrapped", bridge: "Wormhole + Relay",  time: "~15 min", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
@@ -186,51 +180,22 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   },
   BNB: {
     l1: { chainId: "bnb", chain: "BNB Chain", symbol: "BNB", color: "text-yellow-400", icon: "◈" },
-    l2: [exchangeEntry("BNB", "BNB Chain"),
+    l2: [
       { chainId: "eth",  chain: "Ethereum", symbol: "wBNB",  label: "wBNB (ERC-20)",   type: "wrapped", bridge: "Binance Bridge",    time: "~10 min", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/30" },
       { chainId: "poly", chain: "Polygon",  symbol: "wBNB",  label: "wBNB on Polygon", type: "wrapped", bridge: "Polygon Bridge",    time: "~8 min",  color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+    ],
+  },
+  USDC: {
+    l1: { chainId: "eth", chain: "Ethereum", symbol: "USDC", color: "text-blue-400", icon: "◉" },
+    l2: [
+      { chainId: "base", chain: "Base", symbol: "USDC", label: "USDC via CCTP", type: "cctp", bridge: "Circle CCTP", time: "~2 min", color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb", chain: "Arbitrum", symbol: "USDC", label: "USDC via CCTP", type: "cctp", bridge: "Circle CCTP", time: "~3 min", color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op", chain: "Optimism", symbol: "USDC", label: "USDC via CCTP", type: "cctp", bridge: "Circle CCTP", time: "~3 min", color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
     ],
   },
 };
 
 const L1_COINS = Object.keys(CANONICAL_ASSETS);
-
-// Map l2 chainId strings → EVM numeric chain IDs for DepositSheet
-const CHAIN_ID_MAP: Record<string, number> = {
-  "orah-exchange": 1,
-  eth:      1,
-  base:     8453,
-  arb:      42161,
-  op:       10,
-  poly:     137,
-  bnb:      56,
-  avax:     43114,
-  zksync:   324,
-  linea:    59144,
-  scroll:   534352,
-  mantle:   5000,
-  blast:    81457,
-  mode:     34443,
-  boba:     288,
-  metis:    1088,
-  taiko:    167000,
-  gnosis:   100,
-  celo:     42220,
-  moonbeam: 1284,
-  sonic:    146,
-  degen:    666666666,
-  xai:      660279,
-  apechain: 33139,
-  zora:     7777777,
-  redstone: 690,
-  treasure: 978658,
-  hypr:     1002,
-  // L1s
-  btc:      1,   // fallback to ETH mainnet for BTC wrapping
-  sol:      1,   // fallback
-  tron:     1,
-  dot:      1,
-};
 
 // ─── Canonical Deposit / Withdraw panel ──────────────────────────────────────
 
@@ -243,20 +208,29 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
   const [running, setRunning] = useState(false);
   const [withdrawTx, setWithdrawTx] = useState<{ txid: string; explorer?: string } | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
-  const [depositSheetOpen, setDepositSheetOpen] = useState(false);
+  const [cctpIntentId, setCctpIntentId] = useState<string | null>(null);
+  const [cctpStatus, setCctpStatus] = useState<CctpIntentStatus | null>(null);
+  const [cctpError, setCctpError] = useState<string | null>(null);
   const { address, chainId: walletChainId } = useWalletStore();
+  const cctpPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMountedRef = useRef(true);
 
   const asset = CANONICAL_ASSETS[coin];
   const l2Options = asset.l2;
   const l2 = l2Options[Math.min(l2ChainIdx, l2Options.length - 1)];
-  const isExchangeDirect = l2.type === "exchange";
   const l1Price = SPOT_PRICES[coin] ?? 1;
   const usdValue = parseFloat(amount || "0") * l1Price;
-  const depositChainId = CHAIN_ID_MAP[l2.chainId] ?? 1;
 
   // deposit steps: lock → detect → mint → trade
   // withdraw steps: burn → verify → unlock → received
-  const STEPS = mode === "deposit"
+  const STEPS = mode === "deposit" && l2.type === "cctp"
+    ? [
+        { icon: <Flame className="w-4 h-4" />,       label: `Burn ${coin} on ${asset.l1.chain}`, detail: `Approve and burn ${coin} on ${asset.l1.chain} with Circle CCTP contracts` },
+        { icon: <Shield className="w-4 h-4" />,      label: "Circle attestation",                  detail: "Circle verifies burn event and generates cross-chain attestation" },
+        { icon: <Coins className="w-4 h-4" />,       label: `Mint ${l2.symbol} on ${l2.chain}`,   detail: `${l2.symbol} is minted on ${l2.chain} to your recipient wallet` },
+        { icon: <CheckCircle2 className="w-4 h-4" />, label: `${l2.symbol} ready`,                 detail: `Transfer complete — funds are available on ${l2.chain}` },
+      ]
+    : mode === "deposit"
     ? [
         { icon: <Lock className="w-4 h-4" />,        label: `Lock ${coin} on ${asset.l1.chain}`,  detail: `Send ${coin} to the canonical bridge contract — funds locked as collateral` },
         { icon: <Shield className="w-4 h-4" />,      label: "Bridge verifies deposit",             detail: `${l2.bridge} detects your L1 ${coin} within 1 confirmation` },
@@ -269,6 +243,122 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         { icon: <Unlock className="w-4 h-4" />,      label: `Unlock ${coin} on ${asset.l1.chain}`, detail: `Canonical bridge contract releases your locked ${coin}` },
         { icon: <CheckCircle2 className="w-4 h-4" />, label: `${coin} received on L1`,             detail: `Real ${coin} in your wallet — fully on-chain, non-custodial` },
       ];
+
+  const clearCctpPolling = useCallback(() => {
+    if (cctpPollRef.current) {
+      clearInterval(cctpPollRef.current);
+      cctpPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      clearCctpPolling();
+    };
+  }, [clearCctpPolling]);
+
+  const pollCctpStatus = useCallback(async (id: string) => {
+    if (!isMountedRef.current) return;
+    try {
+      const res = await fetch(`/api/bridge/cctp/intent/${id}`);
+      if (!res.ok) {
+        console.warn("CCTP polling returned non-OK status", res.status);
+        return;
+      }
+      const data = await res.json() as unknown;
+      if (!data || typeof data !== "object" || !("status" in data)) return;
+      const status = (data as { status?: unknown }).status;
+      if (status !== "created" && status !== "attested" && status !== "completed") return;
+      if (!isMountedRef.current) return;
+
+      setCctpStatus(status);
+      if (status === "created") setStep(1);
+      if (status === "attested") setStep(2);
+      if (status === "completed") {
+        setStep(4);
+        setRunning(false);
+        clearCctpPolling();
+      }
+    } catch (err) {
+      console.warn("CCTP polling failed; retrying", err);
+    }
+  }, [clearCctpPolling]);
+
+  const handleStartCctp = async () => {
+    if (running || !amount || parseFloat(amount) <= 0 || !address) return;
+    const sourceChainId = CCTP_CHAIN_IDS[asset.l1.chainId];
+    const destinationChainId = CCTP_CHAIN_IDS[l2.chainId];
+    if (!sourceChainId || !destinationChainId) {
+      setCctpError("Selected route is not supported for CCTP yet.");
+      return;
+    }
+    if (!EVM_ADDRESS_REGEX.test(address)) {
+      setCctpError("Invalid EVM wallet address format. Please connect a valid EVM wallet.");
+      return;
+    }
+
+    setRunning(true);
+    setStep(1);
+    setCctpError(null);
+    setWithdrawError(null);
+    setWithdrawTx(null);
+    setCctpIntentId(null);
+    setCctpStatus(null);
+    clearCctpPolling();
+
+    try {
+      const res = await fetch("/api/bridge/cctp/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceChainId,
+          destinationChainId,
+          amount,
+          sender: address,
+          recipient: address,
+          asset: "USDC",
+        }),
+      });
+      const data = await (async (): Promise<{ id?: string; status?: CctpIntentStatus; error?: string }> => {
+        const parsed = await res.json() as unknown;
+        if (!parsed || typeof parsed !== "object") {
+          throw new Error("Unexpected response shape");
+        }
+        const obj = parsed as { id?: unknown; status?: unknown; error?: unknown };
+        return {
+          id: typeof obj.id === "string" ? obj.id : undefined,
+          status: obj.status === "created" || obj.status === "attested" || obj.status === "completed" ? obj.status : undefined,
+          error: typeof obj.error === "string" ? obj.error : undefined,
+        };
+      })();
+      if (!res.ok || !data.id) throw new Error(data.error ?? "Failed to create CCTP transfer intent");
+
+      const intentId = data.id;
+      setCctpIntentId(intentId);
+      const nextStatus = data.status ?? "created";
+      setCctpStatus(nextStatus);
+      if (nextStatus === "created") setStep(1);
+      if (nextStatus === "attested") setStep(2);
+      if (nextStatus === "completed") {
+        setStep(4);
+        setRunning(false);
+        return;
+      }
+
+      if (nextStatus !== "completed" && isMountedRef.current) {
+        cctpPollRef.current = setInterval(() => {
+          void pollCctpStatus(intentId);
+        }, CCTP_POLL_INTERVAL_MS);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to start CCTP transfer.";
+      setCctpError(`${message} Please try again, or contact support if this keeps happening.`);
+      setRunning(false);
+      setStep(0);
+    }
+  };
 
   const handleRun = async () => {
     if (running || !amount || parseFloat(amount) <= 0 || !address) return;
@@ -317,12 +407,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         <div className={cn("rounded-2xl border bg-gradient-to-br p-3", accentBg)}>
           <div className={cn("flex items-center gap-2", accentColor)}>
             {isDeposit ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
-            <span className="font-semibold text-sm">
-              {isDeposit && isExchangeDirect
-                ? `Send ${coin} to your deposit address — credited to your OrahDEX balance within ~5 min.`
-                : isDeposit
-                  ? `Bridge ${coin} from L1 to ${l2.chain} via ${l2.bridge}.`
-                  : `Withdraw ${coin} back to your wallet on ${asset.l1.chain}.`}
+              <span className="font-semibold text-sm">
+              {isDeposit
+                ? l2.type === "cctp"
+                  ? `Bridge ${coin} from ${asset.l1.chain} to ${l2.chain} using ${l2.bridge}.`
+                  : `Bridge ${coin} from L1 to ${l2.chain} via ${l2.bridge}.`
+                : `Withdraw ${coin} back to your wallet on ${asset.l1.chain}.`}
             </span>
           </div>
         </div>
@@ -385,11 +475,11 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
                   <div className={cn("text-xs font-bold", l2opt.color)}>{l2opt.symbol}</div>
                   <div className="flex items-center justify-end gap-1 mt-0.5">
                     <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border",
-                      l2opt.type === "exchange"   ? "bg-green-500/15 border-green-500/40 text-green-300" :
+                      l2opt.type === "cctp"       ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300" :
                       l2opt.type === "canonical"  ? "bg-green-500/10 border-green-500/30 text-green-400" :
                                                     "bg-amber-500/10 border-amber-500/30 text-amber-400"
                     )}>
-                      {l2opt.type === "exchange" ? "EXCHANGE" : l2opt.type === "canonical" ? "CANONICAL" : "WRAPPED"}
+                      {l2opt.type === "cctp" ? "CCTP" : l2opt.type === "canonical" ? "CANONICAL" : "WRAPPED"}
                     </span>
                     <span className="text-[10px] text-muted-foreground">{l2opt.time}</span>
                   </div>
@@ -399,51 +489,78 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           </div>
         </div>
 
-        {/* Deposit address — available for ALL chain destinations */}
+        {/* Deposit / route information */}
         {isDeposit && (
           <div className="rounded-2xl border border-green-500/30 bg-green-500/8 p-4 space-y-3">
             <div className="flex items-center gap-2 text-green-400">
               <ArrowDown className="w-4 h-4" />
-              <span className="text-sm font-bold">
-                {isExchangeDirect
-                  ? `Deposit ${coin} → OrahDEX Exchange`
-                  : `Deposit ${coin} via ${l2.chain}`}
-              </span>
+              <span className="text-sm font-bold">Direct Wallet-to-Wallet Contract Route</span>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              {isExchangeDirect
-                ? `Get your personal deposit address on ${asset.l1.chain}. Send ${coin} and verify the tx hash — your balance is credited within ~5 min.`
-                : `Get your deposit address on ${l2.chain} (${l2.bridge}). Send ${coin} and paste the tx hash to credit your balance.`}
+              {l2.type === "cctp"
+                ? `No exchange deposit address is used. Burn ${coin} on ${asset.l1.chain} and mint ${l2.symbol} on ${l2.chain} via Circle CCTP settlement contracts.`
+                : `No exchange deposit address is used. Settlement is contract-based and wallet-to-wallet (HTLC/canonical bridge), keeping flow non-custodial.`}
             </p>
             {address ? (
-              <button
-                onClick={() => setDepositSheetOpen(true)}
-                className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
-              >
-                <ArrowDown className="w-4 h-4" />
-                Get My {l2.chain} Deposit Address
-              </button>
+              l2.type === "cctp" ? (
+                <button
+                  onClick={handleStartCctp}
+                  disabled={!amount || parseFloat(amount) <= 0 || running}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-blue-500 to-cyan-500 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                >
+                  {running ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      {cctpStatus === "attested" ? "Minting on destination…" : "Waiting for attestation…"}
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-4 h-4" />
+                      Start CCTP Transfer
+                    </>
+                  )}
+                </button>
+              ) : (
+                <a
+                  href="/spot"
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-green-500 to-emerald-600 shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2"
+                >
+                  <ArrowLeftRight className="w-4 h-4" />
+                  Continue with Contract Settlement
+                </a>
+              )
             ) : (
               <div className="flex items-start gap-2 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                Connect your wallet to get your personal deposit address.
+                Connect your wallet to continue with contract-based wallet settlement.
               </div>
             )}
           </div>
         )}
 
-        {/* Deposit Sheet dialog */}
-        {address && (
-          <DepositSheet
-            open={depositSheetOpen}
-            onClose={() => setDepositSheetOpen(false)}
-            walletAddress={address}
-            chainId={depositChainId}
-          />
+        {cctpIntentId && (
+          <div className="rounded-2xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-blue-300">CCTP transfer intent</span>
+              <span className={cn(
+                "px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide",
+                cctpStatus === "completed"
+                  ? "border-green-500/40 bg-green-500/10 text-green-400"
+                  : cctpStatus === "attested"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                    : "border-blue-500/40 bg-blue-500/10 text-blue-300"
+              )}>
+                {cctpStatus ?? "created"}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground break-all">
+              Intent ID: <span className="font-mono text-foreground">{cctpIntentId}</span>
+            </div>
+          </div>
         )}
 
         {/* You will receive / you will unlock */}
-        {!isExchangeDirect && amount && parseFloat(amount) > 0 && (
+        {amount && parseFloat(amount) > 0 && (
           <div className={cn("rounded-2xl border p-4 space-y-2", isDeposit ? "border-green-500/20 bg-green-500/5" : "border-orange-500/20 bg-orange-500/5")}>
             <div className={cn("text-xs font-semibold uppercase tracking-wide", accentColor)}>
               {isDeposit ? "You Will Receive" : "You Will Unlock"}
@@ -465,12 +582,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         {!address && (
           <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            Connect your wallet to {isDeposit ? "get your deposit address" : "initiate a withdrawal"}.
+            Connect your wallet to {isDeposit ? "start direct contract bridging" : "initiate a withdrawal"}.
           </div>
         )}
 
         {/* Action button — only for withdraw (deposit uses the address flow above) */}
-        {!isExchangeDirect && !isDeposit && (
+        {!isDeposit && (
           <button
             onClick={handleRun}
             disabled={!amount || parseFloat(amount) <= 0 || running || !address}
@@ -513,6 +630,12 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-400">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{withdrawError}</span>
+          </div>
+        )}
+        {cctpError && (
+          <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-400">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{cctpError}</span>
           </div>
         )}
       </div>
@@ -1353,7 +1476,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
               )}
               {isInsuf && (
                 <div className="text-[11px] text-red-400 mt-1">
-                  Insufficient — Min: {minBsv} BSV, Max: {maxBsv.toLocaleString()} BSV. You have: 9.3e-7 BSV
+                  Insufficient — Min: {minBsv} BSV, Max: {maxBsv.toLocaleString()} BSV. Deposit BSV gas to continue.
                 </div>
               )}
             </div>

@@ -12,10 +12,11 @@
  *     and charged a 0.5 % liquidation fee that goes to the platform.
  */
 
-import { db } from "@workspace/db";
+import { pool, db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { liquidateFuturesPosition } from "./futuresSettlement.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -111,7 +112,6 @@ async function runLiquidationCycle(): Promise<void> {
     for (const pos of positions) {
       const markPrice  = priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
       const liqPrice   = parseFloat(pos.liquidationPrice) || 0;
-      const margin     = parseFloat(pos.margin)           || 0;
       if (markPrice <= 0 || liqPrice <= 0) continue;
 
       const isLiquidated =
@@ -119,19 +119,16 @@ async function runLiquidationCycle(): Promise<void> {
         pos.side === "short" ? markPrice >= liqPrice : false;
 
       if (isLiquidated) {
-        /* close the position in DB */
-        await db.update(futuresPositionsTable)
-          .set({ status: "liquidated", closedAt: new Date(), markPrice: markPrice.toFixed(8) })
-          .where(and(
-            eq(futuresPositionsTable.id, pos.id),
-            eq(futuresPositionsTable.status, "open"),
-          ));
-
-        const fee = margin * LIQUIDATION_FEE;
+        /* Delegate to the canonical liquidation function which:
+         *   - confiscates (removes) the locked margin from futures_margin_accounts
+         *   - marks the position row as "liquidated" with optimistic concurrency check
+         * This replaces the previous raw DB update that left margin stranded. */
+        const liqResult = await liquidateFuturesPosition(pos.id, markPrice);
+        const fee = liqResult.loss * LIQUIDATION_FEE;
         realLiqFees += fee;
 
         logger.info(
-          { positionId: pos.id, symbol: pos.symbol, side: pos.side, markPrice, liqPrice, fee: fee.toFixed(4) },
+          { positionId: pos.id, symbol: pos.symbol, side: pos.side, markPrice, liqPrice, marginLost: liqResult.loss, fee: fee.toFixed(4) },
           "Futures profit engine: position liquidated",
         );
       }
