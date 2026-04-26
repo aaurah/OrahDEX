@@ -215,7 +215,12 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       price:      fillPrice.toString(),
     });
   } catch (err) {
-    log.warn({ err, tradeId }, "spotSettlement: ledger settlement failed");
+    // Ledger settlement is the source of truth for balances.
+    // A failure here (e.g. SETTLEMENT_INSUFFICIENT_LOCK) means the fill cannot
+    // be credited — propagate so the caller can roll back the order state and
+    // avoid creating phantom balances.
+    log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill");
+    throw err;
   }
 
   // ── 6. Register HTLC with watcher (Relayer Keeper notifications) ─────────

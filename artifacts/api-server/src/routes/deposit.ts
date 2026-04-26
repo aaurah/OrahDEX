@@ -204,7 +204,25 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       return;
     }
 
-    const tx = await txRes.json() as { vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[] };
+    const tx = await txRes.json() as {
+      vin?:  { addr?: string }[];
+      vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[];
+    };
+
+    // Verify the transaction's sending address matches the claimed walletAddress.
+    // For BSV P2PKH wallets this is a direct address comparison. Skip the check
+    // for EVM addresses (0x…) since they identify the exchange account, not the
+    // BSV sending address.
+    if (!walletAddress.startsWith("0x")) {
+      const senderAddr = tx.vin?.[0]?.addr;
+      if (!senderAddr || senderAddr.toLowerCase() !== walletAddress.toLowerCase()) {
+        res.status(403).json({
+          error: "Transaction sender does not match walletAddress. " +
+                 "Only the owner of the BSV wallet that sent this transaction may claim the deposit.",
+        });
+        return;
+      }
+    }
 
     // Find output paying to deposit address
     const output = tx.vout?.find(o =>
@@ -448,6 +466,21 @@ router.post("/deposit/solana-verify", async (req, res) => {
     if (depIdx === -1) {
       res.status(400).json({ error: "Transaction does not send SOL to the OrahDEX deposit address. Please ensure you sent to the correct address." });
       return;
+    }
+
+    // Verify the fee-payer (accountKeys[0]) is the claimed walletAddress.
+    // For Solana-native wallets, the walletAddress should match the transaction
+    // sender (base58 public key). Skip this check for EVM addresses (0x…) since
+    // they identify the exchange account rather than the Solana signing key.
+    if (!walletAddress.startsWith("0x")) {
+      const senderKey = accountKeys[0]?.pubkey;
+      if (!senderKey || senderKey !== walletAddress) {
+        res.status(403).json({
+          error: "Transaction sender does not match walletAddress. " +
+                 "Only the wallet that sent this transaction may claim the deposit.",
+        });
+        return;
+      }
     }
 
     const pre  = tx.meta?.preBalances?.[depIdx]  ?? 0;
