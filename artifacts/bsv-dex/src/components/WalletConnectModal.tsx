@@ -1040,7 +1040,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }
     setImportAddress(addr);
     connect({ address: addr, provider: "orah-wallet", network: "evm", chainId: 1 });
-    setInternalEvmAddress(addr);
     setImportStep("done");
     setTimeout(() => goToPrep(addr, "evm", "orah-wallet"), 1500);
   };
@@ -2404,7 +2403,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                           setRestoredFromBackup(true);
                                           setPasskeyStep("done");
                                           connect({ address: wallet.address, provider: "orah-wallet", network: "evm", chainId: 1 });
-                                          setInternalEvmAddress(wallet.address);
                                           setTimeout(() => goToPrep(wallet.address, "evm", "passkey"), 2000);
                                         } catch (err: any) {
                                           setTransferCodeError(err?.message ?? "Transfer failed");

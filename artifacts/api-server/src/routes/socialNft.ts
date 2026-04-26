@@ -3,7 +3,6 @@ import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
-const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
 
 function uid(): string { return crypto.randomUUID(); }
 
@@ -52,23 +51,7 @@ router.get("/social/posts/:id", async (req, res) => {
     if (!posts.length) { res.status(404).json({ error: "Post not found" }); return; }
 
     const { rows: comments } = await pool.query(
-      `SELECT
-         pc.id,
-         pc.post_id,
-         pc.wallet_address,
-         CASE
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
-           ELSE pc.wallet_address
-         END AS display_name,
-         pc.content,
-         pc.created_at
-       FROM post_comments pc
-       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(pc.wallet_address)
-       WHERE pc.post_id = $1
-       ORDER BY pc.created_at DESC
-       LIMIT 50`,
-      [req.params.id],
+      "SELECT * FROM post_comments WHERE post_id = $1 ORDER BY created_at DESC LIMIT 50", [req.params.id],
     );
     const { rows: mints } = await pool.query(
       "SELECT * FROM post_mints WHERE post_id = $1 ORDER BY created_at DESC LIMIT 20", [req.params.id],
@@ -164,42 +147,14 @@ router.post("/social/posts/:id/comment", async (req, res) => {
     const { wallet_address, display_name, content } = req.body as Record<string, string>;
     if (!wallet_address || !content) { res.status(400).json({ error: "wallet_address and content required" }); return; }
 
-    const { rows: creatorRows } = await pool.query(
-      "SELECT username FROM creator_profiles WHERE LOWER(address) = LOWER($1) LIMIT 1",
-      [wallet_address],
-    );
-    const profileUsername = creatorRows[0]?.username?.trim();
-    const submittedDisplayName = display_name?.trim();
-    const resolvedDisplayName = (profileUsername && !ADDRESS_LIKE_RE.test(profileUsername))
-      ? profileUsername
-      : (submittedDisplayName && !ADDRESS_LIKE_RE.test(submittedDisplayName)
-        ? submittedDisplayName
-        : wallet_address.slice(0, 8));
-
     await pool.query(
       "INSERT INTO post_comments (id, post_id, wallet_address, display_name, content) VALUES ($1,$2,$3,$4,$5)",
-      [uid(), req.params.id, wallet_address, resolvedDisplayName, content],
+      [uid(), req.params.id, wallet_address, display_name ?? wallet_address.slice(0, 8), content],
     );
     await pool.query("UPDATE social_posts SET comment_count = comment_count + 1 WHERE id = $1", [req.params.id]);
 
     const { rows } = await pool.query(
-      `SELECT
-         pc.id,
-         pc.post_id,
-         pc.wallet_address,
-         CASE
-           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
-           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
-           ELSE pc.wallet_address
-         END AS display_name,
-         pc.content,
-         pc.created_at
-       FROM post_comments pc
-       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(pc.wallet_address)
-       WHERE pc.post_id = $1
-       ORDER BY pc.created_at DESC
-       LIMIT 20`,
-      [req.params.id],
+      "SELECT * FROM post_comments WHERE post_id = $1 ORDER BY created_at DESC LIMIT 20", [req.params.id],
     );
     res.json({ success: true, comments: rows });
   } catch (err: any) {

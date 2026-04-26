@@ -13,7 +13,6 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
 import { disconnectReown } from "@/lib/reown";
-import { resolveNftSpendBalance } from "@/lib/nftBalance";
 
 const API = "/api";
 
@@ -64,19 +63,6 @@ interface Holding { coin_creator: string; holder: string; amount: number; userna
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
-const MIN_ADDRESS_LIKE_LENGTH = 24;
-function isAddressLike(value: string) {
-  const v = value.trim();
-  if (!v) return false;
-  if (v.includes("…")) return true;
-  if (v.startsWith("0x")) return true;
-  return new RegExp(`^[A-Za-z0-9]{${MIN_ADDRESS_LIKE_LENGTH},}$`).test(v);
-}
-function commentHandle(comment: Comment) {
-  const displayName = comment.display_name?.trim();
-  if (displayName && !isAddressLike(displayName)) return displayName;
-  return "user";
-}
 function fmtNum(raw: unknown) {
   const n = Number(raw);
   if (!n || !isFinite(n)) return "0";
@@ -110,7 +96,7 @@ function getNftProfileAddress({
   internalEvmAddress: string | null;
 }) {
   if (!address) return null;
-  if (provider === "orah-wallet" && internalEvmAddress) return internalEvmAddress;
+  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 
@@ -182,22 +168,22 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances(isEvm ? address : null, chainId ?? null);
+  const { balances: evmBalances } = useEvmBalances();
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
   const availableBsvNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? Number(nativeEvmBalance.amount) || 0 : 0)
+    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
   const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -410,7 +396,6 @@ function CreatorProfileSheet({
   const [imgErr, setImgErr] = useState(false);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
-  const [holdingItems, setHoldingItems] = useState<any[]>([]);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -422,10 +407,6 @@ function CreatorProfileSheet({
       .then(r => r.json())
       .then(d => setMints(d.mints ?? []))
       .catch(() => {});
-    fetch(`${API}/social/holdings/${creatorAddress}`)
-      .then(r => r.ok ? r.json() : {})
-      .then(d => setHoldingItems(Array.isArray(d.holdings) ? d.holdings : []))
-      .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 
   async function toggleFollow() {
@@ -451,9 +432,7 @@ function CreatorProfileSheet({
     } else {
       const res = await fetch(`${API}/social/holdings/${creatorAddress}`).catch(() => null);
       const d = res?.ok ? await res.json() : {};
-      const holdings = Array.isArray(d.holdings) ? d.holdings : [];
-      setHoldingItems(holdings);
-      setStatSheet({ type, items: holdings });
+      setStatSheet({ type, items: d.holdings ?? [] });
     }
   }
 
@@ -522,7 +501,7 @@ function CreatorProfileSheet({
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
               </button>
               <button className="active:opacity-60" onClick={() => openStatSheet("holding")}>
-                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(holdingItems.length)}</div>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.trade_count ?? 0)}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holding</div>
               </button>
             </div>
@@ -1175,8 +1154,7 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   const [commentText, setCommentText] = useState("");
   const [loadingC, setLoadingC] = useState(true);
   const [imgErr, setImgErr] = useState(false);
-  const { address, provider, network, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address } = useWalletStore();
   const soldOut = post.max_supply !== null && post.mint_count >= post.max_supply;
 
   useEffect(() => {
@@ -1184,9 +1162,9 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   }, [post.id]);
 
   async function submitComment() {
-    if (!commentText.trim() || !actorAddress) return;
+    if (!commentText.trim() || !address) return;
     const txt = commentText; setCommentText("");
-    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: actorAddress, content: txt }) }).catch(() => {});
+    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address, content: txt, display_name: shortAddr(address) }) }).catch(() => {});
     const d = await fetch(`${API}/social/posts/${post.id}`).then(r => r.json()).catch(() => ({}));
     setComments(d.comments ?? []);
   }
@@ -1241,8 +1219,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
             : comments.length === 0 ? <div className="text-center py-6 text-xs" style={{ color: "var(--color-text-secondary)" }}>Be the first to comment</div>
             : comments.map(c => (
               <div key={c.id} className="flex gap-2.5 mb-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{commentHandle(c)[0]?.toUpperCase() ?? "?"}</div>
-                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{commentHandle(c)}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{c.display_name?.[0]?.toUpperCase() ?? "?"}</div>
+                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{c.display_name}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
                   <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{c.content}</p></div>
               </div>
             ))}
@@ -1294,32 +1272,30 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(isEvm ? address : null, chainId ?? null);
-  const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
-    isEvm,
-    isOrahWallet,
-    storeBalance,
-    evmBalances,
-    evmBalancesLoading,
-    mintCurrency: post.mint_currency,
-  });
+  const { balances: evmBalances } = useEvmBalances();
+  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
+  const availableNum = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    : parseFloat(String(storeBalance ?? "0")) || 0;
+  const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
+  const availableLabel = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && mintPrice > 0 && availableNum < mintPrice;
+  const isBsvMint = !isEvm || post.mint_currency === "BSV";
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
   const [, navigate] = useLocation();
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
-    if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
+      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: address }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Mint failed");
       setDone(true);
@@ -1333,18 +1309,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
     if (!price || price <= 0) { setError("Enter a valid price"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/nft/listings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nftId: post.id,
-          collectionId: "social-posts",
-          seller: address,
-          chain: post.chain,
-          price: String(price),
-          currency: post.mint_currency || "BSV",
-        }),
-      });
+      const res = await fetch(`${API}/nft/listings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }) });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to list");
       setDone(true);
@@ -1403,24 +1368,6 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
                 {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
                 {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-                <div className="mt-4 rounded-xl overflow-hidden" style={{ border: "1px solid var(--color-border)" }}>
-                  <button
-                    onClick={() => setShowAdvanced(v => !v)}
-                    className="w-full px-3 py-2.5 text-xs font-bold flex items-center justify-between"
-                    style={{ background: "var(--color-surface)", color: "var(--color-text)" }}
-                  >
-                    <span>Advanced NFT Details</span>
-                    <ChevronRight size={14} style={{ transform: showAdvanced ? "rotate(90deg)" : undefined, transition: "transform 0.2s ease" }} />
-                  </button>
-                  {showAdvanced && (
-                    <div className="px-3 py-2.5 text-[11px] space-y-1.5" style={{ background: "rgba(255,255,255,0.02)", color: "var(--color-text-secondary)" }}>
-                      <div className="flex justify-between gap-2"><span>Post ID</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.id}</span></div>
-                      <div className="flex justify-between gap-2"><span>Creator</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.creator}</span></div>
-                      <div className="flex justify-between gap-2"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-text)" }}>{post.chain}</span></div>
-                      <div className="flex justify-between gap-2"><span>Currency</span><span style={{ color: "var(--color-text)" }}>{post.mint_currency}</span></div>
-                    </div>
-                  )}
-                </div>
                 <button onClick={doMint} disabled={loading || insufficientFunds}
                   className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
                   style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
@@ -1671,8 +1618,7 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 
 /* ─── CREATE TAB ─────────────────────────────────────────────────────────────── */
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
-  const { address, provider, network, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address } = useWalletStore();
   const [form, setForm] = useState({
     title: "", description: "", imageUrl: "", ticker: "",
     mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "",
@@ -1720,17 +1666,16 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   async function submit() {
     if (!address) { setError("Connect your wallet first"); return; }
     if (!canSubmit) { setError("Title and media are required"); return; }
-    const creatorAddress = actorAddress ?? address;
     setLoading(true); setError("");
     try {
       const image_url = mediaMode === "url" ? form.imageUrl : fileData;
-      const profileRes = await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => null);
+      const profileRes = await fetch(`${API}/social/creators/${address}`).catch(() => null);
       const profileData = profileRes?.ok ? await profileRes.json() : null;
-      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(creatorAddress);
+      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(address);
       const res = await fetch(`${API}/social/posts`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          creator: creatorAddress,
+          creator: address,
           creator_name: creatorName,
           title: form.title,
           description: form.description,
@@ -1744,7 +1689,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed");
-      await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => {});
+      await fetch(`${API}/social/creators/${address}`).catch(() => {});
       setSuccess(true);
       setTimeout(() => { setSuccess(false); onSuccess(); }, 2200);
     } catch (err: any) { setError(err.message); }
@@ -1980,16 +1925,9 @@ export function MobileNFT() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
-  useEffect(() => {
-    setCreatorAddress(null);
-    if (!profileAddress) {
-      setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
-    }
-  }, [profileAddress]);
-
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-    if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
+    if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
   }
 
   const openCreator = useCallback((addr: string) => setCreatorAddress(addr), []);

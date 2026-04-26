@@ -8,7 +8,6 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
-const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
 
 function uid(): string {
   return crypto.randomUUID();
@@ -317,55 +316,22 @@ router.get("/nft/listings", async (req, res) => {
 /* POST /nft/listings — create listing */
 router.post("/nft/listings", async (req, res) => {
   try {
-    const {
-      nftId,
-      post_id,
-      collectionId,
-      seller,
-      chain,
-      price,
-      price_bsv,
-      currency,
-      mint_currency,
-    } = req.body as Record<string, string>;
-    const normalizedNftId = nftId ?? post_id;
-    const normalizedCollectionId = collectionId ?? (post_id ? "social-posts" : undefined);
-    const normalizedPrice = price ?? price_bsv;
-    const normalizedCurrency = (currency ?? mint_currency ?? "BSV").toUpperCase();
-    if (!normalizedNftId || !seller || !normalizedPrice) {
-      res.status(400).json({ error: "seller plus (nftId or post_id) and (price or price_bsv) are required" }); return;
+    const { nftId, collectionId, seller, chain, price, currency } = req.body as Record<string, string>;
+    if (!nftId || !seller || !price) {
+      res.status(400).json({ error: "nftId, seller, price are required" }); return;
     }
 
-    // Stablecoins are treated as $1 when no live quote is cached.
-    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
-      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null);
-    if (!quoteUsd) {
-      res.status(400).json({ error: `Unsupported listing currency: ${normalizedCurrency}` }); return;
-    }
-    const priceUsd = String((parseFloat(normalizedPrice) * quoteUsd).toFixed(2));
+    const ethUsd = FALLBACK_PRICES["ETH"] ?? 1800;
+    const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
 
     const [listing] = await db.insert(nftListingsTable).values({
-      id: uid(),
-      nftId: normalizedNftId,
-      collectionId: normalizedCollectionId ?? "uncategorized",
-      seller,
-      chain: chain ?? "BSV",
-      price: normalizedPrice,
-      currency: normalizedCurrency,
-      priceUsd,
-      status: "active",
+      id: uid(), nftId, collectionId, seller, chain: chain ?? "ETH",
+      price, currency: currency ?? "ETH", priceUsd, status: "active",
     }).returning();
 
     await db.insert(nftActivityTable).values({
-      id: uid(),
-      nftId: normalizedNftId,
-      collectionId: normalizedCollectionId ?? "uncategorized",
-      type: "listing",
-      fromAddress: seller,
-      price: normalizedPrice,
-      currency: normalizedCurrency,
-      priceUsd,
-      chain: chain ?? "BSV",
+      id: uid(), nftId, collectionId, type: "listing", fromAddress: seller,
+      price, currency, priceUsd, chain: chain ?? "ETH",
     });
 
     res.json({ success: true, listing });

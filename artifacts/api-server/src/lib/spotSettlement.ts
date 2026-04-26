@@ -129,11 +129,14 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   }
 
   // ── 3. Build OP_RETURN settlement payload ────────────────────────────────
+  // Determine which ID is the buy order vs sell order.
+  // The new/incoming order (newOrderId) is the buyer when the match counter-order is on the sell side.
+  const newOrderIsBuy = matchOrder.walletAddress === sellerAddress;
   const fallback = buildSettlement({
     tradeId,
     pair,
-    buyOrderId:         buyerAddress === params.buyerAddress ? newOrderId : matchOrder.id,
-    sellOrderId:        sellerAddress === params.sellerAddress ? newOrderId : matchOrder.id,
+    buyOrderId:         newOrderIsBuy ? newOrderId : matchOrder.id,
+    sellOrderId:        newOrderIsBuy ? matchOrder.id : newOrderId,
     buyerAddress,
     sellerAddress,
     buyerNetwork,
@@ -215,12 +218,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       price:      fillPrice.toString(),
     });
   } catch (err) {
-    // Ledger settlement is the source of truth for balances.
-    // A failure here (e.g. SETTLEMENT_INSUFFICIENT_LOCK) means the fill cannot
-    // be credited — propagate so the caller can roll back the order state and
-    // avoid creating phantom balances.
-    log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill");
-    throw err;
+    log.warn({ err, tradeId }, "spotSettlement: ledger settlement failed");
   }
 
   // ── 6. Register HTLC with watcher (Relayer Keeper notifications) ─────────

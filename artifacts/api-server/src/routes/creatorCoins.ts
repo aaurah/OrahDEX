@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
@@ -12,7 +13,6 @@ const INIT_VIRTUAL_BSV = 30;
 // (matches pump.fun-style initialisation — this is NOT a credential)
 const TOTAL_SUPPLY = 1_000_000_000;
 const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
-const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 
 
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
@@ -36,6 +36,31 @@ function calcSell(vBsv: number, vTok: number, tokensIn: number) {
   const bsvOut = rawBsv - fee;
   const pricePerToken = rawBsv / tokensIn;
   return { bsvOut, newVBsv, newVTok, fee, pricePerToken };
+}
+
+type SqlClient = {
+  query: (sql: string, params?: any[]) => Promise<{ rows: any[] }>;
+  release: () => void;
+};
+
+async function resolveColumn(
+  client: SqlClient,
+  table: string,
+  candidates: string[],
+): Promise<string | null> {
+  const { rows } = await client.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name = $1
+        AND column_name = ANY($2::text[])`,
+    [table, candidates],
+  );
+  const available = new Set((rows as Array<{ column_name: string }>).map((r) => r.column_name));
+  for (const col of candidates) {
+    if (available.has(col)) return col;
+  }
+  return null;
 }
 
 /* ── GET /social/creators ─────────────────────────────────────────────────── */
@@ -490,9 +515,9 @@ router.get("/social/trending-coins", async (req, res) => {
 
 /* ── DELETE /social/creators/:address ────────────────────────────────────── */
 router.delete("/social/creators/:address", async (req, res) => {
-  const client = await pool.connect();
-  let inTx = false;
+  let client: SqlClient | null = null;
   try {
+    client = await pool.connect() as SqlClient;
     const { address } = req.params;
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
@@ -500,56 +525,65 @@ router.delete("/social/creators/:address", async (req, res) => {
       return;
     }
     await client.query("BEGIN");
-    inTx = true;
-    await client.query("DELETE FROM social_follows  WHERE follower  = $1 OR following = $1", [address]);
-    await client.query("DELETE FROM post_likes      WHERE wallet_address = $1",              [address]);
-    await client.query("DELETE FROM post_comments   WHERE wallet_address = $1",               [address]);
-    await client.query("DELETE FROM post_mints      WHERE minter = $1",                       [address]);
 
-    const { rows: postRows } = await client.query("SELECT id FROM social_posts WHERE creator = $1", [address]);
-    const postIds = postRows.map((row: { id: string }) => row.id).filter(Boolean);
-    if (postIds.length > 0) {
-      await client.query("DELETE FROM post_likes WHERE post_id = ANY($1::text[])", [postIds]);
-      await client.query("DELETE FROM post_comments WHERE post_id = ANY($1::text[])", [postIds]);
-      await client.query("DELETE FROM post_mints WHERE post_id = ANY($1::text[])", [postIds]);
-    }
-    try {
-      await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
-    } catch (err: any) {
-      if (err?.code !== POSTGRES_UNDEFINED_COLUMN_ERROR) throw err;
-      const { rows: statusColumnRows } = await client.query(
-        `SELECT 1 FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = 'social_posts' AND column_name = 'status'
-         LIMIT 1`,
-      );
-      if (statusColumnRows.length > 0) {
-        await client.query(
-          `UPDATE social_posts
-           SET status = 'deleted', creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
-           WHERE creator = $1`,
-          [address],
-        );
-      } else {
-        await client.query(
-          `UPDATE social_posts
-           SET creator_name = '[deleted]', creator_avatar = NULL, updated_at = NOW()
-           WHERE creator = $1`,
-          [address],
-        );
+    const postOwnerColumn = await resolveColumn(client, "social_posts", ["creator", "author"]);
+    const commentAuthorColumn = await resolveColumn(client, "post_comments", ["wallet_address", "author"]);
+
+    await client.query("DELETE FROM social_follows WHERE follower = $1 OR following = $1", [address]);
+    await client.query("DELETE FROM post_likes WHERE wallet_address = $1", [address]);
+    await client.query("DELETE FROM post_mints WHERE minter = $1", [address]);
+
+    if (commentAuthorColumn) {
+      if (commentAuthorColumn === "wallet_address") {
+        await client.query("DELETE FROM post_comments WHERE wallet_address = $1", [address]);
+      } else if (commentAuthorColumn === "author") {
+        await client.query("DELETE FROM post_comments WHERE author = $1", [address]);
       }
     }
 
-    await client.query("DELETE FROM coin_holdings   WHERE holder = $1 OR coin_creator = $1",  [address]);
-    await client.query("DELETE FROM creator_coins   WHERE creator_address = $1",              [address]);
-    await client.query("DELETE FROM creator_profiles WHERE address = $1",                     [address]);
+    if (postOwnerColumn) {
+      if (postOwnerColumn === "creator") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
+      } else if (postOwnerColumn === "author") {
+        await client.query(
+          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query(
+          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
+          [address],
+        );
+        await client.query("DELETE FROM social_posts WHERE author = $1", [address]);
+      }
+    }
+
+    await client.query("DELETE FROM coin_holdings WHERE holder = $1 OR coin_creator = $1", [address]);
+    await client.query("DELETE FROM creator_coins WHERE creator_address = $1", [address]);
+    await client.query("DELETE FROM creator_profiles WHERE address = $1", [address]);
     await client.query("COMMIT");
-    inTx = false;
     res.json({ ok: true });
   } catch (err: any) {
-    if (inTx) await client.query("ROLLBACK").catch(() => {});
+    if (client) await client.query("ROLLBACK");
+    logger.error({ err }, "delete creator profile failed");
     res.status(500).json({ error: err?.message });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
