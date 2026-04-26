@@ -436,7 +436,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
   const [precheckLoading, setPrecheckLoading] = useState(false);
   const precheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const precheckKeyRef = useRef<string>("");
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
@@ -510,28 +509,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     : 0;
 
   // ── Precheck runner (declared after balances so availableAmt is in scope) ──
-  const buildPrecheckKey = useCallback((amt: string, px: string) => {
-    return [
-      symbol,
-      side,
-      type,
-      amt,
-      px,
-      Math.round(slippage * 100),
-      availableAmt,
-      currentPrice,
-      network ?? "evm",
-      address ?? "",
-    ].join("|");
-  }, [symbol, side, type, slippage, availableAmt, currentPrice, network, address]);
-
   const runPrecheck = useCallback(async (amt: string, px: string) => {
     if (!address || !amt || parseFloat(amt) <= 0) {
       setPrecheckResult(null);
-      precheckKeyRef.current = "";
       return;
     }
-    const key = buildPrecheckKey(amt, px);
     setPrecheckLoading(true);
     try {
       const result = await precheck({
@@ -547,11 +529,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         address:          address ?? "",
       });
       setPrecheckResult(result);
-      precheckKeyRef.current = key;
     } finally {
       setPrecheckLoading(false);
     }
-  }, [address, symbol, side, type, slippage, availableAmt, currentPrice, network, buildPrecheckKey]);
+  }, [address, symbol, side, type, slippage, availableAmt, currentPrice, network]);
 
   // Debounce precheck 300 ms after amount/price changes
   useEffect(() => {
@@ -692,34 +673,34 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
-    const required     = parseFloat(amount);
-    const effectivePrice = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
-    const total        = effectivePrice > 0 ? effectivePrice * required : 0;
-    // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
-    // never falsely blocked by floating-point arithmetic.
-    if (side === "sell" && required > availableAmt + 1e-9) {
-      toast({
-        title:       "Insufficient Balance",
-        description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
-        variant:     "destructive",
-      });
-      return;
-    }
-    if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
-      toast({
-        title:       "Insufficient Balance",
-        description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
-        variant:     "destructive",
-      });
-      return;
+    if (availableAmt > 0) {
+      const required = parseFloat(amount);
+      const total    = price ? parseFloat(price) * required : 0;
+      // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
+      // never falsely blocked by floating-point arithmetic.
+      if (side === "sell" && required > availableAmt + 1e-9) {
+        toast({
+          title:       "Insufficient Balance",
+          description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
+          variant:     "destructive",
+        });
+        return;
+      }
+      if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
+        toast({
+          title:       "Insufficient Balance",
+          description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
+          variant:     "destructive",
+        });
+        return;
+      }
     }
 
     // ── Golden path: run precheck (or use cached result) before anything ──
     const timer = new TradeTimer();
     timer.mark("precheck");
-    const submitKey = buildPrecheckKey(amount, price);
     let check = precheckResult;
-    if (!check || precheckKeyRef.current !== submitKey) {
+    if (!check) {
       check = await precheck({
         symbol, side, type,
         amount:           parseFloat(amount),
@@ -731,7 +712,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         address:          address ?? "",
       });
       setPrecheckResult(check);
-      precheckKeyRef.current = submitKey;
     }
     timer.end("precheck");
 

@@ -121,14 +121,6 @@ async function fetchKeyPrices() {
   if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
   // Use last-known-good BSV price rather than hardcoded fallback when WOC is unreachable
   if (!results["BSV"]) results["BSV"] = { usd: _lastKnownBsvUsd, change24h: 0 };
-
-  // Ensure full cross-asset coverage for all tracked markets.
-  for (const [symbol, usd] of Object.entries(FALLBACK_PRICES)) {
-    if (usd <= 0) continue;
-    if (!results[symbol]) {
-      results[symbol] = { usd, change24h: 0 };
-    }
-  }
   return results;
 }
 
@@ -136,7 +128,12 @@ async function fetchKeyPrices() {
 router.get("/dex/prices", async (_req, res) => {
   if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) { res.json(priceCache.data); return; }
   const p  = await fetchKeyPrices();
-  const data = p;
+  const data = {
+    BTC:  { usd: p["BTC"]!.usd,  change24h: p["BTC"]!.change24h },
+    ETH:  { usd: p["ETH"]!.usd,  change24h: p["ETH"]!.change24h },
+    BSV:  { usd: p["BSV"]!.usd,  change24h: p["BSV"]!.change24h },
+    USDT: { usd: 1,               change24h: 0 },
+  };
   priceCache = { data, ts: Date.now() };
   res.json(data);
 });

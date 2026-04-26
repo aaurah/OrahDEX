@@ -15,6 +15,7 @@ import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
@@ -50,7 +51,6 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     remainingQuantity: parseFloat(o.remainingQuantity),
     total:             o.total             ? parseFloat(o.total)             : undefined,
     fee:               parseFloat(o.fee),
-    explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
 }
 
@@ -87,9 +87,11 @@ router.get("/orders", async (req, res) => {
 });
 
 // ── POST /orders ───────────────────────────────────────────────────────────────
-// Accepts an optional `evmSignature` field (MetaMask personal_sign) that proves
-// the trader authorised this order. On match, a BSV OP_RETURN settlement
-// transaction is generated and both orders are marked filled with the txid.
+// Accepts a required `evmSignature` field (MetaMask personal_sign) for external
+// EVM wallets that proves the trader authorised this specific order.
+// The canonical message is built server-side from the order parameters.
+// On match, a BSV OP_RETURN settlement transaction is generated and both orders
+// are marked filled with the txid.
 router.post("/orders", async (req, res) => {
   try {
     const body = req.body;
@@ -98,44 +100,9 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
-    const side = body.side === "buy" || body.side === "sell" ? body.side : null;
-    const type = body.type === "market" || body.type === "limit" || body.type === "stop" ? body.type : null;
-    if (!side || !type) {
-      res.status(400).json({ error: "Invalid order side or type" });
-      return;
-    }
-
-    const symbol = typeof body.symbol === "string" && body.symbol.length > 0
-      ? body.symbol.replace(/-/g, "/")
-      : null;
-    if (!symbol) {
-      res.status(400).json({ error: "Invalid symbol" });
-      return;
-    }
-    const quantity = parseFloat(body.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      res.status(400).json({ error: "Invalid quantity" });
-      return;
-    }
-
-    const rawPrice = body.price != null ? parseFloat(body.price) : undefined;
-    if (rawPrice != null && (!Number.isFinite(rawPrice) || rawPrice <= 0)) {
-      res.status(400).json({ error: "Invalid price" });
-      return;
-    }
-
-    const stopPrice = body.stopPrice != null ? parseFloat(body.stopPrice) : undefined;
-    if (type === "stop" && (stopPrice == null || !Number.isFinite(stopPrice) || stopPrice <= 0)) {
-      res.status(400).json({ error: "Stop orders require a valid stopPrice" });
-      return;
-    }
-    if (type === "limit" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
-      res.status(400).json({ error: "Limit orders require a valid price" });
-      return;
-    }
-
     const id            = crypto.randomUUID();
-    const price         = rawPrice;
+    const quantity      = parseFloat(body.quantity);
+    const price         = body.price ? parseFloat(body.price) : undefined;
     const total         = price ? price * quantity : undefined;
     const fee           = (total || 0) * 0.001;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
@@ -148,25 +115,81 @@ router.post("/orders", async (req, res) => {
 
     const isExternalWallet = walletSource === "external";
 
+    // ── Verify wallet ownership for external EVM wallets ─────────────────────
+    // The evmSignature must have been produced by the private key of walletAddress
+    // over the canonical order-authorisation message. This prevents any caller who
+    // merely knows a walletAddress from placing orders on its behalf.
+    if (body.walletAddress.startsWith("0x") && walletSource === "external") {
+      const evmSig = body.evmSignature ?? body.signedTx;
+      if (!evmSig) {
+        res.status(401).json({
+          error: "evmSignature is required for external EVM wallet orders. " +
+                 "Sign the canonical order message with personal_sign and include it in the request.",
+          code: "SIGNATURE_REQUIRED",
+        });
+        return;
+      }
+      // nonce defaults to the order id; expiry defaults to 5 minutes from now
+      const orderNonce  = body.nonce  ? String(body.nonce)  : id;
+      const orderExpiry = body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Enforce expiry: reject if the order's expiry timestamp is in the past.
+      const expiryUnixSec = parseInt(orderExpiry, 10);
+      if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
+        res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
+        return;
+      }
+
+      // Reject replayed nonces: each (walletAddress, nonce) pair is single-use.
+      if (isOrderNonceConsumed(body.walletAddress, orderNonce)) {
+        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+        return;
+      }
+
+      const authMsg = buildOrderAuthMessage({
+        walletAddress: body.walletAddress,
+        symbol:        body.symbol,
+        side:          body.side,
+        quantity:      quantity.toString(),
+        nonce:         orderNonce,
+        expiry:        orderExpiry,
+      });
+      try {
+        verifyEvmSignature(body.walletAddress, authMsg, evmSig);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+        return;
+      }
+
+      // Consume the nonce after successful verification (single-use enforcement).
+      recordConsumedOrderNonce(body.walletAddress, orderNonce, expiryUnixSec);
+    }
+
+    // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
+    // When provided, enables on-chain RPC balance verification in fundingVerifier.
+    // Must be a numeric value in the supported set; unknown values are silently ignored.
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const chainId = body.chainId != null
+      ? (() => {
+          const n = parseInt(String(body.chainId), 10);
+          return SUPPORTED_CHAIN_IDS.has(n) ? n : undefined;
+        })()
+      : undefined;
+
     // ── Acquire funding lock BEFORE inserting the order (No funding → No order) ──
     // fundingVerifier enforces balance-bucket isolation:
     //   MARKET / LIMIT  → spot bucket (user_balances)
     //   FUTURES         → futures margin bucket (futures_margin_accounts)
     // Returns a fundingRef that proves funds are committed.
-    const [baseAsset, quoteAsset = "USDT"] = symbol.split("/");
-    const lockAsset = side === "buy" ? quoteAsset : baseAsset;
+    const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
+    const lockAsset = body.side === "buy" ? quoteAsset : baseAsset;
 
     let lockPrice = price;
-    if (!lockPrice && side === "buy") {
-      const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    if (!lockPrice && body.side === "buy") {
+      const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
       lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
     }
-    if (side === "buy" && (lockPrice == null || !Number.isFinite(lockPrice) || lockPrice <= 0)) {
-      res.status(400).json({ error: "Unable to determine buy price for funding lock" });
-      return;
-    }
-
-    const lockAmount = side === "buy"
+    const lockAmount = body.side === "buy"
       ? (lockPrice ? (lockPrice * quantity).toString() : "0")
       : quantity.toString();
 
@@ -175,11 +198,12 @@ router.post("/orders", async (req, res) => {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
         kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
-        side,
+        side:            body.side as "buy" | "sell",
         walletSource,
         asset:           lockAsset!,
         amount:          lockAmount,
         signature:       body.evmSignature ?? body.signedTx,
+        chainId,
         reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
       });
       if (!fundingVerif.valid) {
@@ -192,20 +216,20 @@ router.post("/orders", async (req, res) => {
     // ── All checks passed — insert the order ──────────────────────────────────
     const newOrder = {
       id,
-      symbol,
+      symbol:            body.symbol,
       walletAddress:     body.walletAddress,
       networkType,
-      side,                                      // "buy" | "sell"
-      type,                                      // "limit" | "market" | "stop"
+      side:              body.side,              // "buy" | "sell"
+      type:              body.type,              // "limit" | "market"
       status:            "open",
       price:             price?.toString(),
-      stopPrice:         stopPrice?.toString(),
+      stopPrice:         body.stopPrice?.toString(),
       quantity:          quantity.toString(),
       filledQuantity:    "0",
       remainingQuantity: quantity.toString(),
       total:             total?.toString(),
       fee:               fee.toString(),
-      feeAsset:          symbol.split("/")[1] || "USDT",
+      feeAsset:          body.symbol.split("/")[1] || "USDT",
       timeInForce:       body.timeInForce || "GTC",
       txid:              null as string | null,
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
@@ -217,17 +241,17 @@ router.post("/orders", async (req, res) => {
     };
 
     await db.insert(ordersTable).values(newOrder);
-    req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
+    req.log.info({ orderId: id, side: body.side, networkType, walletSource }, "Order placed");
 
     /* Push order-placed notification to the user */
-    const orderPair = symbol;
-    const orderSide = side.toUpperCase();
+    const orderPair = body.symbol;
+    const orderSide = (body.side as string).toUpperCase();
     pushNotification(body.walletAddress, {
       type: "order_placed",
       title: `${orderSide} Order Placed`,
       body: `${quantity} ${orderPair.split("/")[0]} @ ${price ? `$${price}` : "market"} · waiting for match`,
       pair: orderPair,
-      side,
+      side: body.side,
     });
 
     // ── Attempt order matching ───────────────────────────────────────────────
@@ -246,28 +270,28 @@ router.post("/orders", async (req, res) => {
     // EVM HTLC session — set when both parties are external EVM wallets
     let lastEvmHtlcSession: Awaited<ReturnType<typeof initiateEvmHtlcSession>> | null = null;
 
-    const isMarket = type === "market";
-    const isLimit  = type === "limit" && !!price;
+    const isMarket = body.type === "market";
+    const isLimit  = body.type === "limit" && !!price;
 
     // ── Stop order trigger check ─────────────────────────────────────────────
     // If a stop order's trigger price is already beaten by the current market,
     // convert it to a market order so it fills immediately.
     let isStopTriggered = false;
-    if (type === "stop" && stopPrice) {
-      const stopTrigger = stopPrice;
-      const [mkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    if (body.type === "stop" && body.stopPrice) {
+      const stopTrigger = parseFloat(body.stopPrice);
+      const [mkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, body.symbol));
       const mktPrice = mkt ? parseFloat(mkt.lastPrice) : 0;
       if (mktPrice > 0) {
         // Buy-stop: trigger when price rises ABOVE stopPrice (breakout entry)
         // Sell-stop: trigger when price falls BELOW stopPrice (stop-loss exit)
         isStopTriggered =
-          (side === "buy"  && mktPrice >= stopTrigger) ||
-          (side === "sell" && mktPrice <= stopTrigger);
+          (body.side === "buy"  && mktPrice >= stopTrigger) ||
+          (body.side === "sell" && mktPrice <= stopTrigger);
       }
     }
 
     if (isMarket || isLimit || isStopTriggered) {
-      const counterSide = side === "buy" ? "sell" : "buy";
+      const counterSide = body.side === "buy" ? "sell" : "buy";
 
       // For limit orders restrict by price; market/stop orders accept any price
       // Format price safely — avoid scientific notation (e.g. 1e-8) which
@@ -276,13 +300,13 @@ router.post("/orders", async (req, res) => {
 
       const counterOrders = await db.select().from(ordersTable).where(
         and(
-          eq(ordersTable.symbol, symbol),
+          eq(ordersTable.symbol, body.symbol),
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
           ne(ordersTable.walletAddress, body.walletAddress),
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
-            ? [side === "buy"
+            ? [body.side === "buy"
                 ? lte(ordersTable.price, safePriceStr)
                 : gte(ordersTable.price, safePriceStr)]
             : []),
@@ -293,27 +317,8 @@ router.post("/orders", async (req, res) => {
       const sorted = counterOrders.sort((a, b) => {
         const pa = parseFloat(a.price ?? "0");
         const pb = parseFloat(b.price ?? "0");
-        return side === "buy" ? pa - pb : pb - pa;
+        return body.side === "buy" ? pa - pb : pb - pa;
       });
-
-      // External EVM orders must match only against external EVM counterparties
-      // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
-      const requiresDefiWalletToWallet = walletSource === "external" && networkType === "evm";
-      const eligibleMatches = requiresDefiWalletToWallet
-        ? sorted.filter((candidate) => {
-            const isBot = candidate.walletAddress === BOT_ADDRESS;
-            if (isBot) return false;
-            const ref = candidate.fundingRef ?? "";
-            return (
-              ref.startsWith("evm-sig:") ||
-              ref.startsWith("evm-balance:") ||
-              (candidate.walletAddress.startsWith("0x") &&
-                (candidate.networkType ?? "evm") === "evm" &&
-                !ref.startsWith("ledger:") &&
-                !ref.startsWith("margin:"))
-            );
-          })
-        : sorted;
 
       // ── Multi-fill loop: consume counter-orders until qty is satisfied ───────
       // This correctly handles large orders that span multiple counter-orders,
@@ -326,9 +331,9 @@ router.post("/orders", async (req, res) => {
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
 
-      const [baseAsset, quoteAsset = "USDT"] = symbol.split("/");
+      const [baseAsset, quoteAsset = "USDT"] = body.symbol.split("/");
 
-      for (const match of eligibleMatches) {
+      for (const match of sorted) {
         if (remainingQty <= 0.000001) break;
 
         // Use remainingQuantity directly — it is always kept up-to-date by
@@ -343,10 +348,10 @@ router.post("/orders", async (req, res) => {
         const isBot     = match.walletAddress === BOT_ADDRESS;
 
         const tradeId      = crypto.randomUUID();
-        const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
-        const sellerNetwork = side === "sell" ? networkType : (match.networkType ?? "evm");
-        const buyerAddress  = side === "buy" ? body.walletAddress : match.walletAddress;
-        const sellerAddress = side === "sell" ? body.walletAddress : match.walletAddress;
+        const buyerNetwork  = body.side === "buy" ? networkType : (match.networkType ?? "evm");
+        const sellerNetwork = body.side === "sell" ? networkType : (match.networkType ?? "evm");
+        const buyerAddress  = body.side === "buy" ? body.walletAddress : match.walletAddress;
+        const sellerAddress = body.side === "sell" ? body.walletAddress : match.walletAddress;
 
         // ── Detect EVM/EVM wallet-to-wallet fill ─────────────────────────
         // A fill is "EVM external" when:
@@ -393,7 +398,7 @@ router.post("/orders", async (req, res) => {
             tradeId,
             newOrderId:    id,
             matchOrder:    match,
-            pair:          symbol,
+            pair:          body.symbol,
             fillQty,
             fillPrice,
             buyerAddress,
@@ -456,15 +461,12 @@ router.post("/orders", async (req, res) => {
         // reveal() once both locks are confirmed, completing the atomic swap.
         // Internal ledger settlement is skipped for this path (funds stay on-chain).
         if (bothEvmExternal && !lastEvmHtlcSession) {
-          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum).
-          // Validate chainId: must be a positive integer present in EVM_CHAINS.
-          const rawChainId = body.chainId ? Number(body.chainId) : 1;
-          const chainId = Number.isInteger(rawChainId) && rawChainId > 0 && rawChainId in EVM_CHAINS
-            ? rawChainId : 1;
+          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum)
+          const chainId = body.chainId ? Number(body.chainId) : 1;
           const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
           // Resolve token addresses from pair
-          const [base, quot] = symbol.split("/");
+          const [base, quot] = body.symbol.split("/");
           const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
           const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
 
@@ -477,7 +479,7 @@ router.post("/orders", async (req, res) => {
           try {
             lastEvmHtlcSession = await initiateEvmHtlcSession({
               tradeId:       tradeId,
-              pair:          symbol,
+              pair:          body.symbol,
               chainId,
               sellerAddress: sellerAddress as `0x${string}`,
               buyerAddress:  buyerAddress  as `0x${string}`,
@@ -508,7 +510,7 @@ router.post("/orders", async (req, res) => {
         const isFullyFilled   = remainingQty <= 0.000001;
         const correctFee      = (totalFillValue * 0.001).toFixed(8);
         // Record exchange revenue from the order book fill fee (0.1%)
-        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
+        const feeAssetSymbol = (body.symbol as string).split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 
         await db.update(ordersTable)
@@ -526,7 +528,7 @@ router.post("/orders", async (req, res) => {
           .where(eq(ordersTable.id, id));
 
         /* Push order-filled notification */
-        const fillSymbol = symbol;
+        const fillSymbol = body.symbol as string;
         const fillBase   = fillSymbol.split("/")[0];
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
@@ -534,7 +536,7 @@ router.post("/orders", async (req, res) => {
           body:  `${totalFilled.toFixed(4)} ${fillBase} @ $${avgFillPrice.toFixed(4)} avg · BSV settled on-chain`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
-          side,
+          side:  body.side,
         });
       }
     }

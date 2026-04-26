@@ -40,25 +40,6 @@ function relTime(ts: number) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-function formatDateTime(value: string | Date | number) {
-  return new Date(value).toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-function getOrderExplorerUrl(order: any): string | null {
-  if (order?.explorerUrl) return String(order.explorerUrl);
-  if (!order?.txid) return null;
-  return String(order.txid).startsWith("0x")
-    ? `https://etherscan.io/tx/${order.txid}`
-    : `https://whatsonchain.com/tx/${order.txid}`;
-}
-
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
   if (n.href) return n.href;
   const { type, pair } = n;
@@ -286,7 +267,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
-        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`, { cache: "no-store" });
+        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`);
         if (!r.ok) return { available: 0 };
         const j = await r.json();
         return { available: parseFloat(j.available ?? "0") || 0 };
@@ -333,7 +314,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`, { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
     enabled: !!address,
     refetchInterval: 2000,
   });
@@ -347,20 +328,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: altOrdersData } = useQuery({
     queryKey: ["orders", altAddress],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`, { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
     enabled: !!altAddress,
     refetchInterval: 2000,
   });
 
-  const withOwnerWallet = (rows: any, fallbackWallet: string | null | undefined) => (
-    Array.isArray(rows)
-      ? rows.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || fallbackWallet || "" }))
-      : []
-  );
-
   const myOrders: any[] = useMemo(() => {
-    const primary = withOwnerWallet(myOrdersData, address);
-    const alt = withOwnerWallet(altOrdersData, altAddress);
+    const primary = Array.isArray(myOrdersData) ? myOrdersData : [];
+    const alt     = Array.isArray(altOrdersData) ? altOrdersData : [];
     const seen    = new Set<string>();
     return [...primary, ...alt].filter(o => {
       const key = String(o.id);
@@ -368,7 +343,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       seen.add(key);
       return true;
     });
-  }, [myOrdersData, altOrdersData, address, altAddress]);
+  }, [myOrdersData, altOrdersData]);
   const openOrders = myOrders.filter(o => o.status === "open");
   const historyOrders = myOrders.filter(o => o.status !== "open");
 
@@ -384,9 +359,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const getOrderWalletAddress = (order: any) => (
-    String(order?.walletAddress || order?.ownerWalletAddress || "")
-  );
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
@@ -401,54 +373,29 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["orders", address] });
-      if (altAddress) await queryClient.cancelQueries({ queryKey: ["orders", altAddress] });
       const prev = queryClient.getQueryData(["orders", address]);
-      const prevAlt = altAddress ? queryClient.getQueryData(["orders", altAddress]) : undefined;
       queryClient.setQueryData(["orders", address], (old: any) =>
         Array.isArray(old)
           ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
           : old
       );
-      if (altAddress) {
-        queryClient.setQueryData(["orders", altAddress], (old: any) =>
-          Array.isArray(old)
-            ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
-            : old
-        );
-      }
-      return { prev, prevAlt };
+      return { prev };
     },
     onError: (_err, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
-      }
-      if (altAddress && context?.prevAlt !== undefined) {
-        queryClient.setQueryData(["orders", altAddress], context.prevAlt);
       }
     },
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       if (usesApiBalance && address) {
-        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
     },
   });
-  const handleCancelOrder = useCallback((order: any) => {
-    const walletAddress = getOrderWalletAddress(order);
-    if (!walletAddress) {
-      toast({
-        title: "Cancel failed",
-        description: "Order owner wallet is missing. Refresh and try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
-  }, [cancelMutation, toast]);
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
@@ -534,10 +481,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
-      if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       if (usesApiBalance && address) {
-        void fetchApiBalances(base, quote, address);
+        fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
       setTimeout(() => setOrderResult(null), 10000);
@@ -1322,7 +1268,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(handleCancelOrder)}
+                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") }))}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1345,7 +1291,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => handleCancelOrder(o)}
+                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") })}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
@@ -1370,35 +1316,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       <span className="w-16 text-right">Status</span>
                     </div>
                     {historyOrders.map((o: any) => (
-                      <div key={o.id} className="px-4 py-2 border-b border-border/20">
-                        <div className="flex items-center">
-                          <div className="flex-1 min-w-0 flex items-center gap-1">
-                            <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
-                            <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
-                          </div>
-                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
-                          <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
-                          <span className={cn(
-                            "w-16 text-right text-[10px] font-semibold",
-                            o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
-                          )}>
-                            {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                          </span>
+                      <div key={o.id} className="flex items-center px-4 py-2 border-b border-border/20">
+                        <div className="flex-1 min-w-0 flex items-center gap-1">
+                          <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
+                          <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-                          <span className="font-mono">#{String(o.id).slice(0, 10)}</span>
-                          <span>{formatDateTime(o.updatedAt ?? o.createdAt)}</span>
-                          {o.txid && getOrderExplorerUrl(o) && (
-                            <a
-                              href={getOrderExplorerUrl(o)!}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-primary font-mono"
-                            >
-                              {o.txid.slice(0, 12)}… <Link2 size={10} />
-                            </a>
-                          )}
-                        </div>
+                        <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
+                        <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
+                        <span className={cn(
+                          "w-16 text-right text-[10px] font-semibold",
+                          o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                        )}>
+                          {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                        </span>
                       </div>
                     ))}
                   </>
