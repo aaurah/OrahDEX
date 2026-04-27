@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -172,7 +173,15 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     const symbol = normSymbol(req.params.symbol);
     const cached = tickerCache.get(symbol);
     if (cached) { res.json(cached); return; }
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+
+    // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     let lastPrice: number;
     let high24h: number;
@@ -237,12 +246,20 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     const symbol   = normSymbol(req.params.symbol);
     const interval = (req.query.interval as string) || "1h";
     const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1000);
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+
+    // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     let price: number;
     let sym: string;
     if (!market) {
-      // Unknown pair — derive from fallback prices
+      // Unknown pair or DB unavailable — derive from fallback prices
       price = resolveCrossPrice(symbol, 0);
       sym   = symbol;
     } else {
@@ -274,8 +291,14 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     const cached = orderbookCache.get(cacheKey);
     if (cached) { res.json(cached); return; }
 
-    // Fetch market price (fast single-row lookup)
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    // Fetch market price (fast single-row lookup — fall through on DB failure)
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     // For unknown markets, attempt to build a synthetic book from fallback prices
     let lastPrice: number;
@@ -381,9 +404,16 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     const cached = tradesCache.get(symbol);
     if (cached) { res.json(cached); return; }
 
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    // Wrap DB lookup so a transient DB failure falls through to synthetic trades
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
-    // If market not in DB, derive price from FALLBACK_PRICES and return synthetic trades
+    // If market not in DB (or DB unavailable), derive price from FALLBACK_PRICES and return synthetic trades
     if (!market) {
       const [base, quote] = symbol.split("/");
       const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
