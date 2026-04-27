@@ -333,7 +333,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
             { to: token.address, data: balanceOfCalldata(address) },
             "latest",
           ], chainId);
-          const raw = BigInt(hexBal || "0x0");
+          const raw = hexBal && hexBal.length > 2 ? BigInt(hexBal) : 0n;
           const amount = Number(raw) / Math.pow(10, token.decimals);
           return { token, amount };
         })
