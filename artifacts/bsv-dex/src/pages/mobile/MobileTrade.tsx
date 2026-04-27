@@ -17,6 +17,7 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
+import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -706,6 +707,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const vol24  = parseFloat(ticker?.volume)    || 0;
   const volQuote = lastPrice * vol24;
 
+  // Fallback price for candles/orderbook when ticker hasn't loaded yet
+  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice ?? 14.35);
+  // Ensure the chart always has candle data to render
+  const chartCandles = (Array.isArray(candles) && candles.length > 0)
+    ? candles
+    : generateMockCandles(fallbackPrice);
+  // Ensure order book always shows data
+  const rawOB = orderBook as any;
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const effectiveOrderBook = hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice);
+
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {
     if (!lastPrice) return;
@@ -727,8 +739,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const crossBTC  = isBTCBase ? 1 : priceUSD > 0 ? priceUSD / BTC_USD_RATE : 0;
   const crossBSV  = isBSVBase ? 1 : priceUSD > 0 ? priceUSD / BSV_USD_RATE : 0;
 
-  const asks = (orderBook?.asks ?? []).slice(0, 8).reverse();
-  const bids = (orderBook?.bids ?? []).slice(0, 8);
+  const asks = (effectiveOrderBook?.asks ?? []).slice(0, 8).reverse();
+  const bids = (effectiveOrderBook?.bids ?? []).slice(0, 8);
 
   const handleIntervalChange = useCallback((iv: string) => setInterval(iv), []);
 
@@ -1082,6 +1094,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             onIntervalChange={handleIntervalChange}
             hideIntervalBar={true}
             subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
+            data={chartCandles}
           />
         </div>
 
@@ -1128,9 +1141,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {bottomTab === "orderbook" && (() => {
           const ROWS = 10;
           // Bids: highest price first (best bid at top)
-          const bidRows = (orderBook?.bids ?? []).slice(0, ROWS);
+          const bidRows = (effectiveOrderBook?.bids ?? []).slice(0, ROWS);
           // Asks: lowest price first (best ask at top) — they face the bids
-          const askRows = (orderBook?.asks ?? []).slice(0, ROWS);
+          const askRows = (effectiveOrderBook?.asks ?? []).slice(0, ROWS);
           const allQ = [
             ...bidRows.map((b: any) => parseFloat(b.quantity ?? b[1])),
             ...askRows.map((a: any) => parseFloat(a.quantity ?? a[1])),
