@@ -10,6 +10,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as Crypto from "expo-crypto";
 
 export type WalletNetwork = "bsv" | "evm";
 
@@ -49,7 +50,7 @@ interface WalletContextType {
   hasBiometrics: boolean;
   biometricsEnabled: boolean;
   setPin: (pin: string) => Promise<void>;
-  verifyPin: (pin: string) => boolean;
+  verifyPin: (pin: string) => Promise<boolean>;
   clearPin: () => Promise<void>;
   unlock: () => void;
   lock: () => void;
@@ -77,27 +78,29 @@ export function getCoinColor(asset: string): string {
 }
 
 /**
- * FNV-1a based PIN hash. Not cryptographically strong enough for
- * server-side use, but adequate for a local device PIN lock where
- * the salt lives on the same device. Production apps should use
- * expo-crypto / PBKDF2.
+ * Derives a PIN hash using 100 000 rounds of SHA-256 (poor-man's PBKDF2).
+ * Each round includes the round index and the salt to prevent pre-computation.
+ * expo-crypto provides a native SHA-256 implementation; the iteration count
+ * makes brute-forcing all 1 000 000 six-digit PINs non-trivial even with
+ * physical device access.
  */
-function hashPin(pin: string, salt: string): string {
-  const combined = pin + salt + pin.split("").reverse().join("");
-  let h = 0x811c9dc5 >>> 0;
-  for (let i = 0; i < combined.length; i++) {
-    h = (h ^ combined.charCodeAt(i)) >>> 0;
-    h = (Math.imul(h, 0x01000193) >>> 0);
+async function hashPin(pin: string, salt: string): Promise<string> {
+  let current = `${pin}:${salt}`;
+  const ROUNDS = 100_000;
+  for (let i = 0; i < ROUNDS; i++) {
+    current = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      `${current}:${i}:${salt}`,
+    );
   }
-  for (let i = 0; i < salt.length; i++) {
-    h = (h ^ salt.charCodeAt(i)) >>> 0;
-    h = (Math.imul(h, 0x01000193) >>> 0);
-  }
-  return h.toString(16).padStart(8, "0") + btoa(salt).slice(0, 8);
+  return current;
 }
 
 function genSalt(): string {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  // Use Crypto.getRandomValues for a high-entropy salt
+  const bytes = new Uint8Array(16);
+  Crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 const WalletContext = createContext<WalletContextType>({
@@ -115,7 +118,7 @@ const WalletContext = createContext<WalletContextType>({
   hasBiometrics: false,
   biometricsEnabled: false,
   setPin: async () => {},
-  verifyPin: () => false,
+  verifyPin: async () => false,
   clearPin: async () => {},
   unlock: () => {},
   lock: () => {},
@@ -253,7 +256,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
   const setPin = useCallback(async (pin: string) => {
     const salt = genSalt();
-    const hash = hashPin(pin, salt);
+    const hash = await hashPin(pin, salt);
     setPinHash(hash);
     setPinSalt(salt);
     setPinEnabled(true);
@@ -267,9 +270,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyPin = useCallback(
-    (pin: string): boolean => {
+    async (pin: string): Promise<boolean> => {
       if (!pinHash || !pinSalt) return false;
-      return hashPin(pin, pinSalt) === pinHash;
+      const candidate = await hashPin(pin, pinSalt);
+      return candidate === pinHash;
     },
     [pinHash, pinSalt]
   );

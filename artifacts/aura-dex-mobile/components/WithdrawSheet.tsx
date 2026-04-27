@@ -68,22 +68,28 @@ export function WithdrawSheet({ visible, onClose, initialAsset }: Props) {
         return;
       }
 
-      // Step 2: submit withdrawal request
+      // Step 2: submit withdrawal request.
+      // Real wallets (MetaMask, HandCash, etc.) would sign the challenge nonce
+      // with the private key here. Simulated aura-wallet accounts do not hold
+      // private keys, so the request is submitted without a signature — the
+      // server will return 401 and the user will see an appropriate message.
+      const withdrawBody: Record<string, string> = {
+        walletAddress: wallet.address,
+        asset: asset.asset,
+        amount: amountNum.toString(),
+        network: wallet.network,
+        networkLabel: wallet.network === "evm" ? "Ethereum" : "Bitcoin SV",
+        recipient: recipient.trim(),
+        fee: "0",
+      };
+      // Include the challenge nonce so the server can validate request freshness.
+      // Signature must be provided separately by real wallet providers.
+      if (challengeData.nonce) withdrawBody.nonce = challengeData.nonce;
+
       const withdrawRes = await fetch(`${BASE_URL}/api/withdrawals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddress: wallet.address,
-          asset: asset.asset,
-          amount: amountNum.toString(),
-          network: wallet.network,
-          networkLabel: wallet.network === "evm" ? "Ethereum" : "Bitcoin SV",
-          recipient: recipient.trim(),
-          fee: "0",
-          // For simulated wallets the challenge nonce acts as a proof-of-intent;
-          // real wallets would sign this nonce with their private key.
-          signature: challengeData.nonce ?? challengeData.challenge ?? "",
-        }),
+        body: JSON.stringify(withdrawBody),
       });
       const withdrawData = await withdrawRes.json();
 

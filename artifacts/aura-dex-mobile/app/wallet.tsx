@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Platform, TextInput,
+  Platform, TextInput, ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -480,6 +480,7 @@ function PinSetupView({
   const [firstPin, setFirstPin] = useState("");
   const [digits, setDigits] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleDigit = useCallback((d: string) => {
     if (digits.length >= PIN_LENGTH) return;
@@ -522,10 +523,15 @@ function PinSetupView({
   };
 
   const finalize = async (enableBio: boolean) => {
-    await setPin(firstPin);
-    if (enableBio) await toggleBiometrics(true);
-    connect(pendingWallet);
-    onDone();
+    setSaving(true);
+    try {
+      await setPin(firstPin);
+      if (enableBio) await toggleBiometrics(true);
+      connect(pendingWallet);
+      onDone();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const skipPin = () => {
@@ -543,11 +549,20 @@ function PinSetupView({
         <Text style={pinSetupStyles.sub}>
           Use Face ID or Fingerprint alongside your PIN for faster, more convenient unlocking.
         </Text>
-        <TouchableOpacity style={[pinSetupStyles.primaryBtn, { marginBottom: 12 }]} onPress={() => finalize(true)}>
-          <Feather name="smile" size={18} color="#000" />
-          <Text style={pinSetupStyles.primaryBtnText}>Enable Biometrics</Text>
+        <TouchableOpacity
+          style={[pinSetupStyles.primaryBtn, { marginBottom: 12 }, saving && { opacity: 0.6 }]}
+          onPress={() => finalize(true)}
+          disabled={saving}
+        >
+          {saving
+            ? <ActivityIndicator color="#000" size="small" />
+            : <><Feather name="smile" size={18} color="#000" /><Text style={pinSetupStyles.primaryBtnText}>Enable Biometrics</Text></>}
         </TouchableOpacity>
-        <TouchableOpacity style={pinSetupStyles.outlineBtn} onPress={() => finalize(false)}>
+        <TouchableOpacity
+          style={[pinSetupStyles.outlineBtn, saving && { opacity: 0.6 }]}
+          onPress={() => finalize(false)}
+          disabled={saving}
+        >
           <Text style={pinSetupStyles.outlineBtnText}>Skip, PIN only</Text>
         </TouchableOpacity>
       </View>

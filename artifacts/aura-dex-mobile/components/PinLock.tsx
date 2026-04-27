@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -26,7 +26,7 @@ export function PinLock() {
   const [attempts, setAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const [countdown, setCountdown] = useState(0);
-  const [shaking, setShaking] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   // Countdown timer for lockout
   useEffect(() => {
@@ -56,27 +56,31 @@ export function PinLock() {
   }, []);
 
   const checkPin = useCallback(
-    (pin: string) => {
-      if (verifyPin(pin)) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        unlock();
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setShaking(true);
-        setTimeout(() => setShaking(false), 500);
-        const next = attempts + 1;
-        setAttempts(next);
-        setDigits([]);
-        if (next >= MAX_ATTEMPTS) {
-          const until = Date.now() + LOCKOUT_SECONDS * 1000;
-          setLockoutUntil(until);
-          setCountdown(LOCKOUT_SECONDS);
-          setError(`Too many attempts. Try again in ${LOCKOUT_SECONDS}s`);
+    async (pin: string) => {
+      setChecking(true);
+      try {
+        const ok = await verifyPin(pin);
+        if (ok) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          unlock();
         } else {
-          setError(
-            `Incorrect PIN. ${MAX_ATTEMPTS - next} attempt${MAX_ATTEMPTS - next !== 1 ? "s" : ""} remaining`
-          );
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          const next = attempts + 1;
+          setAttempts(next);
+          setDigits([]);
+          if (next >= MAX_ATTEMPTS) {
+            const until = Date.now() + LOCKOUT_SECONDS * 1000;
+            setLockoutUntil(until);
+            setCountdown(LOCKOUT_SECONDS);
+            setError(`Too many attempts. Try again in ${LOCKOUT_SECONDS}s`);
+          } else {
+            setError(
+              `Incorrect PIN. ${MAX_ATTEMPTS - next} attempt${MAX_ATTEMPTS - next !== 1 ? "s" : ""} remaining`
+            );
+          }
         }
+      } finally {
+        setChecking(false);
       }
     },
     [attempts, unlock, verifyPin]
@@ -84,7 +88,7 @@ export function PinLock() {
 
   const addDigit = useCallback(
     (d: string) => {
-      if (lockoutUntil) return;
+      if (lockoutUntil || checking) return;
       if (digits.length >= PIN_LENGTH) return;
       Haptics.selectionAsync();
       const next = [...digits, d];
@@ -93,15 +97,15 @@ export function PinLock() {
         setTimeout(() => checkPin(next.join("")), 80);
       }
     },
-    [checkPin, digits, lockoutUntil]
+    [checkPin, checking, digits, lockoutUntil]
   );
 
   const removeDigit = useCallback(() => {
-    if (lockoutUntil) return;
+    if (lockoutUntil || checking) return;
     Haptics.selectionAsync();
     setDigits((prev) => prev.slice(0, -1));
     setError(null);
-  }, [lockoutUntil]);
+  }, [checking, lockoutUntil]);
 
   const shortAddr = wallet
     ? `${wallet.address.slice(0, 8)}...${wallet.address.slice(-4)}`
@@ -120,7 +124,7 @@ export function PinLock() {
         <Text style={styles.subtitle}>{shortAddr}</Text>
 
         {/* Dot indicators */}
-        <View style={[styles.dotsRow, shaking && styles.dotsShake]}>
+        <View style={styles.dotsRow}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
             <View
               key={i}
@@ -132,8 +136,10 @@ export function PinLock() {
           ))}
         </View>
 
-        {/* Error / countdown */}
-        {lockoutUntil ? (
+        {/* Error / countdown / checking */}
+        {checking ? (
+          <ActivityIndicator color={C.primary} style={{ height: 20 }} />
+        ) : lockoutUntil ? (
           <Text style={styles.errorText}>Locked for {countdown}s</Text>
         ) : error ? (
           <Text style={styles.errorText}>{error}</Text>
@@ -165,9 +171,13 @@ export function PinLock() {
                 return (
                   <TouchableOpacity
                     key={key}
-                    style={[styles.keyBtn, styles.keyBtnNum, !!lockoutUntil && styles.keyDisabled]}
+                    style={[
+                      styles.keyBtn,
+                      styles.keyBtnNum,
+                      (!!lockoutUntil || checking) && styles.keyDisabled,
+                    ]}
                     onPress={() => addDigit(key)}
-                    disabled={!!lockoutUntil}
+                    disabled={!!lockoutUntil || checking}
                     activeOpacity={0.7}
                   >
                     <Text style={styles.keyText}>{key}</Text>
@@ -198,7 +208,6 @@ const styles = StyleSheet.create({
   title: { fontFamily: "Inter_700Bold", fontSize: 28, color: C.text, marginBottom: 8 },
   subtitle: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.textMuted, marginBottom: 32 },
   dotsRow: { flexDirection: "row", gap: 18, marginBottom: 12 },
-  dotsShake: { transform: [{ translateX: 6 }] },
   dot: {
     width: 14, height: 14, borderRadius: 7,
     borderWidth: 2, borderColor: C.cardBorder, backgroundColor: "transparent",
