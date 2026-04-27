@@ -10,7 +10,7 @@ import {
   ChevronDown, TrendingUp, TrendingDown, Zap, History, AlertTriangle,
   Check, X, Timer, DollarSign, Shield, Target, ArrowRightLeft,
 } from "lucide-react";
-import { generateMockCandles } from "@/lib/mock-data";
+import { generateMockCandles, MOCK_TICKER } from "@/lib/mock-data";
 
 const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
@@ -445,7 +445,7 @@ export function PredictionTrading() {
                   symbol={symbol}
                   interval={candleInterval}
                   onIntervalChange={setCandleInterval}
-                  data={currentPrice > 0 ? undefined : generateMockCandles(14.35)}
+                  data={currentPrice > 0 ? undefined : generateMockCandles(MOCK_TICKER[symbol]?.lastPrice ?? 14.35)}
                 />
               </Suspense>
             </div>
