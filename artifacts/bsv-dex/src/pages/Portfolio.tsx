@@ -466,7 +466,22 @@ export function Portfolio() {
                  price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
       });
     }
-    // Non-EVM fallback: list of known assets, only native has a real balance
+    // For EVM/Tron wallets whose chain balances haven't loaded yet, show only the
+    // native-asset balance from the wallet store so that stablecoin rows such as
+    // USDT and USDC don't appear with a misleading 0 balance.
+    if (network === "evm" || network === "tron") {
+      const isStable = stableSet.has(nativeAsset);
+      const mkt    = prices?.[nativeAsset];
+      const price  = isStable ? 1 : (mkt?.lastPrice ?? 0);
+      const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+      const valueUSD = nativeBalance * price;
+      const pnl24h   = valueUSD * change / 100;
+      const color    = ASSET_COLORS[nativeAsset] ?? "#6B7280";
+      return [{ asset: nativeAsset, color, marketKey: nativeAsset,
+                total: nativeBalance, free: nativeBalance, locked: 0,
+                price, change24hPercent: change, valueUSD, pnl24h, isNative: true }];
+    }
+    // Non-EVM fallback (BSV, BTC, SOL…): list of known assets, only native has a real balance
     const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
     return PORTFOLIO_ASSETS.map(a => {
       const isStable = stableSet.has(a.asset);
@@ -484,6 +499,11 @@ export function Portfolio() {
   const totalPnlUSD    = balances.reduce((s, b) => s + b.pnl24h, 0);
   const totalPnlPercent = totalValueUSD > 0 ? (totalPnlUSD / totalValueUSD) * 100 : 0;
   const nonZero        = balances.filter(b => b.total > 0);
+
+  // True while waiting for chain-specific token balances (EVM or Tron).
+  const isLoadingChainBalances =
+    (network === "evm"  && (evmLoading  || evmBalances.length  === 0)) ||
+    (network === "tron" && (tronLoading || tronBalances.length === 0));
 
   return (
     <>
@@ -700,7 +720,7 @@ export function Portfolio() {
                 </button>
               </div>
               <div className="flex items-end gap-4 mb-6">
-                {pricesLoading && totalValueUSD === 0 ? (
+                {(pricesLoading || isLoadingChainBalances) && totalValueUSD === 0 ? (
                   <div className="h-14 w-52 bg-muted/40 rounded-xl animate-pulse" />
                 ) : (
                   <span className="text-5xl font-bold font-mono tracking-tight text-foreground">
@@ -773,7 +793,7 @@ export function Portfolio() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {pricesLoading && totalValueUSD === 0
+                {(pricesLoading || isLoadingChainBalances) && totalValueUSD === 0
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
                         {Array.from({ length: 6 }).map((__, j) => (
