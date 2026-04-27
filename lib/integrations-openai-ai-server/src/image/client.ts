@@ -2,25 +2,18 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-// Lazy singleton — no startup throw so the module loads even when env vars
-// are absent.  Individual function calls will throw/reject if the key is
-// invalid, but they are all called inside try/catch blocks in the routes.
-let _openai: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_openai) {
-    _openai = new OpenAI({
-      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? "",
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    });
-  }
-  return _openai;
-}
+// Instantiated without throwing — if env vars are absent the constructor
+// still succeeds; individual function calls will reject with auth errors.
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? "",
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
 
 export async function generateImageBuffer(
   prompt: string,
   size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
 ): Promise<Buffer> {
-  const response = await getClient().images.generate({
+  const response = await openai.images.generate({
     model: "gpt-image-1",
     prompt,
     size,
@@ -42,7 +35,7 @@ export async function editImages(
     )
   );
 
-  const response = await getClient().images.edit({
+  const response = await openai.images.edit({
     model: "gpt-image-1",
     image: images,
     prompt,

@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -177,7 +178,8 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
       [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    } catch {
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
     }
 
@@ -249,7 +251,8 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
       [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    } catch {
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
     }
 
@@ -292,7 +295,8 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
       [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    } catch {
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
     }
 
@@ -404,7 +408,8 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
       [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
-    } catch {
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
     }
 
