@@ -1,7 +1,7 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import React from "react";
@@ -14,20 +14,20 @@ function NativeTabLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "chart.bar.fill", selected: "chart.bar.fill" }} />
-        <Label>Markets</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "chart.bar.fill", selected: "chart.bar.fill" }} />
+        <NativeTabs.Trigger.Label>Markets</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="portfolio">
-        <Icon sf={{ default: "briefcase", selected: "briefcase.fill" }} />
-        <Label>Portfolio</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "briefcase", selected: "briefcase.fill" }} />
+        <NativeTabs.Trigger.Label>Portfolio</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="discover">
-        <Icon sf={{ default: "bolt", selected: "bolt.fill" }} />
-        <Label>Futures</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "bolt", selected: "bolt.fill" }} />
+        <NativeTabs.Trigger.Label>Futures</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
-        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
-        <Label>Settings</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );

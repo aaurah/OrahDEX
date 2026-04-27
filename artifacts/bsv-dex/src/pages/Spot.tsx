@@ -450,6 +450,7 @@ export function SpotTrading() {
               symbol={symbol}
               interval={candleInterval}
               onIntervalChange={setCandleInterval}
+              data={candles}
             />
           </div>
           <div className="h-[220px] shrink-0 bg-card flex flex-col border-t border-border">
