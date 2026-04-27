@@ -1621,7 +1621,7 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={fromToken}
@@ -1634,7 +1634,7 @@ export function Swap() {
                     placeholder="0.0"
                     value={amountIn}
                     onChange={e => handleAmountChange(e.target.value)}
-                    className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+                    className="flex-1 min-w-0 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
                   />
                 </div>
                 {/* Percentage quick-fill (only when balance is known) */}
@@ -1691,18 +1691,18 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={toToken}
                     onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
                     label=""
                   />
-                  <div className="flex-1 text-right">
+                  <div className="flex-1 min-w-0 text-right overflow-hidden">
                     {quoting ? (
                       <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
                     ) : (
-                      <span className={cn("text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
+                      <span className={cn("block truncate text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
                         {amountOut ? parseFloat(amountOut).toFixed(6) : "0.0"}
                       </span>
                     )}
