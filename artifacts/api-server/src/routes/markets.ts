@@ -314,6 +314,8 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       }
     } else {
       lastPrice = parseFloat(market.lastPrice);
+      // For markets with stale/zero DB price, fall back to cross-rate (same as candles/ticker)
+      if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
     }
 
     // A market with no price yet can't produce meaningful synthetic depth

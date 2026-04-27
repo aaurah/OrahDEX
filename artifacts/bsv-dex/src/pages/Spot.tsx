@@ -203,8 +203,8 @@ export function SpotTrading() {
     jsonLd: seoJsonLd,
   });
 
-  const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
-  const trades     = Array.isArray(apiTrades) ? apiTrades : generateMockTrades(ticker.lastPrice);
+  const candles    = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
+  const trades     = (Array.isArray(apiTrades) && apiTrades.length > 0) ? apiTrades : generateMockTrades(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -212,9 +212,10 @@ export function SpotTrading() {
     return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
   }
   const rawOB = apiOrderBook as any;
-  const orderBook = (rawOB?.bids && Array.isArray(rawOB.bids[0])
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const orderBook = (hasRealOB && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
-    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
+    : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
 
   const cancelOrder = useCancelOrder({
     mutation: {

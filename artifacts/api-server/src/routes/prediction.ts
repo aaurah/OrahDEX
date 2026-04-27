@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router = Router();
 
@@ -179,14 +180,23 @@ function getSymbolRounds(symbol: string): PredictionRound[] {
 }
 
 async function getCurrentPrice(symbol: string): Promise<number> {
+  const pair = symbol.replace("-", "/");
   try {
-    const pair = symbol.replace("-", "/");
     const { rows } = await pool.query(
       `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
       [pair],
     );
-    if (rows.length > 0) return parseFloat(rows[0].last_price) || 0;
+    if (rows.length > 0) {
+      const price = parseFloat(rows[0].last_price);
+      if (price > 0) return price;
+    }
   } catch {}
+  // Fallback: derive from FALLBACK_PRICES when DB is empty or has zero price
+  const [base, quote] = pair.split("/");
+  const stableQuotes = new Set(["USDT","USDC","USD","BUSD","TUSD","USDD","DAI","FDUSD"]);
+  const baseUsd  = base  ? (FALLBACK_PRICES[base]  ?? 0) : 0;
+  const quoteUsd = quote ? (stableQuotes.has(quote) ? 1 : (FALLBACK_PRICES[quote] ?? 0)) : 0;
+  if (baseUsd > 0 && quoteUsd > 0) return baseUsd / quoteUsd;
   return 0;
 }
 
