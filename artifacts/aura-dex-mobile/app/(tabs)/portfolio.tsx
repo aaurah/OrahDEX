@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,21 +6,17 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useWallet } from "@/context/WalletContext";
+import { useWallet, ExchangeBalance, getCoinColor } from "@/context/WalletContext";
+import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { Colors } from "@/constants/colors";
 
 const C = Colors.dark;
-
-const MOCK_BALANCES = [
-  { asset: "BSV", amount: 142.5, value: 7899.5, change: 4.41, color: "#EAB308" },
-  { asset: "USDT", amount: 4520.5, value: 4520.5, change: 0, color: "#22C55E" },
-  { asset: "BTC", amount: 0.0824, value: 5381.3, change: -1.85, color: "#F97316" },
-  { asset: "ETH", amount: 1.25, value: 3998.4, change: 1.53, color: "#8B5CF6" },
-];
 
 const MOCK_ORDERS = [
   { id: "1", symbol: "BSV/USDT", side: "buy", type: "limit", price: 54.00, qty: 10, status: "open", time: "09:15" },
@@ -36,10 +32,28 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function PortfolioScreen() {
   const insets = useSafeAreaInsets();
-  const { wallet } = useWallet();
+  const {
+    wallet,
+    exchangeBalances,
+    isLoadingBalances,
+    totalValueUSD,
+    totalPnlPercent,
+    refreshBalance,
+  } = useWallet();
+  const [withdrawAsset, setWithdrawAsset] = useState<ExchangeBalance | null>(null);
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const totalValue = MOCK_BALANCES.reduce((s, b) => s + b.value, 0);
-  const totalChange = ((MOCK_BALANCES.reduce((s, b) => s + b.value * b.change / 100, 0) / totalValue) * 100);
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await refreshBalance();
+    setRefreshing(false);
+  };
+
+  const openWithdraw = (b: ExchangeBalance) => {
+    setWithdrawAsset(b);
+    setShowWithdraw(true);
+  };
 
   if (!wallet) {
     return (
@@ -64,6 +78,8 @@ export default function PortfolioScreen() {
     );
   }
 
+  const hasBalances = exchangeBalances.length > 0;
+
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 12 }]}>
@@ -74,48 +90,99 @@ export default function PortfolioScreen() {
         </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.primary} />}
+      >
         {/* Total Value Card */}
         <View style={styles.totalCard}>
-          <Text style={styles.totalLabel}>Total Portfolio Value</Text>
-          <Text style={styles.totalValue}>${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
-            <Feather name={totalChange >= 0 ? "trending-up" : "trending-down"} size={14} color={totalChange >= 0 ? C.buy : C.sell} />
-            <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: totalChange >= 0 ? C.buy : C.sell }}>
-              {totalChange >= 0 ? "+" : ""}{totalChange.toFixed(2)}% today
-            </Text>
-          </View>
-          {/* Allocation bar */}
-          <View style={styles.allocBar}>
-            {MOCK_BALANCES.map((b) => (
-              <View
-                key={b.asset}
-                style={[styles.allocSegment, { flex: b.value / totalValue, backgroundColor: b.color }]}
-              />
-            ))}
-          </View>
+          <Text style={styles.totalLabel}>Exchange Balance</Text>
+          {isLoadingBalances && !hasBalances ? (
+            <ActivityIndicator color={C.primary} style={{ marginVertical: 12 }} />
+          ) : (
+            <>
+              <Text style={styles.totalValue}>
+                ${totalValueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <Feather
+                  name={totalPnlPercent >= 0 ? "trending-up" : "trending-down"}
+                  size={14}
+                  color={totalPnlPercent >= 0 ? C.buy : C.sell}
+                />
+                <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 14, color: totalPnlPercent >= 0 ? C.buy : C.sell }}>
+                  {totalPnlPercent >= 0 ? "+" : ""}{totalPnlPercent.toFixed(2)}% today
+                </Text>
+              </View>
+              {/* Allocation bar */}
+              {hasBalances && (
+                <View style={styles.allocBar}>
+                  {exchangeBalances.map((b) => (
+                    <View
+                      key={b.asset}
+                      style={[
+                        styles.allocSegment,
+                        { flex: totalValueUSD > 0 ? b.valueUSD / totalValueUSD : 0, backgroundColor: getCoinColor(b.asset) },
+                      ]}
+                    />
+                  ))}
+                </View>
+              )}
+            </>
+          )}
         </View>
 
         {/* Assets */}
-        <Text style={styles.sectionTitle}>Assets</Text>
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Assets</Text>
+          <TouchableOpacity onPress={handleRefresh}>
+            <Feather name="refresh-cw" size={14} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.card}>
-          {MOCK_BALANCES.map((b, idx) => (
-            <View key={b.asset} style={[styles.assetRow, idx === MOCK_BALANCES.length - 1 && { borderBottomWidth: 0 }]}>
-              <View style={[styles.assetIcon, { backgroundColor: b.color + "22", borderColor: b.color + "44" }]}>
-                <Text style={[styles.assetIconText, { color: b.color }]}>{b.asset[0]}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.assetName}>{b.asset}</Text>
-                <Text style={styles.assetAmount}>{b.amount.toLocaleString()}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={styles.assetValue}>${b.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Text>
-                <Text style={[styles.assetChange, { color: b.change >= 0 ? C.buy : C.sell }]}>
-                  {b.change >= 0 ? "+" : ""}{b.change.toFixed(2)}%
-                </Text>
-              </View>
+          {!hasBalances && !isLoadingBalances ? (
+            <View style={{ padding: 20, alignItems: "center" }}>
+              <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted }}>
+                No balances found. Pull down to refresh.
+              </Text>
             </View>
-          ))}
+          ) : (
+            exchangeBalances.map((b, idx) => {
+              const color = getCoinColor(b.asset);
+              return (
+                <View
+                  key={b.asset}
+                  style={[styles.assetRow, idx === exchangeBalances.length - 1 && { borderBottomWidth: 0 }]}
+                >
+                  <View style={[styles.assetIcon, { backgroundColor: color + "22", borderColor: color + "44" }]}>
+                    <Text style={[styles.assetIconText, { color }]}>{b.asset.slice(0, 2)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.assetName}>{b.asset}</Text>
+                    <Text style={styles.assetAmount}>{b.total.toLocaleString()} total</Text>
+                    {b.locked > 0 && (
+                      <Text style={styles.assetLocked}>{b.locked.toFixed(6)} locked</Text>
+                    )}
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 4 }}>
+                    <Text style={styles.assetValue}>
+                      ${b.valueUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </Text>
+                    <Text style={[styles.assetChange, { color: b.change24hPercent >= 0 ? C.buy : C.sell }]}>
+                      {b.change24hPercent >= 0 ? "+" : ""}{b.change24hPercent.toFixed(2)}%
+                    </Text>
+                    {b.available > 0 && (
+                      <TouchableOpacity style={styles.withdrawBtn} onPress={() => openWithdraw(b)}>
+                        <Feather name="arrow-up-right" size={11} color={C.primary} />
+                        <Text style={styles.withdrawBtnText}>Withdraw</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
         </View>
 
         {/* Open Orders */}
@@ -142,6 +209,12 @@ export default function PortfolioScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <WithdrawSheet
+        visible={showWithdraw}
+        onClose={() => setShowWithdraw(false)}
+        initialAsset={withdrawAsset}
+      />
     </View>
   );
 }
@@ -206,6 +279,18 @@ const styles = StyleSheet.create({
   assetAmount: { fontFamily: "Inter_400Regular", fontSize: 12, color: C.textMuted, marginTop: 2 },
   assetValue: { fontFamily: "Inter_700Bold", fontSize: 14, color: C.text },
   assetChange: { fontFamily: "Inter_500Medium", fontSize: 12, marginTop: 2 },
+  assetLocked: { fontFamily: "Inter_400Regular", fontSize: 11, color: C.textMuted },
+  sectionRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 20, marginBottom: 10,
+  },
+  withdrawBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: C.primary + "15", borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1, borderColor: C.primary + "40",
+  },
+  withdrawBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 10, color: C.primary },
   orderRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 16, paddingVertical: 14,
