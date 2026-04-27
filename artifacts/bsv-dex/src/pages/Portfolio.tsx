@@ -502,8 +502,8 @@ export function Portfolio() {
 
   // True while waiting for chain-specific token balances (EVM or Tron).
   const isLoadingChainBalances =
-    (network === "evm"  && (evmLoading  || evmBalances.length  === 0)) ||
-    (network === "tron" && (tronLoading || tronBalances.length === 0));
+    (network === "evm"  && evmLoading) ||
+    (network === "tron" && tronLoading);
 
   return (
     <>
