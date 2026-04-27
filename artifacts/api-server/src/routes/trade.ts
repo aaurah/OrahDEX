@@ -15,7 +15,7 @@ import { createPublicClient, http } from "viem";
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { or, eq, desc } from "drizzle-orm";
-import { settleSwap, getBalances, creditAvailable } from "../lib/ledger.js";
+import { settleSwap, getBalances, creditAvailable, debitAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
@@ -115,6 +115,78 @@ async function resolveRate(assetIn: string, assetOut: string): Promise<number | 
   const outUsd = await toUsd(assetOut);
   if (!inUsd || !outUsd) return null;
   return inUsd / outUsd;
+}
+
+function normalizeAssetSymbol(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const v = input.trim().toUpperCase();
+  return v.length > 0 ? v : null;
+}
+
+function parseTradeSymbol(input: unknown): { base: string; quote: string; normalized: string } | null {
+  if (typeof input !== "string") return null;
+  const normalized = input.trim().toUpperCase().replace(/-/g, "/");
+  const [base, quote] = normalized.split("/");
+  if (!base || !quote) return null;
+  return { base, quote, normalized: `${base}/${quote}` };
+}
+
+async function executeExchangeTrade(params: {
+  walletAddress: string;
+  assetIn: string;
+  assetOut: string;
+  amountIn: number;
+  minAmountOut?: number;
+}) {
+  const { walletAddress, minAmountOut } = params;
+  const assetIn = params.assetIn.toUpperCase();
+  const assetOut = params.assetOut.toUpperCase();
+  const amountIn = params.amountIn;
+
+  const rate = await resolveRate(assetIn, assetOut);
+  if (!rate) {
+    throw new Error("NO_PRICE");
+  }
+
+  const grossOut = amountIn * rate;
+  const fee = grossOut * FEE_PCT;
+  const amtOut = grossOut - fee;
+
+  if (minAmountOut != null && amtOut < minAmountOut) {
+    throw new Error(`SLIPPAGE_EXCEEDED:${amtOut.toFixed(8)}`);
+  }
+
+  await settleSwap({
+    walletAddress,
+    assetIn,
+    assetOut,
+    amountIn: amountIn.toFixed(8),
+    amountOut: amtOut.toFixed(8),
+  });
+  await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut });
+
+  const tradeId = crypto.randomUUID();
+  const price = amountIn > 0 ? amtOut / amountIn : 0;
+  const symbol = `${assetIn}/${assetOut}`;
+  try {
+    await db.insert(tradesTable).values({
+      id: tradeId,
+      symbol,
+      side: "buy",
+      price: price.toFixed(8),
+      quantity: amountIn.toFixed(8),
+      total: amtOut.toFixed(8),
+      fee: fee.toFixed(8),
+      feeAsset: assetIn,
+      walletAddress,
+      txid: `exchange:${tradeId}`,
+    });
+  } catch (dbErr: any) {
+    logger.warn({ dbErr: dbErr?.message }, "Exchange trade record insert failed (settlement still valid)");
+  }
+
+  const balances = await getBalances(walletAddress);
+  return { tradeId, assetIn, assetOut, amountIn, amountOut: amtOut, fee, rate, balances };
 }
 
 // ── GET /trade/modes ───────────────────────────────────────────────────────────
@@ -541,16 +613,11 @@ router.post("/trade/exchange/quote", async (req, res) => {
 // authorised this swap. Obtain the canonical message from
 // buildExchangeAuthMessage and sign it with personal_sign in MetaMask/ethers.
 router.post("/trade/exchange", async (req, res) => {
-  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut, signature, nonce } = req.body ?? {};
+  const body = req.body ?? {};
+  const walletAddress = body.walletAddress;
 
-  if (!walletAddress || !assetIn || !assetOut || !amountIn) {
-    res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
-    return;
-  }
-
-  const amtIn = parseFloat(amountIn);
-  if (isNaN(amtIn) || amtIn <= 0) {
-    res.status(400).json({ error: "amountIn must be a positive number" });
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
     return;
   }
 
@@ -575,55 +642,50 @@ router.post("/trade/exchange", async (req, res) => {
   }
 
   try {
-    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
-    if (!rate) {
-      res.status(422).json({ error: "No price available for this pair" });
+    let assetIn = normalizeAssetSymbol(body.assetIn);
+    let assetOut = normalizeAssetSymbol(body.assetOut);
+    let amtIn = parseFloat(String(body.amountIn ?? "NaN"));
+    let minOut = body.minAmountOut != null ? parseFloat(String(body.minAmountOut)) : undefined;
+
+    // Advanced path: accept { symbol: "ETH/USDC", side: "sell|buy", quantity }
+    if ((!assetIn || !assetOut || !Number.isFinite(amtIn)) && body.symbol && body.side && body.quantity != null) {
+      const pair = parseTradeSymbol(body.symbol);
+      const side = String(body.side).toLowerCase();
+      const qty = parseFloat(String(body.quantity));
+      if (!pair || !Number.isFinite(qty) || qty <= 0 || (side !== "buy" && side !== "sell")) {
+        res.status(400).json({ error: "Invalid advanced trade params: symbol, side, quantity" });
+        return;
+      }
+      if (side === "sell") {
+        assetIn = pair.base;
+        assetOut = pair.quote;
+        amtIn = qty;
+      } else {
+        assetIn = pair.quote;
+        assetOut = pair.base;
+        const r = await resolveRate(assetIn, assetOut);
+        if (!r || r <= 0) {
+          res.status(422).json({ error: "No price available for this pair" });
+          return;
+        }
+        // quantity for BUY is desired base output; convert to required quote input
+        amtIn = qty / (r * (1 - FEE_PCT));
+        if (minOut == null) minOut = qty * 0.999;
+      }
+    }
+
+    if (!assetIn || !assetOut || !Number.isFinite(amtIn) || amtIn <= 0) {
+      res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
       return;
     }
 
-    const grossOut = amtIn * rate;
-    const fee      = grossOut * FEE_PCT;
-    const amtOut   = grossOut - fee;
-
-    if (minAmountOut && amtOut < parseFloat(minAmountOut)) {
-      res.status(422).json({
-        error: `Slippage exceeded: expected at least ${minAmountOut}, got ${amtOut.toFixed(8)}`,
-        amountOut: amtOut.toFixed(8),
-      });
-      return;
-    }
-
-    await settleSwap({
+    const trade = await executeExchangeTrade({
       walletAddress,
-      assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
-      amountIn:  amtIn.toFixed(8),
-      amountOut: amtOut.toFixed(8),
+      assetIn,
+      assetOut,
+      amountIn: amtIn,
+      minAmountOut: minOut,
     });
-    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase() });
-
-    // Record exchange-mode trade in trades table
-    const tradeId = crypto.randomUUID();
-    const price   = amtIn > 0 ? amtOut / amtIn : 0;
-    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
-    try {
-      await db.insert(tradesTable).values({
-        id:           tradeId,
-        symbol,
-        side:         "buy",
-        price:        price.toFixed(8),
-        quantity:     amtIn.toFixed(8),
-        total:        amtOut.toFixed(8),
-        fee:          fee.toFixed(8),
-        feeAsset:     assetIn.toUpperCase(),
-        walletAddress,
-        txid:         `exchange:${tradeId}`,
-      });
-    } catch (dbErr: any) {
-      logger.warn({ dbErr: dbErr?.message }, "Exchange trade record insert failed (settlement still valid)");
-    }
-
-    const balances = await getBalances(walletAddress);
 
     const vaultActive  = isVaultConfigured();
     const vaultAddress = vaultActive ? getVaultAddress() : null;
@@ -632,15 +694,15 @@ router.post("/trade/exchange", async (req, res) => {
     res.json({
       mode:       "exchange",
       success:    true,
-      tradeId,
+      tradeId: trade.tradeId,
       walletAddress,
-      assetIn:    assetIn.toUpperCase(),
-      assetOut:   assetOut.toUpperCase(),
-      amountIn:   amtIn.toFixed(8),
-      amountOut:  amtOut.toFixed(8),
-      fee:        fee.toFixed(8),
+      assetIn:    trade.assetIn,
+      assetOut:   trade.assetOut,
+      amountIn:   trade.amountIn.toFixed(8),
+      amountOut:  trade.amountOut.toFixed(8),
+      fee:        trade.fee.toFixed(8),
       feePct:     FEE_PCT * 100,
-      rate:       rate.toFixed(8),
+      rate:       trade.rate.toFixed(8),
       settlement: {
         layer:           vaultActive ? "vault" : "internal-ledger",
         vaultAddress:    vaultAddress ?? null,
@@ -650,15 +712,155 @@ router.post("/trade/exchange", async (req, res) => {
           ? `Withdrawals settled via OrahVault on chain ${vaultChain}`
           : "Internal ledger settlement — deploy OrahVault to enable on-chain withdrawals",
       },
-      balances,
+      balances: trade.balances,
       settledAt:  new Date().toISOString(),
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/exchange failed");
-    if (err?.message?.includes("Insufficient")) {
+    if (err?.message === "NO_PRICE") {
+      res.status(422).json({ error: "No price available for this pair" });
+    } else if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
+      res.status(422).json({
+        error: "Slippage exceeded",
+        amountOut: err.message.split(":")[1] ?? null,
+      });
+    } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
       res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
     } else {
       res.status(500).json({ error: err?.message ?? "Trade failed" });
+    }
+  }
+});
+
+// ── POST /trade/exchange/advanced ───────────────────────────────────────────────
+// Dedicated advanced market-style endpoint: { walletAddress, symbol, side, quantity }
+router.post("/trade/exchange/advanced", async (req, res) => {
+  const { walletAddress, symbol, side, quantity, minAmountOut } = req.body ?? {};
+  const pair = parseTradeSymbol(symbol);
+  const normalizedSide = String(side ?? "").toLowerCase();
+  const qty = parseFloat(String(quantity));
+
+  if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
+    res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
+    return;
+  }
+
+  try {
+    let assetIn: string;
+    let assetOut: string;
+    let amountIn: number;
+    let minOut = minAmountOut != null ? parseFloat(String(minAmountOut)) : undefined;
+
+    if (normalizedSide === "sell") {
+      assetIn = pair.base;
+      assetOut = pair.quote;
+      amountIn = qty;
+    } else {
+      assetIn = pair.quote;
+      assetOut = pair.base;
+      const rate = await resolveRate(assetIn, assetOut);
+      if (!rate || rate <= 0) {
+        res.status(422).json({ error: "No price available for this pair" });
+        return;
+      }
+      amountIn = qty / (rate * (1 - FEE_PCT));
+      if (minOut == null) minOut = qty * 0.999;
+    }
+
+    const trade = await executeExchangeTrade({
+      walletAddress,
+      assetIn,
+      assetOut,
+      amountIn,
+      minAmountOut: minOut,
+    });
+
+    res.json({
+      mode: "exchange-advanced",
+      success: true,
+      tradeId: trade.tradeId,
+      walletAddress,
+      symbol: pair.normalized,
+      side: normalizedSide,
+      quantity: qty.toFixed(8),
+      inputAsset: trade.assetIn,
+      outputAsset: trade.assetOut,
+      amountIn: trade.amountIn.toFixed(8),
+      amountOut: trade.amountOut.toFixed(8),
+      fee: trade.fee.toFixed(8),
+      feePct: FEE_PCT * 100,
+      rate: trade.rate.toFixed(8),
+      balances: trade.balances,
+      settledAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "trade/exchange/advanced failed");
+    if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
+      res.status(422).json({ error: "Slippage exceeded", amountOut: err.message.split(":")[1] ?? null });
+    } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
+      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
+    } else {
+      res.status(500).json({ error: err?.message ?? "Advanced trade failed" });
+    }
+  }
+});
+
+// ── POST /trade/exchange/mint ───────────────────────────────────────────────────
+router.post("/trade/exchange/mint", async (req, res) => {
+  const walletAddress = req.body?.walletAddress;
+  const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
+  const amount = parseFloat(String(req.body?.amount ?? "NaN"));
+
+  if (!walletAddress || !Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: "walletAddress and positive amount are required" });
+    return;
+  }
+
+  try {
+    await creditAvailable(walletAddress, asset, amount.toFixed(8));
+    const balances = await getBalances(walletAddress);
+    res.status(201).json({
+      success: true,
+      action: "mint",
+      walletAddress,
+      asset,
+      amount: amount.toFixed(8),
+      balances,
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "trade/exchange/mint failed");
+    res.status(500).json({ error: err?.message ?? "Mint failed" });
+  }
+});
+
+// ── POST /trade/exchange/burn ───────────────────────────────────────────────────
+router.post("/trade/exchange/burn", async (req, res) => {
+  const walletAddress = req.body?.walletAddress;
+  const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
+  const amount = parseFloat(String(req.body?.amount ?? "NaN"));
+
+  if (!walletAddress || !Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ error: "walletAddress and positive amount are required" });
+    return;
+  }
+
+  try {
+    await debitAvailable(walletAddress, asset, amount.toFixed(8));
+    const balances = await getBalances(walletAddress);
+    res.json({
+      success: true,
+      action: "burn",
+      walletAddress,
+      asset,
+      amount: amount.toFixed(8),
+      balances,
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "trade/exchange/burn failed");
+    if (err?.message?.includes("INSUFFICIENT_FUNDS")) {
+      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
+    } else {
+      res.status(500).json({ error: err?.message ?? "Burn failed" });
     }
   }
 });
