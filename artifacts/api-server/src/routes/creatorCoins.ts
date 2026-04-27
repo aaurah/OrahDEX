@@ -13,6 +13,7 @@ const INIT_VIRTUAL_BSV = 30;
 // (matches pump.fun-style initialisation — this is NOT a credential)
 const TOTAL_SUPPLY = 1_000_000_000;
 const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
+const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 
 
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
