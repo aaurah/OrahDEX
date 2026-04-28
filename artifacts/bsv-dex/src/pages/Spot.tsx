@@ -14,6 +14,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
@@ -184,6 +185,26 @@ export function SpotTrading() {
     ?? MOCK_TICKER[rawSymbol]
     ?? generateTickerForSymbol(base, quote);
   const isPositive = ticker.priceChangePercent >= 0;
+
+  /* ── Cross-rate: USD equivalent of the quoted price ── */
+  const { prices: crossRates } = useWalletPrices();
+  const STABLES = new Set(["USDT", "USDC", "TUSD", "USDD", "FDUSD", "BUSD", "DAI"]);
+  const QUOTE_TO_USD: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1, DAI: 1,
+    BTC:  crossRates.BTC?.usd  || 83000,
+    ETH:  crossRates.ETH?.usd  || 1800,
+    BSV:  crossRates.BSV?.usd  || 14,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51, CRO: 0.085, TRX: 0.24,
+  };
+  const isStableQuote  = STABLES.has(quote);
+  const quoteMultiplier = QUOTE_TO_USD[quote] ?? 1;
+  const priceInUsd     = ticker.lastPrice * quoteMultiplier;
+  /* For stablecoin pairs the price IS the USD price, so just show $price.
+     For cross-rate pairs show the approximate USD equivalent. */
+  const usdEquivalent  = isStableQuote
+    ? `$${formatPrice(ticker.lastPrice)}`
+    : `≈$${formatPrice(priceInUsd)}`;
 
   /* ── SEO + live browser-tab title (price in title so it updates as price changes) ── */
   const seoJsonLd = useMemo(() => ({
@@ -405,7 +426,7 @@ export function SpotTrading() {
           <span className={cn("text-lg font-mono font-bold leading-none", isPositive ? "text-buy" : "text-sell")}>
             {formatPrice(ticker.lastPrice)}
           </span>
-          <span className="text-xs text-foreground font-mono mt-1">${formatPrice(ticker.lastPrice)}</span>
+          <span className="text-xs text-muted-foreground font-mono mt-1">{usdEquivalent}</span>
         </div>
 
         <div className="hidden sm:flex flex-col">
