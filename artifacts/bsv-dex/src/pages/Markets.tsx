@@ -16,7 +16,7 @@ import {
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight, BarChart2, ExternalLink, Info } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
@@ -25,6 +25,23 @@ import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } 
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/** Normalised market row — all fields present after `normalise()` */
+interface MarketRow {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  lastPrice: string | number;
+  priceChangePercent24h: string | number;
+  high24h?: string | number;
+  low24h?: string | number;
+  volume24h?: string | number;
+  marketCap?: string | number;
+  type?: string;
+  name?: string;
+  contractAddresses?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
 type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
@@ -123,6 +140,7 @@ export function Markets() {
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
+  const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
   const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
@@ -626,7 +644,10 @@ export function Markets() {
                       </td>
                       <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedCoin(m)}
+                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                        >
                           <CoinLogo symbol={base} size={32} />
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5">
@@ -641,11 +662,11 @@ export function Markets() {
                             </div>
                             <ContractAddressBadge
                               baseAsset={base}
-                              dbAddresses={(m as any).contractAddresses}
+                              dbAddresses={(m as MarketRow).contractAddresses}
                               variant="full"
                             />
                           </div>
-                        </div>
+                        </button>
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
                         {applyQConversion && <span className="text-muted-foreground/60 text-[10px] mr-0.5">{qSym}</span>}
@@ -684,6 +705,13 @@ export function Markets() {
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => setSelectedCoin(m)}
+                            className="inline-flex items-center gap-1 border border-border text-muted-foreground px-2 py-1 rounded-md font-bold text-[11px] hover:border-primary/40 hover:text-foreground transition-all active:scale-95"
+                            title="View coin details"
+                          >
+                            <Info className="w-3 h-3" />
+                          </button>
+                          <button
                             onClick={() => handleTrade(tradeHref)}
                             className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1 rounded-md font-bold text-[11px] hover:brightness-110 transition-all active:scale-95"
                           >
@@ -710,6 +738,207 @@ export function Markets() {
         </div>
       </div>
 
+      {/* ── Coin detail panel (slide-over) ── */}
+      {selectedCoin && (
+        <CoinDetailPanel
+          coin={selectedCoin}
+          onClose={() => setSelectedCoin(null)}
+          onTrade={(href) => { setSelectedCoin(null); handleTrade(href); }}
+          toUSD={toUSD}
+          fmtBTC={fmtBTC}
+          fmtBSV={fmtBSV}
+          qPrice={qPrice}
+          qSym={qSym}
+          applyQConversion={applyQConversion}
+          isCrossQuote={isCrossQuote}
+          tab={tab}
+          isStarred={stars.has(selectedCoin.symbol)}
+          onToggleStar={() => toggleStar(selectedCoin.symbol)}
+        />
+      )}
+
     </div>
+  );
+}
+
+/* ── Coin detail slide-over panel ── */
+function CoinDetailPanel({
+  coin, onClose, onTrade, toUSD, fmtBTC, fmtBSV, qPrice, qSym,
+  applyQConversion, isCrossQuote, tab, isStarred, onToggleStar,
+}: {
+  coin: MarketRow;
+  onClose: () => void;
+  onTrade: (href: string) => void;
+  toUSD: (price: number, quote: string) => number;
+  fmtBTC: (usd: number) => string;
+  fmtBSV: (usd: number) => string;
+  qPrice: (p: number) => string;
+  qSym: string;
+  applyQConversion: boolean;
+  isCrossQuote: boolean;
+  tab: string;
+  isStarred: boolean;
+  onToggleStar: () => void;
+}) {
+  const base  = coin.baseAsset ?? coin.symbol.split(/[-/]/)[0];
+  const quote = coin.quoteAsset ?? coin.symbol.split(/[-/]/)[1];
+  const price = parseFloat(coin.lastPrice) || 0;
+  const chg   = parseFloat(coin.priceChangePercent24h) || 0;
+  const isUp  = chg >= 0;
+  const priceUSD = toUSD(price, quote);
+  const isFutures = tab === "futures";
+  const tradeHref = isFutures
+    ? `/futures/${coin.symbol.replace(/\//g, "-")}`
+    : `/trade/${coin.symbol.replace(/\//g, "-")}`;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <CoinLogo symbol={base} size={36} />
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-base text-foreground">{base}</span>
+                <span className="text-muted-foreground text-sm">/{quote}</span>
+                {isFutures && (
+                  <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{coin.name ?? base} · {isFutures ? "Perpetual" : "Spot"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggleStar}
+              className={cn("p-1.5 rounded-lg transition-colors", isStarred ? "text-green-400" : "text-muted-foreground hover:text-green-400")}
+              title={isStarred ? "Remove from favorites" : "Add to favorites"}
+            >
+              <Star className={cn("w-4 h-4", isStarred && "fill-green-400")} />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Price section */}
+        <div className="px-4 py-4 border-b border-border shrink-0">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="flex items-baseline gap-1.5">
+                {applyQConversion && <span className="text-muted-foreground/60 text-xs">{qSym}</span>}
+                <span className={cn("text-2xl font-bold font-mono", isUp ? "text-green-400" : "text-red-400")}>
+                  {qPrice(price)}
+                </span>
+                {isCrossQuote && !applyQConversion && (
+                  <span className="text-sm text-muted-foreground font-mono">{quote}</span>
+                )}
+              </div>
+              {!isCrossQuote && <p className="text-xs text-muted-foreground font-mono mt-0.5">≈${formatPrice(priceUSD)} USD</p>}
+              {isCrossQuote && priceUSD > 0 && (
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">≈${formatPrice(priceUSD)} USD</p>
+              )}
+            </div>
+            <div className={cn(
+              "flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-sm",
+              isUp ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+            )}>
+              {isUp ? "▲" : "▼"} {isUp ? "+" : ""}{chg.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {/* 24h stats */}
+          <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+              <BarChart2 className="w-3 h-3" /> 24h Statistics
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "High", value: qPrice(parseFloat(coin.high24h) || 0), color: "text-green-400" },
+                { label: "Low",  value: qPrice(parseFloat(coin.low24h) || 0),  color: "text-red-400" },
+                { label: "Volume", value: formatVolume(parseFloat(coin.volume24h) || 0), color: "text-foreground" },
+                { label: "Market Cap", value: coin.marketCap ? formatVolume(parseFloat(coin.marketCap) || 0) : "—", color: "text-foreground" },
+              ].map(s => (
+                <div key={s.label} className="bg-background/50 rounded-lg p-2">
+                  <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                  <p className={cn("text-xs font-semibold font-mono mt-0.5", s.color)}>{s.value || "—"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Cross-rate pricing */}
+          {priceUSD > 0 && (
+            <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3 h-3" /> Cross Rates
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> BTC Price
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-orange-400 tabular-nums">
+                    {base === "BTC" ? "1 BTC" : fmtBTC(priceUSD)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> BSV Price
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-yellow-400 tabular-nums">
+                    {base === "BSV" ? "1 BSV" : fmtBSV(priceUSD)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Contract addresses */}
+          <div className="bg-secondary/40 rounded-xl p-3">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5 mb-2">
+              <Zap className="w-3 h-3" /> Contract / Chain Info
+            </p>
+            <ContractAddressBadge
+              baseAsset={base}
+              dbAddresses={coin.contractAddresses}
+              variant="full"
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-4 py-3 border-t border-border space-y-2 shrink-0">
+          <button
+            onClick={() => onTrade(tradeHref)}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-2.5 rounded-xl font-bold text-sm hover:brightness-110 transition-all active:scale-95"
+          >
+            <TrendingUp className="w-4 h-4" />
+            {isFutures ? "Trade Perpetual" : "Trade Spot"}
+          </button>
+          {!isFutures && (
+            <a
+              href={`https://www.coingecko.com/en/coins/${base.toLowerCase()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 border border-border text-muted-foreground py-2 rounded-xl font-semibold text-xs hover:border-primary/40 hover:text-foreground transition-all"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> View on CoinGecko
+            </a>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
