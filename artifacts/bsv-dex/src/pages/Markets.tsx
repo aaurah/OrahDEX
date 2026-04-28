@@ -26,6 +26,23 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/** Normalised market row — all fields present after `normalise()` */
+interface MarketRow {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  lastPrice: string | number;
+  priceChangePercent24h: string | number;
+  high24h?: string | number;
+  low24h?: string | number;
+  volume24h?: string | number;
+  marketCap?: string | number;
+  type?: string;
+  name?: string;
+  contractAddresses?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
 type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
 
@@ -123,7 +140,7 @@ export function Markets() {
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
-  const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
+  const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
   const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
@@ -645,7 +662,7 @@ export function Markets() {
                             </div>
                             <ContractAddressBadge
                               baseAsset={base}
-                              dbAddresses={(m as any).contractAddresses}
+                              dbAddresses={(m as MarketRow).contractAddresses}
                               variant="full"
                             />
                           </div>
@@ -749,7 +766,7 @@ function CoinDetailPanel({
   coin, onClose, onTrade, toUSD, fmtBTC, fmtBSV, qPrice, qSym,
   applyQConversion, isCrossQuote, tab, isStarred, onToggleStar,
 }: {
-  coin: any;
+  coin: MarketRow;
   onClose: () => void;
   onTrade: (href: string) => void;
   toUSD: (price: number, quote: string) => number;
@@ -895,7 +912,7 @@ function CoinDetailPanel({
             </p>
             <ContractAddressBadge
               baseAsset={base}
-              dbAddresses={(coin as any).contractAddresses}
+              dbAddresses={coin.contractAddresses}
               variant="full"
             />
           </div>
