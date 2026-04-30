@@ -737,7 +737,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
-  const effectiveOrderBook = hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice);
+  // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
+  const effectiveOrderBook = useMemo(
+    () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasRealOB, orderBook, fallbackPrice],
+  );
 
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {
@@ -1192,10 +1197,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── ORDER BOOK — SPLIT FACE-TO-FACE ── */}
         {bottomTab === "orderbook" && (() => {
           const ROWS = 10;
+          // Always sort before slicing — guarantees consistent direction regardless of data source.
           // Bids: highest price first (best bid at top)
-          const bidRows = (effectiveOrderBook?.bids ?? []).slice(0, ROWS);
+          const bidRows = [...(effectiveOrderBook?.bids ?? [])]
+            .sort((a: any, b: any) => parseFloat(b.price ?? b[0]) - parseFloat(a.price ?? a[0]))
+            .slice(0, ROWS);
           // Asks: lowest price first (best ask at top) — they face the bids
-          const askRows = (effectiveOrderBook?.asks ?? []).slice(0, ROWS);
+          const askRows = [...(effectiveOrderBook?.asks ?? [])]
+            .sort((a: any, b: any) => parseFloat(a.price ?? a[0]) - parseFloat(b.price ?? b[0]))
+            .slice(0, ROWS);
           const allQ = [
             ...bidRows.map((b: any) => parseFloat(b.quantity ?? b[1])),
             ...askRows.map((a: any) => parseFloat(a.quantity ?? a[1])),
