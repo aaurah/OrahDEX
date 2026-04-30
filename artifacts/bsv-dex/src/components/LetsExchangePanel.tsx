@@ -496,7 +496,7 @@ export function LetsExchangePanel() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-bold">
             <Zap className="w-4 h-4 text-yellow-400" />
-            LetsExchange — Order Tracking
+            Cross-Chain Order Tracking
           </div>
         </div>
         <OrderTracker orderId={orderId} onReset={() => { setOrderId(null); setAmount(""); setEstimate(null); }} />
@@ -518,7 +518,7 @@ export function LetsExchangePanel() {
     return (
       <div className="rounded-2xl border border-border bg-card shadow-lg p-4 text-sm text-red-400 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0" />
-        Failed to load LetsExchange coin list. Check your API key.
+        Failed to load coin list. Please try again later.
       </div>
     );
   }
@@ -534,7 +534,7 @@ export function LetsExchangePanel() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-bold">
           <Zap className="w-4 h-4 text-yellow-400" />
-          LetsExchange
+          Cross-Chain Exchange
           <span className="text-[10px] font-normal text-muted-foreground">6000+ coins · Non-custodial</span>
         </div>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">Cross-Chain</span>
@@ -683,7 +683,7 @@ export function LetsExchangePanel() {
 
       <p className="text-[11px] text-muted-foreground/50 text-center flex items-center justify-center gap-1">
         <Clock className="w-3 h-3" />
-        Powered by LetsExchange.io · Non-custodial · Best rates across 400+ exchanges
+        Non-custodial · Best rates across 400+ exchanges
         <ExternalLink className="w-2.5 h-2.5" />
       </p>
     </div>
