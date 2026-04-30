@@ -3,9 +3,10 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 interface Props {
   textSize?: string;
   tooltip?: boolean;
+  suffix?: string;
 }
 
-export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
+export function BrandLogo({ textSize = 'text-xl', tooltip = true, suffix = 'DEX' }: Props) {
   const online = useOnlineStatus();
 
   return (
@@ -15,7 +16,7 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
     >
       <OrahO online={online} />
       <span>rah</span>
-      <span className="text-green-400">DEX</span>
+      <span className="text-green-400">{suffix}</span>
     </span>
   );
 }

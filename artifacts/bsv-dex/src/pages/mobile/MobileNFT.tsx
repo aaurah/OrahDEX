@@ -2272,23 +2272,6 @@ export function MobileNFT() {
 
   return (
     <div className="flex flex-col h-full" style={{ background: "hsl(var(--background))" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
-        <div>
-          <h1 className="text-lg font-black tracking-tight" style={{ color: "var(--color-text)" }}>Orah<span style={{ color: "var(--color-accent)" }}>NFT</span></h1>
-          <div className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>BSV · Multichain · Creator Coins</div>
-        </div>
-        <div className="flex items-center gap-2">
-          {(profileAddress ?? address) && (
-            <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
-              <Avatar src={undefined} name={profileAddress ?? address!} size={18} />
-              <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(profileAddress ?? address ?? "")}</span>
-            </button>
-          )}
-          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-accent)" }} /><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>live</span></div>
-        </div>
-      </div>
-
       {/* Inner nav */}
       <div className="flex shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
         {INNER_TABS.map(({ key, label, Icon }) => (
