@@ -28,8 +28,8 @@ const router: IRouter = Router();
 const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
 const BASE    = "https://api.letsexchange.io/api";
 
-const CACHE_TTL    = 5 * 60 * 1000;
-const CG_CACHE_TTL = 60 * 60 * 1000; // CoinGecko prices cached 1 hour
+const CACHE_TTL       = 5 * 60 * 1000;
+const LE_PRICES_TTL   = 10 * 60 * 1000; // LE coin-USD prices cached 10 min
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
 function cached(k: string, ttl = CACHE_TTL) {
@@ -38,55 +38,90 @@ function cached(k: string, ttl = CACHE_TTL) {
 }
 function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
 
-// ── CoinGecko free-tier price fetch ───────────────────────────────────────────
-// Returns symbol (UPPER) → USD price for up to ~2000 coins.
-// Cached 1 h; fetches pages sequentially with a small delay to avoid rate-limits.
-// Fails silently — callers fall back to the static table.
-let cgFetchPromise: Promise<Record<string, number>> | null = null;
+// ── LetsExchange USD price fetch ──────────────────────────────────────────────
+// For every unique LE coin, call POST /v1/info (coin→USDT, amount=1) to get its
+// USD rate.  Results are batched (8 concurrent) with a small inter-batch delay to
+// stay well within LE's rate limits.  Cached 10 min; fails silently.
+let lePriceFetchPromise: Promise<Record<string, number>> | null = null;
 
-async function fetchCoinGeckoPrices(): Promise<Record<string, number>> {
-  const hit = cached("cg_prices", CG_CACHE_TTL) as Record<string,number> | null;
+async function fetchLEPricesUSD(coins: NormalisedCoin[]): Promise<Record<string, number>> {
+  const hit = cached("le_usd_prices", LE_PRICES_TTL) as Record<string,number> | null;
   if (hit) return hit;
+  if (lePriceFetchPromise) return lePriceFetchPromise;
 
-  // Deduplicate concurrent callers — only one in-flight fetch at a time
-  if (cgFetchPromise) return cgFetchPromise;
-
-  cgFetchPromise = (async () => {
-    const map: Record<string, number> = {};
-    try {
-      for (let page = 1; page <= 8; page++) {
-        const url =
-          `https://api.coingecko.com/api/v3/coins/markets` +
-          `?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`;
-        const res = await fetch(url, {
-          headers: { Accept: "application/json" },
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!res.ok) {
-          logger.warn({ status: res.status, page }, "CoinGecko page failed — stopping early");
-          break;
-        }
-        const rows = (await res.json()) as Array<{symbol:string; current_price:number|null}>;
-        for (const r of rows) {
-          if (r.symbol && r.current_price != null) {
-            map[r.symbol.toUpperCase()] = r.current_price;
-          }
-        }
-        // Rate-limit guard: 300 ms between pages (~3 req/s, well under 30/min)
-        if (page < 8) await new Promise(r => setTimeout(r, 300));
+  lePriceFetchPromise = (async () => {
+    // De-dupe: one network entry per symbol (first occurrence wins)
+    const seen  = new Set<string>();
+    const queue: NormalisedCoin[] = [];
+    for (const c of coins) {
+      if (!seen.has(c.symbol) && c.symbol !== "USDT" && c.symbol !== "USDC") {
+        seen.add(c.symbol);
+        queue.push(c);
       }
-      if (Object.keys(map).length > 10) {
-        setCache("cg_prices", map);
-        logger.info({ coins: Object.keys(map).length }, "CoinGecko prices cached");
-      }
-    } catch (err) {
-      logger.warn({ err }, "CoinGecko price fetch failed — using static fallback");
     }
-    cgFetchPromise = null;
+
+    // Choose the best USDT destination network for each coin's source network.
+    // Mapping avoids sequential retries — one targeted call per coin.
+    const pickUsdtNet = (coinNet: string | null): string => {
+      const n = (coinNet ?? "").toUpperCase();
+      if (n === "TRC20" || n === "TRX") return "TRC20";
+      if (n === "BEP20" || n === "BSC") return "BEP20";
+      if (n === "SOL")                  return "SOL";
+      if (n === "POL"  || n === "POLYGON" || n === "MATIC") return "POL";
+      return "ERC20"; // default — largest USDT liquidity
+    };
+
+    const map: Record<string, number> = {};
+    const BATCH = 20; // larger batches = fewer round trips
+
+    for (let i = 0; i < queue.length; i += BATCH) {
+      const batch = queue.slice(i, i + BATCH);
+      await Promise.all(batch.map(async coin => {
+        try {
+          const usdtNet    = pickUsdtNet(coin.network);
+          const networkFrom = coin.network ?? coin.symbol;
+          const body = (amt: number) => ({
+            from:         coin.symbol,
+            to:           "USDT",
+            network_from: networkFrom,
+            network_to:   usdtNet,
+            amount:       amt,
+            affiliate_id: AFFILIATE_ID,
+          });
+
+          // First attempt — use the coin's listed minAmount (or 1 as fallback).
+          let amt  = parseFloat(coin.minAmount ?? "") || 1;
+          let res  = await leRequest("/v1/info", "POST", body(amt));
+          if (res.ok && res.data) {
+            let rate = parseFloat((res.data as any).rate ?? "");
+            if (rate > 0) { map[coin.symbol] = rate; return; }
+
+            // If rate=0, the exchange minimum for this pair may differ from the
+            // coin's minAmount.  Retry once with the amount LE says it requires.
+            const depositMin = parseFloat((res.data as any).deposit_min_amount ?? "");
+            if (depositMin > 0 && depositMin !== amt) {
+              res  = await leRequest("/v1/info", "POST", body(depositMin));
+              if (res.ok && res.data) {
+                rate = parseFloat((res.data as any).rate ?? "");
+                if (rate > 0) map[coin.symbol] = rate;
+              }
+            }
+          }
+        } catch { /* skip on network error */ }
+      }));
+      // Small inter-batch pause — keeps well below LE's rate limit
+      if (i + BATCH < queue.length) await new Promise(r => setTimeout(r, 200));
+    }
+
+    if (Object.keys(map).length > 5) {
+      setCache("le_usd_prices", map);
+      logger.info({ coins: Object.keys(map).length }, "LE USD prices cached");
+    }
+    lePriceFetchPromise = null;
     return map;
   })();
 
-  return cgFetchPromise;
+  return lePriceFetchPromise;
 }
 
 // ── Extract affiliate_id from JWT payload ─────────────────────────────────────
@@ -259,20 +294,21 @@ router.get("/letsexchange/pairs", async (req, res) => {
   const cacheKey = "le_pairs_all";
   let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
 
-  if (!lePairs) {
-    // Reuse coins cache if fresh, otherwise re-fetch
-    let coins = cached("currencies") as NormalisedCoin[] | null;
-    if (!coins) {
-      try {
-        const { ok, data, status } = await leRequest("/v2/coins");
-        if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-        coins = normaliseV2Coins(Array.isArray(data) ? data : []);
-        setCache("currencies", coins);
-      } catch (err: any) {
-        logger.error({ err }, "letsexchange /pairs coins fetch failed");
-        res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
-      }
+  // Always resolve coins (needed both for buildPairs and for fetchLEPricesUSD)
+  let coins = cached("currencies") as NormalisedCoin[] | null;
+  if (!coins) {
+    try {
+      const { ok, data, status } = await leRequest("/v2/coins");
+      if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
+      coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+      setCache("currencies", coins);
+    } catch (err: any) {
+      logger.error({ err }, "letsexchange /pairs coins fetch failed");
+      res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
     }
+  }
+
+  if (!lePairs) {
     lePairs = buildPairs(coins);
     cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
   }
@@ -335,9 +371,13 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Layer 1: static fallbacks
   const usdPrices: Record<string, number> = { ...FALLBACK_USD };
 
-  // Layer 2: CoinGecko live prices (async, cached 1 h — covers ~500 coins)
-  const cgPrices = await fetchCoinGeckoPrices();
-  Object.assign(usdPrices, cgPrices); // live overwrites static
+  // Layer 2: LE live rates (coin→USDT via /v1/info, cached 10 min).
+  // Use cached result only — never block the request on a fresh fetch.
+  // The startup preload warms this cache in the background.
+  const lePrices = (cached("le_usd_prices", LE_PRICES_TTL) as Record<string,number> | null) ?? {};
+  // If not ready yet, kick off the background fetch for next time
+  if (Object.keys(lePrices).length === 0) fetchLEPricesUSD(coins).catch(() => {});
+  Object.assign(usdPrices, lePrices); // LE rates overwrite static fallbacks
 
   // Layer 3: DB native USDT/USDC prices (most accurate)
   for (const p of nativePairs) {
@@ -484,8 +524,16 @@ router.get("/letsexchange/status/:id", async (req, res) => {
   }
 });
 
-// Pre-warm CoinGecko price cache at startup so the first user request is fast.
-// Errors are handled inside fetchCoinGeckoPrices and don't crash the server.
-fetchCoinGeckoPrices().catch(() => {});
+// Pre-warm LE price cache at startup: fetch coin list then batch-request USD rates.
+// Runs entirely in the background — errors are caught inside each helper.
+(async () => {
+  try {
+    const { ok, data } = await leRequest("/v2/coins");
+    if (!ok || !Array.isArray(data)) return;
+    const coins = normaliseV2Coins(data);
+    setCache("currencies", coins);
+    await fetchLEPricesUSD(coins);
+  } catch { /* non-fatal */ }
+})();
 
 export default router;
