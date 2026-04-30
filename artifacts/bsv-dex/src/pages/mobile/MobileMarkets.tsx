@@ -17,10 +17,14 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
+  RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
+  UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -67,7 +71,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote";
+type Cat = "all" | "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
@@ -77,6 +81,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "chains",    label: "🌐 Chains" },
   { id: "usd",       label: "USD" },
   { id: "btc",       label: "BTC" },
+  { id: "bsv",       label: "BSV" },
   { id: "eth",       label: "ETH" },
   { id: "bnb",       label: "BNB" },
   { id: "matic",     label: "MATIC" },
@@ -86,16 +91,26 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
   { id: "base",      label: "⬡ Base" },
+  { id: "zora",      label: "ZORA" },
   { id: "linea",     label: "LINEA" },
   { id: "zk",        label: "ZK" },
   { id: "scr",       label: "SCROLL" },
   { id: "mnt",       label: "MNT" },
   { id: "sol",       label: "SOL" },
   { id: "bch",       label: "BCH" },
-  { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
+  { id: "depin",     label: "DePIN" },
   { id: "meme",      label: "MEME" },
   { id: "defi",      label: "DEFI" },
+  { id: "gaming",    label: "GAMING" },
+  { id: "cosmos",    label: "COSMOS" },
+  { id: "l1",        label: "LAYER 1" },
+  { id: "l2",        label: "LAYER 2" },
+  { id: "rwa",       label: "RWA" },
+  { id: "exchange",  label: "EXCHANGE" },
+  { id: "brc20",     label: "BRC-20" },
+  { id: "uniswap",   label: "UNISWAP" },
+  { id: "pancake",   label: "PANCAKE" },
   { id: "futures",   label: "Futures" },
 ];
 
@@ -109,26 +124,42 @@ const _ALL_POOL_RAW = [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...BASE_MARKETS, ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
+  ...BASE_MARKETS, ...ZORA_MARKETS, ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
   ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...DEPIN_MARKETS, ...BRC20_MARKETS,
+  ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
 ];
 const MOBILE_ALL_POOL: any[] = Array.from(
   new Map(_ALL_POOL_RAW.map(m => [m.symbol ?? `${m.baseAsset}-${m.quoteAsset}`, m])).values()
 );
 
-function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, favorites: Set<string>): MktRow[] {
+function getCatRows(
+  cat: Cat,
+  usdSub: UsdSub,
+  livePrice: Map<string, MktRow>,
+  favorites: Set<string>,
+  lePairs: MktRow[],   // LetsExchange BSV-quoted pairs
+): MktRow[] {
   const enrich = (mock: any[]): MktRow[] =>
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
       if (!live) return n;
-      return { ...n, price: live.price, chg: live.chg, vol: live.vol };
+      const chg = live.chg !== 0 ? live.chg : n.chg;
+      return { ...n, price: live.price, chg, vol: live.vol };
     });
 
   switch (cat) {
-    case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures");
-    case "favorites": return enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol));
+    case "all":       return [
+      ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures"),
+      ...lePairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol)),
+    ];
+    case "favorites": return [
+      ...enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol)),
+      ...lePairs.filter(p => favorites.has(p.symbol)),
+    ];
     case "new":       return NEW_MARKETS.map(normalise);
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
     case "btc":       return enrich(BTC_MARKETS);
@@ -141,16 +172,35 @@ function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, fa
     case "ftm":       return enrich(FTM_MARKETS);
     case "cro":       return enrich(CRO_MARKETS);
     case "base":      return enrich(BASE_MARKETS);
+    case "zora":      return enrich(ZORA_MARKETS);
     case "linea":     return enrich(LINEA_MARKETS);
     case "zk":        return enrich(ZK_MARKETS);
     case "scr":       return enrich(SCR_MARKETS);
     case "mnt":       return enrich(MNT_MARKETS);
     case "sol":       return enrich(SOL_MARKETS);
     case "bch":       return enrich(BCH_MARKETS);
-    case "bsv":       return enrich(BSV_MARKETS);
+    case "bsv": {
+      const native = enrich(BSV_MARKETS);
+      const seenBases = new Set(native.map(r => r.base));
+      const seenSymbols = new Set(native.map(r => r.symbol));
+      const extra = lePairs
+        .filter(p => !seenBases.has(p.base) && !seenSymbols.has(p.symbol) && p.price > 0)
+        .sort((a, b) => a.base.localeCompare(b.base));
+      return [...native, ...extra];
+    }
     case "ai":        return enrich(AI_MARKETS);
+    case "depin":     return enrich(DEPIN_MARKETS);
     case "meme":      return enrich(MEME_MARKETS);
     case "defi":      return enrich(DEFI_MARKETS);
+    case "gaming":    return enrich(GAMING_MARKETS);
+    case "cosmos":    return enrich(COSMOS_MARKETS);
+    case "l1":        return enrich(L1_MARKETS);
+    case "l2":        return enrich(L2_MARKETS);
+    case "rwa":       return enrich(RWA_MARKETS);
+    case "exchange":  return enrich(EXCHANGE_MARKETS);
+    case "brc20":     return enrich(BRC20_MARKETS);
+    case "uniswap":   return enrich(UNISWAP_MARKETS);
+    case "pancake":   return enrich(PANCAKE_MARKETS);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
@@ -215,6 +265,21 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
+  // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  const lePairs = useMemo<MktRow[]>(() =>
+    (rawLePairs ?? []).map(p => ({
+      symbol: p.symbol,
+      base:   p.baseAsset,
+      quote:  p.quoteAsset,
+      price:  p.lastPrice ?? 0,
+      chg:    p.priceChangePercent24h ?? 0,
+      vol:    p.volume ?? 0,
+      cap:    0,
+      type:   "spot",
+    })),
+  [rawLePairs]);
+
   const livePrice = useMemo(() => new Map<string, MktRow>(
     (apiData && Array.isArray(apiData) ? apiData : [])
       .map(normalise)
@@ -224,11 +289,11 @@ export function MobileMarkets() {
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...(Array.isArray(apiData) ? apiData : []).map(normalise),
-      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites)),
+      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, lePairs)),
     ].map((m: MktRow) => [m.symbol, m])
-  ).values()), [apiData, usdSub, livePrice, favorites]);
+  ).values()), [apiData, usdSub, livePrice, favorites, lePairs]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites);
+  let rows = getCatRows(cat, usdSub, livePrice, favorites, lePairs);
 
   if (search) {
     const q = search.toUpperCase();
