@@ -233,6 +233,21 @@ export function Layout({ children }: { children: ReactNode }) {
     }, 300);
     return () => clearInterval(check);
   }, []);
+
+  // Periodic EVM balance refresh for the compact header button (every 30s)
+  useEffect(() => {
+    if (!address || network !== "evm" || !chainId) return;
+    const refresh = async () => {
+      const reown = await import("@/lib/reown").catch(() => null);
+      if (!reown) return;
+      const bal = await reown.fetchEvmBalance(address, chainId);
+      if (bal !== null) useWalletStore.getState().setBalance(bal);
+    };
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    return () => clearInterval(id);
+  }, [address, network, chainId]);
+
   useEffect(() => {
     const prev = prevAddressRef.current;
     if (!prev && address) {
@@ -240,7 +255,7 @@ export function Layout({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
-      const providerLabel = provider ?? networkLabel;
+      const providerLabel = (provider === 'reown' || provider === 'orah-wallet') ? 'Orah Wallet' : (provider ?? networkLabel);
       toast({
         title: "Wallet Connected",
         description: `${providerLabel} · ${shortAddr}`,

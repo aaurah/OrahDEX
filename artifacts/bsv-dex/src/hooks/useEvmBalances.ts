@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { CHAIN_RPC_URLS } from "@/lib/reown";
+import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
 
 export interface TokenBalance {
   symbol: string;
@@ -219,13 +219,12 @@ function balanceOfCalldata(address: string): string {
 }
 
 /**
- * RPC call wrapper — prefers the public JSON-RPC endpoint for the specified
- * chainId so balances are always from the correct chain.
- * Falls back to the injected wallet only when no public RPC is configured.
+ * RPC call wrapper — tries public RPC primary, then fallback, then injected wallet.
+ * All paths are tried so WalletConnect / mobile wallets work without window.ethereum.
  */
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
-  const rpcUrl = CHAIN_RPC_URLS[chainId];
-  if (rpcUrl) {
+  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+  for (const rpcUrl of urls) {
     try {
       const res = await globalThis.fetch(rpcUrl, {
         method: "POST",
@@ -234,11 +233,9 @@ async function rpcCall(method: string, params: any[], chainId: number): Promise<
       });
       if (res.ok) {
         const json = await res.json();
-        if (!json.error) return json.result;
+        if (!json.error && json.result !== undefined) return json.result;
       }
-    } catch {
-      /* fall through to injected wallet */
-    }
+    } catch { /* try next */ }
   }
 
   const injected = (window as any).ethereum;
@@ -299,14 +296,28 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
     setLoading(true);
     try {
-      // Fetch prices and native balance in parallel
-      const [usdPrices, nativeHex] = await Promise.all([
-        fetchMarketPrices(),
-        rpcCall("eth_getBalance", [address, "latest"], chainId),
-      ]);
+      // Prefer wagmi getBalance for native token (works with WalletConnect on mobile)
+      async function fetchNativeAmount(): Promise<number> {
+        const config = getWagmiConfig();
+        if (config) {
+          try {
+            const { getBalance } = await import("@wagmi/core");
+            const result = await getBalance(config, {
+              address: address as `0x${string}`,
+              chainId,
+            });
+            return Number(result.value) / 1e18;
+          } catch { /* fall through to rpcCall */ }
+        }
+        const hex = await rpcCall("eth_getBalance", [address, "latest"], chainId);
+        return Number(BigInt(hex)) / 1e18;
+      }
 
-      const nativeWei = BigInt(nativeHex);
-      const nativeAmount = Number(nativeWei) / 1e18;
+      // Fetch prices and native balance in parallel
+      const [usdPrices, nativeAmount] = await Promise.all([
+        fetchMarketPrices(),
+        fetchNativeAmount(),
+      ]);
       const nativeDef = NATIVE_TOKENS[chainId] ?? { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" };
       const nativePrice = usdPrices[nativeDef.symbol] ?? usdPrices["ETH"] ?? 0;
 
