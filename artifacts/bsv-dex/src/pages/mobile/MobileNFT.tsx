@@ -414,6 +414,11 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
 }
 
 /* ─── CREATOR PROFILE SHEET ──────────────────────────────────────────────────── */
+/* ── Module-level profile cache — survives tab switches, cleared on logout ── */
+const _profileDataCache: Record<string, { profile: Creator; posts: Post[]; topHolders: any[] }> = {};
+const _profileMintsCache: Record<string, any[]> = {};
+const _profileHoldingsCache: Record<string, any[]> = {};
+
 function CreatorProfileSheet({
   creatorAddress, currentUserAddress, onClose, onOpenPost,
 }: {
@@ -422,9 +427,10 @@ function CreatorProfileSheet({
   onClose: () => void;
   onOpenPost: (p: Post) => void;
 }) {
-  const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(null);
-  const [mints, setMints] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = _profileDataCache[creatorAddress] ?? null;
+  const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(cached);
+  const [mints, setMints] = useState<any[]>(_profileMintsCache[creatorAddress] ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [gridTab, setGridTab] = useState<"posts" | "collected" | "activity">("posts");
   const [isFollowing, setIsFollowing] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
@@ -432,7 +438,7 @@ function CreatorProfileSheet({
   const [imgErr, setImgErr] = useState(false);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
-  const [holdingItems, setHoldingItems] = useState<any[]>([]);
+  const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
   const hybrid = useHybridBalance(60_000);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -456,16 +462,16 @@ function CreatorProfileSheet({
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
       .then(r => r.json())
-      .then(setData)
+      .then(d => { _profileDataCache[creatorAddress] = d; setData(d); })
       .catch(() => {})
       .finally(() => setLoading(false));
     fetch(`${API}/social/profile/${creatorAddress}`)
       .then(r => r.json())
-      .then(d => setMints(d.mints ?? []))
+      .then(d => { const m = d.mints ?? []; _profileMintsCache[creatorAddress] = m; setMints(m); })
       .catch(() => {});
     fetch(`${API}/social/holdings/${creatorAddress}`)
       .then(r => r.ok ? r.json() : {})
-      .then(d => setHoldingItems(Array.isArray(d.holdings) ? d.holdings : []))
+      .then(d => { const h = Array.isArray(d.holdings) ? d.holdings : []; _profileHoldingsCache[creatorAddress] = h; setHoldingItems(h); })
       .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 
@@ -502,10 +508,12 @@ function CreatorProfileSheet({
   const posts = data?.posts ?? [];
   const topHolders = data?.topHolders ?? [];
 
-  if (loading) return (
+  // Only block with full-screen loader if we have ZERO cached data
+  if (loading && !data) return (
     <Portal>
-      <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(var(--background))" }}>
+      <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: "hsl(var(--background))" }}>
         <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
+        <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Loading profile…</p>
       </div>
     </Portal>
   );
@@ -524,8 +532,9 @@ function CreatorProfileSheet({
         <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "var(--color-surface)" }}>
           <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
         </button>
-        <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
+        <span className="flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--color-text)" }}>
           {profile.username || shortAddr(creatorAddress)}
+          {loading && <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: "var(--color-accent)" }} />}
         </span>
         <div className="flex gap-2">
           <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
@@ -2589,7 +2598,11 @@ export function MobileNFT() {
       {/* Inner nav */}
       <div className="flex items-center shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
         {INNER_TABS.map(({ key, label, Icon }) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} onClick={() => {
+            setActiveTab(key);
+            // Open profile overlay immediately (same batch = no spinner flash)
+            if (key === "profile" && profileAddress) setCreatorAddress(profileAddress);
+          }}
             className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-all"
             style={{ background: activeTab === key ? "rgba(0,255,136,0.1)" : "transparent", color: activeTab === key ? "var(--color-accent)" : "var(--color-text-secondary)" }}>
             <Icon size={18} /><span className="text-[9px] font-semibold">{label}</span>
