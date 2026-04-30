@@ -1902,11 +1902,21 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
-  if (!profileAddress) return (
+
+  // Truly disconnected — no wallet at all
+  if (!address) return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
       <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}><User size={28} style={{ color: "var(--color-text-secondary)" }} /></div>
       <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Connect your wallet to see your profile and creator coin</p>
       <button onClick={() => navigate("/settings")} className="px-6 py-2.5 rounded-xl font-bold text-sm" style={{ background: "var(--color-accent)", color: "#000" }}>Connect Wallet</button>
+    </div>
+  );
+
+  // Wallet connected but internal EVM identity not yet ready (e.g. just switched chain)
+  if (!profileAddress) return (
+    <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
+      <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
+      <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Setting up your NFT identity…</p>
     </div>
   );
   // Redirect to full creator profile view
