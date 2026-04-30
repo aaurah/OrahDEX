@@ -1179,7 +1179,6 @@ function ExchangeSwapPanel({
           <RefreshCw className="w-4 h-4 text-primary" />
           OrahDEX Exchange
         </div>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
       </div>
 
       {/* Quick pair selector */}
