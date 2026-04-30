@@ -100,6 +100,27 @@ const ALL_POOL_DEDUPED = dedupePool(ALL_POOL);
 
 type NormRow = ReturnType<typeof normalise>;
 
+// Keywords that identify LE network names for each OrahDEX chain category.
+// Matching is: lePair.network?.toLowerCase() includes any keyword in the list.
+const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
+  btc:   ["bitcoin", "btc"],
+  eth:   ["ethereum", "eth", "erc20"],
+  bnb:   ["bsc", "binance", "bnb", "bep20", "bep2"],
+  matic: ["polygon", "matic"],
+  avax:  ["avalanche", "avax"],
+  arb:   ["arbitrum"],
+  op:    ["optimism"],
+  ftm:   ["fantom", "ftm"],
+  cro:   ["cronos", "cro"],
+  bch:   ["bitcoin-cash", "bch", "bitcoincash"],
+  bsv:   ["bsv", "bitcoin-sv", "bitcoinsv"],
+  sol:   ["solana", "sol"],
+  mnt:   ["mantle", "mnt"],
+  zk:    ["zksync"],
+  scr:   ["scroll"],
+  linea: ["linea"],
+};
+
 /**
  * Always use mock data as the full pair list; enrich prices from the live API where available.
  * lePairs are pre-normalised LE rows that may not exist in mock data.
@@ -119,11 +140,25 @@ function getRows(
       return { ...n, price: live.price, chg: live.chg };
     });
 
-  // Combined pool: all native pairs + any LE pairs not already in native pool
-  const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => {
-    const n = normalise(m);
-    return n.symbol;
-  }));
+  // Merge native enriched rows with matching LE rows (deduplicated by symbol)
+  const mergeWithLE = (native: NormRow[], keywords: string[]): NormRow[] => {
+    const seen = new Set(native.map(r => r.symbol));
+    const matching = lePairs.filter(p => {
+      const net = (p.network ?? "").toLowerCase();
+      return keywords.some(kw => net.includes(kw));
+    }).filter(p => !seen.has(p.symbol));
+    return [...native, ...matching];
+  };
+
+  // Helper: native enrich + LE merge for a chain cat
+  const chainRows = (mock: any[], cat: Cat): NormRow[] => {
+    const native = enrich(mock);
+    const keywords = CAT_NETWORKS[cat];
+    return keywords ? mergeWithLE(native, keywords) : native;
+  };
+
+  // Combined pool: all native pairs + LE pairs not already in native pool
+  const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
   const leOnly = lePairs.filter(p => !nativeSymbols.has(p.symbol));
   const combinedPool = () => [
     ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures"),
@@ -135,26 +170,26 @@ function getRows(
     case "favorites": return combinedPool().filter(m => favorites.has(m.symbol));
     case "le":        return lePairs;
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
-    case "new":       return enrich(NEW_MARKETS);
-    case "btc":       return enrich(BTC_MARKETS);
-    case "eth":       return enrich(ETH_MARKETS);
-    case "bnb":       return enrich(BNB_MARKETS);
-    case "matic":     return enrich(MATIC_MARKETS);
-    case "avax":      return enrich(AVAX_MARKETS);
-    case "arb":       return enrich(ARB_MARKETS);
-    case "op":        return enrich(OP_MARKETS);
-    case "ftm":       return enrich(FTM_MARKETS);
-    case "cro":       return enrich(CRO_MARKETS);
-    case "bch":       return enrich(BCH_MARKETS);
-    case "bsv":       return enrich(BSV_MARKETS);
-    case "ai":        return enrich(AI_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
-    case "meme":      return enrich(MEME_MARKETS);
-    case "defi":      return enrich(DEFI_MARKETS);
-    case "mnt":       return enrich(MNT_MARKETS);
-    case "zk":        return enrich(ZK_MARKETS);
-    case "scr":       return enrich(SCR_MARKETS);
-    case "linea":     return enrich(LINEA_MARKETS);
+    case "new":       return chainRows(NEW_MARKETS,    cat);
+    case "btc":       return chainRows(BTC_MARKETS,    cat);
+    case "eth":       return chainRows(ETH_MARKETS,    cat);
+    case "bnb":       return chainRows(BNB_MARKETS,    cat);
+    case "matic":     return chainRows(MATIC_MARKETS,  cat);
+    case "avax":      return chainRows(AVAX_MARKETS,   cat);
+    case "arb":       return chainRows(ARB_MARKETS,    cat);
+    case "op":        return chainRows(OP_MARKETS,     cat);
+    case "ftm":       return chainRows(FTM_MARKETS,    cat);
+    case "cro":       return chainRows(CRO_MARKETS,    cat);
+    case "bch":       return chainRows(BCH_MARKETS,    cat);
+    case "bsv":       return chainRows(BSV_MARKETS,    cat);
+    case "ai":        return chainRows(AI_MARKETS,     cat);
+    case "sol":       return chainRows(SOL_MARKETS,    cat);
+    case "meme":      return chainRows(MEME_MARKETS,   cat);
+    case "defi":      return chainRows(DEFI_MARKETS,   cat);
+    case "mnt":       return chainRows(MNT_MARKETS,    cat);
+    case "zk":        return chainRows(ZK_MARKETS,     cat);
+    case "scr":       return chainRows(SCR_MARKETS,    cat);
+    case "linea":     return chainRows(LINEA_MARKETS,  cat);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
