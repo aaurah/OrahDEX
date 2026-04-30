@@ -644,11 +644,6 @@ function GasTopUpPanel({
             {gasLabels[gasLevel]}
           </span>
         )}
-        {gasLevel === "empty" && (
-          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 ml-0.5 uppercase tracking-wide">
-            No Gas
-          </span>
-        )}
       </button>
 
       {/* Expanded panel */}

@@ -4,7 +4,7 @@ import { useWalletStore, type WalletNetwork } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
 import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
-import { cn } from '@/lib/utils';
+import { cn, getProviderLabel } from '@/lib/utils';
 
 function shortenAddress(addr: string) {
   if (!addr) return '';
@@ -103,7 +103,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="flex flex-col items-start">
             {provider && (
               <span className="text-[10px] text-muted-foreground leading-none">
-                {provider === 'orah-wallet' ? 'Orah Wallet' : provider}
+                {getProviderLabel(provider)}
               </span>
             )}
             <span className="text-sm font-mono text-foreground leading-tight">
@@ -130,7 +130,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground font-medium">
-                  {provider === 'orah-wallet' ? 'Orah Wallet' : provider} · {network?.toUpperCase()}
+                  {getProviderLabel(provider)} · {network?.toUpperCase()}
                 </span>
               </div>
               <button
