@@ -5,7 +5,7 @@ import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
-import { getCachedLEPrices, warmLEPriceCache } from "./lePriceCache.js";
+import { getCachedLEPrices, warmLEPriceCache, leRequest } from "./lePriceCache.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -903,6 +903,95 @@ export async function seedMarketsIfNeeded() {
   }
 }
 
+// ── Quote currencies to seed for every LE coin ────────────────────────────────
+// Covers the five most-traded base currencies so every LE token gets a full row
+// of native spot pairs in the DB, not just the virtual "letsexchange" pairs.
+const LE_SEED_QUOTES = ["USDT", "BSV", "BTC", "ETH", "BNB"] as const;
+
+export async function seedLEPairsIfNeeded() {
+  try {
+    // Fetch the canonical LE coin list — leRequest returns { ok, data }
+    const res = await leRequest("/v2/coins");
+    if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) return;
+    const rawCoins = res.data as Record<string, unknown>[];
+
+    // Deduplicate by ticker (same coin, multiple networks)
+    const seen = new Set<string>();
+    const coins: Array<{ code: string }> = [];
+    for (const item of rawCoins) {
+      const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase();
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      coins.push({ code });
+    }
+
+    // Current live LE USD prices (may be empty if warm-up still running)
+    const lePrices = getCachedLEPrices();
+
+    // Pull prices for the five quote coins so we can compute cross-rates
+    const bsvUSD  = lePrices["BSV"]  ?? FALLBACK_PRICES["BSV"]  ?? 16;
+    const btcUSD  = lePrices["BTC"]  ?? FALLBACK_PRICES["BTC"]  ?? 95000;
+    const ethUSD  = lePrices["ETH"]  ?? FALLBACK_PRICES["ETH"]  ?? 3500;
+    const bnbUSD  = lePrices["BNB"]  ?? FALLBACK_PRICES["BNB"]  ?? 600;
+
+    // Existing DB symbols (to avoid duplicates)
+    const existing = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existing.map(r => r.symbol));
+
+    const toInsert: any[] = [];
+
+    for (const coin of coins) {
+      // LE /v2/coins uses "code" as the ticker symbol
+      const base = (coin.code ?? "").toUpperCase().trim();
+      if (!base) continue;
+
+      // Base USD price from LE cache, then fallback map, then 0
+      const baseUSD = lePrices[base] ?? FALLBACK_PRICES[base] ?? 0;
+
+      for (const quote of LE_SEED_QUOTES) {
+        if (base === quote) continue;                 // skip e.g. USDT/USDT
+        const sym = `${base}/${quote}`;
+        if (existingSymbols.has(sym)) continue;       // already seeded
+
+        let price = 0;
+        if (quote === "USDT") {
+          price = baseUSD;
+        } else if (quote === "BSV" && bsvUSD > 0) {
+          price = baseUSD / bsvUSD;
+        } else if (quote === "BTC" && btcUSD > 0) {
+          price = baseUSD / btcUSD;
+        } else if (quote === "ETH" && ethUSD > 0) {
+          price = baseUSD / ethUSD;
+        } else if (quote === "BNB" && bnbUSD > 0) {
+          price = baseUSD / bnbUSD;
+        }
+
+        const p = price > 0 ? price.toFixed(price < 0.0001 ? 10 : 8) : "0";
+        toInsert.push({
+          symbol: sym, baseAsset: base, quoteAsset: quote,
+          lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: p, low24h: p,
+          status: "active", type: "spot",
+        });
+        existingSymbols.add(sym); // prevent duplicates within this batch
+      }
+    }
+
+    if (toInsert.length > 0) {
+      // Insert in chunks to avoid giant DB transactions
+      const CHUNK = 500;
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        await db.insert(marketsTable).values(toInsert.slice(i, i + CHUNK)).onConflictDoNothing();
+      }
+      logger.info({ count: toInsert.length, coins: coins.length }, "LE pairs seeded into DB");
+    } else {
+      logger.info("LE pairs: all already present in DB");
+    }
+  } catch (err) {
+    logger.warn({ err }, "seedLEPairsIfNeeded failed (non-fatal)");
+  }
+}
+
 export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
@@ -1066,8 +1155,10 @@ let updateInterval: NodeJS.Timeout | null = null;
 let _priceUpdating = false;
 
 export function startPriceUpdater() {
-  // Warm the LE price cache immediately at startup — non-blocking
-  warmLEPriceCache().catch(() => {});
+  // Warm the LE price cache, then seed all LE pairs into the DB with real prices
+  warmLEPriceCache()
+    .then(() => seedLEPairsIfNeeded())
+    .catch(() => {});
 
   seedMarketsIfNeeded().then(() => updateMarketPrices());
   updateInterval = setInterval(async () => {
