@@ -70,6 +70,30 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "futures",   label: "Futures"   },
 ];
 
+// Complete pool covering every category — used for Favorites lookup and "All" tab
+const ALL_POOL = [
+  ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+  ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+  ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
+  ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
+  ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...MNT_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
+  ...NEW_MARKETS, ...FUTURES_MARKETS,
+];
+
+// Deduplicated version — one entry per symbol
+function dedupePool(pool: any[]) {
+  const seen = new Set<string>();
+  return pool.filter(m => {
+    const sym = m.symbol ?? `${m.baseAsset ?? m.base}-${m.quoteAsset ?? m.quote ?? "USDT"}`;
+    if (seen.has(sym)) return false;
+    seen.add(sym);
+    return true;
+  });
+}
+
+const ALL_POOL_DEDUPED = dedupePool(ALL_POOL);
+
 /**
  * Always use mock data as the full pair list; enrich prices from the live API where available.
  */
@@ -82,15 +106,11 @@ function getRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, ReturnType<typ
       return { ...n, price: live.price, chg: live.chg };
     });
 
-  const ALL_POOL = [
-    ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
-    ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
-  ];
-
   switch (cat) {
-    case "favorites": return enrich(ALL_POOL).filter(m => favorites.has(m.symbol));
+    case "all":       return enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures");
+    case "favorites": return enrich(ALL_POOL_DEDUPED).filter(m => favorites.has(m.symbol));
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
-    case "new":       return NEW_MARKETS.map(normalise);
+    case "new":       return enrich(NEW_MARKETS);
     case "btc":       return enrich(BTC_MARKETS);
     case "eth":       return enrich(ETH_MARKETS);
     case "bnb":       return enrich(BNB_MARKETS);
@@ -137,7 +157,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [search, setSearch]   = useState("");
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("market_favorites");
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
 
   // Reset to correct default every time the selector opens
   useEffect(() => {
@@ -189,7 +214,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   };
 
   const toggleFav = (sym: string) =>
-    setFavorites(prev => { const n = new Set(prev); n.has(sym) ? n.delete(sym) : n.add(sym); return n; });
+    setFavorites(prev => {
+      const n = new Set(prev);
+      n.has(sym) ? n.delete(sym) : n.add(sym);
+      try { localStorage.setItem("market_favorites", JSON.stringify([...n])); } catch {}
+      return n;
+    });
 
   const pick = (m: ReturnType<typeof normalise>) => {
     const slug = m.symbol.replace(/\//g, "-");

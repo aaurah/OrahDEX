@@ -67,11 +67,12 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote";
+type Cat = "all" | "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
   { id: "favorites", label: "Favs" },
+  { id: "all",       label: "All" },
   { id: "new",       label: "NEW" },
   { id: "chains",    label: "🌐 Chains" },
   { id: "usd",       label: "USD" },
@@ -102,6 +103,20 @@ const CATS: { id: Cat; label: string }[] = [
  * Always use mock data as the full pair list; enrich prices from API where available.
  * This ensures all pairs are visible even when the API DB only tracks a small subset.
  */
+// Complete, deduplicated pool — used for Favorites and "All" tabs
+const _ALL_POOL_RAW = [
+  ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+  ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+  ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
+  ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
+  ...BASE_MARKETS, ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
+  ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...NEW_MARKETS, ...FUTURES_MARKETS,
+];
+const MOBILE_ALL_POOL: any[] = Array.from(
+  new Map(_ALL_POOL_RAW.map(m => [m.symbol ?? `${m.baseAsset}-${m.quoteAsset}`, m])).values()
+);
+
 function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, favorites: Set<string>): MktRow[] {
   const enrich = (mock: any[]): MktRow[] =>
     mock.map(m => {
@@ -111,14 +126,9 @@ function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, fa
       return { ...n, price: live.price, chg: live.chg, vol: live.vol };
     });
 
-  const ALL_POOL = [
-    ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
-    ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
-    ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
-  ];
-
   switch (cat) {
-    case "favorites": return enrich(ALL_POOL).filter(m => favorites.has(m.symbol));
+    case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures");
+    case "favorites": return enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol));
     case "new":       return NEW_MARKETS.map(normalise);
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
     case "btc":       return enrich(BTC_MARKETS);
@@ -153,7 +163,12 @@ export function MobileMarkets() {
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("market_favorites");
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const prevAddressRef = useRef<string | null>(null);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
@@ -234,7 +249,12 @@ export function MobileMarkets() {
   };
 
   const toggleFav = (sym: string) =>
-    setFavorites(prev => { const n = new Set(prev); n.has(sym) ? n.delete(sym) : n.add(sym); return n; });
+    setFavorites(prev => {
+      const n = new Set(prev);
+      n.has(sym) ? n.delete(sym) : n.add(sym);
+      try { localStorage.setItem("market_favorites", JSON.stringify([...n])); } catch {}
+      return n;
+    });
 
   const goTrade = (m: MktRow) => {
     const slug = m.symbol.replace(/\//g, "-");
