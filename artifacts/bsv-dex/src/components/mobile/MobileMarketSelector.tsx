@@ -34,7 +34,8 @@ function normalise(m: any) {
   const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
   const symbol = m.symbol ?? `${base}-${quote}`;
   const leSource: boolean = m.leSource === true;
-  return { symbol, base, quote, price, chg, type, leSource };
+  const network: string | undefined = m.network ?? m.networkName ?? undefined;
+  return { symbol, base, quote, price, chg, type, leSource, network };
 }
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
@@ -179,7 +180,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
-  const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
+  const [sortKey, setSortKey] = useState<"base"|"price"|"chg"|"network">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
@@ -190,7 +191,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // Reset to correct default every time the selector opens
   useEffect(() => {
-    if (open) setCat(mode === "futures" ? "futures" : (defaultCat ?? "usd"));
+    if (open) {
+      const c = mode === "futures" ? "futures" : (defaultCat ?? "usd");
+      setCat(c);
+      if (c === "le") { setSortKey("network"); setSortDir("asc"); }
+      else { setSortKey("base"); setSortDir("asc"); }
+    }
   }, [open, mode, defaultCat]);
 
   const { data: apiData } = useQuery({
@@ -206,18 +212,42 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   const { pairs: rawLePairs, loading: leLoading } = useLetsExchangePairs({ all: true });
 
-  // Normalise LE pairs to NormRow shape
+  // Normalise LE pairs to NormRow shape (sorted by network then base)
   const lePairs = useMemo<NormRow[]>(() =>
-    (rawLePairs ?? []).map(p => ({
-      symbol:   p.symbol,
-      base:     p.baseAsset,
-      quote:    p.quoteAsset,
-      price:    p.lastPrice ?? 0,
-      chg:      p.priceChangePercent24h ?? 0,
-      type:     "spot" as const,
-      leSource: true,
-    })),
+    (rawLePairs ?? [])
+      .map(p => ({
+        symbol:   p.symbol,
+        base:     p.baseAsset,
+        quote:    p.quoteAsset,
+        price:    p.lastPrice ?? 0,
+        chg:      p.priceChangePercent24h ?? 0,
+        type:     "spot" as const,
+        leSource: true,
+        network:  p.network ?? p.networkName ?? undefined,
+      }))
+      .sort((a, b) => {
+        const na = a.network ?? "zzz";
+        const nb = b.network ?? "zzz";
+        const nc = na.localeCompare(nb);
+        return nc !== 0 ? nc : a.base.localeCompare(b.base);
+      }),
   [rawLePairs]);
+
+  // Chain sub-tabs for the LE category — top 12 networks by pair count + "All"
+  const leNetworks = useMemo<{ id: string; label: string }[]>(() => {
+    const counts = new Map<string, number>();
+    lePairs.forEach(p => {
+      const n = p.network ?? "";
+      if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
+    });
+    const sorted = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([net]) => ({ id: net, label: net.toUpperCase() }));
+    return [{ id: "all", label: "All" }, ...sorted];
+  }, [lePairs]);
+
+  const [leChain, setLeChain] = useState<string>("all");
 
   const livePrice = useMemo(() => new Map(
     (apiData && Array.isArray(apiData) ? apiData : [])
@@ -232,7 +262,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     ].map((m: ReturnType<typeof normalise>) => [m.symbol, m])
   ).values()), [apiData, usdSub, livePrice, favorites, lePairs]);
 
-  let rows = getRows(cat, usdSub, livePrice, favorites, lePairs);
+  // Filter LE pairs by selected chain (when on LE tab)
+  const displayLePairs = useMemo(
+    () => leChain === "all" ? lePairs : lePairs.filter(p => p.network === leChain),
+    [lePairs, leChain],
+  );
+
+  let rows = getRows(cat, usdSub, livePrice, favorites, displayLePairs);
 
   if (search) {
     const q = search.toUpperCase();
@@ -241,15 +277,21 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
+    if (sortKey === "network") {
+      const na = a.network ?? "zzz";
+      const nb = b.network ?? "zzz";
+      v = na.localeCompare(nb);
+      if (v === 0) v = a.base.localeCompare(b.base);
+    }
     if (sortKey === "base")  v = a.base.localeCompare(b.base);
     if (sortKey === "price") v = a.price - b.price;
     if (sortKey === "chg")   v = a.chg - b.chg;
     return sortDir === "asc" ? v : -v;
   });
 
-  const toggleSort = (k: "base"|"price"|"chg") => {
+  const toggleSort = (k: "base"|"price"|"chg"|"network") => {
     if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(k); setSortDir("desc"); }
+    else { setSortKey(k); setSortDir("asc"); }
   };
 
   const toggleFav = (sym: string) =>
@@ -266,7 +308,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     onClose();
   };
 
-  function SortIcon({ k }: { k: "base"|"price"|"chg" }) {
+  function SortIcon({ k }: { k: "base"|"price"|"chg"|"network" }) {
     if (sortKey !== k) return (
       <span className="inline-flex flex-col ml-0.5 opacity-30">
         <ChevronUp className="w-2.5 h-2.5" />
@@ -325,7 +367,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           {effectiveCats.map(c => (
             <button
               key={c.id}
-              onClick={() => { setCat(c.id); setSearch(""); }}
+              onClick={() => {
+                setCat(c.id);
+                setSearch("");
+                if (c.id === "le") { setSortKey("network"); setSortDir("asc"); setLeChain("all"); }
+                else { setSortKey("base"); setSortDir("asc"); }
+              }}
               className={cn(
                 "shrink-0 px-3 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors",
                 cat === c.id ? "text-foreground font-bold" : "text-muted-foreground"
@@ -359,13 +406,34 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         )}
 
+        {/* LE chain sub-tabs */}
+        {cat === "le" && leNetworks.length > 1 && (
+          <div className="flex overflow-x-auto no-scrollbar gap-1.5 px-3 py-2 border-b border-border/40 shrink-0">
+            {leNetworks.map(n => (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => setLeChain(n.id)}
+                className={cn(
+                  "shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-colors whitespace-nowrap",
+                  leChain === n.id
+                    ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/40"
+                    : "bg-secondary/60 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {n.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Column headers */}
         <div className="flex items-center px-4 py-1.5 border-b border-border/30 shrink-0">
           <button
-            onClick={() => toggleSort("base")}
+            onClick={() => cat === "le" ? toggleSort("network") : toggleSort("base")}
             className="flex-1 flex items-center text-[10px] text-muted-foreground font-medium"
           >
-            Pair <SortIcon k="base" />
+            {cat === "le" ? <>Chain <SortIcon k="network" /></> : <>Pair <SortIcon k="base" /></>}
           </button>
           <button
             onClick={() => toggleSort("price")}
@@ -433,6 +501,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                     )}
                     {isActive && (
                       <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
+                    )}
+                    {m.leSource && m.network && (
+                      <div className="text-[9px] text-muted-foreground/60 mt-0.5 leading-none">{m.network.toUpperCase()}</div>
                     )}
                   </button>
 
