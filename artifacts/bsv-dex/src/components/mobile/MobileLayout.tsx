@@ -83,7 +83,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate("/swap")}
             className="flex items-center h-full px-2 active:opacity-70 transition-opacity shrink-0"
           >
-            <BrandLogo textSize="text-2xl" />
+            <BrandLogo textSize="text-2xl" suffix={location.startsWith("/nft") ? "NFT" : "DEX"} />
           </button>
 
           <div className="flex-1" />
