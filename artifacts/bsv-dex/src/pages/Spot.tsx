@@ -14,6 +14,7 @@ import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
@@ -113,6 +114,7 @@ function normalise(m: any) {
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address, internalBsvAddress, internalEvmAddress } = useWalletStore();
+  const { open: openWalletModal } = useWalletModalStore();
   // Alt address: Orah wallet users have both a BSV and an EVM address.
   // Orders placed on the BSV network are stored against the BSV address, and
   // orders placed on the EVM network are stored against the EVM address.
@@ -923,6 +925,8 @@ export function SpotTrading() {
               key={lePanelKey}
               initialFrom={base}
               initialTo={quote}
+              walletAddress={address}
+              onConnectWallet={openWalletModal}
             />
           </div>
         </div>

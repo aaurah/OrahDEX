@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, ExternalLink, Lock,
+  Clock, ExternalLink, Lock, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -397,10 +397,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
 
 // ─── Step 2: Address ──────────────────────────────────────────────────────────
 
-function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue }: {
+function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, walletAddress }: {
   fromCoin: LeCoin; toCoin: LeCoin; amount: string; estimate: Estimate|null;
   onBack: () => void;
   onContinue: (address: string, extraId: string) => void;
+  walletAddress?: string | null;
 }) {
   const [address,    setAddress]    = useState("");
   const [extraId,    setExtraId]    = useState("");
@@ -459,6 +460,22 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue }:
         <p className="text-xs text-white/40">
           On the <span className="text-white/70">{toCoin.networkName ?? toCoin.network ?? toCoin.symbol}</span> network
         </p>
+        {/* Use connected wallet chip */}
+        {walletAddress && (
+          <button
+            type="button"
+            onClick={() => setAddress(walletAddress)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all",
+              address === walletAddress
+                ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                : "bg-white/5 border-white/15 text-white/60 hover:bg-white/10 hover:border-white/25 hover:text-white/80",
+            )}
+          >
+            <Wallet className="w-3.5 h-3.5 shrink-0" />
+            {address === walletAddress ? "✓ Using connected wallet" : `Use connected wallet: ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`}
+          </button>
+        )}
         <div className="relative">
           <input value={address} onChange={e => setAddress(e.target.value)}
             placeholder={`${toCoin.symbol} wallet address`}
@@ -466,7 +483,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue }:
           {address && <CopyButton text={address} className="absolute right-2 top-1/2 -translate-y-1/2" />}
         </div>
         <p className="text-[11px] text-yellow-400/70">
-          ⚠ Funds will be lost if the address or network don't match.
+          ⚠ Verify the address matches the selected coin and network to avoid lost funds.
         </p>
       </div>
 
@@ -674,9 +691,13 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 export function LetsExchangePanel({
   initialFrom,
   initialTo,
+  walletAddress,
+  onConnectWallet,
 }: {
   initialFrom?: string;
   initialTo?: string;
+  walletAddress?: string | null;
+  onConnectWallet?: () => void;
 } = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
@@ -783,9 +804,27 @@ export function LetsExchangePanel({
           <Zap className="w-4 h-4 text-yellow-400" />
           Cross-Chain Exchange
         </div>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
-          {coins.length}+ coins
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Wallet connection status */}
+          {walletAddress ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-[11px] text-emerald-400 font-semibold">
+              <Wallet className="w-3 h-3" />
+              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+            </div>
+          ) : onConnectWallet ? (
+            <button
+              type="button"
+              onClick={onConnectWallet}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/15 text-[11px] text-white/60 font-semibold hover:bg-white/10 hover:text-white/80 transition-colors"
+            >
+              <Wallet className="w-3 h-3" />
+              Connect Wallet
+            </button>
+          ) : null}
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
+            {coins.length}+ coins
+          </span>
+        </div>
       </div>
 
       <div className="px-4 pb-4 pt-2">
@@ -804,7 +843,8 @@ export function LetsExchangePanel({
         {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} />}
         {step === 2 && fromCoin && toCoin && (
           <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
-            onBack={() => setStep(1)} onContinue={handleAddressContinue} />
+            onBack={() => setStep(1)} onContinue={handleAddressContinue}
+            walletAddress={walletAddress} />
         )}
         {step === 3 && order && fromCoin && toCoin && (
           <StepDeposit order={order} fromCoin={fromCoin} toCoin={toCoin}
