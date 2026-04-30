@@ -318,10 +318,17 @@ export function SpotTrading() {
       .map(normalise)
       .filter(m => m.type === "spot");
     const mockNorm = ALL_SPOT_MOCK.map(normalise);
-    // deduplicate: API wins, then mock fills the rest
+    // deduplicate: API wins on price, mock fills the rest.
+    // If API returns exactly 0 change (unseeded pair), prefer the mock's realistic change.
     const deduped = new Map<string, ReturnType<typeof normalise>>();
     mockNorm.forEach(m => { if (!deduped.has(m.symbol)) deduped.set(m.symbol, m); });
-    apiNorm.forEach(m => { deduped.set(m.symbol, m); }); // API overrides mock
+    apiNorm.forEach(m => {
+      const mock = deduped.get(m.symbol);
+      const chg = m.priceChangePercent24h !== 0
+        ? m.priceChangePercent24h
+        : (mock?.priceChangePercent24h ?? 0);
+      deduped.set(m.symbol, { ...m, priceChangePercent24h: chg });
+    });
 
     // Merge server-provided LE pairs — skip pairs that already exist natively
     lePairs.forEach(p => {
