@@ -1,0 +1,11 @@
+{
+  "typescript.tsdk": "artifacts/orahdex-contracts/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "githubPullRequests.experimental.useQuickChat": true,
+  "githubIssues.ignoreUserCompletionTrigger": [
+    ""
+  ],
+  "githubIssues.alwaysPromptForNewIssueRepo": true,
+  "githubIssues.createInsertFormat": "url",
+  "remote.autoForwardPortsFallback": 0
+}
