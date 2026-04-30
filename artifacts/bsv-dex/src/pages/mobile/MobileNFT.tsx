@@ -721,9 +721,9 @@ function CreatorProfileSheet({
               {hybrid.chains.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {hybrid.chains.filter(c => c.native > 0).map(c => (
-                    <div key={c.symbol} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold" style={{ background: "rgba(255,255,255,0.06)" }}>
-                      <span style={{ color: "var(--color-text-secondary)" }}>{c.symbol}</span>
-                      <span style={{ color: "var(--color-text)" }}>{c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span>
+                    <div key={c.chain} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <span style={{ color: CHAIN_COLOR[c.chain] ?? "var(--color-text-secondary)" }}>{c.chain}</span>
+                      <span style={{ color: "var(--color-text)" }}>{c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
                       <span style={{ color: "var(--color-text-secondary)" }}>·</span>
                       <span style={{ color: "var(--color-accent)" }}>${c.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
                     </div>
@@ -1437,12 +1437,48 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && totalPrice > 0 && availableNum < totalPrice;
   const [, navigate] = useLocation();
 
+  // Chain name → EVM chainId (for on-chain payment)
+  const EVM_CHAIN_IDS: Record<string, number> = {
+    ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
+  };
+
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
     if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
+      // ── On-chain payment for EVM posts ──────────────────────────────────
+      const postChain = post.chain ?? "BSV";
+      const targetChainId = EVM_CHAIN_IDS[postChain];
+      if (targetChainId && mintPrice > 0 && post.creator) {
+        const injected: any = (window as any).ethereum;
+        if (!injected) throw new Error("No wallet found — please connect MetaMask or WalletConnect");
+
+        // Switch to the correct chain if needed
+        const currentChainHex: string = await injected.request({ method: "eth_chainId" });
+        const currentChainId = parseInt(currentChainHex, 16);
+        if (currentChainId !== targetChainId) {
+          try {
+            await injected.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0x" + targetChainId.toString(16) }],
+            });
+          } catch (switchErr: any) {
+            throw new Error(`Please switch your wallet to ${postChain} network to buy this NFT`);
+          }
+        }
+
+        // Send ETH to creator
+        const valueWei = BigInt(Math.round(mintPrice * qty * 1e18));
+        const valueHex = "0x" + valueWei.toString(16);
+        await injected.request({
+          method: "eth_sendTransaction",
+          params: [{ from: address, to: post.creator, value: valueHex }],
+        });
+      }
+
+      // ── Record in backend ───────────────────────────────────────────────
       for (let i = 0; i < qty; i++) {
         const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
         const d = await res.json();
