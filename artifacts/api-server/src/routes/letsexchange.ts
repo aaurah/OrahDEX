@@ -17,7 +17,7 @@ import { logger } from "../lib/logger.js";
 const router: IRouter = Router();
 
 const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
-const BASE_URL = "https://api.letsexchange.io/api/v1";
+const BASE_URL = "https://api.letsexchange.io/api/v2";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 
@@ -55,22 +55,68 @@ async function leRequest(
   return { ok: res.ok, status: res.status, data };
 }
 
-// Normalise a raw LetsExchange coin object into a consistent shape the
-// frontend can rely on (API returns `ticker`, not `symbol`).
-function normaliseCoin(raw: Record<string, unknown>) {
-  const ticker = (raw.ticker ?? raw.symbol ?? raw.code ?? "") as string;
-  return {
-    symbol:        ticker.toUpperCase(),
-    name:          (raw.name ?? ticker) as string,
-    network:       (raw.network ?? raw.networkName ?? null) as string | null,
-    image:         (raw.image ?? raw.logo ?? null) as string | null,
-    hasExternalId: !!(raw.has_extra_id ?? raw.hasExternalId ?? false),
-    addressRegex:  (raw.addressRegex ?? raw.address_regex ?? null) as string | null,
-  };
+interface NormalisedCoin {
+  symbol:      string;
+  name:        string;
+  network:     string | null;
+  networkName: string | null;
+  image:       string | null;
+  hasExtraId:  boolean;
+  minAmount:   string | null;
+  maxAmount:   string | null;
+}
+
+// Normalise the v2 LetsExchange coin list.
+// Each coin can have multiple networks — we expand into one entry per
+// active network so the user can pick e.g. "USDT on TRC20" vs "USDT on ERC20".
+function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
+  const result: NormalisedCoin[] = [];
+  const seen = new Set<string>();
+
+  for (const item of raw) {
+    const c = item as Record<string, unknown>;
+    const symbol = ((c.code ?? c.ticker ?? c.symbol ?? "") as string).toUpperCase();
+    if (!symbol) continue;
+
+    const name      = (c.name ?? symbol) as string;
+    const image     = (c.icon ?? c.image ?? null) as string | null;
+    const minAmount = (c.min_amount ?? null) as string | null;
+    const maxAmount = (c.max_amount ?? null) as string | null;
+    const networks  = Array.isArray(c.networks) ? c.networks as Record<string, unknown>[] : [];
+
+    if (networks.length === 0) {
+      // Flat coin (v1-style)
+      const key = `${symbol}::`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({ symbol, name, network: null, networkName: null, image, hasExtraId: false, minAmount, maxAmount });
+      }
+    } else {
+      for (const net of networks) {
+        if (net.is_active === 0) continue;
+        const netCode = (net.code ?? "") as string;
+        const key = `${symbol}::${netCode}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push({
+          symbol,
+          name,
+          network:     netCode || null,
+          networkName: (net.name ?? null) as string | null,
+          image:       (net.icon ?? image) as string | null,
+          hasExtraId:  !!(net.has_extra),
+          minAmount,
+          maxAmount,
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 // ── GET /api/letsexchange/currencies ──────────────────────────────────────────
-// Returns all 6000+ supported coins. Cached for 5 minutes.
+// Returns all supported coins, one entry per coin×network. Cached for 5 minutes.
 router.get("/letsexchange/currencies", async (_req, res) => {
   const key = "currencies";
   const hit = cached(key);
@@ -78,18 +124,8 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   try {
     const { ok, data, status } = await leRequest("/coins");
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    // Normalise and deduplicate by symbol+network
     const raw = Array.isArray(data) ? data : [];
-    const seen = new Set<string>();
-    const coins = raw
-      .map((c: Record<string, unknown>) => normaliseCoin(c))
-      .filter(c => {
-        if (!c.symbol) return false;
-        const key = `${c.symbol}::${c.network ?? ""}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+    const coins = normaliseV2Coins(raw);
     setCache(key, coins);
     res.json(coins);
   } catch (err: any) {
