@@ -33,6 +33,7 @@ import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
 import feeRevenueRouter from "./feeRevenue.js";
 import tradeRouter from "./trade.js";
+import letsexchangeRouter from "./letsexchange.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -107,6 +108,7 @@ router.use("/nft", nftRouter);
 router.use(socialNftRouter);
 router.use(creatorCoinsRouter);
 router.use(predictionRouter);
+router.use(letsexchangeRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */

@@ -47,7 +47,7 @@ function createTransporter(cfg: SmtpConfig): Transporter {
     port: cfg.port,
     secure: cfg.secure,
     auth: { user: cfg.user, pass: cfg.pass },
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: true },
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
   });

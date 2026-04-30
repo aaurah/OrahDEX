@@ -6,6 +6,15 @@ import { logger } from "../lib/logger.js";
 import { sendMail } from "../lib/mailer.js";
 import { notifyNewTicket, sendTestNotification } from "../lib/notifier.js";
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 const router = Router();
 
 /* ── PUBLIC: Submit contact form ticket ────────────────────────────────────── */
@@ -42,7 +51,7 @@ router.post("/support/contact", async (req, res) => {
         to: supportEmail,
         subject: `[Support Ticket #${ticket.id}] ${ticket.subject}`,
         text: `New support ticket from ${ticket.name} <${ticket.email}>\n\nCategory: ${ticket.category}\n\nMessage:\n${ticket.message}`,
-        html: `<h3>New Support Ticket #${ticket.id}</h3><p><strong>From:</strong> ${ticket.name} &lt;${ticket.email}&gt;</p><p><strong>Category:</strong> ${ticket.category}</p><p><strong>Subject:</strong> ${ticket.subject}</p><hr><p>${ticket.message.replace(/\n/g, "<br>")}</p>`,
+        html: `<h3>New Support Ticket #${ticket.id}</h3><p><strong>From:</strong> ${escapeHtml(ticket.name)} &lt;${escapeHtml(ticket.email)}&gt;</p><p><strong>Category:</strong> ${escapeHtml(ticket.category)}</p><p><strong>Subject:</strong> ${escapeHtml(ticket.subject)}</p><hr><p>${escapeHtml(ticket.message).replace(/\n/g, "<br>")}</p>`,
       });
     } catch (mailErr: any) {
       logger.warn({ err: mailErr?.message }, "Support ticket mail notification failed");
@@ -134,7 +143,7 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
           to: ticket.email,
           subject: `Re: [Ticket #${ticket.id}] ${ticket.subject}`,
           text: `Hi ${ticket.name},\n\n${adminReply}\n\nBest regards,\n${siteName} Support Team\n${supportEmail}`,
-          html: `<p>Hi ${ticket.name},</p><p>${adminReply.replace(/\n/g, "<br>")}</p><p>Best regards,<br><strong>${siteName} Support Team</strong></p>`,
+          html: `<p>Hi ${escapeHtml(ticket.name)},</p><p>${escapeHtml(adminReply).replace(/\n/g, "<br>")}</p><p>Best regards,<br><strong>${escapeHtml(siteName)} Support Team</strong></p>`,
         });
       } catch (mailErr: any) {
         logger.warn({ err: mailErr?.message }, "Support reply mail failed");

@@ -366,6 +366,9 @@ importers:
       lightweight-charts:
         specifier: ^5.1.0
         version: 5.1.0
+      postcss:
+        specifier: '>=8.5.10'
+        version: 8.5.10
       qrcode.react:
         specifier: ^4.2.0
         version: 4.2.0(react@19.2.4)
