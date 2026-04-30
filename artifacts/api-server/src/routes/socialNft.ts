@@ -11,7 +11,7 @@ function uid(): string { return crypto.randomUUID(); }
 /* ── GET /social/feed ─────────────────────────────────────────────────────── */
 router.get("/social/feed", async (req, res) => {
   try {
-    const { category, q, sort = "hot", creator } = req.query as Record<string, string>;
+    const { category, q, sort = "hot", creator, chain } = req.query as Record<string, string>;
     const offset = parseInt((req.query.offset as string) ?? "0", 10);
     const limit  = Math.min(parseInt((req.query.limit  as string) ?? "20", 10), 50);
 
@@ -19,6 +19,7 @@ router.get("/social/feed", async (req, res) => {
     const params: any[] = [];
 
     if (category) { params.push(category); where += ` AND sp.category = $${params.length}`; }
+    if (chain)    { params.push(chain.toUpperCase()); where += ` AND sp.chain = $${params.length}`; }
     if (q)        { params.push(`%${q}%`);  where += ` AND (sp.title ILIKE $${params.length} OR sp.description ILIKE $${params.length})`; }
     if (creator)  { params.push(creator);   where += ` AND sp.creator = $${params.length}`; }
 
@@ -81,11 +82,17 @@ router.get("/social/posts/:id", async (req, res) => {
   }
 });
 
-/* ── POST /social/posts — create post + mint as BSV inscription ───────────── */
+const SUPPORTED_CHAINS = new Set(["BSV","ETH","BASE","BNB","MATIC","ARB","OP","SOL","BTC","BCH"]);
+
+/* ── POST /social/posts — create post + mint as multichain inscription ──────── */
 router.post("/social/posts", async (req, res) => {
   try {
-    const { creator, creator_name, title, description, image_url, mint_price, mint_currency = "BSV", category = "art", max_supply, tags } = req.body as Record<string, any>;
+    const { creator, creator_name, title, description, image_url, mint_price, mint_currency = "BSV", category = "art", max_supply, tags, chain: reqChain } = req.body as Record<string, any>;
     if (!creator || !title) { res.status(400).json({ error: "creator and title are required" }); return; }
+
+    const chain = (typeof reqChain === "string" && SUPPORTED_CHAINS.has(reqChain.toUpperCase()))
+      ? reqChain.toUpperCase()
+      : "BSV";
 
     const priceUsd = (parseFloat(mint_price ?? "0") * 16).toFixed(2);
     const inscriptionId = `${uid().replace(/-/g, "")}i0`;
@@ -93,8 +100,8 @@ router.post("/social/posts", async (req, res) => {
     const id = `post-${uid().slice(0, 8)}`;
     await pool.query(
       `INSERT INTO social_posts (id, creator, creator_name, title, description, image_url, mint_price, mint_currency, mint_price_usd, max_supply, category, tags, inscription_id, chain)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BSV')`,
-      [id, creator, creator_name ?? creator.slice(0, 8), title, description, image_url, mint_price ?? "0", mint_currency, priceUsd, max_supply ?? null, category, tags ? JSON.stringify(tags) : null, inscriptionId],
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id, creator, creator_name ?? creator.slice(0, 8), title, description, image_url, mint_price ?? "0", mint_currency, priceUsd, max_supply ?? null, category, tags ? JSON.stringify(tags) : null, inscriptionId, chain],
     );
 
     const { rows } = await pool.query("SELECT * FROM social_posts WHERE id = $1", [id]);
