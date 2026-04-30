@@ -366,6 +366,9 @@ router.get("/letsexchange/pairs", async (req, res) => {
     RAY: 1.8,   MNGO: 0.012, ORCA: 0.28, JTO: 1.5,
     RSR: 0.0048, LQTY: 0.72, ALCX: 10, SPELL: 0.00055, CVX: 1.8, BAL: 1.5,
     ANKR: 0.017, SKL: 0.024, CTSI: 0.078, STORJ: 0.36, OGN: 0.065,
+    // Meme / culture tokens with LE support (only entries not already above)
+    DOGINME: 0.0000945, LMWR: 0.021, TURBO: 0.0082, MOG: 0.0000082,
+    MEW: 0.0058, NEIRO: 0.00048, MEME: 0.012, EIGEN: 2.42,
   };
 
   // Layer 1: static fallbacks
