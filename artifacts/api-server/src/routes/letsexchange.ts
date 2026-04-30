@@ -119,6 +119,92 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   }
 });
 
+// ── GET /api/letsexchange/pairs ───────────────────────────────────────────────
+// Returns all LE coins expressed as OrahDEX-compatible market objects.
+// Each coin gets a virtual pair against every LE_QUOTES entry, so the full
+// list is available to any consumer (pair selector, market feed, etc.)
+// without the client having to rebuild it from the coin list.
+//
+// Query params:
+//   quote   (string, default "BSV")   — filter to a single quote asset
+//   all     (boolean, default false)  — return all quotes, not just BSV
+//
+// Response shape per item:
+//   symbol, baseAsset, quoteAsset, network, networkName,
+//   image, hasExtraId, minAmount, maxAmount,
+//   lastPrice (0), priceChangePercent24h (0), volume (0),
+//   type ("letsexchange"), leSource (true)
+
+const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "DOGE", "LTC"];
+const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+
+function buildPairs(coins: NormalisedCoin[]) {
+  const pairs: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const coin of coins) {
+    for (const q of LE_PAIR_QUOTES) {
+      if (coin.symbol === q) continue;
+      const key = `${coin.symbol}/${q}::${coin.network ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({
+        symbol:                `${coin.symbol}/${q}`,
+        baseAsset:             coin.symbol,
+        quoteAsset:            q,
+        network:               coin.network,
+        networkName:           coin.networkName,
+        image:                 coin.image,
+        hasExtraId:            coin.hasExtraId,
+        minAmount:             coin.minAmount,
+        maxAmount:             coin.maxAmount,
+        lastPrice:             0,
+        priceChangePercent24h: 0,
+        volume:                0,
+        type:                  "letsexchange",
+        leSource:              true,
+      });
+    }
+  }
+  return pairs;
+}
+
+router.get("/letsexchange/pairs", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  const cacheKey = "le_pairs_all";
+  let pairs = cached(cacheKey) as Record<string, unknown>[] | null;
+
+  if (!pairs) {
+    // Reuse coins cache if fresh, otherwise re-fetch
+    let coins = cached("currencies") as NormalisedCoin[] | null;
+    if (!coins) {
+      try {
+        const { ok, data, status } = await leRequest("/v2/coins");
+        if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
+        coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+        setCache("currencies", coins);
+      } catch (err: any) {
+        logger.error({ err }, "letsexchange /pairs coins fetch failed");
+        res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
+      }
+    }
+    pairs = buildPairs(coins);
+    cache.set(cacheKey, { data: pairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) }); // custom TTL
+  }
+
+  let result = pairs;
+  if (!returnAll && filterQuote) {
+    result = pairs.filter(p => p.quoteAsset === filterQuote);
+  } else if (!returnAll) {
+    // Default: return BSV quote pairs so the pair selector loads BSV tab fast
+    result = pairs.filter(p => p.quoteAsset === "BSV");
+  }
+
+  res.set("Cache-Control", "public, max-age=600");
+  res.json(result);
+});
+
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
 // Real endpoint: POST /api/v1/info
 // Required: from, to, network_from, network_to, amount, affiliate_id
