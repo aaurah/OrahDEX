@@ -58,7 +58,30 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Routing**: Wouter
 - **Charting**: lightweight-charts v5
 - **Wallet Connectivity**: `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1`, `@reown/appkit`, `@reown/appkit-adapter-wagmi`, Nodemailer.
-- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark.
+- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark, LetsExchange.
+
+## LetsExchange Cross-Chain Integration
+- **Partner ID / Affiliate ID**: `1692` (decoded from JWT `data.id` field at startup in `letsexchange.ts`)
+- **API Key**: standard affiliate JWT key stored in `LETSEXCHANGE_API_KEY` secret
+- **Working endpoints** (no enterprise upgrade needed):
+  - `GET  /api/v2/coins` → coin list (1,055+ coins with networks, min/max amounts, extra_id flag)
+  - `POST /api/v1/info` → live rate + min/max + `rate_id` + `rate_id_expired_at` (for fixed-rate flow)
+  - `POST /api/v1/transaction` → create exchange order → returns `transaction_id`, `deposit` address, `deposit_extra_id`
+  - `GET  /api/v1/transaction/{id}` → full order details + live status + tx hashes
+- **Key field names** (v1 API, not what we had initially guessed):
+  - Create request: `withdrawal` (not `withdrawal_address`), `withdrawal_extra_id` must always be sent (even `""`), `affiliate_id` required
+  - Create response: `transaction_id` (not `id`), `deposit` (not `deposit_address`), `withdrawal` (not `withdrawal_address`)
+  - Status values: `wait`, `confirmation`, `confirmed`, `exchanging`, `sending`, `finished`, `failed`, `overdue`, `refunded`
+- **Fixed-rate flow**: `POST /v1/info` returns `rate_id` + expiry timestamp → pass `rate_id` to `POST /v1/transaction` for locked rate
+- **Proxy routes**: `artifacts/api-server/src/routes/letsexchange.ts`
+- **Frontend**: `artifacts/bsv-dex/src/components/LetsExchangePanel.tsx` — native 3-step UI (amount → address → deposit/QR/tracking), no external redirects. Accepts `initialFrom`/`initialTo` props to pre-select coins.
+- **Orderbook fallback integration** (2026-04-30):
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangeCoins.ts` — singleton hook, fetches LE coins once, exposes `getCoin(sym)` / `isLECoin(sym)`
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangeRate.ts` — per-pair live rate hook polling every 10s from `/api/letsexchange/estimate`
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangePairs.ts` — fetches server-provided LE pairs (`GET /api/letsexchange/pairs`); supports `quote` filter or `all:true`
+  - `OrderBook.tsx` — shows a yellow "Cross-chain rate ⚡LE →" card at the spread when LE rate available; clicking scrolls to LetsExchangePanel pre-filled with current pair
+  - `Spot.tsx` — merges server-provided LE pairs (10,494 pairs; ~1,053 coins × 10 quotes: BSV/BTC/ETH/USDT/BNB/SOL/XRP/TRX/DOGE/LTC) into the pair selector with `⚡LE` badge; shows no-liquidity fallback banner above order form; `LetsExchangePanel` always pre-seeded with current pair's base/quote
+  - **API endpoint** `GET /api/letsexchange/pairs` — unified pairs feed: LE-sourced pairs (tagged `leSource:true`) + OrahDEX native spot pairs from DB (tagged `orahSource:true`); LE wins on duplicate symbols; supports `?quote=BSV` filter and `?all=true`; ~8,469 total pairs (7,880 LE + 589 OrahDEX-native)
 
 # Trade Logic Audit (2026-04-10)
 

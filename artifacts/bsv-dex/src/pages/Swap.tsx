@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
@@ -36,6 +36,7 @@ import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
+import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -643,11 +644,6 @@ function GasTopUpPanel({
             {gasLabels[gasLevel]}
           </span>
         )}
-        {gasLevel === "empty" && (
-          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 ml-0.5 uppercase tracking-wide">
-            No Gas
-          </span>
-        )}
       </button>
 
       {/* Expanded panel */}
@@ -1178,7 +1174,6 @@ function ExchangeSwapPanel({
           <RefreshCw className="w-4 h-4 text-primary" />
           OrahDEX Exchange
         </div>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
       </div>
 
       {/* Quick pair selector */}
@@ -1350,7 +1345,7 @@ function ExchangeSwapPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/60 text-center">
-        Instant · No gas · 0.3% fee · Uses OrahDEX internal balance
+        Instant · 0.3% fee · Uses OrahDEX internal balance
       </p>
     </div>
   );
@@ -1361,6 +1356,10 @@ function ExchangeSwapPanel({
 export function Swap() {
   useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
   const [, setLocation] = useLocation();
+  const searchStr = useSearch();
+  const searchParams = new URLSearchParams(searchStr);
+  const leFrom = searchParams.get("from") ?? undefined;
+  const leTo   = searchParams.get("to")   ?? undefined;
   const isMobile = useIsMobile();
 
   const { address, chainId: walletChainId, provider } = useWalletStore();
@@ -1575,6 +1574,16 @@ export function Swap() {
             <Link2 className="w-3.5 h-3.5" />
             Bridge
           </button>
+        </div>
+
+        {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
+        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border/40" />
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap on-chain via {chainId === 56 ? "PancakeSwap" : "Uniswap"}</span>
+          <div className="flex-1 h-px bg-border/40" />
         </div>
 
         <>
@@ -1808,16 +1817,6 @@ export function Swap() {
               </span>
             </div>
           </>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap via OrahDEX Exchange</span>
-          <div className="flex-1 h-px bg-border/40" />
-        </div>
-
-        {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
-        <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">

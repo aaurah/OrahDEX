@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useGetMarkets } from "@workspace/api-client-react";
 import { useSEO } from "@/hooks/useSEO";
@@ -23,6 +23,7 @@ import { getWalletMarketTab } from "@/lib/walletMarket";
 import { AiInsightsBar } from "@/components/AiInsightsBar";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -198,6 +199,36 @@ export function Markets() {
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 15_000 } });
   const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
+  // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  const leBsvPairs = useMemo(
+    () => (rawLePairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLePairs],
+  );
+
+  // LetsExchange BTC-quoted pairs — all 800+ coins tradeable vs BTC
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
+  const leBtcPairs = useMemo(
+    () => (rawLeBtcPairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLeBtcPairs],
+  );
+
   /**
    * Build a symbol → live-price map from the API response.
    * Mock data always provides the FULL pair list; API prices enrich it.
@@ -275,8 +306,20 @@ export function Markets() {
         return dbBySymbols(NEW_MARKETS.map(normalise));
       case "usd":
         return dbByQuote(usdSub);
-      case "bsv":     return dbByQuote("BSV");
-      case "btc":     return dbByQuote("BTC");
+      case "bsv": {
+        const dbBsv = dbByQuote("BSV");
+        const dbSymbols = new Set(dbBsv.map((m: any) => m.symbol));
+        const dbBases = new Set(dbBsv.map((m: any) => m.baseAsset));
+        const leOnly = leBsvPairs.filter(m => !dbSymbols.has(m.symbol) && !dbBases.has(m.baseAsset));
+        return [...dbBsv, ...leOnly];
+      }
+      case "btc": {
+        const dbBtc = dbByQuote("BTC");
+        const dbBtcSymbols = new Set(dbBtc.map((m: any) => m.symbol));
+        const dbBtcBases = new Set(dbBtc.map((m: any) => m.baseAsset));
+        const leOnlyBtc = leBtcPairs.filter(m => !dbBtcSymbols.has(m.symbol) && !dbBtcBases.has(m.baseAsset));
+        return [...dbBtc, ...leOnlyBtc];
+      }
       case "eth":     return dbByQuote("ETH");
       case "bnb":     return dbByQuote("BNB");
       case "matic":   return dbByQuote("MATIC");
@@ -318,8 +361,16 @@ export function Markets() {
       case "favorites": return tradeable(raw.filter(m => stars.has(m.symbol))).length;
       case "new":       return dbBySymbols(NEW_MARKETS.map(normalise)).length;
       case "usd":       return dbQ(usdSub);
-      case "bsv":       return dbQ("BSV");
-      case "btc":       return dbQ("BTC");
+      case "bsv": {
+        const c = dbQ("BSV");
+        const dbBases = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="BSV")).map((m:any)=>m.baseAsset));
+        return c + leBsvPairs.filter(m => !dbBases.has(m.baseAsset)).length;
+      }
+      case "btc": {
+        const c = dbQ("BTC");
+        const dbBtcBases = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="BTC")).map((m:any)=>m.baseAsset));
+        return c + leBtcPairs.filter(m => !dbBtcBases.has(m.baseAsset)).length;
+      }
       case "eth":       return dbQ("ETH");
       case "bnb":       return dbQ("BNB");
       case "matic":     return dbQ("MATIC");
@@ -355,7 +406,9 @@ export function Markets() {
   }
 
   const markets  = getMarkets();
-  const searchPool = search ? tradeable(raw) : markets;
+  const searchPool = search
+    ? [...tradeable(raw), ...leBsvPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
+    : markets;
   const filtered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
@@ -629,7 +682,9 @@ export function Markets() {
                   const isUp  = chg >= 0;
                   const tradeHref = tab === "futures"
                     ? `/futures/${m.symbol.replace(/\//g, "-")}`
-                    : `/trade/${m.symbol.replace(/\//g, "-")}`;
+                    : m.type === "letsexchange"
+                      ? `/swap?from=${base}&to=${quote}`
+                      : `/trade/${m.symbol.replace(/\//g, "-")}`;
 
                   const priceUSD = toUSD(price, quote);
                   const btcCellVal = base === "BTC" ? "1 BTC" : fmtBTC(priceUSD);
@@ -789,7 +844,9 @@ function CoinDetailPanel({
   const isFutures = tab === "futures";
   const tradeHref = isFutures
     ? `/futures/${coin.symbol.replace(/\//g, "-")}`
-    : `/trade/${coin.symbol.replace(/\//g, "-")}`;
+    : coin.type === "letsexchange"
+      ? `/swap?from=${coin.baseAsset}&to=${coin.quoteAsset}`
+      : `/trade/${coin.symbol.replace(/\//g, "-")}`;
 
   return (
     <>

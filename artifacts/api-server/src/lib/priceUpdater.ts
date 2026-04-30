@@ -1,10 +1,11 @@
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { eq, desc, gte } from "drizzle-orm";
+import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
+import { getCachedLEPrices, warmLEPriceCache, leRequest } from "./lePriceCache.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -109,18 +110,20 @@ export const COINGECKO_IDS: Record<string, string> = {
   SPELL: "spell-token",
   PERP:  "perpetual-protocol",
   // Meme / culture
-  TRUMP: "official-trump",
-  TURBO: "turbo",
-  MOG:   "mog-coin",
-  POPCAT:"popcat",
-  MEW:   "cat-in-a-dogs-world",
-  NEIRO: "first-neiro-on-ethereum",
+  TRUMP:   "official-trump",
+  TURBO:   "turbo",
+  MOG:     "mog-coin",
+  POPCAT:  "popcat",
+  MEW:     "cat-in-a-dogs-world",
+  NEIRO:   "first-neiro-on-ethereum",
+  DOGINME: "doginme",
   BABYDOGE:"baby-doge-coin",
   MEME:  "memecoin-2",
   NOT:   "notcoin",
   HMSTR: "hamster-kombat",
   DOGS:  "dogs",
   EIGEN: "eigenlayer",
+  LMWR:  "limewire-token",
   // L2 / bridge tokens
   ZK:    "zksync",
   SCR:   "scroll",
@@ -132,6 +135,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   BOBA:  "boba-network",
   METIS: "metis-token",
   // Gaming / Metaverse
+  APE:   "apecoin",
   AXS:   "axie-infinity",
   ENJ:   "enjincoin",
   GALA:  "gala",
@@ -249,7 +253,7 @@ export const USDT_PAIRS = [
   "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
   "HNT","IOTX","GLM","STORJ","POWR","LPT",
   // ── Gaming / Metaverse ──────────────────────────────────────────────────────
-  "AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "APE","AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
   "BEAM","PRIME","RON","MC","GODS",
   // ── Cosmos ecosystem ────────────────────────────────────────────────────────
   "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
@@ -263,7 +267,7 @@ export const USDT_PAIRS = [
   "KSM","ACA","ASTR","PHA",
   // ── Meme coins ───────────────────────────────────────────────────────────────
   "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
-  "MEME","NOT","HMSTR","DOGS","EIGEN",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
   // ── L2 / bridge ──────────────────────────────────────────────────────────────
   "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
   "WBTC","WSTETH","RETH",
@@ -274,144 +278,131 @@ export const USDT_PAIRS = [
   "ZORA","ENJOY","BUILD",
 ];
 
-// BTC pairs — wide coverage vs BTC
-export const BTC_PAIRS = [
-  "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","DASH","XMR","ZEC","MKR","CRV","RUNE","YFI",
-  "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
-  "ETC","FTM","EOS","THETA","VET","BSV","BCH",
-  "TON","KAS","SEI","TIA","KAVA","ONE","ZIL","AXS","GALA","ENJ",
-  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI",
-  "STX","GMX","DYDX","PENDLE","FET","RNDR","TAO","WLD",
-  "WIF","JUP","PYTH","RON","AKT","LUNA",
-];
-
-// ETH pairs — top coins vs ETH
-export const ETH_PAIRS = [
-  "BTC","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","MKR","CRV","LDO","COMP","SNX","GRT","RUNE","YFI",
-  "TON","SEI","TIA","AXS","GALA","ENJ","IMX","SAND","MANA",
-  "OSMO","ONDO","ORDI","STX","FET","RNDR","TAO","BONK","WIF",
-];
-
-// Stablecoin pairs — USDC, TUSD, USDD quote assets (same as USDT, minus niche tokens)
-const STABLE_BASE_PAIRS = [
+// ── Comprehensive base-coin pool ────────────────────────────────────────────
+// Mirrors USDT_PAIRS exactly; used to auto-build every chain-native pair list
+// so that ALL markets carry the same full depth of tradeable assets.
+const ALL_BASE_COINS: string[] = [
+  // ── Top L1 blue-chips ──────────────────────────────────────────────────────
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
   "MATIC","LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP",
   "VET","FIL","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
-  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX","RUNE",
-  "FTM","ALGO","XLM","HBAR","EGLD","EOS","ZEC","DASH","XMR","SAND","MANA",
-  "TON","KAS","SEI","TIA","KAVA","AXS","ENJ","GALA","IMX","RON",
-  "OSMO","ATOM","ONDO","PAXG","OKB","KCS","ORDI","SATS",
-  "BONK","WIF","JUP","PYTH","FET","RNDR","TAO","WLD","STX","GMX","DYDX",
-];
-export const USDC_PAIRS = [
-  ...STABLE_BASE_PAIRS,
-  // ── Base chain assets vs USDC ────────────────────────────────────────────
+  // ── DeFi ───────────────────────────────────────────────────────────────────
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX",
+  "YFI","RUNE","BAL","GMX","DYDX","PENDLE","CVX","FXS","SPELL","PERP","CAKE",
+  // ── L1 alts ────────────────────────────────────────────────────────────────
+  "FTM","ALGO","XLM","HBAR","EGLD","THETA","EOS","ZEC","DASH","XMR",
+  "SAND","MANA","CRO","KAVA","ONE","ZIL","ICX","WAVES","NEO","CFX",
+  "ROSE","FLR","CELO","CKB","CORE","BTT","XDC","GLMR","MOVR","KDA","ZEN",
+  "TON","KAS","SEI","TIA",
+  // ── Solana ecosystem ───────────────────────────────────────────────────────
+  "BONK","WIF","JUP","PYTH","JTO","ORCA","BOME","RAY","MSOL","W","TNSR",
+  // ── AI / DePIN ─────────────────────────────────────────────────────────────
+  "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
+  "HNT","IOTX","GLM","STORJ","POWR","LPT",
+  // ── Gaming / Metaverse ─────────────────────────────────────────────────────
+  "APE","AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "BEAM","PRIME","RON","MC","GODS",
+  // ── Cosmos ecosystem ───────────────────────────────────────────────────────
+  "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
+  // ── RWA ────────────────────────────────────────────────────────────────────
+  "ONDO","PAXG","XAUT","CFG","MPL",
+  // ── Exchange tokens ────────────────────────────────────────────────────────
+  "OKB","GT","KCS","HT","BGB","WBT",
+  // ── BRC-20 / Ordinals ──────────────────────────────────────────────────────
+  "ORDI","SATS","RATS",
+  // ── Polkadot ecosystem ─────────────────────────────────────────────────────
+  "KSM","ACA","ASTR","PHA",
+  // ── Meme coins ─────────────────────────────────────────────────────────────
+  "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
+  // ── L2 / bridge ────────────────────────────────────────────────────────────
+  "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
+  "WBTC","WSTETH","RETH",
+  // ── Base chain assets ──────────────────────────────────────────────────────
   "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
   "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
-  // ── Zora ecosystem vs USDC ──────────────────────────────────────────────
+  // ── Zora ecosystem ─────────────────────────────────────────────────────────
   "ZORA","ENJOY","BUILD",
 ];
-export const TUSD_PAIRS = STABLE_BASE_PAIRS;
-export const USDD_PAIRS = STABLE_BASE_PAIRS;
 
-// BCH pairs — top coins vs Bitcoin Cash
-export const BCH_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// Pure fiat-pegged stablecoins that should not appear as base tokens in
+// chain-native markets (e.g. no DAI/ETH or FRAX/BNB).
+const STABLECOIN_BASE_EXCL = new Set([
+  "USDT","USDC","TUSD","USDD","BUSD","DAI","FRAX","LUSD","GUSD","USDP",
+]);
 
-// BNB pairs — top coins vs BNB
-export const BNB_PAIRS = [
-  "BTC","ETH","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP",
-  "SUI","INJ","PEPE","SHIB","AAVE","CRV","MKR","FIL","ALGO","XLM",
-];
+/**
+ * Build a deduplicated chain-native pair list: all ALL_BASE_COINS except
+ * the quote token itself and pure stablecoins, plus optional chain-specific extras.
+ */
+function buildChainPairs(quote: string, extras: string[] = []): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const b of [...ALL_BASE_COINS, ...extras]) {
+    if (b !== quote && !STABLECOIN_BASE_EXCL.has(b) && !seen.has(b)) {
+      seen.add(b);
+      result.push(b);
+    }
+  }
+  return result;
+}
 
-// ── EVM chain quote markets ────────────────────────────────────────────────
+// ── Per-quote pair lists (auto-generated from ALL_BASE_COINS) ───────────────
 
-// MATIC (Polygon) pairs
-export const MATIC_PAIRS = [
-  // Blue-chips
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP","SUI","INJ",
-  // Stablecoins (bridged on Polygon)
-  "USDC","USDT","DAI","WBTC",
-  // Polygon / DeFi ecosystem
-  "AAVE","CRV","SUSHI","BAL","COMP","SNX","GRT","YFI","MKR","LDO",
-  "1INCH","SAND","MANA","AXS","IMX","GALA","ENJ",
-  "GHST","QUICK","DFYN",
-];
+// Stablecoin variants — full USDT depth
+export const USDC_PAIRS = [...USDT_PAIRS];
+export const TUSD_PAIRS = [...USDT_PAIRS];
+export const USDD_PAIRS = [...USDT_PAIRS];
 
-// AVAX (Avalanche) pairs
-export const AVAX_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// BTC pairs — every base vs Bitcoin
+export const BTC_PAIRS = buildChainPairs("BTC");
 
-// ARB (Arbitrum) pairs
-export const ARB_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","OP","SUI","INJ","AAVE","CRV",
-];
+// ETH pairs — every base vs Ether
+export const ETH_PAIRS = buildChainPairs("ETH");
 
-// OP (Optimism) pairs
-export const OP_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","SUI","INJ","AAVE","CRV",
-];
+// BCH pairs — every base vs Bitcoin Cash
+export const BCH_PAIRS = buildChainPairs("BCH");
 
-// FTM (Fantom) pairs
-export const FTM_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","OP","AAVE",
-];
+// BNB pairs — every base vs BNB
+export const BNB_PAIRS = buildChainPairs("BNB");
 
-// CRO (Cronos) pairs
-export const CRO_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR",
-];
+// BSV pairs — every base vs Bitcoin SV
+export const BSV_PAIRS = buildChainPairs("BSV");
 
-// BASE (Coinbase L2) pairs
-export const BASE_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","ARB","OP","DOGE",
-  "SHIB","PEPE","MKR","CRV","LDO","COMP","GRT","SNX","RUNE","SUSHI",
-];
+// ── EVM chain quote markets ─────────────────────────────────────────────────
 
-// LINEA (MetaMask L2) pairs
-export const LINEA_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","SNX","CRV","LDO",
-  "COMP","GRT","MKR","SUSHI","RUNE","ZEC","INJ","NEAR","DOT","SOL",
-];
+// MATIC (Polygon) — all bases + bridged stables + Polygon ecosystem
+export const MATIC_PAIRS = buildChainPairs("MATIC", ["USDC","USDT","DAI","WBTC","GHST","QUICK","DFYN"]);
 
-// ZK (zkSync Era) pairs
-export const ZK_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","ARB","OP","LINK","UNI","AAVE",
-  "COMP","CRV","LDO","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// AVAX (Avalanche) — all bases
+export const AVAX_PAIRS = buildChainPairs("AVAX");
 
-// SCR (Scroll L2) pairs
-export const SCR_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","LDO","CRV",
-  "MKR","SNX","COMP","GRT","RUNE","SUSHI","INJ","NEAR","DOT","SOL",
-];
+// ARB (Arbitrum) — all bases
+export const ARB_PAIRS = buildChainPairs("ARB");
 
-// MNT (Mantle L2) pairs
-export const MNT_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","ARB","OP",
-  "CRV","LDO","COMP","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// OP (Optimism) — all bases
+export const OP_PAIRS = buildChainPairs("OP");
 
-// BSV pairs — top coins vs BSV
-export const BSV_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","BCH","TRX","NEAR","PEPE","SHIB","APT",
-  "ARB","OP","SUI","INJ","FIL","ALGO","XLM","HBAR","FTM","ZEC",
-];
+// FTM (Fantom) — all bases
+export const FTM_PAIRS = buildChainPairs("FTM");
+
+// CRO (Cronos) — all bases
+export const CRO_PAIRS = buildChainPairs("CRO");
+
+// BASE (Coinbase L2) — all bases + bridged stables
+export const BASE_PAIRS = buildChainPairs("BASE", ["USDC","DAI"]);
+
+// LINEA (MetaMask L2) — all bases + bridged stables
+export const LINEA_PAIRS = buildChainPairs("LINEA", ["USDC","DAI"]);
+
+// ZK (zkSync Era) — all bases + bridged stables
+export const ZK_PAIRS = buildChainPairs("ZK", ["USDC","USDT","DAI"]);
+
+// SCR (Scroll L2) — all bases + bridged stables
+export const SCR_PAIRS = buildChainPairs("SCR", ["USDC","USDT","DAI"]);
+
+// MNT (Mantle L2) — all bases + bridged stables
+export const MNT_PAIRS = buildChainPairs("MNT", ["USDC","USDT","DAI"]);
 
 // Futures PERP pairs
 export const FUTURES_PAIRS = [
@@ -576,6 +567,32 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
+  // ── LetsExchange live prices — fills coins not on Binance/CoinGecko ──────────
+  // Uses the shared 10-minute cache populated by warmLEPriceCache() at startup
+  // and kept fresh by the pairs route.  Non-blocking: never delays the cycle.
+  try {
+    const lePrices = getCachedLEPrices();
+    for (const [sym, usd] of Object.entries(lePrices)) {
+      if (!out[sym] && usd > 0) {
+        // Coin not covered by Binance — use LE live rate
+        out[sym] = {
+          usd,
+          usd_24h_change: simulateDailyChange(sym),
+          usd_24h_vol: usd * 100_000,
+          usd_market_cap: 0,
+        };
+      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
+        // Binance returned a 0-price entry — replace with LE rate
+        out[sym].usd = usd;
+      }
+    }
+    if (Object.keys(lePrices).length > 0) {
+      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE price merge failed (non-fatal)");
+  }
+
   return out;
 }
 
@@ -647,7 +664,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
   STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
   "1INCH":0.35,ZRO:2.52,RETH:3980,
-  DAI:1.00,WBTC:70215,WSTETH:3981,
+  DAI:1.00,WBTC:83000,WSTETH:3200,
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
   BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
   BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
@@ -656,7 +673,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
   HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
   // ── Gaming / Metaverse ───────────────────────────────────────────────────────
-  AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
+  APE:1.25,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
   WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
   MC:0.12,GODS:0.082,
   // ── Cosmos ecosystem ─────────────────────────────────────────────────────────
@@ -673,13 +690,13 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Meme / culture ───────────────────────────────────────────────────────────
   TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
   POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
-  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,
+  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,LMWR:0.021,
   // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
   GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:70725,CBETH:3400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  CBBTC:83000,CBETH:1800,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
   HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
   BALD:0.00284,NORMIE:0.00182,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
@@ -886,11 +903,162 @@ export async function seedMarketsIfNeeded() {
   }
 }
 
+// ── Quote currencies to seed for every LE coin ────────────────────────────────
+// Covers the five most-traded base currencies so every LE token gets a full row
+// of native spot pairs in the DB, not just the virtual "letsexchange" pairs.
+const LE_SEED_QUOTES = ["USDT", "BSV", "BTC", "ETH", "BNB"] as const;
+
+export async function seedLEPairsIfNeeded() {
+  try {
+    // Fetch the canonical LE coin list — leRequest returns { ok, data }
+    const res = await leRequest("/v2/coins");
+    if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) return;
+    const rawCoins = res.data as Record<string, unknown>[];
+
+    // Deduplicate by ticker (same coin, multiple networks)
+    const seen = new Set<string>();
+    const coins: Array<{ code: string }> = [];
+    for (const item of rawCoins) {
+      const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase();
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      coins.push({ code });
+    }
+
+    // Current live LE USD prices (may be empty if warm-up still running)
+    const lePrices = getCachedLEPrices();
+
+    // Pull prices for the five quote coins so we can compute cross-rates
+    const bsvUSD  = lePrices["BSV"]  ?? FALLBACK_PRICES["BSV"]  ?? 16;
+    const btcUSD  = lePrices["BTC"]  ?? FALLBACK_PRICES["BTC"]  ?? 95000;
+    const ethUSD  = lePrices["ETH"]  ?? FALLBACK_PRICES["ETH"]  ?? 3500;
+    const bnbUSD  = lePrices["BNB"]  ?? FALLBACK_PRICES["BNB"]  ?? 600;
+
+    // Existing DB symbols (to avoid duplicates)
+    const existing = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existing.map(r => r.symbol));
+
+    const toInsert: any[] = [];
+
+    for (const coin of coins) {
+      // LE /v2/coins uses "code" as the ticker symbol
+      const base = (coin.code ?? "").toUpperCase().trim();
+      if (!base) continue;
+
+      // Base USD price from LE cache, then fallback map, then 0
+      const baseUSD = lePrices[base] ?? FALLBACK_PRICES[base] ?? 0;
+
+      for (const quote of LE_SEED_QUOTES) {
+        if (base === quote) continue;                 // skip e.g. USDT/USDT
+        const sym = `${base}/${quote}`;
+        if (existingSymbols.has(sym)) continue;       // already seeded
+
+        let price = 0;
+        if (quote === "USDT") {
+          price = baseUSD;
+        } else if (quote === "BSV" && bsvUSD > 0) {
+          price = baseUSD / bsvUSD;
+        } else if (quote === "BTC" && btcUSD > 0) {
+          price = baseUSD / btcUSD;
+        } else if (quote === "ETH" && ethUSD > 0) {
+          price = baseUSD / ethUSD;
+        } else if (quote === "BNB" && bnbUSD > 0) {
+          price = baseUSD / bnbUSD;
+        }
+
+        const p = price > 0 ? price.toFixed(price < 0.0001 ? 10 : 8) : "0";
+        toInsert.push({
+          symbol: sym, baseAsset: base, quoteAsset: quote,
+          lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: p, low24h: p,
+          status: "active", type: "letsexchange",
+        });
+        existingSymbols.add(sym); // prevent duplicates within this batch
+      }
+    }
+
+    if (toInsert.length > 0) {
+      // Insert in chunks to avoid giant DB transactions
+      const CHUNK = 500;
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        await db.insert(marketsTable).values(toInsert.slice(i, i + CHUNK)).onConflictDoNothing();
+      }
+      logger.info({ count: toInsert.length, coins: coins.length }, "LE pairs seeded into DB");
+    } else {
+      logger.info("LE pairs: all already present in DB");
+    }
+
+    // ── One-time migration: reclassify existing LE-seeded pairs ──────────────
+    // Any "spot" pair whose quote is one of the 5 LE quotes AND whose base is
+    // NOT in the pre-LE original static list gets marked "letsexchange" so the
+    // frontend knows to route trades through the LE swap panel.
+    try {
+      const leCodes = new Set(coins.map(c => c.code));
+      // Original coins seeded before LE — keep as "spot" (internal order book)
+      const originalBases = new Set(USDT_PAIRS);
+      // LE-only = in LE coin list AND not in the original Binance seeded list
+      const leBases = [...leCodes].filter(s => !originalBases.has(s));
+      if (leBases.length > 0) {
+        const MCHUNK = 500;
+        let migrated = 0;
+        for (let i = 0; i < leBases.length; i += MCHUNK) {
+          const chunk = leBases.slice(i, i + MCHUNK);
+          const res = await db.update(marketsTable)
+            .set({ type: "letsexchange" })
+            .where(and(
+              eq(marketsTable.type, "spot"),
+              inArray(marketsTable.quoteAsset, [...LE_SEED_QUOTES]),
+              inArray(marketsTable.baseAsset, chunk),
+            ));
+          migrated += (res.rowsAffected ?? res.changes ?? 0);
+        }
+        if (migrated > 0) {
+          logger.info({ migrated }, "Migrated existing LE pairs → type:letsexchange");
+        }
+      }
+    } catch (migErr) {
+      logger.warn({ migErr }, "LE type migration failed (non-fatal)");
+    }
+  } catch (err) {
+    logger.warn({ err }, "seedLEPairsIfNeeded failed (non-fatal)");
+  }
+}
+
+// Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
+const _coinChangeMap: Record<string, number> = {};
+export function getCoinChangeMap(): Record<string, number> { return _coinChangeMap; }
+
 export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
     const prices = await fetchSovereignPrices();
     logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
+
+    // Wrapped / synthetic BTC tokens should always track BTC 1:1.
+    // If Binance / CoinGecko doesn't provide an independent price, copy BTC.
+    const btcData = prices["BTC"];
+    if (btcData) {
+      for (const wrapper of ["WBTC", "CBBTC", "RBTC", "TBTC"]) {
+        if (!prices[wrapper]) {
+          prices[wrapper] = { ...btcData };
+        }
+      }
+    }
+
+    // Wrapped / synthetic ETH tokens track ETH 1:1 when no independent price.
+    const ethData = prices["ETH"];
+    if (ethData) {
+      for (const wrapper of ["WETH", "CBETH", "RETH", "WSTETH"]) {
+        if (!prices[wrapper] || prices[wrapper].usd < ethData.usd * 0.5) {
+          prices[wrapper] = { ...ethData };
+        }
+      }
+    }
+
+    // Populate the shared change map so other modules (e.g. letsexchange route) can read it
+    for (const [sym, data] of Object.entries(prices)) {
+      _coinChangeMap[sym] = data.usd_24h_change ?? 0;
+    }
 
     const markets = await db.select().from(marketsTable);
 
@@ -1028,6 +1196,11 @@ let updateInterval: NodeJS.Timeout | null = null;
 let _priceUpdating = false;
 
 export function startPriceUpdater() {
+  // Warm the LE price cache, then seed all LE pairs into the DB with real prices
+  warmLEPriceCache()
+    .then(() => seedLEPairsIfNeeded())
+    .catch(() => {});
+
   seedMarketsIfNeeded().then(() => updateMarketPrices());
   updateInterval = setInterval(async () => {
     if (_priceUpdating) { logger.warn("Price updater: previous tick still running, skipping"); return; }

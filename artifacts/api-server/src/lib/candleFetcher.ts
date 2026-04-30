@@ -22,7 +22,7 @@ const BINANCE_USDT_PAIRS = new Set([
   "RUNE","FTM","ALGO","XLM","HBAR","THETA","ZEC","DASH","CRO",
   "BONK","WIF","JUP","PYTH","JTO","ORCA","RAY","W",
   "FET","RNDR","TAO","WLD","GLM","STORJ","LPT",
-  "AXS","ENJ","GALA","RON","CAKE","GMX","DYDX","PENDLE",
+  "APE","AXS","ENJ","GALA","RON","CAKE","GMX","DYDX","PENDLE",
   "TON","KAS","SEI","TIA","KAVA","NEO","ZIL","WAVES","ICX",
   "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","BGB","ORDI",
   "KSM","TRUMP","STX","FLOKI","TURBO","EIGEN","ZRO","MNT",

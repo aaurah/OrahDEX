@@ -191,11 +191,14 @@ function fmtUsd(n: number) {
 }
 
 function fmtPrice(n: number) {
-  if (!n) return "$0.00";
+  if (!n || n <= 0) return "$0.00";
   if (n >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  if (n >= 1) return `$${n.toFixed(4)}`;
+  if (n >= 1)    return `$${n.toFixed(4)}`;
   if (n >= 0.01) return `$${n.toFixed(6)}`;
-  return `$${n.toFixed(8)}`;
+  if (n >= 1e-8) return `$${n.toFixed(8)}`;
+  // Sub-satoshi-priced tokens: show 4 sig figs without scientific notation
+  const mag = -Math.floor(Math.log10(n));
+  return `$${n.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "")}`;
 }
 
 // ── Custom tooltip for chart ──────────────────────────────────────────────────

@@ -108,13 +108,14 @@ export async function notifyNewTicket(ticket: NotifyTicketOptions): Promise<void
     ticket.message.slice(0, 300) + (ticket.message.length > 300 ? "…" : ""),
   ].join("\n");
 
+  const esc = (s: string) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const htmlBody = [
     `<b>New Support Ticket #${ticket.id}</b>`,
-    `<b>From:</b> ${ticket.name} (${ticket.email})`,
-    `<b>Category:</b> ${ticket.category}  |  <b>Priority:</b> ${ticket.priority}`,
-    `<b>Subject:</b> ${ticket.subject}`,
+    `<b>From:</b> ${esc(ticket.name)} (${esc(ticket.email)})`,
+    `<b>Category:</b> ${esc(ticket.category)}  |  <b>Priority:</b> ${esc(ticket.priority)}`,
+    `<b>Subject:</b> ${esc(ticket.subject)}`,
     ``,
-    ticket.message.slice(0, 400) + (ticket.message.length > 400 ? "…" : ""),
+    esc(ticket.message.slice(0, 400) + (ticket.message.length > 400 ? "…" : "")),
   ].join("\n");
 
   const jobs: Promise<void>[] = [];

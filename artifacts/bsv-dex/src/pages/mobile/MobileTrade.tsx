@@ -207,12 +207,15 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 
 function fmt(p: number) {
-  if (!p || !isFinite(p)) return "—";
+  if (!p || !isFinite(p) || p <= 0) return "—";
   if (p >= 1000)  return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
   if (p >= 1)     return p.toFixed(2);
   if (p >= 0.01)  return p.toFixed(4);
   if (p >= 0.001) return p.toFixed(6);
-  return p.toFixed(8);
+  if (p >= 1e-8)  return p.toFixed(8);
+  // Sub-satoshi prices (e.g. BTT/BTC): extend decimal places to show 4 sig figs
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
 }
 function fmtVol(v: number) {
   if (!v) return "—";
@@ -370,8 +373,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return true;
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
-  const openOrders = myOrders.filter(o => o.status === "open");
-  const historyOrders = myOrders.filter(o => o.status !== "open");
+  const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
+  const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
 
   // ── Compute amounts locked in open orders for THIS market ──────────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
@@ -700,6 +703,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  // ── LetsExchange min/max for the current pair & direction ─────────────────
+  const { data: leMinData } = useQuery({
+    queryKey: ["le-min", base, quote, side],
+    queryFn: async () => {
+      const coin_from = side === "sell" ? base : quote;
+      const coin_to   = side === "sell" ? quote : base;
+      const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
+      });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+
   const lastPrice = parseFloat(ticker?.lastPrice) || 0;
   const change = parseFloat(ticker?.priceChangePercent) || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
@@ -716,7 +737,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
-  const effectiveOrderBook = hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice);
+  // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
+  const effectiveOrderBook = useMemo(
+    () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasRealOB, orderBook, fallbackPrice],
+  );
 
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {
@@ -750,6 +776,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     : lastPrice;
   const amtNum  = parseFloat(amount || "0");
   const total   = (effectivePrice * amtNum).toFixed(4);
+
+  // LE min/max converted to base-asset units
+  const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
+  const leMaxRaw: number = parseFloat(leMinData?.max_amount ?? 0) || 0;
+  // For SELL: LE min is already in base. For BUY: LE min is in quote → divide by price.
+  const leMinBase = side === "sell"
+    ? leMinRaw
+    : (leMinRaw > 0 && effectivePrice > 0 ? leMinRaw / effectivePrice : 0);
+  const leMaxBase = side === "sell"
+    ? leMaxRaw
+    : (leMaxRaw > 0 && effectivePrice > 0 ? leMaxRaw / effectivePrice : 0);
+  const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
+  const aboveLeMax = leMaxBase > 0 && amtNum > leMaxBase;
   const FEE_RATE = 0.001;
   const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
 
@@ -855,6 +894,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+
+    // ── LetsExchange min/max guard ────────────────────────────────────────────
+    if (belowLeMin) {
+      toast({
+        title: "Amount too low",
+        description: `Minimum trade via exchange is ${leMinBase < 0.0001 ? leMinBase.toFixed(8) : leMinBase.toFixed(6)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (aboveLeMax) {
+      toast({
+        title: "Amount too high",
+        description: `Maximum trade via exchange is ${leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
     // isSubmittingRef is a ref (synchronous) — it blocks double-taps that arrive
@@ -1017,7 +1074,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </p>
               {crossBTC > 0 && !isBTCBase && (
                 <span className="text-[11px] text-orange-400 tabular-nums font-medium">
-                  ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                  ₿ {fmt(crossBTC)}
                 </span>
               )}
               {crossBSV > 0 && !isBSVBase && (
@@ -1140,10 +1197,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── ORDER BOOK — SPLIT FACE-TO-FACE ── */}
         {bottomTab === "orderbook" && (() => {
           const ROWS = 10;
+          // Always sort before slicing — guarantees consistent direction regardless of data source.
           // Bids: highest price first (best bid at top)
-          const bidRows = (effectiveOrderBook?.bids ?? []).slice(0, ROWS);
+          const bidRows = [...(effectiveOrderBook?.bids ?? [])]
+            .sort((a: any, b: any) => parseFloat(b.price ?? b[0]) - parseFloat(a.price ?? a[0]))
+            .slice(0, ROWS);
           // Asks: lowest price first (best ask at top) — they face the bids
-          const askRows = (effectiveOrderBook?.asks ?? []).slice(0, ROWS);
+          const askRows = [...(effectiveOrderBook?.asks ?? [])]
+            .sort((a: any, b: any) => parseFloat(a.price ?? a[0]) - parseFloat(b.price ?? b[0]))
+            .slice(0, ROWS);
           const allQ = [
             ...bidRows.map((b: any) => parseFloat(b.quantity ?? b[1])),
             ...askRows.map((a: any) => parseFloat(a.quantity ?? a[1])),
@@ -1254,7 +1316,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </span>
                 {!isBTCBase && crossBTC > 0 && (
                   <span className="text-[10px] text-orange-400 tabular-nums font-medium">
-                    ₿{crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                    ₿{fmt(crossBTC)}
                   </span>
                 )}
                 {!isBSVBase && crossBSV > 0 && (
@@ -1321,11 +1383,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   Connect Wallet
                 </button>
               </div>
-            ) : myOrders.length === 0 ? (
+            ) : openOrders.length === 0 && historyOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
                 <ListOrdered size={28} className="opacity-30" />
-                <p className="text-sm">No orders yet</p>
-                <p className="text-xs opacity-60">Place a trade to see your orders here</p>
+                <p className="text-sm">No orders for {symbol}</p>
+                <p className="text-xs opacity-60">Orders on other pairs are in your Portfolio</p>
               </div>
             ) : (
               <>
@@ -1520,6 +1582,32 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <Plus size={14} />
               </button>
             </div>
+
+            {/* LE min/max hint */}
+            {leMinBase > 0 && (
+              <div className="flex items-center justify-between text-[10px] px-1 -mt-0.5">
+                <span className={cn("font-semibold", belowLeMin ? "text-red-400" : "text-muted-foreground/55")}>
+                  Min: {leMinBase < 0.0001
+                    ? leMinBase.toFixed(8)
+                    : leMinBase < 1
+                      ? leMinBase.toFixed(6)
+                      : leMinBase.toFixed(4)
+                  } {base}
+                </span>
+                {leMaxBase > 0 && (
+                  <span className={cn("font-semibold", aboveLeMax ? "text-red-400" : "text-muted-foreground/40")}>
+                    Max: {leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} {base}
+                  </span>
+                )}
+              </div>
+            )}
+            {(belowLeMin || aboveLeMax) && (
+              <p className="text-[10px] text-red-400 px-1 -mt-0.5">
+                {belowLeMin
+                  ? `Amount is below the minimum required for this trade`
+                  : `Amount exceeds the maximum allowed for this trade`}
+              </p>
+            )}
 
             {/* % quick-fill bar */}
             <div className="relative pt-1 pb-1">
@@ -1866,13 +1954,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             ) : (
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting}
+                disabled={!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (

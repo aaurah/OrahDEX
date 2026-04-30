@@ -39,12 +39,13 @@ export function CoinLogo({ symbol, size = 32, className = "", ring = false }: Pr
   const [srcIdx, setSrcIdx] = useState(0);
   const [failed, setFailed] = useState(false);
 
-  const color = COIN_COLORS[symbol.toUpperCase()] ?? "#6B7280";
-  const initials = symbol.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  const safeSym = symbol ?? "";
+  const color = COIN_COLORS[safeSym.toUpperCase()] ?? "#6B7280";
+  const initials = safeSym.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "?";
   const fontSize = size <= 20 ? 8 : size <= 28 ? 9 : size <= 36 ? 11 : 12;
   const ringCls = ring ? "ring-2 ring-border" : "";
 
-  const sources = coinSources(symbol);
+  const sources = coinSources(safeSym);
 
   if (failed) {
     return (

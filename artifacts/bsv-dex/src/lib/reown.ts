@@ -213,15 +213,30 @@ export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
 
 /**
  * Fetch the native token balance for any EVM address on any chain.
- * Uses a public JSON-RPC endpoint — works regardless of whether
- * window.ethereum exists (covers MetaMask, WalletConnect/Reown, Coinbase, etc.)
+ * Priority:
+ *   1. wagmi getBalance (works via WalletConnect session — no window.ethereum needed)
+ *   2. Injected wallet provider (MetaMask extension desktop)
+ *   3. Public RPC primary + fallback
  */
 export async function fetchEvmBalance(
   address: string,
   chainId?: number | null
 ): Promise<string | null> {
   try {
-    /* 1. Try injected wallet provider first (fast path, already on correct chain) */
+    /* 1. wagmi getBalance — works with WalletConnect/Reown (mobile) */
+    if (chainId && _adapter?.wagmiConfig) {
+      try {
+        const { getBalance } = await import("@wagmi/core");
+        const result = await getBalance(_adapter.wagmiConfig, {
+          address: address as `0x${string}`,
+          chainId,
+        });
+        const native = Number(result.value) / 1e18;
+        if (native >= 0) return native.toFixed(6);
+      } catch { /* fall through */ }
+    }
+
+    /* 2. Injected wallet (MetaMask desktop extension — already on correct chain) */
     const eth = (window as any).ethereum;
     if (eth) {
       try {
@@ -232,30 +247,35 @@ export async function fetchEvmBalance(
         const wei = BigInt(hex);
         const native = Number(wei) / 1e18;
         return native.toFixed(6);
-      } catch {
-        /* fall through to public RPC */
-      }
+      } catch { /* fall through */ }
     }
 
-    /* 2. Fall back to public RPC (needed for WalletConnect / Reown) */
-    const rpc = chainId ? CHAIN_RPC_URLS[chainId] : null;
-    if (!rpc) return null;
+    /* 3. Public RPC primary then fallback */
+    const rpcs = [
+      chainId ? CHAIN_RPC_URLS[chainId] : null,
+      chainId ? CHAIN_RPC_FALLBACKS[chainId] : null,
+    ].filter(Boolean) as string[];
 
-    const res = await fetch(rpc, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getBalance",
-        params: [address, "latest"],
-      }),
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json?.result) return null;
-    const native = Number(BigInt(json.result)) / 1e18;
-    return native.toFixed(6);
+    for (const rpc of rpcs) {
+      try {
+        const res = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "eth_getBalance",
+            params: [address, "latest"],
+          }),
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        if (!json?.result) continue;
+        const native = Number(BigInt(json.result)) / 1e18;
+        return native.toFixed(6);
+      } catch { continue; }
+    }
+
+    return null;
   } catch {
     return null;
   }
