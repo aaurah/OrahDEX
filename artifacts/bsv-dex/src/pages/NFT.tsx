@@ -1505,10 +1505,10 @@ export function NFTPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {address && (
+          {(profileAddress ?? address) && (
             <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
-              <Avatar src={undefined} name={address} size={20} />
-              <span className="text-xs font-mono text-muted-foreground">{shortAddr(address)}</span>
+              <Avatar src={undefined} name={profileAddress ?? address!} size={20} />
+              <span className="text-xs font-mono text-muted-foreground">{shortAddr(profileAddress ?? address ?? "")}</span>
             </button>
           )}
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full animate-pulse bg-primary" /><span className="text-[10px] text-muted-foreground">live</span></div>
