@@ -179,7 +179,10 @@ function getRows(
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
-      return live ? { ...n, price: live.price, chg: live.chg } : n;
+      if (!live) return n;
+      // If API returns exactly 0 change (unseeded pair), keep the mock's realistic change value
+      const chg = live.chg !== 0 ? live.chg : n.chg;
+      return { ...n, price: live.price, chg };
     });
 
   // Merge native rows with ONE AOS row per unique base coin (best quote for the chain).
