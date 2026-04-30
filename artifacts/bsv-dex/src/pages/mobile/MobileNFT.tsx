@@ -2577,6 +2577,13 @@ export function MobileNFT() {
     }
   }, [profileAddress]);
 
+  // Auto-restore profile overlay when profile tab is active but all other overlays have closed
+  useEffect(() => {
+    if (activeTab === "profile" && profileAddress && !creatorAddress && !detailPost && !mintPost) {
+      setCreatorAddress(profileAddress);
+    }
+  }, [activeTab, profileAddress, creatorAddress, detailPost, mintPost]);
+
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
     if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
