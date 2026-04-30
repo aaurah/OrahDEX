@@ -325,8 +325,8 @@ importers:
         specifier: ^6.33.0
         version: 6.33.0
       '@ledgerhq/hw-app-eth':
-        specifier: ^7.7.0
-        version: 7.7.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+        specifier: ^7.8.0
+        version: 7.8.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       '@ledgerhq/hw-transport-webhid':
         specifier: ^6.35.0
         version: 6.35.0
@@ -2251,26 +2251,32 @@ packages:
   '@jridgewell/trace-mapping@0.3.9':
     resolution: {integrity: sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==}
 
-  '@ledgerhq/client-ids@0.8.2':
-    resolution: {integrity: sha512-mfds5IyuJLDEwzIzHrYwii1YjP3EkY+txMInWDeektnafzC0nkKOirhluoCKUqtetwBuTUBYLDCf2eyfbmdtrQ==}
+  '@ledgerhq/client-ids@0.8.3':
+    resolution: {integrity: sha512-+0lR1JPxlV7ln2CForSLRj1jritH0+s6D4sP8RJysgv5aDFVdxZl0Wo4mpvxvnudqISqgN3Y3eyXnMNjJ7/1yA==}
 
   '@ledgerhq/devices@8.14.0':
     resolution: {integrity: sha512-eMGOaagkMJrqGtqemYNraPg38FA0I/UUEPrbrC+vOZu1qeoG+Sek3gjuJih6rMK4efUfcI4Zs19w/Hv/58fwkQ==}
 
-  '@ledgerhq/domain-service@1.7.4':
-    resolution: {integrity: sha512-7QYkml4MBRMzQsj92xsafI6xum8xuyztTKKRGWMlV9kN47EdMukiOnr5Ywt6SZD3cDJ6cBWxtwj8n853LcdBcQ==}
+  '@ledgerhq/devices@8.14.1':
+    resolution: {integrity: sha512-q6tOUO963tFPrsJtdzu5juC8xIAIRe6etLSZ+ZhwgUivTHNJbmFFBxMU3p19dwn8VaKRvbw0pxJv+qmokMYpRA==}
+
+  '@ledgerhq/domain-service@1.8.0':
+    resolution: {integrity: sha512-4L5OQy89saTZUIAIcsFNEwwyXkcJUsNC6Fj/V98fzCpUMqm5XHBXSiiF2B8sNCIx+fcghW9ELXJniB2ijBWZKw==}
 
   '@ledgerhq/errors@6.33.0':
     resolution: {integrity: sha512-9iMdjB0Hfxfd8HGMVM0TDPfxBXhJ4MtGKyFlm8aveSHSXjcTjGtCkcnk4OUZ6ZHopBb69BFR+HC2N/ob9xuNgA==}
 
-  '@ledgerhq/evm-tools@1.12.3':
-    resolution: {integrity: sha512-ZDD4lqwIpMA0ZrwYLA+D6JZoJUDA2E6Uk4hqNnFj1K5h6XKJstj3t8HFRvjKNubMOctQPjsVZ1I5yFPLAPRG4w==}
+  '@ledgerhq/errors@6.34.0':
+    resolution: {integrity: sha512-l16K56FzPoXBMT5J4EpnIBmRLTYkpSyYj3z4er+rmbwq0t9dDG/UaRvFeBpwB2gqGcYWcue14qF9Wkuos/43eA==}
 
-  '@ledgerhq/hw-app-eth@7.7.0':
-    resolution: {integrity: sha512-0QSLGRigCWECXdSItykYO7OhhGlyIzvcUiW6O15QNBPgKWWjFZBtqwrQ7fSHFxCoLi6kI9DNHvmfNlb7BbAsQw==}
+  '@ledgerhq/evm-tools@1.12.4':
+    resolution: {integrity: sha512-Dh1XnWFFqnFK3bADX+/eHhFSmjkMGj4CRuvFQXCwhrYkiPTuFtMBdNj6BIE41LQaSfCtYn+6PEMuzjCQHeK92A==}
 
-  '@ledgerhq/hw-transport-mocker@6.34.0':
-    resolution: {integrity: sha512-gFxz0oZXNIoye6qKHddjyprBTErvvEPic2SZbbZHXMc4KHkZuSmpkLOrzqs+iPMiT8OqykuYHV3wAzU2Mu1+Ww==}
+  '@ledgerhq/hw-app-eth@7.8.0':
+    resolution: {integrity: sha512-cW9BZLguGNw9EQ2epIf+vcmrIjSyF8n8W38bv8JTRwmm0JjNPu85uGOk5RbMKDYt43qUMmH4eY46JqtaIIyBZg==}
+
+  '@ledgerhq/hw-transport-mocker@6.34.1':
+    resolution: {integrity: sha512-TfrE+nhKYS+j7DpJ5worRrf1buV7HasLnT/pwJT5Hhs8ve6QN6Aaz4d4t4/FWCy4CqKaROyL0/Piu046/dQwiQ==}
 
   '@ledgerhq/hw-transport-webhid@6.35.0':
     resolution: {integrity: sha512-Zo0BFOApGspbcPRyIYmlbrPY9Er6jwfa4YjjSWWIFMQ38t4fOCny/Cu+JKtvTmCrwPASVP9d90PneJ2OSCt8xQ==}
@@ -2278,14 +2284,17 @@ packages:
   '@ledgerhq/hw-transport@6.35.0':
     resolution: {integrity: sha512-BFk4Zr5gfzT40RT6nj0NQTNB25bxWD3QWhdrOA6Mi/CChFTdGomjOuAhWHla2kH50ft8M5UsiiUeHoR+56J69g==}
 
-  '@ledgerhq/live-env@2.32.0':
-    resolution: {integrity: sha512-5/6gQDRJCxluC3dy8WdtpfE13xLhwOOi07FF6uU57jtx4Pe2C8qKtvA4wnZD5I7R3RAKS4o84meSshGXNplcPA==}
+  '@ledgerhq/hw-transport@6.35.1':
+    resolution: {integrity: sha512-YCkk9koo0FzCzHvLVpdrQ3+EQOPMpp/fSednHhk7AiaJC/c+pX6wKevUDp1MLcq7gUHbVOXyYYpqoW6A97w8OA==}
+
+  '@ledgerhq/live-env@2.33.0':
+    resolution: {integrity: sha512-kDjMJp7zUTlxO6oNAiGV913jSg45GVPPybxG+RJKPyjdWtdBPD0LKGggx+zMzh8a2JAVAETG0+QLi0ZTYXkDtg==}
 
   '@ledgerhq/logs@6.17.0':
     resolution: {integrity: sha512-yra33g5q/AU7+PwAws+GaVpQGUuxnDREjVBnviJjcaJLVKuLzI4pnj8Bd3nY3fypM5k1yZEYKEXfUuGFUjP2+w==}
 
-  '@ledgerhq/types-live@6.104.0':
-    resolution: {integrity: sha512-5WLoFeKaassNM9dDKkiv8FCn5JRntghq208IV/MEDNj02oTkaZSHFUVuBFQEw3d6m2svkF40aMlI2gnf0tNMoQ==}
+  '@ledgerhq/types-live@6.105.0':
+    resolution: {integrity: sha512-Mojj/8wUwTi9HQ0Z3XShUfapeMDrY+F9E0i7rYJO/a9qAFor8Qtb567YLfyb+NVv+HIv+YabW94NgtJ3L/8jLA==}
 
   '@lit-labs/ssr-dom-shim@1.5.1':
     resolution: {integrity: sha512-Aou5UdlSpr5whQe8AA/bZG0jMj96CoJIWbGfZ91qieWu5AWUMKw8VR/pAkQkJYvBNhmCcWnZlyyk5oze8JIqYA==}
@@ -9982,18 +9991,18 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@ledgerhq/client-ids@0.8.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)':
+  '@ledgerhq/client-ids@0.8.3(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)':
     dependencies:
-      '@ledgerhq/live-env': 2.32.0
+      '@ledgerhq/live-env': 2.33.0
       '@reduxjs/toolkit': 2.11.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
       uuid: 14.0.0
     transitivePeerDependencies:
       - react
       - react-redux
 
-  '@ledgerhq/client-ids@0.8.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
+  '@ledgerhq/client-ids@0.8.3(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
     dependencies:
-      '@ledgerhq/live-env': 2.32.0
+      '@ledgerhq/live-env': 2.33.0
       '@reduxjs/toolkit': 2.11.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       uuid: 14.0.0
     transitivePeerDependencies:
@@ -10007,11 +10016,18 @@ snapshots:
       rxjs: 7.8.2
       semver: 7.7.3
 
-  '@ledgerhq/domain-service@1.7.4(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))':
+  '@ledgerhq/devices@8.14.1':
     dependencies:
-      '@ledgerhq/errors': 6.33.0
+      '@ledgerhq/errors': 6.34.0
       '@ledgerhq/logs': 6.17.0
-      '@ledgerhq/types-live': 6.104.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
+      rxjs: 7.8.2
+      semver: 7.7.3
+
+  '@ledgerhq/domain-service@1.8.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))':
+    dependencies:
+      '@ledgerhq/errors': 6.34.0
+      '@ledgerhq/logs': 6.17.0
+      '@ledgerhq/types-live': 6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
       axios: 1.15.1
       eip55: 2.1.1
       react: 19.0.0
@@ -10022,28 +10038,30 @@ snapshots:
 
   '@ledgerhq/errors@6.33.0': {}
 
-  '@ledgerhq/evm-tools@1.12.3':
+  '@ledgerhq/errors@6.34.0': {}
+
+  '@ledgerhq/evm-tools@1.12.4':
     dependencies:
       '@ethersproject/constants': 5.8.0
       '@ethersproject/hash': 5.8.0
-      '@ledgerhq/live-env': 2.32.0
+      '@ledgerhq/live-env': 2.33.0
       axios: 1.15.1
       crypto-js: 4.2.0
     transitivePeerDependencies:
       - debug
 
-  '@ledgerhq/hw-app-eth@7.7.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
+  '@ledgerhq/hw-app-eth@7.8.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
     dependencies:
       '@ethersproject/abi': 5.8.0
       '@ethersproject/rlp': 5.8.0
       '@ethersproject/transactions': 5.8.0
-      '@ledgerhq/domain-service': 1.7.4(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))
-      '@ledgerhq/errors': 6.33.0
-      '@ledgerhq/evm-tools': 1.12.3
-      '@ledgerhq/hw-transport': 6.35.0
-      '@ledgerhq/hw-transport-mocker': 6.34.0
+      '@ledgerhq/domain-service': 1.8.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))
+      '@ledgerhq/errors': 6.34.0
+      '@ledgerhq/evm-tools': 1.12.4
+      '@ledgerhq/hw-transport': 6.35.1
+      '@ledgerhq/hw-transport-mocker': 6.34.1
       '@ledgerhq/logs': 6.17.0
-      '@ledgerhq/types-live': 6.104.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      '@ledgerhq/types-live': 6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       axios: 1.15.1
       bignumber.js: 9.3.1
       semver: 7.7.3
@@ -10052,9 +10070,9 @@ snapshots:
       - react
       - react-redux
 
-  '@ledgerhq/hw-transport-mocker@6.34.0':
+  '@ledgerhq/hw-transport-mocker@6.34.1':
     dependencies:
-      '@ledgerhq/hw-transport': 6.35.0
+      '@ledgerhq/hw-transport': 6.35.1
       '@ledgerhq/logs': 6.17.0
       rxjs: 7.8.2
 
@@ -10072,25 +10090,32 @@ snapshots:
       '@ledgerhq/logs': 6.17.0
       events: 3.3.0
 
-  '@ledgerhq/live-env@2.32.0':
+  '@ledgerhq/hw-transport@6.35.1':
+    dependencies:
+      '@ledgerhq/devices': 8.14.1
+      '@ledgerhq/errors': 6.34.0
+      '@ledgerhq/logs': 6.17.0
+      events: 3.3.0
+
+  '@ledgerhq/live-env@2.33.0':
     dependencies:
       rxjs: 7.8.2
       utility-types: 3.11.0
 
   '@ledgerhq/logs@6.17.0': {}
 
-  '@ledgerhq/types-live@6.104.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)':
+  '@ledgerhq/types-live@6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)':
     dependencies:
-      '@ledgerhq/client-ids': 0.8.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
+      '@ledgerhq/client-ids': 0.8.3(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
       bignumber.js: 9.3.1
       rxjs: 7.8.2
     transitivePeerDependencies:
       - react
       - react-redux
 
-  '@ledgerhq/types-live@6.104.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
+  '@ledgerhq/types-live@6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)':
     dependencies:
-      '@ledgerhq/client-ids': 0.8.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      '@ledgerhq/client-ids': 0.8.3(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       bignumber.js: 9.3.1
       rxjs: 7.8.2
     transitivePeerDependencies:
