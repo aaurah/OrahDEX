@@ -276,11 +276,12 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
   initialFrom?: string;
   initialTo?: string;
+  walletAddress?: string | null;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -289,6 +290,27 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [availBal,   setAvailBal]   = useState<number | null>(null);
+
+  // Fetch internal exchange balance for the "from" coin whenever it or the wallet changes
+  useEffect(() => {
+    setAvailBal(null);
+    if (!fromCoin || !walletAddress) return;
+    let cancelled = false;
+    fetch(`${API}/api/balances/${fromCoin.symbol}?walletAddress=${encodeURIComponent(walletAddress)}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setAvailBal(parseFloat(d.available ?? "0") || 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [fromCoin, walletAddress]);
+
+  // Quick-fill helpers
+  const applyPct = (pct: number) => {
+    if (!availBal || availBal <= 0) return;
+    const val = (availBal * pct) / 100;
+    setAmount(val.toPrecision(6).replace(/\.?0+$/, ""));
+    setEstimate(null);
+  };
 
   // Pre-select coins — use initialFrom/initialTo when provided, else BTC → BSV
   useEffect(() => {
@@ -375,11 +397,33 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
 
       {/* You send */}
       <div className="rounded-xl bg-muted/40 p-3 mb-1">
-        <p className="text-xs text-muted-foreground mb-2">You Send</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-muted-foreground">You Send</p>
+          {availBal !== null && fromCoin && (
+            <p className="text-xs text-muted-foreground/70">
+              Available: <span className="font-mono text-foreground/80">{fmtNum(availBal, 6)} {fromCoin.symbol}</span>
+            </p>
+          )}
+        </div>
         <input type="number" min="0" placeholder="0.0" value={amount}
           onChange={e => setAmount(e.target.value)}
           className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 text-xl font-bold text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors" />
-        <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
+        {/* Quick-fill percentage buttons */}
+        {availBal !== null && availBal > 0 && (
+          <div className="flex items-center gap-1.5 mb-2">
+            {([25, 50, 75] as const).map(pct => (
+              <button key={pct} type="button" onClick={() => applyPct(pct)}
+                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-muted/60 border border-border/40 hover:border-primary/40 hover:text-primary transition-colors text-muted-foreground">
+                {pct}%
+              </button>
+            ))}
+            <button type="button" onClick={() => applyPct(100)}
+              className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary transition-colors">
+              Max
+            </button>
+          </div>
+        )}
+        <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); setAvailBal(null); }} exclude={toCoin?.symbol} />
         {(minAmt !== null || maxAmt !== null) && fromCoin && (
           <p className={cn("text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
             Min: <span className="font-mono">{fmtNum(minAmt)} {fromCoin.symbol}</span>
@@ -1141,7 +1185,7 @@ export function LetsExchangePanel({
               </div>
             )}
 
-            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} />}
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} />}
             {step === 2 && fromCoin && toCoin && (
               <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
                 onBack={() => setStep(1)} onContinue={handleAddressContinue}
