@@ -1400,7 +1400,16 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
     mintCurrency: post.mint_currency,
   });
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && mintPrice > 0 && availableNum < mintPrice;
+  const [qty, setQty] = useState(1);
+
+  const remainingSupply = post.max_supply ? Math.max(0, post.max_supply - post.mint_count) : null;
+  const maxAffordable = mintPrice > 0 && availableNum > 0 ? Math.floor(availableNum / mintPrice) : 99;
+  const maxQty = remainingSupply !== null
+    ? Math.max(1, Math.min(remainingSupply, maxAffordable, 100))
+    : Math.max(1, Math.min(maxAffordable, 100));
+
+  const totalPrice = mintPrice * qty;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && totalPrice > 0 && availableNum < totalPrice;
   const [, navigate] = useLocation();
 
   async function doMint() {
@@ -1409,9 +1418,11 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "Mint failed");
+      for (let i = 0; i < qty; i++) {
+        const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error ?? "Mint failed");
+      }
       setDone(true);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
@@ -1450,7 +1461,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
           <div className="text-center py-8">
             <div className="text-5xl mb-3">{mode === "buy" ? "🎉" : "🏷️"}</div>
             <h3 className="text-xl font-bold mb-1" style={{ color: "var(--color-text)" }}>{mode === "buy" ? "Collected!" : "Listed!"}</h3>
-            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${post.title} is permanently on ${post.chain ?? "BSV"}.` : `${post.title} is now listed for sale.`}</p>
+            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${qty > 1 ? `${qty}× ` : ""}${post.title} permanently on ${post.chain ?? "BSV"}.` : `${post.title} is now listed for sale.`}</p>
             {mode === "buy" && <div className="text-xs font-mono px-3 py-1.5 rounded-xl inline-block mb-4" style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}>{post.inscription_id.slice(0, 24)}…</div>}
             <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>Done</button>
           </div>
@@ -1479,26 +1490,69 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
               <>
                 {/* Price + Balance comparison card */}
                 <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-                  <div className="flex items-end justify-between mb-3">
+                  <div className="flex items-start justify-between mb-3">
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</div>
-                      <div className="text-2xl font-black" style={{ color: "var(--color-text)" }}>{safePrice(post.mint_price)} <span className="text-base font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span></div>
-                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>≈ ${post.mint_price_usd}</div>
+                      <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Price per item</div>
+                      <div className="text-xl font-black" style={{ color: "var(--color-text)" }}>
+                        {safePrice(post.mint_price)}{" "}
+                        <span className="font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>≈ ${post.mint_price_usd} each</div>
                     </div>
                     {availableLabel && (
                       <div className="text-right">
                         <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Your Balance</div>
                         <div className="text-xl font-black font-mono" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-accent)" }}>{availableLabel}</div>
-                        {insufficientFunds && <div className="text-[10px] mt-0.5 font-bold" style={{ color: "#ff4444" }}>Insufficient ↑</div>}
-                        {!insufficientFunds && address && hasLoadedBalance && <div className="text-[10px] mt-0.5 font-bold" style={{ color: "var(--color-accent)" }}>Enough ✓</div>}
+                        {insufficientFunds
+                          ? <div className="text-[10px] mt-0.5 font-bold" style={{ color: "#ff4444" }}>Need {safePrice(totalPrice - availableNum)} more</div>
+                          : address && hasLoadedBalance
+                            ? <div className="text-[10px] mt-0.5 font-bold" style={{ color: "var(--color-accent)" }}>Enough ✓</div>
+                            : null}
                       </div>
                     )}
                   </div>
-                  {/* Progress bar: price vs balance */}
-                  {availableLabel && mintPrice > 0 && availableNum > 0 && (
-                    <div className="rounded-full overflow-hidden" style={{ height: 4, background: "rgba(255,255,255,0.1)" }}>
+
+                  {/* Quantity slider */}
+                  {maxQty > 1 && mintPrice > 0 && (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--color-text-secondary)" }}>Quantity</span>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setQty(q => Math.max(1, q - 1))}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-black"
+                            style={{ background: "var(--color-border)", color: "var(--color-text)" }}>−</button>
+                          <span className="text-base font-black w-8 text-center" style={{ color: "var(--color-text)" }}>{qty}</span>
+                          <button onClick={() => setQty(q => Math.min(maxQty, q + 1))}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-black"
+                            style={{ background: "var(--color-accent)", color: "#000" }}>+</button>
+                        </div>
+                      </div>
+                      <input type="range" min={1} max={maxQty} value={qty}
+                        onChange={e => setQty(parseInt(e.target.value, 10))}
+                        className="w-full" style={{ accentColor: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }} />
+                      <div className="flex justify-between text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                        <span>1</span>
+                        <span>Max {maxQty}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Total price row */}
+                  {qty > 1 && (
+                    <div className="flex items-center justify-between py-2 rounded-xl px-3 mb-3"
+                      style={{ background: insufficientFunds ? "rgba(255,60,60,0.1)" : "rgba(0,255,136,0.07)", border: `1px solid ${insufficientFunds ? "rgba(255,60,60,0.25)" : "rgba(0,255,136,0.2)"}` }}>
+                      <span className="text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>Total ({qty}×)</span>
+                      <span className="text-base font-black" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>
+                        {safePrice(totalPrice)} <span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Progress bar: total price vs balance */}
+                  {availableLabel && totalPrice > 0 && availableNum > 0 && (
+                    <div className="rounded-full overflow-hidden" style={{ height: 3, background: "rgba(255,255,255,0.08)" }}>
                       <div className="h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(100, (mintPrice / availableNum) * 100)}%`, background: insufficientFunds ? "#ff4444" : "var(--color-accent)" }} />
+                        style={{ width: `${Math.min(100, (totalPrice / availableNum) * 100)}%`, background: insufficientFunds ? "#ff4444" : CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }} />
                     </div>
                   )}
                 </div>
@@ -1512,7 +1566,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 ))}
                 <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
                 {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
-                {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
+                {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient — need {safePrice(totalPrice)} {post.mint_currency} for {qty}×, you have {safePrice(availableNum)}</span></div>}
                 {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
                 <div className="mt-4 rounded-xl overflow-hidden" style={{ border: "1px solid var(--color-border)" }}>
                   <button
@@ -1537,7 +1591,12 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                   style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
                   {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
                     insufficientFunds ? "Insufficient Balance" :
-                    <><Zap size={16} />{address ? `Buy for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
+                    <><Zap size={16} />{address
+                      ? qty > 1
+                        ? `Buy ${qty}× for ${safePrice(totalPrice)} ${post.mint_currency}`
+                        : `Buy for ${safePrice(mintPrice)} ${post.mint_currency}`
+                      : "Connect Wallet"
+                    }</>}
                 </button>
               </>
             ) : (
