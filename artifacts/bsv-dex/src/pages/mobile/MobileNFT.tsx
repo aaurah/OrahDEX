@@ -6,7 +6,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -2238,12 +2238,118 @@ function NftChatTab() {
   );
 }
 
+/* ── Notification types ─────────────────────────────────────────────────── */
+interface SocialNotif {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  timestamp: number;
+  txid?: string;
+}
+
+const NOTIF_ICONS: Record<string, React.ReactNode> = {
+  like:    <Heart size={14} className="text-rose-400" />,
+  mint:    <Zap size={14} className="text-yellow-400" />,
+  comment: <MessageCircle size={14} className="text-sky-400" />,
+};
+
+function timeAgoShort(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function NotificationPanel({ address, onClose }: { address: string; onClose: () => void }) {
+  const [notifs, setNotifs] = useState<SocialNotif[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`)
+      .then(r => r.ok ? r.json() : { notifications: [] })
+      .then(d => { setNotifs(d.notifications ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [address]);
+
+  function clearAll() {
+    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`, { method: "DELETE" }).catch(() => {});
+    setNotifs([]);
+  }
+
+  return (
+    <Portal>
+      <div
+        className="absolute inset-0 z-50 flex flex-col"
+        style={{ background: "rgba(0,0,0,0.55)" }}
+        onClick={onClose}
+      >
+        <div className="flex-1" />
+        <div
+          className="rounded-t-2xl flex flex-col"
+          style={{ background: "hsl(var(--card))", maxHeight: "75vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
+            <div className="flex items-center gap-2">
+              <Bell size={16} className="text-primary" />
+              <span className="font-bold text-sm text-foreground">Notifications</span>
+              {notifs.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-bold">{notifs.length}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {notifs.length > 0 && (
+                <button onClick={clearAll} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Clear all</button>
+              )}
+              <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl bg-secondary/60">
+                <X size={14} className="text-foreground/70" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-2 space-y-1.5" style={{ minHeight: 120 }}>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw size={16} className="animate-spin text-muted-foreground" />
+              </div>
+            ) : notifs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+                <Bell size={28} strokeWidth={1.5} />
+                <span className="text-sm">No notifications yet</span>
+                <span className="text-[11px] text-center text-muted-foreground/60">You'll see likes, mints, and comments on your posts here</span>
+              </div>
+            ) : (
+              notifs.map(n => (
+                <div key={n.id} className="flex items-start gap-2.5 p-2.5 rounded-xl border border-border/30 bg-secondary/20">
+                  <div className="w-7 h-7 rounded-full bg-secondary/60 flex items-center justify-center shrink-0 mt-0.5">
+                    {NOTIF_ICONS[n.type] ?? <Bell size={13} className="text-muted-foreground" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-foreground leading-tight">{n.title}</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-2">{n.body}</p>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgoShort(n.timestamp)}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ height: "env(safe-area-inset-bottom, 12px)", minHeight: 12 }} />
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 export function MobileNFT() {
   const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "chat" | "profile">("feed");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
@@ -2252,6 +2358,21 @@ export function MobileNFT() {
     if (!profileAddress) {
       setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
     }
+  }, [profileAddress]);
+
+  useEffect(() => {
+    if (!profileAddress) { setUnreadCount(0); return; }
+    const LAST_SEEN_KEY = `nft_notif_seen_${profileAddress}`;
+    function poll() {
+      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) ?? "0", 10);
+      fetch(`${API}/social/notifications?address=${encodeURIComponent(profileAddress!)}&since=${lastSeen}`)
+        .then(r => r.ok ? r.json() : { notifications: [] })
+        .then(d => { setUnreadCount((d.notifications ?? []).length); })
+        .catch(() => {});
+    }
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => clearInterval(id);
   }, [profileAddress]);
 
   function handleLike(id: string) {
@@ -2273,7 +2394,7 @@ export function MobileNFT() {
   return (
     <div className="flex flex-col h-full" style={{ background: "hsl(var(--background))" }}>
       {/* Inner nav */}
-      <div className="flex shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
+      <div className="flex items-center shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
         {INNER_TABS.map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)}
             className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-all"
@@ -2281,6 +2402,22 @@ export function MobileNFT() {
             <Icon size={18} /><span className="text-[9px] font-semibold">{label}</span>
           </button>
         ))}
+        {profileAddress && (
+          <button
+            onClick={() => { setUnreadCount(0); localStorage.setItem(`nft_notif_seen_${profileAddress}`, String(Date.now())); setNotifOpen(true); }}
+            className="relative flex flex-col items-center gap-0.5 py-1.5 px-2.5 rounded-xl transition-all"
+            style={{ color: notifOpen ? "var(--color-accent)" : "var(--color-text-secondary)" }}
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[9px] font-black px-1"
+                style={{ background: "var(--color-accent)", color: "#000" }}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+            <span className="text-[9px] font-semibold">Alerts</span>
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -2293,6 +2430,9 @@ export function MobileNFT() {
       </div>
 
       {/* OVERLAYS */}
+      {notifOpen && profileAddress && (
+        <NotificationPanel address={profileAddress} onClose={() => setNotifOpen(false)} />
+      )}
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
