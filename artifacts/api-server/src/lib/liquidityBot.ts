@@ -80,11 +80,38 @@ const LEVELS = [
   [0.0280, 0.8],
 ] as const;
 
+/**
+ * Estimate a realistic 24h quote-volume for a market when the DB has no real
+ * volume data yet.  The `usdValue` is the mid-price expressed in USD
+ * (base-asset USD price, not the cross price).  Tiers are intentionally
+ * conservative so the synthetic depth matches real-world liquidity.
+ */
+function syntheticUsdVolume(baseUsdPrice: number): number {
+  if (baseUsdPrice >= 50_000) return 2_000_000_000;   // BTC-tier
+  if (baseUsdPrice >=  1_000) return   200_000_000;   // ETH / BNB-tier
+  if (baseUsdPrice >=    100) return    50_000_000;   // SOL / AVAX-tier
+  if (baseUsdPrice >=     10) return    10_000_000;   // LINK / DOT-tier
+  if (baseUsdPrice >=      1) return     2_000_000;   // mid-cap alts
+  if (baseUsdPrice >=   0.01) return       300_000;   // micro-cap / memes
+  return                                    50_000;   // nano-cap
+}
+
 /* ── Compute sane base order size from 24-h volume ──────────────────────── */
-function baseSize(volume24h: number, midPrice: number): number {
+function baseSize(
+  volume24h: number,
+  midPrice: number,
+  baseUsdPrice: number,   // base-asset USD value (for synthetic vol fallback)
+): number {
   if (!midPrice || midPrice <= 0) return 0.001;
+
+  // If no real volume recorded yet, synthesise from the asset's USD price tier.
+  // This ensures every pair gets meaningful order-book depth from day one.
+  const effectiveQuoteVol = volume24h > 0
+    ? volume24h
+    : syntheticUsdVolume(baseUsdPrice);   // treat as USD-equivalent quote vol
+
   // target: ~0.03% of 24h volume per level in quote terms
-  const quotePerLevel = volume24h * 0.0003;
+  const quotePerLevel = effectiveQuoteVol * 0.0003;
   // Dynamic floor: at least worth 5 base units at current price (avoids insane qty)
   const quoteFloor = midPrice * 5;
   const base = Math.max(quotePerLevel, quoteFloor) / midPrice;
@@ -130,6 +157,7 @@ async function refreshMarket(
   quoteAsset: string,
   midPrice: number,
   volume24h: number,
+  baseUsdPrice: number,   // base-asset USD price for synthetic volume fallback
 ): Promise<void> {
   // If the live price is missing, try the static fallback map
   if (!midPrice || midPrice <= 0) {
@@ -138,7 +166,7 @@ async function refreshMarket(
   }
   if (!midPrice || midPrice <= 0) return; // truly unknown — skip
 
-  const bSize = baseSize(volume24h, midPrice);
+  const bSize = baseSize(volume24h, midPrice, baseUsdPrice);
   const orders: LevelOrder[] = [
     ...buildLadder("buy",  midPrice, bSize),
     ...buildLadder("sell", midPrice, bSize),
@@ -229,28 +257,43 @@ async function runCycle(): Promise<void> {
     // Process in batches of 20 to avoid overwhelming the DB connection pool.
     const BATCH_SIZE = 20;
     const marketJobs = active.map(m => {
+      const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
+      const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
+
       let midPrice: number;
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
         midPrice = parseFloat(m.lastPrice as string) || 0;
       } else {
-        const baseUSD  = usdMap.get(m.baseAsset);
-        const quoteUSD = usdMap.get(m.quoteAsset);
-        midPrice = (baseUSD && quoteUSD && quoteUSD > 0)
+        midPrice = (baseUSD > 0 && quoteUSD > 0)
           ? baseUSD / quoteUSD
           : parseFloat(m.lastPrice as string) || 0;
       }
-      return { m, midPrice };
+
+      // Volume: use DB value when available; otherwise derive from base-asset's
+      // USDT volume scaled to this quote currency.
+      let vol = parseFloat(m.volume24h as string) || 0;
+      if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
+        // Find the USDT volume for the base asset as a proxy
+        const usdtMarket = active.find(
+          x => x.baseAsset === m.baseAsset && x.quoteAsset === "USDT" && x.type === "spot"
+        );
+        const usdtVol = parseFloat(usdtMarket?.volume24h as string) || 0;
+        if (usdtVol > 0) vol = usdtVol / quoteUSD;
+      }
+
+      return { m, midPrice, baseUsdPrice: baseUSD, vol };
     });
 
     for (let i = 0; i < marketJobs.length; i += BATCH_SIZE) {
       const batch = marketJobs.slice(i, i + BATCH_SIZE);
       await Promise.all(
-        batch.map(({ m, midPrice }) =>
+        batch.map(({ m, midPrice, baseUsdPrice, vol }) =>
           refreshMarket(
             m.symbol,
             m.quoteAsset,
             midPrice,
-            parseFloat(m.volume24h as string) || 0,
+            vol,
+            baseUsdPrice,
           ).catch(err =>
             logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
           )
