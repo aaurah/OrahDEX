@@ -333,7 +333,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2">
           {/* Hamburger — left side */}
           <button
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors shrink-0"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors shrink-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle navigation"
           >
@@ -349,7 +349,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors text-xs font-medium"
             title={`Switch theme — currently ${THEME_LABELS[safeTheme]}`}
           >
             <ThemeIcon className="w-3.5 h-3.5" />
@@ -363,7 +363,7 @@ export function Layout({ children }: { children: ReactNode }) {
               "p-2 rounded-lg transition-colors",
               location.startsWith("/settings")
                 ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
             )}
             title="Settings"
           >
@@ -377,7 +377,7 @@ export function Layout({ children }: { children: ReactNode }) {
                 setNotifOpen(o => !o);
                 if (!notifOpen) markAllRead();
               }}
-              className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+              className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
               title="Notifications"
             >
               <Bell className="w-4 h-4" />
@@ -471,7 +471,7 @@ export function Layout({ children }: { children: ReactNode }) {
                             className={cn(
                               "w-full text-left px-4 py-3 border-b border-border/40 transition-colors last:border-0 group",
                               !n.read && "bg-primary/5",
-                              dest ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : "cursor-default",
+                              dest ? "cursor-pointer hover:bg-muted/50 active:bg-muted" : "cursor-default",
                             )}
                           >
                             <div className="flex items-start gap-2.5">
@@ -684,7 +684,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
                       isActive
                         ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     )}
                   >
                     <link.icon className="w-5 h-5 shrink-0" />
@@ -697,7 +697,7 @@ export function Layout({ children }: { children: ReactNode }) {
               {/* More section */}
               <button
                 onClick={() => setShowMoreNav(v => !v)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all"
               >
                 <Gauge className="w-5 h-5 shrink-0" />
                 <span className="text-sm">More</span>
@@ -717,7 +717,7 @@ export function Layout({ children }: { children: ReactNode }) {
                           "flex items-center gap-3 px-3 py-2 rounded-xl font-medium transition-all text-sm",
                           isActive
                             ? "bg-primary/10 text-primary"
-                            : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                         )}
                       >
                         <link.icon className="w-4 h-4 shrink-0" />
@@ -738,7 +738,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
                   location.startsWith("/settings")
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 )}
               >
                 <Settings className="w-5 h-5 shrink-0" />
