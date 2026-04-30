@@ -15,6 +15,7 @@ import { useLocation } from "wouter";
 import { disconnectReown } from "@/lib/reown";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
+import { useHybridBalance } from "@/hooks/useHybridBalance";
 
 const API = "/api";
 
@@ -418,6 +419,7 @@ function CreatorProfileSheet({
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>([]);
+  const hybrid = useHybridBalance(60_000);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -637,6 +639,33 @@ function CreatorProfileSheet({
               )}
             </div>
           </div>
+
+          {/* ── Hybrid wallet balance (only on own profile) ── */}
+          {isSelf && (
+            <div className="rounded-2xl p-3.5 mb-3" style={{ background: "var(--color-surface)" }}>
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--color-text-secondary)" }}>Total Portfolio</span>
+                {hybrid.loading && <RefreshCw size={10} className="animate-spin" style={{ color: "var(--color-text-secondary)" }} />}
+              </div>
+              <div className="text-2xl font-black mb-2.5" style={{ color: "var(--color-accent)" }}>
+                {hybrid.loading && hybrid.chains.length === 0
+                  ? "—"
+                  : `$${hybrid.totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </div>
+              {hybrid.chains.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {hybrid.chains.filter(c => c.native > 0).map(c => (
+                    <div key={c.symbol} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <span style={{ color: "var(--color-text-secondary)" }}>{c.symbol}</span>
+                      <span style={{ color: "var(--color-text)" }}>{c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 4 })}</span>
+                      <span style={{ color: "var(--color-text-secondary)" }}>·</span>
+                      <span style={{ color: "var(--color-accent)" }}>${c.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Chain badges ── */}
           <div className="flex gap-1.5 flex-wrap mb-4">
