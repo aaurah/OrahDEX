@@ -117,6 +117,26 @@ const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
   linea: ["linea"],
 };
 
+// Preferred quote order when picking a single AOS pair per coin in each chain tab.
+const CAT_PREFERRED_QUOTE: Partial<Record<Cat, string[]>> = {
+  btc:   ["BTC",  "USDT", "USDC"],
+  eth:   ["ETH",  "USDT", "USDC"],
+  bnb:   ["BNB",  "USDT", "USDC"],
+  matic: ["MATIC","USDT", "USDC"],
+  avax:  ["AVAX", "USDT", "USDC"],
+  arb:   ["ETH",  "USDT", "USDC"],
+  op:    ["ETH",  "USDT", "USDC"],
+  ftm:   ["FTM",  "USDT", "USDC"],
+  cro:   ["CRO",  "USDT", "USDC"],
+  bch:   ["BCH",  "USDT", "USDC"],
+  bsv:   ["BSV",  "USDT", "USDC"],
+  sol:   ["SOL",  "USDT", "USDC"],
+  mnt:   ["MNT",  "USDT", "USDC"],
+  zk:    ["ETH",  "USDT", "USDC"],
+  scr:   ["ETH",  "USDT", "USDC"],
+  linea: ["ETH",  "USDT", "USDC"],
+};
+
 function getRows(
   cat: Cat,
   usdSub: UsdSub,
@@ -131,22 +151,48 @@ function getRows(
       return live ? { ...n, price: live.price, chg: live.chg } : n;
     });
 
-  // Merge native rows with matching AOS rows (no duplicates, priced-only)
-  const mergeAOS = (native: NormRow[], keywords: string[]): NormRow[] => {
-    const seen = new Set(native.map(r => r.symbol));
-    const extra = aosPairs.filter(p => {
+  // Merge native rows with ONE AOS row per unique base coin (best quote for the chain).
+  const mergeAOS = (native: NormRow[], keywords: string[], quotePriority: string[]): NormRow[] => {
+    const seenSymbols = new Set(native.map(r => r.symbol));
+    const seenBases   = new Set(native.map(r => r.base));
+
+    // Filter eligible AOS pairs: correct network + has price
+    const eligible = aosPairs.filter(p => {
       const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw))
-        && !seen.has(p.symbol)
-        && p.price > 0;           // only show AOS pairs with a known price
+      return keywords.some(kw => net.includes(kw)) && p.price > 0;
     });
+
+    // Group by base asset
+    const byBase = new Map<string, NormRow[]>();
+    for (const p of eligible) {
+      if (!byBase.has(p.base)) byBase.set(p.base, []);
+      byBase.get(p.base)!.push(p);
+    }
+
+    // Pick the single best pair per coin
+    const extra: NormRow[] = [];
+    for (const [base, pairs] of byBase) {
+      if (seenBases.has(base)) continue; // already covered by a native pair
+
+      let best: NormRow | undefined;
+      for (const q of quotePriority) {
+        best = pairs.find(p => p.quote === q);
+        if (best) break;
+      }
+      best = best ?? pairs[0];
+      if (best && !seenSymbols.has(best.symbol)) extra.push(best);
+    }
+
+    // Sort AOS additions alphabetically, then append after native rows
+    extra.sort((a, b) => a.base.localeCompare(b.base));
     return [...native, ...extra];
   };
 
   const chainRows = (mock: any[], c: Cat): NormRow[] => {
-    const native   = enrich(mock);
-    const keywords = CAT_NETWORKS[c];
-    return keywords ? mergeAOS(native, keywords) : native;
+    const native       = enrich(mock);
+    const keywords     = CAT_NETWORKS[c];
+    const quotePriority = CAT_PREFERRED_QUOTE[c] ?? ["USDT", "USDC"];
+    return keywords ? mergeAOS(native, keywords, quotePriority) : native;
   };
 
   // "All" pool = all native spot + AOS pairs not already native (priced only)
@@ -411,76 +457,92 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               {cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
             </div>
-          ) : (
-            rows.map(m => {
+          ) : (() => {
+            // Insert a section divider before the first AOS (swap-only) row
+            let aosDividerShown = false;
+            return rows.map(m => {
               const isActive = m.symbol === currentSymbol?.replace(/\//g, "-");
               const isUp     = m.chg >= 0;
+              const showDivider = !search && m.swapOnly && !aosDividerShown;
+              if (showDivider) aosDividerShown = true;
               return (
-                <div
-                  key={m.symbol}
-                  className={cn(
-                    "flex items-center px-4 py-[10px] border-b border-border/20",
-                    isActive ? "bg-primary/8" : "active:bg-secondary/40"
-                  )}
-                >
-                  {/* Star */}
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); toggleFav(m.symbol); }}
-                    className="mr-1 shrink-0 flex items-center justify-center w-8 h-8 -ml-1 rounded-full active:bg-secondary/60"
-                  >
-                    <Star
-                      size={15}
-                      className={favorites.has(m.symbol) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}
-                    />
-                  </button>
-
-                  {/* Coin logo */}
-                  <button onClick={() => pick(m)} className="mr-2.5 shrink-0">
-                    <CoinLogo symbol={m.base} size={28} />
-                  </button>
-
-                  {/* Pair name + badges */}
-                  <button onClick={() => pick(m)} className="flex-1 text-left">
-                    <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
-                      {m.base}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
-                    {m.type === "futures" && (
-                      <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
-                    )}
-                    {m.swapOnly && (
-                      <span className="ml-1 text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
-                    )}
-                    {isActive && (
-                      <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
-                    )}
-                  </button>
-
-                  {/* Price */}
-                  <button onClick={() => pick(m)} className="w-24 text-right pr-2">
-                    <span className="text-[12px] font-semibold text-foreground tabular-nums">
-                      {m.price > 0 ? fmt(m.price) : "—"}
-                    </span>
-                  </button>
-
-                  {/* Change */}
-                  <button onClick={() => pick(m)} className="w-16 text-right">
-                    {m.price > 0 ? (
-                      <span className={cn(
-                        "text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded",
-                        isUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
-                      )}>
-                        {isUp ? "+" : ""}{m.chg.toFixed(2)}%
+                <div key={m.symbol}>
+                  {/* AOS section header — shown once before the first swap-only row */}
+                  {showDivider && (
+                    <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-500/5 border-y border-blue-500/15">
+                      <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                        Available on Swap
                       </span>
-                    ) : (
-                      <span className="text-[10px] text-blue-400/60">live →</span>
+                      <div className="flex-1 h-px bg-blue-500/15" />
+                      <span className="text-[9px] text-blue-400/60">via LetsExchange</span>
+                    </div>
+                  )}
+
+                  <div
+                    className={cn(
+                      "flex items-center px-4 py-[10px] border-b border-border/20",
+                      isActive ? "bg-primary/8" : "active:bg-secondary/40"
                     )}
-                  </button>
+                  >
+                    {/* Star */}
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); toggleFav(m.symbol); }}
+                      className="mr-1 shrink-0 flex items-center justify-center w-8 h-8 -ml-1 rounded-full active:bg-secondary/60"
+                    >
+                      <Star
+                        size={15}
+                        className={favorites.has(m.symbol) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}
+                      />
+                    </button>
+
+                    {/* Coin logo */}
+                    <button onClick={() => pick(m)} className="mr-2.5 shrink-0">
+                      <CoinLogo symbol={m.base} size={28} />
+                    </button>
+
+                    {/* Pair name + badges */}
+                    <button onClick={() => pick(m)} className="flex-1 text-left">
+                      <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
+                        {m.base}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
+                      {m.type === "futures" && (
+                        <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
+                      )}
+                      {m.swapOnly && (
+                        <span className="ml-1 text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
+                      )}
+                      {isActive && (
+                        <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
+                      )}
+                    </button>
+
+                    {/* Price */}
+                    <button onClick={() => pick(m)} className="w-24 text-right pr-2">
+                      <span className="text-[12px] font-semibold text-foreground tabular-nums">
+                        {m.price > 0 ? fmt(m.price) : "—"}
+                      </span>
+                    </button>
+
+                    {/* Change */}
+                    <button onClick={() => pick(m)} className="w-16 text-right">
+                      {m.price > 0 ? (
+                        <span className={cn(
+                          "text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded",
+                          isUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
+                        )}>
+                          {isUp ? "+" : ""}{m.chg.toFixed(2)}%
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-blue-400/60">live →</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
               );
-            })
-          )}
+            });
+          })()}
         </div>
       </div>
     </>
