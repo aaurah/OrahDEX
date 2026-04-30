@@ -474,7 +474,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                         Available on Swap
                       </span>
                       <div className="flex-1 h-px bg-blue-500/15" />
-                      <span className="text-[9px] text-blue-400/60">via LetsExchange</span>
                     </div>
                   )}
 

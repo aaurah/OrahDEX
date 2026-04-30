@@ -251,7 +251,7 @@ export function OrderBook({
                     className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold text-yellow-400 hover:text-yellow-300 transition-colors"
                   >
                     <Zap className="w-3 h-3" />
-                    No internal liquidity — swap cross-chain via LetsExchange
+                    No internal liquidity — swap cross-chain
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 )}
