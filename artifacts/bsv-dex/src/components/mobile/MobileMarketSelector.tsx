@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight } from "lucide-react";
 import { useLocation } from "wouter";
@@ -327,13 +327,22 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     } catch { return new Set<string>(); }
   });
 
+  // Reset sort only (keep the user's last chain/category between opens)
   useEffect(() => {
     if (open) {
-      setCat(mode === "futures" ? "futures" : (defaultCat ?? "usd"));
       setSortKey("base");
       setSortDir("asc");
     }
-  }, [open, mode, defaultCat]);
+  }, [open]);
+
+  // Only reset the category when the mode itself changes (spot ↔ futures)
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current !== mode) {
+      prevModeRef.current = mode;
+      setCat(mode === "futures" ? "futures" : (defaultCat ?? "usd"));
+    }
+  }, [mode, defaultCat]);
 
   // Native market data (prices / changes)
   const { data: apiData } = useQuery({
