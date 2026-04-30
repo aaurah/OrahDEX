@@ -242,7 +242,57 @@ router.get("/letsexchange/pairs", async (req, res) => {
   nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
   lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // LE overrides
 
-  let allPairs = Array.from(bySymbol.values());
+  // ── Cross-rate enrichment ────────────────────────────────────────────────
+  // Build a USD price map from native USDT/USDC pairs (DB prices are most fresh).
+  // Stablecoins are pinned to $1.  Everything else falls back to a static table.
+  const STABLES: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, BUSD: 1, DAI: 1, FDUSD: 1,
+  };
+  const FALLBACK_USD: Record<string, number> = {
+    BTC: 83000, ETH: 1800,  BNB: 580,   BSV: 16,    BCH: 320,  SOL: 130,
+    XRP: 0.52,  DOGE: 0.08, LTC: 65,    TRX: 0.24,  ADA: 0.35, DOT: 5.2,
+    LINK: 11,   MATIC: 0.32, AVAX: 18,  UNI: 5.8,   AAVE: 95,  MKR: 1400,
+    SNX: 1.8,   SUSHI: 0.7, COMP: 42,   YFI: 5800,  CRV: 0.35,
+    "1INCH": 0.22, FTM: 0.51, CRO: 0.085, OP: 0.70,  ARB: 0.42,
+    IMX: 0.80,  APT: 5.2,   SUI: 0.92,  NEAR: 2.1,  FIL: 3.5,
+    ICP: 5.8,   ATOM: 4.2,  ALGO: 0.14, MANA: 0.25, SAND: 0.28,
+    AXS: 3.8,   THETA: 0.73, VET: 0.022, ETC: 17,   XLM: 0.088,
+    ZIL: 0.011, ENJ: 0.11,  BAT: 0.12,  ZRX: 0.24,  GRT: 0.096,
+    LRC: 0.14,  DYDX: 0.58, PEPE: 0.0000085, SHIB: 0.0000094,
+    FLOKI: 0.000052, BONK: 0.000012, WIF: 1.4,   POPCAT: 0.34,
+    TON: 3.1,   NOT: 0.0065, HMSTR: 0.0018, DOGS: 0.00018,
+    INJ: 10.2,  SEI: 0.24,  TIA: 3.8,   PYTH: 0.23, JUP: 0.48,
+    RNDR: 3.8,  WLD: 0.98,  FET: 0.60,  AGIX: 0.44, OCEAN: 0.33,
+    TAO: 220,   ROSE: 0.046, CFX: 0.088, STX: 0.75, AR: 5.8,
+    KAS: 0.053, JASMY: 0.016, ACH: 0.022, MAGIC: 0.38, GMX: 12,
+    PERP: 0.43, BICO: 0.12, BAND: 0.98, REN: 0.042, NMR: 12,
+    RAY: 1.8,   MNGO: 0.012, ORCA: 0.28, JTO: 1.5,  PYUSD: 1,
+    EURC: 1.09, USDE: 1,    USDM: 1,   CRVUSD: 1,  FRAX: 1,
+    LUSD: 1,    MIM: 0.98,  SUSD: 1,    USDP: 1,    RSR: 0.0048,
+    LQTY: 0.72, ALCX: 10,   SPELL: 0.00055, CVX: 1.8, BAL: 1.5,
+    ANKR: 0.017, SKL: 0.024, CTSI: 0.078, STORJ: 0.36, OGN: 0.065,
+  };
+
+  // USD price map: fallbacks first, then DB native prices override them
+  const usdPrices: Record<string, number> = { ...STABLES, ...FALLBACK_USD };
+  for (const p of nativePairs) {
+    const q = p.quoteAsset as string;
+    const price = p.lastPrice as number;
+    if ((q === "USDT" || q === "USDC") && price > 0) {
+      usdPrices[p.baseAsset as string] = price; // DB wins over static table
+    }
+  }
+  // Stablecoins always stay at $1
+  Object.assign(usdPrices, STABLES);
+
+  // Enrich LE-only pairs that still have lastPrice === 0
+  let allPairs = Array.from(bySymbol.values()).map(p => {
+    if ((p.lastPrice as number) > 0) return p; // native pair already has price
+    const baseUsd  = usdPrices[(p.baseAsset  as string)?.toUpperCase()];
+    const quoteUsd = usdPrices[(p.quoteAsset as string)?.toUpperCase()];
+    if (!baseUsd || !quoteUsd) return p;
+    return { ...p, lastPrice: baseUsd / quoteUsd };
+  });
 
   let result = allPairs;
   if (!returnAll && filterQuote) {
