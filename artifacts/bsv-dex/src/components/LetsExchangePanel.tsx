@@ -223,9 +223,11 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
+  initialFrom?: string;
+  initialTo?: string;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -235,15 +237,34 @@ function StepAmount({ coins, onContinue }: {
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Pre-select BTC → BSV
+  // Pre-select coins — use initialFrom/initialTo when provided, else BTC → BSV
   useEffect(() => {
     if (!coins.length) return;
-    const btc = coins.find(c => c.symbol === "BTC" && c.network === "BTC");
-    const bsv = coins.find(c => c.symbol === "BSV" && c.network === "BSV");
-    const eth = coins.find(c => c.symbol === "ETH" && c.network === "ETH");
-    if (btc) setFromCoin(btc);
-    if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
-  }, [coins]);
+
+    function pickCoin(sym: string): LeCoin | null {
+      const up = sym.toUpperCase();
+      return coins.find(c => c.symbol === up && c.network === up)
+          ?? coins.find(c => c.symbol === up)
+          ?? null;
+    }
+
+    if (initialFrom) {
+      const c = pickCoin(initialFrom);
+      if (c) setFromCoin(c);
+    } else {
+      const btc = coins.find(c => c.symbol === "BTC" && c.network === "BTC");
+      if (btc) setFromCoin(btc);
+    }
+
+    if (initialTo) {
+      const c = pickCoin(initialTo);
+      if (c) setToCoin(c);
+    } else {
+      const bsv = coins.find(c => c.symbol === "BSV" && c.network === "BSV");
+      const eth = coins.find(c => c.symbol === "ETH" && c.network === "ETH");
+      if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
+    }
+  }, [coins, initialFrom, initialTo]);
 
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
@@ -650,7 +671,13 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
-export function LetsExchangePanel() {
+export function LetsExchangePanel({
+  initialFrom,
+  initialTo,
+}: {
+  initialFrom?: string;
+  initialTo?: string;
+} = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
   const [loading,  setLoading]  = useState(true);
@@ -774,7 +801,7 @@ export function LetsExchangePanel() {
           </div>
         )}
 
-        {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} />}
+        {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} />}
         {step === 2 && fromCoin && toCoin && (
           <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
             onBack={() => setStep(1)} onContinue={handleAddressContinue} />

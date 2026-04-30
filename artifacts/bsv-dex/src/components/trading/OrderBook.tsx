@@ -2,8 +2,8 @@ import { useState, useRef } from "react";
 import { OrderBook as OrderBookType } from '@workspace/api-client-react';
 import { formatPrice, formatVolume } from '@/lib/utils';
 import { cn } from '@/lib/utils';
-import { RecentTrades } from './RecentTrades';
 import type { Trade } from '@workspace/api-client-react';
+import { Zap, ArrowRight } from "lucide-react";
 
 export interface OrderBookFill {
   price: string;
@@ -15,15 +15,36 @@ export interface OrderBookFill {
 type BookMode = "full" | "asks" | "bids";
 type Panel = "book" | "trades";
 
+interface LERate {
+  rate: string;       // quote per 1 base
+  minAmount: string;
+  maxAmount: string;
+}
+
 interface OrderBookProps {
   data: OrderBookType;
   lastPrice?: number;
   onFill?: (fill: OrderBookFill) => void;
   symbol?: string;
   trades?: Trade[];
+  /** Live LetsExchange rate — shown as virtual orders when liquidity is thin */
+  leRate?: LERate | null;
+  /** True when the internal orderbook has real orders */
+  hasInternalLiquidity?: boolean;
+  /** Called when user clicks the LE swap row — opens LetsExchange panel */
+  onLeSwap?: () => void;
 }
 
-export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades: tradesProp = [] }: OrderBookProps) {
+export function OrderBook({
+  data,
+  lastPrice,
+  onFill,
+  symbol = "BTC/USDT",
+  trades: tradesProp = [],
+  leRate,
+  hasInternalLiquidity = true,
+  onLeSwap,
+}: OrderBookProps) {
   const trades = Array.isArray(tradesProp) ? tradesProp : [];
   const [mode, setMode] = useState<BookMode>("full");
   const [panel, setPanel] = useState<Panel>("book");
@@ -41,6 +62,9 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
   const base = parts[0] ?? "BTC";
   const quote = parts[1] ?? "USDT";
 
+  // LE cross-chain rate (parsed from prop)
+  const leAskPrice = leRate ? parseFloat(leRate.rate) : null;
+
   const maxTotal = Math.max(
     ...data.bids.map(b => b.total),
     ...data.asks.map(a => a.total),
@@ -51,9 +75,12 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
   const showBids = mode === "full" || mode === "bids";
   const isPositive = lastPrice != null && lastPrice > 0;
 
+  // Show LE card when rate is available
+  const showLEOrders = !!leRate && !!leAskPrice;
+
   return (
     <div className="flex flex-col h-full bg-card font-mono tabular-nums overflow-hidden">
-      {/* Top tabs: Order Book | Market Trades */}
+      {/* Top tabs */}
       <div className="flex items-center border-b border-border shrink-0">
         {(["book", "trades"] as Panel[]).map(p => (
           <button
@@ -70,7 +97,6 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
           </button>
         ))}
 
-        {/* View-mode switcher — only for order book panel */}
         {panel === "book" && (
           <div className="flex items-center gap-0.5 px-2 shrink-0">
             {(["full", "asks", "bids"] as BookMode[]).map(m => (
@@ -132,7 +158,6 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
       {/* Order Book panel */}
       {panel === "book" && (
         <>
-          {/* Column headers */}
           <div className="flex justify-between px-2 py-1 text-[9px] text-muted-foreground border-b border-border shrink-0 font-sans">
             <span className="flex-1">Price({quote})</span>
             <span className="w-16 text-right">Amount({base})</span>
@@ -140,7 +165,7 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Asks (sells) — shown at top, reversed so lowest ask is nearest the spread */}
+            {/* Asks (sells) */}
             {showAsks && (
               <div className={cn("overflow-hidden flex flex-col justify-end", showBids ? "flex-1" : "flex-1")}>
                 {data.asks.slice(-20).reverse().map((ask, i) => {
@@ -166,13 +191,32 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
               </div>
             )}
 
-            {/* Spread / current price */}
+            {/* Spread / current price + LE rate card */}
             {showAsks && showBids && (
-              <div className="py-1.5 px-2 border-y border-border flex items-center justify-between bg-white/[0.02] shrink-0">
-                <span className={cn("text-sm font-bold leading-none", isPositive ? "text-buy" : "text-sell")}>
-                  {lastPrice ? formatPrice(lastPrice) : '—'}
-                </span>
-                <span className="text-[9px] text-muted-foreground/50 italic">Mark Price</span>
+              <div className="shrink-0">
+                <div className="py-1.5 px-2 border-y border-border flex items-center justify-between bg-white/[0.02]">
+                  <span className={cn("text-sm font-bold leading-none", isPositive ? "text-buy" : "text-sell")}>
+                    {lastPrice ? formatPrice(lastPrice) : '—'}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground/50 italic">Mark Price</span>
+                </div>
+                {/* LE rate card — always shown when rate is available */}
+                {showLEOrders && leAskPrice && (
+                  <button
+                    onClick={onLeSwap}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 bg-yellow-500/8 hover:bg-yellow-500/15 border-b border-yellow-500/20 transition-colors group"
+                  >
+                    <Zap className="w-3 h-3 text-yellow-400 shrink-0" />
+                    <span className="flex-1 text-left text-[9px] text-yellow-400/80">
+                      Cross-chain rate
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-yellow-400">
+                      {formatPrice(leAskPrice, 4)}
+                    </span>
+                    <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold shrink-0">⚡LE</span>
+                    <ArrowRight className="w-2.5 h-2.5 text-yellow-400/50 group-hover:text-yellow-400 transition-colors shrink-0" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -199,6 +243,24 @@ export function OrderBook({ data, lastPrice, onFill, symbol = "BTC/USDT", trades
                     </div>
                   );
                 })}
+
+                {/* No liquidity at all — show a clear LE CTA */}
+                {!hasInternalLiquidity && showLEOrders && (
+                  <button
+                    onClick={onLeSwap}
+                    className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 text-[10px] font-semibold text-yellow-400 hover:text-yellow-300 transition-colors"
+                  >
+                    <Zap className="w-3 h-3" />
+                    No internal liquidity — swap cross-chain via LetsExchange
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
+
+                {!hasInternalLiquidity && !showLEOrders && (
+                  <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">
+                    No orders yet — be the first to provide liquidity
+                  </div>
+                )}
               </div>
             )}
           </div>

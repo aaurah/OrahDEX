@@ -74,7 +74,12 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
   - Status values: `wait`, `confirmation`, `confirmed`, `exchanging`, `sending`, `finished`, `failed`, `overdue`, `refunded`
 - **Fixed-rate flow**: `POST /v1/info` returns `rate_id` + expiry timestamp → pass `rate_id` to `POST /v1/transaction` for locked rate
 - **Proxy routes**: `artifacts/api-server/src/routes/letsexchange.ts`
-- **Frontend**: `artifacts/bsv-dex/src/components/LetsExchangePanel.tsx` — native 3-step UI (amount → address → deposit/QR/tracking), no external redirects
+- **Frontend**: `artifacts/bsv-dex/src/components/LetsExchangePanel.tsx` — native 3-step UI (amount → address → deposit/QR/tracking), no external redirects. Accepts `initialFrom`/`initialTo` props to pre-select coins.
+- **Orderbook fallback integration** (2026-04-30):
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangeCoins.ts` — singleton hook, fetches 789 unique LE coins once, exposes `getCoin(sym)` / `isLECoin(sym)` / `uniqueSymbols`
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangeRate.ts` — per-pair live rate hook polling every 10s from `/api/letsexchange/estimate`
+  - `OrderBook.tsx` — shows a yellow "Cross-chain rate ⚡LE →" card at the spread when LE rate available; clicking scrolls to LetsExchangePanel pre-filled with current pair
+  - `Spot.tsx` — injects ~3,945 LE pairs (789 symbols × 5 quotes: USDT/BTC/ETH/BSV/BNB) into the pair selector with `⚡LE` badge; shows no-liquidity fallback banner above order form; `LetsExchangePanel` always pre-seeded with current pair's base/quote
 
 # Trade Logic Audit (2026-04-10)
 
