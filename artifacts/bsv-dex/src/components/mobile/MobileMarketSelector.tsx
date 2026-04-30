@@ -194,8 +194,8 @@ function getRows(
     const quotePriority = CAT_PREFERRED_QUOTE[c] ?? ["USDT", "USDC"];
     if (!keywords) return native;
 
-    // BTC is a quote currency, not a chain/network — for the BTC tab we want
-    // ALL LE coins that quote in BTC regardless of their own network.
+    // BTC and BSV are quote currencies, not chain/networks — for those tabs we want
+    // ALL LE coins that quote in that currency regardless of their own network.
     if (c === "btc") {
       const seenSymbols = new Set(native.map(r => r.symbol));
       const seenBases   = new Set(native.map(r => r.base));
@@ -203,6 +203,14 @@ function getRows(
         .filter(p => p.quote === "BTC" && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol));
       btcAos.sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...btcAos];
+    }
+    if (c === "bsv") {
+      const seenSymbols = new Set(native.map(r => r.symbol));
+      const seenBases   = new Set(native.map(r => r.base));
+      const bsvAos = aosPairs
+        .filter(p => p.quote === "BSV" && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol));
+      bsvAos.sort((a, b) => a.base.localeCompare(b.base));
+      return [...native, ...bsvAos];
     }
 
     return mergeAOS(native, keywords, quotePriority);
@@ -446,8 +454,21 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             <div className="flex items-center gap-2 px-4 py-2 bg-orange-500/8 border-b border-orange-500/20 shrink-0">
               <ArrowLeftRight size={12} className="text-orange-400 shrink-0" />
               <span className="text-[11px] font-bold text-orange-400">BTC Swap Hub</span>
-              <span className="text-[10px] text-orange-400/70">— {btcSwapCount} coins via LetsExchange</span>
+              <span className="text-[10px] text-orange-400/70">— {btcSwapCount} coins available</span>
               <span className="ml-auto text-[9px] text-orange-400/50">⚡ auto-routed</span>
+            </div>
+          ) : null;
+        })()}
+
+        {/* BSV Swap Hub banner */}
+        {!search && cat === "bsv" && (() => {
+          const bsvSwapCount = rows.filter(m => m.swapOnly).length;
+          return bsvSwapCount > 0 ? (
+            <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/8 border-b border-yellow-500/20 shrink-0">
+              <ArrowLeftRight size={12} className="text-yellow-400 shrink-0" />
+              <span className="text-[11px] font-bold text-yellow-400">⚡ BSV Swap Hub</span>
+              <span className="text-[10px] text-yellow-400/70">— {bsvSwapCount} coins available</span>
+              <span className="ml-auto text-[9px] text-yellow-400/50">auto-routed</span>
             </div>
           ) : null;
         })()}
@@ -507,10 +528,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                       <div className="flex items-center gap-2 px-4 py-1.5 bg-orange-500/8 border-y border-orange-500/20">
                         <ArrowLeftRight size={10} className="text-orange-400 shrink-0" />
                         <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">
-                          BTC Swap via LetsExchange
+                          BTC Cross-Chain Swap
                         </span>
                         <div className="flex-1 h-px bg-orange-500/20" />
                         <span className="text-[9px] text-orange-400/60">⚡ auto-routed</span>
+                      </div>
+                    ) : cat === "bsv" ? (
+                      <div className="flex items-center gap-2 px-4 py-1.5 bg-yellow-500/8 border-y border-yellow-500/20">
+                        <ArrowLeftRight size={10} className="text-yellow-400 shrink-0" />
+                        <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
+                          BSV Cross-Chain Swap
+                        </span>
+                        <div className="flex-1 h-px bg-yellow-500/20" />
+                        <span className="text-[9px] text-yellow-400/60">⚡ auto-routed</span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-500/5 border-y border-blue-500/15">
