@@ -2,11 +2,45 @@ import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { pushNotification, getNotifications, clearNotifications } from "../lib/notifQueue.js";
+import { getCachedLEPrices, fetchLECoinPriceUSD } from "../lib/lePriceCache.js";
 
 const router: IRouter = Router();
 const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
 
 function uid(): string { return crypto.randomUUID(); }
+
+/* ── Currency → USD price helpers ─────────────────────────────────────────── */
+const CURRENCY_NET: Record<string, string | null> = {
+  ETH: "ERC20", BSV: "BSV", BTC: "BTC", BNB: "BEP20",
+  SOL: "SOL", MATIC: "POL", BCH: "BCH", ARB: "ARBITRUM", OP: "OPTIMISM",
+};
+// Conservative fallbacks (updated Apr 2025)
+const FALLBACK_USD: Record<string, number> = {
+  ETH: 3100, BSV: 35, BTC: 95000, BNB: 580,
+  SOL: 140,  MATIC: 0.9, BCH: 400, ARB: 0.9, OP: 1.8,
+};
+
+async function getCurrencyUsdPrice(currency: string): Promise<number> {
+  const sym = currency.toUpperCase();
+  const le = getCachedLEPrices();
+  if (le[sym] && le[sym] > 0) return le[sym];
+  try {
+    const live = await fetchLECoinPriceUSD(sym, CURRENCY_NET[sym] ?? null, null);
+    if (live > 0) return live;
+  } catch { /* fall through */ }
+  return FALLBACK_USD[sym] ?? 1;
+}
+
+/* ── GET /social/prices — live USD prices for NFT currencies ─────────────── */
+router.get("/social/prices", async (_req, res) => {
+  const currencies = ["ETH","BSV","BTC","BNB","SOL","MATIC","BCH","ARB","OP"];
+  const le = getCachedLEPrices();
+  const prices: Record<string, number> = {};
+  for (const c of currencies) {
+    prices[c] = le[c] && le[c] > 0 ? le[c] : FALLBACK_USD[c] ?? 1;
+  }
+  res.json({ prices });
+});
 
 /* ── GET /social/feed ─────────────────────────────────────────────────────── */
 router.get("/social/feed", async (req, res) => {
@@ -94,7 +128,8 @@ router.post("/social/posts", async (req, res) => {
       ? reqChain.toUpperCase()
       : "BSV";
 
-    const priceUsd = (parseFloat(mint_price ?? "0") * 16).toFixed(2);
+    const currencyUsdPrice = await getCurrencyUsdPrice(mint_currency || chain);
+    const priceUsd = (parseFloat(mint_price ?? "0") * currencyUsdPrice).toFixed(2);
     const inscriptionId = `${uid().replace(/-/g, "")}i0`;
 
     const id = `post-${uid().slice(0, 8)}`;

@@ -1385,6 +1385,14 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [error, setError] = useState("");
   const [listPrice, setListPrice] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch(`${API}/social/prices`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.prices) setLivePrices(d.prices); })
+      .catch(() => {});
+  }, []);
   const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
   const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
@@ -1401,6 +1409,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   });
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
   const [qty, setQty] = useState(1);
+  const liveUsdRate = livePrices[post.mint_currency?.toUpperCase() ?? ""] ?? 0;
+  const liveUsdPerUnit = liveUsdRate > 0 ? mintPrice * liveUsdRate : null;
 
   const remainingSupply = post.max_supply ? Math.max(0, post.max_supply - post.mint_count) : null;
   const maxAffordable = mintPrice > 0 && availableNum > 0 ? Math.floor(availableNum / mintPrice) : 99;
@@ -1497,7 +1507,11 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                         {safePrice(post.mint_price)}{" "}
                         <span className="font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
                       </div>
-                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>≈ ${post.mint_price_usd} each</div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                        {liveUsdPerUnit !== null
+                          ? `≈ $${liveUsdPerUnit < 1 ? liveUsdPerUnit.toFixed(4) : liveUsdPerUnit.toFixed(2)} each`
+                          : `≈ $${post.mint_price_usd} each`}
+                      </div>
                     </div>
                     {availableLabel && (
                       <div className="text-right">
@@ -1541,7 +1555,14 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                   {qty > 1 && (
                     <div className="flex items-center justify-between py-2 rounded-xl px-3 mb-3"
                       style={{ background: insufficientFunds ? "rgba(255,60,60,0.1)" : "rgba(0,255,136,0.07)", border: `1px solid ${insufficientFunds ? "rgba(255,60,60,0.25)" : "rgba(0,255,136,0.2)"}` }}>
-                      <span className="text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>Total ({qty}×)</span>
+                      <div>
+                        <span className="text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>Total ({qty}×)</span>
+                        {liveUsdPerUnit !== null && (
+                          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                            ≈ ${(liveUsdPerUnit * qty).toFixed(2)}
+                          </div>
+                        )}
+                      </div>
                       <span className="text-base font-black" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>
                         {safePrice(totalPrice)} <span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
                       </span>
