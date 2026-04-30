@@ -1,14 +1,16 @@
 /**
- * letsexchange.ts — LetsExchange.io API proxy routes
+ * letsexchange.ts — LetsExchange.io API proxy
  *
- * Proxies requests to LetsExchange.io's public API so the frontend
- * never exposes the API key. Provides:
- *   GET  /api/letsexchange/currencies       — all supported coins/tokens
- *   GET  /api/letsexchange/pairs/:from      — available pairs for a coin
- *   POST /api/letsexchange/estimate         — estimated output for a swap
- *   POST /api/letsexchange/exchange         — create a real exchange order
- *   GET  /api/letsexchange/status/:id       — check order status
- *   GET  /api/letsexchange/min/:from/:to    — minimum exchange amount
+ * Routes:
+ *   GET  /api/letsexchange/currencies          — full coin list (v2, cached 5min)
+ *   POST /api/letsexchange/estimate            — live rate for a pair (v1 enterprise)
+ *   POST /api/letsexchange/exchange            — create an exchange order (v1 enterprise)
+ *   GET  /api/letsexchange/status/:id          — poll order status (v1 enterprise)
+ *
+ * The estimate / exchange / status routes require a LetsExchange Enterprise API key.
+ * With a standard affiliate key only /currencies works.  All three routes return
+ * { enterpriseRequired: true } with HTTP 402 when the upstream responds with 404,
+ * so the frontend can display a clear "Enterprise key needed" state.
  */
 
 import { Router, type IRouter } from "express";
@@ -16,81 +18,50 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
-const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
-const BASE_URL = "https://api.letsexchange.io/api/v2";
-
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+const API_KEY   = process.env.LETSEXCHANGE_API_KEY ?? "";
+const BASE_V1   = "https://api.letsexchange.io/api/v1";
+const BASE_V2   = "https://api.letsexchange.io/api/v2";
+const CACHE_TTL = 5 * 60 * 1000;
 
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
+function cached(k: string) { const e = cache.get(k); return e && Date.now()-e.ts < CACHE_TTL ? e.data : null; }
+function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
 
-function cached(key: string): unknown | null {
-  const e = cache.get(key);
-  if (!e) return null;
-  if (Date.now() - e.ts > CACHE_TTL_MS) { cache.delete(key); return null; }
-  return e.data;
-}
-function setCache(key: string, data: unknown) {
-  cache.set(key, { data, ts: Date.now() });
-}
-
-async function leRequest(
-  path: string,
-  method: "GET" | "POST" = "GET",
-  body?: unknown,
-): Promise<{ ok: boolean; status: number; data: unknown }> {
-  const url = `${BASE_URL}${path}`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  };
+async function leRequest(base: string, path: string, method: "GET"|"POST" = "GET", body?: unknown) {
+  const url = `${base}${path}`;
+  const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
-
   const opts: RequestInit = { method, headers };
   if (body && method === "POST") opts.body = JSON.stringify(body);
-
   const res = await fetch(url, opts);
   let data: unknown;
   try { data = await res.json(); } catch { data = null; }
   return { ok: res.ok, status: res.status, data };
 }
 
+// ── Coin normalisation ─────────────────────────────────────────────────────────
+
 interface NormalisedCoin {
-  symbol:      string;
-  name:        string;
-  network:     string | null;
-  networkName: string | null;
-  image:       string | null;
-  hasExtraId:  boolean;
-  minAmount:   string | null;
-  maxAmount:   string | null;
+  symbol: string; name: string; network: string|null; networkName: string|null;
+  image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
 }
 
-// Normalise the v2 LetsExchange coin list.
-// Each coin can have multiple networks — we expand into one entry per
-// active network so the user can pick e.g. "USDT on TRC20" vs "USDT on ERC20".
 function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
   const result: NormalisedCoin[] = [];
   const seen = new Set<string>();
-
   for (const item of raw) {
     const c = item as Record<string, unknown>;
     const symbol = ((c.code ?? c.ticker ?? c.symbol ?? "") as string).toUpperCase();
     if (!symbol) continue;
-
     const name      = (c.name ?? symbol) as string;
-    const image     = (c.icon ?? c.image ?? null) as string | null;
-    const minAmount = (c.min_amount ?? null) as string | null;
-    const maxAmount = (c.max_amount ?? null) as string | null;
-    const networks  = Array.isArray(c.networks) ? c.networks as Record<string, unknown>[] : [];
-
-    if (networks.length === 0) {
-      // Flat coin (v1-style)
+    const image     = (c.icon ?? c.image ?? null) as string|null;
+    const minAmount = (c.min_amount ?? null) as string|null;
+    const maxAmount = (c.max_amount ?? null) as string|null;
+    const networks  = Array.isArray(c.networks) ? c.networks as Record<string,unknown>[] : [];
+    if (!networks.length) {
       const key = `${symbol}::`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        result.push({ symbol, name, network: null, networkName: null, image, hasExtraId: false, minAmount, maxAmount });
-      }
+      if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
         if (net.is_active === 0) continue;
@@ -98,35 +69,22 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        result.push({
-          symbol,
-          name,
-          network:     netCode || null,
-          networkName: (net.name ?? null) as string | null,
-          image:       (net.icon ?? image) as string | null,
-          hasExtraId:  !!(net.has_extra),
-          minAmount,
-          maxAmount,
-        });
+        result.push({ symbol, name, network: netCode||null, networkName:(net.name??null) as string|null, image:(net.icon??image) as string|null, hasExtraId:!!(net.has_extra), minAmount, maxAmount });
       }
     }
   }
-
   return result;
 }
 
-// ── GET /api/letsexchange/currencies ──────────────────────────────────────────
-// Returns all supported coins, one entry per coin×network. Cached for 5 minutes.
+// ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
-  const key = "currencies";
-  const hit = cached(key);
+  const hit = cached("currencies");
   if (hit) { res.json(hit); return; }
   try {
-    const { ok, data, status } = await leRequest("/coins");
+    const { ok, data, status } = await leRequest(BASE_V2, "/coins");
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    const raw = Array.isArray(data) ? data : [];
-    const coins = normaliseV2Coins(raw);
-    setCache(key, coins);
+    const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+    setCache("currencies", coins);
     res.json(coins);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
@@ -134,75 +92,33 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   }
 });
 
-// ── GET /api/letsexchange/pairs/:from ─────────────────────────────────────────
-// Returns coins you can swap TO from the given coin ticker.
-router.get("/letsexchange/pairs/:from", async (req, res) => {
-  const from = req.params.from?.toUpperCase();
-  if (!from) { res.status(400).json({ error: "from is required" }); return; }
-
-  const key = `pairs:${from}`;
-  const hit = cached(key);
-  if (hit) { res.json(hit); return; }
-
-  try {
-    const { ok, data, status } = await leRequest(`/coins-to?symbol=${encodeURIComponent(from)}`);
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    setCache(key, data);
-    res.json(data);
-  } catch (err: any) {
-    logger.error({ err }, "letsexchange /pairs failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
-  }
-});
-
-// ── GET /api/letsexchange/min/:from/:to ──────────────────────────────────────
-// Returns minimum exchange amount for a pair.
-router.get("/letsexchange/min/:from/:to", async (req, res) => {
-  const from = req.params.from?.toUpperCase();
-  const to   = req.params.to?.toUpperCase();
-  if (!from || !to) { res.status(400).json({ error: "from and to are required" }); return; }
-
-  const key = `min:${from}:${to}`;
-  const hit = cached(key);
-  if (hit) { res.json(hit); return; }
-
-  try {
-    const { ok, data, status } = await leRequest(
-      `/min-amount?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-    );
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    setCache(key, data);
-    res.json(data);
-  } catch (err: any) {
-    logger.error({ err }, "letsexchange /min failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
-  }
-});
-
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
-// Body: { from, to, amount }
-// Returns estimated output amount.
+// Body: { coin_from, coin_to, deposit_amount, network_from?, network_to? }
 router.post("/letsexchange/estimate", async (req, res) => {
-  const { from, to, amount } = req.body ?? {};
-  if (!from || !to || !amount) {
-    res.status(400).json({ error: "from, to, and amount are required" });
-    return;
+  const { coin_from, coin_to, deposit_amount, network_from, network_to } = req.body ?? {};
+  if (!coin_from || !coin_to || !deposit_amount) {
+    res.status(400).json({ error: "coin_from, coin_to, and deposit_amount are required" }); return;
   }
-
-  const fromUpper = String(from).toUpperCase();
-  const toUpper   = String(to).toUpperCase();
-  const amt       = parseFloat(amount);
+  const amt = parseFloat(String(deposit_amount));
   if (!isFinite(amt) || amt <= 0) {
-    res.status(400).json({ error: "amount must be a positive number" });
-    return;
+    res.status(400).json({ error: "deposit_amount must be a positive number" }); return;
   }
-
   try {
-    const { ok, data, status } = await leRequest("/estimate", "POST", {
-      from: fromUpper,
-      to:   toUpper,
-      amount: String(amt),
-    });
+    const body: Record<string,unknown> = {
+      coin_from:      String(coin_from).toUpperCase(),
+      coin_to:        String(coin_to).toUpperCase(),
+      deposit_amount: amt,
+    };
+    if (network_from) body.network_from = String(network_from);
+    if (network_to)   body.network_to   = String(network_to);
+
+    const { ok, data, status } = await leRequest(BASE_V1, "/estimate", "POST", body);
+
+    // Enterprise endpoint not available for standard affiliate keys → 404
+    if (status === 404) {
+      res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required for live rates. Contact LetsExchange to upgrade your key." });
+      return;
+    }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
   } catch (err: any) {
@@ -212,34 +128,34 @@ router.post("/letsexchange/estimate", async (req, res) => {
 });
 
 // ── POST /api/letsexchange/exchange ──────────────────────────────────────────
-// Body: { from, to, amount, address, refundAddress? }
-// Creates a real exchange order. Returns { id, payinAddress, payinAmount, ... }
+// Body: { coin_from, coin_to, deposit_amount, withdrawal_address, withdrawal_extra_id?, refund_address?, network_from?, network_to? }
 router.post("/letsexchange/exchange", async (req, res) => {
-  const { from, to, amount, address, refundAddress, extraId } = req.body ?? {};
-  if (!from || !to || !amount || !address) {
-    res.status(400).json({ error: "from, to, amount, and address are required" });
-    return;
+  const { coin_from, coin_to, deposit_amount, withdrawal_address, withdrawal_extra_id, refund_address, network_from, network_to } = req.body ?? {};
+  if (!coin_from || !coin_to || !deposit_amount || !withdrawal_address) {
+    res.status(400).json({ error: "coin_from, coin_to, deposit_amount, and withdrawal_address are required" }); return;
   }
-
-  const fromUpper = String(from).toUpperCase();
-  const toUpper   = String(to).toUpperCase();
-  const amt       = parseFloat(amount);
+  const amt = parseFloat(String(deposit_amount));
   if (!isFinite(amt) || amt <= 0) {
-    res.status(400).json({ error: "amount must be a positive number" });
-    return;
+    res.status(400).json({ error: "deposit_amount must be a positive number" }); return;
   }
-
   try {
-    const body: Record<string, string> = {
-      from:    fromUpper,
-      to:      toUpper,
-      amount:  String(amt),
-      address: String(address),
+    const body: Record<string,unknown> = {
+      coin_from:           String(coin_from).toUpperCase(),
+      coin_to:             String(coin_to).toUpperCase(),
+      deposit_amount:      amt,
+      withdrawal_address:  String(withdrawal_address),
     };
-    if (refundAddress) body.refundAddress = String(refundAddress);
-    if (extraId)       body.extraId       = String(extraId);
+    if (withdrawal_extra_id) body.withdrawal_extra_id = String(withdrawal_extra_id);
+    if (refund_address)      body.refund_address      = String(refund_address);
+    if (network_from)        body.network_from        = String(network_from);
+    if (network_to)          body.network_to          = String(network_to);
 
-    const { ok, data, status } = await leRequest("/exchange", "POST", body);
+    const { ok, data, status } = await leRequest(BASE_V1, "/create", "POST", body);
+
+    if (status === 404) {
+      res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required to create exchanges." });
+      return;
+    }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
   } catch (err: any) {
@@ -249,12 +165,19 @@ router.post("/letsexchange/exchange", async (req, res) => {
 });
 
 // ── GET /api/letsexchange/status/:id ─────────────────────────────────────────
-// Check the status of an existing order.
 router.get("/letsexchange/status/:id", async (req, res) => {
-  const id = req.params.id;
+  const { id } = req.params;
   if (!id) { res.status(400).json({ error: "id is required" }); return; }
   try {
-    const { ok, data, status } = await leRequest(`/exchange/${encodeURIComponent(id)}`);
+    const { ok, data, status } = await leRequest(BASE_V1, `/transaction/${encodeURIComponent(id)}`);
+    if (status === 404) {
+      // Could be "not found" OR "enterprise required" — try to distinguish by shape
+      const d = data as Record<string,unknown>|null;
+      if (!d || typeof d !== "object" || (!("id" in d) && !("status" in d))) {
+        res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required to check transaction status." });
+        return;
+      }
+    }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
   } catch (err: any) {
