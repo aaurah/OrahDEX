@@ -13,6 +13,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { useLocation } from "wouter";
+import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 
 const API = "/api";
 
@@ -1263,30 +1264,52 @@ function NftChatPanel() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const actor = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
+  const CHANNEL = "nft";
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [online, setOnline] = useState(false);
+  const [cryptoReady, setCryptoReady] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
 
   useEffect(() => {
-    const src = new EventSource(`${API}/chat/channels/nft/stream`);
+    deriveChannelKey(CHANNEL).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
+  }, []);
+
+  async function decryptBatch(msgs: ChatMsg[]) {
+    if (!cryptoKeyRef.current) return;
+    const entries = await Promise.all(
+      msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
+    );
+    setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+  }
+
+  useEffect(() => {
+    if (!cryptoReady) return;
+    const src = new EventSource(`${API}/chat/channels/${CHANNEL}/stream`);
     src.onopen = () => setOnline(true);
     src.onerror = () => setOnline(false);
     src.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         if (data.type === "backfill") {
-          setMessages(data.messages ?? []);
+          const msgs: ChatMsg[] = data.messages ?? [];
+          setMessages(msgs);
+          decryptBatch(msgs);
         } else if (data.id) {
           setMessages(prev => prev.find(m => m.id === data.id) ? prev : [...prev, data]);
+          decryptMessage(cryptoKeyRef.current!, data.text).then(plain =>
+            setDecrypted(prev => ({ ...prev, [data.id]: plain }))
+          );
         }
       } catch {}
     };
     return () => src.close();
-  }, []);
+  }, [cryptoReady]);
 
   useEffect(() => {
     if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1294,16 +1317,17 @@ function NftChatPanel() {
 
   async function sendMsg() {
     const txt = input.trim();
-    if (!txt || sending) return;
+    if (!txt || sending || !cryptoKeyRef.current) return;
     setInput("");
     setSending(true);
     setError("");
     try {
       const displayName = actor ? `${actor.slice(0, 6)}…${actor.slice(-4)}` : "anon";
-      const res = await fetch(`${API}/chat/channels/nft/messages`, {
+      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
+      const res = await fetch(`${API}/chat/channels/${CHANNEL}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: txt, wallet: actor ?? "anonymous", displayName, role: "trader" }),
+        body: JSON.stringify({ text: encrypted, wallet: actor ?? "anonymous", displayName, role: "trader" }),
       });
       const d = await res.json();
       if (!res.ok) setError(d.error ?? "Failed to send");
@@ -1328,6 +1352,7 @@ function NftChatPanel() {
             <MessagesSquare size={16} className="text-primary" />
             <span className="font-bold text-sm text-foreground">NFT Community Chat</span>
             <span className="text-[10px] text-muted-foreground">(real-time · all users)</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono bg-primary/10 text-primary">🔒 E2E encrypted</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "hsl(var(--primary))" : "#555", boxShadow: online ? "0 0 5px hsl(var(--primary))" : "none" }} />
@@ -1347,14 +1372,20 @@ function NftChatPanel() {
               </p>
             </div>
           )}
+          {!cryptoReady && (
+            <div className="flex justify-center py-4">
+              <span className="text-xs text-muted-foreground">🔒 Initialising encryption…</span>
+            </div>
+          )}
           {messages.map(msg => {
             const isMe = actor && msg.wallet === actor;
             const isSystem = msg.role === "system" || msg.role === "ora";
             const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            const plainText = decrypted[msg.id] ?? msg.text;
             if (isSystem) {
               return (
                 <div key={msg.id} className="flex justify-center">
-                  <div className="text-[10px] px-3 py-1 rounded-full bg-primary/10 text-primary/80">{msg.text}</div>
+                  <div className="text-[10px] px-3 py-1 rounded-full bg-primary/10 text-primary/80">{plainText}</div>
                 </div>
               );
             }
@@ -1369,7 +1400,7 @@ function NftChatPanel() {
                     <span className="text-[9px] text-muted-foreground">{time}</span>
                   </div>
                   <div className={`px-3 py-2 rounded-2xl text-sm break-words ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                    {msg.text}
+                    {plainText}
                     {msg.txid && <div className="mt-0.5 text-[9px] font-mono opacity-60 truncate max-w-[200px]">txid: {msg.txid.slice(0, 14)}…</div>}
                   </div>
                 </div>

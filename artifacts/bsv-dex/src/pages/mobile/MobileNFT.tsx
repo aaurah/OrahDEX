@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -14,6 +14,7 @@ import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
 import { disconnectReown } from "@/lib/reown";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
+import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 
 const API = "/api";
 
@@ -1981,16 +1982,32 @@ function NftChatTab() {
   const actor = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [online, setOnline] = useState(false);
+  const [cryptoReady, setCryptoReady] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
 
   const CHANNEL = "nft";
 
   useEffect(() => {
+    deriveChannelKey(CHANNEL).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
+  }, []);
+
+  async function decryptBatch(msgs: ChatMsg[]) {
+    if (!cryptoKeyRef.current) return;
+    const entries = await Promise.all(
+      msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
+    );
+    setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+  }
+
+  useEffect(() => {
+    if (!cryptoReady) return;
     const src = new EventSource(`${API}/chat/channels/${CHANNEL}/stream`);
     src.onopen = () => setOnline(true);
     src.onerror = () => setOnline(false);
@@ -1998,17 +2015,22 @@ function NftChatTab() {
       try {
         const data = JSON.parse(e.data);
         if (data.type === "backfill") {
-          setMessages(data.messages ?? []);
+          const msgs: ChatMsg[] = data.messages ?? [];
+          setMessages(msgs);
+          decryptBatch(msgs);
         } else if (data.id) {
           setMessages(prev => {
             if (prev.find(m => m.id === data.id)) return prev;
             return [...prev, data];
           });
+          decryptMessage(cryptoKeyRef.current!, data.text).then(plain =>
+            setDecrypted(prev => ({ ...prev, [data.id]: plain }))
+          );
         }
       } catch {}
     };
     return () => src.close();
-  }, []);
+  }, [cryptoReady]);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -2018,16 +2040,17 @@ function NftChatTab() {
 
   async function sendMsg() {
     const txt = input.trim();
-    if (!txt || sending) return;
+    if (!txt || sending || !cryptoKeyRef.current) return;
     setInput("");
     setSending(true);
     setError("");
     try {
       const displayName = actor ? `${actor.slice(0, 6)}…${actor.slice(-4)}` : "anon";
+      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
       const res = await fetch(`${API}/chat/channels/${CHANNEL}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: txt, wallet: actor ?? "anonymous", displayName, role: "trader" }),
+        body: JSON.stringify({ text: encrypted, wallet: actor ?? "anonymous", displayName, role: "trader" }),
       });
       const d = await res.json();
       if (!res.ok) setError(d.error ?? "Failed to send");
@@ -2055,6 +2078,7 @@ function NftChatTab() {
         <div className="flex items-center gap-2">
           <MessagesSquare size={16} style={{ color: "var(--color-accent)" }} />
           <span className="font-bold text-sm" style={{ color: "var(--color-text)" }}>NFT Community Chat</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>🔒 E2E</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "var(--color-accent)" : "#666", boxShadow: online ? "0 0 6px var(--color-accent)" : "none" }} />
@@ -2075,14 +2099,20 @@ function NftChatTab() {
             </p>
           </div>
         )}
+        {!cryptoReady && (
+          <div className="flex justify-center py-4">
+            <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>🔒 Initialising encryption…</span>
+          </div>
+        )}
         {messages.map(msg => {
           const isMe = actor && msg.wallet === actor;
           const isSystem = msg.role === "system" || msg.role === "ora";
+          const plainText = decrypted[msg.id] ?? msg.text;
           if (isSystem) {
             return (
               <div key={msg.id} className="flex justify-center">
                 <div className="text-[10px] px-3 py-1 rounded-full" style={{ background: "rgba(123,104,238,0.12)", color: "#7b68ee" }}>
-                  {msg.text}
+                  {plainText}
                 </div>
               </div>
             );
@@ -2109,7 +2139,7 @@ function NftChatTab() {
                     borderBottomRightRadius: isMe ? 4 : undefined,
                     borderBottomLeftRadius: !isMe ? 4 : undefined,
                   }}>
-                  {msg.text}
+                  {plainText}
                   {msg.txid && (
                     <div className="mt-1 text-[9px] font-mono opacity-70 truncate"
                       style={{ maxWidth: 180, color: isMe ? "#000" : "var(--color-accent)" }}>
