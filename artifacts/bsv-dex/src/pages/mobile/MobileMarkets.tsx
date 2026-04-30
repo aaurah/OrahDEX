@@ -142,6 +142,7 @@ function getCatRows(
   favorites: Set<string>,
   lePairs: MktRow[],      // LetsExchange BSV-quoted pairs
   leBtcPairs: MktRow[],   // LetsExchange BTC-quoted pairs
+  apiRows: MktRow[],      // All live DB pairs (normalised)
 ): MktRow[] {
   const enrich = (mock: any[]): MktRow[] =>
     mock.map(m => {
@@ -151,6 +152,10 @@ function getCatRows(
       const chg = live.chg !== 0 ? live.chg : n.chg;
       return { ...n, price: live.price, chg, vol: live.vol };
     });
+
+  /** All DB pairs for a given quote, priced > 0 */
+  const dbByQuote = (quote: string): MktRow[] =>
+    apiRows.filter(m => m.quote === quote && m.type !== "futures" && m.price > 0);
 
   switch (cat) {
     case "all":       return [
@@ -164,6 +169,9 @@ function getCatRows(
     case "new":       return NEW_MARKETS.map(normalise);
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
     case "btc": {
+      const dbBtc = dbByQuote("BTC");
+      if (dbBtc.length > 0) return dbBtc;
+      // Fallback: static list enriched with live prices + LE extras
       const native = enrich(BTC_MARKETS);
       const seenBtcBases = new Set(native.map(r => r.base));
       const seenBtcSymbols = new Set(native.map(r => r.symbol));
@@ -172,8 +180,8 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extraBtc];
     }
-    case "eth":       return enrich(ETH_MARKETS);
-    case "bnb":       return enrich(BNB_MARKETS);
+    case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
+    case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
     case "matic":     return enrich(MATIC_MARKETS);
     case "avax":      return enrich(AVAX_MARKETS);
     case "arb":       return enrich(ARB_MARKETS);
@@ -304,20 +312,23 @@ export function MobileMarkets() {
     })),
   [rawLeBtcPairs]);
 
+  const apiRows = useMemo<MktRow[]>(
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+    [apiData]
+  );
+
   const livePrice = useMemo(() => new Map<string, MktRow>(
-    (apiData && Array.isArray(apiData) ? apiData : [])
-      .map(normalise)
-      .map((m: MktRow) => [m.symbol, m])
-  ), [apiData]);
+    apiRows.map((m: MktRow) => [m.symbol, m])
+  ), [apiRows]);
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
-      ...(Array.isArray(apiData) ? apiData : []).map(normalise),
-      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, lePairs, leBtcPairs)),
+      ...apiRows,
+      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, lePairs, leBtcPairs, apiRows)),
     ].map((m: MktRow) => [m.symbol, m])
-  ).values()), [apiData, usdSub, livePrice, favorites, lePairs, leBtcPairs]);
+  ).values()), [apiRows, usdSub, livePrice, favorites, lePairs, leBtcPairs]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites, lePairs, leBtcPairs);
+  let rows = getCatRows(cat, usdSub, livePrice, favorites, lePairs, leBtcPairs, apiRows);
 
   if (search) {
     const q = search.toUpperCase();
