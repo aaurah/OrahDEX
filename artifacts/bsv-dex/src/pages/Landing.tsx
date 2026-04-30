@@ -717,10 +717,12 @@ export function LandingPage() {
       </section>
 
       {/* ── LIVE TICKER STRIP ─────────────────────────────────────────────── */}
-      <TickerStrip markets={markets ?? []} />
+      <div className="relative z-0">
+        <TickerStrip markets={markets ?? []} />
+      </div>
 
       {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
-      <section className="relative px-6 lg:px-10 pb-6 -mt-4">
+      <section className="relative z-10 px-6 lg:px-10 pb-6 -mt-[19px]">
         <div className="max-w-6xl mx-auto">
           <div className="rounded-2xl border border-border/60 overflow-hidden"
             style={{ background: "radial-gradient(circle at top left, rgba(24,27,43,0.9) 0%, rgba(5,6,10,0.95) 60%)" }}>
