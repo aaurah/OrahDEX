@@ -1,7 +1,7 @@
 import { useParams, Link } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets, useCancelOrder } from "@workspace/api-client-react";
 import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
@@ -9,6 +9,8 @@ import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
+import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
+import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -137,6 +139,9 @@ export function SpotTrading() {
   const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
   const [cancelPairOnly, setCancelPairOnly] = useState(false);
+  // Track whether to highlight the LE panel (set when user clicks LE orderbook rows)
+  const [lePanelKey, setLePanelKey] = useState(0);
+  const lePanelRef = useRef<HTMLDivElement>(null);
   const pairDropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -181,6 +186,26 @@ export function SpotTrading() {
     { query: { enabled: !!altAddress, refetchInterval: 5000 } }
   );
   const { data: apiMarkets } = useGetMarkets();
+
+  // ── LetsExchange integration ──────────────────────────────────────────────
+  const { getCoin: getLECoin, isLECoin, uniqueSymbols: leSymbols } = useLetsExchangeCoins();
+
+  // Get primary LE coin entries for the current pair (null if not supported)
+  const fromLECoin = useMemo(() => getLECoin(base),  [getLECoin, base]);
+  const toLECoin   = useMemo(() => getLECoin(quote), [getLECoin, quote]);
+
+  // Live LE rate for the current pair — null when pair unsupported on LE
+  const { rate: leRateData } = useLetsExchangeRate(
+    fromLECoin ? { symbol: fromLECoin.symbol, network: fromLECoin.network } : null,
+    toLECoin   ? { symbol: toLECoin.symbol,   network: toLECoin.network   } : null,
+  );
+
+  // Callback for OrderBook LE rows — remount LE panel with fresh coin selection
+  const handleLeSwap = useCallback(() => {
+    setLePanelKey(k => k + 1);
+    // Scroll to the LE panel
+    setTimeout(() => lePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  }, []);
 
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
     ?? MOCK_TICKER[rawSymbol]
@@ -263,6 +288,9 @@ export function SpotTrading() {
 
   // Market list for pair selector — base is the full mock catalogue (all chains/quotes)
   // then API data replaces any matching pair with live data.
+  // Then LetsExchange coins are injected as additional tradeable pairs.
+  const LE_QUOTE_TABS: QuoteTab[] = ["USDT", "BTC", "ETH", "BSV", "BNB"];
+
   const allMarkets = useMemo(() => {
     const apiNorm = ((apiMarkets && (apiMarkets as any[]).length > 0) ? (apiMarkets as any[]) : [])
       .map(normalise)
@@ -272,8 +300,31 @@ export function SpotTrading() {
     const deduped = new Map<string, ReturnType<typeof normalise>>();
     mockNorm.forEach(m => { if (!deduped.has(m.symbol)) deduped.set(m.symbol, m); });
     apiNorm.forEach(m => { deduped.set(m.symbol, m); }); // API overrides mock
+
+    // Inject LetsExchange coins as virtual pairs for each supported quote
+    // (skip pairs that already exist natively)
+    leSymbols.forEach(sym => {
+      LE_QUOTE_TABS.forEach(qTab => {
+        if (sym === qTab) return; // skip e.g. USDT/USDT
+        const key = `${sym}/${qTab}`;
+        if (!deduped.has(key)) {
+          deduped.set(key, normalise({
+            symbol:              key,
+            baseAsset:           sym,
+            quoteAsset:          qTab,
+            lastPrice:           0,
+            priceChangePercent24h: 0,
+            volume:              0,
+            type:                "letsexchange",
+            leSource:            true,
+          }));
+        }
+      });
+    });
+
     return Array.from(deduped.values());
-  }, [apiMarkets]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiMarkets, leSymbols]);
 
   const currentMarket = useMemo(
     () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
@@ -390,6 +441,7 @@ export function SpotTrading() {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
+                    const isLEPair = (m as any).leSource === true || (m as any).type === "letsexchange";
                     return (
                       <Link
                         key={m.symbol}
@@ -402,17 +454,22 @@ export function SpotTrading() {
                       >
                         <CoinLogo symbol={m.baseAsset} size={24} />
                         <div className="flex-1 min-w-0">
-                          <span className="text-xs font-semibold text-foreground">{m.baseAsset}</span>
-                          <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-semibold text-foreground">{m.baseAsset}</span>
+                            <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
+                            {isLEPair && (
+                              <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold leading-none">⚡LE</span>
+                            )}
+                          </div>
                         </div>
                         <span className="w-20 text-right text-[11px] font-mono text-foreground tabular-nums">
-                          {formatPrice(m.lastPrice)}
+                          {isLEPair && m.lastPrice === 0 ? "—" : formatPrice(m.lastPrice)}
                         </span>
                         <span className={cn(
                           "w-14 text-right text-[10px] font-bold tabular-nums",
                           isUp ? "text-buy" : "text-sell"
                         )}>
-                          {isUp ? "+" : ""}{m.priceChangePercent24h.toFixed(2)}%
+                          {isLEPair && m.priceChangePercent24h === 0 ? "—" : `${isUp ? "+" : ""}${m.priceChangePercent24h.toFixed(2)}%`}
                         </span>
                       </Link>
                     );
@@ -830,17 +887,43 @@ export function SpotTrading() {
             onFill={handleOrderBookFill}
             symbol={symbol}
             trades={trades as any}
+            leRate={leRateData ? {
+              rate:      leRateData.rate,
+              minAmount: leRateData.minAmount,
+              maxAmount: leRateData.maxAmount,
+            } : null}
+            hasInternalLiquidity={hasRealOB}
+            onLeSwap={handleLeSwap}
           />
         </div>
 
         {/* FAR-RIGHT: Order Form + AI Analysis + LetsExchange */}
         <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
           <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+          {/* Show LE fallback banner when no internal orderbook liquidity */}
+          {!hasRealOB && leRateData && (
+            <div
+              className="mx-2 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/25 cursor-pointer hover:bg-yellow-500/15 transition-colors"
+              onClick={handleLeSwap}
+            >
+              <Zap className="w-4 h-4 text-yellow-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-yellow-400 leading-tight">No internal liquidity</p>
+                <p className="text-[9px] text-yellow-400/70 leading-tight">
+                  Rate: 1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote} via LetsExchange
+                </p>
+              </div>
+            </div>
+          )}
           <div className="p-2 border-t border-border">
             <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
           </div>
-          <div className="p-2 border-t border-border">
-            <LetsExchangePanel />
+          <div ref={lePanelRef} className="p-2 border-t border-border">
+            <LetsExchangePanel
+              key={lePanelKey}
+              initialFrom={base}
+              initialTo={quote}
+            />
           </div>
         </div>
 
