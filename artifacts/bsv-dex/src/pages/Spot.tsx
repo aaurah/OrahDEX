@@ -451,6 +451,20 @@ export function SpotTrading() {
                   ))}
                 </div>
               )}
+              {/* BTC Swap Hub banner */}
+              {!dropSearch.trim() && dropQuote === "BTC" && (() => {
+                const leBtcCount = dropFiltered.filter(m => (m as any).leSource === true || (m as any).type === "letsexchange").length;
+                return leBtcCount > 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-orange-500/8 border-b border-orange-500/20 shrink-0">
+                    <ArrowLeftRight className="w-3 h-3 text-orange-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] font-bold text-orange-400">BTC Swap Hub</span>
+                      <span className="text-[9px] text-orange-400/70 ml-1">— {leBtcCount} coins via LetsExchange</span>
+                    </div>
+                    <span className="text-[8px] text-orange-400/50 shrink-0">⚡ auto-routed</span>
+                  </div>
+                ) : null;
+              })()}
               {/* Column headers */}
               <div className="flex items-center px-3 py-1 text-[9px] font-medium text-muted-foreground border-b border-border/50 shrink-0">
                 <span className="flex-1">Pair</span>
