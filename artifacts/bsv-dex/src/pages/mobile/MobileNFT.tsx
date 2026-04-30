@@ -1671,7 +1671,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
                     {/* Price input */}
                     <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-2" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${isBelowFloor ? "rgba(255,60,60,0.4)" : "var(--color-border)"}` }}>
-                      <input type="number" min={0} step={sliderStep} placeholder={safePrice(floorPrice)}
+                      <input type="number" min={0} step="any" placeholder={safePrice(floorPrice)}
                         className="flex-1 bg-transparent text-xl font-black outline-none"
                         style={{ color: "var(--color-text)" }}
                         value={listPrice} onChange={e => setListPrice(e.target.value)} />
