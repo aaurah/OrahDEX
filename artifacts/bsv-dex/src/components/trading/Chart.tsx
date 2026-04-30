@@ -223,8 +223,8 @@ function fmtPrice(v: number, price: number): string {
 /* ══════════════════════════════════════════════════════════════════════════
    ORAHCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar }: {
-  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean;
+function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar, data: fallbackData }: {
+  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean; data?: Candle[];
 }) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -322,6 +322,13 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     timerRef.current = setInterval(() => { fetchCandles(); fetchTicker(); }, 30_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchCandles, fetchTicker]);
+
+  /* When the API fetch completes with no data, fall back to the provided candles */
+  useEffect(() => {
+    if (!loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
+      setCandles(fallbackData);
+    }
+  }, [loading, candles.length, fallbackData]);
 
   /* Keep candlesRef always current so crosshair callback is never stale */
   useEffect(() => { candlesRef.current = candles; }, [candles]);
@@ -938,6 +945,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 /* ══════════════════════════════════════════════════════════════════════════
    EXPORT
 ══════════════════════════════════════════════════════════════════════════ */
-export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar }: ChartProps) {
-  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} />;
+export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar, data }: ChartProps) {
+  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} data={data} />;
 }

@@ -80,6 +80,68 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+/* ─── AUTH ENDPOINT RATE LIMITER ─────────────────────────────────────────── */
+// Protects POST /auth, POST /auth/totp, and POST /auth/wallet from brute-force
+// attacks. Up to AUTH_MAX_FAILURES failures per AUTH_WINDOW_MS per IP are
+// allowed; exceeding that blocks the IP for AUTH_COOLDOWN_MS.
+
+const AUTH_MAX_FAILURES  = 5;
+const AUTH_WINDOW_MS     = 60 * 1_000;       // 1-minute sliding window
+const AUTH_COOLDOWN_MS   = 15 * 60 * 1_000;  // 15-minute block on excessive failures
+
+interface AuthBucket { count: number; windowStart: number; blockedUntil: number; }
+const authBuckets = new Map<string, AuthBucket>();
+
+setInterval(() => {
+  const now = Date.now();
+  // Remove buckets that are neither currently blocked nor within an active window
+  for (const [k, v] of authBuckets.entries()) {
+    if (v.blockedUntil < now && v.windowStart + AUTH_WINDOW_MS < now) authBuckets.delete(k);
+  }
+}, 5 * 60 * 1_000);
+
+function getClientIp(req: import("express").Request): string {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) return (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]).trim();
+  return req.socket?.remoteAddress ?? "unknown";
+}
+
+/** Returns true if the request should proceed; sends 429 and returns false if blocked. */
+function checkAuthRateLimit(req: import("express").Request, res: import("express").Response): boolean {
+  const ip  = getClientIp(req);
+  const now = Date.now();
+  let   bkt = authBuckets.get(ip);
+
+  if (bkt?.blockedUntil && bkt.blockedUntil > now) {
+    const secs = Math.ceil((bkt.blockedUntil - now) / 1000);
+    res.status(429).json({ error: `Too many failed attempts. Try again in ${secs} seconds.` });
+    return false;
+  }
+
+  // Reset window if expired
+  if (!bkt || now - bkt.windowStart > AUTH_WINDOW_MS) {
+    bkt = { count: 0, windowStart: now, blockedUntil: 0 };
+    authBuckets.set(ip, bkt);
+  }
+  return true;
+}
+
+/** Call on every failed auth attempt (wrong password, wrong TOTP, bad sig). */
+function recordAuthFailure(req: import("express").Request): void {
+  const ip  = getClientIp(req);
+  const now = Date.now();
+  let   bkt = authBuckets.get(ip) ?? { count: 0, windowStart: now, blockedUntil: 0 };
+
+  if (now - bkt.windowStart > AUTH_WINDOW_MS) {
+    bkt = { count: 0, windowStart: now, blockedUntil: 0 };
+  }
+  bkt.count++;
+  if (bkt.count >= AUTH_MAX_FAILURES) {
+    bkt.blockedUntil = now + AUTH_COOLDOWN_MS;
+  }
+  authBuckets.set(ip, bkt);
+}
+
 /* ─── SERVER-SIDE TOTP (RFC 6238) ─────────────────────────────────────────── */
 function base32Decode(input: string): Buffer {
   const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -125,6 +187,8 @@ async function verifyTOTPServer(code: string, secret: string): Promise<boolean> 
  * Credentials are NEVER stored in source code.
  */
 router.post("/auth", (req, res) => {
+  if (!checkAuthRateLimit(req, res)) return;
+
   const { email, password } = req.body as { email?: string; password?: string };
   const validEmail    = process.env.ADMIN_EMAIL;
   const validPassword = process.env.ADMIN_PASSWORD;
@@ -138,6 +202,7 @@ router.post("/auth", (req, res) => {
     email.trim().toLowerCase() !== validEmail.trim().toLowerCase() ||
     password !== validPassword
   ) {
+    recordAuthFailure(req);
     res.status(401).json({ error: "Invalid email or password." });
     return;
   }
@@ -150,6 +215,8 @@ router.post("/auth", (req, res) => {
  * Validates a 6-digit TOTP code against ADMIN_TOTP_SECRET env secret.
  */
 router.post("/auth/totp", async (req, res) => {
+  if (!checkAuthRateLimit(req, res)) return;
+
   const { code } = req.body as { code?: string };
   if (!code || code.length !== 6) {
     res.status(400).json({ error: "A 6-digit code is required." });
@@ -165,6 +232,7 @@ router.post("/auth/totp", async (req, res) => {
     const token = generateAdminToken();
     res.json({ success: true, token });
   } else {
+    recordAuthFailure(req);
     res.status(401).json({ error: "Incorrect code. Try again." });
   }
 });
@@ -208,6 +276,8 @@ router.post("/auth/wallet-challenge", (req, res) => {
  * Verifies a signed message, checks the address is on the whitelist, and grants admin access.
  */
 router.post("/auth/wallet", async (req, res) => {
+  if (!checkAuthRateLimit(req, res)) return;
+
   const { address, signature } = req.body as { address?: string; signature?: string };
   if (!address || !signature) {
     res.status(400).json({ error: "address and signature are required" });
@@ -215,6 +285,7 @@ router.post("/auth/wallet", async (req, res) => {
   }
   const stored = pendingNonces.get(address.toLowerCase());
   if (!stored || stored.expiresAt < Date.now()) {
+    recordAuthFailure(req);
     res.status(401).json({ error: "Challenge expired or not found. Request a new one." });
     return;
   }
@@ -224,10 +295,12 @@ router.post("/auth/wallet", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[wallet-auth] recoverEthAddress threw:", msg);
+    recordAuthFailure(req);
     res.status(401).json({ error: `Invalid signature format: ${msg}` });
     return;
   }
   if (recovered.toLowerCase() !== address.toLowerCase()) {
+    recordAuthFailure(req);
     res.status(401).json({ error: "Signature does not match address" });
     return;
   }
@@ -235,6 +308,7 @@ router.post("/auth/wallet", async (req, res) => {
     .where(eq(platformSettingsTable.key, "admin_wallet_whitelist"));
   const whitelist: string[] = rows.length ? JSON.parse(rows[0].value) : [];
   if (!whitelist.includes(address.toLowerCase())) {
+    recordAuthFailure(req);
     res.status(403).json({ error: "Address not in admin whitelist. Contact your administrator." });
     return;
   }
@@ -279,15 +353,15 @@ router.put("/wallet-whitelist", async (req, res) => {
 router.get("/security-vault", async (_req, res) => {
   try {
     const wallet = await getOrCreateWallet();
+    // Only public metadata is returned. Raw private keys (wif, privKeyHex)
+    // and the TOTP secret are never exposed via the API — obtain them directly
+    // from the database or environment if emergency recovery is needed.
     res.json({
       bsvWallet: {
-        address:    wallet.address,
-        wif:        wallet.wif,
-        privKeyHex: wallet.privKeyHex,
-        pubKeyHex:  wallet.pubKeyHex,
+        address:   wallet.address,
+        pubKeyHex: wallet.pubKeyHex,
       },
-      adminEmail:  process.env.ADMIN_EMAIL  ?? null,
-      totpSecret:  process.env.ADMIN_TOTP_SECRET ?? null,
+      adminEmail: process.env.ADMIN_EMAIL ?? null,
     });
   } catch { res.status(500).json({ error: "Failed to load security vault" }); }
 });

@@ -14,6 +14,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
+import { useWalletPrices } from "@/hooks/useWalletPrices";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
@@ -185,6 +186,26 @@ export function SpotTrading() {
     ?? generateTickerForSymbol(base, quote);
   const isPositive = ticker.priceChangePercent >= 0;
 
+  /* ── Cross-rate: USD equivalent of the quoted price ── */
+  const { prices: crossRates } = useWalletPrices();
+  const STABLES = new Set(["USDT", "USDC", "TUSD", "USDD", "FDUSD", "BUSD", "DAI"]);
+  const QUOTE_TO_USD: Record<string, number> = {
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1, DAI: 1,
+    BTC:  crossRates.BTC?.usd  || 83000,
+    ETH:  crossRates.ETH?.usd  || 1800,
+    BSV:  crossRates.BSV?.usd  || 14,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51, CRO: 0.085, TRX: 0.24,
+  };
+  const isStableQuote  = STABLES.has(quote);
+  const quoteMultiplier = QUOTE_TO_USD[quote] ?? 1;
+  const priceInUsd     = ticker.lastPrice * quoteMultiplier;
+  /* For stablecoin pairs the price IS the USD price, so just show $price.
+     For cross-rate pairs show the approximate USD equivalent. */
+  const usdEquivalent  = isStableQuote
+    ? `$${formatPrice(ticker.lastPrice)}`
+    : `≈$${formatPrice(priceInUsd)}`;
+
   /* ── SEO + live browser-tab title (price in title so it updates as price changes) ── */
   const seoJsonLd = useMemo(() => ({
     "@context": "https://schema.org",
@@ -203,8 +224,8 @@ export function SpotTrading() {
     jsonLd: seoJsonLd,
   });
 
-  const candles    = apiCandles || generateMockCandles(ticker.lastPrice);
-  const trades     = Array.isArray(apiTrades) ? apiTrades : generateMockTrades(ticker.lastPrice);
+  const candles    = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
+  const trades     = (Array.isArray(apiTrades) && apiTrades.length > 0) ? apiTrades : generateMockTrades(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -212,9 +233,10 @@ export function SpotTrading() {
     return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
   }
   const rawOB = apiOrderBook as any;
-  const orderBook = (rawOB?.bids && Array.isArray(rawOB.bids[0])
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const orderBook = (hasRealOB && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
-    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
+    : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
 
   const cancelOrder = useCancelOrder({
     mutation: {
@@ -404,7 +426,7 @@ export function SpotTrading() {
           <span className={cn("text-lg font-mono font-bold leading-none", isPositive ? "text-buy" : "text-sell")}>
             {formatPrice(ticker.lastPrice)}
           </span>
-          <span className="text-xs text-foreground font-mono mt-1">${formatPrice(ticker.lastPrice)}</span>
+          <span className="text-xs text-muted-foreground font-mono mt-1">{usdEquivalent}</span>
         </div>
 
         <div className="hidden sm:flex flex-col">
@@ -450,6 +472,7 @@ export function SpotTrading() {
               symbol={symbol}
               interval={candleInterval}
               onIntervalChange={setCandleInterval}
+              data={candles}
             />
           </div>
           <div className="h-[220px] shrink-0 bg-card flex flex-col border-t border-border">
