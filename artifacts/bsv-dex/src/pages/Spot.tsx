@@ -459,9 +459,23 @@ export function SpotTrading() {
                     <ArrowLeftRight className="w-3 h-3 text-orange-400 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] font-bold text-orange-400">BTC Swap Hub</span>
-                      <span className="text-[9px] text-orange-400/70 ml-1">— {leBtcCount} coins via LetsExchange</span>
+                      <span className="text-[9px] text-orange-400/70 ml-1">— {leBtcCount} coins available</span>
                     </div>
                     <span className="text-[8px] text-orange-400/50 shrink-0">⚡ auto-routed</span>
+                  </div>
+                ) : null;
+              })()}
+              {/* BSV Swap Hub banner */}
+              {!dropSearch.trim() && dropQuote === "BSV" && (() => {
+                const leBsvCount = dropFiltered.filter(m => (m as any).leSource === true || (m as any).type === "letsexchange").length;
+                return leBsvCount > 0 ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/8 border-b border-yellow-500/20 shrink-0">
+                    <ArrowLeftRight className="w-3 h-3 text-yellow-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] font-bold text-yellow-400">⚡ BSV Swap Hub</span>
+                      <span className="text-[9px] text-yellow-400/70 ml-1">— {leBsvCount} coins available</span>
+                    </div>
+                    <span className="text-[8px] text-yellow-400/50 shrink-0">auto-routed</span>
                   </div>
                 ) : null;
               })()}
@@ -497,7 +511,7 @@ export function SpotTrading() {
                             <span className="text-xs font-semibold text-foreground">{m.baseAsset}</span>
                             <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
                             {isLEPair && (
-                              <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold leading-none">⚡LE</span>
+                              <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold leading-none">⚡ SWAP</span>
                             )}
                           </div>
                         </div>
