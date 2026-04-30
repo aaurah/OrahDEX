@@ -10,6 +10,9 @@ import {
   MNT_MARKETS, ZK_MARKETS, SCR_MARKETS, LINEA_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
+  BASE_MARKETS, ZORA_MARKETS, GAMING_MARKETS, COSMOS_MARKETS,
+  L1_MARKETS, L2_MARKETS, RWA_MARKETS, EXCHANGE_MARKETS,
+  DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn, marketMatchesQuery } from "@/lib/utils";
@@ -46,7 +49,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "zora" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
@@ -54,6 +57,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "usd",       label: "USD"       },
   { id: "new",       label: "NEW"       },
   { id: "btc",       label: "BTC"       },
+  { id: "bsv",       label: "BSV"       },
   { id: "eth",       label: "ETH"       },
   { id: "bnb",       label: "BNB"       },
   { id: "matic",     label: "MATIC"     },
@@ -62,16 +66,27 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP"        },
   { id: "ftm",       label: "FTM"       },
   { id: "cro",       label: "CRO"       },
-  { id: "bch",       label: "BCH"       },
-  { id: "bsv",       label: "BSV"       },
-  { id: "ai",        label: "AI"        },
-  { id: "sol",       label: "SOL"       },
-  { id: "meme",      label: "MEME"      },
-  { id: "defi",      label: "DEFI"      },
+  { id: "base",      label: "⬡ Base"    },
+  { id: "zora",      label: "ZORA"      },
   { id: "mnt",       label: "MNT"       },
   { id: "zk",        label: "ZK"        },
   { id: "scr",       label: "SCROLL"    },
   { id: "linea",     label: "LINEA"     },
+  { id: "bch",       label: "BCH"       },
+  { id: "sol",       label: "SOL"       },
+  { id: "ai",        label: "AI"        },
+  { id: "depin",     label: "DePIN"     },
+  { id: "meme",      label: "MEME"      },
+  { id: "defi",      label: "DEFI"      },
+  { id: "uniswap",   label: "UNISWAP"   },
+  { id: "pancake",   label: "PANCAKE"   },
+  { id: "gaming",    label: "GAMING"    },
+  { id: "cosmos",    label: "COSMOS"    },
+  { id: "l1",        label: "LAYER 1"   },
+  { id: "l2",        label: "LAYER 2"   },
+  { id: "rwa",       label: "RWA"       },
+  { id: "exchange",  label: "EXCHANGE"  },
+  { id: "brc20",     label: "BRC-20"    },
   { id: "futures",   label: "Futures"   },
 ];
 
@@ -80,8 +95,12 @@ const ALL_POOL = [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...BASE_MARKETS, ...ZORA_MARKETS,
   ...MNT_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
+  ...AI_MARKETS, ...DEPIN_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
 ];
 
@@ -99,42 +118,54 @@ const ALL_POOL_DEDUPED = dedupePool(ALL_POOL);
 
 // Maps each OrahDEX chain category to keywords found in LE network names.
 const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
-  btc:   ["bitcoin", "btc"],
-  eth:   ["ethereum", "eth", "erc20"],
-  bnb:   ["bsc", "binance", "bnb", "bep20", "bep2"],
-  matic: ["polygon", "matic"],
-  avax:  ["avalanche", "avax"],
-  arb:   ["arbitrum"],
-  op:    ["optimism"],
-  ftm:   ["fantom", "ftm"],
-  cro:   ["cronos", "cro"],
-  bch:   ["bitcoin-cash", "bch", "bitcoincash"],
-  bsv:   ["bsv", "bitcoin-sv", "bitcoinsv"],
-  sol:   ["solana", "sol"],
-  mnt:   ["mantle", "mnt"],
-  zk:    ["zksync"],
-  scr:   ["scroll"],
-  linea: ["linea"],
+  btc:     ["bitcoin", "btc"],
+  eth:     ["ethereum", "eth", "erc20"],
+  bnb:     ["bsc", "binance", "bnb", "bep20", "bep2"],
+  matic:   ["polygon", "matic"],
+  avax:    ["avalanche", "avax"],
+  arb:     ["arbitrum"],
+  op:      ["optimism"],
+  ftm:     ["fantom", "ftm"],
+  cro:     ["cronos", "cro"],
+  bch:     ["bitcoin-cash", "bch", "bitcoincash"],
+  bsv:     ["bsv", "bitcoin-sv", "bitcoinsv"],
+  sol:     ["solana", "sol"],
+  mnt:     ["mantle", "mnt"],
+  zk:      ["zksync"],
+  scr:     ["scroll"],
+  linea:   ["linea"],
+  base:    ["base", "base-mainnet"],
+  zora:    ["zora"],
+  cosmos:  ["cosmos", "ibc", "cosmoshub"],
+  brc20:   ["bitcoin", "btc"],
+  uniswap: ["ethereum", "eth", "erc20"],
+  pancake: ["bsc", "binance", "bnb", "bep20"],
 };
 
 // Preferred quote order when picking a single AOS pair per coin in each chain tab.
 const CAT_PREFERRED_QUOTE: Partial<Record<Cat, string[]>> = {
-  btc:   ["BTC",  "USDT", "USDC"],
-  eth:   ["ETH",  "USDT", "USDC"],
-  bnb:   ["BNB",  "USDT", "USDC"],
-  matic: ["MATIC","USDT", "USDC"],
-  avax:  ["AVAX", "USDT", "USDC"],
-  arb:   ["ETH",  "USDT", "USDC"],
-  op:    ["ETH",  "USDT", "USDC"],
-  ftm:   ["FTM",  "USDT", "USDC"],
-  cro:   ["CRO",  "USDT", "USDC"],
-  bch:   ["BCH",  "USDT", "USDC"],
-  bsv:   ["BSV",  "USDT", "USDC"],
-  sol:   ["SOL",  "USDT", "USDC"],
-  mnt:   ["MNT",  "USDT", "USDC"],
-  zk:    ["ETH",  "USDT", "USDC"],
-  scr:   ["ETH",  "USDT", "USDC"],
-  linea: ["ETH",  "USDT", "USDC"],
+  btc:     ["BTC",  "USDT", "USDC"],
+  eth:     ["ETH",  "USDT", "USDC"],
+  bnb:     ["BNB",  "USDT", "USDC"],
+  matic:   ["MATIC","USDT", "USDC"],
+  avax:    ["AVAX", "USDT", "USDC"],
+  arb:     ["ETH",  "USDT", "USDC"],
+  op:      ["ETH",  "USDT", "USDC"],
+  ftm:     ["FTM",  "USDT", "USDC"],
+  cro:     ["CRO",  "USDT", "USDC"],
+  bch:     ["BCH",  "USDT", "USDC"],
+  bsv:     ["BSV",  "USDT", "USDC"],
+  sol:     ["SOL",  "USDT", "USDC"],
+  mnt:     ["MNT",  "USDT", "USDC"],
+  zk:      ["ETH",  "USDT", "USDC"],
+  scr:     ["ETH",  "USDT", "USDC"],
+  linea:   ["ETH",  "USDT", "USDC"],
+  base:    ["ETH",  "USDT", "USDC"],
+  zora:    ["ETH",  "USDT", "USDC"],
+  cosmos:  ["ATOM", "USDT", "USDC"],
+  brc20:   ["BTC",  "USDT", "USDC"],
+  uniswap: ["ETH",  "USDT", "USDC"],
+  pancake: ["BNB",  "USDT", "USDC"],
 };
 
 function getRows(
@@ -239,15 +270,27 @@ function getRows(
     case "ftm":       return chainRows(FTM_MARKETS,   cat);
     case "cro":       return chainRows(CRO_MARKETS,   cat);
     case "bch":       return chainRows(BCH_MARKETS,   cat);
-    case "bsv":       return chainRows(BSV_MARKETS,   cat);
-    case "ai":        return chainRows(AI_MARKETS,    cat);
-    case "sol":       return chainRows(SOL_MARKETS,   cat);
-    case "meme":      return chainRows(MEME_MARKETS,  cat);
-    case "defi":      return chainRows(DEFI_MARKETS,  cat);
-    case "mnt":       return chainRows(MNT_MARKETS,   cat);
-    case "zk":        return chainRows(ZK_MARKETS,    cat);
-    case "scr":       return chainRows(SCR_MARKETS,   cat);
-    case "linea":     return chainRows(LINEA_MARKETS, cat);
+    case "bsv":       return chainRows(BSV_MARKETS,      cat);
+    case "ai":        return chainRows(AI_MARKETS,       cat);
+    case "sol":       return chainRows(SOL_MARKETS,      cat);
+    case "meme":      return chainRows(MEME_MARKETS,     cat);
+    case "defi":      return chainRows(DEFI_MARKETS,     cat);
+    case "mnt":       return chainRows(MNT_MARKETS,      cat);
+    case "zk":        return chainRows(ZK_MARKETS,       cat);
+    case "scr":       return chainRows(SCR_MARKETS,      cat);
+    case "linea":     return chainRows(LINEA_MARKETS,    cat);
+    case "base":      return chainRows(BASE_MARKETS,     cat);
+    case "zora":      return chainRows(ZORA_MARKETS,     cat);
+    case "gaming":    return chainRows(GAMING_MARKETS,   cat);
+    case "cosmos":    return chainRows(COSMOS_MARKETS,   cat);
+    case "l1":        return enrich(L1_MARKETS);
+    case "l2":        return enrich(L2_MARKETS);
+    case "rwa":       return enrich(RWA_MARKETS);
+    case "exchange":  return enrich(EXCHANGE_MARKETS);
+    case "depin":     return chainRows(DEPIN_MARKETS,    cat);
+    case "brc20":     return chainRows(BRC20_MARKETS,    cat);
+    case "uniswap":   return chainRows(UNISWAP_MARKETS,  cat);
+    case "pancake":   return chainRows(PANCAKE_MARKETS,  cat);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
