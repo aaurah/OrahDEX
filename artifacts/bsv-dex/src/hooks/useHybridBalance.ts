@@ -116,13 +116,18 @@ export function useHybridBalance(refreshMs = 60_000): HybridBalance {
     internalBtcAddress,
     internalSolAddress,
     internalBchAddress,
+    address: connectedAddress,
+    network,
   } = useWalletStore();
+
+  // Use connected wallet address as fallback for EVM when no Orah internal address
+  const evmAddress = internalEvmAddress ?? (network === "evm" && connectedAddress ? connectedAddress : null);
 
   const { prices } = useWalletPrices(refreshMs);
   const [chains, setChains] = useState<ChainBalance[]>([]);
   const [loading, setLoading] = useState(false);
   const fetchKey = [
-    internalEvmAddress, internalBsvAddress,
+    evmAddress, internalBsvAddress,
     internalBtcAddress, internalSolAddress, internalBchAddress,
   ].join("|");
   const prevKey = useRef<string>("");
@@ -138,12 +143,12 @@ export function useHybridBalance(refreshMs = 60_000): HybridBalance {
     async function load() {
       const tasks: Promise<ChainBalance>[] = [];
 
-      // EVM chains — all share the same internal EVM address
-      if (internalEvmAddress) {
+      // EVM chains — use internal address if available, otherwise connected wallet
+      if (evmAddress) {
         for (const { chainId, symbol, chain, priceKey } of EVM_CHAINS) {
           const fetcher = chainId === 1
-            ? fetchEthMainnet(internalEvmAddress)
-            : evmGetBalance(internalEvmAddress, chainId);
+            ? fetchEthMainnet(evmAddress)
+            : evmGetBalance(evmAddress, chainId);
           tasks.push(
             fetcher.then(native => ({
               symbol,
