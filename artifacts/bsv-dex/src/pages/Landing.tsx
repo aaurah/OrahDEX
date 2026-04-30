@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
@@ -323,6 +323,226 @@ function OraAiSection() {
   );
 }
 
+/* ── Coin colour map ─────────────────────────────────────────────────────── */
+const COIN_COLORS: Record<string, string> = {
+  BTC:"#F7931A",ETH:"#627EEA",BSV:"#EAB305",USDT:"#26A17B",BNB:"#F0B90B",
+  SOL:"#9945FF",XRP:"#346AA9",ADA:"#0033AD",DOGE:"#C2A633",DOT:"#E6007A",
+  AVAX:"#E84142",MATIC:"#8247E5",LINK:"#2A5ADA",UNI:"#FF007A",ATOM:"#2E3148",
+  LTC:"#BFBBBB",BCH:"#8DC351",TRX:"#EB0029",NEAR:"#00C08B",ICP:"#29ABE2",
+  ARB:"#12AAFF",OP:"#FF0420",SUI:"#4DA2FF",INJ:"#00B2FF",PEPE:"#479A3A",
+  SHIB:"#FFA409",MKR:"#6ACCB2",AAVE:"#B6509E",CRV:"#FF0000",ENS:"#5284FF",
+  LDO:"#F68819",SUSHI:"#FA52A0",COMP:"#00D395",GRT:"#6F4CBA",SNX:"#00D1FF",
+  YFI:"#006AE3",GMX:"#03D1CF",DYDX:"#6966FF",FTM:"#1969FF",ALGO:"#6EC1E4",
+  XLM:"#14B6E7",HBAR:"#00ACBF",TON:"#0098EA",KAS:"#49EACB",SEI:"#9B1FE8",
+  TIA:"#7B2FBE",BASE:"#0052FF",IMX:"#17B5CB",CAKE:"#D1884F",RAY:"#C54CE0",
+  JUP:"#E86334",PYTH:"#E6DAFE",FET:"#1D6AFF",RNDR:"#AE4ABC",TAO:"#88888A",
+  WLD:"#676767",HNT:"#474DFF",AXS:"#0055D5",SAND:"#04ADEF",MANA:"#FF2D55",
+  APT:"#30B7E8",BONK:"#F5931D",WIF:"#C9B037",PENDLE:"#3BCCB0",CVX:"#3A3A6C",
+  GMX2:"#03D1CF",FXS:"#000000",SPELL:"#8B5CF6",PERP:"#00CFBE",INJ2:"#00B2FF",
+};
+function coinColor(sym: string) { return COIN_COLORS[sym.toUpperCase()] ?? "#6b7280"; }
+
+/* ── Coin avatar ─────────────────────────────────────────────────────────── */
+function CoinAvatar({ symbol, size = 26 }: { symbol: string; size?: number }) {
+  const [err, setErr] = useState(false);
+  const sym = symbol.toUpperCase();
+  const color = coinColor(sym);
+  return (
+    <div
+      className="rounded-full shrink-0 overflow-hidden flex items-center justify-center"
+      style={{ width: size, height: size, background: `${color}22`, border: `1px solid ${color}44` }}
+    >
+      {!err ? (
+        <img
+          src={`https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/${sym.toLowerCase()}.png`}
+          alt={sym}
+          width={size}
+          height={size}
+          style={{ width: size, height: size, objectFit: "contain" }}
+          onError={() => setErr(true)}
+        />
+      ) : (
+        <span style={{ fontSize: size * 0.36, color, fontWeight: 900, lineHeight: 1 }}>{sym.slice(0, 2)}</span>
+      )}
+    </div>
+  );
+}
+
+/* ── Scrolling price ticker ───────────────────────────────────────────────── */
+function TickerStrip({ markets }: { markets: any[] }) {
+  const items = useMemo(() => {
+    const usdt = markets
+      .filter(m => m.quoteAsset === "USDT" && m.status === "active")
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 35);
+    const btc = markets
+      .filter(m => m.quoteAsset === "BTC" && m.status === "active")
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 8);
+    const seen = new Set<string>();
+    return [...usdt, ...btc].filter(m => { if (seen.has(m.symbol)) return false; seen.add(m.symbol); return true; });
+  }, [markets]);
+
+  if (items.length === 0) return null;
+
+  const fp = (p: number) =>
+    p >= 10000 ? "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 })
+    : p >= 1   ? "$" + p.toFixed(2)
+    : p >= 0.001 ? "$" + p.toPrecision(3)
+    : "$" + p.toExponential(2);
+
+  return (
+    <div className="w-full overflow-hidden border-b border-border/30 bg-card/40 backdrop-blur-sm" style={{ height: 38 }}>
+      <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+      <div
+        className="flex items-center h-full"
+        style={{ animation: "orah-ticker 80s linear infinite", width: "max-content" }}
+      >
+        {[...items, ...items].map((m, i) => {
+          const up = m.priceChangePercent24h >= 0;
+          return (
+            <Link
+              key={i}
+              href={`/trade/${m.symbol.replace("/", "-")}`}
+              className="flex items-center gap-1.5 px-3.5 h-full border-r border-border/20 hover:bg-foreground/4 transition-colors shrink-0 cursor-pointer"
+            >
+              <CoinAvatar symbol={m.baseAsset} size={16} />
+              <span className="text-[11px] font-bold text-foreground/80 whitespace-nowrap">{m.symbol}</span>
+              <span className="text-[11px] font-mono text-foreground/55 whitespace-nowrap">{fp(m.lastPrice)}</span>
+              <span className={`text-[10px] font-bold whitespace-nowrap ${up ? "text-green-400" : "text-red-400"}`}>
+                {up ? "▲" : "▼"}{Math.abs(m.priceChangePercent24h).toFixed(2)}%
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Featured markets section ────────────────────────────────────────────── */
+type MktTab = "ALL" | "USDT" | "BTC" | "ETH" | "BSV";
+const MKT_TABS: { id: MktTab; label: string }[] = [
+  { id: "ALL",  label: "All" },
+  { id: "USDT", label: "USDT" },
+  { id: "BTC",  label: "BTC" },
+  { id: "ETH",  label: "ETH" },
+  { id: "BSV",  label: "BSV" },
+];
+
+function FeaturedMarkets({ markets }: { markets: any[] }) {
+  const [tab, setTab] = useState<MktTab>("ALL");
+
+  const filtered = useMemo(() => {
+    let list = markets.filter(m => m.status === "active");
+    if (tab === "BSV") {
+      list = list.filter(m => m.baseAsset === "BSV" || m.quoteAsset === "BSV");
+    } else if (tab !== "ALL") {
+      list = list.filter(m => m.quoteAsset === tab);
+    }
+    return list.sort((a, b) => b.volume24h - a.volume24h).slice(0, 24);
+  }, [markets, tab]);
+
+  const fmtPrice = (p: number) => {
+    if (p >= 10000) return "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 });
+    if (p >= 1)     return "$" + p.toFixed(2);
+    if (p >= 0.0001) return "$" + p.toPrecision(4);
+    return "$" + p.toExponential(2);
+  };
+
+  const fmtVol = (v: number) => {
+    if (v >= 1e9) return "$" + (v / 1e9).toFixed(1) + "B";
+    if (v >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+    if (v >= 1e3) return "$" + (v / 1e3).toFixed(1) + "K";
+    return "$" + v.toFixed(0);
+  };
+
+  return (
+    <section className="relative px-6 lg:px-10 py-16">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-start sm:items-center justify-between gap-4 mb-8 flex-col sm:flex-row">
+          <div>
+            <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-1.5 block">Live Markets</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-foreground">
+              Top Trading Pairs
+              <span className="ml-3 text-sm font-bold text-muted-foreground/50 align-middle">
+                {markets.length.toLocaleString()}+ total
+              </span>
+            </h2>
+          </div>
+          <Link
+            href="/markets"
+            className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors border border-border px-3 py-1.5 rounded-lg hover:bg-card shrink-0"
+          >
+            All Markets <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex items-center gap-1.5 mb-6 overflow-x-auto pb-1 scrollbar-none">
+          {MKT_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
+                tab === t.id
+                  ? "bg-green-500 text-black border-green-500"
+                  : "text-muted-foreground border-border hover:border-green-500/30 hover:text-foreground bg-transparent"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Cards grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {filtered.map(m => {
+            const up = m.priceChangePercent24h >= 0;
+            return (
+              <Link
+                key={m.symbol}
+                href={`/trade/${m.symbol.replace("/", "-")}`}
+                className="group flex flex-col gap-2.5 p-3.5 rounded-2xl border border-border bg-card/40 hover:bg-card hover:border-green-500/25 transition-all hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-2">
+                  <CoinAvatar symbol={m.baseAsset} size={28} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-black text-foreground leading-tight truncate">{m.baseAsset}</p>
+                    <p className="text-[9px] text-muted-foreground/40 leading-tight truncate">/{m.quoteAsset}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-black text-foreground font-mono leading-tight">{fmtPrice(m.lastPrice)}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[9px] text-muted-foreground/40">Vol {fmtVol(m.volume24h)}</p>
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                      up ? "bg-green-500/12 text-green-400" : "bg-red-500/12 text-red-400"
+                    }`}>
+                      {up ? "+" : ""}{m.priceChangePercent24h.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Bottom CTA */}
+        <div className="flex justify-center mt-10">
+          <Link
+            href="/markets"
+            className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-sm border border-green-500/30 text-green-400 hover:bg-green-500/8 hover:border-green-500/60 transition-all"
+          >
+            View All {markets.length.toLocaleString()}+ Markets <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -496,6 +716,9 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── LIVE TICKER STRIP ─────────────────────────────────────────────── */}
+      <TickerStrip markets={markets ?? []} />
+
       {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 pb-6 -mt-4">
         <div className="max-w-6xl mx-auto">
@@ -526,6 +749,9 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── FEATURED MARKETS ──────────────────────────────────────────────── */}
+      <FeaturedMarkets markets={markets ?? []} />
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-12">
