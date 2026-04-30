@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { pushNotification, getNotifications, clearNotifications } from "../lib/notifQueue.js";
 
 const router: IRouter = Router();
 const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
@@ -127,6 +128,15 @@ router.post("/social/posts/:id/mint", async (req, res) => {
       [req.params.id],
     );
 
+    if (post.creator && minter && post.creator.toLowerCase() !== minter.toLowerCase()) {
+      pushNotification(post.creator, {
+        type: "mint",
+        title: "New Mint!",
+        body: `${minter.slice(0, 6)}…${minter.slice(-4)} minted "${post.title}"`,
+        txid: tx_hash ?? undefined,
+      });
+    }
+
     res.json({ success: true, mintCount: post.mint_count + 1, inscriptionId: post.inscription_id });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -151,6 +161,14 @@ router.post("/social/posts/:id/like", async (req, res) => {
     } else {
       await pool.query("INSERT INTO post_likes (id, post_id, wallet_address) VALUES ($1,$2,$3)", [uid(), req.params.id, wallet_address]);
       await pool.query("UPDATE social_posts SET like_count = like_count + 1 WHERE id = $1", [req.params.id]);
+      const { rows: likedPost } = await pool.query("SELECT creator, title FROM social_posts WHERE id = $1", [req.params.id]);
+      if (likedPost[0]?.creator && likedPost[0].creator.toLowerCase() !== wallet_address.toLowerCase()) {
+        pushNotification(likedPost[0].creator, {
+          type: "like",
+          title: "Someone liked your post",
+          body: `${wallet_address.slice(0, 6)}…${wallet_address.slice(-4)} liked "${likedPost[0].title}"`,
+        });
+      }
       res.json({ liked: true });
     }
   } catch (err: any) {
@@ -181,6 +199,15 @@ router.post("/social/posts/:id/comment", async (req, res) => {
       [uid(), req.params.id, wallet_address, resolvedDisplayName, content],
     );
     await pool.query("UPDATE social_posts SET comment_count = comment_count + 1 WHERE id = $1", [req.params.id]);
+
+    const { rows: commentedPost } = await pool.query("SELECT creator, title FROM social_posts WHERE id = $1", [req.params.id]);
+    if (commentedPost[0]?.creator && commentedPost[0].creator.toLowerCase() !== wallet_address.toLowerCase()) {
+      pushNotification(commentedPost[0].creator, {
+        type: "comment",
+        title: "New comment on your post",
+        body: `${resolvedDisplayName}: "${content.length > 60 ? content.slice(0, 60) + "…" : content}" on "${commentedPost[0].title}"`,
+      });
+    }
 
     const { rows } = await pool.query(
       `SELECT
@@ -299,6 +326,22 @@ async function tryFetchLiveZora(): Promise<any[]> {
       .filter((n: any) => n.image_url && n.title);
   } catch { return []; }
 }
+
+/* ── GET /social/notifications ───────────────────────────────────────────── */
+router.get("/social/notifications", (req, res) => {
+  const { address, since } = req.query as Record<string, string>;
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+  const sinceTs = since ? parseInt(since, 10) : 0;
+  res.json({ notifications: getNotifications(address, sinceTs) });
+});
+
+/* ── DELETE /social/notifications ────────────────────────────────────────── */
+router.delete("/social/notifications", (req, res) => {
+  const { address } = req.query as Record<string, string>;
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+  clearNotifications(address);
+  res.json({ success: true });
+});
 
 router.get("/social/external/trending", async (_req, res) => {
   try {
