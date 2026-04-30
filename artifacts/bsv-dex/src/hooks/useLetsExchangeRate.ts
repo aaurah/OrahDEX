@@ -51,7 +51,7 @@ export function useLetsExchangeRate(
           network_from: fromCoin.network ?? fromCoin.symbol,
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       refAmt,
-          float:        false,
+          float:        true,
         }),
       });
       const d = await r.json();
