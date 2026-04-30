@@ -11,6 +11,7 @@ import {
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -32,7 +33,8 @@ function normalise(m: any) {
   const chg   = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
   const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
   const symbol = m.symbol ?? `${base}-${quote}`;
-  return { symbol, base, quote, price, chg, type };
+  const leSource: boolean = m.leSource === true;
+  return { symbol, base, quote, price, chg, type, leSource };
 }
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
@@ -41,11 +43,12 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures";
+type Cat = "all" | "favorites" | "le" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favorites" },
   { id: "all",       label: "All"       },
+  { id: "le",        label: "⚡ LE"     },
   { id: "usd",       label: "USD"       },
   { id: "new",       label: "NEW"       },
   { id: "btc",       label: "BTC"       },
@@ -94,11 +97,20 @@ function dedupePool(pool: any[]) {
 
 const ALL_POOL_DEDUPED = dedupePool(ALL_POOL);
 
+type NormRow = ReturnType<typeof normalise>;
+
 /**
  * Always use mock data as the full pair list; enrich prices from the live API where available.
+ * lePairs are pre-normalised LE rows that may not exist in mock data.
  */
-function getRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, ReturnType<typeof normalise>>, favorites: Set<string>) {
-  const enrich = (mock: any[]): ReturnType<typeof normalise>[] =>
+function getRows(
+  cat: Cat,
+  usdSub: UsdSub,
+  livePrice: Map<string, NormRow>,
+  favorites: Set<string>,
+  lePairs: NormRow[],
+) {
+  const enrich = (mock: any[]): NormRow[] =>
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
@@ -106,9 +118,21 @@ function getRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, ReturnType<typ
       return { ...n, price: live.price, chg: live.chg };
     });
 
+  // Combined pool: all native pairs + any LE pairs not already in native pool
+  const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => {
+    const n = normalise(m);
+    return n.symbol;
+  }));
+  const leOnly = lePairs.filter(p => !nativeSymbols.has(p.symbol));
+  const combinedPool = () => [
+    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures"),
+    ...leOnly,
+  ];
+
   switch (cat) {
-    case "all":       return enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures");
-    case "favorites": return enrich(ALL_POOL_DEDUPED).filter(m => favorites.has(m.symbol));
+    case "all":       return combinedPool();
+    case "favorites": return combinedPool().filter(m => favorites.has(m.symbol));
+    case "le":        return lePairs;
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
     case "new":       return enrich(NEW_MARKETS);
     case "btc":       return enrich(BTC_MARKETS);
@@ -180,6 +204,21 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     refetchInterval: 15_000,
   });
 
+  const { pairs: rawLePairs, loading: leLoading } = useLetsExchangePairs({ all: true });
+
+  // Normalise LE pairs to NormRow shape
+  const lePairs = useMemo<NormRow[]>(() =>
+    (rawLePairs ?? []).map(p => ({
+      symbol:   p.symbol,
+      base:     p.baseAsset,
+      quote:    p.quoteAsset,
+      price:    p.lastPrice ?? 0,
+      chg:      p.priceChangePercent24h ?? 0,
+      type:     "spot" as const,
+      leSource: true,
+    })),
+  [rawLePairs]);
+
   const livePrice = useMemo(() => new Map(
     (apiData && Array.isArray(apiData) ? apiData : [])
       .map(normalise)
@@ -189,11 +228,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...(Array.isArray(apiData) ? apiData : []).map(normalise),
-      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites)),
+      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, lePairs)),
     ].map((m: ReturnType<typeof normalise>) => [m.symbol, m])
-  ).values()), [apiData, usdSub, livePrice, favorites]);
+  ).values()), [apiData, usdSub, livePrice, favorites, lePairs]);
 
-  let rows = getRows(cat, usdSub, livePrice, favorites);
+  let rows = getRows(cat, usdSub, livePrice, favorites, lePairs);
 
   if (search) {
     const q = search.toUpperCase();
@@ -346,7 +385,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              {cat === "favorites" ? "No favorites yet" : search ? `No results` : "Loading…"}
+              {cat === "favorites" ? "No favorites yet"
+                : cat === "le" && leLoading ? "Loading LE pairs…"
+                : search ? "No results"
+                : "Loading…"}
             </div>
           ) : (
             rows.map(m => {
@@ -362,12 +404,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                 >
                   {/* Star */}
                   <button
-                    onClick={() => toggleFav(m.symbol)}
-                    className="mr-2 shrink-0"
+                    type="button"
+                    onClick={e => { e.stopPropagation(); toggleFav(m.symbol); }}
+                    className="mr-1 shrink-0 flex items-center justify-center w-8 h-8 -ml-1 rounded-full active:bg-secondary/60"
                   >
                     <Star
-                      size={12}
-                      className={favorites.has(m.symbol) ? "fill-green-400 text-green-400" : "text-muted-foreground/30"}
+                      size={15}
+                      className={favorites.has(m.symbol) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}
                     />
                   </button>
 
@@ -384,6 +427,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                     <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
                     {m.type === "futures" && (
                       <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
+                    )}
+                    {m.leSource && (
+                      <span className="ml-1 text-[8px] font-bold text-yellow-400 bg-yellow-500/15 px-1 py-0.5 rounded">⚡LE</span>
                     )}
                     {isActive && (
                       <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
