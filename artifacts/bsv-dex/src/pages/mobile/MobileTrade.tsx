@@ -271,6 +271,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
+  // ── LE redirect guard ────────────────────────────────────────────────────
+  // If someone navigates directly to /trade/XYZ-USDT for an LE-only pair,
+  // redirect them transparently to the LE swap panel.
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    if (isFutures) return; // futures never go to LE
+    const ctrl = new AbortController();
+    fetch(`${BASE}/api/markets/${encodeURIComponent(symbol)}/ticker`, { signal: ctrl.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.type === "letsexchange") {
+          setLocation(`/swap?from=${base}&to=${quote}`);
+        }
+      })
+      .catch(() => {}); // non-fatal — stay on trade page if fetch fails
+    return () => ctrl.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);

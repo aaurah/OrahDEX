@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { eq, desc, gte } from "drizzle-orm";
+import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
@@ -971,7 +971,7 @@ export async function seedLEPairsIfNeeded() {
           symbol: sym, baseAsset: base, quoteAsset: quote,
           lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
           volume24h: "0", high24h: p, low24h: p,
-          status: "active", type: "spot",
+          status: "active", type: "letsexchange",
         });
         existingSymbols.add(sym); // prevent duplicates within this batch
       }
@@ -986,6 +986,38 @@ export async function seedLEPairsIfNeeded() {
       logger.info({ count: toInsert.length, coins: coins.length }, "LE pairs seeded into DB");
     } else {
       logger.info("LE pairs: all already present in DB");
+    }
+
+    // ── One-time migration: reclassify existing LE-seeded pairs ──────────────
+    // Any "spot" pair whose quote is one of the 5 LE quotes AND whose base is
+    // NOT in the pre-LE original static list gets marked "letsexchange" so the
+    // frontend knows to route trades through the LE swap panel.
+    try {
+      const leCodes = new Set(coins.map(c => c.code));
+      // Original coins seeded before LE — keep as "spot" (internal order book)
+      const originalBases = new Set(USDT_PAIRS);
+      // LE-only = in LE coin list AND not in the original Binance seeded list
+      const leBases = [...leCodes].filter(s => !originalBases.has(s));
+      if (leBases.length > 0) {
+        const MCHUNK = 500;
+        let migrated = 0;
+        for (let i = 0; i < leBases.length; i += MCHUNK) {
+          const chunk = leBases.slice(i, i + MCHUNK);
+          const res = await db.update(marketsTable)
+            .set({ type: "letsexchange" })
+            .where(and(
+              eq(marketsTable.type, "spot"),
+              inArray(marketsTable.quoteAsset, [...LE_SEED_QUOTES]),
+              inArray(marketsTable.baseAsset, chunk),
+            ));
+          migrated += (res.rowsAffected ?? res.changes ?? 0);
+        }
+        if (migrated > 0) {
+          logger.info({ migrated }, "Migrated existing LE pairs → type:letsexchange");
+        }
+      }
+    } catch (migErr) {
+      logger.warn({ migErr }, "LE type migration failed (non-fatal)");
     }
   } catch (err) {
     logger.warn({ err }, "seedLEPairsIfNeeded failed (non-fatal)");

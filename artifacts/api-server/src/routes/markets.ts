@@ -224,15 +224,18 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
       sym           = market.symbol;
     }
 
-    const ticker = generateTicker({
-      symbol:               sym,
-      lastPrice,
-      high24h,
-      low24h,
-      volume24h,
-      priceChange24h,
-      priceChangePercent24h: pctChange,
-    });
+    const ticker = {
+      ...generateTicker({
+        symbol:               sym,
+        lastPrice,
+        high24h,
+        low24h,
+        volume24h,
+        priceChange24h,
+        priceChangePercent24h: pctChange,
+      }),
+      type: market?.type ?? "spot",
+    };
     tickerCache.set(symbol, ticker);
     res.json(ticker);
   } catch (err) {
