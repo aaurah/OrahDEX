@@ -291,8 +291,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   const pick = (m: NormRow) => {
     if (m.swapOnly) {
-      // AOS pairs: redirect to Swap tab
-      navigate("/swap");
+      // AOS pairs: open Swap tab with from/to pre-selected
+      navigate(`/swap?from=${encodeURIComponent(m.base)}&to=${encodeURIComponent(m.quote)}`);
       onClose();
       return;
     }
