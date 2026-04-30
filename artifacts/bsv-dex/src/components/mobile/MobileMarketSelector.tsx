@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
@@ -11,6 +11,7 @@ import {
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -26,17 +27,20 @@ function fmt(p: number): string {
 }
 
 function normalise(m: any) {
-  const base  = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
-  const quote = m.quoteAsset ?? m.quote ?? "USDT";
-  const price = parseFloat(m.lastPrice ?? m.price) || 0;
-  const chg   = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
-  const type  = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
-  const symbol = m.symbol ?? `${base}-${quote}`;
-  return { symbol, base, quote, price, chg, type };
+  const base     = m.baseAsset  ?? m.base  ?? m.symbol?.split(/[-/]/)[0] ?? "";
+  const quote    = m.quoteAsset ?? m.quote ?? "USDT";
+  const price    = parseFloat(m.lastPrice ?? m.price) || 0;
+  const chg      = parseFloat(m.priceChangePercent24h ?? m.priceChangePercent ?? m.change) || 0;
+  const type     = m.type ?? (m.symbol?.includes("PERP") ? "futures" : "spot");
+  const symbol   = m.symbol ?? `${base}-${quote}`;
+  const network  = (m.network ?? m.networkName ?? undefined) as string | undefined;
+  const swapOnly = m.swapOnly === true;      // true for AOS pairs (from LE)
+  return { symbol, base, quote, price, chg, type, network, swapOnly };
 }
 
 type NormRow = ReturnType<typeof normalise>;
-type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
+type UsdSub  = "USDT" | "USDC" | "TUSD" | "USDD";
+
 const USD_SUBS: UsdSub[] = ["USDT", "USDC", "TUSD", "USDD"];
 const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
@@ -93,41 +97,88 @@ function dedupePool(pool: any[]) {
 
 const ALL_POOL_DEDUPED = dedupePool(ALL_POOL);
 
-function getRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, NormRow>, favorites: Set<string>) {
+// Maps each OrahDEX chain category to keywords found in LE network names.
+const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
+  btc:   ["bitcoin", "btc"],
+  eth:   ["ethereum", "eth", "erc20"],
+  bnb:   ["bsc", "binance", "bnb", "bep20", "bep2"],
+  matic: ["polygon", "matic"],
+  avax:  ["avalanche", "avax"],
+  arb:   ["arbitrum"],
+  op:    ["optimism"],
+  ftm:   ["fantom", "ftm"],
+  cro:   ["cronos", "cro"],
+  bch:   ["bitcoin-cash", "bch", "bitcoincash"],
+  bsv:   ["bsv", "bitcoin-sv", "bitcoinsv"],
+  sol:   ["solana", "sol"],
+  mnt:   ["mantle", "mnt"],
+  zk:    ["zksync"],
+  scr:   ["scroll"],
+  linea: ["linea"],
+};
+
+function getRows(
+  cat: Cat,
+  usdSub: UsdSub,
+  livePrice: Map<string, NormRow>,
+  favorites: Set<string>,
+  aosPairs: NormRow[],    // swap-only (AOS) pairs from LetsExchange
+) {
   const enrich = (mock: any[]): NormRow[] =>
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
-      if (!live) return n;
-      return { ...n, price: live.price, chg: live.chg };
+      return live ? { ...n, price: live.price, chg: live.chg } : n;
     });
 
-  const allSpot = () => enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures");
+  // Merge native rows with matching AOS rows (no duplicates)
+  const mergeAOS = (native: NormRow[], keywords: string[]): NormRow[] => {
+    const seen = new Set(native.map(r => r.symbol));
+    const extra = aosPairs.filter(p => {
+      const net = (p.network ?? "").toLowerCase();
+      return keywords.some(kw => net.includes(kw)) && !seen.has(p.symbol);
+    });
+    return [...native, ...extra];
+  };
+
+  const chainRows = (mock: any[], c: Cat): NormRow[] => {
+    const native   = enrich(mock);
+    const keywords = CAT_NETWORKS[c];
+    return keywords ? mergeAOS(native, keywords) : native;
+  };
+
+  // "All" pool = all native spot + AOS pairs not already native
+  const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
+  const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol));
+  const allSpot = () => [
+    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures"),
+    ...aosOnly,
+  ];
 
   switch (cat) {
     case "all":       return allSpot();
     case "favorites": return allSpot().filter(m => favorites.has(m.symbol));
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
-    case "new":       return enrich(NEW_MARKETS);
-    case "btc":       return enrich(BTC_MARKETS);
-    case "eth":       return enrich(ETH_MARKETS);
-    case "bnb":       return enrich(BNB_MARKETS);
-    case "matic":     return enrich(MATIC_MARKETS);
-    case "avax":      return enrich(AVAX_MARKETS);
-    case "arb":       return enrich(ARB_MARKETS);
-    case "op":        return enrich(OP_MARKETS);
-    case "ftm":       return enrich(FTM_MARKETS);
-    case "cro":       return enrich(CRO_MARKETS);
-    case "bch":       return enrich(BCH_MARKETS);
-    case "bsv":       return enrich(BSV_MARKETS);
-    case "ai":        return enrich(AI_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
-    case "meme":      return enrich(MEME_MARKETS);
-    case "defi":      return enrich(DEFI_MARKETS);
-    case "mnt":       return enrich(MNT_MARKETS);
-    case "zk":        return enrich(ZK_MARKETS);
-    case "scr":       return enrich(SCR_MARKETS);
-    case "linea":     return enrich(LINEA_MARKETS);
+    case "new":       return chainRows(NEW_MARKETS,   cat);
+    case "btc":       return chainRows(BTC_MARKETS,   cat);
+    case "eth":       return chainRows(ETH_MARKETS,   cat);
+    case "bnb":       return chainRows(BNB_MARKETS,   cat);
+    case "matic":     return chainRows(MATIC_MARKETS, cat);
+    case "avax":      return chainRows(AVAX_MARKETS,  cat);
+    case "arb":       return chainRows(ARB_MARKETS,   cat);
+    case "op":        return chainRows(OP_MARKETS,    cat);
+    case "ftm":       return chainRows(FTM_MARKETS,   cat);
+    case "cro":       return chainRows(CRO_MARKETS,   cat);
+    case "bch":       return chainRows(BCH_MARKETS,   cat);
+    case "bsv":       return chainRows(BSV_MARKETS,   cat);
+    case "ai":        return chainRows(AI_MARKETS,    cat);
+    case "sol":       return chainRows(SOL_MARKETS,   cat);
+    case "meme":      return chainRows(MEME_MARKETS,  cat);
+    case "defi":      return chainRows(DEFI_MARKETS,  cat);
+    case "mnt":       return chainRows(MNT_MARKETS,   cat);
+    case "zk":        return chainRows(ZK_MARKETS,    cat);
+    case "scr":       return chainRows(SCR_MARKETS,   cat);
+    case "linea":     return chainRows(LINEA_MARKETS, cat);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
@@ -141,13 +192,14 @@ interface Props {
   mode?: "spot" | "futures";
 }
 
-const SPOT_CATS = CATS.filter(c => c.id !== "futures");
+const SPOT_CATS    = CATS.filter(c => c.id !== "futures");
 const FUTURES_CATS: { id: Cat; label: string }[] = [{ id: "futures", label: "Futures" }];
 
 export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat, mode }: Props) {
-  const [, navigate] = useLocation();
+  const [, navigate]  = useLocation();
   const effectiveCats = mode === "futures" ? FUTURES_CATS : mode === "spot" ? SPOT_CATS : CATS;
   const resolvedDefault: Cat = mode === "futures" ? "futures" : (defaultCat ?? "usd");
+
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
@@ -168,6 +220,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     }
   }, [open, mode, defaultCat]);
 
+  // Native market data (prices / changes)
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
@@ -179,6 +232,22 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     refetchInterval: 15_000,
   });
 
+  // AOS pairs from LetsExchange — available to trade via Swap tab
+  const { pairs: rawAosPairs } = useLetsExchangePairs({ all: true });
+
+  const aosPairs = useMemo<NormRow[]>(() =>
+    (rawAosPairs ?? []).map(p => ({
+      symbol:   p.symbol,
+      base:     p.baseAsset,
+      quote:    p.quoteAsset,
+      price:    p.lastPrice ?? 0,
+      chg:      p.priceChangePercent24h ?? 0,
+      type:     "spot" as const,
+      network:  p.network ?? p.networkName ?? undefined,
+      swapOnly: true,
+    })),
+  [rawAosPairs]);
+
   const livePrice = useMemo(() => new Map(
     (apiData && Array.isArray(apiData) ? apiData : [])
       .map(normalise)
@@ -188,11 +257,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...(Array.isArray(apiData) ? apiData : []).map(normalise),
-      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites)),
+      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, aosPairs)),
     ].map((m: NormRow) => [m.symbol, m])
-  ).values()), [apiData, usdSub, livePrice, favorites]);
+  ).values()), [apiData, usdSub, livePrice, favorites, aosPairs]);
 
-  let rows = getRows(cat, usdSub, livePrice, favorites);
+  let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs);
 
   if (search) {
     const q = search.toUpperCase();
@@ -221,6 +290,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     });
 
   const pick = (m: NormRow) => {
+    if (m.swapOnly) {
+      // AOS pairs: redirect to Swap tab
+      navigate("/swap");
+      onClose();
+      return;
+    }
     const slug = m.symbol.replace(/\//g, "-");
     navigate(m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`);
     onClose();
@@ -249,14 +324,14 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         onClick={onClose}
       />
 
-      {/* Slide-in drawer from left */}
+      {/* Slide-in drawer */}
       <div
         className={cn(
           "fixed top-0 left-0 bottom-0 z-50 w-[88vw] max-w-sm bg-background flex flex-col shadow-2xl transition-transform duration-250 ease-out",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        {/* Drawer header */}
+        {/* Header */}
         <div className="flex items-center justify-between px-4 pt-safe-top pt-4 pb-3 border-b border-border shrink-0">
           <span className="text-base font-bold">{mode === "futures" ? "Futures Pairs" : "Markets"}</span>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
@@ -321,22 +396,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
         {/* Column headers */}
         <div className="flex items-center px-4 py-1.5 border-b border-border/30 shrink-0">
-          <button
-            onClick={() => toggleSort("base")}
-            className="flex-1 flex items-center text-[10px] text-muted-foreground font-medium"
-          >
+          <button onClick={() => toggleSort("base")} className="flex-1 flex items-center text-[10px] text-muted-foreground font-medium">
             Pair <SortIcon k="base" />
           </button>
-          <button
-            onClick={() => toggleSort("price")}
-            className="w-24 flex items-center justify-end text-[10px] text-muted-foreground font-medium"
-          >
+          <button onClick={() => toggleSort("price")} className="w-24 flex items-center justify-end text-[10px] text-muted-foreground font-medium">
             Price <SortIcon k="price" />
           </button>
-          <button
-            onClick={() => toggleSort("chg")}
-            className="w-16 flex items-center justify-end text-[10px] text-muted-foreground font-medium"
-          >
+          <button onClick={() => toggleSort("chg")} className="w-16 flex items-center justify-end text-[10px] text-muted-foreground font-medium">
             Chg% <SortIcon k="chg" />
           </button>
         </div>
@@ -350,12 +416,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           ) : (
             rows.map(m => {
               const isActive = m.symbol === currentSymbol?.replace(/\//g, "-");
-              const isUp = m.chg >= 0;
+              const isUp     = m.chg >= 0;
               return (
                 <div
                   key={m.symbol}
                   className={cn(
-                    "flex items-center px-4 py-[10px] border-b border-border/20 cursor-pointer",
+                    "flex items-center px-4 py-[10px] border-b border-border/20",
                     isActive ? "bg-primary/8" : "active:bg-secondary/40"
                   )}
                 >
@@ -376,7 +442,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                     <CoinLogo symbol={m.base} size={28} />
                   </button>
 
-                  {/* Pair */}
+                  {/* Pair name + badges */}
                   <button onClick={() => pick(m)} className="flex-1 text-left">
                     <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
                       {m.base}
@@ -385,6 +451,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                     {m.type === "futures" && (
                       <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
                     )}
+                    {m.swapOnly && (
+                      <span className="ml-1 text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
+                    )}
                     {isActive && (
                       <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
                     )}
@@ -392,17 +461,23 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
                   {/* Price */}
                   <button onClick={() => pick(m)} className="w-24 text-right pr-2">
-                    <span className="text-[12px] font-semibold text-foreground tabular-nums">{fmt(m.price)}</span>
+                    <span className="text-[12px] font-semibold text-foreground tabular-nums">
+                      {m.swapOnly ? "—" : fmt(m.price)}
+                    </span>
                   </button>
 
                   {/* Change */}
                   <button onClick={() => pick(m)} className="w-16 text-right">
-                    <span className={cn(
-                      "text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded",
-                      isUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
-                    )}>
-                      {isUp ? "+" : ""}{m.chg.toFixed(2)}%
-                    </span>
+                    {m.swapOnly ? (
+                      <span className="text-[10px] text-muted-foreground/50">Swap</span>
+                    ) : (
+                      <span className={cn(
+                        "text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded",
+                        isUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
+                      )}>
+                        {isUp ? "+" : ""}{m.chg.toFixed(2)}%
+                      </span>
+                    )}
                   </button>
                 </div>
               );
