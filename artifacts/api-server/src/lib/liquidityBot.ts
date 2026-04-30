@@ -137,12 +137,17 @@ function buildLadder(
     const px   = midPrice * (1 + sign * spread);
     const qty  = bSize * sizeMulti;
 
-    // Format price with appropriate precision
+    // Format price with appropriate precision (handles sub-satoshi like 1e-11)
     let priceStr: string;
     if (px >= 1000)       priceStr = px.toFixed(2);
     else if (px >= 1)     priceStr = px.toFixed(4);
     else if (px >= 0.001) priceStr = px.toFixed(6);
-    else                  priceStr = px.toFixed(10).replace(/0+$/, "").replace(/\.$/, "0");
+    else if (px >= 1e-8)  priceStr = px.toFixed(10);
+    else {
+      // Sub-satoshi: enough decimals to show 4+ significant figures
+      const mag = -Math.floor(Math.log10(px));
+      priceStr = px.toFixed(Math.min(mag + 4, 18)).replace(/0+$/, "").replace(/\.$/, "0");
+    }
 
     const qtyStr   = qty >= 1 ? qty.toFixed(4) : qty.toFixed(8);
     const totalStr = (px * qty).toFixed(6);

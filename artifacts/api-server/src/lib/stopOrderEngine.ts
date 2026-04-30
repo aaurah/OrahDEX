@@ -129,13 +129,13 @@ export async function triggerStopOrders(): Promise<void> {
             await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(), updatedAt: new Date() })
+              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
               .where(eq(ordersTable.id, match.id));
           }
         } else {
           await db.update(ordersTable)
             .set({ status: matchFullyFilled ? "filled" : "open",
-                   filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(),
+                   filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18),
                    txid: broadcastTxid, matchedOrderId: order.id, updatedAt: new Date() })
             .where(eq(ordersTable.id, match.id));
         }
@@ -147,9 +147,9 @@ export async function triggerStopOrders(): Promise<void> {
         const stopFullyFilled  = newStopRemaining <= 0.000001;
         await db.update(ordersTable)
           .set({ status: stopFullyFilled ? "filled" : "open",
-                 filledQuantity: newStopFilled.toString(),
-                 remainingQuantity: newStopRemaining.toString(),
-                 price: fillPrice.toString(), total: fillTotal,
+                 filledQuantity: newStopFilled.toFixed(18),
+                 remainingQuantity: newStopRemaining.toFixed(18),
+                 price: fillPrice.toFixed(18), total: (fillQty * fillPrice).toFixed(18),
                  txid: broadcastTxid, matchedOrderId: match.id, updatedAt: new Date() })
           .where(eq(ordersTable.id, order.id));
 
