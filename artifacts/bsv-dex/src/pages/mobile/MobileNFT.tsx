@@ -2247,10 +2247,10 @@ export function MobileNFT() {
           <div className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>BSV · Multichain · Creator Coins</div>
         </div>
         <div className="flex items-center gap-2">
-          {address && (
+          {(profileAddress ?? address) && (
             <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
-              <Avatar src={undefined} name={address} size={18} />
-              <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(address)}</span>
+              <Avatar src={undefined} name={profileAddress ?? address!} size={18} />
+              <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(profileAddress ?? address ?? "")}</span>
             </button>
           )}
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-accent)" }} /><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>live</span></div>
