@@ -390,8 +390,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return true;
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
-  const openOrders = myOrders.filter(o => o.status === "open");
-  const historyOrders = myOrders.filter(o => o.status !== "open");
+  const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
+  const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
 
   // ── Compute amounts locked in open orders for THIS market ──────────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
@@ -1341,11 +1341,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   Connect Wallet
                 </button>
               </div>
-            ) : myOrders.length === 0 ? (
+            ) : openOrders.length === 0 && historyOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
                 <ListOrdered size={28} className="opacity-30" />
-                <p className="text-sm">No orders yet</p>
-                <p className="text-xs opacity-60">Place a trade to see your orders here</p>
+                <p className="text-sm">No orders for {symbol}</p>
+                <p className="text-xs opacity-60">Orders on other pairs are in your Portfolio</p>
               </div>
             ) : (
               <>
