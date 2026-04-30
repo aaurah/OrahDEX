@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, Lock, Wallet,
+  Clock, Lock, Wallet, History, Trash2, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -73,10 +73,63 @@ interface StatusResult {
   real_withdrawal_amount?: string;
 }
 
+// History entry — persisted to localStorage
+interface HistoryEntry {
+  transaction_id: string;
+  coin_from:       string;
+  coin_to:         string;
+  network_from:    string;
+  network_to:      string;
+  deposit_amount:  string;
+  withdrawal_amount: string;
+  withdrawal:      string;
+  deposit:         string;
+  deposit_extra_id: string | null;
+  status:          string;
+  rate?:           string;
+  createdAt:       number;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const API = API_BASE;
 const RATE_REFRESH = 10;
+const LS_KEY = "le_swap_history";
+
+function loadHistory(): HistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function saveHistory(entries: HistoryEntry[]) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(entries.slice(0, 50))); } catch {}
+}
+
+function addHistoryEntry(order: OrderResult) {
+  const entries = loadHistory();
+  const entry: HistoryEntry = {
+    transaction_id:   order.transaction_id,
+    coin_from:        order.coin_from,
+    coin_to:          order.coin_to,
+    network_from:     order.coin_from_network,
+    network_to:       order.coin_to_network,
+    deposit_amount:   order.deposit_amount,
+    withdrawal_amount: order.withdrawal_amount,
+    withdrawal:       order.withdrawal,
+    deposit:          order.deposit,
+    deposit_extra_id: order.deposit_extra_id,
+    status:           order.status ?? "wait",
+    rate:             order.rate,
+    createdAt:        Date.now(),
+  };
+  // deduplicate by transaction_id
+  const filtered = entries.filter(e => e.transaction_id !== entry.transaction_id);
+  saveHistory([entry, ...filtered]);
+}
 
 function fmtNum(n: string|number|null|undefined, sig = 6): string {
   if (n == null || n === "") return "–";
@@ -682,6 +735,230 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   );
 }
 
+// ─── HistoryView ─────────────────────────────────────────────────────────────
+
+function HistoryView({ onClose }: { onClose: () => void }) {
+  const [entries,     setEntries]     = useState<HistoryEntry[]>(() => loadHistory());
+  const [expanded,    setExpanded]    = useState<string | null>(null);
+  const [liveStatus,  setLiveStatus]  = useState<Record<string, StatusResult>>({});
+  const [fetching,    setFetching]    = useState<Set<string>>(new Set());
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const fetchStatus = useCallback(async (id: string) => {
+    if (fetching.has(id)) return;
+    setFetching(prev => new Set(prev).add(id));
+    try {
+      const r = await fetch(`${API}/letsexchange/status/${id}`);
+      const d = await r.json();
+      if (r.ok && d.transaction_id) {
+        setLiveStatus(prev => ({ ...prev, [id]: d as StatusResult }));
+        // Update cached status in localStorage
+        setEntries(prev => {
+          const updated = prev.map(e => e.transaction_id === id ? { ...e, status: d.status ?? e.status } : e);
+          saveHistory(updated);
+          return updated;
+        });
+      }
+    } catch {}
+    setFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
+  }, [fetching]);
+
+  // Auto-fetch status for expanded entry
+  useEffect(() => {
+    if (expanded) fetchStatus(expanded);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
+
+  const handleClear = () => {
+    saveHistory([]);
+    setEntries([]);
+    setLiveStatus({});
+    setConfirmClear(false);
+  };
+
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-3 text-white/30">
+        <History className="w-8 h-8" />
+        <p className="text-sm">No swap history yet</p>
+        <button type="button" onClick={onClose} className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors mt-1">
+          Start a swap →
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-bold text-white">{entries.length} swap{entries.length !== 1 ? "s" : ""}</p>
+        {confirmClear ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/40">Clear all?</span>
+            <button type="button" onClick={handleClear} className="text-xs text-red-400 hover:text-red-300 font-semibold transition-colors">Yes</button>
+            <button type="button" onClick={() => setConfirmClear(false)} className="text-xs text-white/40 hover:text-white/60 transition-colors">No</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmClear(true)}
+            className="flex items-center gap-1 text-xs text-white/30 hover:text-white/50 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" /> Clear
+          </button>
+        )}
+      </div>
+
+      {/* Entry list */}
+      {entries.map(entry => {
+        const live    = liveStatus[entry.transaction_id];
+        const status  = live?.status ?? entry.status;
+        const isOpen  = expanded === entry.transaction_id;
+        const isFetching = fetching.has(entry.transaction_id);
+        const isDone  = DONE_STATUSES.has(status);
+
+        return (
+          <div key={entry.transaction_id}
+            className={cn("rounded-xl border transition-colors overflow-hidden",
+              isOpen ? "border-white/20 bg-[#1e1e1e]" : "border-white/10 bg-[#1a1a1a] hover:border-white/15")}>
+            {/* Row header — always visible */}
+            <button type="button"
+              className="w-full flex items-center gap-3 px-3 py-3 text-left"
+              onClick={() => setExpanded(isOpen ? null : entry.transaction_id)}>
+              {/* Coin logos */}
+              <div className="flex items-center -space-x-2 shrink-0">
+                <CoinLogo symbol={entry.coin_from} size={24} />
+                <CoinLogo symbol={entry.coin_to}   size={18} className="ring-1 ring-[#1a1a1a] rounded-full" />
+              </div>
+              {/* Pair + amounts */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                  <span>{entry.coin_from}</span>
+                  <ArrowRight className="w-3 h-3 text-white/30 shrink-0" />
+                  <span>{entry.coin_to}</span>
+                </div>
+                <p className="text-[11px] text-white/40 mt-0.5 font-mono">
+                  {fmtNum(entry.deposit_amount, 6)} → ≈{fmtNum(live?.real_withdrawal_amount ?? entry.withdrawal_amount, 6)}
+                </p>
+              </div>
+              {/* Status + date */}
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className={cn("text-[10px] font-bold uppercase tracking-wide",
+                  STATUS_COLOR[status] ?? "text-white/50")}>
+                  {STATUS_LABEL[status] ?? status}
+                </span>
+                <span className="text-[10px] text-white/30">
+                  {new Date(entry.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <ChevronDown className={cn("w-4 h-4 text-white/30 shrink-0 transition-transform", isOpen && "rotate-180")} />
+            </button>
+
+            {/* Expanded detail */}
+            {isOpen && (
+              <div className="px-3 pb-4 space-y-3 border-t border-white/10 pt-3">
+                {/* Live status */}
+                <div className="flex items-center gap-2.5">
+                  {isDone
+                    ? status === "finished"
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      : <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                    : isFetching
+                      ? <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                      : <RefreshCw className="w-4 h-4 text-blue-400 shrink-0" />
+                  }
+                  <span className={cn("text-sm font-semibold", STATUS_COLOR[status] ?? "text-white")}>
+                    {STATUS_LABEL[status] ?? status}
+                  </span>
+                  {!isFetching && (
+                    <button type="button" onClick={() => fetchStatus(entry.transaction_id)}
+                      className="ml-auto p-1 rounded-lg text-white/30 hover:text-white/60 transition-colors">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Deposit address */}
+                <div className="space-y-1">
+                  <p className="text-xs text-white/40">Deposit address ({entry.coin_from})</p>
+                  <div className="rounded-xl bg-[#141414] border border-white/10 px-3 py-2.5 flex items-center gap-2">
+                    <CoinLogo symbol={entry.coin_from} size={16} />
+                    <p className="flex-1 min-w-0 text-xs text-white/80 font-mono break-all">{entry.deposit}</p>
+                    <CopyButton text={entry.deposit} />
+                  </div>
+                  {entry.deposit_extra_id && (
+                    <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-yellow-300 font-semibold">Memo / Tag</p>
+                        <p className="text-xs font-mono text-yellow-200">{entry.deposit_extra_id}</p>
+                      </div>
+                      <CopyButton text={entry.deposit_extra_id} />
+                    </div>
+                  )}
+                </div>
+
+                {/* TX hashes */}
+                {live?.hash_in && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-white/40">Deposit TX</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-white/60">{shortAddr(live.hash_in)}</span>
+                      <CopyButton text={live.hash_in} />
+                    </div>
+                  </div>
+                )}
+                {live?.hash_out && (
+                  <div className="flex justify-between text-xs">
+                    <span className="text-white/40">Withdrawal TX</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-white/60">{shortAddr(live.hash_out)}</span>
+                      <CopyButton text={live.hash_out} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Summary */}
+                <div className="rounded-xl bg-[#141414] p-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Order ID</span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono text-emerald-400">{shortAddr(entry.transaction_id)}</span>
+                      <CopyButton text={entry.transaction_id} />
+                    </div>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">You sent</span>
+                    <span className="font-mono text-white">{fmtNum(entry.deposit_amount, 6)} {entry.coin_from}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">You receive</span>
+                    <span className="font-mono text-emerald-400">
+                      ≈{fmtNum(live?.real_withdrawal_amount ?? entry.withdrawal_amount, 6)} {entry.coin_to}
+                    </span>
+                  </div>
+                  {entry.rate && (
+                    <div className="flex justify-between">
+                      <span className="text-white/40">Rate</span>
+                      <span className="font-mono text-white/60">1 {entry.coin_from} ≈ {fmtNum(entry.rate, 6)} {entry.coin_to}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-white/40">To address</span>
+                    <span className="font-mono text-white/60 truncate ml-4">{shortAddr(entry.withdrawal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Date</span>
+                    <span className="text-white/60">{new Date(entry.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function LetsExchangePanel({
@@ -707,6 +984,8 @@ export function LetsExchangePanel({
   const [creating,   setCreating]   = useState(false);
   const [createError, setCreateError] = useState<string|null>(null);
   const [order,      setOrder]      = useState<OrderResult|null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyCount, setHistoryCount] = useState(() => loadHistory().length);
 
   useEffect(() => {
     let cancelled = false;
@@ -766,7 +1045,10 @@ export function LetsExchangePanel({
         setCreating(false);
         return;
       }
-      setOrder(d as OrderResult);
+      const newOrder = d as OrderResult;
+      addHistoryEntry(newOrder);
+      setHistoryCount(loadHistory().length);
+      setOrder(newOrder);
       setStep(3);
     } catch { setCreateError("Network error — please try again"); }
     setCreating(false);
@@ -817,6 +1099,25 @@ export function LetsExchangePanel({
               Connect Wallet
             </button>
           ) : null}
+          {/* History toggle */}
+          <button
+            type="button"
+            onClick={() => setShowHistory(v => !v)}
+            className={cn(
+              "relative flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-colors",
+              showHistory
+                ? "bg-white/10 border-white/20 text-white"
+                : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70",
+            )}
+          >
+            <History className="w-3 h-3" />
+            History
+            {historyCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-[9px] text-black font-bold flex items-center justify-center">
+                {historyCount}
+              </span>
+            )}
+          </button>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
             {coins.length}+ coins
           </span>
@@ -824,27 +1125,33 @@ export function LetsExchangePanel({
       </div>
 
       <div className="px-4 pb-4 pt-2">
-        {createError && (
-          <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-400 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{createError}</span>
-          </div>
-        )}
-        {creating && (
-          <div className="mb-4 rounded-xl bg-white/5 p-3 flex items-center gap-3 text-sm text-white/60">
-            <Loader2 className="w-4 h-4 animate-spin" /> Creating exchange order…
-          </div>
-        )}
+        {showHistory ? (
+          <HistoryView onClose={() => setShowHistory(false)} />
+        ) : (
+          <>
+            {createError && (
+              <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-400 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{createError}</span>
+              </div>
+            )}
+            {creating && (
+              <div className="mb-4 rounded-xl bg-white/5 p-3 flex items-center gap-3 text-sm text-white/60">
+                <Loader2 className="w-4 h-4 animate-spin" /> Creating exchange order…
+              </div>
+            )}
 
-        {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} />}
-        {step === 2 && fromCoin && toCoin && (
-          <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
-            onBack={() => setStep(1)} onContinue={handleAddressContinue}
-            walletAddress={walletAddress} />
-        )}
-        {step === 3 && order && fromCoin && toCoin && (
-          <StepDeposit order={order} fromCoin={fromCoin} toCoin={toCoin}
-            onBack={() => setStep(2)} onReset={handleReset} />
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} />}
+            {step === 2 && fromCoin && toCoin && (
+              <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
+                onBack={() => setStep(1)} onContinue={handleAddressContinue}
+                walletAddress={walletAddress} />
+            )}
+            {step === 3 && order && fromCoin && toCoin && (
+              <StepDeposit order={order} fromCoin={fromCoin} toCoin={toCoin}
+                onBack={() => setStep(2)} onReset={() => { handleReset(); setHistoryCount(loadHistory().length); }} />
+            )}
+          </>
         )}
       </div>
     </div>
