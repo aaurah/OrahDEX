@@ -404,7 +404,7 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
                     <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground">{CAT_ICONS[p.category]} {p.category}</span>
                   </div>
                 </div>
-                <button onClick={() => onCreator(p.creator)} className="w-full">
+                <button onClick={() => onOpen(p)} className="w-full">
                   {p.image_url ? (
                     <div className="aspect-[4/3] bg-muted/20 overflow-hidden">
                       <img src={p.image_url} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />

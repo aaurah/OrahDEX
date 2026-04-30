@@ -1115,7 +1115,7 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
         <div className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>BSV</div>
       </div>
 
-      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onCreator(post.creator)}>
+      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onOpen(post)}>
         {!imgErr
           ? <img src={post.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-5xl">🖼️</div>
