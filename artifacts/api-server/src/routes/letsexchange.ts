@@ -55,6 +55,20 @@ async function leRequest(
   return { ok: res.ok, status: res.status, data };
 }
 
+// Normalise a raw LetsExchange coin object into a consistent shape the
+// frontend can rely on (API returns `ticker`, not `symbol`).
+function normaliseCoin(raw: Record<string, unknown>) {
+  const ticker = (raw.ticker ?? raw.symbol ?? raw.code ?? "") as string;
+  return {
+    symbol:        ticker.toUpperCase(),
+    name:          (raw.name ?? ticker) as string,
+    network:       (raw.network ?? raw.networkName ?? null) as string | null,
+    image:         (raw.image ?? raw.logo ?? null) as string | null,
+    hasExternalId: !!(raw.has_extra_id ?? raw.hasExternalId ?? false),
+    addressRegex:  (raw.addressRegex ?? raw.address_regex ?? null) as string | null,
+  };
+}
+
 // ── GET /api/letsexchange/currencies ──────────────────────────────────────────
 // Returns all 6000+ supported coins. Cached for 5 minutes.
 router.get("/letsexchange/currencies", async (_req, res) => {
@@ -64,8 +78,20 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   try {
     const { ok, data, status } = await leRequest("/coins");
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    setCache(key, data);
-    res.json(data);
+    // Normalise and deduplicate by symbol+network
+    const raw = Array.isArray(data) ? data : [];
+    const seen = new Set<string>();
+    const coins = raw
+      .map((c: Record<string, unknown>) => normaliseCoin(c))
+      .filter(c => {
+        if (!c.symbol) return false;
+        const key = `${c.symbol}::${c.network ?? ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    setCache(key, coins);
+    res.json(coins);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
     res.status(502).json({ error: "Failed to reach LetsExchange" });
