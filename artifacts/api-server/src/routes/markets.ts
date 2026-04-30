@@ -72,8 +72,13 @@ function syntheticOrderBook(price: number, depth = 20, symbol = "") {
 
   for (let i = 0; i < depth; i++) {
     // Add small random jitter to price steps so levels aren't perfectly uniform.
-    const bidPx = parseFloat((price - halfSpread - i * tickStep - rng() * tickStep * 0.3).toFixed(8));
-    const askPx = parseFloat((price + halfSpread + i * tickStep + rng() * tickStep * 0.3).toFixed(8));
+    const pxFmt = (n: number) => {
+      if (n >= 1e-8) return parseFloat(n.toFixed(8));
+      const mag = -Math.floor(Math.log10(Math.max(n, 1e-18)));
+      return parseFloat(n.toFixed(Math.min(mag + 4, 18)));
+    };
+    const bidPx = pxFmt(price - halfSpread - i * tickStep - rng() * tickStep * 0.3);
+    const askPx = pxFmt(price + halfSpread + i * tickStep + rng() * tickStep * 0.3);
 
     // Exponential size decay: deep levels have less liquidity, with ±20% noise.
     const base = (rng() * 4 + 0.5) * Math.exp(-i * 0.10);

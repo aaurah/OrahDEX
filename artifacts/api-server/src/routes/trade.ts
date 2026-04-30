@@ -173,10 +173,10 @@ async function executeExchangeTrade(params: {
       id: tradeId,
       symbol,
       side: "buy",
-      price: price.toFixed(8),
-      quantity: amountIn.toFixed(8),
-      total: amtOut.toFixed(8),
-      fee: fee.toFixed(8),
+      price: price.toFixed(18),
+      quantity: amountIn.toFixed(18),
+      total: amtOut.toFixed(18),
+      fee: fee.toFixed(18),
       feeAsset: assetIn,
       walletAddress,
       txid: `exchange:${tradeId}`,
@@ -455,8 +455,8 @@ router.post("/trade/wallet/settle", async (req, res) => {
            (id, symbol, side, price, quantity, total, fee, fee_asset, wallet_address, txid)
          VALUES ($1,$2,'buy',$3,$4,$5,$6,$7,$8,$9)`,
         [
-          tradeId, symbol, price.toFixed(8), amtIn.toFixed(8),
-          amtOut.toFixed(8), fee.toFixed(8), assetIn.toUpperCase(),
+          tradeId, symbol, price.toFixed(18), amtIn.toFixed(18),
+          amtOut.toFixed(18), fee.toFixed(18), assetIn.toUpperCase(),
           walletAddress, txHash,
         ],
       );

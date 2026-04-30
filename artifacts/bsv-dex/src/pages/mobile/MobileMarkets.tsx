@@ -36,7 +36,9 @@ function fmt(p: number): string {
   if (p >= 1)      return p.toFixed(4);
   if (p >= 0.01)   return p.toFixed(4);
   if (p >= 0.0001) return p.toFixed(6);
-  return p.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
+  if (p >= 1e-8)   return p.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
 }
 
 function fmtShort(n: number): string {

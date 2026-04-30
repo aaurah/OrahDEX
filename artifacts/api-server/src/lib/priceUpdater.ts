@@ -7,6 +7,16 @@ import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest } from "./lePriceCache.js";
 
+/** Format a price with enough decimal places so sub-satoshi values aren't lost.
+ *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
+ */
+function fmtPrice(p: number): string {
+  if (!Number.isFinite(p) || p <= 0) return "0";
+  if (p >= 1e-8) return p.toFixed(8);
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 4, 18));
+}
+
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
 export const COINGECKO_IDS: Record<string, string> = {
@@ -178,9 +188,10 @@ export const COINGECKO_IDS: Record<string, string> = {
   BGB:   "bitget-token",
   WBT:   "whitebit",
   // BRC-20 / Ordinals
-  ORDI:  "ordinals",
-  SATS:  "1000sats-ordinals",
-  RATS:  "rats-ordinals",
+  ORDI:       "ordinals",
+  SATS:       "1000sats-ordinals",
+  "1000SATS": "1000sats-ordinals",
+  RATS:       "rats-ordinals",
   // Polkadot ecosystem
   KSM:   "kusama",
   ACA:   "acala",
@@ -684,7 +695,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Exchange tokens ──────────────────────────────────────────────────────────
   OKB:42,GT:6.5,KCS:8.5,HT:2.8,BGB:3.5,WBT:22,
   // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
-  ORDI:28,SATS:0.00000035,RATS:0.00000042,
+  ORDI:28,SATS:0.00000035,"1000SATS":0.00000035,RATS:0.00000042,
   // ── Polkadot ecosystem ───────────────────────────────────────────────────────
   KSM:22,ACA:0.052,ASTR:0.042,PHA:0.082,
   // ── Meme / culture ───────────────────────────────────────────────────────────
@@ -728,8 +739,8 @@ export async function seedMarketsIfNeeded() {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "USDT",
-          lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+          lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
           status: "active", type: "spot",
         });
       }
@@ -743,8 +754,8 @@ export async function seedMarketsIfNeeded() {
           const fp = FALLBACK_PRICES[base] ?? 1;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+            lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
             status: "active", type: "spot",
           });
         }
@@ -760,8 +771,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / ethPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "ETH",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -776,8 +787,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bnbPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BNB",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -800,8 +811,8 @@ export async function seedMarketsIfNeeded() {
           const crossPrice = basePrice / quotePrice;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+            lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
             status: "active", type: "spot",
           });
         }
@@ -824,8 +835,8 @@ export async function seedMarketsIfNeeded() {
           const crossPrice = basePrice / quotePrice;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+            lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
             status: "active", type: "spot",
           });
         }
@@ -841,8 +852,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bchPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BCH",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -857,8 +868,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / btcPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BTC",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -873,8 +884,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bsvPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BSV",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -887,8 +898,8 @@ export async function seedMarketsIfNeeded() {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "USDT",
-          lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+          lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
           status: "active", type: "futures",
         });
       }
@@ -1168,12 +1179,12 @@ export async function updateMarketPrices() {
       }
 
       await db.update(marketsTable).set({
-        lastPrice:            lastPrice.toFixed(8),
-        priceChange24h:       change.toFixed(8),
+        lastPrice:            fmtPrice(lastPrice),
+        priceChange24h:       fmtPrice(Math.abs(change)) === "0" ? "0" : change.toFixed(18).replace(/0+$/, "").replace(/\.$/, "0"),
         priceChangePercent24h: changePercent.toFixed(4),
         volume24h:            (safePrice(vol) ? vol : 0).toFixed(2),
-        high24h:              (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
-        low24h:               (safePrice(low24h)  ? low24h  : lastPrice * 0.99).toFixed(8),
+        high24h:              fmtPrice(safePrice(high24h) ? high24h : lastPrice * 1.01),
+        low24h:               fmtPrice(safePrice(low24h)  ? low24h  : lastPrice * 0.99),
         marketCap:            data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
     }
