@@ -358,7 +358,9 @@ export function MobileMarkets() {
 
   const goTrade = (m: MktRow) => {
     const slug = m.symbol.replace(/\//g, "-");
-    navigate(m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`);
+    if (m.type === "futures") { navigate(`/futures/${slug}`); return; }
+    if (m.type === "letsexchange") { navigate(`/swap?from=${m.base}&to=${m.quote}`); return; }
+    navigate(`/trade/${slug}`);
   };
 
   function SortIcon({ k }: { k: SortKey }) {
