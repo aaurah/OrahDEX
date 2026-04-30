@@ -8,6 +8,7 @@ import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
+import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -832,11 +833,14 @@ export function SpotTrading() {
           />
         </div>
 
-        {/* FAR-RIGHT: Order Form + AI Analysis */}
-        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
+        {/* FAR-RIGHT: Order Form + AI Analysis + LetsExchange */}
+        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
           <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
           <div className="p-2 border-t border-border">
             <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
+          </div>
+          <div className="p-2 border-t border-border">
+            <LetsExchangePanel />
           </div>
         </div>
 

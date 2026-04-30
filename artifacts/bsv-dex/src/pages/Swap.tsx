@@ -36,6 +36,7 @@ import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
+import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -1818,6 +1819,16 @@ export function Swap() {
 
         {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
         <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
+
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border/40" />
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap cross-chain via LetsExchange</span>
+          <div className="flex-1 h-px bg-border/40" />
+        </div>
+
+        {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
+        <LetsExchangePanel />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">

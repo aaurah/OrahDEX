@@ -90,6 +90,7 @@
     "buffer": "^6.0.3",
     "jsqr": "^1.4.0",
     "lightweight-charts": "^5.1.0",
+    "postcss": "^8.5.10",
     "qrcode.react": "^4.2.0",
     "react-helmet-async": "^3.0.0",
     "viem": "^2.47.6",
