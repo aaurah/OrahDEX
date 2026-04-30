@@ -720,6 +720,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  // ── LetsExchange min/max for the current pair & direction ─────────────────
+  const { data: leMinData } = useQuery({
+    queryKey: ["le-min", base, quote, side],
+    queryFn: async () => {
+      const coin_from = side === "sell" ? base : quote;
+      const coin_to   = side === "sell" ? quote : base;
+      const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
+      });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+
   const lastPrice = parseFloat(ticker?.lastPrice) || 0;
   const change = parseFloat(ticker?.priceChangePercent) || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
@@ -770,6 +788,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     : lastPrice;
   const amtNum  = parseFloat(amount || "0");
   const total   = (effectivePrice * amtNum).toFixed(4);
+
+  // LE min/max converted to base-asset units
+  const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
+  const leMaxRaw: number = parseFloat(leMinData?.max_amount ?? 0) || 0;
+  // For SELL: LE min is already in base. For BUY: LE min is in quote → divide by price.
+  const leMinBase = side === "sell"
+    ? leMinRaw
+    : (leMinRaw > 0 && effectivePrice > 0 ? leMinRaw / effectivePrice : 0);
+  const leMaxBase = side === "sell"
+    ? leMaxRaw
+    : (leMaxRaw > 0 && effectivePrice > 0 ? leMaxRaw / effectivePrice : 0);
+  const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
+  const aboveLeMax = leMaxBase > 0 && amtNum > leMaxBase;
   const FEE_RATE = 0.001;
   const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
 
@@ -875,6 +906,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+
+    // ── LetsExchange min/max guard ────────────────────────────────────────────
+    if (belowLeMin) {
+      toast({
+        title: "Amount too low",
+        description: `Minimum trade via exchange is ${leMinBase < 0.0001 ? leMinBase.toFixed(8) : leMinBase.toFixed(6)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (aboveLeMax) {
+      toast({
+        title: "Amount too high",
+        description: `Maximum trade via exchange is ${leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
     // isSubmittingRef is a ref (synchronous) — it blocks double-taps that arrive
@@ -1541,6 +1590,32 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </button>
             </div>
 
+            {/* LE min/max hint */}
+            {leMinBase > 0 && (
+              <div className="flex items-center justify-between text-[10px] px-1 -mt-0.5">
+                <span className={cn("font-semibold", belowLeMin ? "text-red-400" : "text-muted-foreground/55")}>
+                  Min: {leMinBase < 0.0001
+                    ? leMinBase.toFixed(8)
+                    : leMinBase < 1
+                      ? leMinBase.toFixed(6)
+                      : leMinBase.toFixed(4)
+                  } {base}
+                </span>
+                {leMaxBase > 0 && (
+                  <span className={cn("font-semibold", aboveLeMax ? "text-red-400" : "text-muted-foreground/40")}>
+                    Max: {leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} {base}
+                  </span>
+                )}
+              </div>
+            )}
+            {(belowLeMin || aboveLeMax) && (
+              <p className="text-[10px] text-red-400 px-1 -mt-0.5">
+                {belowLeMin
+                  ? `Amount is below the minimum required for this trade`
+                  : `Amount exceeds the maximum allowed for this trade`}
+              </p>
+            )}
+
             {/* % quick-fill bar */}
             <div className="relative pt-1 pb-1">
               <div className="flex justify-between px-1 mb-1">
@@ -1886,13 +1961,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             ) : (
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting}
+                disabled={!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (
