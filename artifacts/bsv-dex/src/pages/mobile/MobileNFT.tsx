@@ -133,8 +133,22 @@ const CAT_ICONS: Record<string, string> = {
   all: "🌐", art: "🎨", generative: "⚡", relics: "🏛️",
   utility: "🔧", governance: "🗳️", bridge: "🌉", ai: "🤖",
 };
-const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
-const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
+const CHAINS = ["BSV","ETH","BASE","BNB","MATIC","ARB","OP","SOL","BTC","BCH"];
+const CHAIN_COLOR: Record<string, string> = {
+  BSV: "#00ff88", ETH: "#627eea", BASE: "#0052ff", BNB: "#f3ba2f",
+  MATIC: "#8247e5", ARB: "#12aaff", OP: "#ff0420", SOL: "#9945ff",
+  BTC: "#f7931a", BCH: "#4caf50",
+};
+const CHAIN_CURRENCY: Record<string, string> = {
+  BSV: "BSV", ETH: "ETH", BASE: "ETH", BNB: "BNB",
+  MATIC: "MATIC", ARB: "ETH", OP: "ETH", SOL: "SOL",
+  BTC: "BTC", BCH: "BCH",
+};
+const CHAIN_LABEL: Record<string, string> = {
+  BSV: "BSV", ETH: "Ethereum", BASE: "Base", BNB: "BNB Chain",
+  MATIC: "Polygon", ARB: "Arbitrum", OP: "Optimism", SOL: "Solana",
+  BTC: "Bitcoin", BCH: "Bitcoin Cash",
+};
 
 /* ─── tiny UI ────────────────────────────────────────────────────────────────── */
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
@@ -1436,7 +1450,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
           <div className="text-center py-8">
             <div className="text-5xl mb-3">{mode === "buy" ? "🎉" : "🏷️"}</div>
             <h3 className="text-xl font-bold mb-1" style={{ color: "var(--color-text)" }}>{mode === "buy" ? "Collected!" : "Listed!"}</h3>
-            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${post.title} is permanently on BSV.` : `${post.title} is now listed for sale.`}</p>
+            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${post.title} is permanently on ${post.chain ?? "BSV"}.` : `${post.title} is now listed for sale.`}</p>
             {mode === "buy" && <div className="text-xs font-mono px-3 py-1.5 rounded-xl inline-block mb-4" style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}>{post.inscription_id.slice(0, 24)}…</div>}
             <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>Done</button>
           </div>
@@ -1463,7 +1477,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
             {mode === "buy" ? (
               <>
-                {[["Chain", "BSV (on-chain inscription)"], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
+                {[["Chain", `${post.chain ?? "BSV"} (on-chain inscription)`], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
                   <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
                     <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
                     <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
@@ -1538,10 +1552,16 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
 /* ─── SEARCH TAB ─────────────────────────────────────────────────────────────── */
 const CHAIN_BADGE: Record<string, { bg: string; label: string }> = {
-  BSV:   { bg: "#f7931a", label: "BSV" },
+  BSV:   { bg: "#00ff88", label: "BSV" },
   ETH:   { bg: "#627eea", label: "ETH" },
   BASE:  { bg: "#0052ff", label: "BASE" },
+  BNB:   { bg: "#f3ba2f", label: "BNB" },
+  MATIC: { bg: "#8247e5", label: "MATIC" },
+  ARB:   { bg: "#12aaff", label: "ARB" },
+  OP:    { bg: "#ff0420", label: "OP" },
   SOL:   { bg: "#9945ff", label: "SOL" },
+  BTC:   { bg: "#f7931a", label: "BTC" },
+  BCH:   { bg: "#4caf50", label: "BCH" },
   ZORA:  { bg: "#00aaff", label: "ZORA" },
 };
 
@@ -1751,7 +1771,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [form, setForm] = useState({
     title: "", description: "", imageUrl: "", ticker: "",
-    mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "",
+    mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "", chain: "BSV",
   });
   const [mediaMode, setMediaMode] = useState<"url" | "file">("url");
   const [filePreview, setFilePreview] = useState("");
@@ -1762,6 +1782,10 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
+
+  function selectChain(c: string) {
+    setForm(f => ({ ...f, chain: c, mintCurrency: CHAIN_CURRENCY[c] ?? c }));
+  }
 
   const inp: React.CSSProperties = {
     background: "var(--color-surface)", color: "var(--color-text)",
@@ -1816,6 +1840,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           mint_currency: form.mintCurrency,
           category: form.category,
           max_supply: form.maxSupply ? parseInt(form.maxSupply, 10) : null,
+          chain: form.chain,
         }),
       });
       const d = await res.json();
@@ -1830,9 +1855,9 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   if (success) return (
     <div className="flex flex-col items-center justify-center h-full py-20">
       <div className="text-6xl mb-4">✨</div>
-      <h3 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Inscribed on BSV!</h3>
+      <h3 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Posted on {CHAIN_LABEL[form.chain] ?? form.chain}!</h3>
       <p className="text-sm text-center px-6" style={{ color: "var(--color-text-secondary)" }}>
-        Your post is permanently on the BSV blockchain. Your creator coin was auto-created.
+        Your post is permanently inscribed on {form.chain}. Your creator coin was auto-created.
       </p>
     </div>
   );
@@ -1841,7 +1866,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     <div className="p-4 pb-32 overflow-y-auto h-full">
       <h2 className="text-lg font-bold mb-1" style={{ color: "var(--color-text)" }}>Create Post</h2>
       <p className="text-xs mb-4" style={{ color: "var(--color-text-secondary)" }}>
-        Every post = NFT inscription on BSV + tradeable creator coin. Multichain via OrahBridge.
+        Every post = NFT inscription + tradeable creator coin. Choose your chain below.
       </p>
 
       {/* Media preview */}
@@ -1908,13 +1933,41 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Ticker / Symbol <span style={{ opacity: 0.5 }}>(optional)</span></label>
           <input style={inp} placeholder="e.g. ORDI, ART, MUSIC — auto-generated if blank" value={form.ticker}
             onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) }))} maxLength={8} />
-          <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>This becomes your creator coin ticker on BSV</div>
+          <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>Creator coin ticker — auto-generated if blank</div>
         </div>
 
         <div>
           <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Description</label>
           <textarea style={{ ...inp, resize: "none" } as React.CSSProperties} rows={3}
             placeholder="Tell collectors about this work…" value={form.description} onChange={set("description")} maxLength={500} />
+        </div>
+
+        {/* Chain selector */}
+        <div>
+          <label className="text-xs font-medium block mb-2" style={{ color: "var(--color-text-secondary)" }}>Chain</label>
+          <div className="flex flex-wrap gap-1.5">
+            {CHAINS.map(c => {
+              const active = form.chain === c;
+              const col = CHAIN_COLOR[c] ?? "#888";
+              return (
+                <button key={c} onClick={() => selectChain(c)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all"
+                  style={{
+                    background: active ? `${col}28` : "var(--color-surface)",
+                    color: active ? col : "var(--color-text-secondary)",
+                    border: active ? `1.5px solid ${col}80` : "1.5px solid transparent",
+                  }}>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: col }} />
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+          {form.chain && (
+            <p className="text-[10px] mt-1.5" style={{ color: "var(--color-text-secondary)" }}>
+              Posting on <span style={{ color: CHAIN_COLOR[form.chain] ?? "inherit", fontWeight: 700 }}>{CHAIN_LABEL[form.chain] ?? form.chain}</span> · mint currency: <span style={{ fontWeight: 700, color: "var(--color-text)" }}>{form.mintCurrency}</span>
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -1924,9 +1977,9 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           </div>
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Currency</label>
-            <select style={inp} value={form.mintCurrency} onChange={set("mintCurrency")}>
-              {CHAINS.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <div style={{ ...inp, display: "flex", alignItems: "center", fontWeight: 700, color: CHAIN_COLOR[form.chain] ?? "var(--color-text)" }}>
+              {form.mintCurrency}
+            </div>
           </div>
         </div>
 
@@ -1945,7 +1998,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
         {/* Multichain info */}
         <div className="rounded-xl p-3" style={{ background: "rgba(0,255,136,0.06)", border: "1px solid rgba(0,255,136,0.15)" }}>
-          <div className="text-xs font-bold mb-2" style={{ color: "var(--color-accent)" }}>🌐 Multichain NFT + Coin</div>
+          <div className="text-xs font-bold mb-2" style={{ color: "var(--color-accent)" }}>🌐 Supported Chains</div>
           <div className="flex flex-wrap gap-1.5">
             {CHAINS.map(c => <span key={c} className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: `${CHAIN_COLOR[c]}20`, color: CHAIN_COLOR[c] }}>{c}</span>)}
           </div>
@@ -2006,14 +2059,16 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"hot" | "new" | "top">("hot");
   const [category, setCategory] = useState("all");
+  const [feedChain, setFeedChain] = useState("all");
 
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams({ sort, limit: "20" });
     if (category !== "all") params.set("category", category);
+    if (feedChain !== "all") params.set("chain", feedChain);
     if (search) params.set("q", search);
     fetch(`${API}/social/feed?${params}`).then(r => r.json()).then(d => setPosts(d.posts ?? [])).catch(() => {}).finally(() => setLoading(false));
-  }, [sort, category, search]);
+  }, [sort, category, feedChain, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -2034,11 +2089,25 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
             </button>
           ))}
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 mb-1.5" style={{ scrollbarWidth: "none" }}>
           {CATEGORIES.map(c => (
             <button key={c} onClick={() => setCategory(c)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-all"
               style={{ background: category === c ? "rgba(0,255,136,0.15)" : "var(--color-surface)", color: category === c ? "var(--color-accent)" : "var(--color-text-secondary)", border: category === c ? "1px solid rgba(0,255,136,0.3)" : "1px solid transparent" }}>
               {CAT_ICONS[c]} {c}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          {[{key:"all",label:"All Chains",color:"#888"}, ...CHAINS.map(c => ({ key: c, label: c, color: CHAIN_COLOR[c] ?? "#888" }))].map(({ key, label, color }) => (
+            <button key={key} onClick={() => setFeedChain(key)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap shrink-0 transition-all"
+              style={{
+                background: feedChain === key ? `${color}22` : "var(--color-surface)",
+                color: feedChain === key ? color : "var(--color-text-secondary)",
+                border: feedChain === key ? `1.5px solid ${color}60` : "1.5px solid transparent",
+              }}>
+              {key !== "all" && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />}
+              {label}
             </button>
           ))}
         </div>
