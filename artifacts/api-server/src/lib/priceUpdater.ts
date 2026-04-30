@@ -635,7 +635,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
   STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
   "1INCH":0.35,ZRO:2.52,RETH:3980,
-  DAI:1.00,WBTC:70215,WSTETH:3981,
+  DAI:1.00,WBTC:83000,WSTETH:3200,
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
   BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
   BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
@@ -667,7 +667,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:70725,CBETH:3400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  CBBTC:83000,CBETH:1800,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
   HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
   BALD:0.00284,NORMIE:0.00182,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
@@ -879,6 +879,27 @@ export async function updateMarketPrices() {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
     const prices = await fetchSovereignPrices();
     logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
+
+    // Wrapped / synthetic BTC tokens should always track BTC 1:1.
+    // If Binance / CoinGecko doesn't provide an independent price, copy BTC.
+    const btcData = prices["BTC"];
+    if (btcData) {
+      for (const wrapper of ["WBTC", "CBBTC", "RBTC", "TBTC"]) {
+        if (!prices[wrapper]) {
+          prices[wrapper] = { ...btcData };
+        }
+      }
+    }
+
+    // Wrapped / synthetic ETH tokens track ETH 1:1 when no independent price.
+    const ethData = prices["ETH"];
+    if (ethData) {
+      for (const wrapper of ["WETH", "CBETH", "RETH", "WSTETH"]) {
+        if (!prices[wrapper] || prices[wrapper].usd < ethData.usd * 0.5) {
+          prices[wrapper] = { ...ethData };
+        }
+      }
+    }
 
     const markets = await db.select().from(marketsTable);
 

@@ -77,7 +77,7 @@ export const USDT_MARKETS: any[] = [
 ];
 
 // ─── BSV PAIRS ────────────────────────────────────────────────────────────────
-const BSV_PRICE = 14.35;
+const BSV_PRICE = 15.84;
 function bsvPair(base: string, usdtPrice: number, chg: number, vol: number): any {
   const p = usdtPrice / BSV_PRICE;
   return spot(base, "BSV", p, chg, vol / BSV_PRICE);
@@ -175,7 +175,7 @@ export const BSV_MARKETS: any[] = [
 ];
 
 // ─── BTC PAIRS ────────────────────────────────────────────────────────────────
-const BTC_PRICE = 68310;
+const BTC_PRICE = 83000;
 function btcPair(base: string, usdtPrice: number, chg: number, vol: number): any {
   const p = usdtPrice / BTC_PRICE;
   return spot(base, "BTC", p, chg, vol / BTC_PRICE);
@@ -1046,13 +1046,10 @@ export const BRC20_MARKETS: any[] = [
   /* ── Stacks (Bitcoin L2) ── */
   spot("STX",   "USDT", 1.52,    6.42,  22_000_000),  // Stacks — Bitcoin smart contracts
   /* ── Bitcoin ecosystem ── */
-  spot("WBTC",  "USDT", 70215,  -1.92, 120_000_000),  // Wrapped Bitcoin (ERC-20)
-  spot("CBBTC", "USDT", 70725,  -1.85,  85_000_000),  // Coinbase Wrapped BTC (Base)
-  spot("RBTC",  "USDT", 70215,  -1.92,  12_000_000),  // RSK smart Bitcoin
-  spot("TBTC",  "USDT", 70215,  -1.92,   8_000_000),  // tBTC — decentralized bridge
-  /* ── Bitcoin Cash ecosystem ── */
-  spot("BCH",   "USDT", 477,     1.10,  28_000_000),
-  spot("BSV",   "USDT", 55.42,   4.41,  18_500_000),
+  spot("WBTC",  "USDT", 83000,  -1.85, 120_000_000),  // Wrapped Bitcoin (ERC-20)
+  spot("CBBTC", "USDT", 83000,  -1.85,  85_000_000),  // Coinbase Wrapped BTC (Base)
+  spot("RBTC",  "USDT", 83000,  -1.92,  12_000_000),  // RSK smart Bitcoin
+  spot("TBTC",  "USDT", 83000,  -1.92,   8_000_000),  // tBTC — decentralized bridge
 ];
 
 export const NEW_MARKETS: any[] = [
