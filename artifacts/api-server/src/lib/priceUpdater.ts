@@ -1024,6 +1024,10 @@ export async function seedLEPairsIfNeeded() {
   }
 }
 
+// Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
+const _coinChangeMap: Record<string, number> = {};
+export function getCoinChangeMap(): Record<string, number> { return _coinChangeMap; }
+
 export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
@@ -1049,6 +1053,11 @@ export async function updateMarketPrices() {
           prices[wrapper] = { ...ethData };
         }
       }
+    }
+
+    // Populate the shared change map so other modules (e.g. letsexchange route) can read it
+    for (const [sym, data] of Object.entries(prices)) {
+      _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
     const markets = await db.select().from(marketsTable);

@@ -26,6 +26,7 @@ import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
+import { getCoinChangeMap } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
 
@@ -112,6 +113,7 @@ const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX",
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
 
 function buildPairs(coins: NormalisedCoin[]) {
+  const changeMap = getCoinChangeMap();
   const pairs: Record<string, unknown>[] = [];
   const seen = new Set<string>();
   for (const coin of coins) {
@@ -131,7 +133,7 @@ function buildPairs(coins: NormalisedCoin[]) {
         minAmount:             coin.minAmount,
         maxAmount:             coin.maxAmount,
         lastPrice:             0,
-        priceChangePercent24h: 0,
+        priceChangePercent24h: changeMap[coin.symbol] ?? 0,
         volume:                0,
         type:                  "letsexchange",
         leSource:              true,
