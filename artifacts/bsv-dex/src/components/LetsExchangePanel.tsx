@@ -24,6 +24,8 @@ import {
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
+import { useWalletStore } from "@/store/useWalletStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -290,19 +292,36 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [availBal,   setAvailBal]   = useState<number | null>(null);
 
-  // Fetch internal exchange balance for the "from" coin whenever it or the wallet changes
-  useEffect(() => {
-    setAvailBal(null);
-    if (!fromCoin || !walletAddress) return;
-    let cancelled = false;
-    fetch(`${API}/api/balances/${fromCoin.symbol}?walletAddress=${encodeURIComponent(walletAddress)}`, { cache: "no-store" })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d) setAvailBal(parseFloat(d.available ?? "0") || 0); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [fromCoin, walletAddress]);
+  // Real on-chain EVM balance for the "from" coin
+  const { chainId: walletChainId, balance: nativeBal } = useWalletStore();
+  const { balances: evmBalances } = useEvmBalances(
+    walletAddress ?? null,
+    walletChainId ?? null,
+  );
+
+  // Resolve the available balance: native token (e.g. ETH) or ERC-20 token
+  const availBal = useMemo(() => {
+    if (!fromCoin || !walletAddress) return null;
+    const sym = fromCoin.symbol.toUpperCase();
+    // Check EVM token balances first (covers ERC-20 tokens)
+    if (evmBalances && evmBalances.length > 0) {
+      const match = evmBalances.find(b => b.symbol.toUpperCase() === sym);
+      if (match && match.amount > 0) return match.amount;
+      // If EVM balances loaded but coin not in list, it may be native
+      const native = evmBalances.find(b => b.isNative);
+      if (native && native.symbol.toUpperCase() === sym) return native.amount;
+    }
+    // Fallback: use native wallet balance string from wallet store for native coins
+    if (nativeBal && walletChainId) {
+      const nativeSym = walletChainId === 56 ? "BNB" : walletChainId === 137 ? "POL" : "ETH";
+      if (sym === nativeSym) {
+        const v = parseFloat(nativeBal);
+        return isNaN(v) ? null : v;
+      }
+    }
+    return null;
+  }, [fromCoin, walletAddress, evmBalances, nativeBal, walletChainId]);
 
   // Quick-fill helpers
   const applyPct = (pct: number) => {
