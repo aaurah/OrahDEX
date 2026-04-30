@@ -530,6 +530,16 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
   const addrOk = address.trim().length >= 10;
   const extraOk = !toCoin.hasExtraId || extraId.trim().length > 0;
 
+  // Only offer "Use connected wallet" when the receiving coin is on an EVM-compatible network.
+  // EVM addresses (0x…) are invalid for BTC, BSV, XMR, SOL, etc.
+  const EVM_NETWORKS = new Set([
+    "eth","erc20","bep20","bsc","bnb","matic","polygon","optimism","op","arbitrum","arb",
+    "avax","avalanche","ftm","fantom","celo","base","mnt","mantle","cro","cronos",
+    "linea","zksync","zk","scroll","blast","mode",
+  ]);
+  const isEvmReceiver = EVM_NETWORKS.has((toCoin.network ?? toCoin.symbol).toLowerCase());
+  const showConnectedWallet = isEvmReceiver && !!walletAddress;
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
@@ -579,11 +589,11 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
         <p className="text-xs text-muted-foreground">
           On the <span className="text-muted-foreground/80">{toCoin.networkName ?? toCoin.network ?? toCoin.symbol}</span> network
         </p>
-        {/* Use connected wallet chip */}
-        {walletAddress && (
+        {/* Use connected wallet chip — only for EVM-compatible receiving coins */}
+        {showConnectedWallet && (
           <button
             type="button"
-            onClick={() => setAddress(walletAddress)}
+            onClick={() => setAddress(walletAddress!)}
             className={cn(
               "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all",
               address === walletAddress
@@ -592,7 +602,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
             )}
           >
             <Wallet className="w-3.5 h-3.5 shrink-0" />
-            {address === walletAddress ? "✓ Using connected wallet" : `Use connected wallet: ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`}
+            {address === walletAddress ? "✓ Using connected wallet" : `Use connected wallet: ${walletAddress!.slice(0, 6)}…${walletAddress!.slice(-4)}`}
           </button>
         )}
         <div className="relative">
