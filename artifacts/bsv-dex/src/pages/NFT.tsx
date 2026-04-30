@@ -99,7 +99,7 @@ function safePrice(v: unknown, decimals = 4) {
 function getNftProfileAddress({
   address,
   provider,
-  network,
+  network: _network,
   internalEvmAddress,
 }: {
   address: string | null;
@@ -107,8 +107,11 @@ function getNftProfileAddress({
   network: string | null;
   internalEvmAddress: string | null;
 }) {
+  // For seed-phrase (orah-wallet) users the profile is ALWAYS the internally-derived
+  // EVM address — it never changes no matter which chain is active.
+  if (provider === "orah-wallet") return internalEvmAddress ?? null;
+  // For external wallets (MetaMask, WalletConnect, etc.) use the connected address.
   if (!address) return null;
-  if (provider === "orah-wallet" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 function timeAgo(iso: string) {
