@@ -58,7 +58,23 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Routing**: Wouter
 - **Charting**: lightweight-charts v5
 - **Wallet Connectivity**: `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1`, `@reown/appkit`, `@reown/appkit-adapter-wagmi`, Nodemailer.
-- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark.
+- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark, LetsExchange.
+
+## LetsExchange Cross-Chain Integration
+- **Partner ID / Affiliate ID**: `1692` (decoded from JWT `data.id` field at startup in `letsexchange.ts`)
+- **API Key**: standard affiliate JWT key stored in `LETSEXCHANGE_API_KEY` secret
+- **Working endpoints** (no enterprise upgrade needed):
+  - `GET  /api/v2/coins` → coin list (1,055+ coins with networks, min/max amounts, extra_id flag)
+  - `POST /api/v1/info` → live rate + min/max + `rate_id` + `rate_id_expired_at` (for fixed-rate flow)
+  - `POST /api/v1/transaction` → create exchange order → returns `transaction_id`, `deposit` address, `deposit_extra_id`
+  - `GET  /api/v1/transaction/{id}` → full order details + live status + tx hashes
+- **Key field names** (v1 API, not what we had initially guessed):
+  - Create request: `withdrawal` (not `withdrawal_address`), `withdrawal_extra_id` must always be sent (even `""`), `affiliate_id` required
+  - Create response: `transaction_id` (not `id`), `deposit` (not `deposit_address`), `withdrawal` (not `withdrawal_address`)
+  - Status values: `wait`, `confirmation`, `confirmed`, `exchanging`, `sending`, `finished`, `failed`, `overdue`, `refunded`
+- **Fixed-rate flow**: `POST /v1/info` returns `rate_id` + expiry timestamp → pass `rate_id` to `POST /v1/transaction` for locked rate
+- **Proxy routes**: `artifacts/api-server/src/routes/letsexchange.ts`
+- **Frontend**: `artifacts/bsv-dex/src/components/LetsExchangePanel.tsx` — native 3-step UI (amount → address → deposit/QR/tracking), no external redirects
 
 # Trade Logic Audit (2026-04-10)
 
