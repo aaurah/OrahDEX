@@ -1,16 +1,16 @@
 /**
  * LetsExchangePanel.tsx
  *
- * Cross-chain exchange panel using the LetsExchange partner widget.
- * Coin data comes from the LetsExchange v2 API; the actual exchange
- * (estimate → create → track) runs inside the official widget iframe
- * so no exchange-tier API access is required.
+ * Inline cross-chain exchange panel.
+ * Step 1: coin/amount picker (OrahDEX native UI)
+ * Step 2: full-screen exchange view — widget iframe, sandboxed with NO top-navigation,
+ *         so the user never leaves OrahDEX.
  */
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown,
-  ArrowUpDown, Zap, CheckCircle2, ExternalLink,
+  ArrowUpDown, Zap, CheckCircle2, ChevronLeft, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -21,7 +21,6 @@ const PARTNER_REF = "1692";
 const WIDGET_BASE = "https://widget.letsexchange.io/";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
 interface LeCoin {
   symbol: string;
   name: string;
@@ -34,7 +33,6 @@ interface LeCoin {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function widgetUrl(from: LeCoin | null, to: LeCoin | null, amount: string): string {
   const params = new URLSearchParams({ ref: PARTNER_REF, theme: "dark" });
   if (from) params.set("from", from.symbol);
@@ -43,19 +41,19 @@ function widgetUrl(from: LeCoin | null, to: LeCoin | null, amount: string): stri
   return `${WIDGET_BASE}?${params.toString()}`;
 }
 
-// ─── CoinPicker ───────────────────────────────────────────────────────────────
+function fmt(n: string | null, digits = 4) {
+  if (!n) return null;
+  const v = parseFloat(n);
+  return isNaN(v) ? null : v.toPrecision(digits);
+}
 
+// ─── CoinPicker ───────────────────────────────────────────────────────────────
 function CoinPicker({
-  coins,
-  selected,
-  onChange,
-  label,
-  exclude,
+  coins, selected, onChange, exclude,
 }: {
   coins: LeCoin[];
   selected: LeCoin | null;
   onChange: (c: LeCoin) => void;
-  label: string;
   exclude?: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -70,22 +68,22 @@ function CoinPicker({
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    const h = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
   const filtered = useMemo(() => {
-    const query = q.toLowerCase().trim();
+    const qq = q.toLowerCase().trim();
     const list = exclude ? coins.filter(c => c.symbol !== exclude) : coins;
-    if (!query) return list.slice(0, 120);
+    if (!qq) return list.slice(0, 120);
     return list
       .filter(c =>
-        c.symbol.toLowerCase().includes(query) ||
-        c.name.toLowerCase().includes(query) ||
-        (c.networkName ?? "").toLowerCase().includes(query),
+        c.symbol.toLowerCase().includes(qq) ||
+        c.name.toLowerCase().includes(qq) ||
+        (c.networkName ?? "").toLowerCase().includes(qq),
       )
       .slice(0, 80);
   }, [coins, q, exclude]);
@@ -175,66 +173,102 @@ function CoinPicker({
   );
 }
 
-// ─── Widget modal ─────────────────────────────────────────────────────────────
-
-function WidgetModal({
+// ─── Inline exchange screen (full-page overlay, no navigation away) ────────────
+function ExchangeScreen({
   url,
-  onClose,
+  fromCoin,
+  toCoin,
+  onBack,
 }: {
   url: string;
-  onClose: () => void;
+  fromCoin: LeCoin | null;
+  toCoin: LeCoin | null;
+  onBack: () => void;
 }) {
+  const [loading, setLoading] = useState(true);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [key, setKey] = useState(0);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setKey(k => k + 1);
+  }, []);
+
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex flex-col bg-black/80 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="flex items-center justify-between px-4 py-3 bg-card border-b border-border shrink-0">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Zap className="w-4 h-4 text-yellow-400" />
-          Cross-Chain Exchange
+    <div className="fixed inset-0 z-[9999] flex flex-col bg-[#0d0d0d]"
+         style={{ fontFamily: "inherit" }}>
+
+      {/* Native-looking header bar */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 bg-[#111]/90 backdrop-blur-md">
+        <button
+          type="button"
+          onClick={onBack}
+          className="p-1.5 -ml-1 rounded-xl hover:bg-white/10 transition-colors text-white"
+          aria-label="Back"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+
+        <div className="flex-1 flex items-center gap-2">
+          {fromCoin && toCoin ? (
+            <>
+              <CoinLogo symbol={fromCoin.symbol} size={20} />
+              <span className="text-white text-sm font-bold">{fromCoin.symbol}</span>
+              <span className="text-white/40 text-sm">→</span>
+              <CoinLogo symbol={toCoin.symbol} size={20} />
+              <span className="text-white text-sm font-bold">{toCoin.symbol}</span>
+            </>
+          ) : (
+            <span className="text-white text-sm font-bold">Cross-Chain Exchange</span>
+          )}
         </div>
-        <div className="flex items-center gap-3">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-          >
-            Open in tab <ExternalLink className="w-3 h-3" />
-          </a>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg hover:bg-muted transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+
+        <button
+          type="button"
+          onClick={reload}
+          className="p-1.5 rounded-xl hover:bg-white/10 transition-colors text-white/60 hover:text-white"
+          aria-label="Reload"
+        >
+          <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+        </button>
       </div>
+
+      {/* Loading overlay */}
+      {loading && (
+        <div className="absolute inset-0 top-[57px] flex flex-col items-center justify-center gap-3 bg-[#0d0d0d] z-10">
+          <Loader2 className="w-8 h-8 animate-spin text-yellow-400" />
+          <p className="text-sm text-white/50">
+            Loading exchange{fromCoin && toCoin ? ` ${fromCoin.symbol} → ${toCoin.symbol}` : ""}…
+          </p>
+        </div>
+      )}
+
+      {/* Exchange iframe — sandboxed without top-navigation or popups */}
       <iframe
+        key={key}
+        ref={iframeRef}
         src={url}
+        onLoad={() => setLoading(false)}
         className="flex-1 w-full border-none"
         title="Cross-Chain Exchange"
         allow="clipboard-write"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+        sandbox="allow-scripts allow-same-origin allow-forms"
       />
     </div>
   );
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
-
 export function LetsExchangePanel() {
-  const [coins,       setCoins]       = useState<LeCoin[]>([]);
-  const [coinsError,  setCoinsError]  = useState(false);
-  const [loading,     setLoading]     = useState(true);
+  const [coins,      setCoins]      = useState<LeCoin[]>([]);
+  const [coinsError, setCoinsError] = useState(false);
+  const [loading,    setLoading]    = useState(true);
 
   const [fromCoin, setFromCoin] = useState<LeCoin | null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin | null>(null);
   const [amount,   setAmount]   = useState("");
 
-  const [showWidget, setShowWidget] = useState(false);
+  const [showExchange, setShowExchange] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,10 +279,10 @@ export function LetsExchangePanel() {
         if (cancelled) return;
         if (r.ok && Array.isArray(d)) {
           setCoins(d);
-          const btc  = d.find((c: LeCoin) => c.symbol === "BTC" && (!c.network || c.network === "BTC"));
-          const eth  = d.find((c: LeCoin) => c.symbol === "ETH" && (!c.network || c.network === "ETH"));
-          if (btc)  setFromCoin(btc);
-          if (eth)  setToCoin(eth);
+          const btc = d.find((c: LeCoin) => c.symbol === "BTC" && (!c.network || c.network === "BTC"));
+          const eth = d.find((c: LeCoin) => c.symbol === "ETH" && (!c.network || c.network === "ETH"));
+          if (btc) setFromCoin(btc);
+          if (eth) setToCoin(eth);
         } else {
           setCoinsError(true);
         }
@@ -260,21 +294,22 @@ export function LetsExchangePanel() {
     return () => { cancelled = true; };
   }, []);
 
-  const handleFlip = () => {
-    setFromCoin(toCoin);
-    setToCoin(fromCoin);
-  };
+  const handleFlip = () => { setFromCoin(toCoin); setToCoin(fromCoin); };
 
   const url = widgetUrl(fromCoin, toCoin, amount);
 
-  const minAmt = fromCoin?.minAmount ? parseFloat(fromCoin.minAmount) : null;
-  const belowMin = minAmt !== null && amount !== "" && parseFloat(amount) < minAmt;
+  const minAmt   = fromCoin?.minAmount ? parseFloat(fromCoin.minAmount) : null;
+  const maxAmt   = fromCoin?.maxAmount ? parseFloat(fromCoin.maxAmount) : null;
+  const numAmt   = amount !== "" ? parseFloat(amount) : null;
+  const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
+  const aboveMax = maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+  const amtError = belowMin || aboveMax;
 
   if (loading) {
     return (
       <div className="rounded-2xl border border-border bg-card shadow-lg p-6 flex flex-col items-center gap-3 text-muted-foreground">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
-        <p className="text-sm">Loading {"\u{1F4B1}"} 6000+ coins…</p>
+        <p className="text-sm">Loading 6000+ coins…</p>
       </div>
     );
   }
@@ -290,8 +325,14 @@ export function LetsExchangePanel() {
 
   return (
     <>
-      {showWidget && (
-        <WidgetModal url={url} onClose={() => setShowWidget(false)} />
+      {/* Full-screen exchange screen — no external redirect */}
+      {showExchange && (
+        <ExchangeScreen
+          url={url}
+          fromCoin={fromCoin}
+          toCoin={toCoin}
+          onBack={() => setShowExchange(false)}
+        />
       )}
 
       <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">
@@ -300,9 +341,11 @@ export function LetsExchangePanel() {
           <div className="flex items-center gap-2 text-sm font-bold">
             <Zap className="w-4 h-4 text-yellow-400" />
             Cross-Chain Exchange
-            <span className="text-[10px] font-normal text-muted-foreground">6000+ coins · Non-custodial</span>
+            <span className="text-[10px] font-normal text-muted-foreground">1000+ coins · Non-custodial</span>
           </div>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">Cross-Chain</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
+            Cross-Chain
+          </span>
         </div>
 
         {/* From */}
@@ -314,7 +357,6 @@ export function LetsExchangePanel() {
                 coins={coins}
                 selected={fromCoin}
                 onChange={c => setFromCoin(c)}
-                label="From"
                 exclude={toCoin?.symbol}
               />
             </div>
@@ -328,9 +370,11 @@ export function LetsExchangePanel() {
             />
           </div>
           {fromCoin?.minAmount && (
-            <p className={cn("text-[11px]", belowMin ? "text-red-400 font-semibold" : "text-muted-foreground/70")}>
-              Min: {parseFloat(fromCoin.minAmount).toPrecision(4)} {fromCoin.symbol}
-              {fromCoin.maxAmount && ` · Max: ${parseFloat(fromCoin.maxAmount).toPrecision(6)} ${fromCoin.symbol}`}
+            <p className={cn("text-[11px]", amtError ? "text-red-400 font-semibold" : "text-emerald-400/80")}>
+              Min:&nbsp;{fmt(fromCoin.minAmount)} {fromCoin.symbol}
+              {fromCoin.maxAmount && (
+                <>&nbsp;· Max:&nbsp;{fmt(fromCoin.maxAmount, 6)} {fromCoin.symbol}</>
+              )}
             </p>
           )}
         </div>
@@ -355,7 +399,6 @@ export function LetsExchangePanel() {
                 coins={coins}
                 selected={toCoin}
                 onChange={c => setToCoin(c)}
-                label="To"
                 exclude={fromCoin?.symbol}
               />
             </div>
@@ -368,11 +411,11 @@ export function LetsExchangePanel() {
         {/* CTA */}
         <button
           type="button"
-          disabled={!fromCoin || !toCoin || belowMin}
-          onClick={() => setShowWidget(true)}
+          disabled={!fromCoin || !toCoin || amtError}
+          onClick={() => setShowExchange(true)}
           className={cn(
             "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
-            !fromCoin || !toCoin || belowMin
+            !fromCoin || !toCoin || amtError
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-black shadow-lg shadow-yellow-500/20 active:scale-[0.98]",
           )}
@@ -381,7 +424,9 @@ export function LetsExchangePanel() {
           {!fromCoin || !toCoin
             ? "Select coins to continue"
             : belowMin
-            ? `Below minimum (${parseFloat(fromCoin.minAmount!).toPrecision(4)} ${fromCoin.symbol})`
+            ? `Below minimum (${fmt(fromCoin.minAmount)} ${fromCoin.symbol})`
+            : aboveMax
+            ? `Above maximum (${fmt(fromCoin.maxAmount, 6)} ${fromCoin.symbol})`
             : `Exchange ${fromCoin.symbol} → ${toCoin.symbol}`}
         </button>
 
