@@ -6,7 +6,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell, Tag,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -1398,7 +1398,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [listPrice, setListPrice] = useState("");
+  const floorPrice = parseFloat(String(post.mint_price)) || 0;
+  const [listPrice, setListPrice] = useState(() => floorPrice > 0 ? safePrice(floorPrice) : "");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
 
@@ -1655,27 +1656,90 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 </button>
               </>
             ) : (
-              <>
-                <div className="py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-                  <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>Set a price to list your copy of this NFT on the OrahDEX marketplace. Buyers pay you directly.</p>
-                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-                    <input type="number" min="0" step="0.0001" placeholder="0.0000"
-                      className="flex-1 bg-transparent text-sm font-mono outline-none"
-                      style={{ color: "var(--color-text)" }}
-                      value={listPrice} onChange={e => setListPrice(e.target.value)} />
-                    <span className="text-xs font-bold shrink-0" style={{ color: "var(--color-text-secondary)" }}>{post.mint_currency}</span>
+              (() => {
+                const parsedListPrice = parseFloat(listPrice) || 0;
+                const sliderMin = 0;
+                const sliderMax = floorPrice > 0 ? floorPrice * 20 : 0.001;
+                const sliderStep = floorPrice > 0 ? floorPrice / 100 : 0.000001;
+                const isBelowFloor = floorPrice > 0 && parsedListPrice > 0 && parsedListPrice < floorPrice;
+                const liveListUsd = liveUsdRate > 0 && parsedListPrice > 0 ? parsedListPrice * liveUsdRate : null;
+                return (
+                <>
+                  {/* Price card */}
+                  <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)", border: `1px solid ${isBelowFloor ? "rgba(255,60,60,0.4)" : "var(--color-border)"}` }}>
+                    <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--color-text-secondary)" }}>Your Listing Price</div>
+
+                    {/* Price input */}
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-2" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${isBelowFloor ? "rgba(255,60,60,0.4)" : "var(--color-border)"}` }}>
+                      <input type="number" min={0} step={sliderStep} placeholder={safePrice(floorPrice)}
+                        className="flex-1 bg-transparent text-xl font-black outline-none"
+                        style={{ color: "var(--color-text)" }}
+                        value={listPrice} onChange={e => setListPrice(e.target.value)} />
+                      <span className="text-sm font-bold shrink-0" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                    </div>
+                    {liveListUsd !== null && (
+                      <div className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>≈ ${liveListUsd < 1 ? liveListUsd.toFixed(4) : liveListUsd.toFixed(2)} USD</div>
+                    )}
+
+                    {/* Min / Max slider */}
+                    {floorPrice > 0 && (
+                      <div className="mb-1">
+                        <input type="range"
+                          min={sliderMin} max={sliderMax} step={sliderStep}
+                          value={parsedListPrice || floorPrice}
+                          onChange={e => setListPrice(safePrice(parseFloat(e.target.value)))}
+                          className="w-full" style={{ accentColor: isBelowFloor ? "#ff4444" : (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") }} />
+                        <div className="flex justify-between text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                          <span>Min 0</span>
+                          <span className="font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>
+                            Floor {safePrice(floorPrice)}
+                          </span>
+                          <span>Max {safePrice(sliderMax)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick-pick buttons */}
+                    {floorPrice > 0 && (
+                      <div className="flex gap-2 mt-3">
+                        {[["Floor", floorPrice], ["2×", floorPrice * 2], ["5×", floorPrice * 5], ["10×", floorPrice * 10]].map(([label, val]) => (
+                          <button key={label as string}
+                            onClick={() => setListPrice(safePrice(val as number))}
+                            className="flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                            style={{
+                              background: Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") + "33" : "rgba(255,255,255,0.05)",
+                              color: Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") : "var(--color-text-secondary)",
+                              border: `1px solid ${Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") + "55" : "var(--color-border)"}`,
+                            }}>
+                            {label as string}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[11px] mt-1.5" style={{ color: "var(--color-text-secondary)" }}>Current floor: {safePrice(post.mint_price)} {post.mint_currency}</p>
-                </div>
-                {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to list</span></div>}
-                {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-                <button onClick={doList} disabled={loading || !listPrice}
-                  className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
-                  style={{ background: loading || !listPrice ? "#555" : "#ff4444", color: "#fff" }}>
-                  {loading ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> :
-                    <>{address ? `List for ${listPrice || "…"} ${post.mint_currency}` : "Connect Wallet"}</>}
-                </button>
-              </>
+
+                  {/* Below-floor warning */}
+                  {isBelowFloor && (
+                    <div className="mb-3 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.25)" }}>
+                      <span className="text-[11px]" style={{ color: "#ff6666" }}>⚠ Price is below the floor ({safePrice(floorPrice)} {post.mint_currency}). Buyers are unlikely to purchase below floor.</span>
+                    </div>
+                  )}
+
+                  {!address && <div className="mb-3 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to list</span></div>}
+                  {error && <div className="mb-3 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+
+                  <button onClick={doList} disabled={loading || !listPrice || parsedListPrice <= 0}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
+                    style={{ background: loading || !listPrice || parsedListPrice <= 0 ? "#555" : "#ff4444", color: "#fff" }}>
+                    {loading
+                      ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : address
+                        ? <><Tag size={15} />{`List for ${listPrice || "…"} ${post.mint_currency}`}</>
+                        : "Connect Wallet"}
+                  </button>
+                </>
+                );
+              })()
             )}
           </>
         )}
