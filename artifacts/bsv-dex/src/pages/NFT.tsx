@@ -14,6 +14,7 @@ import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { useLocation } from "wouter";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
+import { useHybridBalance } from "@/hooks/useHybridBalance";
 
 const API = "/api";
 
@@ -817,6 +818,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
   const isViewingOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
+  const hybrid = useHybridBalance(60_000);
 
   const loadProfileData = useCallback(() => {
     setLoading(true);
@@ -936,6 +938,33 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   <div><div className="text-sm font-bold text-foreground">{fmtUsd(creator.ath_usd)}</div><div className="text-[9px] text-muted-foreground">ATH</div></div>
                 </div>
               </div>
+
+              {/* ── Hybrid portfolio (own profile only) ── */}
+              {isViewingOwnProfile && (
+                <div className="mx-4 mb-3 rounded-xl p-3 border border-border/40" style={{ background: "rgba(0,255,136,0.04)" }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Portfolio</span>
+                    {hybrid.loading && <RefreshCw size={10} className="animate-spin text-muted-foreground" />}
+                  </div>
+                  <div className="text-lg font-black text-primary mb-1.5">
+                    {hybrid.loading && hybrid.chains.length === 0
+                      ? "—"
+                      : `$${hybrid.totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </div>
+                  {hybrid.chains.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {hybrid.chains.filter(c => c.native > 0).map(c => (
+                        <span key={c.symbol} className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/40 text-muted-foreground">
+                          {c.symbol} {c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                          {" · "}
+                          <span className="text-primary">${c.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex border-t border-border">
                 {(["posts", "holders"] as const).map(t => (
                   <button key={t} onClick={() => setTab(t)}
