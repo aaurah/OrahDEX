@@ -134,10 +134,18 @@ function addHistoryEntry(order: OrderResult) {
   saveHistory([entry, ...filtered]);
 }
 
-function fmtNum(n: string|number|null|undefined, sig = 6): string {
+function fmtNum(n: string|number|null|undefined, maxDec = 8): string {
   if (n == null || n === "") return "–";
   const v = parseFloat(String(n));
-  return isNaN(v) ? "–" : v.toPrecision(sig).replace(/\.?0+$/, "");
+  if (!isFinite(v) || isNaN(v)) return "–";
+  if (v === 0) return "0";
+  const abs = Math.abs(v);
+  // Choose decimal places by magnitude — never show more than maxDec
+  const dec = abs >= 1000 ? 2
+    : abs >= 1    ? Math.min(maxDec, 4)
+    : abs >= 0.01 ? Math.min(maxDec, 6)
+    : Math.min(maxDec, 8);
+  return v.toFixed(dec).replace(/\.?0+$/, "");
 }
 function shortAddr(a: string) { return a.length <= 16 ? a : `${a.slice(0, 8)}…${a.slice(-6)}`; }
 
@@ -330,7 +338,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const applyPct = (pct: number) => {
     if (!availBal || availBal <= 0) return;
     const val = (availBal * pct) / 100;
-    setAmount(val.toPrecision(6).replace(/\.?0+$/, ""));
+    setAmount(fmtNum(val, 8));
     setEstimate(null);
   };
 

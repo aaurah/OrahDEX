@@ -1248,6 +1248,13 @@ export function MobilePortfolio() {
                 ) : (
                   <div className="space-y-2 mb-4">
                     {bridgeHistory.map((e: any, i: number) => {
+                      const fmtAmt = (n: any, maxDec = 8) => {
+                        const v = parseFloat(String(n ?? ""));
+                        if (!isFinite(v) || isNaN(v) || v === 0) return String(n ?? "–");
+                        const abs = Math.abs(v);
+                        const dec = abs >= 1000 ? 2 : abs >= 1 ? 4 : abs >= 0.01 ? 6 : Math.min(maxDec, 8);
+                        return v.toFixed(dec).replace(/\.?0+$/, "");
+                      };
                       const live = liveLeStatuses[e.transaction_id];
                       const status = live?.status ?? e.status ?? "wait";
                       const rawTs = e.createdAt ?? e.created_at;
@@ -1270,7 +1277,7 @@ export function MobilePortfolio() {
                       const hashOut = live?.hash_out ?? null;
                       const depositAddr = e.deposit ?? null;
                       const withdrawalAmt = e.withdrawal_amount && Number(e.withdrawal_amount) > 0
-                        ? Number(e.withdrawal_amount).toFixed(6)
+                        ? fmtAmt(e.withdrawal_amount)
                         : null;
 
                       const copyText = async (text: string) => {
@@ -1298,7 +1305,7 @@ export function MobilePortfolio() {
                                 )}
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {e.deposit_amount} {e.coin_from}
+                                {fmtAmt(e.deposit_amount)} {e.coin_from}
                                 {withdrawalAmt
                                   ? <> → <span className="text-green-400 font-semibold">{withdrawalAmt} {e.coin_to}</span></>
                                   : <span className="text-muted-foreground/50"> → pending</span>}
@@ -1310,7 +1317,7 @@ export function MobilePortfolio() {
                           {/* Deposit address — shown for pending swaps */}
                           {isPending && depositAddr && (
                             <div className="mx-4 mb-2.5 rounded-xl border border-yellow-500/25 bg-yellow-500/8 px-3 py-2">
-                              <p className="text-[10px] text-yellow-400/80 font-semibold mb-0.5">Send {e.deposit_amount} {e.coin_from} to:</p>
+                              <p className="text-[10px] text-yellow-400/80 font-semibold mb-0.5">Send {fmtAmt(e.deposit_amount)} {e.coin_from} to:</p>
                               <div className="flex items-center gap-2">
                                 <p className="text-[11px] font-mono text-foreground/80 truncate flex-1">{depositAddr}</p>
                                 <button
