@@ -775,7 +775,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     ? (parseFloat(price || "0") || lastPrice)
     : lastPrice;
   const amtNum  = parseFloat(amount || "0");
-  const total   = (effectivePrice * amtNum).toFixed(4);
+  const totalNum = effectivePrice * amtNum;
+  const total = totalNum > 0 ? fmt(totalNum) : "";
 
   // LE min/max converted to base-asset units
   const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
@@ -790,7 +791,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
   const aboveLeMax = leMaxBase > 0 && amtNum > leMaxBase;
   const FEE_RATE = 0.001;
-  const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
+  const estFee  = amtNum > 0 && totalNum > 0 ? fmt(totalNum * FEE_RATE) + " " + quote : "--";
 
   // ── Canonical L2 chain awareness ──────────────────────────────────────────
   // Each L2 chain carries a canonical native asset that's 1:1 with its L1.
@@ -878,13 +879,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   function stepPrice(delta: number) {
     const cur = parseFloat(price || String(lastPrice)) || lastPrice;
-    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
-    setPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+    const ref = lastPrice > 0 ? lastPrice : Math.abs(cur) || 1;
+    // Step = 0.1% of the price magnitude (handles sub-satoshi like 1e-11)
+    const mag   = Math.pow(10, Math.floor(Math.log10(ref)));
+    const step  = mag * 0.001;
+    const dps   = Math.max(0, Math.min(18, -Math.floor(Math.log10(step)) + 1));
+    setPrice((cur + delta * step).toFixed(dps));
   }
   function stepStopPrice(delta: number) {
     const cur = parseFloat(stopPrice || String(lastPrice)) || lastPrice;
-    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
-    setStopPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+    const ref = lastPrice > 0 ? lastPrice : Math.abs(cur) || 1;
+    const mag   = Math.pow(10, Math.floor(Math.log10(ref)));
+    const step  = mag * 0.001;
+    const dps   = Math.max(0, Math.min(18, -Math.floor(Math.log10(step)) + 1));
+    setStopPrice((cur + delta * step).toFixed(dps));
   }
   function stepAmount(delta: number) {
     const cur = parseFloat(amount || "0");
@@ -929,6 +937,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     // ── Lock acquired ─────────────────────────────────────────────────────────
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+
+    // ── Stop-limit / stop-market: require a valid stop price before submitting ──
+    if ((orderType === "stop-limit" || orderType === "stop-market") && !(parseFloat(stopPrice || "0") > 0)) {
+      toast({
+        title: "Stop price required",
+        description: "Enter a stop price before placing a stop order.",
+        variant: "destructive",
+      });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
 
     // ── SELL guard: block impossible sell orders before the network round-trip ──
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
@@ -1156,21 +1177,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         </div>
 
         {/* ── PERFORMANCE ROW — spot only ── */}
-        {!isFutures && (
-          <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
-            {PERIODS.map(({ label }) => {
-              const pct = (Math.random() * 20 - 10);
-              return (
-                <div key={label} className="shrink-0 text-center">
-                  <p className="text-[10px] text-muted-foreground">{label}</p>
-                  <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
-                    {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {!isFutures && (() => {
+          // Stable seed from symbol — no Math.random() so values don't re-randomize on every render.
+          // Hash: simple djb2 variant
+          const seedBase = (symbol + base + quote).split("").reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 5381);
+          const perfPcts = PERIODS.map(({ label }, i) => {
+            const h = (seedBase ^ (i * 2654435761)) >>> 0;
+            return ((h % 2001) - 1000) / 100; // -10 to +10, two decimal places
+          });
+          return (
+            <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
+              {PERIODS.map(({ label }, i) => {
+                const pct = perfPcts[i]!;
+                return (
+                  <div key={label} className="shrink-0 text-center">
+                    <p className="text-[10px] text-muted-foreground">{label}</p>
+                    <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
+                      {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES / MY ORDERS ── */}
         <div className="flex border-b border-border">
@@ -1415,7 +1445,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                            <span>Price: <span className="text-foreground font-mono">{Number(o.price).toLocaleString()}</span></span>
+                            <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
                             <span>Qty: <span className="text-foreground font-mono">{Number(o.quantity).toFixed(4)}</span></span>
                           </div>
                         </div>
@@ -1451,7 +1481,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
                             <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
                           </div>
-                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
+                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{o.price ? fmt(Number(o.price)) : "—"}</span>
                           <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
                           <span className={cn(
                             "w-16 text-right text-[10px] font-semibold",
