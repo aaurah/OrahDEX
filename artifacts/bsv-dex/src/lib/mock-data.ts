@@ -521,7 +521,7 @@ export const BASE_MARKETS: any[] = [
   spot("DEGEN",  "USDC",  0.00842,   14.82,   138_000_000), // Farcaster social token
   spot("HIGHER", "USDC",  0.00215,    9.64,    82_000_000), // Base cultural token
   spot("MOCHI",  "USDC",  0.00142,   11.25,    58_000_000), // Base cat meme
-  spot("DOGINME","USDC",  0.000428,  16.84,    52_000_000), // Base dog meme
+  spot("DOGINME","USDC",  0.0000945, 12.84,    18_000_000), // Base dog meme
   spot("BALD",   "USDC",  0.00284,    8.42,    42_000_000), // first Base meme coin
   spot("NORMIE", "USDC",  0.00182,   13.10,    38_000_000), // Base meme
   spot("MORPHO", "USDC",  1.82,       5.21,    48_000_000), // Morpho lending on Base
@@ -755,6 +755,7 @@ export const MEME_MARKETS: any[] = [
   spot("WIF",     "USDT", 0.892,      8.42,  82_000_000),
   spot("POPCAT",  "USDT", 0.842,     15.42,  62_000_000),
   spot("BRETT",   "USDT", 0.1142,    18.42,  42_000_000),
+  spot("DOGINME", "USDT", 0.0000945, 12.84,  18_000_000),
   spot("MOG",     "USDT", 0.0000082, 11.50,  22_000_000),
   spot("TURBO",   "USDT", 0.00842,   15.84,  18_000_000),
   spot("BOME",    "USDT", 0.00842,   18.50,  92_000_000),

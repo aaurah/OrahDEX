@@ -109,12 +109,13 @@ export const COINGECKO_IDS: Record<string, string> = {
   SPELL: "spell-token",
   PERP:  "perpetual-protocol",
   // Meme / culture
-  TRUMP: "official-trump",
-  TURBO: "turbo",
-  MOG:   "mog-coin",
-  POPCAT:"popcat",
-  MEW:   "cat-in-a-dogs-world",
-  NEIRO: "first-neiro-on-ethereum",
+  TRUMP:   "official-trump",
+  TURBO:   "turbo",
+  MOG:     "mog-coin",
+  POPCAT:  "popcat",
+  MEW:     "cat-in-a-dogs-world",
+  NEIRO:   "first-neiro-on-ethereum",
+  DOGINME: "doginme",
   BABYDOGE:"baby-doge-coin",
   MEME:  "memecoin-2",
   NOT:   "notcoin",
@@ -264,7 +265,7 @@ export const USDT_PAIRS = [
   "KSM","ACA","ASTR","PHA",
   // ── Meme coins ───────────────────────────────────────────────────────────────
   "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
-  "MEME","NOT","HMSTR","DOGS","EIGEN",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
   // ── L2 / bridge ──────────────────────────────────────────────────────────────
   "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
   "WBTC","WSTETH","RETH",
@@ -311,7 +312,7 @@ const ALL_BASE_COINS: string[] = [
   "KSM","ACA","ASTR","PHA",
   // ── Meme coins ─────────────────────────────────────────────────────────────
   "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
-  "MEME","NOT","HMSTR","DOGS","EIGEN",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
   // ── L2 / bridge ────────────────────────────────────────────────────────────
   "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
   "WBTC","WSTETH","RETH",
@@ -639,6 +640,8 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
   BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
   BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
+  // ── Base meme coins ──────────────────────────────────────────────────────────
+  DOGINME:0.0000945,TOSHI:0.000185,BALD:0.00284,AERO:1.2,
   // ── AI / DePIN ───────────────────────────────────────────────────────────────
   FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
   ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
