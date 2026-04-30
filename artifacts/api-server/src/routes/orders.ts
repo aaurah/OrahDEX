@@ -263,13 +263,13 @@ router.post("/orders", async (req, res) => {
       side,                                      // "buy" | "sell"
       type,                                      // "limit" | "market" | "stop"
       status:            "open",
-      price:             price?.toString(),
-      stopPrice:         stopPrice?.toString(),
-      quantity:          quantity.toString(),
+      price:             price != null ? price.toFixed(18) : undefined,
+      stopPrice:         stopPrice != null ? stopPrice.toFixed(18) : undefined,
+      quantity:          quantity.toFixed(18),
       filledQuantity:    "0",
-      remainingQuantity: quantity.toString(),
-      total:             total?.toString(),
-      fee:               fee.toString(),
+      remainingQuantity: quantity.toFixed(18),
+      total:             total != null ? total.toFixed(18) : undefined,
+      fee:               fee.toFixed(18),
       feeAsset:          symbol.split("/")[1] || "USDT",
       timeInForce:       body.timeInForce || "GTC",
       txid:              null as string | null,
@@ -482,15 +482,15 @@ router.post("/orders", async (req, res) => {
             await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toString(), remainingQuantity: newMatchRemaining.toString(), updatedAt: new Date() })
+              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
               .where(eq(ordersTable.id, match.id));
           }
         } else {
           await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
-              filledQuantity:    newMatchFilled.toString(),
-              remainingQuantity: newMatchRemaining.toString(),
+              filledQuantity:    newMatchFilled.toFixed(18),
+              remainingQuantity: newMatchRemaining.toFixed(18),
               txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
@@ -571,7 +571,7 @@ router.post("/orders", async (req, res) => {
         // ── Mark the user's order with actual fill amount ─────────────────
         const avgFillPrice    = totalFillValue / totalFilled;
         const isFullyFilled   = remainingQty <= 0.000001;
-        const correctFee      = (totalFillValue * 0.001).toFixed(8);
+        const correctFee      = (totalFillValue * 0.001).toFixed(18);
         // Record exchange revenue from the order book fill fee (0.1%)
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
@@ -579,10 +579,10 @@ router.post("/orders", async (req, res) => {
         await db.update(ordersTable)
           .set({
             status:            isFullyFilled ? "filled" : "open",
-            filledQuantity:    totalFilled.toString(),
-            remainingQuantity: Math.max(0, remainingQty).toString(),
-            price:             (isMarket || isStopTriggered) ? avgFillPrice.toString() : undefined,
-            total:             totalFillValue.toFixed(8),
+            filledQuantity:    totalFilled.toFixed(18),
+            remainingQuantity: Math.max(0, remainingQty).toFixed(18),
+            price:             (isMarket || isStopTriggered) ? avgFillPrice.toFixed(18) : undefined,
+            total:             totalFillValue.toFixed(18),
             fee:               correctFee,
             txid:              lastTxid,
             matchedOrderId:    lastMatchId,
