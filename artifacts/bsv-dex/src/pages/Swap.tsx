@@ -1823,7 +1823,7 @@ export function Swap() {
         {/* Divider */}
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap cross-chain via LetsExchange</span>
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap cross-chain</span>
           <div className="flex-1 h-px bg-border/40" />
         </div>
 
