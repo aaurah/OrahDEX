@@ -63,7 +63,6 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     disconnect();
   };
 
-  /** Switch wallet (keeps same account type) */
   const handleSwitchWallet = async () => {
     setOpen(false);
     if (provider === 'reown') {
@@ -82,15 +81,15 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
       {compact ? (
         <button
           onClick={() => setOpen(v => !v)}
-          className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[160px]"
+          className="flex items-center gap-1.5 bg-muted/60 border border-border/50 px-2.5 py-[5px] rounded-lg active:opacity-70 transition-opacity max-w-[160px]"
         >
           <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
           <div className="flex flex-col items-start min-w-0">
-            <span className="text-[11px] font-mono text-white leading-tight truncate">
+            <span className="text-[11px] font-mono text-foreground leading-tight truncate">
               {shortenAddress(address)}
             </span>
             {balanceLabel && (
-              <span className="text-[9px] text-green-400 font-semibold leading-tight">{balanceLabel}</span>
+              <span className="text-[9px] text-green-500 font-semibold leading-tight">{balanceLabel}</span>
             )}
           </div>
           <ChevronDown className={cn('w-3 h-3 text-muted-foreground shrink-0 transition-transform', open && 'rotate-180')} />
@@ -98,7 +97,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
       ) : (
         <button
           onClick={() => setOpen(v => !v)}
-          className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl hover:bg-white/10 transition-colors"
+          className="flex items-center gap-2 bg-muted/60 border border-border/50 px-3 py-1.5 rounded-xl hover:bg-muted transition-colors"
         >
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
           <div className="flex flex-col items-start">
@@ -112,7 +111,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             </span>
           </div>
           {balanceLabel && (
-            <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-semibold text-green-500 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded">
               {balanceLabel}
             </span>
           )}
@@ -123,7 +122,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
       {/* Dropdown panel */}
       {open && (
         <div className={cn(
-          'absolute z-50 mt-2 bg-card border border-border rounded-2xl shadow-2xl shadow-black/40 overflow-hidden',
+          'absolute z-50 mt-2 bg-card border border-border rounded-2xl shadow-2xl shadow-black/20 overflow-hidden',
           compact ? 'right-0 w-64' : 'right-0 w-72'
         )}>
           {/* Header */}
@@ -139,19 +138,18 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                 className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
                 title="Copy address"
               >
-                {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+                {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
             <p className="text-sm font-mono text-foreground break-all leading-snug">{address}</p>
             {balanceLabel && (
-              <p className="text-xs text-green-400 font-semibold mt-1">{balanceLabel}</p>
+              <p className="text-xs text-green-500 font-semibold mt-1">{balanceLabel}</p>
             )}
           </div>
 
-          {/* Network type switcher — shown for multi-chain wallets (passkey/HD) */}
+          {/* Network type switcher */}
           {(() => {
-            // Determine which networks this wallet supports
             const evmAddr   = internalEvmAddress ?? (network === 'evm' ? address : null);
             const available: WalletNetwork[] = [];
             if (evmAddr)               available.push('evm');
@@ -159,7 +157,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             if (internalBtcAddress)    available.push('btc');
             if (internalSolAddress)    available.push('sol');
             if (internalBchAddress)    available.push('bch');
-            if (available.length < 2)  return null; // single-network wallet — nothing to switch
+            if (available.length < 2)  return null;
             return (
               <div className="px-3 py-2.5 border-b border-border">
                 <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
@@ -175,7 +173,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                           "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border",
                           isActive
                             ? "bg-primary/15 text-primary border-primary/40"
-                            : "bg-white/5 text-muted-foreground border-transparent hover:bg-white/10 hover:text-foreground"
+                            : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted hover:text-foreground"
                         )}
                       >
                         <span className="text-base leading-none">{NETWORK_ICONS[net]}</span>
@@ -200,7 +198,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="p-2 flex flex-col gap-1">
                 <button
                   onClick={handleSwitchWallet}
-                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors text-left"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left"
                 >
                   <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <ArrowLeftRight className="w-4 h-4 text-primary" />
