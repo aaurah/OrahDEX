@@ -900,7 +900,7 @@ export function SpotTrading() {
               <div className="min-w-0">
                 <p className="text-[10px] font-bold text-yellow-400 leading-tight">No internal liquidity</p>
                 <p className="text-[9px] text-yellow-400/70 leading-tight">
-                  Rate: 1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote} via LetsExchange
+                  Rate: 1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote}
                 </p>
               </div>
             </div>
