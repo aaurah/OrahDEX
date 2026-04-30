@@ -129,13 +129,37 @@ router.get("/social/creators/:address", async (req, res) => {
       return;
     }
 
-    const [{ rows: posts }, { rows: topHolders }, { rows: trades }] = await Promise.all([
+    const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }] = await Promise.all([
       pool.query("SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address]),
       pool.query("SELECT holder, amount FROM coin_holdings WHERE coin_creator = $1 ORDER BY amount DESC LIMIT 5", [address]),
       pool.query("SELECT * FROM coin_trades WHERE coin_creator = $1 ORDER BY created_at DESC LIMIT 20", [address]),
+      // NFT market cap: sum of (mint_count * mint_price_usd) across all posts
+      pool.query(
+        `SELECT COALESCE(SUM(mint_count * mint_price_usd), 0) AS nft_market_cap_usd
+         FROM social_posts WHERE creator = $1`, [address],
+      ),
+      // NFT holders: distinct minters across all creator's posts
+      pool.query(
+        `SELECT COUNT(DISTINCT pm.minter) AS nft_holder_count
+         FROM post_mints pm
+         JOIN social_posts sp ON pm.post_id = sp.id
+         WHERE sp.creator = $1`, [address],
+      ),
     ]);
 
-    const profile = { ...profiles[0], post_count: posts.length };
+    const nftMarketCap = parseFloat(nftStats[0]?.nft_market_cap_usd ?? 0);
+    const nftHolderCount = parseInt(nftHolders[0]?.nft_holder_count ?? 0, 10);
+
+    const raw = profiles[0];
+    const profile = {
+      ...raw,
+      post_count: posts.length,
+      // If DEX coin has no market cap yet, use NFT mint value instead
+      market_cap_usd: (raw.market_cap_usd > 0 ? raw.market_cap_usd : 0) + nftMarketCap,
+      ath_usd: Math.max(raw.ath_usd ?? 0, nftMarketCap),
+      // If DEX coin has no holders yet, show NFT buyers instead
+      holder_count: Math.max(raw.holder_count ?? 0, nftHolderCount),
+    };
     res.json({ profile, posts, topHolders, trades });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
