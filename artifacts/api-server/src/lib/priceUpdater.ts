@@ -5,6 +5,7 @@ import { logger } from "./logger.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
+import { getCachedLEPrices, warmLEPriceCache } from "./lePriceCache.js";
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -566,6 +567,32 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
+  // ── LetsExchange live prices — fills coins not on Binance/CoinGecko ──────────
+  // Uses the shared 10-minute cache populated by warmLEPriceCache() at startup
+  // and kept fresh by the pairs route.  Non-blocking: never delays the cycle.
+  try {
+    const lePrices = getCachedLEPrices();
+    for (const [sym, usd] of Object.entries(lePrices)) {
+      if (!out[sym] && usd > 0) {
+        // Coin not covered by Binance — use LE live rate
+        out[sym] = {
+          usd,
+          usd_24h_change: simulateDailyChange(sym),
+          usd_24h_vol: usd * 100_000,
+          usd_market_cap: 0,
+        };
+      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
+        // Binance returned a 0-price entry — replace with LE rate
+        out[sym].usd = usd;
+      }
+    }
+    if (Object.keys(lePrices).length > 0) {
+      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE price merge failed (non-fatal)");
+  }
+
   return out;
 }
 
@@ -1039,6 +1066,9 @@ let updateInterval: NodeJS.Timeout | null = null;
 let _priceUpdating = false;
 
 export function startPriceUpdater() {
+  // Warm the LE price cache immediately at startup — non-blocking
+  warmLEPriceCache().catch(() => {});
+
   seedMarketsIfNeeded().then(() => updateMarketPrices());
   updateInterval = setInterval(async () => {
     if (_priceUpdating) { logger.warn("Price updater: previous tick still running, skipping"); return; }

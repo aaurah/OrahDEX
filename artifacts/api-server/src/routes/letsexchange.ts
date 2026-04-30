@@ -22,14 +22,14 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
+import {
+  leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
+  type NormalisedCoin,
+} from "../lib/lePriceCache.js";
 
 const router: IRouter = Router();
 
-const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
-const BASE    = "https://api.letsexchange.io/api";
-
-const CACHE_TTL       = 5 * 60 * 1000;
-const LE_PRICES_TTL   = 10 * 60 * 1000; // LE coin-USD prices cached 10 min
+const CACHE_TTL = 5 * 60 * 1000;
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
 function cached(k: string, ttl = CACHE_TTL) {
@@ -38,126 +38,7 @@ function cached(k: string, ttl = CACHE_TTL) {
 }
 function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
 
-// ── LetsExchange USD price fetch ──────────────────────────────────────────────
-// For every unique LE coin, call POST /v1/info (coin→USDT, amount=1) to get its
-// USD rate.  Results are batched (8 concurrent) with a small inter-batch delay to
-// stay well within LE's rate limits.  Cached 10 min; fails silently.
-let lePriceFetchPromise: Promise<Record<string, number>> | null = null;
-
-async function fetchLEPricesUSD(coins: NormalisedCoin[]): Promise<Record<string, number>> {
-  const hit = cached("le_usd_prices", LE_PRICES_TTL) as Record<string,number> | null;
-  if (hit) return hit;
-  if (lePriceFetchPromise) return lePriceFetchPromise;
-
-  lePriceFetchPromise = (async () => {
-    // De-dupe: one network entry per symbol (first occurrence wins)
-    const seen  = new Set<string>();
-    const queue: NormalisedCoin[] = [];
-    for (const c of coins) {
-      if (!seen.has(c.symbol) && c.symbol !== "USDT" && c.symbol !== "USDC") {
-        seen.add(c.symbol);
-        queue.push(c);
-      }
-    }
-
-    // Choose the best USDT destination network for each coin's source network.
-    // Mapping avoids sequential retries — one targeted call per coin.
-    const pickUsdtNet = (coinNet: string | null): string => {
-      const n = (coinNet ?? "").toUpperCase();
-      if (n === "TRC20" || n === "TRX") return "TRC20";
-      if (n === "BEP20" || n === "BSC") return "BEP20";
-      if (n === "SOL")                  return "SOL";
-      if (n === "POL"  || n === "POLYGON" || n === "MATIC") return "POL";
-      return "ERC20"; // default — largest USDT liquidity
-    };
-
-    const map: Record<string, number> = {};
-    const BATCH = 20; // larger batches = fewer round trips
-
-    for (let i = 0; i < queue.length; i += BATCH) {
-      const batch = queue.slice(i, i + BATCH);
-      await Promise.all(batch.map(async coin => {
-        try {
-          const usdtNet    = pickUsdtNet(coin.network);
-          const networkFrom = coin.network ?? coin.symbol;
-          const body = (amt: number) => ({
-            from:         coin.symbol,
-            to:           "USDT",
-            network_from: networkFrom,
-            network_to:   usdtNet,
-            amount:       amt,
-            affiliate_id: AFFILIATE_ID,
-          });
-
-          // First attempt — use the coin's listed minAmount (or 1 as fallback).
-          let amt  = parseFloat(coin.minAmount ?? "") || 1;
-          let res  = await leRequest("/v1/info", "POST", body(amt));
-          if (res.ok && res.data) {
-            let rate = parseFloat((res.data as any).rate ?? "");
-            if (rate > 0) { map[coin.symbol] = rate; return; }
-
-            // If rate=0, the exchange minimum for this pair may differ from the
-            // coin's minAmount.  Retry once with the amount LE says it requires.
-            const depositMin = parseFloat((res.data as any).deposit_min_amount ?? "");
-            if (depositMin > 0 && depositMin !== amt) {
-              res  = await leRequest("/v1/info", "POST", body(depositMin));
-              if (res.ok && res.data) {
-                rate = parseFloat((res.data as any).rate ?? "");
-                if (rate > 0) map[coin.symbol] = rate;
-              }
-            }
-          }
-        } catch { /* skip on network error */ }
-      }));
-      // Small inter-batch pause — keeps well below LE's rate limit
-      if (i + BATCH < queue.length) await new Promise(r => setTimeout(r, 200));
-    }
-
-    if (Object.keys(map).length > 5) {
-      setCache("le_usd_prices", map);
-      logger.info({ coins: Object.keys(map).length }, "LE USD prices cached");
-    }
-    lePriceFetchPromise = null;
-    return map;
-  })();
-
-  return lePriceFetchPromise;
-}
-
-// ── Extract affiliate_id from JWT payload ─────────────────────────────────────
-// The JWT `data.id` field contains the partner/affiliate ID.
-function getAffiliateId(): string {
-  if (!API_KEY) return "";
-  try {
-    const parts = API_KEY.split(".");
-    if (parts.length < 2) return "";
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const id = payload?.data?.id ?? payload?.sub ?? "";
-    return String(id);
-  } catch { return ""; }
-}
-const AFFILIATE_ID = getAffiliateId();
-
-async function leRequest(
-  path: string, method: "GET"|"POST" = "GET", body?: unknown,
-): Promise<{ ok: boolean; status: number; data: unknown }> {
-  const url = `${BASE}${path}`;
-  const headers: Record<string,string> = { "Content-Type": "application/json", "Accept": "application/json" };
-  if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
-  const opts: RequestInit = { method, headers };
-  if (body && method === "POST") opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
-  let data: unknown;
-  try { data = await res.json(); } catch { data = null; }
-  return { ok: res.ok, status: res.status, data };
-}
-
 // ── Coin normalisation ─────────────────────────────────────────────────────────
-
-interface NormalisedCoin {
-  symbol: string; name: string; network: string|null; networkName: string|null;
-  image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
-}
 
 function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
   const result: NormalisedCoin[] = [];
@@ -374,11 +255,9 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Layer 1: static fallbacks
   const usdPrices: Record<string, number> = { ...FALLBACK_USD };
 
-  // Layer 2: LE live rates (coin→USDT via /v1/info, cached 10 min).
-  // Use cached result only — never block the request on a fresh fetch.
-  // The startup preload warms this cache in the background.
-  const lePrices = (cached("le_usd_prices", LE_PRICES_TTL) as Record<string,number> | null) ?? {};
-  // If not ready yet, kick off the background fetch for next time
+  // Layer 2: LE live rates from shared cache (non-blocking).
+  // getCachedLEPrices() returns {} on a cold cache; kick off a refresh for next time.
+  const lePrices = getCachedLEPrices();
   if (Object.keys(lePrices).length === 0) fetchLEPricesUSD(coins).catch(() => {});
   Object.assign(usdPrices, lePrices); // LE rates overwrite static fallbacks
 
