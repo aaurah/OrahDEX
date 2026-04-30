@@ -1828,7 +1828,7 @@ export function Swap() {
         </div>
 
         {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
-        <LetsExchangePanel />
+        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
