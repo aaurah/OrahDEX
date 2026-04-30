@@ -445,7 +445,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
             </button>
           </div>
         )}
-        <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); setAvailBal(null); }} exclude={toCoin?.symbol} />
+        <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
         {(minAmt !== null || maxAmt !== null) && fromCoin && (
           <p className={cn("text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
             Min: <span className="font-mono">{fmtNum(minAmt)} {fromCoin.symbol}</span>
