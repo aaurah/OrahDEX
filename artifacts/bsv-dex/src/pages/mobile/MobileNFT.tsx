@@ -96,9 +96,15 @@ function fmtUsd(raw: unknown) {
   if (n < 1) return `$${n.toFixed(4)}`;
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function safePrice(v: unknown, decimals = 4) {
+function safePrice(v: unknown, decimals?: number) {
   const n = Number(v);
-  return isFinite(n) ? n.toFixed(decimals) : "0.0000";
+  if (!isFinite(n)) return "0.0000";
+  if (decimals !== undefined) return n.toFixed(decimals);
+  // Auto-scale: show enough decimals to represent micro amounts
+  if (n === 0) return "0";
+  if (n >= 1) return n.toFixed(4);
+  const d = Math.ceil(-Math.log10(Math.abs(n))) + 2;
+  return n.toFixed(Math.max(4, Math.min(d, 8)));
 }
 function getNftProfileAddress({
   address,
@@ -1881,7 +1887,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [form, setForm] = useState({
     title: "", description: "", imageUrl: "", ticker: "",
-    mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "", chain: "BSV",
+    mintPrice: "0.001", mintCurrency: "BSV", category: "art", maxSupply: "", chain: "BSV",
   });
   const [mediaMode, setMediaMode] = useState<"url" | "file">("url");
   const [filePreview, setFilePreview] = useState("");
@@ -1893,8 +1899,13 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
 
+  const CHAIN_DEFAULT_PRICE: Record<string, string> = {
+    BSV: "0.001", ETH: "0.0001", BASE: "0.0001", OP: "0.0001", ARB: "0.0001",
+    BNB: "0.0005", MATIC: "0.01", SOL: "0.001", BTC: "0.00001", BCH: "0.001",
+  };
+
   function selectChain(c: string) {
-    setForm(f => ({ ...f, chain: c, mintCurrency: CHAIN_CURRENCY[c] ?? c }));
+    setForm(f => ({ ...f, chain: c, mintCurrency: CHAIN_CURRENCY[c] ?? c, mintPrice: CHAIN_DEFAULT_PRICE[c] ?? "0.001" }));
   }
 
   const inp: React.CSSProperties = {
@@ -1946,7 +1957,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           description: form.description,
           image_url,
           ticker: form.ticker || undefined,
-          mint_price: parseFloat(form.mintPrice) || 0.01,
+          mint_price: parseFloat(form.mintPrice) || 0,
           mint_currency: form.mintCurrency,
           category: form.category,
           max_supply: form.maxSupply ? parseInt(form.maxSupply, 10) : null,
@@ -2083,7 +2094,12 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</label>
-            <input style={inp} type="number" min="0" step="0.001" value={form.mintPrice} onChange={set("mintPrice")} />
+            <input style={inp} type="number" min="0" step="any" inputMode="decimal"
+              placeholder={CHAIN_DEFAULT_PRICE[form.chain] ?? "0.001"}
+              value={form.mintPrice} onChange={set("mintPrice")} />
+            <div className="text-[10px] mt-1" style={{ color: "var(--color-text-secondary)" }}>
+              Micro: {CHAIN_DEFAULT_PRICE[form.chain] ?? "0.001"} · any amount OK
+            </div>
           </div>
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Currency</label>
