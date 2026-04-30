@@ -934,10 +934,16 @@ export function MobilePortfolio() {
                       </p>
                       {r.price > 0 && !["USDT","USDC","DAI"].includes(r.asset) && (
                         <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                          @ ${r.price.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: r.price < 1 ? 6 : 2,
-                          })}
+                          @ ${(() => {
+                            const p = r.price;
+                            if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                            if (p >= 1)    return p.toFixed(2);
+                            if (p >= 0.01) return p.toFixed(4);
+                            if (p >= 0.001) return p.toFixed(6);
+                            if (p >= 1e-8)  return p.toFixed(8);
+                            const mag = -Math.floor(Math.log10(p));
+                            return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
+                          })()}
                         </p>
                       )}
                     </div>

@@ -207,12 +207,15 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 
 function fmt(p: number) {
-  if (!p || !isFinite(p)) return "—";
+  if (!p || !isFinite(p) || p <= 0) return "—";
   if (p >= 1000)  return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
   if (p >= 1)     return p.toFixed(2);
   if (p >= 0.01)  return p.toFixed(4);
   if (p >= 0.001) return p.toFixed(6);
-  return p.toFixed(8);
+  if (p >= 1e-8)  return p.toFixed(8);
+  // Sub-satoshi prices (e.g. BTT/BTC): extend decimal places to show 4 sig figs
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
 }
 function fmtVol(v: number) {
   if (!v) return "—";
@@ -1066,7 +1069,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </p>
               {crossBTC > 0 && !isBTCBase && (
                 <span className="text-[11px] text-orange-400 tabular-nums font-medium">
-                  ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                  ₿ {fmt(crossBTC)}
                 </span>
               )}
               {crossBSV > 0 && !isBSVBase && (
@@ -1303,7 +1306,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </span>
                 {!isBTCBase && crossBTC > 0 && (
                   <span className="text-[10px] text-orange-400 tabular-nums font-medium">
-                    ₿{crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                    ₿{fmt(crossBTC)}
                   </span>
                 )}
                 {!isBSVBase && crossBSV > 0 && (

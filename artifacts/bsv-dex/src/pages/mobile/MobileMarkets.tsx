@@ -543,11 +543,14 @@ export function MobileMarkets() {
 const STABLE_QUOTE_SET = new Set(["USDT", "USDC", "TUSD", "USDD", "USD", "BUSD"]);
 
 function fmtCross(v: number, decimals: number): string {
-  if (!v) return "—";
-  if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (v >= 1)    return v.toFixed(decimals <= 4 ? 4 : decimals);
+  if (!v || v <= 0) return "—";
+  if (v >= 1000)  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (v >= 1)     return v.toFixed(decimals <= 4 ? 4 : decimals);
   if (v >= 0.001) return v.toFixed(6);
-  return v.toFixed(8);
+  if (v >= 1e-8)  return v.toFixed(8);
+  // Sub-satoshi prices: extend decimal places to show 4 significant figures
+  const mag = -Math.floor(Math.log10(v));
+  return v.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
 }
 
 function MexcRow({
