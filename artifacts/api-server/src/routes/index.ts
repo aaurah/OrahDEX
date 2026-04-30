@@ -104,7 +104,7 @@ router.use("/chat", chatRouter);
 router.use("/settlement/evm", evmSettlementRouter);
 router.use(withdrawalsRouter);
 router.use(depositRouter);
-router.use("/nft", nftRouter);
+router.use(nftRouter);
 router.use(socialNftRouter);
 router.use(creatorCoinsRouter);
 router.use(predictionRouter);
