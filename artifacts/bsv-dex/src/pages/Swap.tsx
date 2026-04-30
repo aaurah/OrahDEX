@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
@@ -1362,6 +1362,10 @@ function ExchangeSwapPanel({
 export function Swap() {
   useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
   const [, setLocation] = useLocation();
+  const searchStr = useSearch();
+  const searchParams = new URLSearchParams(searchStr);
+  const leFrom = searchParams.get("from") ?? undefined;
+  const leTo   = searchParams.get("to")   ?? undefined;
   const isMobile = useIsMobile();
 
   const { address, chainId: walletChainId, provider } = useWalletStore();
@@ -1828,7 +1832,7 @@ export function Swap() {
         </div>
 
         {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
-        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} />
+        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
