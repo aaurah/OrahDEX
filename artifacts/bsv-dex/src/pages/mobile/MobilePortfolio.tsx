@@ -240,12 +240,49 @@ export function MobilePortfolio() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<"trades" | "bridge" | "swaps">("trades");
-  const [bridgeHistory] = useState<any[]>(() => {
+  const [bridgeHistory, setBridgeHistory] = useState<any[]>(() => {
     try { return JSON.parse(localStorage.getItem("le_swap_history") ?? "[]"); } catch { return []; }
   });
   const [swapHistory] = useState<any[]>(() => {
     try { return JSON.parse(localStorage.getItem("orah_swap_history") ?? "[]"); } catch { return []; }
   });
+  const [liveLeStatuses, setLiveLeStatuses] = useState<Record<string, any>>({});
+
+  // Poll status for pending bridge entries whenever the Bridge tab is open
+  useEffect(() => {
+    if (historySubTab !== "bridge") return;
+    const pending = bridgeHistory.filter(
+      e => !["finished", "failed", "refunded"].includes(e.status ?? "")
+    );
+    if (pending.length === 0) return;
+
+    const fetchAll = async () => {
+      for (const e of pending) {
+        try {
+          const r = await fetch(`${BASE}/api/letsexchange/status/${e.transaction_id}`);
+          if (!r.ok) continue;
+          const d = await r.json();
+          if (!d.transaction_id) continue;
+          setLiveLeStatuses(prev => ({ ...prev, [e.transaction_id]: d }));
+          // Persist updated status back to localStorage
+          if (d.status) {
+            setBridgeHistory(prev => {
+              const updated = prev.map(x =>
+                x.transaction_id === e.transaction_id ? { ...x, status: d.status } : x
+              );
+              try { localStorage.setItem("le_swap_history", JSON.stringify(updated)); } catch {}
+              return updated;
+            });
+          }
+        } catch {}
+      }
+    };
+
+    fetchAll();
+    const iv = setInterval(fetchAll, 30_000);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historySubTab, bridgeHistory.length]);
   const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
@@ -1209,35 +1246,118 @@ export function MobilePortfolio() {
                     <p className="text-xs opacity-60 text-center">Cross-chain swaps will appear here</p>
                   </div>
                 ) : (
-                  <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                  <div className="space-y-2 mb-4">
                     {bridgeHistory.map((e: any, i: number) => {
-                      const ts  = e.created_at ? new Date(e.created_at) : null;
+                      const live = liveLeStatuses[e.transaction_id];
+                      const status = live?.status ?? e.status ?? "wait";
+                      const rawTs = e.createdAt ?? e.created_at;
+                      const ts = rawTs ? new Date(rawTs) : null;
                       const dateStr = ts
                         ? ts.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                         : "";
-                      const statusColor = e.status === "finished" ? "text-green-400 bg-green-500/15"
-                        : e.status === "failed" || e.status === "refunded" ? "text-red-400 bg-red-500/15"
+                      const isFinished = status === "finished";
+                      const isFailed   = status === "failed" || status === "refunded";
+                      const isPending  = !isFinished && !isFailed;
+                      const statusColor = isFinished ? "text-green-400 bg-green-500/15"
+                        : isFailed ? "text-red-400 bg-red-500/15"
                         : "text-yellow-400 bg-yellow-500/15";
+                      const statusLabel = status === "wait" ? "awaiting deposit"
+                        : status === "confirming" ? "confirming"
+                        : status === "exchanging" ? "exchanging"
+                        : status === "sending" ? "sending"
+                        : status;
+                      const hashIn  = live?.hash_in  ?? null;
+                      const hashOut = live?.hash_out ?? null;
+                      const depositAddr = e.deposit ?? null;
+                      const withdrawalAmt = e.withdrawal_amount && Number(e.withdrawal_amount) > 0
+                        ? Number(e.withdrawal_amount).toFixed(6)
+                        : null;
+
+                      const copyText = async (text: string) => {
+                        try { await navigator.clipboard.writeText(text); } catch {}
+                      };
+
                       return (
-                        <div key={e.transaction_id ?? i} className={`px-4 py-3.5 ${i < bridgeHistory.length - 1 ? "border-b border-border" : ""}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                              <ArrowLeftRight size={16} className="text-primary" />
+                        <div key={e.transaction_id ?? i} className="bg-card border border-border rounded-2xl overflow-hidden">
+                          {/* Header row */}
+                          <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
+                            <div className={cn(
+                              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border",
+                              isFinished ? "bg-green-500/10 border-green-500/25" : isFailed ? "bg-red-500/10 border-red-500/25" : "bg-primary/10 border-primary/20"
+                            )}>
+                              <ArrowLeftRight size={16} className={isFinished ? "text-green-400" : isFailed ? "text-red-400" : "text-primary"} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-bold text-foreground">{e.coin_from} → {e.coin_to}</span>
                                 <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md capitalize", statusColor)}>
-                                  {e.status ?? "pending"}
+                                  {statusLabel}
                                 </span>
+                                {isPending && (
+                                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse shrink-0" />
+                                )}
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {e.deposit_amount} {e.coin_from} → {e.withdrawal_amount ? `~${Number(e.withdrawal_amount).toFixed(6)} ${e.coin_to}` : "—"}
-                                {dateStr && <span className="text-muted-foreground/50"> · {dateStr}</span>}
+                                {e.deposit_amount} {e.coin_from}
+                                {withdrawalAmt
+                                  ? <> → <span className="text-green-400 font-semibold">{withdrawalAmt} {e.coin_to}</span></>
+                                  : <span className="text-muted-foreground/50"> → pending</span>}
+                                {dateStr && <span className="text-muted-foreground/40"> · {dateStr}</span>}
                               </p>
                             </div>
                           </div>
-                          <p className="text-[10px] font-mono text-muted-foreground/40 mt-1.5 truncate">ID: {e.transaction_id}</p>
+
+                          {/* Deposit address — shown for pending swaps */}
+                          {isPending && depositAddr && (
+                            <div className="mx-4 mb-2.5 rounded-xl border border-yellow-500/25 bg-yellow-500/8 px-3 py-2">
+                              <p className="text-[10px] text-yellow-400/80 font-semibold mb-0.5">Send {e.deposit_amount} {e.coin_from} to:</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-[11px] font-mono text-foreground/80 truncate flex-1">{depositAddr}</p>
+                                <button
+                                  onClick={() => copyText(depositAddr)}
+                                  className="shrink-0 text-yellow-400/70 hover:text-yellow-400 active:opacity-60 transition-colors"
+                                >
+                                  <Copy size={12} />
+                                </button>
+                              </div>
+                              {e.deposit_extra_id && (
+                                <p className="text-[10px] text-muted-foreground/60 mt-0.5">Memo: <span className="font-mono">{e.deposit_extra_id}</span></p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* TX hashes */}
+                          {(hashIn || hashOut) && (
+                            <div className="mx-4 mb-2.5 space-y-1">
+                              {hashIn && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground/50 shrink-0 w-16">Deposit TX</span>
+                                  <span className="text-[10px] font-mono text-muted-foreground/70 truncate flex-1">{hashIn}</span>
+                                  <button onClick={() => copyText(hashIn)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground active:opacity-60">
+                                    <Copy size={10} />
+                                  </button>
+                                </div>
+                              )}
+                              {hashOut && (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-muted-foreground/50 shrink-0 w-16">Receive TX</span>
+                                  <span className="text-[10px] font-mono text-muted-foreground/70 truncate flex-1">{hashOut}</span>
+                                  <button onClick={() => copyText(hashOut)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground active:opacity-60">
+                                    <Copy size={10} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Order ID */}
+                          <div className="flex items-center gap-2 px-4 pb-2.5">
+                            <span className="text-[10px] text-muted-foreground/30 shrink-0">ID</span>
+                            <span className="text-[10px] font-mono text-muted-foreground/35 truncate">{e.transaction_id}</span>
+                            <button onClick={() => copyText(e.transaction_id)} className="shrink-0 text-muted-foreground/25 hover:text-muted-foreground/60 active:opacity-60">
+                              <Copy size={10} />
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
