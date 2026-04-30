@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -6,7 +6,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, MessagesSquare,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -1253,7 +1253,167 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   );
 }
 
-type ActiveTab = "feed" | "search" | "create" | "profile";
+/* ─── CHAT PANEL (desktop) ───────────────────────────────────────────────────── */
+interface ChatMsg {
+  id: string; channel: string; wallet: string; displayName: string;
+  role: string; text: string; ts: number; txid?: string;
+}
+
+function NftChatPanel() {
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actor = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [online, setOnline] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const src = new EventSource(`${API}/chat/channels/nft/stream`);
+    src.onopen = () => setOnline(true);
+    src.onerror = () => setOnline(false);
+    src.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "backfill") {
+          setMessages(data.messages ?? []);
+        } else if (data.id) {
+          setMessages(prev => prev.find(m => m.id === data.id) ? prev : [...prev, data]);
+        }
+      } catch {}
+    };
+    return () => src.close();
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function sendMsg() {
+    const txt = input.trim();
+    if (!txt || sending) return;
+    setInput("");
+    setSending(true);
+    setError("");
+    try {
+      const displayName = actor ? `${actor.slice(0, 6)}…${actor.slice(-4)}` : "anon";
+      const res = await fetch(`${API}/chat/channels/nft/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: txt, wallet: actor ?? "anonymous", displayName, role: "trader" }),
+      });
+      const d = await res.json();
+      if (!res.ok) setError(d.error ?? "Failed to send");
+    } catch { setError("Network error"); }
+    finally { setSending(false); inputRef.current?.focus(); }
+  }
+
+  const roleColor: Record<string, string> = {
+    trader: "hsl(var(--muted-foreground))",
+    leader: "hsl(var(--primary))",
+    support: "#ffaa00",
+    system: "#7b68ee",
+    ora: "#00aaff",
+  };
+
+  return (
+    <div className="flex h-full">
+      {/* Message list */}
+      <div className="flex-1 flex flex-col min-h-0">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-2">
+            <MessagesSquare size={16} className="text-primary" />
+            <span className="font-bold text-sm text-foreground">NFT Community Chat</span>
+            <span className="text-[10px] text-muted-foreground">(real-time · all users)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "hsl(var(--primary))" : "#555", boxShadow: online ? "0 0 5px hsl(var(--primary))" : "none" }} />
+            <span className="text-[10px]" style={{ color: online ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}>
+              {online ? "live" : "connecting…"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center py-16">
+              <MessagesSquare size={48} className="text-muted-foreground/30 mb-3" />
+              <p className="text-base font-semibold text-foreground">NFT Community Chat</p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                Discuss NFTs, drops, creator coins, and BSV inscriptions with the community.
+              </p>
+            </div>
+          )}
+          {messages.map(msg => {
+            const isMe = actor && msg.wallet === actor;
+            const isSystem = msg.role === "system" || msg.role === "ora";
+            const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            if (isSystem) {
+              return (
+                <div key={msg.id} className="flex justify-center">
+                  <div className="text-[10px] px-3 py-1 rounded-full bg-primary/10 text-primary/80">{msg.text}</div>
+                </div>
+              );
+            }
+            return (
+              <div key={msg.id} className={`flex gap-3 ${isMe ? "flex-row-reverse" : ""}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isMe ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  {(msg.displayName?.[0] ?? "?").toUpperCase()}
+                </div>
+                <div className={`flex flex-col max-w-[60%] ${isMe ? "items-end" : "items-start"}`}>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    {!isMe && <span className="text-[10px] font-semibold" style={{ color: roleColor[msg.role] ?? "hsl(var(--muted-foreground))" }}>{msg.displayName}</span>}
+                    <span className="text-[9px] text-muted-foreground">{time}</span>
+                  </div>
+                  <div className={`px-3 py-2 rounded-2xl text-sm break-words ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                    {msg.text}
+                    {msg.txid && <div className="mt-0.5 text-[9px] font-mono opacity-60 truncate max-w-[200px]">txid: {msg.txid.slice(0, 14)}…</div>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef} />
+        </div>
+
+        {error && <div className="px-6 py-1 text-xs text-destructive bg-destructive/10 shrink-0">{error}</div>}
+
+        <div className="shrink-0 px-6 py-4 border-t border-border">
+          {!actor ? (
+            <div className="text-center py-3 text-sm text-muted-foreground bg-muted/30 rounded-xl">
+              Connect a wallet to join the chat
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 bg-muted/30 rounded-2xl px-4 py-2.5 border border-border">
+              <input
+                ref={inputRef}
+                className="flex-1 bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground"
+                placeholder="Message the NFT community…"
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMsg())}
+                maxLength={500}
+                disabled={sending}
+              />
+              <button
+                onClick={sendMsg}
+                disabled={!input.trim() || sending}
+                className="flex items-center justify-center w-8 h-8 rounded-xl transition-all disabled:opacity-40 bg-primary hover:bg-primary/90 disabled:bg-muted"
+                style={{ color: input.trim() ? "hsl(var(--primary-foreground))" : "hsl(var(--muted-foreground))" }}>
+                <Send size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ActiveTab = "feed" | "search" | "create" | "chat" | "profile";
 
 export function NFTPage() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
@@ -1273,9 +1433,10 @@ export function NFTPage() {
   const openCreator = useCallback((a: string) => setCreatorAddress(a), []);
 
   const INNER_TABS: { key: ActiveTab; label: string; Icon: any }[] = [
-    { key: "feed", label: "Feed", Icon: Flame },
-    { key: "search", label: "Search", Icon: Search },
-    { key: "create", label: "Create", Icon: PlusSquare },
+    { key: "feed",    label: "Feed",    Icon: Flame },
+    { key: "search",  label: "Search",  Icon: Search },
+    { key: "create",  label: "Create",  Icon: PlusSquare },
+    { key: "chat",    label: "Chat",    Icon: MessagesSquare },
     { key: "profile", label: "Profile", Icon: User },
   ];
 
@@ -1311,6 +1472,7 @@ export function NFTPage() {
         {activeTab === "feed"    && <FeedTab likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab onSuccess={() => setActiveTab("feed")} />}
+        {activeTab === "chat"    && <NftChatPanel />}
         {activeTab === "profile" && <MyProfileTab onOpenCreator={openCreator} onOpenPost={openPost} />}
       </div>
 
