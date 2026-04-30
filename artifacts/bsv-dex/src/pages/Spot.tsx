@@ -13,7 +13,7 @@ import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
 import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
-import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
+import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
@@ -322,10 +322,14 @@ export function SpotTrading() {
   );
 
   const filteredMarkets = useMemo(() => {
-    const q = marketSearch.toLowerCase();
-    return allMarkets
-      .filter(m => m.quoteAsset === quoteTab)
-      .filter(m => !q || m.baseAsset.toLowerCase().includes(q) || m.symbol.toLowerCase().includes(q));
+    const q = marketSearch.trim();
+    if (q) {
+      // When actively searching, drop the quoteTab filter and search ALL markets
+      return allMarkets.filter(m =>
+        marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q)
+      );
+    }
+    return allMarkets.filter(m => m.quoteAsset === quoteTab);
   }, [allMarkets, quoteTab, marketSearch]);
 
   const quoteCounts = useMemo(() => {
@@ -337,10 +341,14 @@ export function SpotTrading() {
   }, [allMarkets]);
 
   const dropFiltered = useMemo(() => {
-    const q = dropSearch.toLowerCase();
-    return allMarkets
-      .filter(m => m.quoteAsset === dropQuote)
-      .filter(m => !q || m.baseAsset.toLowerCase().includes(q) || m.symbol.toLowerCase().includes(q));
+    const q = dropSearch.trim();
+    if (q) {
+      // When actively searching, ignore the quote tab and search ALL markets
+      return allMarkets.filter(m =>
+        marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q)
+      );
+    }
+    return allMarkets.filter(m => m.quoteAsset === dropQuote);
   }, [allMarkets, dropQuote, dropSearch]);
 
   return (
@@ -391,31 +399,40 @@ export function SpotTrading() {
                   <input
                     autoFocus
                     type="text"
-                    placeholder="Search pairs…"
+                    placeholder="Search by coin, name or chain (e.g. APE, ethereum, ETH)…"
                     value={dropSearch}
                     onChange={e => setDropSearch(e.target.value)}
                     className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
                   />
                 </div>
               </div>
-              {/* Quote tabs — only show tabs that have at least 1 pair */}
-              <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
-                {QUOTE_TABS.filter(t => (quoteCounts[t.id] ?? 0) > 0).map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setDropQuote(t.id)}
-                    className={cn(
-                      "shrink-0 px-2.5 py-0.5 rounded text-[10px] font-bold transition-all",
-                      dropQuote === t.id
-                        ? "bg-primary/15 text-primary"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {t.id === "BSV" ? "⚡BSV" : t.label}
-                    <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
-                  </button>
-                ))}
-              </div>
+              {/* Quote tabs — collapse to "All markets" pill when searching */}
+              {dropSearch.trim() ? (
+                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border shrink-0">
+                  <span className="text-[10px] font-bold text-primary bg-primary/15 px-2 py-0.5 rounded-full">
+                    🔍 All markets · {dropFiltered.length} result{dropFiltered.length !== 1 ? "s" : ""}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground">Searching every chain &amp; quote</span>
+                </div>
+              ) : (
+                <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
+                  {QUOTE_TABS.filter(t => (quoteCounts[t.id] ?? 0) > 0).map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setDropQuote(t.id)}
+                      className={cn(
+                        "shrink-0 px-2.5 py-0.5 rounded text-[10px] font-bold transition-all",
+                        dropQuote === t.id
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {t.id === "BSV" ? "⚡BSV" : t.label}
+                      <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Column headers */}
               <div className="flex items-center px-3 py-1 text-[9px] font-medium text-muted-foreground border-b border-border/50 shrink-0">
                 <span className="flex-1">Pair</span>

@@ -12,7 +12,7 @@ import {
   FUTURES_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
-import { cn } from "@/lib/utils";
+import { cn, marketMatchesQuery } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -314,8 +314,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs);
 
   if (search) {
-    const q = search.toUpperCase();
-    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    rows = globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search));
   }
 
   rows = [...rows].sort((a, b) => {
@@ -389,7 +388,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             <Search size={13} className="text-muted-foreground shrink-0" />
             <input
               className="flex-1 bg-transparent text-[13px] placeholder:text-muted-foreground/60 outline-none"
-              placeholder="Search pair"
+              placeholder="Search by coin, name, or quote (e.g. ETH, bitcoin, BTC)"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -399,27 +398,36 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         </div>
 
-        {/* Category tabs */}
-        <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
-          {effectiveCats.map(c => (
-            <button
-              key={c.id}
-              onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
-              className={cn(
-                "shrink-0 px-3 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors",
-                cat === c.id ? "text-foreground font-bold" : "text-muted-foreground"
-              )}
-            >
-              {c.label}
-              {cat === c.id && (
-                <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-primary rounded-full" />
-              )}
-            </button>
-          ))}
-        </div>
+        {/* Category tabs — replaced by result count pill when searching */}
+        {search ? (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
+            <span className="text-[11px] font-bold text-primary bg-primary/15 px-2.5 py-1 rounded-full">
+              🔍 All chains · {rows.length} result{rows.length !== 1 ? "s" : ""}
+            </span>
+            <span className="text-[10px] text-muted-foreground">Every chain &amp; quote asset</span>
+          </div>
+        ) : (
+          <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
+            {effectiveCats.map(c => (
+              <button
+                key={c.id}
+                onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
+                className={cn(
+                  "shrink-0 px-3 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors",
+                  cat === c.id ? "text-foreground font-bold" : "text-muted-foreground"
+                )}
+              >
+                {c.label}
+                {cat === c.id && (
+                  <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-primary rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* USD sub-tabs */}
-        {cat === "usd" && (
+        {!search && cat === "usd" && (
           <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 shrink-0">
             {USD_SUBS.map(s => (
               <button
