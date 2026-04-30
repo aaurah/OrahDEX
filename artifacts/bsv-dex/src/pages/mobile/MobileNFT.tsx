@@ -420,6 +420,24 @@ function CreatorProfileSheet({
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>([]);
   const hybrid = useHybridBalance(60_000);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const isSelf = currentUserAddress && currentUserAddress === creatorAddress;
+    if (!isSelf) { setUnreadCount(0); return; }
+    const LAST_SEEN_KEY = `nft_notif_seen_${currentUserAddress}`;
+    function poll() {
+      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) ?? "0", 10);
+      fetch(`${API}/social/notifications?address=${encodeURIComponent(currentUserAddress!)}&since=${lastSeen}`)
+        .then(r => r.ok ? r.json() : { notifications: [] })
+        .then(d => setUnreadCount((d.notifications ?? []).length))
+        .catch(() => {});
+    }
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => clearInterval(id);
+  }, [currentUserAddress, creatorAddress]);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
@@ -499,6 +517,25 @@ function CreatorProfileSheet({
           <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
             <Share2 size={14} style={{ color: "var(--color-text)" }} />
           </button>
+          {isSelf && (
+            <button
+              onClick={() => {
+                setUnreadCount(0);
+                localStorage.setItem(`nft_notif_seen_${currentUserAddress}`, String(Date.now()));
+                setNotifOpen(true);
+              }}
+              className="relative w-9 h-9 rounded-full flex items-center justify-center"
+              style={{ background: "var(--color-surface)" }}
+            >
+              <Bell size={14} style={{ color: "var(--color-text)" }} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] flex items-center justify-center rounded-full text-[9px] font-black px-0.5"
+                  style={{ background: "var(--color-accent)", color: "#000" }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
           {isSelf && (
             <button onClick={() => setShowEdit(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
               <Settings size={14} style={{ color: "var(--color-text)" }} />
@@ -832,6 +869,9 @@ function CreatorProfileSheet({
             </div>
           </div>
         </Portal>
+      )}
+      {notifOpen && currentUserAddress && (
+        <NotificationPanel address={currentUserAddress} onClose={() => setNotifOpen(false)} />
       )}
     </div>
     </Portal>
@@ -2348,8 +2388,6 @@ export function MobileNFT() {
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
@@ -2358,21 +2396,6 @@ export function MobileNFT() {
     if (!profileAddress) {
       setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
     }
-  }, [profileAddress]);
-
-  useEffect(() => {
-    if (!profileAddress) { setUnreadCount(0); return; }
-    const LAST_SEEN_KEY = `nft_notif_seen_${profileAddress}`;
-    function poll() {
-      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) ?? "0", 10);
-      fetch(`${API}/social/notifications?address=${encodeURIComponent(profileAddress!)}&since=${lastSeen}`)
-        .then(r => r.ok ? r.json() : { notifications: [] })
-        .then(d => { setUnreadCount((d.notifications ?? []).length); })
-        .catch(() => {});
-    }
-    poll();
-    const id = setInterval(poll, 30_000);
-    return () => clearInterval(id);
   }, [profileAddress]);
 
   function handleLike(id: string) {
@@ -2402,22 +2425,6 @@ export function MobileNFT() {
             <Icon size={18} /><span className="text-[9px] font-semibold">{label}</span>
           </button>
         ))}
-        {profileAddress && (
-          <button
-            onClick={() => { setUnreadCount(0); localStorage.setItem(`nft_notif_seen_${profileAddress}`, String(Date.now())); setNotifOpen(true); }}
-            className="relative flex flex-col items-center gap-0.5 py-1.5 px-2.5 rounded-xl transition-all"
-            style={{ color: notifOpen ? "var(--color-accent)" : "var(--color-text-secondary)" }}
-          >
-            <Bell size={18} />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[9px] font-black px-1"
-                style={{ background: "var(--color-accent)", color: "#000" }}>
-                {unreadCount > 9 ? "9+" : unreadCount}
-              </span>
-            )}
-            <span className="text-[9px] font-semibold">Alerts</span>
-          </button>
-        )}
       </div>
 
       {/* Content */}
@@ -2430,9 +2437,6 @@ export function MobileNFT() {
       </div>
 
       {/* OVERLAYS */}
-      {notifOpen && profileAddress && (
-        <NotificationPanel address={profileAddress} onClose={() => setNotifOpen(false)} />
-      )}
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
