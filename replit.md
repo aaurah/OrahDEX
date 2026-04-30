@@ -81,7 +81,7 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
   - `artifacts/bsv-dex/src/hooks/useLetsExchangePairs.ts` — fetches server-provided LE pairs (`GET /api/letsexchange/pairs`); supports `quote` filter or `all:true`
   - `OrderBook.tsx` — shows a yellow "Cross-chain rate ⚡LE →" card at the spread when LE rate available; clicking scrolls to LetsExchangePanel pre-filled with current pair
   - `Spot.tsx` — merges server-provided LE pairs (10,494 pairs; ~1,053 coins × 10 quotes: BSV/BTC/ETH/USDT/BNB/SOL/XRP/TRX/DOGE/LTC) into the pair selector with `⚡LE` badge; shows no-liquidity fallback banner above order form; `LetsExchangePanel` always pre-seeded with current pair's base/quote
-  - **API endpoint** `GET /api/letsexchange/pairs` — builds all LE pairs server-side from coin list; supports `?quote=BSV` filter and `?all=true`; cached 10 min
+  - **API endpoint** `GET /api/letsexchange/pairs` — unified pairs feed: LE-sourced pairs (tagged `leSource:true`) + OrahDEX native spot pairs from DB (tagged `orahSource:true`); LE wins on duplicate symbols; supports `?quote=BSV` filter and `?all=true`; ~8,469 total pairs (7,880 LE + 589 OrahDEX-native)
 
 # Trade Logic Audit (2026-04-10)
 

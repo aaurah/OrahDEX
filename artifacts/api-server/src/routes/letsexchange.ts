@@ -20,6 +20,8 @@
 
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
+import { db } from "@workspace/db";
+import { marketsTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
 
@@ -168,14 +170,41 @@ function buildPairs(coins: NormalisedCoin[]) {
   return pairs;
 }
 
+// Helper: fetch OrahDEX native spot markets from the DB
+async function fetchNativeMarkets(): Promise<Record<string, unknown>[]> {
+  const rows = await db.select({
+    symbol:               marketsTable.symbol,
+    baseAsset:            marketsTable.baseAsset,
+    quoteAsset:           marketsTable.quoteAsset,
+    lastPrice:            marketsTable.lastPrice,
+    priceChangePercent24h: marketsTable.priceChangePercent24h,
+    volume:               marketsTable.volume24h,
+    type:                 marketsTable.type,
+  }).from(marketsTable);
+
+  return rows
+    .filter(r => r.type === "spot")
+    .map(r => ({
+      symbol:               r.symbol,
+      baseAsset:            r.baseAsset,
+      quoteAsset:           r.quoteAsset,
+      lastPrice:            parseFloat(String(r.lastPrice)) || 0,
+      priceChangePercent24h: parseFloat(String(r.priceChangePercent24h)) || 0,
+      volume:               parseFloat(String(r.volume)) || 0,
+      type:                 "spot",
+      leSource:             false,
+      orahSource:           true,
+    }));
+}
+
 router.get("/letsexchange/pairs", async (req, res) => {
   const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
   const returnAll   = req.query.all === "true" || req.query.all === "1";
 
   const cacheKey = "le_pairs_all";
-  let pairs = cached(cacheKey) as Record<string, unknown>[] | null;
+  let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
 
-  if (!pairs) {
+  if (!lePairs) {
     // Reuse coins cache if fresh, otherwise re-fetch
     let coins = cached("currencies") as NormalisedCoin[] | null;
     if (!coins) {
@@ -189,19 +218,41 @@ router.get("/letsexchange/pairs", async (req, res) => {
         res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
       }
     }
-    pairs = buildPairs(coins);
-    cache.set(cacheKey, { data: pairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) }); // custom TTL
+    lePairs = buildPairs(coins);
+    cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
   }
 
-  let result = pairs;
+  // Fetch OrahDEX native spot pairs from the DB and merge them in.
+  // LE pairs come first; native pairs fill any symbol not already present.
+  let nativePairs: Record<string, unknown>[] = [];
+  try {
+    const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
+    if (cacheHit) {
+      nativePairs = cacheHit;
+    } else {
+      nativePairs = await fetchNativeMarkets();
+      setCache("native_markets", nativePairs);
+    }
+  } catch (err: any) {
+    logger.warn({ err }, "letsexchange /pairs: could not fetch native markets (non-fatal)");
+  }
+
+  // Deduplicate: LE pairs win over native pairs for the same symbol
+  const bySymbol = new Map<string, Record<string, unknown>>();
+  nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+  lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // LE overrides
+
+  let allPairs = Array.from(bySymbol.values());
+
+  let result = allPairs;
   if (!returnAll && filterQuote) {
-    result = pairs.filter(p => p.quoteAsset === filterQuote);
+    result = allPairs.filter(p => p.quoteAsset === filterQuote);
   } else if (!returnAll) {
-    // Default: return BSV quote pairs so the pair selector loads BSV tab fast
-    result = pairs.filter(p => p.quoteAsset === "BSV");
+    // Default: BSV quote
+    result = allPairs.filter(p => p.quoteAsset === "BSV");
   }
 
-  res.set("Cache-Control", "public, max-age=600");
+  res.set("Cache-Control", "public, max-age=60");
   res.json(result);
 });
 

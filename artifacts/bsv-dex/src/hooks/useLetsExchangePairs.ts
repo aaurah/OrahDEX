@@ -17,17 +17,18 @@ export interface LEPair {
   symbol:                string;
   baseAsset:             string;
   quoteAsset:            string;
-  network:               string | null;
-  networkName:           string | null;
-  image:                 string | null;
-  hasExtraId:            boolean;
-  minAmount:             string | null;
-  maxAmount:             string | null;
+  network?:              string | null;
+  networkName?:          string | null;
+  image?:                string | null;
+  hasExtraId?:           boolean;
+  minAmount?:            string | null;
+  maxAmount?:            string | null;
   lastPrice:             number;
   priceChangePercent24h: number;
   volume:                number;
-  type:                  "letsexchange";
-  leSource:              true;
+  type:                  "letsexchange" | "spot";
+  leSource:              boolean;
+  orahSource?:           boolean;
 }
 
 // Module-level cache — keyed by the query string used
