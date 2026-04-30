@@ -122,6 +122,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   HMSTR: "hamster-kombat",
   DOGS:  "dogs",
   EIGEN: "eigenlayer",
+  LMWR:  "limewire-token",
   // L2 / bridge tokens
   ZK:    "zksync",
   SCR:   "scroll",
@@ -640,8 +641,6 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
   BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
   BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
-  // ── Base meme coins ──────────────────────────────────────────────────────────
-  DOGINME:0.0000945,TOSHI:0.000185,BALD:0.00284,AERO:1.2,
   // ── AI / DePIN ───────────────────────────────────────────────────────────────
   FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
   ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
@@ -664,7 +663,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Meme / culture ───────────────────────────────────────────────────────────
   TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
   POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
-  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,
+  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,LMWR:0.021,
   // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
   GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
