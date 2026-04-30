@@ -1477,18 +1477,39 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
             {mode === "buy" ? (
               <>
-                {[["Chain", `${post.chain ?? "BSV"} (on-chain inscription)`], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
+                {/* Price + Balance comparison card */}
+                <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+                  <div className="flex items-end justify-between mb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</div>
+                      <div className="text-2xl font-black" style={{ color: "var(--color-text)" }}>{safePrice(post.mint_price)} <span className="text-base font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span></div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>≈ ${post.mint_price_usd}</div>
+                    </div>
+                    {availableLabel && (
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Your Balance</div>
+                        <div className="text-xl font-black font-mono" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-accent)" }}>{availableLabel}</div>
+                        {insufficientFunds && <div className="text-[10px] mt-0.5 font-bold" style={{ color: "#ff4444" }}>Insufficient ↑</div>}
+                        {!insufficientFunds && address && hasLoadedBalance && <div className="text-[10px] mt-0.5 font-bold" style={{ color: "var(--color-accent)" }}>Enough ✓</div>}
+                      </div>
+                    )}
+                  </div>
+                  {/* Progress bar: price vs balance */}
+                  {availableLabel && mintPrice > 0 && availableNum > 0 && (
+                    <div className="rounded-full overflow-hidden" style={{ height: 4, background: "rgba(255,255,255,0.1)" }}>
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${Math.min(100, (mintPrice / availableNum) * 100)}%`, background: insufficientFunds ? "#ff4444" : "var(--color-accent)" }} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Remaining details */}
+                {[["Chain", `${post.chain ?? "BSV"} (on-chain inscription)`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
                   <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
                     <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
                     <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
                   </div>
                 ))}
-                {availableLabel && (
-                  <div className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
-                    <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Your balance</span>
-                    <span className="text-sm font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
-                  </div>
-                )}
                 <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
                 {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
                 {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
