@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Search, Star, ChevronUp, ChevronDown } from "lucide-react";
+import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import {
@@ -192,7 +192,20 @@ function getRows(
     const native       = enrich(mock);
     const keywords     = CAT_NETWORKS[c];
     const quotePriority = CAT_PREFERRED_QUOTE[c] ?? ["USDT", "USDC"];
-    return keywords ? mergeAOS(native, keywords, quotePriority) : native;
+    if (!keywords) return native;
+
+    // BTC is a quote currency, not a chain/network — for the BTC tab we want
+    // ALL LE coins that quote in BTC regardless of their own network.
+    if (c === "btc") {
+      const seenSymbols = new Set(native.map(r => r.symbol));
+      const seenBases   = new Set(native.map(r => r.base));
+      const btcAos = aosPairs
+        .filter(p => p.quote === "BTC" && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol));
+      btcAos.sort((a, b) => a.base.localeCompare(b.base));
+      return [...native, ...btcAos];
+    }
+
+    return mergeAOS(native, keywords, quotePriority);
   };
 
   // "All" pool = all native spot + AOS pairs not already native (priced only)
@@ -426,6 +439,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         )}
 
+        {/* BTC Swap Hub banner */}
+        {!search && cat === "btc" && (() => {
+          const btcSwapCount = rows.filter(m => m.swapOnly).length;
+          return btcSwapCount > 0 ? (
+            <div className="flex items-center gap-2 px-4 py-2 bg-orange-500/8 border-b border-orange-500/20 shrink-0">
+              <ArrowLeftRight size={12} className="text-orange-400 shrink-0" />
+              <span className="text-[11px] font-bold text-orange-400">BTC Swap Hub</span>
+              <span className="text-[10px] text-orange-400/70">— {btcSwapCount} coins via LetsExchange</span>
+              <span className="ml-auto text-[9px] text-orange-400/50">⚡ auto-routed</span>
+            </div>
+          ) : null;
+        })()}
+
         {/* USD sub-tabs */}
         {!search && cat === "usd" && (
           <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 shrink-0">
@@ -477,12 +503,23 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                 <div key={m.symbol}>
                   {/* AOS section header — shown once before the first swap-only row */}
                   {showDivider && (
-                    <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-500/5 border-y border-blue-500/15">
-                      <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                        Available on Swap
-                      </span>
-                      <div className="flex-1 h-px bg-blue-500/15" />
-                    </div>
+                    cat === "btc" ? (
+                      <div className="flex items-center gap-2 px-4 py-1.5 bg-orange-500/8 border-y border-orange-500/20">
+                        <ArrowLeftRight size={10} className="text-orange-400 shrink-0" />
+                        <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">
+                          BTC Swap via LetsExchange
+                        </span>
+                        <div className="flex-1 h-px bg-orange-500/20" />
+                        <span className="text-[9px] text-orange-400/60">⚡ auto-routed</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-500/5 border-y border-blue-500/15">
+                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                          Available on Swap
+                        </span>
+                        <div className="flex-1 h-px bg-blue-500/15" />
+                      </div>
+                    )
                   )}
 
                   <div
