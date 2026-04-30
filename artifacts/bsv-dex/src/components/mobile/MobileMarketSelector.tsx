@@ -290,12 +290,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     });
 
   const pick = (m: NormRow) => {
-    if (m.swapOnly) {
-      // AOS pairs: open Swap tab with from/to pre-selected
-      navigate(`/swap?from=${encodeURIComponent(m.base)}&to=${encodeURIComponent(m.quote)}`);
-      onClose();
-      return;
-    }
     const slug = m.symbol.replace(/\//g, "-");
     navigate(m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`);
     onClose();
@@ -462,21 +456,21 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                   {/* Price */}
                   <button onClick={() => pick(m)} className="w-24 text-right pr-2">
                     <span className="text-[12px] font-semibold text-foreground tabular-nums">
-                      {m.swapOnly ? "—" : fmt(m.price)}
+                      {m.price > 0 ? fmt(m.price) : "—"}
                     </span>
                   </button>
 
                   {/* Change */}
                   <button onClick={() => pick(m)} className="w-16 text-right">
-                    {m.swapOnly ? (
-                      <span className="text-[10px] text-muted-foreground/50">Swap</span>
-                    ) : (
+                    {m.price > 0 ? (
                       <span className={cn(
                         "text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded",
                         isUp ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"
                       )}>
                         {isUp ? "+" : ""}{m.chg.toFixed(2)}%
                       </span>
+                    ) : (
+                      <span className="text-[10px] text-blue-400/60">live →</span>
                     )}
                   </button>
                 </div>
