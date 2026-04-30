@@ -239,6 +239,13 @@ export function MobilePortfolio() {
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
+  const [historySubTab, setHistorySubTab] = useState<"trades" | "bridge" | "swaps">("trades");
+  const [bridgeHistory] = useState<any[]>(() => {
+    try { return JSON.parse(localStorage.getItem("le_swap_history") ?? "[]"); } catch { return []; }
+  });
+  const [swapHistory] = useState<any[]>(() => {
+    try { return JSON.parse(localStorage.getItem("orah_swap_history") ?? "[]"); } catch { return []; }
+  });
   const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
@@ -1073,126 +1080,209 @@ export function MobilePortfolio() {
 
           {/* History tab */}
           {tab === "history" && (
-            historyLoading ? (
-              <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-                <RefreshCw size={20} className="animate-spin opacity-40" />
-                <p className="text-xs">Loading history…</p>
+            <>
+              {/* Sub-tab chips: Trades / Bridge / Swaps */}
+              <div className="flex gap-2 mb-3">
+                {([
+                  { key: "trades", label: "Trades"       },
+                  { key: "bridge", label: "Bridge"       },
+                  { key: "swaps",  label: "Coin Travel"  },
+                ] as const).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setHistorySubTab(key)}
+                    className={cn(
+                      "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
+                      historySubTab === key
+                        ? "bg-primary/15 border-primary/40 text-primary"
+                        : "bg-card border-border text-muted-foreground"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
-            ) : historyData.length === 0 ? (
-              <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                <History size={28} className="opacity-20 mb-1" />
-                <p className="text-sm font-medium">No transaction history yet</p>
-                <p className="text-xs opacity-60 text-center">Your trades will appear here after you buy or sell</p>
-              </div>
-            ) : (
-              <>
-                {/* Coin filter chips */}
-                {historyCoins.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                    <button
-                      onClick={() => setHistoryFilter(null)}
-                      className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                        !historyFilter
-                          ? "bg-primary/15 border-primary/40 text-primary"
-                          : "bg-card border-border text-muted-foreground"
-                      }`}
-                    >
-                      All
-                    </button>
-                    {historyCoins.map(coin => (
-                      <button
-                        key={coin}
-                        onClick={() => setHistoryFilter(historyFilter === coin ? null : coin)}
-                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                          historyFilter === coin
-                            ? "bg-primary/15 border-primary/40 text-primary"
-                            : "bg-card border-border text-muted-foreground"
-                        }`}
-                      >
-                        <span
-                          className="w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
-                          style={{ backgroundColor: (ASSET_COLORS[coin] ?? "#6B7280") + "33", color: ASSET_COLORS[coin] ?? "#6B7280" }}
-                        >
-                          {coin[0]}
-                        </span>
-                        {coin}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-4 mb-4">
-                  {historyByDate.map(({ label, trades }) => (
-                    <div key={label}>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
-                      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                        {trades.map((t: any, i: number) => {
-                          const isBuy  = (t.side ?? "buy") === "buy";
-                          const sym    = (t.symbol ?? "BSV/USDT").split("/");
-                          const base   = sym[0] ?? "BSV";
-                          const quote  = sym[1] ?? "USDT";
-                          const coinIn  = isBuy ? base  : quote;
-                          const coinOut = isBuy ? quote : base;
-                          const amtIn   = isBuy
-                            ? Number(t.quantity ?? t.fillQty ?? 0)
-                            : Number(t.total    ?? (Number(t.quantity) * Number(t.price)));
-                          const amtOut  = isBuy
-                            ? Number(t.total    ?? (Number(t.quantity) * Number(t.price)))
-                            : Number(t.quantity ?? t.fillQty ?? 0);
-                          const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
-                          const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                          const fee     = Number(t.fee ?? 0);
-                          const color = ASSET_COLORS[base] ?? "#6B7280";
-                        return (
-                          <div
-                            key={t.id ?? i}
-                            className={`flex items-center gap-3 px-4 py-3.5 ${i < trades.length - 1 ? "border-b border-border" : ""}`}
-                          >
-                            {/* Coin avatar */}
-                            <div
-                              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
-                            >
-                              {base[0]}
-                            </div>
 
-                            {/* Info */}
+              {/* ── TRADES ─────────────────────────────────────────────── */}
+              {historySubTab === "trades" && (
+                historyLoading ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                    <RefreshCw size={20} className="animate-spin opacity-40" />
+                    <p className="text-xs">Loading trades…</p>
+                  </div>
+                ) : historyData.length === 0 ? (
+                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                    <History size={28} className="opacity-20 mb-1" />
+                    <p className="text-sm font-medium">No trade history yet</p>
+                    <p className="text-xs opacity-60 text-center">Your filled orders will appear here</p>
+                  </div>
+                ) : (
+                  <>
+                    {historyCoins.length > 1 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mb-2">
+                        <button
+                          onClick={() => setHistoryFilter(null)}
+                          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                            !historyFilter ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
+                          }`}
+                        >All</button>
+                        {historyCoins.map(coin => (
+                          <button
+                            key={coin}
+                            onClick={() => setHistoryFilter(historyFilter === coin ? null : coin)}
+                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                              historyFilter === coin ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
+                            }`}
+                          >
+                            <span className="w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
+                              style={{ backgroundColor: (ASSET_COLORS[coin] ?? "#6B7280") + "33", color: ASSET_COLORS[coin] ?? "#6B7280" }}>
+                              {coin[0]}
+                            </span>
+                            {coin}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="space-y-4 mb-4">
+                      {historyByDate.map(({ label, trades }) => (
+                        <div key={label}>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
+                          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                            {trades.map((t: any, i: number) => {
+                              const isBuy   = (t.side ?? "buy") === "buy";
+                              const sym     = (t.symbol ?? "BSV/USDT").split("/");
+                              const base    = sym[0] ?? "BSV";
+                              const quote   = sym[1] ?? "USDT";
+                              const coinIn  = isBuy ? base  : quote;
+                              const coinOut = isBuy ? quote : base;
+                              const amtIn   = isBuy ? Number(t.quantity ?? t.fillQty ?? 0) : Number(t.total ?? (Number(t.quantity) * Number(t.price)));
+                              const amtOut  = isBuy ? Number(t.total ?? (Number(t.quantity) * Number(t.price))) : Number(t.quantity ?? t.fillQty ?? 0);
+                              const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+                              const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                              const fee     = Number(t.fee ?? 0);
+                              const color   = ASSET_COLORS[base] ?? "#6B7280";
+                              return (
+                                <div key={t.id ?? i} className={`flex items-center gap-3 px-4 py-3.5 ${i < trades.length - 1 ? "border-b border-border" : ""}`}>
+                                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                                    style={{ backgroundColor: color + "22", borderColor: color + "44", color }}>
+                                    {base[0]}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm font-semibold text-foreground">{base}/{quote}</span>
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                                        {isBuy ? "BUY" : "SELL"}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                                      @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} · {timeStr}
+                                      {fee > 0 && <span className="text-muted-foreground/50"> · fee {fee.toFixed(4)}</span>}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0 space-y-0.5">
+                                    <div className="flex items-center justify-end gap-1 text-green-400">
+                                      <ArrowDownLeft size={10} strokeWidth={2.5} />
+                                      <span className="text-xs font-bold font-mono">+{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}</span>
+                                    </div>
+                                    <div className="flex items-center justify-end gap-1 text-muted-foreground/70">
+                                      <ArrowUpRight size={10} strokeWidth={2.5} />
+                                      <span className="text-[11px] font-mono">-{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )
+              )}
+
+              {/* ── BRIDGE (LetsExchange cross-chain) ──────────────────── */}
+              {historySubTab === "bridge" && (
+                bridgeHistory.length === 0 ? (
+                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                    <ArrowLeftRight size={28} className="opacity-20 mb-1" />
+                    <p className="text-sm font-medium">No bridge history yet</p>
+                    <p className="text-xs opacity-60 text-center">Cross-chain swaps will appear here</p>
+                  </div>
+                ) : (
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                    {bridgeHistory.map((e: any, i: number) => {
+                      const ts  = e.created_at ? new Date(e.created_at) : null;
+                      const dateStr = ts
+                        ? ts.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                        : "";
+                      const statusColor = e.status === "finished" ? "text-green-400 bg-green-500/15"
+                        : e.status === "failed" || e.status === "refunded" ? "text-red-400 bg-red-500/15"
+                        : "text-yellow-400 bg-yellow-500/15";
+                      return (
+                        <div key={e.transaction_id ?? i} className={`px-4 py-3.5 ${i < bridgeHistory.length - 1 ? "border-b border-border" : ""}`}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                              <ArrowLeftRight size={16} className="text-primary" />
+                            </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-sm font-semibold text-foreground">{base}/{quote}</span>
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
-                                  {isBuy ? "BUY" : "SELL"}
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-foreground">{e.coin_from} → {e.coin_to}</span>
+                                <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md capitalize", statusColor)}>
+                                  {e.status ?? "pending"}
                                 </span>
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} · {timeStr}
-                                {fee > 0 && <span className="text-muted-foreground/50"> · fee {fee.toFixed(4)}</span>}
+                                {e.deposit_amount} {e.coin_from} → {e.withdrawal_amount ? `~${Number(e.withdrawal_amount).toFixed(6)} ${e.coin_to}` : "—"}
+                                {dateStr && <span className="text-muted-foreground/50"> · {dateStr}</span>}
                               </p>
                             </div>
-
-                            {/* In / Out amounts */}
-                            <div className="text-right shrink-0 space-y-0.5">
-                              <div className="flex items-center justify-end gap-1 text-green-400">
-                                <ArrowDownLeft size={10} strokeWidth={2.5} />
-                                <span className="text-xs font-bold font-mono">
-                                  +{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-end gap-1 text-muted-foreground/70">
-                                <ArrowUpRight size={10} strokeWidth={2.5} />
-                                <span className="text-[11px] font-mono">
-                                  -{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}
-                                </span>
-                              </div>
-                            </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <p className="text-[10px] font-mono text-muted-foreground/40 mt-1.5 truncate">ID: {e.transaction_id}</p>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-              </>
-            )
+                )
+              )}
+
+              {/* ── COIN TRAVEL (on-chain DEX swaps) ───────────────────── */}
+              {historySubTab === "swaps" && (
+                swapHistory.length === 0 ? (
+                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                    <Zap size={28} className="opacity-20 mb-1" />
+                    <p className="text-sm font-medium">No on-chain swaps yet</p>
+                    <p className="text-xs opacity-60 text-center">On-chain DEX swaps will appear here</p>
+                  </div>
+                ) : (
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                    {swapHistory.map((s: any, i: number) => {
+                      const ts = s.ts ? new Date(s.ts) : null;
+                      const dateStr = ts
+                        ? ts.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                        : "";
+                      return (
+                        <div key={s.id ?? i} className={`flex items-center gap-3 px-4 py-3.5 ${i < swapHistory.length - 1 ? "border-b border-border" : ""}`}>
+                          <div className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0">
+                            <Zap size={16} className="text-green-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-foreground">BSV → {s.coinSymbol}</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400">SWAP</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {s.bsvAmount} BSV → {Number(s.receiveAmt).toFixed(6)} {s.coinSymbol}
+                              {s.chainLabel && <span className="text-muted-foreground/50"> · {s.chainLabel}</span>}
+                              {dateStr && <span className="text-muted-foreground/50"> · {dateStr}</span>}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+            </>
           )}
         </div>
 
