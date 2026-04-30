@@ -680,7 +680,8 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
       .finally(() => setLoading(false));
   }, [profileAddress]);
 
-  if (!profileAddress) {
+  // Truly disconnected — no wallet at all
+  if (!address) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center p-8">
@@ -688,6 +689,18 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
           <h3 className="text-lg font-bold text-foreground mb-2">Connect Wallet</h3>
           <p className="text-sm text-muted-foreground mb-4">Connect your wallet to view your NFT profile</p>
           <button onClick={() => navigate("/settings")} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Connect</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Wallet connected but internal EVM identity not yet ready (e.g. just switched chain)
+  if (!profileAddress) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center p-8">
+          <RefreshCw size={24} className="mx-auto mb-3 text-muted-foreground animate-spin" />
+          <p className="text-sm text-muted-foreground">Setting up your NFT identity…</p>
         </div>
       </div>
     );
