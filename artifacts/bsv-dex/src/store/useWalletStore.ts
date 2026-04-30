@@ -187,6 +187,9 @@ export const useWalletStore = create<WalletState>()(
             address: newAddress,
             balance: null,
             chainId: null,
+            // Explicitly carry provider forward so it is never dropped by any
+            // render-batching edge case — the NFT profile guard relies on it.
+            provider: s.provider,
             // Always persist the EVM address so we can switch back to it
             internalEvmAddress: evmAddr,
           };
