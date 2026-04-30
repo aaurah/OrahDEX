@@ -1,16 +1,21 @@
 /**
  * letsexchange.ts — LetsExchange.io API proxy
  *
- * Routes:
- *   GET  /api/letsexchange/currencies          — full coin list (v2, cached 5min)
- *   POST /api/letsexchange/estimate            — live rate for a pair (v1 enterprise)
- *   POST /api/letsexchange/exchange            — create an exchange order (v1 enterprise)
- *   GET  /api/letsexchange/status/:id          — poll order status (v1 enterprise)
+ * Real API endpoints (per https://api-doc.letsexchange.io):
+ *   GET  /api/v2/coins                  — full coin list
+ *   POST /api/v1/info                   — rate + min/max for a pair
+ *   POST /api/v1/transaction            — create exchange order
+ *   GET  /api/v1/transaction/{id}       — full transaction details
+ *   GET  /api/v1/transaction/{id}/status — status string only
  *
- * The estimate / exchange / status routes require a LetsExchange Enterprise API key.
- * With a standard affiliate key only /currencies works.  All three routes return
- * { enterpriseRequired: true } with HTTP 402 when the upstream responds with 404,
- * so the frontend can display a clear "Enterprise key needed" state.
+ * Our proxy routes:
+ *   GET  /api/letsexchange/currencies   → v2/coins
+ *   POST /api/letsexchange/estimate     → v1/info
+ *   POST /api/letsexchange/exchange     → v1/transaction
+ *   GET  /api/letsexchange/status/:id   → v1/transaction/{id}
+ *
+ * affiliate_id is extracted from the JWT (data.id field) and included in
+ * every request so commissions are tracked automatically.
  */
 
 import { Router, type IRouter } from "express";
@@ -18,19 +23,34 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
-const API_KEY   = process.env.LETSEXCHANGE_API_KEY ?? "";
-const BASE_V1   = "https://api.letsexchange.io/api/v1";
-const BASE_V2   = "https://api.letsexchange.io/api/v2";
-const CACHE_TTL = 5 * 60 * 1000;
+const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
+const BASE    = "https://api.letsexchange.io/api";
 
+const CACHE_TTL = 5 * 60 * 1000;
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
 function cached(k: string) { const e = cache.get(k); return e && Date.now()-e.ts < CACHE_TTL ? e.data : null; }
 function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
 
-async function leRequest(base: string, path: string, method: "GET"|"POST" = "GET", body?: unknown) {
-  const url = `${base}${path}`;
-  const headers: Record<string, string> = { "Content-Type": "application/json", "Accept": "application/json" };
+// ── Extract affiliate_id from JWT payload ─────────────────────────────────────
+// The JWT `data.id` field contains the partner/affiliate ID.
+function getAffiliateId(): string {
+  if (!API_KEY) return "";
+  try {
+    const parts = API_KEY.split(".");
+    if (parts.length < 2) return "";
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const id = payload?.data?.id ?? payload?.sub ?? "";
+    return String(id);
+  } catch { return ""; }
+}
+const AFFILIATE_ID = getAffiliateId();
+
+async function leRequest(
+  path: string, method: "GET"|"POST" = "GET", body?: unknown,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const url = `${BASE}${path}`;
+  const headers: Record<string,string> = { "Content-Type": "application/json", "Accept": "application/json" };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
   const opts: RequestInit = { method, headers };
   if (body && method === "POST") opts.body = JSON.stringify(body);
@@ -69,7 +89,14 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        result.push({ symbol, name, network: netCode||null, networkName:(net.name??null) as string|null, image:(net.icon??image) as string|null, hasExtraId:!!(net.has_extra), minAmount, maxAmount });
+        result.push({
+          symbol, name,
+          network:     netCode || null,
+          networkName: (net.name ?? null) as string|null,
+          image:       (net.icon ?? image) as string|null,
+          hasExtraId:  !!(net.has_extra),
+          minAmount, maxAmount,
+        });
       }
     }
   }
@@ -81,7 +108,7 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   const hit = cached("currencies");
   if (hit) { res.json(hit); return; }
   try {
-    const { ok, data, status } = await leRequest(BASE_V2, "/coins");
+    const { ok, data, status } = await leRequest("/v2/coins");
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
     setCache("currencies", coins);
@@ -93,31 +120,41 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 });
 
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
-// Body: { coin_from, coin_to, deposit_amount, network_from?, network_to? }
+// Real endpoint: POST /api/v1/info
+// Required: from, to, network_from, network_to, amount, affiliate_id
+// Response:  min_amount, max_amount, amount (output), rate, rate_id, rate_id_expired_at, withdrawal_fee
 router.post("/letsexchange/estimate", async (req, res) => {
-  const { coin_from, coin_to, deposit_amount, network_from, network_to } = req.body ?? {};
-  if (!coin_from || !coin_to || !deposit_amount) {
-    res.status(400).json({ error: "coin_from, coin_to, and deposit_amount are required" }); return;
+  const { from, to, network_from, network_to, amount, float: isFloat } = req.body ?? {};
+  if (!from || !to || !network_from || !network_to || !amount) {
+    res.status(400).json({ error: "from, to, network_from, network_to, and amount are required" }); return;
   }
-  const amt = parseFloat(String(deposit_amount));
-  if (!isFinite(amt) || amt <= 0) {
-    res.status(400).json({ error: "deposit_amount must be a positive number" }); return;
-  }
+  const amt = parseFloat(String(amount));
+  if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
+
   try {
     const body: Record<string,unknown> = {
-      coin_from:      String(coin_from).toUpperCase(),
-      coin_to:        String(coin_to).toUpperCase(),
-      deposit_amount: amt,
+      from:         String(from).toUpperCase(),
+      to:           String(to).toUpperCase(),
+      network_from: String(network_from),
+      network_to:   String(network_to),
+      amount:       amt,
+      affiliate_id: AFFILIATE_ID,
+      float:        isFloat ?? false,
     };
-    if (network_from) body.network_from = String(network_from);
-    if (network_to)   body.network_to   = String(network_to);
 
-    const { ok, data, status } = await leRequest(BASE_V1, "/estimate", "POST", body);
+    const { ok, data, status } = await leRequest("/v1/info", "POST", body);
 
-    // Enterprise endpoint not available for standard affiliate keys → 404
+    if (status === 403) {
+      res.status(403).json({ error: "Invalid API key", detail: data }); return;
+    }
     if (status === 404) {
-      res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required for live rates. Contact LetsExchange to upgrade your key." });
-      return;
+      // 404 from /v1/info means "Rate is not available for this pair" — valid business response
+      const d = data as Record<string,unknown>|null;
+      const msg = (d?.error as string) ?? "Rate is not available for this pair";
+      res.status(404).json({ error: msg, detail: data }); return;
+    }
+    if (status === 422) {
+      res.status(422).json({ error: "Validation error", detail: data }); return;
     }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
@@ -128,34 +165,46 @@ router.post("/letsexchange/estimate", async (req, res) => {
 });
 
 // ── POST /api/letsexchange/exchange ──────────────────────────────────────────
-// Body: { coin_from, coin_to, deposit_amount, withdrawal_address, withdrawal_extra_id?, refund_address?, network_from?, network_to? }
+// Real endpoint: POST /api/v1/transaction
+// Required: float, coin_from, coin_to, network_from, network_to, deposit_amount,
+//           withdrawal (address), withdrawal_extra_id (send "" if none), affiliate_id
+// Optional: return (refund address), return_extra_id, rate_id, email
+// Response: transaction_id, status, deposit, deposit_extra_id, withdrawal_amount, ...
 router.post("/letsexchange/exchange", async (req, res) => {
-  const { coin_from, coin_to, deposit_amount, withdrawal_address, withdrawal_extra_id, refund_address, network_from, network_to } = req.body ?? {};
-  if (!coin_from || !coin_to || !deposit_amount || !withdrawal_address) {
-    res.status(400).json({ error: "coin_from, coin_to, deposit_amount, and withdrawal_address are required" }); return;
+  const {
+    coin_from, coin_to, network_from, network_to,
+    deposit_amount, withdrawal, withdrawal_extra_id,
+    return: refund, return_extra_id,
+    rate_id, float: isFloat, email,
+  } = req.body ?? {};
+
+  if (!coin_from || !coin_to || !network_from || !network_to || !deposit_amount || !withdrawal) {
+    res.status(400).json({ error: "coin_from, coin_to, network_from, network_to, deposit_amount, and withdrawal are required" }); return;
   }
   const amt = parseFloat(String(deposit_amount));
-  if (!isFinite(amt) || amt <= 0) {
-    res.status(400).json({ error: "deposit_amount must be a positive number" }); return;
-  }
+  if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "deposit_amount must be positive" }); return; }
+
   try {
     const body: Record<string,unknown> = {
-      coin_from:           String(coin_from).toUpperCase(),
-      coin_to:             String(coin_to).toUpperCase(),
-      deposit_amount:      amt,
-      withdrawal_address:  String(withdrawal_address),
+      float:                isFloat ?? false,
+      coin_from:            String(coin_from).toUpperCase(),
+      coin_to:              String(coin_to).toUpperCase(),
+      network_from:         String(network_from),
+      network_to:           String(network_to),
+      deposit_amount:       amt,
+      withdrawal:           String(withdrawal),
+      withdrawal_extra_id:  withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
+      affiliate_id:         AFFILIATE_ID,
     };
-    if (withdrawal_extra_id) body.withdrawal_extra_id = String(withdrawal_extra_id);
-    if (refund_address)      body.refund_address      = String(refund_address);
-    if (network_from)        body.network_from        = String(network_from);
-    if (network_to)          body.network_to          = String(network_to);
+    if (refund)          body["return"]          = String(refund);
+    if (return_extra_id) body["return_extra_id"] = String(return_extra_id);
+    if (rate_id)         body["rate_id"]         = String(rate_id);
+    if (email)           body["email"]           = String(email);
 
-    const { ok, data, status } = await leRequest(BASE_V1, "/create", "POST", body);
+    const { ok, data, status } = await leRequest("/v1/transaction", "POST", body);
 
-    if (status === 404) {
-      res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required to create exchanges." });
-      return;
-    }
+    if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
+    if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
   } catch (err: any) {
@@ -165,19 +214,15 @@ router.post("/letsexchange/exchange", async (req, res) => {
 });
 
 // ── GET /api/letsexchange/status/:id ─────────────────────────────────────────
+// Real endpoint: GET /api/v1/transaction/{id}
+// Returns full transaction object including status, deposit, withdrawal_amount, hashes, etc.
 router.get("/letsexchange/status/:id", async (req, res) => {
   const { id } = req.params;
   if (!id) { res.status(400).json({ error: "id is required" }); return; }
   try {
-    const { ok, data, status } = await leRequest(BASE_V1, `/transaction/${encodeURIComponent(id)}`);
-    if (status === 404) {
-      // Could be "not found" OR "enterprise required" — try to distinguish by shape
-      const d = data as Record<string,unknown>|null;
-      if (!d || typeof d !== "object" || (!("id" in d) && !("status" in d))) {
-        res.status(402).json({ enterpriseRequired: true, message: "LetsExchange Enterprise API access required to check transaction status." });
-        return;
-      }
-    }
+    const { ok, data, status } = await leRequest(`/v1/transaction/${encodeURIComponent(id)}`);
+    if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
+    if (status === 404) { res.status(404).json({ error: "Transaction not found", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
     res.json(data);
   } catch (err: any) {
