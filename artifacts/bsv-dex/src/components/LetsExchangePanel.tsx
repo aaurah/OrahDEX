@@ -121,7 +121,7 @@ function CoinPicker({
       <p className="text-[10px] text-muted-foreground mb-1 font-medium uppercase tracking-wider">{label}</p>
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/60 hover:bg-muted border border-border/40 hover:border-border/80 transition-colors min-w-[140px] w-full"
+        className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/60 hover:bg-muted border border-border/40 hover:border-border/80 transition-colors w-full"
       >
         {selected ? (
           <>
@@ -544,7 +544,7 @@ export function LetsExchangePanel() {
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
         <p className="text-xs font-medium text-muted-foreground">You Send</p>
         <div className="flex items-center gap-2">
-          <div className="shrink-0">
+          <div className="w-[155px] shrink-0">
             <CoinPicker
               coins={coins}
               selected={fromCoin}
@@ -559,7 +559,7 @@ export function LetsExchangePanel() {
             placeholder="0.0"
             value={amount}
             onChange={e => handleAmountChange(e.target.value)}
-            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+            className="min-w-0 flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
           />
         </div>
         {minAmount && (
@@ -583,7 +583,7 @@ export function LetsExchangePanel() {
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
         <p className="text-xs font-medium text-muted-foreground">You Receive</p>
         <div className="flex items-center gap-2">
-          <div className="shrink-0">
+          <div className="w-[155px] shrink-0">
             <CoinPicker
               coins={coins}
               selected={toCoin}
@@ -592,7 +592,7 @@ export function LetsExchangePanel() {
               exclude={fromCoin?.symbol}
             />
           </div>
-          <div className="flex-1 text-2xl font-bold text-right">
+          <div className="min-w-0 flex-1 text-2xl font-bold text-right">
             {estimating ? (
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground ml-auto" />
             ) : estimate ? (
