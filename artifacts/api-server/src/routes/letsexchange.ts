@@ -28,11 +28,66 @@ const router: IRouter = Router();
 const API_KEY = process.env.LETSEXCHANGE_API_KEY ?? "";
 const BASE    = "https://api.letsexchange.io/api";
 
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL    = 5 * 60 * 1000;
+const CG_CACHE_TTL = 60 * 60 * 1000; // CoinGecko prices cached 1 hour
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
-function cached(k: string) { const e = cache.get(k); return e && Date.now()-e.ts < CACHE_TTL ? e.data : null; }
+function cached(k: string, ttl = CACHE_TTL) {
+  const e = cache.get(k);
+  return e && Date.now() - e.ts < ttl ? e.data : null;
+}
 function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
+
+// ── CoinGecko free-tier price fetch ───────────────────────────────────────────
+// Returns symbol (UPPER) → USD price for up to ~2000 coins.
+// Cached 1 h; fetches pages sequentially with a small delay to avoid rate-limits.
+// Fails silently — callers fall back to the static table.
+let cgFetchPromise: Promise<Record<string, number>> | null = null;
+
+async function fetchCoinGeckoPrices(): Promise<Record<string, number>> {
+  const hit = cached("cg_prices", CG_CACHE_TTL) as Record<string,number> | null;
+  if (hit) return hit;
+
+  // Deduplicate concurrent callers — only one in-flight fetch at a time
+  if (cgFetchPromise) return cgFetchPromise;
+
+  cgFetchPromise = (async () => {
+    const map: Record<string, number> = {};
+    try {
+      for (let page = 1; page <= 8; page++) {
+        const url =
+          `https://api.coingecko.com/api/v3/coins/markets` +
+          `?vs_currency=usd&order=market_cap_desc&per_page=250&page=${page}&sparkline=false`;
+        const res = await fetch(url, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          logger.warn({ status: res.status, page }, "CoinGecko page failed — stopping early");
+          break;
+        }
+        const rows = (await res.json()) as Array<{symbol:string; current_price:number|null}>;
+        for (const r of rows) {
+          if (r.symbol && r.current_price != null) {
+            map[r.symbol.toUpperCase()] = r.current_price;
+          }
+        }
+        // Rate-limit guard: 300 ms between pages (~3 req/s, well under 30/min)
+        if (page < 8) await new Promise(r => setTimeout(r, 300));
+      }
+      if (Object.keys(map).length > 10) {
+        setCache("cg_prices", map);
+        logger.info({ coins: Object.keys(map).length }, "CoinGecko prices cached");
+      }
+    } catch (err) {
+      logger.warn({ err }, "CoinGecko price fetch failed — using static fallback");
+    }
+    cgFetchPromise = null;
+    return map;
+  })();
+
+  return cgFetchPromise;
+}
 
 // ── Extract affiliate_id from JWT payload ─────────────────────────────────────
 // The JWT `data.id` field contains the partner/affiliate ID.
@@ -243,17 +298,23 @@ router.get("/letsexchange/pairs", async (req, res) => {
   lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // LE overrides
 
   // ── Cross-rate enrichment ────────────────────────────────────────────────
-  // Build a USD price map from native USDT/USDC pairs (DB prices are most fresh).
-  // Stablecoins are pinned to $1.  Everything else falls back to a static table.
+  // Priority (highest → lowest):
+  //   1. DB native USDT/USDC pair prices (most accurate, real-time)
+  //   2. CoinGecko live prices for top ~500 coins (fetched async, cached 1 h)
+  //   3. Static fallback table (always available, covers major coins)
+  //   4. Stablecoins pinned at $1 (override everything)
+
   const STABLES: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, BUSD: 1, DAI: 1, FDUSD: 1,
+    PYUSD: 1, USDE: 1, USDM: 1, CRVUSD: 1, FRAX: 1, LUSD: 1, MIM: 0.998,
+    SUSD: 1, USDP: 1, EURC: 1.09, USDN: 1,
   };
   const FALLBACK_USD: Record<string, number> = {
     BTC: 83000, ETH: 1800,  BNB: 580,   BSV: 16,    BCH: 320,  SOL: 130,
     XRP: 0.52,  DOGE: 0.08, LTC: 65,    TRX: 0.24,  ADA: 0.35, DOT: 5.2,
     LINK: 11,   MATIC: 0.32, AVAX: 18,  UNI: 5.8,   AAVE: 95,  MKR: 1400,
     SNX: 1.8,   SUSHI: 0.7, COMP: 42,   YFI: 5800,  CRV: 0.35,
-    "1INCH": 0.22, FTM: 0.51, CRO: 0.085, OP: 0.70,  ARB: 0.42,
+    "1INCH": 0.22, FTM: 0.51, CRO: 0.085, OP: 0.70, ARB: 0.42,
     IMX: 0.80,  APT: 5.2,   SUI: 0.92,  NEAR: 2.1,  FIL: 3.5,
     ICP: 5.8,   ATOM: 4.2,  ALGO: 0.14, MANA: 0.25, SAND: 0.28,
     AXS: 3.8,   THETA: 0.73, VET: 0.022, ETC: 17,   XLM: 0.088,
@@ -266,28 +327,33 @@ router.get("/letsexchange/pairs", async (req, res) => {
     TAO: 220,   ROSE: 0.046, CFX: 0.088, STX: 0.75, AR: 5.8,
     KAS: 0.053, JASMY: 0.016, ACH: 0.022, MAGIC: 0.38, GMX: 12,
     PERP: 0.43, BICO: 0.12, BAND: 0.98, REN: 0.042, NMR: 12,
-    RAY: 1.8,   MNGO: 0.012, ORCA: 0.28, JTO: 1.5,  PYUSD: 1,
-    EURC: 1.09, USDE: 1,    USDM: 1,   CRVUSD: 1,  FRAX: 1,
-    LUSD: 1,    MIM: 0.98,  SUSD: 1,    USDP: 1,    RSR: 0.0048,
-    LQTY: 0.72, ALCX: 10,   SPELL: 0.00055, CVX: 1.8, BAL: 1.5,
+    RAY: 1.8,   MNGO: 0.012, ORCA: 0.28, JTO: 1.5,
+    RSR: 0.0048, LQTY: 0.72, ALCX: 10, SPELL: 0.00055, CVX: 1.8, BAL: 1.5,
     ANKR: 0.017, SKL: 0.024, CTSI: 0.078, STORJ: 0.36, OGN: 0.065,
   };
 
-  // USD price map: fallbacks first, then DB native prices override them
-  const usdPrices: Record<string, number> = { ...STABLES, ...FALLBACK_USD };
+  // Layer 1: static fallbacks
+  const usdPrices: Record<string, number> = { ...FALLBACK_USD };
+
+  // Layer 2: CoinGecko live prices (async, cached 1 h — covers ~500 coins)
+  const cgPrices = await fetchCoinGeckoPrices();
+  Object.assign(usdPrices, cgPrices); // live overwrites static
+
+  // Layer 3: DB native USDT/USDC prices (most accurate)
   for (const p of nativePairs) {
-    const q = p.quoteAsset as string;
-    const price = p.lastPrice as number;
+    const q     = p.quoteAsset as string;
+    const price = p.lastPrice  as number;
     if ((q === "USDT" || q === "USDC") && price > 0) {
-      usdPrices[p.baseAsset as string] = price; // DB wins over static table
+      usdPrices[(p.baseAsset as string).toUpperCase()] = price;
     }
   }
-  // Stablecoins always stay at $1
+
+  // Layer 4: stablecoins always pinned at $1
   Object.assign(usdPrices, STABLES);
 
   // Enrich LE-only pairs that still have lastPrice === 0
   let allPairs = Array.from(bySymbol.values()).map(p => {
-    if ((p.lastPrice as number) > 0) return p; // native pair already has price
+    if ((p.lastPrice as number) > 0) return p; // already has a real price
     const baseUsd  = usdPrices[(p.baseAsset  as string)?.toUpperCase()];
     const quoteUsd = usdPrices[(p.quoteAsset as string)?.toUpperCase()];
     if (!baseUsd || !quoteUsd) return p;
@@ -417,5 +483,9 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     res.status(502).json({ error: "Failed to reach LetsExchange" });
   }
 });
+
+// Pre-warm CoinGecko price cache at startup so the first user request is fast.
+// Errors are handled inside fetchCoinGeckoPrices and don't crash the server.
+fetchCoinGeckoPrices().catch(() => {});
 
 export default router;

@@ -131,12 +131,14 @@ function getRows(
       return live ? { ...n, price: live.price, chg: live.chg } : n;
     });
 
-  // Merge native rows with matching AOS rows (no duplicates)
+  // Merge native rows with matching AOS rows (no duplicates, priced-only)
   const mergeAOS = (native: NormRow[], keywords: string[]): NormRow[] => {
     const seen = new Set(native.map(r => r.symbol));
     const extra = aosPairs.filter(p => {
       const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw)) && !seen.has(p.symbol);
+      return keywords.some(kw => net.includes(kw))
+        && !seen.has(p.symbol)
+        && p.price > 0;           // only show AOS pairs with a known price
     });
     return [...native, ...extra];
   };
@@ -147,9 +149,9 @@ function getRows(
     return keywords ? mergeAOS(native, keywords) : native;
   };
 
-  // "All" pool = all native spot + AOS pairs not already native
+  // "All" pool = all native spot + AOS pairs not already native (priced only)
   const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
-  const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol));
+  const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol) && p.price > 0);
   const allSpot = () => [
     ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures"),
     ...aosOnly,
@@ -258,7 +260,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     [
       ...(Array.isArray(apiData) ? apiData : []).map(normalise),
       ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, aosPairs)),
-    ].map((m: NormRow) => [m.symbol, m])
+    ]
+      .filter(m => !m.swapOnly || m.price > 0)  // hide unpriced AOS from search too
+      .map((m: NormRow) => [m.symbol, m])
   ).values()), [apiData, usdSub, livePrice, favorites, aosPairs]);
 
   let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs);
