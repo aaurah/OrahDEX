@@ -1351,7 +1351,7 @@ function ExchangeSwapPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/60 text-center">
-        Instant · No gas · 0.3% fee · Uses OrahDEX internal balance
+        Instant · 0.3% fee · Uses OrahDEX internal balance
       </p>
     </div>
   );
@@ -1580,6 +1580,16 @@ export function Swap() {
             <Link2 className="w-3.5 h-3.5" />
             Bridge
           </button>
+        </div>
+
+        {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
+        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+
+        {/* Divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-border/40" />
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap on-chain via {chainId === 56 ? "PancakeSwap" : "Uniswap"}</span>
+          <div className="flex-1 h-px bg-border/40" />
         </div>
 
         <>
@@ -1821,18 +1831,8 @@ export function Swap() {
           <div className="flex-1 h-px bg-border/40" />
         </div>
 
-        {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
+        {/* Exchange Swap Panel (custodial, 223 assets) */}
         <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap cross-chain</span>
-          <div className="flex-1 h-px bg-border/40" />
-        </div>
-
-        {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
-        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
