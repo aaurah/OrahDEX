@@ -12,7 +12,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
-import { disconnectReown } from "@/lib/reown";
+import { disconnectReown, sendEvmTransfer } from "@/lib/reown";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
@@ -1452,29 +1452,12 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
       const postChain = post.chain ?? "BSV";
       const targetChainId = EVM_CHAIN_IDS[postChain];
       if (targetChainId && mintPrice > 0 && post.creator) {
-        const injected: any = (window as any).ethereum;
-        if (!injected) throw new Error("No wallet found — please connect MetaMask or WalletConnect");
-
-        // Switch to the correct chain if needed
-        const currentChainHex: string = await injected.request({ method: "eth_chainId" });
-        const currentChainId = parseInt(currentChainHex, 16);
-        if (currentChainId !== targetChainId) {
-          try {
-            await injected.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x" + targetChainId.toString(16) }],
-            });
-          } catch (switchErr: any) {
-            throw new Error(`Please switch your wallet to ${postChain} network to buy this NFT`);
-          }
-        }
-
-        // Send ETH to creator
         const valueWei = BigInt(Math.round(mintPrice * qty * 1e18));
-        const valueHex = "0x" + valueWei.toString(16);
-        await injected.request({
-          method: "eth_sendTransaction",
-          params: [{ from: address, to: post.creator, value: valueHex }],
+        await sendEvmTransfer({
+          from: address,
+          to: post.creator,
+          valueWei,
+          targetChainId,
         });
       }
 
