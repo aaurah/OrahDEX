@@ -194,49 +194,49 @@ function CoinPicker({ coins, selected, onChange, exclude }: {
   return (
     <div className="relative" ref={panelRef}>
       <button type="button" onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-2 w-full px-3 py-3 rounded-xl bg-[#2a2a2a] border border-white/10 hover:border-white/20 transition-colors text-left">
+        className="flex items-center gap-2 w-full px-3 py-3 rounded-xl bg-muted/60 border border-border/40 hover:border-border/60 transition-colors text-left">
         {selected ? (
           <>
             <CoinLogo symbol={selected.symbol} size={28} />
             <div className="flex-1 min-w-0">
               <p className="font-bold text-sm leading-tight">{selected.symbol}</p>
-              <p className="text-[11px] text-white/40 leading-tight truncate">{selected.networkName ?? selected.network ?? selected.name}</p>
+              <p className="text-[11px] text-muted-foreground leading-tight truncate">{selected.networkName ?? selected.network ?? selected.name}</p>
             </div>
           </>
         ) : (
-          <span className="text-white/40 text-sm flex-1">Select coin</span>
+          <span className="text-muted-foreground text-sm flex-1">Select coin</span>
         )}
-        <ChevronDown className="w-4 h-4 text-white/30 shrink-0" />
+        <ChevronDown className="w-4 h-4 text-muted-foreground/60 shrink-0" />
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 w-72 bg-[#1a1a1a] border border-white/15 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 340 }}>
-          <div className="p-2.5 border-b border-white/10 flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-white/30 shrink-0" />
+        <div className="absolute z-50 top-full mt-1 left-0 w-72 bg-card border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 340 }}>
+          <div className="p-2.5 border-b border-border/40 flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
             <input ref={inputRef} placeholder={`Search ${coins.length.toLocaleString()} coins…`} value={q}
               onChange={e => setQ(e.target.value)}
-              className="flex-1 bg-transparent text-xs outline-none placeholder:text-white/30 text-white" />
-            {q && <button type="button" onClick={() => setQ("")}><X className="w-3.5 h-3.5 text-white/30 hover:text-white" /></button>}
-            <button type="button" onClick={() => setOpen(false)}><X className="w-3.5 h-3.5 text-white/30 hover:text-white" /></button>
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/40 text-foreground" />
+            {q && <button type="button" onClick={() => setQ("")}><X className="w-3.5 h-3.5 text-muted-foreground/60 hover:text-foreground" /></button>}
+            <button type="button" onClick={() => setOpen(false)}><X className="w-3.5 h-3.5 text-muted-foreground/60 hover:text-foreground" /></button>
           </div>
           <div className="overflow-y-auto flex-1 py-1">
-            {filtered.length === 0 ? <p className="text-xs text-white/30 text-center py-6">No coins found</p> : (
+            {filtered.length === 0 ? <p className="text-xs text-muted-foreground/60 text-center py-6">No coins found</p> : (
               filtered.map(c => (
                 <button type="button" key={`${c.symbol}::${c.network ?? ""}`}
                   onClick={() => { onChange(c); setOpen(false); }}
-                  className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors text-left",
-                    selected?.symbol === c.symbol && selected?.network === c.network && "bg-white/5")}>
+                  className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left",
+                    selected?.symbol === c.symbol && selected?.network === c.network && "bg-muted/30")}>
                   <CoinLogo symbol={c.symbol} size={28} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold leading-tight text-white">{c.symbol}</p>
-                    <p className="text-[10px] text-white/40 leading-tight truncate">{c.name}{c.networkName ? ` · ${c.networkName}` : ""}</p>
+                    <p className="text-sm font-semibold leading-tight text-foreground">{c.symbol}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight truncate">{c.name}{c.networkName ? ` · ${c.networkName}` : ""}</p>
                   </div>
                   {selected?.symbol === c.symbol && selected?.network === c.network && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                 </button>
               ))
             )}
           </div>
-          <div className="px-3 py-1.5 border-t border-white/10 text-[10px] text-white/30 text-center">
+          <div className="px-3 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60 text-center">
             {filtered.length.toLocaleString()} of {coins.length.toLocaleString()} coins
           </div>
         </div>
@@ -252,7 +252,7 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   const copy = () => { navigator.clipboard.writeText(text).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return (
     <button type="button" onClick={copy}
-      className={cn("p-1.5 rounded-lg transition-colors", copied ? "text-emerald-400" : "text-white/40 hover:text-white/70", className)}>
+      className={cn("p-1.5 rounded-lg transition-colors", copied ? "text-emerald-400" : "text-muted-foreground hover:text-muted-foreground/80", className)}>
       {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
     </button>
   );
@@ -268,7 +268,7 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
     return () => clearInterval(iv);
   }, [seconds, onEnd]);
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-white/50">
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/70">
       <RefreshCw className="w-3 h-3" /> {t}s
     </span>
   );
@@ -363,8 +363,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
     <div className="flex flex-col gap-0">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <p className="text-xs text-white/40">Step 1/3</p>
-          <h2 className="text-lg font-bold text-white">Choose deposit amount</h2>
+          <p className="text-xs text-muted-foreground">Step 1/3</p>
+          <h2 className="text-lg font-bold text-foreground">Choose deposit amount</h2>
         </div>
         {estimate && (
           <Countdown key={`${refreshKey}-${estimate.rate_id ?? ""}`}
@@ -374,11 +374,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
       </div>
 
       {/* You send */}
-      <div className="rounded-xl bg-[#1e1e1e] p-3 mb-1">
-        <p className="text-xs text-white/40 mb-2">You Send</p>
+      <div className="rounded-xl bg-muted/40 p-3 mb-1">
+        <p className="text-xs text-muted-foreground mb-2">You Send</p>
         <input type="number" min="0" placeholder="0.0" value={amount}
           onChange={e => setAmount(e.target.value)}
-          className="w-full bg-[#141414] border border-white/10 rounded-xl px-4 py-3 mb-2 text-xl font-bold text-white outline-none placeholder:text-white/20 focus:border-white/30 transition-colors" />
+          className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 text-xl font-bold text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors" />
         <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
         {(minAmt !== null || maxAmt !== null) && fromCoin && (
           <p className={cn("text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
@@ -391,23 +391,23 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
       {/* Swap direction */}
       <div className="flex justify-center my-2">
         <button type="button" onClick={() => { const t = fromCoin; setFromCoin(toCoin); setToCoin(t); setEstimate(null); setAmount(""); }}
-          className="p-2.5 rounded-full bg-[#2a2a2a] border border-white/10 hover:bg-[#333] hover:border-white/20 transition-colors">
-          <ArrowUpDown className="w-4 h-4 text-white/50" />
+          className="p-2.5 rounded-full bg-muted/60 border border-border/40 hover:bg-muted hover:border-border/60 transition-colors">
+          <ArrowUpDown className="w-4 h-4 text-muted-foreground/70" />
         </button>
       </div>
 
       {/* You get */}
-      <div className="rounded-xl bg-[#1e1e1e] p-3 mb-3">
-        <p className="text-xs text-white/40 mb-2">You Get</p>
-        <div className="w-full bg-[#141414] border border-white/10 rounded-xl px-4 py-3 mb-2 min-h-[52px] flex items-center">
+      <div className="rounded-xl bg-muted/40 p-3 mb-3">
+        <p className="text-xs text-muted-foreground mb-2">You Get</p>
+        <div className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 min-h-[52px] flex items-center">
           {estLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-white/30" />
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/60" />
           ) : estimate ? (
             <span className="text-xl font-bold text-emerald-400 font-mono">{fmtNum(estimate.amount, 8)}</span>
           ) : estError ? (
             <span className="text-sm text-red-400/80">{estError}</span>
           ) : (
-            <span className="text-xl font-bold text-white/20">≈</span>
+            <span className="text-xl font-bold text-muted-foreground/40">≈</span>
           )}
         </div>
         <CoinPicker coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
@@ -415,7 +415,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
         {/* Rate + fixed rate badge */}
         {estimate && fromCoin && toCoin && (
           <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <p className="text-xs text-white/40">
+            <p className="text-xs text-muted-foreground">
               1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
             </p>
             {estimate.rate_id && (
@@ -426,7 +426,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
           </div>
         )}
         {estimate?.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
-          <p className="text-[11px] text-white/30 mt-1">
+          <p className="text-[11px] text-muted-foreground/60 mt-1">
             Network fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
           </p>
         )}
@@ -437,7 +437,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo }: {
         className={cn("w-full py-4 rounded-xl font-bold text-base transition-all",
           canContinue
             ? "bg-emerald-500 hover:bg-emerald-400 text-black active:scale-[0.98]"
-            : "bg-[#2a2a2a] text-white/30 cursor-not-allowed")}>
+            : "bg-muted/60 text-muted-foreground/60 cursor-not-allowed")}>
         {!fromCoin || !toCoin ? "Select coins" :
          !numAmt             ? "Enter amount" :
          belowMin            ? `Below minimum (${fmtNum(minAmt)} ${fromCoin.symbol})` :
@@ -467,36 +467,36 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
-        <button type="button" onClick={onBack} className="p-1.5 rounded-xl hover:bg-white/10 transition-colors text-white/60 hover:text-white">
+        <button type="button" onClick={onBack} className="p-1.5 rounded-xl hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div>
-          <p className="text-xs text-white/40">Step 2/3</p>
-          <h2 className="text-lg font-bold text-white">Withdrawal Setup</h2>
+          <p className="text-xs text-muted-foreground">Step 2/3</p>
+          <h2 className="text-lg font-bold text-foreground">Withdrawal Setup</h2>
         </div>
       </div>
 
       {/* Summary */}
-      <div className="rounded-xl bg-[#1e1e1e] p-3 space-y-3">
+      <div className="rounded-xl bg-muted/40 p-3 space-y-3">
         <div className="flex items-center gap-3">
           <CoinLogo symbol={fromCoin.symbol} size={32} />
           <div>
-            <p className="text-sm font-bold">{fromCoin.symbol} <span className="text-white/40 font-normal text-xs">{fromCoin.networkName ?? fromCoin.network ?? ""}</span></p>
-            <p className="text-xs text-white/40">You send</p>
+            <p className="text-sm font-bold">{fromCoin.symbol} <span className="text-muted-foreground font-normal text-xs">{fromCoin.networkName ?? fromCoin.network ?? ""}</span></p>
+            <p className="text-xs text-muted-foreground">You send</p>
           </div>
           <p className="ml-auto font-bold text-base font-mono">{amount}</p>
         </div>
-        <div className="h-px bg-white/10" />
+        <div className="h-px bg-muted/60" />
         <div className="flex items-center gap-3">
           <CoinLogo symbol={toCoin.symbol} size={32} />
           <div>
-            <p className="text-sm font-bold">{toCoin.symbol} <span className="text-white/40 font-normal text-xs">{toCoin.networkName ?? toCoin.network ?? ""}</span></p>
-            <p className="text-xs text-white/40">You receive</p>
+            <p className="text-sm font-bold">{toCoin.symbol} <span className="text-muted-foreground font-normal text-xs">{toCoin.networkName ?? toCoin.network ?? ""}</span></p>
+            <p className="text-xs text-muted-foreground">You receive</p>
           </div>
           {estimate ? (
             <p className="ml-auto font-bold text-base text-emerald-400 font-mono">≈{fmtNum(estimate.amount, 8)}</p>
           ) : (
-            <p className="ml-auto text-sm text-white/30">Live rate</p>
+            <p className="ml-auto text-sm text-muted-foreground/60">Live rate</p>
           )}
         </div>
         {estimate?.rate_id && (
@@ -509,9 +509,9 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
 
       {/* Address */}
       <div className="space-y-2">
-        <label className="text-sm font-semibold text-white">Your {toCoin.symbol} receiving address</label>
-        <p className="text-xs text-white/40">
-          On the <span className="text-white/70">{toCoin.networkName ?? toCoin.network ?? toCoin.symbol}</span> network
+        <label className="text-sm font-semibold text-foreground">Your {toCoin.symbol} receiving address</label>
+        <p className="text-xs text-muted-foreground">
+          On the <span className="text-muted-foreground/80">{toCoin.networkName ?? toCoin.network ?? toCoin.symbol}</span> network
         </p>
         {/* Use connected wallet chip */}
         {walletAddress && (
@@ -522,7 +522,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
               "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all",
               address === walletAddress
                 ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                : "bg-white/5 border-white/15 text-white/60 hover:bg-white/10 hover:border-white/25 hover:text-white/80",
+                : "bg-muted/30 border-border/50 text-muted-foreground hover:bg-muted/60 hover:border-border/70 hover:text-foreground/80",
             )}
           >
             <Wallet className="w-3.5 h-3.5 shrink-0" />
@@ -532,7 +532,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
         <div className="relative">
           <input value={address} onChange={e => setAddress(e.target.value)}
             placeholder={`${toCoin.symbol} wallet address`}
-            className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30 transition-colors pr-12" />
+            className="w-full bg-muted/40 border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors pr-12" />
           {address && <CopyButton text={address} className="absolute right-2 top-1/2 -translate-y-1/2" />}
         </div>
         <p className="text-[11px] text-yellow-400/70">
@@ -543,23 +543,23 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
       {/* Extra ID */}
       {toCoin.hasExtraId && (
         <div className="space-y-2">
-          <label className="text-sm font-semibold text-white">Memo / Tag <span className="text-red-400 text-xs">required</span></label>
+          <label className="text-sm font-semibold text-foreground">Memo / Tag <span className="text-red-400 text-xs">required</span></label>
           <input value={extraId} onChange={e => setExtraId(e.target.value)}
             placeholder="Destination tag or memo"
-            className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30 transition-colors" />
+            className="w-full bg-muted/40 border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors" />
         </div>
       )}
 
       {/* Optional refund address */}
       <button type="button" onClick={() => setShowRefund(v => !v)}
-        className="text-xs text-white/40 hover:text-white/60 flex items-center gap-1 transition-colors w-fit">
+        className="text-xs text-muted-foreground hover:text-muted-foreground flex items-center gap-1 transition-colors w-fit">
         <ChevronDown className={cn("w-3 h-3 transition-transform", showRefund && "rotate-180")} />
         Add refund address (optional)
       </button>
       {showRefund && (
         <input value={refund} onChange={e => setRefund(e.target.value)}
           placeholder={`${fromCoin.symbol} refund address (if exchange fails)`}
-          className="w-full bg-[#1e1e1e] border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/30 transition-colors" />
+          className="w-full bg-muted/40 border border-border/40 rounded-xl px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors" />
       )}
 
       <button type="button" disabled={!addrOk || !extraOk}
@@ -567,7 +567,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
         className={cn("w-full py-4 rounded-xl font-bold text-base transition-all",
           addrOk && extraOk
             ? "bg-emerald-500 hover:bg-emerald-400 text-black active:scale-[0.98]"
-            : "bg-[#2a2a2a] text-white/30 cursor-not-allowed")}>
+            : "bg-muted/60 text-muted-foreground/60 cursor-not-allowed")}>
         {!addrOk ? "Enter receiving address" : !extraOk ? "Enter memo / tag" : "Create Exchange →"}
       </button>
     </div>
@@ -605,31 +605,31 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-1">
-        <button type="button" onClick={onBack} className="p-1.5 rounded-xl hover:bg-white/10 transition-colors text-white/60 hover:text-white">
+        <button type="button" onClick={onBack} className="p-1.5 rounded-xl hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-xs text-white/40">Step 3/3</p>
+            <p className="text-xs text-muted-foreground">Step 3/3</p>
             {!isDone && <Countdown key={refreshKey} seconds={15} onEnd={() => setRefreshKey(k => k + 1)} />}
           </div>
-          <h2 className="text-lg font-bold text-white">Send by one transaction</h2>
+          <h2 className="text-lg font-bold text-foreground">Send by one transaction</h2>
         </div>
       </div>
 
       {/* Amount to send */}
-      <div className="rounded-xl bg-[#1e1e1e] p-4">
-        <p className="text-xs text-white/40 mb-1">Send exactly</p>
+      <div className="rounded-xl bg-muted/40 p-4">
+        <p className="text-xs text-muted-foreground mb-1">Send exactly</p>
         <p className="text-2xl font-bold">
           <span className="text-emerald-400 font-mono">{fmtNum(order.deposit_amount, 8)}</span>
-          <span className="text-white ml-2">{fromCoin.symbol}</span>
-          <span className="text-white/40 text-base font-normal ml-2">({fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol})</span>
+          <span className="text-foreground ml-2">{fromCoin.symbol}</span>
+          <span className="text-muted-foreground text-base font-normal ml-2">({fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol})</span>
         </p>
         <p className="text-xs text-yellow-400/70 mt-1">Send only the exact amount — do not split across multiple transactions</p>
       </div>
 
       {/* Status */}
-      <div className="rounded-xl bg-[#1e1e1e] p-3 flex items-center gap-3">
+      <div className="rounded-xl bg-muted/40 p-3 flex items-center gap-3">
         {isDone ? (
           currentStatus === "finished"
             ? <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -642,7 +642,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             {STATUS_LABEL[currentStatus] ?? currentStatus}
           </p>
           {(status?.withdrawal_amount ?? order.withdrawal_amount) && (
-            <p className="text-xs text-white/40 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               You receive: <span className="text-emerald-400 font-mono">{fmtNum(status?.real_withdrawal_amount ?? order.withdrawal_amount, 8)} {toCoin.symbol}</span>
             </p>
           )}
@@ -652,10 +652,10 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
       {/* Deposit address */}
       <div className="space-y-2">
-        <p className="text-sm font-semibold text-white">Deposit address for {fromCoin.symbol}</p>
-        <div className="rounded-xl bg-[#1e1e1e] border border-white/10 px-4 py-3 flex items-center gap-2">
+        <p className="text-sm font-semibold text-foreground">Deposit address for {fromCoin.symbol}</p>
+        <div className="rounded-xl bg-muted/40 border border-border/40 px-4 py-3 flex items-center gap-2">
           <CoinLogo symbol={fromCoin.symbol} size={20} />
-          <p className="flex-1 min-w-0 text-sm text-white/80 font-mono break-all">{order.deposit}</p>
+          <p className="flex-1 min-w-0 text-sm text-foreground/80 font-mono break-all">{order.deposit}</p>
           <CopyButton text={order.deposit} />
         </div>
         {order.deposit_extra_id && (
@@ -677,46 +677,46 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       </div>
 
       {/* Rate + TX info */}
-      <div className="rounded-xl bg-[#1e1e1e] p-3 space-y-1.5">
+      <div className="rounded-xl bg-muted/40 p-3 space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-white/40">Exchange ID</span>
+          <span className="text-xs text-muted-foreground">Exchange ID</span>
           <div className="flex items-center gap-1">
             <span className="text-xs text-emerald-400 font-mono">{shortAddr(order.transaction_id)}</span>
             <CopyButton text={order.transaction_id} />
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-white/40">Rate</span>
-          <span className="text-xs text-white/70 font-mono">
+          <span className="text-xs text-muted-foreground">Rate</span>
+          <span className="text-xs text-muted-foreground/80 font-mono">
             {order.rate ? `1 ${fromCoin.symbol} ≈ ${fmtNum(order.rate, 8)} ${toCoin.symbol}` : "Float"}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-white/40">You get</span>
+          <span className="text-xs text-muted-foreground">You get</span>
           <span className="text-xs text-emerald-400 font-mono">{fmtNum(order.withdrawal_amount, 8)} {toCoin.symbol}</span>
         </div>
       </div>
 
       {/* Transaction info expandable */}
-      <div className="rounded-xl bg-[#1e1e1e] border border-white/10 overflow-hidden">
+      <div className="rounded-xl bg-muted/40 border border-border/40 overflow-hidden">
         <button type="button" onClick={() => setInfoOpen(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors">
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors">
           <span className="font-semibold text-sm flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-white/30" /> Transaction info
+            <Clock className="w-3.5 h-3.5 text-muted-foreground/60" /> Transaction info
           </span>
-          <span className="text-white/40 text-lg">{infoOpen ? "−" : "+"}</span>
+          <span className="text-muted-foreground text-lg">{infoOpen ? "−" : "+"}</span>
         </button>
         {infoOpen && (
-          <div className="px-4 pb-4 space-y-2 border-t border-white/10 pt-3 text-xs">
-            <div className="flex justify-between gap-2"><span className="text-white/40">You send</span><span className="font-mono text-white">{fmtNum(order.deposit_amount, 8)} {fromCoin.symbol}</span></div>
-            <div className="flex justify-between gap-2"><span className="text-white/40">You receive</span><span className="font-mono text-emerald-400">≈{fmtNum(order.withdrawal_amount, 8)} {toCoin.symbol}</span></div>
-            <div className="flex justify-between gap-2"><span className="text-white/40">To address</span><span className="font-mono text-white/80 truncate ml-4 text-right">{shortAddr(order.withdrawal)}</span></div>
-            <div className="flex justify-between gap-2"><span className="text-white/40">Order ID</span><span className="font-mono text-emerald-400">{order.transaction_id}</span></div>
+          <div className="px-4 pb-4 space-y-2 border-t border-border/40 pt-3 text-xs">
+            <div className="flex justify-between gap-2"><span className="text-muted-foreground">You send</span><span className="font-mono text-foreground">{fmtNum(order.deposit_amount, 8)} {fromCoin.symbol}</span></div>
+            <div className="flex justify-between gap-2"><span className="text-muted-foreground">You receive</span><span className="font-mono text-emerald-400">≈{fmtNum(order.withdrawal_amount, 8)} {toCoin.symbol}</span></div>
+            <div className="flex justify-between gap-2"><span className="text-muted-foreground">To address</span><span className="font-mono text-foreground/80 truncate ml-4 text-right">{shortAddr(order.withdrawal)}</span></div>
+            <div className="flex justify-between gap-2"><span className="text-muted-foreground">Order ID</span><span className="font-mono text-emerald-400">{order.transaction_id}</span></div>
             {status?.hash_in && (
-              <div className="flex justify-between gap-2"><span className="text-white/40">Deposit TX</span><span className="font-mono text-white/70 truncate ml-4">{shortAddr(status.hash_in)}</span></div>
+              <div className="flex justify-between gap-2"><span className="text-muted-foreground">Deposit TX</span><span className="font-mono text-muted-foreground/80 truncate ml-4">{shortAddr(status.hash_in)}</span></div>
             )}
             {status?.hash_out && (
-              <div className="flex justify-between gap-2"><span className="text-white/40">Withdrawal TX</span><span className="font-mono text-white/70 truncate ml-4">{shortAddr(status.hash_out)}</span></div>
+              <div className="flex justify-between gap-2"><span className="text-muted-foreground">Withdrawal TX</span><span className="font-mono text-muted-foreground/80 truncate ml-4">{shortAddr(status.hash_out)}</span></div>
             )}
           </div>
         )}
@@ -778,7 +778,7 @@ function HistoryView({ onClose }: { onClose: () => void }) {
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 gap-3 text-white/30">
+      <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground/60">
         <History className="w-8 h-8" />
         <p className="text-sm">No swap history yet</p>
         <button type="button" onClick={onClose} className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors mt-1">
@@ -792,16 +792,16 @@ function HistoryView({ onClose }: { onClose: () => void }) {
     <div className="flex flex-col gap-1">
       {/* Header row */}
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-bold text-white">{entries.length} swap{entries.length !== 1 ? "s" : ""}</p>
+        <p className="text-sm font-bold text-foreground">{entries.length} swap{entries.length !== 1 ? "s" : ""}</p>
         {confirmClear ? (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-white/40">Clear all?</span>
+            <span className="text-xs text-muted-foreground">Clear all?</span>
             <button type="button" onClick={handleClear} className="text-xs text-red-400 hover:text-red-300 font-semibold transition-colors">Yes</button>
-            <button type="button" onClick={() => setConfirmClear(false)} className="text-xs text-white/40 hover:text-white/60 transition-colors">No</button>
+            <button type="button" onClick={() => setConfirmClear(false)} className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors">No</button>
           </div>
         ) : (
           <button type="button" onClick={() => setConfirmClear(true)}
-            className="flex items-center gap-1 text-xs text-white/30 hover:text-white/50 transition-colors">
+            className="flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground/70 transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> Clear
           </button>
         )}
@@ -818,7 +818,7 @@ function HistoryView({ onClose }: { onClose: () => void }) {
         return (
           <div key={entry.transaction_id}
             className={cn("rounded-xl border transition-colors overflow-hidden",
-              isOpen ? "border-white/20 bg-[#1e1e1e]" : "border-white/10 bg-[#1a1a1a] hover:border-white/15")}>
+              isOpen ? "border-border/60 bg-muted/40" : "border-border/40 bg-card hover:border-border/50")}>
             {/* Row header — always visible */}
             <button type="button"
               className="w-full flex items-center gap-3 px-3 py-3 text-left"
@@ -830,31 +830,31 @@ function HistoryView({ onClose }: { onClose: () => void }) {
               </div>
               {/* Pair + amounts */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   <span>{entry.coin_from}</span>
-                  <ArrowRight className="w-3 h-3 text-white/30 shrink-0" />
+                  <ArrowRight className="w-3 h-3 text-muted-foreground/60 shrink-0" />
                   <span>{entry.coin_to}</span>
                 </div>
-                <p className="text-[11px] text-white/40 mt-0.5 font-mono">
+                <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
                   {fmtNum(entry.deposit_amount, 6)} → ≈{fmtNum(live?.real_withdrawal_amount ?? entry.withdrawal_amount, 6)}
                 </p>
               </div>
               {/* Status + date */}
               <div className="flex flex-col items-end gap-1 shrink-0">
                 <span className={cn("text-[10px] font-bold uppercase tracking-wide",
-                  STATUS_COLOR[status] ?? "text-white/50")}>
+                  STATUS_COLOR[status] ?? "text-muted-foreground/70")}>
                   {STATUS_LABEL[status] ?? status}
                 </span>
-                <span className="text-[10px] text-white/30">
+                <span className="text-[10px] text-muted-foreground/60">
                   {new Date(entry.createdAt).toLocaleDateString()}
                 </span>
               </div>
-              <ChevronDown className={cn("w-4 h-4 text-white/30 shrink-0 transition-transform", isOpen && "rotate-180")} />
+              <ChevronDown className={cn("w-4 h-4 text-muted-foreground/60 shrink-0 transition-transform", isOpen && "rotate-180")} />
             </button>
 
             {/* Expanded detail */}
             {isOpen && (
-              <div className="px-3 pb-4 space-y-3 border-t border-white/10 pt-3">
+              <div className="px-3 pb-4 space-y-3 border-t border-border/40 pt-3">
                 {/* Live status */}
                 <div className="flex items-center gap-2.5">
                   {isDone
@@ -870,7 +870,7 @@ function HistoryView({ onClose }: { onClose: () => void }) {
                   </span>
                   {!isFetching && (
                     <button type="button" onClick={() => fetchStatus(entry.transaction_id)}
-                      className="ml-auto p-1 rounded-lg text-white/30 hover:text-white/60 transition-colors">
+                      className="ml-auto p-1 rounded-lg text-muted-foreground/60 hover:text-muted-foreground transition-colors">
                       <RefreshCw className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -878,10 +878,10 @@ function HistoryView({ onClose }: { onClose: () => void }) {
 
                 {/* Deposit address */}
                 <div className="space-y-1">
-                  <p className="text-xs text-white/40">Deposit address ({entry.coin_from})</p>
-                  <div className="rounded-xl bg-[#141414] border border-white/10 px-3 py-2.5 flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">Deposit address ({entry.coin_from})</p>
+                  <div className="rounded-xl bg-background border border-border/40 px-3 py-2.5 flex items-center gap-2">
                     <CoinLogo symbol={entry.coin_from} size={16} />
-                    <p className="flex-1 min-w-0 text-xs text-white/80 font-mono break-all">{entry.deposit}</p>
+                    <p className="flex-1 min-w-0 text-xs text-foreground/80 font-mono break-all">{entry.deposit}</p>
                     <CopyButton text={entry.deposit} />
                   </div>
                   {entry.deposit_extra_id && (
@@ -899,55 +899,55 @@ function HistoryView({ onClose }: { onClose: () => void }) {
                 {/* TX hashes */}
                 {live?.hash_in && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/40">Deposit TX</span>
+                    <span className="text-muted-foreground">Deposit TX</span>
                     <div className="flex items-center gap-1">
-                      <span className="font-mono text-white/60">{shortAddr(live.hash_in)}</span>
+                      <span className="font-mono text-muted-foreground">{shortAddr(live.hash_in)}</span>
                       <CopyButton text={live.hash_in} />
                     </div>
                   </div>
                 )}
                 {live?.hash_out && (
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/40">Withdrawal TX</span>
+                    <span className="text-muted-foreground">Withdrawal TX</span>
                     <div className="flex items-center gap-1">
-                      <span className="font-mono text-white/60">{shortAddr(live.hash_out)}</span>
+                      <span className="font-mono text-muted-foreground">{shortAddr(live.hash_out)}</span>
                       <CopyButton text={live.hash_out} />
                     </div>
                   </div>
                 )}
 
                 {/* Summary */}
-                <div className="rounded-xl bg-[#141414] p-3 space-y-1.5 text-xs">
+                <div className="rounded-xl bg-background p-3 space-y-1.5 text-xs">
                   <div className="flex justify-between">
-                    <span className="text-white/40">Order ID</span>
+                    <span className="text-muted-foreground">Order ID</span>
                     <div className="flex items-center gap-1">
                       <span className="font-mono text-emerald-400">{shortAddr(entry.transaction_id)}</span>
                       <CopyButton text={entry.transaction_id} />
                     </div>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/40">You sent</span>
-                    <span className="font-mono text-white">{fmtNum(entry.deposit_amount, 6)} {entry.coin_from}</span>
+                    <span className="text-muted-foreground">You sent</span>
+                    <span className="font-mono text-foreground">{fmtNum(entry.deposit_amount, 6)} {entry.coin_from}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/40">You receive</span>
+                    <span className="text-muted-foreground">You receive</span>
                     <span className="font-mono text-emerald-400">
                       ≈{fmtNum(live?.real_withdrawal_amount ?? entry.withdrawal_amount, 6)} {entry.coin_to}
                     </span>
                   </div>
                   {entry.rate && (
                     <div className="flex justify-between">
-                      <span className="text-white/40">Rate</span>
-                      <span className="font-mono text-white/60">1 {entry.coin_from} ≈ {fmtNum(entry.rate, 6)} {entry.coin_to}</span>
+                      <span className="text-muted-foreground">Rate</span>
+                      <span className="font-mono text-muted-foreground">1 {entry.coin_from} ≈ {fmtNum(entry.rate, 6)} {entry.coin_to}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-white/40">To address</span>
-                    <span className="font-mono text-white/60 truncate ml-4">{shortAddr(entry.withdrawal)}</span>
+                    <span className="text-muted-foreground">To address</span>
+                    <span className="font-mono text-muted-foreground truncate ml-4">{shortAddr(entry.withdrawal)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-white/40">Date</span>
-                    <span className="text-white/60">{new Date(entry.createdAt).toLocaleString()}</span>
+                    <span className="text-muted-foreground">Date</span>
+                    <span className="text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</span>
                   </div>
                 </div>
               </div>
@@ -1076,9 +1076,9 @@ export function LetsExchangePanel({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-[#111] shadow-xl">
+    <div className="rounded-2xl border border-border bg-card shadow-xl">
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <div className="flex items-center gap-2 text-sm font-bold text-white">
+        <div className="flex items-center gap-2 text-sm font-bold text-foreground">
           <Zap className="w-4 h-4 text-yellow-400" />
           Cross-Chain Exchange
         </div>
@@ -1093,7 +1093,7 @@ export function LetsExchangePanel({
             <button
               type="button"
               onClick={onConnectWallet}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/15 text-[11px] text-white/60 font-semibold hover:bg-white/10 hover:text-white/80 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-muted/30 border border-border/50 text-[11px] text-muted-foreground font-semibold hover:bg-muted/60 hover:text-foreground/80 transition-colors"
             >
               <Wallet className="w-3 h-3" />
               Connect Wallet
@@ -1106,8 +1106,8 @@ export function LetsExchangePanel({
             className={cn(
               "relative flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-colors",
               showHistory
-                ? "bg-white/10 border-white/20 text-white"
-                : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white/70",
+                ? "bg-muted/60 border-border/60 text-foreground"
+                : "bg-muted/30 border-border/40 text-muted-foreground/70 hover:bg-muted/60 hover:text-muted-foreground/80",
             )}
           >
             <History className="w-3 h-3" />
@@ -1136,7 +1136,7 @@ export function LetsExchangePanel({
               </div>
             )}
             {creating && (
-              <div className="mb-4 rounded-xl bg-white/5 p-3 flex items-center gap-3 text-sm text-white/60">
+              <div className="mb-4 rounded-xl bg-muted/30 p-3 flex items-center gap-3 text-sm text-muted-foreground">
                 <Loader2 className="w-4 h-4 animate-spin" /> Creating exchange order…
               </div>
             )}
