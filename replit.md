@@ -76,10 +76,12 @@ The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/
 - **Proxy routes**: `artifacts/api-server/src/routes/letsexchange.ts`
 - **Frontend**: `artifacts/bsv-dex/src/components/LetsExchangePanel.tsx` — native 3-step UI (amount → address → deposit/QR/tracking), no external redirects. Accepts `initialFrom`/`initialTo` props to pre-select coins.
 - **Orderbook fallback integration** (2026-04-30):
-  - `artifacts/bsv-dex/src/hooks/useLetsExchangeCoins.ts` — singleton hook, fetches 789 unique LE coins once, exposes `getCoin(sym)` / `isLECoin(sym)` / `uniqueSymbols`
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangeCoins.ts` — singleton hook, fetches LE coins once, exposes `getCoin(sym)` / `isLECoin(sym)`
   - `artifacts/bsv-dex/src/hooks/useLetsExchangeRate.ts` — per-pair live rate hook polling every 10s from `/api/letsexchange/estimate`
+  - `artifacts/bsv-dex/src/hooks/useLetsExchangePairs.ts` — fetches server-provided LE pairs (`GET /api/letsexchange/pairs`); supports `quote` filter or `all:true`
   - `OrderBook.tsx` — shows a yellow "Cross-chain rate ⚡LE →" card at the spread when LE rate available; clicking scrolls to LetsExchangePanel pre-filled with current pair
-  - `Spot.tsx` — injects ~3,945 LE pairs (789 symbols × 5 quotes: USDT/BTC/ETH/BSV/BNB) into the pair selector with `⚡LE` badge; shows no-liquidity fallback banner above order form; `LetsExchangePanel` always pre-seeded with current pair's base/quote
+  - `Spot.tsx` — merges server-provided LE pairs (10,494 pairs; ~1,053 coins × 10 quotes: BSV/BTC/ETH/USDT/BNB/SOL/XRP/TRX/DOGE/LTC) into the pair selector with `⚡LE` badge; shows no-liquidity fallback banner above order form; `LetsExchangePanel` always pre-seeded with current pair's base/quote
+  - **API endpoint** `GET /api/letsexchange/pairs` — builds all LE pairs server-side from coin list; supports `?quote=BSV` filter and `?all=true`; cached 10 min
 
 # Trade Logic Audit (2026-04-10)
 

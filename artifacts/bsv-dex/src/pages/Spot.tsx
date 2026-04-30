@@ -11,6 +11,7 @@ import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
 import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -190,7 +191,10 @@ export function SpotTrading() {
   const { data: apiMarkets } = useGetMarkets();
 
   // ── LetsExchange integration ──────────────────────────────────────────────
-  const { getCoin: getLECoin, isLECoin, uniqueSymbols: leSymbols } = useLetsExchangeCoins();
+  const { getCoin: getLECoin, isLECoin } = useLetsExchangeCoins();
+  // Server-provided pairs — all LE coins against all supported quote assets.
+  // Fetched once per quote tab on demand; falls back to [] while loading.
+  const { pairs: lePairs } = useLetsExchangePairs({ all: true });
 
   // Get primary LE coin entries for the current pair (null if not supported)
   const fromLECoin = useMemo(() => getLECoin(base),  [getLECoin, base]);
@@ -290,9 +294,7 @@ export function SpotTrading() {
 
   // Market list for pair selector — base is the full mock catalogue (all chains/quotes)
   // then API data replaces any matching pair with live data.
-  // Then LetsExchange coins are injected as additional tradeable pairs.
-  const LE_QUOTE_TABS: QuoteTab[] = ["USDT", "BTC", "ETH", "BSV", "BNB"];
-
+  // Then server-provided LetsExchange pairs are merged in (API wins over LE).
   const allMarkets = useMemo(() => {
     const apiNorm = ((apiMarkets && (apiMarkets as any[]).length > 0) ? (apiMarkets as any[]) : [])
       .map(normalise)
@@ -303,30 +305,16 @@ export function SpotTrading() {
     mockNorm.forEach(m => { if (!deduped.has(m.symbol)) deduped.set(m.symbol, m); });
     apiNorm.forEach(m => { deduped.set(m.symbol, m); }); // API overrides mock
 
-    // Inject LetsExchange coins as virtual pairs for each supported quote
-    // (skip pairs that already exist natively)
-    leSymbols.forEach(sym => {
-      LE_QUOTE_TABS.forEach(qTab => {
-        if (sym === qTab) return; // skip e.g. USDT/USDT
-        const key = `${sym}/${qTab}`;
-        if (!deduped.has(key)) {
-          deduped.set(key, normalise({
-            symbol:              key,
-            baseAsset:           sym,
-            quoteAsset:          qTab,
-            lastPrice:           0,
-            priceChangePercent24h: 0,
-            volume:              0,
-            type:                "letsexchange",
-            leSource:            true,
-          }));
-        }
-      });
+    // Merge server-provided LE pairs — skip pairs that already exist natively
+    lePairs.forEach(p => {
+      if (!deduped.has(p.symbol)) {
+        deduped.set(p.symbol, normalise(p as any));
+      }
     });
 
     return Array.from(deduped.values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiMarkets, leSymbols]);
+  }, [apiMarkets, lePairs]);
 
   const currentMarket = useMemo(
     () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
