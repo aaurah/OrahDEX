@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, ExternalLink, Lock, Wallet,
+  Clock, Lock, Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -669,12 +669,8 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         )}
       </div>
 
-      {/* Support link + new exchange */}
-      <div className="flex items-center justify-between">
-        <a href={`https://letsexchange.io/track/${order.transaction_id}`} target="_blank" rel="noopener noreferrer"
-          className="text-xs text-white/40 hover:text-white/60 flex items-center gap-1 transition-colors">
-          Track on LetsExchange <ExternalLink className="w-3 h-3" />
-        </a>
+      {/* New exchange */}
+      <div className="flex items-center justify-end">
         {isDone && (
           <button type="button" onClick={onReset}
             className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
@@ -798,7 +794,7 @@ export function LetsExchangePanel({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-[#111] shadow-xl overflow-hidden">
+    <div className="rounded-2xl border border-border bg-[#111] shadow-xl">
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 text-sm font-bold text-white">
           <Zap className="w-4 h-4 text-yellow-400" />
