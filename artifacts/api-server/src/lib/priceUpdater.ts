@@ -275,144 +275,131 @@ export const USDT_PAIRS = [
   "ZORA","ENJOY","BUILD",
 ];
 
-// BTC pairs — wide coverage vs BTC
-export const BTC_PAIRS = [
-  "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","DASH","XMR","ZEC","MKR","CRV","RUNE","YFI",
-  "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
-  "ETC","FTM","EOS","THETA","VET","BSV","BCH",
-  "TON","KAS","SEI","TIA","KAVA","ONE","ZIL","AXS","GALA","ENJ",
-  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI",
-  "STX","GMX","DYDX","PENDLE","FET","RNDR","TAO","WLD",
-  "WIF","JUP","PYTH","RON","AKT","LUNA",
-];
-
-// ETH pairs — top coins vs ETH
-export const ETH_PAIRS = [
-  "BTC","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","MKR","CRV","LDO","COMP","SNX","GRT","RUNE","YFI",
-  "TON","SEI","TIA","APE","AXS","GALA","ENJ","IMX","SAND","MANA",
-  "OSMO","ONDO","ORDI","STX","FET","RNDR","TAO","BONK","WIF",
-];
-
-// Stablecoin pairs — USDC, TUSD, USDD quote assets (same as USDT, minus niche tokens)
-const STABLE_BASE_PAIRS = [
+// ── Comprehensive base-coin pool ────────────────────────────────────────────
+// Mirrors USDT_PAIRS exactly; used to auto-build every chain-native pair list
+// so that ALL markets carry the same full depth of tradeable assets.
+const ALL_BASE_COINS: string[] = [
+  // ── Top L1 blue-chips ──────────────────────────────────────────────────────
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
   "MATIC","LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP",
   "VET","FIL","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
-  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX","RUNE",
-  "FTM","ALGO","XLM","HBAR","EGLD","EOS","ZEC","DASH","XMR","SAND","MANA",
-  "TON","KAS","SEI","TIA","KAVA","AXS","ENJ","GALA","IMX","RON",
-  "OSMO","ATOM","ONDO","PAXG","OKB","KCS","ORDI","SATS",
-  "BONK","WIF","JUP","PYTH","FET","RNDR","TAO","WLD","STX","GMX","DYDX",
-];
-export const USDC_PAIRS = [
-  ...STABLE_BASE_PAIRS,
-  // ── Base chain assets vs USDC ────────────────────────────────────────────
+  // ── DeFi ───────────────────────────────────────────────────────────────────
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX",
+  "YFI","RUNE","BAL","GMX","DYDX","PENDLE","CVX","FXS","SPELL","PERP","CAKE",
+  // ── L1 alts ────────────────────────────────────────────────────────────────
+  "FTM","ALGO","XLM","HBAR","EGLD","THETA","EOS","ZEC","DASH","XMR",
+  "SAND","MANA","CRO","KAVA","ONE","ZIL","ICX","WAVES","NEO","CFX",
+  "ROSE","FLR","CELO","CKB","CORE","BTT","XDC","GLMR","MOVR","KDA","ZEN",
+  "TON","KAS","SEI","TIA",
+  // ── Solana ecosystem ───────────────────────────────────────────────────────
+  "BONK","WIF","JUP","PYTH","JTO","ORCA","BOME","RAY","MSOL","W","TNSR",
+  // ── AI / DePIN ─────────────────────────────────────────────────────────────
+  "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
+  "HNT","IOTX","GLM","STORJ","POWR","LPT",
+  // ── Gaming / Metaverse ─────────────────────────────────────────────────────
+  "APE","AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "BEAM","PRIME","RON","MC","GODS",
+  // ── Cosmos ecosystem ───────────────────────────────────────────────────────
+  "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
+  // ── RWA ────────────────────────────────────────────────────────────────────
+  "ONDO","PAXG","XAUT","CFG","MPL",
+  // ── Exchange tokens ────────────────────────────────────────────────────────
+  "OKB","GT","KCS","HT","BGB","WBT",
+  // ── BRC-20 / Ordinals ──────────────────────────────────────────────────────
+  "ORDI","SATS","RATS",
+  // ── Polkadot ecosystem ─────────────────────────────────────────────────────
+  "KSM","ACA","ASTR","PHA",
+  // ── Meme coins ─────────────────────────────────────────────────────────────
+  "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
+  "MEME","NOT","HMSTR","DOGS","EIGEN",
+  // ── L2 / bridge ────────────────────────────────────────────────────────────
+  "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
+  "WBTC","WSTETH","RETH",
+  // ── Base chain assets ──────────────────────────────────────────────────────
   "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
   "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
-  // ── Zora ecosystem vs USDC ──────────────────────────────────────────────
+  // ── Zora ecosystem ─────────────────────────────────────────────────────────
   "ZORA","ENJOY","BUILD",
 ];
-export const TUSD_PAIRS = STABLE_BASE_PAIRS;
-export const USDD_PAIRS = STABLE_BASE_PAIRS;
 
-// BCH pairs — top coins vs Bitcoin Cash
-export const BCH_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// Pure fiat-pegged stablecoins that should not appear as base tokens in
+// chain-native markets (e.g. no DAI/ETH or FRAX/BNB).
+const STABLECOIN_BASE_EXCL = new Set([
+  "USDT","USDC","TUSD","USDD","BUSD","DAI","FRAX","LUSD","GUSD","USDP",
+]);
 
-// BNB pairs — top coins vs BNB
-export const BNB_PAIRS = [
-  "BTC","ETH","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP",
-  "SUI","INJ","PEPE","SHIB","AAVE","CRV","MKR","FIL","ALGO","XLM",
-];
+/**
+ * Build a deduplicated chain-native pair list: all ALL_BASE_COINS except
+ * the quote token itself and pure stablecoins, plus optional chain-specific extras.
+ */
+function buildChainPairs(quote: string, extras: string[] = []): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const b of [...ALL_BASE_COINS, ...extras]) {
+    if (b !== quote && !STABLECOIN_BASE_EXCL.has(b) && !seen.has(b)) {
+      seen.add(b);
+      result.push(b);
+    }
+  }
+  return result;
+}
 
-// ── EVM chain quote markets ────────────────────────────────────────────────
+// ── Per-quote pair lists (auto-generated from ALL_BASE_COINS) ───────────────
 
-// MATIC (Polygon) pairs
-export const MATIC_PAIRS = [
-  // Blue-chips
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP","SUI","INJ",
-  // Stablecoins (bridged on Polygon)
-  "USDC","USDT","DAI","WBTC",
-  // Polygon / DeFi ecosystem
-  "AAVE","CRV","SUSHI","BAL","COMP","SNX","GRT","YFI","MKR","LDO",
-  "1INCH","SAND","MANA","AXS","IMX","GALA","ENJ",
-  "GHST","QUICK","DFYN",
-];
+// Stablecoin variants — full USDT depth
+export const USDC_PAIRS = [...USDT_PAIRS];
+export const TUSD_PAIRS = [...USDT_PAIRS];
+export const USDD_PAIRS = [...USDT_PAIRS];
 
-// AVAX (Avalanche) pairs
-export const AVAX_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// BTC pairs — every base vs Bitcoin
+export const BTC_PAIRS = buildChainPairs("BTC");
 
-// ARB (Arbitrum) pairs
-export const ARB_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","OP","SUI","INJ","AAVE","CRV",
-];
+// ETH pairs — every base vs Ether
+export const ETH_PAIRS = buildChainPairs("ETH");
 
-// OP (Optimism) pairs
-export const OP_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","SUI","INJ","AAVE","CRV",
-];
+// BCH pairs — every base vs Bitcoin Cash
+export const BCH_PAIRS = buildChainPairs("BCH");
 
-// FTM (Fantom) pairs
-export const FTM_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","OP","AAVE",
-];
+// BNB pairs — every base vs BNB
+export const BNB_PAIRS = buildChainPairs("BNB");
 
-// CRO (Cronos) pairs
-export const CRO_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR",
-];
+// BSV pairs — every base vs Bitcoin SV
+export const BSV_PAIRS = buildChainPairs("BSV");
 
-// BASE (Coinbase L2) pairs
-export const BASE_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","ARB","OP","DOGE",
-  "SHIB","PEPE","MKR","CRV","LDO","COMP","GRT","SNX","RUNE","SUSHI",
-];
+// ── EVM chain quote markets ─────────────────────────────────────────────────
 
-// LINEA (MetaMask L2) pairs
-export const LINEA_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","SNX","CRV","LDO",
-  "COMP","GRT","MKR","SUSHI","RUNE","ZEC","INJ","NEAR","DOT","SOL",
-];
+// MATIC (Polygon) — all bases + bridged stables + Polygon ecosystem
+export const MATIC_PAIRS = buildChainPairs("MATIC", ["USDC","USDT","DAI","WBTC","GHST","QUICK","DFYN"]);
 
-// ZK (zkSync Era) pairs
-export const ZK_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","ARB","OP","LINK","UNI","AAVE",
-  "COMP","CRV","LDO","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// AVAX (Avalanche) — all bases
+export const AVAX_PAIRS = buildChainPairs("AVAX");
 
-// SCR (Scroll L2) pairs
-export const SCR_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","LDO","CRV",
-  "MKR","SNX","COMP","GRT","RUNE","SUSHI","INJ","NEAR","DOT","SOL",
-];
+// ARB (Arbitrum) — all bases
+export const ARB_PAIRS = buildChainPairs("ARB");
 
-// MNT (Mantle L2) pairs
-export const MNT_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","ARB","OP",
-  "CRV","LDO","COMP","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// OP (Optimism) — all bases
+export const OP_PAIRS = buildChainPairs("OP");
 
-// BSV pairs — top coins vs BSV
-export const BSV_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","BCH","TRX","NEAR","PEPE","SHIB","APT",
-  "ARB","OP","SUI","INJ","FIL","ALGO","XLM","HBAR","FTM","ZEC",
-];
+// FTM (Fantom) — all bases
+export const FTM_PAIRS = buildChainPairs("FTM");
+
+// CRO (Cronos) — all bases
+export const CRO_PAIRS = buildChainPairs("CRO");
+
+// BASE (Coinbase L2) — all bases + bridged stables
+export const BASE_PAIRS = buildChainPairs("BASE", ["USDC","DAI"]);
+
+// LINEA (MetaMask L2) — all bases + bridged stables
+export const LINEA_PAIRS = buildChainPairs("LINEA", ["USDC","DAI"]);
+
+// ZK (zkSync Era) — all bases + bridged stables
+export const ZK_PAIRS = buildChainPairs("ZK", ["USDC","USDT","DAI"]);
+
+// SCR (Scroll L2) — all bases + bridged stables
+export const SCR_PAIRS = buildChainPairs("SCR", ["USDC","USDT","DAI"]);
+
+// MNT (Mantle L2) — all bases + bridged stables
+export const MNT_PAIRS = buildChainPairs("MNT", ["USDC","USDT","DAI"]);
 
 // Futures PERP pairs
 export const FUTURES_PAIRS = [
