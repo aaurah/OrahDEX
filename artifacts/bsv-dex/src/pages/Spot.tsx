@@ -16,7 +16,7 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTr
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown } from "lucide-react";
+import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown, ArrowLeftRight, BookOpen, RefreshCw } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
@@ -147,6 +147,11 @@ export function SpotTrading() {
   const lePanelRef = useRef<HTMLDivElement>(null);
   const pairDropRef = useRef<HTMLDivElement>(null);
 
+  // ── Trade mode: "order" = internal DEX, "swap" = LetsExchange routing ─────
+  type TradeMode = "order" | "swap";
+  const [tradeMode, setTradeMode] = useState<TradeMode>("order");
+  const [tradeModeLockedByUser, setTradeModeLockedByUser] = useState(false);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pairDropRef.current && !pairDropRef.current.contains(e.target as Node)) {
@@ -206,11 +211,11 @@ export function SpotTrading() {
     toLECoin   ? { symbol: toLECoin.symbol,   network: toLECoin.network   } : null,
   );
 
-  // Callback for OrderBook LE rows — remount LE panel with fresh coin selection
+  // Callback for OrderBook LE rows — switch to swap mode and remount LE panel
   const handleLeSwap = useCallback(() => {
     setLePanelKey(k => k + 1);
-    // Scroll to the LE panel
-    setTimeout(() => lePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    setTradeMode("swap");
+    setTradeModeLockedByUser(true);
   }, []);
 
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
@@ -266,6 +271,19 @@ export function SpotTrading() {
   }
   const rawOB = apiOrderBook as any;
   const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+
+  // Auto-switch trade mode based on liquidity, unless the user manually picked
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!tradeModeLockedByUser) {
+      setTradeMode(hasRealOB ? "order" : "swap");
+    }
+  }, [hasRealOB, symbol]); // reset on symbol change too
+
+  // When pair changes, unlock user preference so auto-routing kicks in fresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setTradeModeLockedByUser(false); }, [symbol]);
+
   const orderBook = (hasRealOB && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
     : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
@@ -904,41 +922,185 @@ export function SpotTrading() {
           />
         </div>
 
-        {/* FAR-RIGHT: Order Form + AI Analysis + LetsExchange */}
-        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card overflow-y-auto">
-          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
-          {/* Show LE fallback banner when no internal orderbook liquidity */}
-          {!hasRealOB && leRateData && (
-            <div
-              className="mx-2 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/25 cursor-pointer hover:bg-yellow-500/15 transition-colors"
-              onClick={handleLeSwap}
-            >
-              <Zap className="w-4 h-4 text-yellow-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold text-yellow-400 leading-tight">No internal liquidity</p>
-                <p className="text-[9px] text-yellow-400/70 leading-tight">
-                  Rate: 1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote}
-                </p>
-              </div>
+        {/* FAR-RIGHT: Smart-routed Trade Panel */}
+        <div className="hidden lg:flex w-[270px] xl:w-[300px] shrink-0 border-l border-border flex-col min-h-0 bg-card">
+          {/* ── Mode selector ─────────────────────────────────────────────── */}
+          <div className="shrink-0 border-b border-border px-2 pt-2 pb-0">
+            {/* Route indicator */}
+            <div className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded-lg mb-2 text-[10px]",
+              hasRealOB
+                ? "bg-buy/8 text-buy border border-buy/20"
+                : "bg-yellow-500/10 text-yellow-400 border border-yellow-500/25"
+            )}>
+              {hasRealOB ? (
+                <>
+                  <Droplets className="w-3 h-3 shrink-0" />
+                  <span className="font-semibold">Liquidity available</span>
+                  <span className="text-muted-foreground ml-auto">DEX order book</span>
+                </>
+              ) : leRateData ? (
+                <>
+                  <Zap className="w-3 h-3 shrink-0" />
+                  <span className="font-semibold">Auto-routed → Swap</span>
+                  <span className="text-muted-foreground ml-auto text-[9px]">no DEX depth</span>
+                </>
+              ) : (
+                <>
+                  <BookOpen className="w-3 h-3 shrink-0" />
+                  <span className="font-semibold">No liquidity yet</span>
+                  <span className="text-muted-foreground ml-auto">place first order</span>
+                </>
+              )}
             </div>
-          )}
-          <div className="p-2 border-t border-border">
-            <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
+            {/* Toggle tabs */}
+            <div className="flex rounded-lg overflow-hidden border border-border mb-2">
+              <button
+                onClick={() => { setTradeMode("order"); setTradeModeLockedByUser(true); }}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold transition-all",
+                  tradeMode === "order"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                )}
+              >
+                <BookOpen className="w-3 h-3" />
+                Limit / Market
+              </button>
+              <button
+                onClick={() => { setTradeMode("swap"); setTradeModeLockedByUser(true); setLePanelKey(k => k + 1); }}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold transition-all border-l border-border",
+                  tradeMode === "swap"
+                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                )}
+              >
+                <ArrowLeftRight className="w-3 h-3" />
+                Cross-chain Swap
+              </button>
+            </div>
           </div>
-          <div ref={lePanelRef} className="p-2 border-t border-border">
-            <LetsExchangePanel
-              key={lePanelKey}
-              initialFrom={base}
-              initialTo={quote}
-              walletAddress={address}
-              onConnectWallet={openWalletModal}
-            />
+
+          {/* ── Trade mode content ────────────────────────────────────────── */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {tradeMode === "order" ? (
+              <>
+                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+                {/* Swap nudge when no internal OB liquidity */}
+                {!hasRealOB && leRateData && (
+                  <button
+                    onClick={handleLeSwap}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-yellow-500/8 hover:bg-yellow-500/15 border-t border-yellow-500/20 transition-colors group"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="text-[10px] font-bold text-yellow-400 leading-tight">No DEX liquidity — switch to swap?</p>
+                      <p className="text-[9px] text-yellow-400/70 leading-tight">
+                        1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote}
+                      </p>
+                    </div>
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-yellow-400/50 group-hover:text-yellow-400 transition-colors shrink-0" />
+                  </button>
+                )}
+                <div className="p-2 border-t border-border">
+                  <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
+                </div>
+              </>
+            ) : (
+              <div ref={lePanelRef} className="p-2">
+                {/* Swap rate summary */}
+                {leRateData && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl mb-2">
+                    <RefreshCw className="w-3 h-3 text-yellow-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[9px] text-yellow-400/70 leading-none mb-0.5">Live swap rate</p>
+                      <p className="text-[11px] font-bold text-yellow-400 leading-none">
+                        1 {base} = {parseFloat(leRateData.rate).toFixed(6)} {quote}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setTradeMode("order"); setTradeModeLockedByUser(true); }}
+                      className="ml-auto text-[9px] text-muted-foreground hover:text-foreground underline shrink-0"
+                    >
+                      Trade instead
+                    </button>
+                  </div>
+                )}
+                {!leRateData && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-secondary/60 border border-border rounded-xl mb-2">
+                    <Zap className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <p className="text-[10px] text-muted-foreground">Swap rate not available for this pair</p>
+                  </div>
+                )}
+                <LetsExchangePanel
+                  key={lePanelKey}
+                  initialFrom={base}
+                  initialTo={quote}
+                  walletAddress={address}
+                  onConnectWallet={openWalletModal}
+                />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* MOBILE: full-width order form below chart */}
+        {/* MOBILE: Smart-routed Trade Panel */}
         <div className="lg:hidden w-full shrink-0 border-t border-border bg-card">
-          <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+          {/* Mobile mode selector */}
+          <div className="flex border-b border-border">
+            <button
+              onClick={() => { setTradeMode("order"); setTradeModeLockedByUser(true); }}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all",
+                tradeMode === "order"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground"
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              {hasRealOB ? "Trade" : "Provide Liquidity"}
+            </button>
+            <button
+              onClick={() => { setTradeMode("swap"); setTradeModeLockedByUser(true); setLePanelKey(k => k + 1); }}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 text-[11px] font-semibold transition-all border-l border-border",
+                tradeMode === "swap"
+                  ? "border-b-2 border-yellow-400 text-yellow-400"
+                  : "text-muted-foreground"
+              )}
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              {!hasRealOB ? "Swap (Recommended)" : "Cross-chain Swap"}
+            </button>
+          </div>
+
+          {/* Liquidity badge */}
+          {!hasRealOB && leRateData && (
+            <div className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-[10px]",
+              tradeMode === "swap"
+                ? "bg-yellow-500/10 text-yellow-400 border-b border-yellow-500/20"
+                : "bg-secondary/40 text-muted-foreground border-b border-border"
+            )}>
+              <Zap className="w-3 h-3 shrink-0" />
+              <span>Auto-routed: no DEX liquidity — swap recommended</span>
+            </div>
+          )}
+
+          {tradeMode === "order" ? (
+            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+          ) : (
+            <div className="p-3">
+              <LetsExchangePanel
+                key={lePanelKey}
+                initialFrom={base}
+                initialTo={quote}
+                walletAddress={address}
+                onConnectWallet={openWalletModal}
+              />
+            </div>
+          )}
         </div>
       </div>
 
