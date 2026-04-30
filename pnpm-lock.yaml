@@ -102,7 +102,7 @@ importers:
   artifacts/api-server:
     dependencies:
       '@noble/ed25519':
-        specifier: ^2.2.3
+        specifier: ^2.3.0
         version: 2.3.0
       '@noble/hashes':
         specifier: ^2.0.1
