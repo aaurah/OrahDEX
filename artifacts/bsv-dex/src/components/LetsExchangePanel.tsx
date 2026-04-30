@@ -385,7 +385,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
           network_from: fromCoin.network ?? fromCoin.symbol,
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
-          float:        false,
+          float:        true,
         }),
       });
       const d = await r.json();
@@ -455,10 +455,20 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         )}
         <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
         {(minAmt !== null || maxAmt !== null) && fromCoin && (
-          <p className={cn("text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
-            Min: <span className="font-mono">{fmtNum(minAmt)} {fromCoin.symbol}</span>
-            {maxAmt !== null && <>&nbsp;&nbsp;Max: <span className="font-mono">{fmtNum(maxAmt, 7)} {fromCoin.symbol}</span></>}
-          </p>
+          <div className={cn("flex items-center gap-3 text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
+            {minAmt !== null && (
+              <button type="button" onClick={() => setAmount(fmtNum(minAmt, 8))}
+                className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity cursor-pointer">
+                Min: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(minAmt)} {fromCoin.symbol}</span>
+              </button>
+            )}
+            {maxAmt !== null && (
+              <button type="button" onClick={() => setAmount(fmtNum(maxAmt, 8))}
+                className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity cursor-pointer">
+                Max: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(maxAmt, 7)} {fromCoin.symbol}</span>
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -492,11 +502,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
             <p className="text-xs text-muted-foreground">
               1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
             </p>
-            {estimate.rate_id && (
-              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">
-                <Lock className="w-2.5 h-2.5" /> Fixed Rate
-              </span>
-            )}
           </div>
         )}
         {estimate?.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
@@ -1105,13 +1110,8 @@ export function LetsExchangePanel({
         deposit_amount:      parseFloat(sendAmount),
         withdrawal:          address,
         withdrawal_extra_id: extraId,   // always sent, even if ""
-        float:               false,
+        float:               true,
       };
-      // Include rate_id for fixed-rate exchange if we have one and it hasn't expired
-      if (estimate?.rate_id) {
-        const expiry = estimate.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) : 0;
-        if (expiry > Date.now()) body.rate_id = estimate.rate_id;
-      }
 
       const r = await fetch(`${API}/letsexchange/exchange`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
