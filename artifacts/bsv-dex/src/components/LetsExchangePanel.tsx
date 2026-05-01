@@ -327,8 +327,9 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const [refreshKey, setRefreshKey] = useState(0);
 
   // ── Smart router state ───────────────────────────────────────────────────
-  const [routeSource, setRouteSource] = useState<"internal"|"letsexchange"|null>(null);
+  const [routeSource,  setRouteSource]  = useState<"internal"|"letsexchange"|null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError,   setRouteError]   = useState(false);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
   // Real on-chain EVM balance for the "from" coin
@@ -431,9 +432,9 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
     if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
     const amt = parseFloat(amount);
     if (!fromCoin || !toCoin || !amount || !isFinite(amt) || amt <= 0) {
-      setRouteSource(null); return;
+      setRouteSource(null); setRouteError(false); return;
     }
-    setRouteLoading(true);
+    setRouteLoading(true); setRouteError(false);
     routeTimerRef.current = setTimeout(async () => {
       try {
         const r = await fetch(`${API}/swap/route`, {
@@ -442,8 +443,15 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
           body: JSON.stringify({ assetIn: fromCoin.symbol, assetOut: toCoin.symbol, amountIn: amt }),
         });
         const d = await r.json();
-        if (r.ok && d.source) setRouteSource(d.source as "internal"|"letsexchange");
-      } catch { /* non-fatal */ }
+        if (r.ok && d.source) {
+          setRouteSource(d.source as "internal"|"letsexchange");
+          setRouteError(false);
+        } else {
+          setRouteSource(null); setRouteError(true);
+        }
+      } catch {
+        setRouteSource(null); setRouteError(true);
+      }
       setRouteLoading(false);
     }, 600);
     return () => { if (routeTimerRef.current) clearTimeout(routeTimerRef.current); };
@@ -564,22 +572,32 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         )}
       </div>
 
-      {/* Smart Router badge */}
-      {(routeSource || routeLoading) && fromCoin && toCoin && numAmt && numAmt > 0 && (
+      {/* Smart Router badge — informational only; this panel always executes via LetsExchange */}
+      {(routeSource || routeLoading || routeError) && fromCoin && toCoin && numAmt && numAmt > 0 && (
         <div className={cn(
           "flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all",
           routeLoading
             ? "bg-muted/30 border-border/30 text-muted-foreground/50"
+            : routeError
+            ? "bg-muted/20 border-border/20 text-muted-foreground/40"
             : routeSource === "internal"
             ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
             : "bg-blue-500/10 border-blue-500/30 text-blue-400",
         )}>
           {routeLoading ? (
-            <><Loader2 className="w-3 h-3 animate-spin" /> <span>Checking liquidity…</span></>
+            <><Loader2 className="w-3 h-3 animate-spin" /><span>Checking liquidity…</span></>
+          ) : routeError ? (
+            <><span className="opacity-50">⚪</span><span className="text-muted-foreground/40">Routing check unavailable</span></>
           ) : routeSource === "internal" ? (
-            <><span className="text-sm">⚡</span> <span>OrahDEX Orderbook — internal liquidity available</span></>
+            <>
+              <span>⚡</span>
+              <span>Internal liquidity available on OrahDEX — trading via LetsExchange for cross-chain execution</span>
+            </>
           ) : (
-            <><span className="text-sm">🔄</span> <span>LetsExchange — cross-chain bridge</span></>
+            <>
+              <span>🔄</span>
+              <span>Routing via LetsExchange cross-chain bridge</span>
+            </>
           )}
         </div>
       )}

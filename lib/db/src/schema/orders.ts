@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -37,6 +37,14 @@ export const ordersTable = pgTable("orders", {
   nonce: text("nonce"),
   /** Unix ms — the server rejected this intent if expiry < Date.now() at receipt time */
   expiry: text("expiry"),  // stored as string to avoid bigint serialization issues
+  /**
+   * Explicit liquidity-provider classification flags.
+   * isBot:       order was placed by an automated market-maker / liquidity bot.
+   * isSynthetic: order is a synthetic depth quote (not backed by real funds).
+   * These are used by the hybrid router to exclude non-real liquidity.
+   */
+  isBot:       boolean("is_bot").notNull().default(false),
+  isSynthetic: boolean("is_synthetic").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

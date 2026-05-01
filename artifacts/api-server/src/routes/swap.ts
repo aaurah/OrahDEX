@@ -172,28 +172,41 @@ router.post("/swap/route", async (req, res) => {
     const [a, b] = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
     const decision = await getHybridRoute(a, b, amt);
 
-    // Build internal quote (always attempt it for display)
+    // Build internal quote using oracle price + VWAP when available
     let internalQuote: Record<string, unknown> | null = null;
-    const rate = await resolveRate(a, b);
+    const rate = decision.liquidity.vwap > 0
+      ? decision.liquidity.vwap
+      : await resolveRate(a, b);
     if (rate) {
-      const grossOut = amt * rate;
-      const fee      = grossOut * FEE_PCT;
-      internalQuote  = {
-        assetIn: a, assetOut: b,
-        amountIn:  amt.toFixed(8),
-        amountOut: (grossOut - fee).toFixed(8),
-        fee:       fee.toFixed(8),
-        feePct:    FEE_PCT * 100,
-        rate:      rate.toFixed(8),
+      const grossOut   = amt * rate;
+      const fee        = grossOut * FEE_PCT;
+      const netOut     = grossOut - fee;
+      internalQuote    = {
+        assetIn:       a,
+        assetOut:      b,
+        amountIn:      amt.toFixed(8),
+        amountOut:     netOut.toFixed(8),
+        grossOut:      grossOut.toFixed(8),
+        fee:           fee.toFixed(8),
+        feePct:        FEE_PCT * 100,
+        rate:          rate.toFixed(8),
+        vwap:          decision.liquidity.vwap > 0 ? decision.liquidity.vwap.toFixed(8) : null,
+        slippage:      decision.liquidity.slippage !== null
+          ? parseFloat((decision.liquidity.slippage * 100).toFixed(4))
+          : null,
+        fillPct:       parseFloat(decision.liquidity.fillPct.toFixed(2)),
       };
     }
 
     res.json({
-      source:       decision.source,
-      reason:       decision.reason,
-      liquidity:    decision.liquidity,
+      source:           decision.source,
+      reason:           decision.reason,
+      liquidity:        decision.liquidity,
       internalQuote,
-      internalRate: decision.internalRate,
+      internalRate:     decision.internalRate,
+      fees:             decision.fees,
+      effectiveRate:    decision.effectiveRate,
+      slippageEstimate: decision.slippageEstimate,
     });
   } catch (err: any) {
     logger.error({ err }, "swap/route failed");
@@ -224,11 +237,27 @@ router.post("/swap/execute", async (req, res) => {
   const [a, b] = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
 
   try {
-    // Determine route
+    // forceSource: only accepted from trusted server-side callers identified
+    // by the X-Internal-Token header.  Public clients that send forceSource
+    // without the header have it silently ignored to prevent abuse (e.g.
+    // forcing internal routing when depth is thin).
+    const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
+    const callerToken    = req.headers["x-internal-token"];
+    const isTrustedCaller =
+      INTERNAL_TOKEN &&
+      callerToken &&
+      callerToken === INTERNAL_TOKEN;
+
+    // Determine route: re-evaluate inside execute so the decision is always
+    // fresh at execution time (not stale from a prior /route call).
     let source: "internal" | "letsexchange";
-    if (forceSource === "internal" || forceSource === "letsexchange") {
+    if (isTrustedCaller && (forceSource === "internal" || forceSource === "letsexchange")) {
       source = forceSource;
+      logger.info({ a, b, forceSource }, "swap/execute: trusted caller override accepted");
     } else {
+      if (forceSource) {
+        logger.warn({ a, b, forceSource }, "swap/execute: forceSource ignored (missing/invalid token)");
+      }
       const decision = await getHybridRoute(a, b, amt);
       source = decision.source;
     }

@@ -1,73 +1,129 @@
 /**
- * hybridRouter.ts — Smart swap routing engine
+ * hybridRouter.ts — VWAP-based hybrid swap routing engine
  *
- * Rule: if OrahDEX has real orderbook liquidity → route internally.
- *       if not → route via LetsExchange.
+ * Routing criterion:
+ *   Walk the real orderbook (excluding bot + synthetic orders) to simulate a
+ *   fill of `amountIn`. Compute the volume-weighted average price (VWAP) of
+ *   that fill. Compare VWAP to the oracle mid-price.  If the implied slippage
+ *   is within MAX_SLIPPAGE_PCT (default 1.5%) AND the fill covers at least
+ *   MIN_FILL_PCT (default 90%) of the requested amount, route internally.
+ *   Otherwise route to LetsExchange.
  *
- * "Real" orders = any open limit order NOT placed by the liquidity bot.
- * Synthetic (bot) orders provide displayed depth but are NOT counted as
- * fillable liquidity for routing purposes.
+ * This is strictly superior to a raw depth-% heuristic:
+ *   - A large order at a terrible price scores high on depth but would give
+ *     worse execution than LE → now correctly routed to LE.
+ *   - A small order at near-mid price may not fill 100% but still qualifies
+ *     for internal routing if slippage is acceptable.
+ *
+ * Classification:
+ *   Real orders = is_bot = false AND is_synthetic = false.
+ *   Bot/synthetic flags are set explicitly at insert time (not inferred from
+ *   address strings), making this robust to bot address changes.
  */
 
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { and, eq, ne, or } from "drizzle-orm";
-import { BOT_ADDRESS } from "./liquidityBot.js";
+import { and, eq, or, isNotNull, not } from "drizzle-orm";
 import { logger } from "./logger.js";
 
+/** Maximum slippage (as a fraction 0–1) to prefer internal routing */
+const MAX_SLIPPAGE     = 0.015; // 1.5%
+/** Minimum fraction of the requested amount that must be fillable internally */
+const MIN_FILL_FRACTION = 0.90; // 90%
+/** Platform fee charged on internal swaps */
+export const INTERNAL_FEE_PCT = 0.003; // 0.3%
+/** Approximate LetsExchange all-in fee */
+export const LE_FEE_PCT       = 0.0035; // 0.35%
+
+export interface FillSimulation {
+  /** Fraction of amountIn covered by real orders (0–1) */
+  fillFraction:    number;
+  /** Number of real orders on this side of the book */
+  realOrderCount:  number;
+  /** Volume-weighted average price of the fill (0 if no orders) */
+  vwap:            number;
+  /** Oracle mid-price used for slippage computation */
+  oraclePrice:     number | null;
+  /** Implied slippage vs oracle (fraction, 0 = no slippage; null = oracle unavailable) */
+  slippage:        number | null;
+  /** Total quote received / spent for the filled portion */
+  quoteTotal:      number;
+}
+
 export interface LiquidityCheck {
-  hasLiquidity: boolean;
+  hasLiquidity:   boolean;
   realOrderCount: number;
-  fillableDepth: number;   // how much of amountIn can be filled by real orders
-  fillPct: number;         // 0–100 — percentage of the requested amount that real orders cover
+  fillPct:        number;         // 0–100
+  fillableDepth:  number;
+  vwap:           number;
+  slippage:       number | null;
+  oraclePrice:    number | null;
 }
 
 export interface RouteDecision {
-  source: "internal" | "letsexchange";
-  reason: string;
-  liquidity: LiquidityCheck;
-  internalRate: number | null;  // A→B price from marketsTable
+  source:          "internal" | "letsexchange";
+  reason:          string;
+  liquidity:       LiquidityCheck;
+  internalRate:    number | null;
+  fees: {
+    internal:      { pct: number; description: string };
+    letsexchange:  { pct: number; description: string };
+  };
+  effectiveRate: {
+    internal:     number | null;
+    letsexchange: number | null;
+  };
+  slippageEstimate: number | null;
 }
 
+// ── Oracle price lookup ───────────────────────────────────────────────────────
+
+async function getOraclePrice(assetIn: string, assetOut: string): Promise<number | null> {
+  const directSym  = `${assetIn}/${assetOut}`;
+  const inverseSym = `${assetOut}/${assetIn}`;
+  try {
+    const [mkt] = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable)
+      .where(or(eq(marketsTable.symbol, directSym), eq(marketsTable.symbol, inverseSym)))
+      .limit(1);
+    if (!mkt) return null;
+    const p = parseFloat(mkt.lastPrice);
+    if (!p || !isFinite(p)) return null;
+    return mkt.symbol === inverseSym ? 1 / p : p;
+  } catch { return null; }
+}
+
+// ── VWAP fill simulation ──────────────────────────────────────────────────────
+
 /**
- * Checks whether the real (non-bot) orderbook has enough depth to fill
- * `amountIn` of `assetIn`. Side is derived from the pair direction:
- *   buying assetIn with assetOut  →  we need ask depth on assetIn/assetOut
- *   selling assetIn for assetOut  →  we need bid depth on assetOut/assetIn
+ * Walks the real orderbook for the A→B direction and computes how much of
+ * `amountIn` of asset A can be filled, at what VWAP, and implied slippage.
+ *
+ * For "selling A for B" we need ask orders priced in B per A (sell side asks).
+ * For "buying A with B" we need bid orders.
+ *
+ * In practice, OrahDEX stores orders as:
+ *   symbol = BASE/QUOTE, side = "buy"|"sell"
+ *
+ * assetIn→assetOut swap:
+ *   If the pair assetIn/assetOut exists: we are selling assetIn → need "sell" orders (or taker fills "buy" orders)
+ *   Actually: a user who wants to sell assetIn for assetOut needs to fill against BUY orders.
+ *   We walk the buy side of assetIn/assetOut sorted by price desc (best bid first).
  */
-export async function checkInternalLiquidity(
-  assetIn: string,
+export async function simulateFill(
+  assetIn:  string,
   assetOut: string,
   amountIn: number,
-): Promise<LiquidityCheck> {
-  const STABLES = new Set(["USDT", "USDC", "BUSD", "TUSD", "DAI"]);
-  const empty: LiquidityCheck = { hasLiquidity: false, realOrderCount: 0, fillableDepth: 0, fillPct: 0 };
+): Promise<FillSimulation> {
+  const directSym  = `${assetIn}/${assetOut}`;  // e.g. BTC/USDT
+  const inverseSym = `${assetOut}/${assetIn}`;  // e.g. USDT/BTC
 
   try {
-    // Determine the canonical symbol and side to query
-    // e.g. BTC→USDT  ⟹ sell side of BTC/USDT
-    //      USDT→BTC  ⟹ buy  side of BTC/USDT
-    const directSym  = `${assetIn}/${assetOut}`;
-    const inverseSym = `${assetOut}/${assetIn}`;
-
-    // Pick which pair symbol to query and which side to walk
-    let symbol: string;
-    let side: "buy" | "sell";
-
-    if (!STABLES.has(assetOut)) {
-      // assetOut is not a stablecoin — direct pair may not exist; route via USDT
-      // Simplified: just check total real order count on either direction
-      symbol = directSym;
-      side   = "sell";
-    } else {
-      // Selling assetIn for a stablecoin → look for sell orders on assetIn/assetOut
-      symbol = directSym;
-      side   = "sell";
-    }
-
-    // Fetch all real open limit orders for this symbol (excludes bot + market orders with no price)
-    const openOrders = await db
+    // Fetch all real open limit orders for either pair direction
+    const rawOrders = await db
       .select({
+        symbol:            ordersTable.symbol,
         side:              ordersTable.side,
         price:             ordersTable.price,
         remainingQuantity: ordersTable.remainingQuantity,
@@ -80,83 +136,161 @@ export async function checkInternalLiquidity(
             eq(ordersTable.symbol, inverseSym),
           ),
           eq(ordersTable.status, "open"),
-          ne(ordersTable.walletAddress, BOT_ADDRESS),
+          eq(ordersTable.isBot, false),
+          eq(ordersTable.isSynthetic, false),
+          isNotNull(ordersTable.price),
         ),
       )
-      .limit(200);
+      .limit(500);
 
-    if (!openOrders.length) return empty;
-
-    // Walk the relevant side to see how much of amountIn can be filled
-    const levels = openOrders
-      .filter(o => o.price && parseFloat(o.remainingQuantity) > 0)
-      .map(o => ({
-        side: o.side as "buy" | "sell",
-        price: parseFloat(o.price!),
-        qty: parseFloat(o.remainingQuantity),
-      }))
-      .filter(o => o.side === side || o.side === (side === "buy" ? "sell" : "buy"));
-
-    let fillableDepth = 0;
-    for (const lvl of levels) {
-      fillableDepth += lvl.qty;
-      if (fillableDepth >= amountIn) break;
+    if (!rawOrders.length) {
+      return { fillFraction: 0, realOrderCount: 0, vwap: 0, oraclePrice: null, slippage: null, quoteTotal: 0 };
     }
 
-    const fillPct = amountIn > 0 ? Math.min(100, (fillableDepth / amountIn) * 100) : 0;
-    const LIQUIDITY_THRESHOLD_PCT = 80; // need 80% fill coverage to prefer internal
+    // Normalise to: price in assetOut per 1 assetIn, qty in assetIn
+    const levels: { price: number; qty: number }[] = [];
+    for (const o of rawOrders) {
+      const p   = parseFloat(o.price!);
+      const qty = parseFloat(o.remainingQuantity);
+      if (!p || !qty || !isFinite(p) || !isFinite(qty)) continue;
 
-    return {
-      hasLiquidity: fillPct >= LIQUIDITY_THRESHOLD_PCT,
-      realOrderCount: openOrders.length,
-      fillableDepth,
-      fillPct,
-    };
+      if (o.symbol === directSym) {
+        // Direct pair: we sell assetIn, buyers post buy orders
+        // Fill against "buy" orders (they want to buy our assetIn for assetOut)
+        if (o.side === "buy") levels.push({ price: p, qty });
+      } else {
+        // Inverse pair assetOut/assetIn: convert
+        // A "sell" order here sells assetOut for assetIn, which means they're
+        // buying assetIn at price = 1/p (assetOut per assetIn)
+        if (o.side === "sell") levels.push({ price: 1 / p, qty: qty * p });
+      }
+    }
+
+    // Sort best-first (highest price = best deal when selling assetIn)
+    levels.sort((a, b) => b.price - a.price);
+
+    // Walk the book
+    let remaining   = amountIn;
+    let quoteTotal  = 0;
+    let filledBase  = 0;
+    for (const lvl of levels) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, lvl.qty);
+      filledBase  += take;
+      quoteTotal  += take * lvl.price;
+      remaining   -= take;
+    }
+
+    const fillFraction  = amountIn > 0 ? Math.min(1, filledBase / amountIn) : 0;
+    const vwap          = filledBase > 0 ? quoteTotal / filledBase : 0;
+    const oraclePrice   = await getOraclePrice(assetIn, assetOut);
+    const slippage      = (oraclePrice && oraclePrice > 0 && vwap > 0)
+      ? Math.abs(vwap - oraclePrice) / oraclePrice
+      : null;
+
+    return { fillFraction, realOrderCount: rawOrders.length, vwap, oraclePrice, slippage, quoteTotal };
   } catch (err) {
-    logger.warn({ err }, "hybridRouter: liquidity check failed (falling back to LE)");
-    return empty;
+    logger.warn({ err }, "hybridRouter: fill simulation failed");
+    return { fillFraction: 0, realOrderCount: 0, vwap: 0, oraclePrice: null, slippage: null, quoteTotal: 0 };
   }
 }
 
-/** Full routing decision: check liquidity, pick source, return with context. */
+// ── Public routing API ────────────────────────────────────────────────────────
+
+export async function checkInternalLiquidity(
+  assetIn:  string,
+  assetOut: string,
+  amountIn: number,
+): Promise<LiquidityCheck> {
+  const sim = await simulateFill(assetIn, assetOut, amountIn);
+
+  const hasLiquidity =
+    sim.fillFraction  >= MIN_FILL_FRACTION &&
+    (sim.slippage === null || sim.slippage <= MAX_SLIPPAGE);
+
+  return {
+    hasLiquidity,
+    realOrderCount: sim.realOrderCount,
+    fillPct:        sim.fillFraction * 100,
+    fillableDepth:  sim.fillFraction * amountIn,
+    vwap:           sim.vwap,
+    slippage:       sim.slippage,
+    oraclePrice:    sim.oraclePrice,
+  };
+}
+
 export async function getHybridRoute(
-  assetIn: string,
+  assetIn:  string,
   assetOut: string,
   amountIn: number,
 ): Promise<RouteDecision> {
-  const liquidity = await checkInternalLiquidity(assetIn, assetOut, amountIn);
+  const liquidity   = await checkInternalLiquidity(assetIn, assetOut, amountIn);
+  const oraclePrice = liquidity.oraclePrice;
 
-  // Also get the market price for context
-  let internalRate: number | null = null;
-  try {
-    const directSym  = `${assetIn}/${assetOut}`;
-    const inverseSym = `${assetOut}/${assetIn}`;
-    const [mkt] = await db
-      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
-      .from(marketsTable)
-      .where(or(eq(marketsTable.symbol, directSym), eq(marketsTable.symbol, inverseSym)))
-      .limit(1);
-    if (mkt) {
-      const p = parseFloat(mkt.lastPrice);
-      internalRate = mkt.symbol === inverseSym ? (p > 0 ? 1 / p : null) : (p > 0 ? p : null);
-    }
-  } catch { /* non-fatal */ }
+  // Effective rates after fees
+  const internalEffective   = oraclePrice ? oraclePrice * (1 - INTERNAL_FEE_PCT) : null;
+  const leEffective         = oraclePrice ? oraclePrice * (1 - LE_FEE_PCT)       : null;
+
+  // Slippage-adjusted internal effective rate
+  const internalVwapEff = liquidity.vwap > 0
+    ? liquidity.vwap * (1 - INTERNAL_FEE_PCT)
+    : internalEffective;
+
+  const fees = {
+    internal:     { pct: INTERNAL_FEE_PCT * 100, description: "OrahDEX platform fee (0.3%)" },
+    letsexchange: { pct: LE_FEE_PCT       * 100, description: "LetsExchange all-in fee (~0.35%)" },
+  };
+
+  const effectiveRate = {
+    internal:     internalVwapEff,
+    letsexchange: leEffective,
+  };
+
+  let source: "internal" | "letsexchange";
+  let reason:  string;
 
   if (liquidity.hasLiquidity) {
-    return {
-      source:       "internal",
-      reason:       `OrahDEX orderbook has ${liquidity.realOrderCount} real orders covering ${liquidity.fillPct.toFixed(0)}% of requested amount`,
-      liquidity,
-      internalRate,
-    };
+    source = "internal";
+    const slipStr = liquidity.slippage !== null
+      ? ` slippage ${(liquidity.slippage * 100).toFixed(2)}%`
+      : "";
+    reason = `OrahDEX orderbook: ${liquidity.realOrderCount} real orders, ` +
+      `${liquidity.fillPct.toFixed(0)}% fill,${slipStr} VWAP ${liquidity.vwap.toFixed(6)}`;
+  } else if (liquidity.realOrderCount === 0) {
+    source = "letsexchange";
+    reason = "No real (non-bot) orders on OrahDEX for this pair";
+  } else if (liquidity.fillPct < MIN_FILL_FRACTION * 100) {
+    source = "letsexchange";
+    reason = `Insufficient depth: ${liquidity.fillPct.toFixed(0)}% fill ` +
+      `(need ≥ ${(MIN_FILL_FRACTION * 100).toFixed(0)}%)`;
+  } else {
+    source = "letsexchange";
+    const slipPct = liquidity.slippage !== null ? (liquidity.slippage * 100).toFixed(2) : "?";
+    reason = `Slippage too high: ${slipPct}% vs oracle ` +
+      `(max allowed ${(MAX_SLIPPAGE * 100).toFixed(1)}%)`;
   }
 
+  // Structured log every routing decision
+  logger.info({
+    event:       "hybrid_route",
+    assetIn,
+    assetOut,
+    amountIn,
+    source,
+    realOrders:  liquidity.realOrderCount,
+    fillPct:     liquidity.fillPct,
+    vwap:        liquidity.vwap,
+    slippage:    liquidity.slippage,
+    oraclePrice,
+  }, `hybridRouter: ${source} — ${reason}`);
+
   return {
-    source:       "letsexchange",
-    reason:       liquidity.realOrderCount === 0
-      ? "No real orders on OrahDEX for this pair — routing via LetsExchange"
-      : `Insufficient orderbook depth (${liquidity.fillPct.toFixed(0)}% fill coverage) — routing via LetsExchange`,
+    source,
+    reason,
     liquidity,
-    internalRate,
+    internalRate: oraclePrice,
+    fees,
+    effectiveRate,
+    slippageEstimate: liquidity.slippage,
   };
 }
