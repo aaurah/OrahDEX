@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
@@ -93,31 +93,70 @@ function syntheticOrderBook(price: number, depth = 20, symbol = "") {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
+/**
+ * GET /markets
+ *
+ * Returns the stable, canonical list of markets.
+ * Only rows with enabled=true are returned — disabled markets are hidden from
+ * all public API responses. Pair list never fluctuates because:
+ *   - Internal (spot/futures) pairs are pinned=true and can never be auto-removed.
+ *   - LetsExchange pairs are seeded once and soft-disabled, never deleted.
+ *
+ * Query params:
+ *   ?type=spot,futures,letsexchange  — comma-separated type filter (default: all)
+ *   ?category=internal               — shortcut for type=spot,futures
+ *   ?category=external               — shortcut for type=letsexchange
+ *   ?category=all                    — all enabled markets (default)
+ */
 router.get("/markets", async (req, res) => {
-  const cached = marketsCache.get("all");
+  // Build a cache key that reflects any filters
+  const rawType     = req.query.type     as string | undefined;
+  const rawCategory = req.query.category as string | undefined;
+
+  let types: string[] = [];
+  if (rawCategory === "internal") {
+    types = ["spot", "futures"];
+  } else if (rawCategory === "external") {
+    types = ["letsexchange"];
+  } else if (rawType) {
+    types = rawType.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+  }
+
+  const cacheKey = types.length ? `filtered:${types.sort().join(",")}` : "all";
+  const cached = marketsCache.get(cacheKey);
   if (cached) { res.json(cached); return; }
+
   try {
-    const markets = await db.select().from(marketsTable);
+    // Always filter by enabled=true — this is the stability guarantee.
+    const conditions = types.length
+      ? and(eq(marketsTable.enabled, true), inArray(marketsTable.type, types))
+      : eq(marketsTable.enabled, true);
+
+    const markets = await db.select().from(marketsTable).where(conditions);
+
     const result = markets.map((m) => ({
-      symbol:               m.symbol,
-      baseAsset:            m.baseAsset,
-      quoteAsset:           m.quoteAsset,
-      lastPrice:            parseFloat(m.lastPrice),
-      priceChange24h:       parseFloat(m.priceChange24h),
-      priceChangePercent24h:parseFloat(m.priceChangePercent24h),
-      volume24h:            parseFloat(m.volume24h),
-      high24h:              parseFloat(m.high24h),
-      low24h:               parseFloat(m.low24h),
-      marketCap:            m.marketCap ? parseFloat(m.marketCap) : undefined,
-      status:               m.status,
-      type:                 m.type,
-      minOrderSize:         parseFloat(m.minOrderSize),
-      maxOrderSize:         parseFloat(m.maxOrderSize),
-      tickSize:             parseFloat(m.tickSize),
-      makerFee:             parseFloat(m.makerFee),
-      takerFee:             parseFloat(m.takerFee),
+      symbol:                m.symbol,
+      baseAsset:             m.baseAsset,
+      quoteAsset:            m.quoteAsset,
+      lastPrice:             parseFloat(m.lastPrice),
+      priceChange24h:        parseFloat(m.priceChange24h),
+      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+      volume24h:             parseFloat(m.volume24h),
+      high24h:               parseFloat(m.high24h),
+      low24h:                parseFloat(m.low24h),
+      marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
+      status:                m.status,
+      type:                  m.type,
+      enabled:               m.enabled,
+      pinned:                m.pinned,
+      minOrderSize:          parseFloat(m.minOrderSize),
+      maxOrderSize:          parseFloat(m.maxOrderSize),
+      tickSize:              parseFloat(m.tickSize),
+      makerFee:              parseFloat(m.makerFee),
+      takerFee:              parseFloat(m.takerFee),
     }));
-    marketsCache.set("all", result);
+
+    marketsCache.set(cacheKey, result);
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
