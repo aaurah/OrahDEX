@@ -30,7 +30,7 @@ import { getCoinChangeMap } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
 
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000; // 30 min — coins list changes rarely
 interface CacheEntry { data: unknown; ts: number }
 const cache = new Map<string, CacheEntry>();
 function cached(k: string, ttl = CACHE_TTL) {
@@ -38,6 +38,31 @@ function cached(k: string, ttl = CACHE_TTL) {
   return e && Date.now() - e.ts < ttl ? e.data : null;
 }
 function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now() }); }
+
+// Stampede guard — only one in-flight fetch for currencies at a time
+let currenciesInflight: Promise<NormalisedCoin[]> | null = null;
+
+async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
+  if (currenciesInflight) return currenciesInflight;
+  currenciesInflight = (async () => {
+    try {
+      const { ok, data, status } = await leRequest("/v2/coins");
+      if (!ok) throw new Error(`LE /v2/coins returned ${status}`);
+      const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+      setCache("currencies", coins);
+      return coins;
+    } finally {
+      currenciesInflight = null;
+    }
+  })();
+  return currenciesInflight;
+}
+
+/** Pre-warm the currencies cache at server startup. */
+export async function warmCurrenciesCache(): Promise<void> {
+  try { await fetchAndCacheCurrencies(); }
+  catch (err) { logger.warn({ err }, "LE currencies warm-up failed (non-fatal)"); }
+}
 
 // ── Coin normalisation ─────────────────────────────────────────────────────────
 
@@ -79,13 +104,10 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
-  const hit = cached("currencies");
+  const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit) { res.json(hit); return; }
   try {
-    const { ok, data, status } = await leRequest("/v2/coins");
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
-    setCache("currencies", coins);
+    const coins = await fetchAndCacheCurrencies();
     res.json(coins);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
@@ -181,10 +203,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
   let coins = cached("currencies") as NormalisedCoin[] | null;
   if (!coins) {
     try {
-      const { ok, data, status } = await leRequest("/v2/coins");
-      if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-      coins = normaliseV2Coins(Array.isArray(data) ? data : []);
-      setCache("currencies", coins);
+      coins = await fetchAndCacheCurrencies();
     } catch (err: any) {
       logger.error({ err }, "letsexchange /pairs coins fetch failed");
       res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
