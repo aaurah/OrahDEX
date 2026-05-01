@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, integer, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -21,6 +21,16 @@ export const marketsTable = pgTable("markets", {
   makerFee: numeric("maker_fee", { precision: 10, scale: 6 }).notNull().default("0.001"),
   takerFee: numeric("taker_fee", { precision: 10, scale: 6 }).notNull().default("0.001"),
   contractAddresses: jsonb("contract_addresses").$type<Record<string, string>>(),
+  /**
+   * enabled: false hides the market from all public API responses.
+   * Admins can disable a pair without deleting it.
+   */
+  enabled: boolean("enabled").notNull().default(true),
+  /**
+   * pinned: true = internal pair (spot/futures). Never auto-disabled by seeders.
+   * LetsExchange pairs are not pinned.
+   */
+  pinned: boolean("pinned").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

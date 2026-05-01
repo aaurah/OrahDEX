@@ -910,6 +910,16 @@ export async function seedMarketsIfNeeded() {
       await db.insert(marketsTable).values(toInsert).onConflictDoNothing();
       logger.info(`Seeded ${toInsert.length} new markets`);
     }
+
+    // Ensure all internal (non-LE) pairs are flagged as pinned.
+    // This is idempotent and handles any rows seeded before this flag existed.
+    await db
+      .update(marketsTable)
+      .set({ pinned: true, enabled: true })
+      .where(and(
+        inArray(marketsTable.type, ["spot", "futures"]),
+        eq(marketsTable.pinned, false),
+      ));
   } catch (err) {
     logger.warn({ err }, "Failed to seed markets");
   }

@@ -2068,6 +2068,33 @@ router.patch("/markets/:symbol/status", async (req, res) => {
   }
 });
 
+/**
+ * PATCH /admin/markets/:symbol/enabled
+ *
+ * Soft-enable or soft-disable a market without deleting it.
+ * Pinned markets (internal spot/futures) can be disabled but remain in DB.
+ * Body: { enabled: true | false }
+ */
+router.patch("/markets/:symbol/enabled", requireAdminToken, async (req, res) => {
+  try {
+    const symbol  = decodeURIComponent(req.params.symbol);
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") {
+      res.status(400).json({ error: "enabled must be a boolean" }); return;
+    }
+    const [row] = await db
+      .update(marketsTable)
+      .set({ enabled })
+      .where(eq(marketsTable.symbol, symbol))
+      .returning({ symbol: marketsTable.symbol, enabled: marketsTable.enabled, pinned: marketsTable.pinned });
+    if (!row) { res.status(404).json({ error: "Market not found" }); return; }
+    pushAdminLog("info", `Market ${symbol} enabled=${enabled}`, "admin");
+    res.json({ success: true, symbol: row.symbol, enabled: row.enabled, pinned: row.pinned });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
 /* ─── AUTO-SETUP — seed all defaults + test email in one click ────────────── */
 
 const SITE_DEFAULTS: Record<string, string> = {
