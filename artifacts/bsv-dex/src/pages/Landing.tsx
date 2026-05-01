@@ -1065,7 +1065,7 @@ export function LandingPage() {
             <span>·</span>
             <Link href="/p2p" className="hover:text-muted-foreground transition-colors">P2P</Link>
             <span>·</span>
-            <Link href="/bridge" className="hover:text-muted-foreground transition-colors">Bridge</Link>
+            <Link href="/swap" className="hover:text-muted-foreground transition-colors">Bridge</Link>
             <span>·</span>
             <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           </div>

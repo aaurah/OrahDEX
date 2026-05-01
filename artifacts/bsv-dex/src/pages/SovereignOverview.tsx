@@ -258,9 +258,9 @@ export function SovereignOverviewPage() {
             />
             <FeatureRow
               icon={ArrowRightLeft}
-              href="/bridge"
-              title="Atomic Cross-Chain Bridge"
-              body="HTLC-based bridge with no wrapped tokens. Lock, reveal, and settle across chains trustlessly — or reclaim your funds after timeout."
+              href="/swap"
+              title="Cross-Chain Bridge"
+              body="Swap 6,000+ coins across 40+ chains via LetsExchange — non-custodial, no registration, best-rate routing."
             />
             <FeatureRow
               icon={TrendingUp}
