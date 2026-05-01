@@ -1040,7 +1040,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
                 Bridge
               </a>
-              {" "}(LetsExchange) or deposit on-chain.
+              {" "}or deposit on-chain.
             </span>
           </div>
         )}

@@ -800,7 +800,7 @@ function GasTopUpPanel({
           )}
 
           <p className="text-[11px] text-muted-foreground/50 text-center">
-            Swaps {stablecoin?.symbol ?? "USDC"} → {nativeSymbol} via {dexName} V3 on {chainName}
+            Swaps {stablecoin?.symbol ?? "USDC"} → {nativeSymbol} on-chain on {chainName}
           </p>
         </div>
       )}
@@ -1354,7 +1354,7 @@ function ExchangeSwapPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
+  useSEO({ title: "Swap — OrahDEX", description: "Swap tokens cross-chain and on-chain via OrahDEX" });
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
@@ -1576,7 +1576,7 @@ export function Swap() {
           </button>
         </div>
 
-        {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
+        {/* OrahBridge Panel — 6000+ coins, non-custodial, cross-chain */}
         <div id="lets-exchange-panel">
           <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
         </div>
@@ -1584,7 +1584,7 @@ export function Swap() {
         {/* Divider */}
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap on-chain via {chainId === 56 ? "PancakeSwap" : "Uniswap"}</span>
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap on-chain</span>
           <div className="flex-1 h-px bg-border/40" />
         </div>
 
@@ -1814,8 +1814,7 @@ export function Swap() {
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name} via
-                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
+                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
               </span>
             </div>
           </>

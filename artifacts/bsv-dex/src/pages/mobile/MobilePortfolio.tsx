@@ -862,7 +862,7 @@ export function MobilePortfolio() {
                 <span className="text-base font-bold text-primary">{formatQuoteAmount(lpTotalValue, quoteCurrency)}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Liquidity deposited into AMM pools (Uniswap, etc.). Underlying tokens stay in your wallet — value shown here is your LP position.
+                Liquidity deposited into AMM pools. Underlying tokens stay in your wallet — value shown here is your LP position.
               </p>
             </div>
           )}

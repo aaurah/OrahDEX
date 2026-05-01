@@ -260,7 +260,7 @@ export function SovereignOverviewPage() {
               icon={ArrowRightLeft}
               href="/swap"
               title="Cross-Chain Bridge"
-              body="Swap 6,000+ coins across 40+ chains via LetsExchange — non-custodial, no registration, best-rate routing."
+              body="Swap 6,000+ coins across 40+ chains via OrahBridge — non-custodial, no registration, best-rate routing."
             />
             <FeatureRow
               icon={TrendingUp}

@@ -695,7 +695,7 @@ function LiquidityModal({
             <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
               <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
               <p className="text-xs text-green-300/90 leading-relaxed">
-                <strong>Real on-chain transaction.</strong> Your wallet will be prompted to sign. Tokens are deducted from your wallet and deposited into a live Uniswap V3 pool.
+                <strong>Real on-chain transaction.</strong> Your wallet will be prompted to sign. Tokens are deducted from your wallet and deposited into a live on-chain liquidity pool.
               </p>
             </div>
           );
