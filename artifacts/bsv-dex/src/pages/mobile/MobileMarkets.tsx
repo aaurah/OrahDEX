@@ -182,22 +182,22 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extraBtc];
     }
-    case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
-    case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
-    case "matic":     return enrich(MATIC_MARKETS);
-    case "avax":      return enrich(AVAX_MARKETS);
-    case "arb":       return enrich(ARB_MARKETS);
-    case "op":        return enrich(OP_MARKETS);
-    case "ftm":       return enrich(FTM_MARKETS);
-    case "cro":       return enrich(CRO_MARKETS);
-    case "base":      return enrich(BASE_MARKETS);
+    case "eth":       return dbByQuote("ETH").length   > 0 ? dbByQuote("ETH")   : enrich(ETH_MARKETS);
+    case "bnb":       return dbByQuote("BNB").length   > 0 ? dbByQuote("BNB")   : enrich(BNB_MARKETS);
+    case "sol":       return dbByQuote("SOL").length   > 0 ? dbByQuote("SOL")   : enrich(SOL_MARKETS);
+    case "bch":       return dbByQuote("BCH").length   > 0 ? dbByQuote("BCH")   : enrich(BCH_MARKETS);
+    case "matic":     return dbByQuote("MATIC").length > 0 ? dbByQuote("MATIC") : enrich(MATIC_MARKETS);
+    case "avax":      return dbByQuote("AVAX").length  > 0 ? dbByQuote("AVAX")  : enrich(AVAX_MARKETS);
+    case "arb":       return dbByQuote("ARB").length   > 0 ? dbByQuote("ARB")   : enrich(ARB_MARKETS);
+    case "op":        return dbByQuote("OP").length    > 0 ? dbByQuote("OP")    : enrich(OP_MARKETS);
+    case "ftm":       return dbByQuote("FTM").length   > 0 ? dbByQuote("FTM")   : enrich(FTM_MARKETS);
+    case "cro":       return dbByQuote("CRO").length   > 0 ? dbByQuote("CRO")   : enrich(CRO_MARKETS);
+    case "base":      return dbByQuote("BASE").length  > 0 ? dbByQuote("BASE")  : enrich(BASE_MARKETS);
+    case "linea":     return dbByQuote("LINEA").length > 0 ? dbByQuote("LINEA") : enrich(LINEA_MARKETS);
+    case "zk":        return dbByQuote("ZK").length    > 0 ? dbByQuote("ZK")    : enrich(ZK_MARKETS);
+    case "scr":       return dbByQuote("SCR").length   > 0 ? dbByQuote("SCR")   : enrich(SCR_MARKETS);
+    case "mnt":       return dbByQuote("MNT").length   > 0 ? dbByQuote("MNT")   : enrich(MNT_MARKETS);
     case "zora":      return enrich(ZORA_MARKETS);
-    case "linea":     return enrich(LINEA_MARKETS);
-    case "zk":        return enrich(ZK_MARKETS);
-    case "scr":       return enrich(SCR_MARKETS);
-    case "mnt":       return enrich(MNT_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
-    case "bch":       return enrich(BCH_MARKETS);
     case "bsv": {
       const native = enrich(BSV_MARKETS);
       const seenBases = new Set(native.map(r => r.base));
@@ -250,10 +250,22 @@ export function MobileMarkets() {
   const BSV_USD = crossPrices.BSV.usd || 14;
   const ETH_USD = crossPrices.ETH.usd || 1800;
   const CROSS_QUOTE_USD: Record<string, number> = {
-    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1,
     BTC: BTC_USD, ETH: ETH_USD, BSV: BSV_USD,
-    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
-    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
+    BNB:   crossPrices.BNB?.usd   || 580,
+    BCH:   crossPrices.BCH?.usd   || 320,
+    SOL:   crossPrices.SOL?.usd   || 130,
+    MATIC: crossPrices.MATIC?.usd || 0.32,
+    AVAX:  crossPrices.AVAX?.usd  || 18,
+    ARB:   crossPrices.ARB?.usd   || 0.42,
+    OP:    crossPrices.OP?.usd    || 0.70,
+    FTM:   crossPrices.FTM?.usd   || 0.20,
+    CRO:   crossPrices.CRO?.usd   || 0.09,
+    BASE:  crossPrices.BASE?.usd  || 0.85,
+    LINEA: crossPrices.LINEA?.usd || 0.05,
+    ZK:    crossPrices.ZK?.usd    || 0.15,
+    SCR:   crossPrices.SCR?.usd   || 0.52,
+    MNT:   crossPrices.MNT?.usd   || 1.02,
   };
 
   /* Auto-switch to correct market category when wallet connects / chain changes */
