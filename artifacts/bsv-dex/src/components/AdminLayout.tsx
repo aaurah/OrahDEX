@@ -111,7 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Security",
     items: [
       { href: "/admin/security",     label: "Security Settings",  icon: Shield },
-      { href: "/admin/api",          label: "API Keys",           icon: Key },
+      { href: "/admin/api",          label: "API Settings",       icon: Key },
       { href: "/admin/admins",       label: "Admin Users",        icon: ShieldCheck },
     ],
   },

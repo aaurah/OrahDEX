@@ -1155,6 +1155,8 @@ const INTEGRATION_KEYS = [
   "discord_webhook_url",
   "telegram_bot_token",
   "telegram_chat_id",
+  "letsexchange_api_key",
+  "sumsub_api_key",
 ];
 
 router.get("/integrations", async (_req, res) => {

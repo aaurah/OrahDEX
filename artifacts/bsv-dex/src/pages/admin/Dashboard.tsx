@@ -3,6 +3,7 @@ import {
   Users, ArrowRightLeft, TrendingUp, DollarSign,
   Cpu, Key, Activity, ShieldCheck, AlertTriangle,
   RefreshCw, Flame, MessageCircle, Zap,
+  ChevronRight, Shield, Link2, BarChart3, HeartPulse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -162,38 +163,38 @@ export function AdminDashboard() {
       {/* Platform Updates */}
       <div className="bg-card border border-border rounded-2xl p-5">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-primary" /> Platform Updates
-          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.5.0 · 17 Apr 2026</span>
+          <Zap className="w-4 h-4 text-primary" /> Recent Updates
+          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.6.0 · 1 May 2026</span>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             {
-              icon: "✉",
+              icon: "🛡",
               color: "text-green-400",
               bg: "bg-green-400/5 border-green-400/20",
-              title: "Outbound Email Live",
-              detail: "Brevo SMTP confirmed. All platform mail sent from support@orahdex.org.",
+              title: "API Rate Limiting",
+              detail: "Global 200 req/min, exchange writes 30/min, estimate 60/min. Body limit capped at 1 MB.",
             },
             {
-              icon: "📬",
-              color: "text-blue-400",
-              bg: "bg-blue-400/5 border-blue-400/20",
-              title: "Inbound Email Routing",
-              detail: "ImprovMX MX records active. support@, legal@, admin@ forwarding enabled.",
+              icon: "🔗",
+              color: "text-cyan-400",
+              bg: "bg-cyan-400/5 border-cyan-400/20",
+              title: "Bridge Hints Updated",
+              detail: "Zero-balance warnings now direct users to Bridge (LetsExchange) — no longer misleads to 'Buy first'.",
             },
             {
-              icon: "⚖",
+              icon: "🔑",
               color: "text-amber-400",
               bg: "bg-amber-400/5 border-amber-400/20",
-              title: "Balance Display Fixed",
-              detail: "Orah wallet balance now always reads from the internal ledger — deducts correctly after every trade.",
+              title: "Trade Signature Fix",
+              detail: "Frontend and server now use the same canonical order auth message. Replay protection via nonce + expiry.",
             },
             {
-              icon: "🔌",
+              icon: "🌐",
               color: "text-violet-400",
               bg: "bg-violet-400/5 border-violet-400/20",
-              title: "Integrations Nav Added",
-              detail: "Admin Integrations page accessible via sidebar. SMTP config, connection tests, and service management.",
+              title: "Network Switching",
+              detail: "BSV Testnet, Solana, BTC, and BCH network switching fixed. Native addresses persist correctly.",
             },
           ].map(({ icon, color, bg, title, detail }) => (
             <div key={title} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${bg}`}>
@@ -305,13 +306,15 @@ export function AdminDashboard() {
                 </div>
               </div>
             )}
-            <div className="flex items-start gap-3 p-3 rounded-xl border text-sm bg-green-400/5 border-green-400/20">
-              <span className="text-green-400 shrink-0 mt-0.5">✓</span>
-              <div className="flex-1">
-                <p className="text-foreground">All database backups completed</p>
-                <p className="text-xs text-muted-foreground mt-0.5">BSV Mainnet contracts audited</p>
+            {stats?.systemStatus === "operational" && (
+              <div className="flex items-start gap-3 p-3 rounded-xl border text-sm bg-green-400/5 border-green-400/20">
+                <span className="text-green-400 shrink-0 mt-0.5">✓</span>
+                <div className="flex-1">
+                  <p className="text-foreground">Exchange core — all systems operational</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Rate limiting active · Order auth verified · Bridge routing enabled</p>
+                </div>
               </div>
-            </div>
+            )}
             {!stats && !isLoading && (
               <div className="flex items-start gap-3 p-3 rounded-xl border text-sm bg-orange-400/5 border-orange-400/20">
                 <span className="text-orange-400 shrink-0 mt-0.5">⚠</span>
@@ -324,25 +327,36 @@ export function AdminDashboard() {
           </div>
         </div>
 
-        {/* Trade Volume Chart Placeholder */}
+        {/* Quick Actions */}
         <div className="bg-card border border-border rounded-2xl p-5 lg:col-span-2">
           <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-green-400" /> Revenue & Volume Summary
+            <Zap className="w-4 h-4 text-primary" /> Quick Actions
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: "Total Users",    value: stats?.totalUsers?.toLocaleString() ?? "—",    icon: Users,          color: "text-blue-400" },
-              { label: "Trades Today",   value: stats?.totalTrades24h?.toLocaleString() ?? "—", icon: ArrowRightLeft, color: "text-green-400" },
-              { label: "Revenue Today",  value: stats ? `$${(stats.revenue24h ?? 0).toLocaleString()}` : "—", icon: DollarSign, color: "text-orange-400" },
-              { label: "TVL",            value: stats ? `$${((stats.tvl ?? 0) / 1e6).toFixed(0)}M` : "—", icon: ShieldCheck, color: "text-violet-400" },
-            ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Icon className={cn("w-3.5 h-3.5", color)} />
-                  <span className="text-xs text-muted-foreground">{label}</span>
+              { href: "/admin/pairs",          icon: ArrowRightLeft, label: "Trade Pairs",   color: "text-primary bg-primary/10" },
+              { href: "/admin/fees",           icon: DollarSign,     label: "Fee Config",    color: "text-orange-400 bg-orange-400/10" },
+              { href: "/admin/users",          icon: Users,          label: "Users",         color: "text-blue-400 bg-blue-400/10" },
+              { href: "/admin/security",       icon: Shield,         label: "Security",      color: "text-green-400 bg-green-400/10" },
+              { href: "/admin/health",         icon: HeartPulse,     label: "Health",        color: "text-cyan-400 bg-cyan-400/10" },
+              { href: "/admin/trade-analytics",icon: BarChart3,      label: "Analytics",     color: "text-violet-400 bg-violet-400/10" },
+              { href: "/admin/withdrawals",    icon: ArrowRightLeft, label: "Withdrawals",   color: "text-amber-400 bg-amber-400/10" },
+              { href: "/admin/ledger",         icon: ShieldCheck,    label: "Ledger",        color: "text-green-400 bg-green-400/10" },
+              { href: "/admin/integrations",   icon: Link2,          label: "Integrations",  color: "text-blue-400 bg-blue-400/10" },
+              { href: "/admin/features",       icon: Zap,            label: "Features",      color: "text-primary bg-primary/10" },
+              { href: "/admin/api",            icon: Key,            label: "API Settings",  color: "text-orange-400 bg-orange-400/10" },
+              { href: "/admin/logs",           icon: Activity,       label: "Logs",          color: "text-red-400 bg-red-400/10" },
+            ].map(({ href, icon: Icon, label, color }) => (
+              <a
+                key={href}
+                href={href}
+                className="flex flex-col items-center gap-2 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-secondary/40 transition-all group text-center"
+              >
+                <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", color)}>
+                  <Icon className="w-4 h-4" />
                 </div>
-                <span className="text-xl font-bold font-mono">{value}</span>
-              </div>
+                <span className="text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors leading-tight">{label}</span>
+              </a>
             ))}
           </div>
         </div>

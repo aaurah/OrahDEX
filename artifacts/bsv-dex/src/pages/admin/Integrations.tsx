@@ -5,6 +5,7 @@ import {
   AlertTriangle, CheckCircle2, Cpu, Globe, Zap,
   Wallet, Bell, Shield, Mail, BarChart3, MessageSquare,
   ChevronDown, ChevronUp, Wifi, WifiOff, Loader2, ExternalLink,
+  Link2, ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -34,6 +35,8 @@ interface IntegrationSettings {
   discord_webhook_url: string;
   telegram_bot_token: string;
   telegram_chat_id: string;
+  letsexchange_api_key: string;
+  sumsub_api_key: string;
 }
 
 const DEFAULTS: IntegrationSettings = {
@@ -59,6 +62,8 @@ const DEFAULTS: IntegrationSettings = {
   discord_webhook_url: "",
   telegram_bot_token: "",
   telegram_chat_id: "",
+  letsexchange_api_key: "",
+  sumsub_api_key: "",
 };
 
 const fetchIntegrations = (): Promise<IntegrationSettings> =>
@@ -646,6 +651,58 @@ export function AdminIntegrations() {
             To switch to real delivery, paste your SendGrid/Mailgun/Gmail credentials above and click Save All.
           </div>
         )}
+      </Section>
+
+      {/* ── Bridge — LetsExchange ── */}
+      <Section
+        icon={<Link2 className="w-4 h-4" />}
+        title="Bridge — LetsExchange"
+        description="Powers the Bridge tab. Users can swap 340+ coins cross-chain without holding the target asset. Add your affiliate API key to earn commission on each swap."
+        badge="Recommended"
+        badgeColor="bg-amber-400/10 text-amber-400 border-amber-400/20"
+        configuredCount={countSet("letsexchange_api_key")}
+        totalCount={1}
+      >
+        <MaskedField
+          label="LetsExchange API Key"
+          value={form.letsexchange_api_key}
+          onChange={set("letsexchange_api_key")}
+          placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          hint="Get your affiliate API key at letsexchange.io/affiliate. Used for all Bridge swaps and earns commission per conversion."
+        />
+        <div className="p-3 bg-cyan-400/5 border border-cyan-400/15 rounded-xl text-xs text-cyan-300 space-y-1">
+          <p className="font-semibold">Bridge is the primary way users acquire new coins on OrahDEX.</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-cyan-300/80">
+            <li>Go to <span className="font-mono">letsexchange.io</span> → Affiliate Program → Get API Key</li>
+            <li>Use <span className="font-mono">float: true</span> swaps for best UX (no fixed-rate lock)</li>
+            <li>Platform earns a percentage of every Bridge swap as affiliate commission</li>
+          </ol>
+        </div>
+      </Section>
+
+      {/* ── KYC / AML ── */}
+      <Section
+        icon={<ShieldCheck className="w-4 h-4" />}
+        title="KYC / AML — Sumsub"
+        description="Automated identity verification for withdrawals, spot, futures, and P2P. Required for regulated regions."
+        badge="Recommended"
+        badgeColor="bg-amber-400/10 text-amber-400 border-amber-400/20"
+        configuredCount={countSet("sumsub_api_key")}
+        totalCount={1}
+      >
+        <MaskedField
+          label="Sumsub App Token"
+          value={form.sumsub_api_key}
+          onChange={set("sumsub_api_key")}
+          placeholder="sbx:xxxxxxxx.xxxxxxxx"
+          hint="Get your App Token from app.sumsub.com → Settings → API Keys. Prefix sbx: for sandbox, prd: for production."
+        />
+        <div className="p-3 bg-amber-400/5 border border-amber-400/15 rounded-xl text-xs text-amber-300 space-y-1">
+          <p className="font-semibold">KYC is enforced at the feature-flag level:</p>
+          <p className="text-amber-300/80">
+            Go to <a href="/admin/features" className="underline underline-offset-2">Feature Flags</a> to configure which actions require KYC (withdrawals, spot, futures, P2P).
+          </p>
+        </div>
       </Section>
 
       {/* ── 5. Security & Anti-Spam ── */}

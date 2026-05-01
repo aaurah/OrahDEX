@@ -139,6 +139,16 @@ Three issues combined to prevent the app loading on mobile Safari (orahdex.org):
 3. **`Buffer` global missing in mobile Safari** — crypto and wallet libraries (WalletConnect, secp256k1, bip39) assume Node.js `Buffer` exists. Fixed by adding `src/polyfills.ts` (using the `buffer` npm package) imported as the very first line of `main.tsx`. Also polyfills `global` and `process`.
 Result: startup JS reduced from 4.4MB to ~570KB (87% smaller). App now loads correctly on mobile.
 
+## Admin Panel Audit & Improvements (2026-05-01)
+- **Dashboard "Platform Updates"** updated to v4.6.0 (1 May 2026) with real recent changes: API rate limiting, Bridge hints, trade signature fix, network switching.
+- **Dashboard "Revenue & Volume Summary"** removed (was a redundant repeat of stat cards). Replaced with **Quick Actions** grid — 12 icon tiles linking directly to most-used admin sections.
+- **Dashboard System Alert** — hardcoded static "All database backups completed" replaced with dynamic `stats.systemStatus === "operational"` alert describing actual exchange state.
+- **Sidebar label** — "API Keys" renamed to "API Settings" (the actual page at `/admin/api` has 9 tabs: rate limiting, CORS, keys, webhooks, circuit breaker, etc.).
+- **Integrations page** — Added "Bridge — LetsExchange" section (key: `letsexchange_api_key`) and "KYC / AML — Sumsub" section (key: `sumsub_api_key`), both stored in `platformSettingsTable`. Added `letsexchange_api_key` and `sumsub_api_key` to `INTEGRATION_KEYS` in `admin.ts`.
+- **SetupGuide** — Added step H: "Bridge — LetsExchange API Key" (between KYC and BSV Node steps). Checks `letsexchange_api_key` in integrations.
+- **FeatureFlags** — Migrated from localStorage-only to full database persistence via `/api/admin/site-settings`. Flags stored with `feature_` prefix (e.g., `site:feature_spot_trading`). Maintenance message also persisted as `site:maintenance_message`. Component uses `useQuery` + `useMutation` from React Query.
+- **Rate Limiter fix** — Added `app.set("trust proxy", 1)` to Express app so `express-rate-limit` correctly identifies client IPs from `X-Forwarded-For` headers behind Replit's reverse proxy (was showing `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` ValidationError in logs).
+
 ## Exchange Revenue & Fee System (2026-04-17)
 - **`artifacts/api-server/src/lib/feeCollector.ts`** — Central fee accumulation library. `recordPlatformFee(source, amount, asset)` inserts into `keeper_earnings` table under wallet `EXCHANGE_TREASURY`. All routes call this after successful fee events.
 - **Fee sources wired**: `swap.ts` (0.3% on output), `orders.ts` (0.1% on fill total), `copyTrading.ts` (10% of vault performance fee)
