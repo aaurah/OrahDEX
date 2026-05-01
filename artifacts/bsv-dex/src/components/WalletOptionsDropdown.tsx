@@ -150,20 +150,25 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
           {/* Network type switcher */}
           {(() => {
-            const evmAddr   = internalEvmAddress ?? (network === 'evm' ? address : null);
+            const evmAddr = internalEvmAddress ?? (network === 'evm' ? address : null);
+            const bsvAddr = internalBsvAddress  ?? (network === 'bsv' || network === 'bsv-test' ? address : null);
+            const solAddr = internalSolAddress  ?? (network === 'sol' ? address : null);
+            const btcAddr = internalBtcAddress  ?? (network === 'btc' ? address : null);
+            const bchAddr = internalBchAddress  ?? (network === 'bch' ? address : null);
             const available: WalletNetwork[] = [];
-            if (evmAddr)               available.push('evm');
-            if (internalBsvAddress)    available.push('bsv');
-            if (internalBtcAddress)    available.push('btc');
-            if (internalSolAddress)    available.push('sol');
-            if (internalBchAddress)    available.push('bch');
+            if (evmAddr) available.push('evm');
+            if (bsvAddr) available.push('bsv');
+            if (btcAddr) available.push('btc');
+            if (solAddr) available.push('sol');
+            if (bchAddr) available.push('bch');
             if (available.length < 2)  return null;
             return (
               <div className="px-3 py-2.5 border-b border-border">
                 <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
                 <div className="flex gap-1">
                   {available.map((net) => {
-                    const isActive = network === net;
+                    // treat bsv-test as active when the bsv button is shown
+                    const isActive = network === net || (net === 'bsv' && network === 'bsv-test');
                     return (
                       <button
                         key={net}

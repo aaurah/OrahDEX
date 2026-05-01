@@ -171,17 +171,23 @@ export const useWalletStore = create<WalletState>()(
 
       switchNetworkType: (network) =>
         set((s) => {
-          // Capture the current EVM address before leaving it so we can return later.
-          // If we're currently on EVM, the main address IS the EVM address.
-          const evmAddr = s.internalEvmAddress ?? (s.network === 'evm' ? s.address : null);
+          // For each network type, the "authoritative" address is either the
+          // stored internal address OR the current live address if that network
+          // is already active. This lets native wallets (SOL, BTC, BCH connected
+          // directly) round-trip through other networks and come back.
+          const evmAddr = s.internalEvmAddress ?? (s.network === 'evm'                               ? s.address : null);
+          const bsvAddr = s.internalBsvAddress  ?? (s.network === 'bsv' || s.network === 'bsv-test'  ? s.address : null);
+          const solAddr = s.internalSolAddress  ?? (s.network === 'sol'                               ? s.address : null);
+          const btcAddr = s.internalBtcAddress  ?? (s.network === 'btc'                               ? s.address : null);
+          const bchAddr = s.internalBchAddress  ?? (s.network === 'bch'                               ? s.address : null);
 
           let newAddress: string | null = null;
           if (network === 'evm')       newAddress = evmAddr;
-          if (network === 'bsv')       newAddress = s.internalBsvAddress;
-          if (network === 'bsv-test')  newAddress = s.internalBsvAddress; // same keypair, testnet params
-          if (network === 'btc')       newAddress = s.internalBtcAddress;
-          if (network === 'sol')       newAddress = s.internalSolAddress;
-          if (network === 'bch')       newAddress = s.internalBchAddress;
+          if (network === 'bsv')       newAddress = bsvAddr;
+          if (network === 'bsv-test')  newAddress = bsvAddr; // same keypair, testnet params
+          if (network === 'btc')       newAddress = btcAddr;
+          if (network === 'sol')       newAddress = solAddr;
+          if (network === 'bch')       newAddress = bchAddr;
           if (!newAddress) return {}; // no address available for this network — no-op
           return {
             network,
@@ -191,8 +197,12 @@ export const useWalletStore = create<WalletState>()(
             // Explicitly carry provider forward so it is never dropped by any
             // render-batching edge case — the NFT profile guard relies on it.
             provider: s.provider,
-            // Always persist the EVM address so we can switch back to it
+            // Persist all known addresses so round-trips always work
             internalEvmAddress: evmAddr,
+            internalBsvAddress: bsvAddr,
+            internalSolAddress: solAddr,
+            internalBtcAddress: btcAddr,
+            internalBchAddress: bchAddr,
           };
         }),
 
