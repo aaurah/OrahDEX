@@ -108,9 +108,10 @@ export const COINGECKO_IDS: Record<string, string> = {
   POWR:  "power-ledger",
   LPT:   "livepeer",
   // DeFi
-  CAKE:  "pancakeswap-token",
-  GMX:   "gmx",
-  DYDX:  "dydx-chain",
+  CAKE:   "pancakeswap-token",
+  ALPACA: "alpaca-finance",
+  GMX:    "gmx",
+  DYDX:   "dydx-chain",
   PENDLE:"pendle",
   BAL:   "balancer",
   STX:   "blockstack",
@@ -663,7 +664,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── DeFi ─────────────────────────────────────────────────────────────────────
   MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
   GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,
-  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,
+  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,ALPACA:0.00046,
   // ── L1 alts ──────────────────────────────────────────────────────────────────
   FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
   ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
