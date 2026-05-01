@@ -99,6 +99,30 @@ const API = API_BASE;
 const RATE_REFRESH = 10;
 const LS_KEY = "le_swap_history";
 
+// ─── Module-level coin cache ──────────────────────────────────────────────────
+// All panel instances share one fetch so simultaneous mounts don't fire
+// multiple requests. The result is kept for 30 min (matching backend TTL).
+
+const COINS_CLIENT_TTL = 30 * 60 * 1000;
+let _coinsCache: LeCoin[] | null = null;
+let _coinsCacheTs = 0;
+let _coinsInflight: Promise<LeCoin[]> | null = null;
+
+async function fetchCoins(): Promise<LeCoin[]> {
+  if (_coinsCache && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  if (_coinsInflight) return _coinsInflight;
+  _coinsInflight = fetch(`${API}/letsexchange/currencies`)
+    .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
+    .then((d: LeCoin[]) => {
+      _coinsCache = d;
+      _coinsCacheTs = Date.now();
+      _coinsInflight = null;
+      return d;
+    })
+    .catch(err => { _coinsInflight = null; throw err; });
+  return _coinsInflight;
+}
+
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -1078,17 +1102,9 @@ export function LetsExchangePanel({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/letsexchange/currencies`);
-        const d = await r.json();
-        if (!cancelled) {
-          if (r.ok && Array.isArray(d)) setCoins(d);
-          else setCoinsErr(true);
-        }
-      } catch { if (!cancelled) setCoinsErr(true); }
-      if (!cancelled) setLoading(false);
-    })();
+    fetchCoins()
+      .then(d => { if (!cancelled) { setCoins(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setCoinsErr(true); setLoading(false); } });
     return () => { cancelled = true; };
   }, []);
 

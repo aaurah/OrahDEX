@@ -14,6 +14,7 @@ import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.j
 import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
+import { warmCurrenciesCache } from "./routes/letsexchange.js";
 
 const app: Express = express();
 
@@ -195,6 +196,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 /* ── Background services — each wrapped so one failure can't crash others ──── */
+warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
