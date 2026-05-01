@@ -1976,8 +1976,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
                     ? (usesApiBalance
-                      ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge (LetsExchange) to fund it, or deposit on-chain.`
-                      : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge (LetsExchange) or deposit from another wallet.`)
+                      ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
+                      : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
                     ? (usesApiBalance
                       ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`

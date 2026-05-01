@@ -572,7 +572,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         )}
       </div>
 
-      {/* Smart Router badge — informational only; this panel always executes via LetsExchange */}
+      {/* Smart Router badge — informational only */}
       {(routeSource || routeLoading || routeError) && fromCoin && toCoin && numAmt && numAmt > 0 && (
         <div className={cn(
           "px-3 py-2 rounded-xl border text-xs transition-all",
@@ -601,17 +601,17 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
                 <span>Internal liquidity available</span>
               </div>
               <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
-                OrahDEX orderbook has depth for this pair. This panel routes via LetsExchange for cross-chain settlement. Internal execution is available in advanced mode.
+                OrahDEX orderbook has depth for this pair. This panel routes via OrahBridge for cross-chain settlement. Internal execution is available in advanced mode.
               </p>
             </>
           ) : (
             <>
               <div className="flex items-center gap-1.5 font-medium text-blue-400">
                 <span>🔄</span>
-                <span>Routing via LetsExchange</span>
+                <span>Routing via OrahBridge</span>
               </div>
               <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
-                No sufficient internal liquidity for this pair and amount — using LetsExchange cross-chain bridge.
+                No sufficient internal liquidity for this pair and amount — using OrahBridge cross-chain.
               </p>
             </>
           )}
