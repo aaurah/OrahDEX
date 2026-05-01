@@ -575,28 +575,44 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
       {/* Smart Router badge — informational only; this panel always executes via LetsExchange */}
       {(routeSource || routeLoading || routeError) && fromCoin && toCoin && numAmt && numAmt > 0 && (
         <div className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all",
+          "px-3 py-2 rounded-xl border text-xs transition-all",
           routeLoading
             ? "bg-muted/30 border-border/30 text-muted-foreground/50"
             : routeError
             ? "bg-muted/20 border-border/20 text-muted-foreground/40"
             : routeSource === "internal"
-            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-            : "bg-blue-500/10 border-blue-500/30 text-blue-400",
+            ? "bg-emerald-500/10 border-emerald-500/30"
+            : "bg-blue-500/10 border-blue-500/30",
         )}>
           {routeLoading ? (
-            <><Loader2 className="w-3 h-3 animate-spin" /><span>Checking liquidity…</span></>
+            <div className="flex items-center gap-1.5 text-muted-foreground/50">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Checking liquidity…</span>
+            </div>
           ) : routeError ? (
-            <><span className="opacity-50">⚪</span><span className="text-muted-foreground/40">Routing check unavailable</span></>
+            <div className="flex items-center gap-1.5 text-muted-foreground/40">
+              <span>⚪</span>
+              <span>Routing check unavailable</span>
+            </div>
           ) : routeSource === "internal" ? (
             <>
-              <span>⚡</span>
-              <span>Internal liquidity available on OrahDEX — trading via LetsExchange for cross-chain execution</span>
+              <div className="flex items-center gap-1.5 font-medium text-emerald-400">
+                <span>⚡</span>
+                <span>Internal liquidity available</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
+                OrahDEX orderbook has depth for this pair. This panel routes via LetsExchange for cross-chain settlement. Internal execution is available in advanced mode.
+              </p>
             </>
           ) : (
             <>
-              <span>🔄</span>
-              <span>Routing via LetsExchange cross-chain bridge</span>
+              <div className="flex items-center gap-1.5 font-medium text-blue-400">
+                <span>🔄</span>
+                <span>Routing via LetsExchange</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
+                No sufficient internal liquidity for this pair and amount — using LetsExchange cross-chain bridge.
+              </p>
             </>
           )}
         </div>

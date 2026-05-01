@@ -131,7 +131,10 @@ router.post("/swap", async (req, res) => {
     // Record exchange platform fee revenue
     await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase(), txRef: walletAddress });
 
-    req.log.info({ walletAddress, assetIn, assetOut, amtIn, amtOut, fee }, "Swap settled");
+    req.log.info({
+      walletMask: `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`,
+      assetIn, assetOut, amtIn, amtOut, fee,
+    }, "Swap settled");
 
     res.json({
       success:   true,
@@ -199,14 +202,22 @@ router.post("/swap/route", async (req, res) => {
     }
 
     res.json({
-      source:           decision.source,
-      reason:           decision.reason,
-      liquidity:        decision.liquidity,
+      source:                decision.source,
+      reason:                decision.reason,
+      fillBehavior:          decision.fillBehavior,
+      routeVersion:          decision.routeVersion,
+      oracleFallbackApplied: decision.oracleFallbackApplied,
+      liquidity:             decision.liquidity,
+      pairConfig: {
+        minFillFraction: decision.pairConfig.minFillFraction,
+        maxSlippage:     decision.pairConfig.maxSlippage,
+        oracleFallback:  decision.pairConfig.oracleFallback,
+      },
       internalQuote,
-      internalRate:     decision.internalRate,
-      fees:             decision.fees,
-      effectiveRate:    decision.effectiveRate,
-      slippageEstimate: decision.slippageEstimate,
+      internalRate:          decision.internalRate,
+      fees:                  decision.fees,
+      effectiveRate:         decision.effectiveRate,
+      slippageEstimate:      decision.slippageEstimate,
     });
   } catch (err: any) {
     logger.error({ err }, "swap/route failed");
@@ -281,7 +292,10 @@ router.post("/swap/execute", async (req, res) => {
       await settleSwap({ walletAddress, assetIn: a, assetOut: b,
         amountIn: amt.toFixed(18), amountOut: amtOut.toFixed(18) });
       await recordPlatformFee({ source: "swap", amount: fee, asset: b, txRef: walletAddress });
-      logger.info({ walletAddress, a, b, amt, amtOut, source: "internal" }, "hybrid swap: internal settled");
+      logger.info({
+        walletMask: `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`,
+        a, b, amt, amtOut, source: "internal",
+      }, "hybrid swap: internal settled");
       return res.json({
         success: true, source: "internal",
         assetIn: a, assetOut: b,
