@@ -1036,7 +1036,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in your connected wallet. Buy or bridge {availableSym} to start trading.
+              No {availableSym} in wallet — get it via{" "}
+              <a href="/bridge" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
+                Bridge
+              </a>
+              {" "}(LetsExchange) or deposit on-chain.
             </span>
           </div>
         )}
