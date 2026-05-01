@@ -25,7 +25,7 @@ export function useInternalEvmWallet() {
   const provisionedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!address || network !== "bsv") {
+    if (!address || (network !== "bsv" && network !== "bsv-test")) {
       if (!address) setInternalEvm(null);
       return;
     }
