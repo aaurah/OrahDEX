@@ -326,6 +326,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // ── Smart router state ───────────────────────────────────────────────────
+  const [routeSource, setRouteSource] = useState<"internal"|"letsexchange"|null>(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const routeTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+
   // Real on-chain EVM balance for the "from" coin
   // useAccount (wagmi) is the authoritative source for the connected chain ID,
   // covering WalletConnect, injected, and all external wallet providers.
@@ -420,6 +425,30 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   }, [fromCoin, toCoin, amount]);
 
   useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
+
+  // ── Debounced smart-route check ──────────────────────────────────────────
+  useEffect(() => {
+    if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+    const amt = parseFloat(amount);
+    if (!fromCoin || !toCoin || !amount || !isFinite(amt) || amt <= 0) {
+      setRouteSource(null); return;
+    }
+    setRouteLoading(true);
+    routeTimerRef.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/swap/route`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assetIn: fromCoin.symbol, assetOut: toCoin.symbol, amountIn: amt }),
+        });
+        const d = await r.json();
+        if (r.ok && d.source) setRouteSource(d.source as "internal"|"letsexchange");
+      } catch { /* non-fatal */ }
+      setRouteLoading(false);
+    }, 600);
+    return () => { if (routeTimerRef.current) clearTimeout(routeTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCoin?.symbol, toCoin?.symbol, amount]);
 
   // Use live min/max from estimate if available, otherwise fall back to coin data
   const minAmt = estimate?.min_amount ? parseFloat(estimate.min_amount) :
@@ -534,6 +563,26 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
           </p>
         )}
       </div>
+
+      {/* Smart Router badge */}
+      {(routeSource || routeLoading) && fromCoin && toCoin && numAmt && numAmt > 0 && (
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium transition-all",
+          routeLoading
+            ? "bg-muted/30 border-border/30 text-muted-foreground/50"
+            : routeSource === "internal"
+            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+            : "bg-blue-500/10 border-blue-500/30 text-blue-400",
+        )}>
+          {routeLoading ? (
+            <><Loader2 className="w-3 h-3 animate-spin" /> <span>Checking liquidity…</span></>
+          ) : routeSource === "internal" ? (
+            <><span className="text-sm">⚡</span> <span>OrahDEX Orderbook — internal liquidity available</span></>
+          ) : (
+            <><span className="text-sm">🔄</span> <span>LetsExchange — cross-chain bridge</span></>
+          )}
+        </div>
+      )}
 
       <button type="button" disabled={!canContinue}
         onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, estimate)}
