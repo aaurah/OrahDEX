@@ -707,19 +707,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { data: leMinData } = useQuery({
     queryKey: ["le-min", base, quote, side],
     queryFn: async () => {
-      const from = side === "sell" ? base : quote;
-      const to   = side === "sell" ? quote : base;
+      const coin_from = side === "sell" ? base : quote;
+      const coin_to   = side === "sell" ? quote : base;
       const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from,
-          to,
-          network_from: from,
-          network_to:   to,
-          amount:       100,
-          float:        true,
-        }),
+        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
       });
       if (!r.ok) return null;
       return r.json();

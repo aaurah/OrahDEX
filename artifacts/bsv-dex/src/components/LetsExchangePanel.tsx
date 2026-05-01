@@ -301,8 +301,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  // Pair-specific min/max probed as soon as coins are chosen (independent of amount)
-  const [pairMin, setPairMin] = useState<{ min: number; max: number } | null>(null);
 
   // Real on-chain EVM balance for the "from" coin
   // useAccount (wagmi) is the authoritative source for the connected chain ID,
@@ -373,37 +371,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
     }
   }, [coins, initialFrom, initialTo]);
 
-  // Probe the pair min/max as soon as fromCoin + toCoin are both selected,
-  // before the user types any amount. Uses a large probe amount (1 000 units)
-  // so LE always returns a successful response with the real pair min_amount.
-  useEffect(() => {
-    if (!fromCoin || !toCoin) { setPairMin(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/letsexchange/estimate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from:         fromCoin.symbol,
-            to:           toCoin.symbol,
-            network_from: fromCoin.network ?? fromCoin.symbol,
-            network_to:   toCoin.network   ?? toCoin.symbol,
-            amount:       1000,
-            float:        true,
-          }),
-        });
-        if (cancelled) return;
-        const d = await r.json();
-        if (!r.ok || !d?.min_amount) return;
-        const min = parseFloat(d.min_amount);
-        const max = parseFloat(d.max_amount ?? "0");
-        if (isFinite(min) && min > 0) setPairMin({ min, max: isFinite(max) && max > 0 ? max : 0 });
-      } catch { /* ignore probe failures silently */ }
-    })();
-    return () => { cancelled = true; };
-  }, [fromCoin, toCoin]);
-
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
     if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) { setEstimate(null); return; }
@@ -430,12 +397,10 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
 
   useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
 
-  // Priority: live estimate → pair probe → coin-level fallback
+  // Use live min/max from estimate if available, otherwise fall back to coin data
   const minAmt = estimate?.min_amount ? parseFloat(estimate.min_amount) :
-                 pairMin              ? pairMin.min                     :
                  fromCoin?.minAmount  ? parseFloat(fromCoin.minAmount)  : null;
   const maxAmt = estimate?.max_amount ? parseFloat(estimate.max_amount) :
-                 (pairMin?.max && pairMin.max > 0) ? pairMin.max       :
                  fromCoin?.maxAmount  ? parseFloat(fromCoin.maxAmount)  : null;
   const numAmt = amount !== "" ? parseFloat(amount) : null;
   const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
