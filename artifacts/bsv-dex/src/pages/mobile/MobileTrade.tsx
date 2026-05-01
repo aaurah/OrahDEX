@@ -989,11 +989,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       : undefined;
 
     let evmSignature: string | undefined;
+    let orderNonce:   string | undefined;
+    let orderExpiry:  string | undefined;
     if (isExternalEvm) {
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
-      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
+      const orderMsg = [
+        "Authorize OrahDEX order",
+        `Wallet: ${address}`,
+        `Symbol: ${symbol}`,
+        `Side: ${side}`,
+        `Quantity: ${amtNum.toString()}`,
+        `Nonce: ${orderNonce}`,
+        `Expiry: ${orderExpiry}`,
+      ].join("\n");
+
       try {
         evmSignature = await signMessageAsync({ message: orderMsg });
       } catch (signErr: any) {
@@ -1025,6 +1039,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
       evmSignature,
+      nonce:  orderNonce,
+      expiry: orderExpiry,
     } as any);
   }
 

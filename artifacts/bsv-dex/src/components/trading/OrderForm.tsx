@@ -760,23 +760,37 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
     // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
     // must sign the order intent with personal_sign to prove authorization.
-    // The signature is stored on the order row (fundingRef: "evm-sig:…") and is
-    // required by the server before the order enters the matching engine.
-    // Orah internal wallets use the API ledger and do not need a separate sign step.
+    // The signature is stored on the order row and is required by the server before
+    // the order enters the matching engine.
+    // IMPORTANT: the message format MUST match buildOrderAuthMessage on the server
+    // exactly — the server reconstructs the same string and recovers the signer.
     let evmSignature: string | undefined;
+    let orderNonce:   string | undefined;
+    let orderExpiry:  string | undefined;
     if (isExternalEvm) {
-      // Build a random nonce using crypto.getRandomValues to prevent signature replay.
+      // Generate a random nonce and a 5-minute expiry
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
-      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
+      const orderMsg = [
+        "Authorize OrahDEX order",
+        `Wallet: ${address}`,
+        `Symbol: ${symbol}`,
+        `Side: ${side}`,
+        `Quantity: ${parseFloat(amount).toString()}`,
+        `Nonce: ${orderNonce}`,
+        `Expiry: ${orderExpiry}`,
+      ].join("\n");
+
       try {
         setSigningOrder(true);
         evmSignature = await signMessageAsync({ message: orderMsg });
       } catch (signErr: any) {
         setSigningOrder(false);
         const msg: string = signErr?.message ?? "";
-        // User rejected the signature prompt
         if (msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")) {
           toast({ title: "Signature rejected", description: "You must sign the order to proceed.", variant: "destructive" });
         } else {
@@ -804,8 +818,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
-          // EVM signature — authorises the order for on-chain settlement via HTLC
+          // EVM signature + matching nonce/expiry — server reconstructs the same
+          // canonical message and recovers the signer to verify ownership
           evmSignature,
+          nonce:  orderNonce,
+          expiry: orderExpiry,
           chainId: isEvm ? chainId : undefined,
         } as any,
       },
