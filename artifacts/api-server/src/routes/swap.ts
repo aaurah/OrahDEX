@@ -159,10 +159,11 @@ router.post("/swap", async (req, res) => {
 });
 
 // ── POST /swap/route ──────────────────────────────────────────────────────────
-// Read-only: returns which source (internal orderbook vs LetsExchange) would
-// be used to execute a swap, plus quotes from each.
+// Read-only: returns which source (internal / letsexchange / split) would be
+// used to execute a swap, plus quotes, fee breakdown, and pair config.
+// Pass allowSplit=true to see whether a split-route would be used.
 router.post("/swap/route", async (req, res) => {
-  const { assetIn, assetOut, amountIn } = req.body ?? {};
+  const { assetIn, assetOut, amountIn, allowSplit } = req.body ?? {};
   if (!assetIn || !assetOut || !amountIn) {
     res.status(400).json({ error: "assetIn, assetOut, amountIn are required" }); return;
   }
@@ -172,47 +173,41 @@ router.post("/swap/route", async (req, res) => {
   }
 
   try {
-    const [a, b] = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
-    const decision = await getHybridRoute(a, b, amt);
+    const [a, b]   = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
+    const splitOpt = allowSplit === true || allowSplit === "true";
+    const decision = await getHybridRoute(a, b, amt, splitOpt);
 
-    // Build internal quote using oracle price + VWAP when available
+    // Build full internal quote using VWAP when available, oracle rate otherwise
     let internalQuote: Record<string, unknown> | null = null;
-    const rate = decision.liquidity.vwap > 0
-      ? decision.liquidity.vwap
-      : await resolveRate(a, b);
+    const rate = decision.liquidity.vwap > 0 ? decision.liquidity.vwap : await resolveRate(a, b);
     if (rate) {
-      const grossOut   = amt * rate;
-      const fee        = grossOut * FEE_PCT;
-      const netOut     = grossOut - fee;
-      internalQuote    = {
-        assetIn:       a,
-        assetOut:      b,
-        amountIn:      amt.toFixed(8),
-        amountOut:     netOut.toFixed(8),
-        grossOut:      grossOut.toFixed(8),
-        fee:           fee.toFixed(8),
-        feePct:        FEE_PCT * 100,
-        rate:          rate.toFixed(8),
-        vwap:          decision.liquidity.vwap > 0 ? decision.liquidity.vwap.toFixed(8) : null,
-        slippage:      decision.liquidity.slippage !== null
+      const grossOut = amt * rate;
+      const fee      = grossOut * FEE_PCT;
+      internalQuote  = {
+        assetIn: a, assetOut: b,
+        amountIn:  amt.toFixed(8),
+        amountOut: (grossOut - fee).toFixed(8),
+        grossOut:  grossOut.toFixed(8),
+        fee:       fee.toFixed(8),
+        feePct:    FEE_PCT * 100,
+        rate:      rate.toFixed(8),
+        vwap:      decision.liquidity.vwap > 0 ? decision.liquidity.vwap.toFixed(8) : null,
+        slippage:  decision.liquidity.slippage !== null
           ? parseFloat((decision.liquidity.slippage * 100).toFixed(4))
           : null,
-        fillPct:       parseFloat(decision.liquidity.fillPct.toFixed(2)),
+        fillPct:   parseFloat(decision.liquidity.fillPct.toFixed(2)),
       };
     }
 
     res.json({
       source:                decision.source,
-      reason:                decision.reason,
       fillBehavior:          decision.fillBehavior,
+      reason:                decision.reason,
       routeVersion:          decision.routeVersion,
       oracleFallbackApplied: decision.oracleFallbackApplied,
       liquidity:             decision.liquidity,
-      pairConfig: {
-        minFillFraction: decision.pairConfig.minFillFraction,
-        maxSlippage:     decision.pairConfig.maxSlippage,
-        oracleFallback:  decision.pairConfig.oracleFallback,
-      },
+      pairConfig:            decision.pairConfig,
+      splitLegs:             decision.splitLegs,
       internalQuote,
       internalRate:          decision.internalRate,
       fees:                  decision.fees,
@@ -226,16 +221,24 @@ router.post("/swap/route", async (req, res) => {
 });
 
 // ── POST /swap/execute ────────────────────────────────────────────────────────
-// Unified execution: auto-routes to internal ledger OR LetsExchange based on
-// real orderbook liquidity.
-// Body for internal execution:  { walletAddress, assetIn, assetOut, amountIn, minAmountOut? }
-// Body for LE execution:        { assetIn, assetOut, amountIn, withdrawal, networkFrom, networkTo, withdrawal_extra_id? }
-// Optional override:            { forceSource: "internal" | "letsexchange" }
+// Unified dispatcher: auto-routes to internal / letsexchange / split.
+// Body:
+//   assetIn, assetOut, amountIn    — required for all paths
+//   walletAddress                  — required for internal leg
+//   withdrawal, networkFrom, networkTo — required for LE leg
+//   allowSplit                     — boolean; opt in to split routing
+//   forceSource                    — "internal"|"letsexchange" (trusted callers only)
+//   minAmountOut                   — slippage guard for internal leg
+//   withdrawal_extra_id, return, rate_id, email — forwarded to LE
+//
+// Response shape:
+//   source: "internal" | "letsexchange" | "split"
+//   For split: { internal: { ... }, external: { ... } }
 router.post("/swap/execute", async (req, res) => {
   const {
     walletAddress, assetIn, assetOut, amountIn,
     minAmountOut, withdrawal, networkFrom, networkTo, withdrawal_extra_id,
-    return: refund, rate_id, email, forceSource,
+    return: refund, rate_id, email, forceSource, allowSplit,
   } = req.body ?? {};
 
   if (!assetIn || !assetOut || !amountIn) {
@@ -245,57 +248,81 @@ router.post("/swap/execute", async (req, res) => {
   if (!isFinite(amt) || amt <= 0) {
     res.status(400).json({ error: "amountIn must be a positive finite number" }); return;
   }
-  const [a, b] = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
+  const [a, b]   = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
+  const splitOpt = allowSplit === true || allowSplit === "true";
 
   try {
-    // forceSource: only accepted from trusted server-side callers identified
-    // by the X-Internal-Token header.  Public clients that send forceSource
-    // without the header have it silently ignored to prevent abuse (e.g.
-    // forcing internal routing when depth is thin).
-    const INTERNAL_TOKEN = process.env.INTERNAL_API_TOKEN;
-    const callerToken    = req.headers["x-internal-token"];
-    const isTrustedCaller =
-      INTERNAL_TOKEN &&
-      callerToken &&
-      callerToken === INTERNAL_TOKEN;
+    // forceSource: only accepted from trusted server-side callers (X-Internal-Token header).
+    const INTERNAL_TOKEN  = process.env.INTERNAL_API_TOKEN;
+    const callerToken     = req.headers["x-internal-token"];
+    const isTrustedCaller = INTERNAL_TOKEN && callerToken && callerToken === INTERNAL_TOKEN;
 
-    // Determine route: re-evaluate inside execute so the decision is always
-    // fresh at execution time (not stale from a prior /route call).
-    let source: "internal" | "letsexchange";
+    // Route decision is always re-evaluated at execution time (never stale).
+    let decision = await getHybridRoute(a, b, amt, splitOpt);
+
     if (isTrustedCaller && (forceSource === "internal" || forceSource === "letsexchange")) {
-      source = forceSource;
-      logger.info({ a, b, forceSource }, "swap/execute: trusted caller override accepted");
-    } else {
-      if (forceSource) {
-        logger.warn({ a, b, forceSource }, "swap/execute: forceSource ignored (missing/invalid token)");
-      }
-      const decision = await getHybridRoute(a, b, amt);
-      source = decision.source;
+      logger.info({ a, b, forceSource }, "swap/execute: trusted caller override");
+      // Rebuild decision with forced source — reuse liquidity data but override
+      decision = { ...decision, source: forceSource, fillBehavior: "reject_partial", splitLegs: null };
+    } else if (forceSource) {
+      logger.warn({ a, b, forceSource }, "swap/execute: forceSource ignored (missing/invalid token)");
     }
 
-    // ── Internal execution (ledger-based, requires OrahDEX balance) ─────────
-    if (source === "internal") {
-      if (!walletAddress) {
-        res.status(400).json({ error: "walletAddress is required for internal swap" }); return;
-      }
+    const source = decision.source;
+
+    // ── Helper: execute LE leg ────────────────────────────────────────────────
+    const executeLELeg = async (leAmt: number): Promise<{ ok: boolean; status: number; data: unknown }> => {
+      if (!withdrawal) throw new Error("MISSING_WITHDRAWAL");
+      if (!networkFrom || !networkTo) throw new Error("MISSING_NETWORK");
+      const ws = String(withdrawal).trim();
+      if (ws.length < 10 || ws.length > 200) throw new Error("INVALID_WITHDRAWAL");
+      const leBody: Record<string, unknown> = {
+        float:               false,
+        coin_from:           a, coin_to: b,
+        network_from:        String(networkFrom),
+        network_to:          String(networkTo),
+        deposit_amount:      leAmt,
+        withdrawal:          ws,
+        withdrawal_extra_id: withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
+        affiliate_id:        AFFILIATE_ID,
+      };
+      if (refund)  leBody["return"]  = String(refund);
+      if (rate_id) leBody["rate_id"] = String(rate_id);
+      if (email)   leBody["email"]   = String(email);
+      return leRequest("/v1/transaction", "POST", leBody);
+    };
+
+    // ── Helper: execute internal leg ──────────────────────────────────────────
+    const executeInternalLeg = async (internalAmt: number) => {
+      if (!walletAddress) throw new Error("MISSING_WALLET");
       const rate = await resolveRate(a, b);
-      if (!rate) {
-        res.status(422).json({ error: "No price available for this pair internally" }); return;
-      }
-      const grossOut = amt * rate;
-      const fee      = grossOut * FEE_PCT;
-      const amtOut   = grossOut - fee;
-      if (minAmountOut && amtOut < parseFloat(String(minAmountOut))) {
-        res.status(422).json({ error: "Slippage exceeded", code: "SLIPPAGE_EXCEEDED",
-          amtOut: amtOut.toFixed(8), minOut: parseFloat(String(minAmountOut)).toFixed(8) }); return;
+      if (!rate) throw new Error("NO_ORACLE");
+      const gross   = internalAmt * rate;
+      const fee     = gross * FEE_PCT;
+      const amtOut  = gross - fee;
+      if (minAmountOut) {
+        const minOut = parseFloat(String(minAmountOut)) * (internalAmt / amt);
+        if (amtOut < minOut) throw new Error(`SLIPPAGE_EXCEEDED:${amtOut.toFixed(8)}:${minOut.toFixed(8)}`);
       }
       await settleSwap({ walletAddress, assetIn: a, assetOut: b,
-        amountIn: amt.toFixed(18), amountOut: amtOut.toFixed(18) });
+        amountIn: internalAmt.toFixed(18), amountOut: amtOut.toFixed(18) });
       await recordPlatformFee({ source: "swap", amount: fee, asset: b, txRef: walletAddress });
-      logger.info({
-        walletMask: `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`,
-        a, b, amt, amtOut, source: "internal",
-      }, "hybrid swap: internal settled");
+      return { gross, fee, amtOut, rate };
+    };
+
+    // ── Internal-only execution ───────────────────────────────────────────────
+    if (source === "internal") {
+      const { gross, fee, amtOut, rate } = await executeInternalLeg(amt).catch(err => {
+        const msg = String(err?.message ?? "");
+        if (msg === "MISSING_WALLET")  throw Object.assign(new Error("walletAddress is required for internal swap"), { status: 400 });
+        if (msg === "NO_ORACLE")       throw Object.assign(new Error("No price available for this pair internally"), { status: 422 });
+        if (msg.startsWith("SLIPPAGE_EXCEEDED")) {
+          const [, out, min] = msg.split(":");
+          throw Object.assign(new Error("Slippage exceeded"), { status: 422, detail: { amtOut: out, minOut: min } });
+        }
+        throw err;
+      });
+      logger.info({ walletMask: `${walletAddress?.slice(0,6)}…${walletAddress?.slice(-4)}`, a, b, amt, amtOut, source }, "hybrid swap: internal settled");
       return res.json({
         success: true, source: "internal",
         assetIn: a, assetOut: b,
@@ -305,7 +332,58 @@ router.post("/swap/execute", async (req, res) => {
       });
     }
 
-    // ── LetsExchange execution ───────────────────────────────────────────────
+    // ── Split execution: internal leg + LetsExchange leg ─────────────────────
+    if (source === "split" && decision.splitLegs) {
+      const internalAmt = decision.splitLegs.internal!.amount;
+      const externalAmt = decision.splitLegs.external!.amount;
+
+      // Execute internal leg first (ledger debit — reversible if LE fails)
+      const internalResult = await executeInternalLeg(internalAmt).catch(err => {
+        const msg = String(err?.message ?? "");
+        if (msg === "MISSING_WALLET") throw Object.assign(new Error("walletAddress is required for split swap internal leg"), { status: 400 });
+        if (msg === "NO_ORACLE")      throw Object.assign(new Error("No price available for internal leg"), { status: 422 });
+        throw err;
+      });
+
+      // Execute LE leg for the remainder
+      const leResult = await executeLELeg(externalAmt).catch(err => {
+        const msg = String(err?.message ?? "");
+        if (msg === "MISSING_WITHDRAWAL") throw Object.assign(new Error("withdrawal is required for split swap LetsExchange leg"), { status: 400 });
+        if (msg === "MISSING_NETWORK")    throw Object.assign(new Error("networkFrom and networkTo required for LE leg"), { status: 400 });
+        if (msg === "INVALID_WITHDRAWAL") throw Object.assign(new Error("Invalid withdrawal address"), { status: 400 });
+        throw err;
+      });
+
+      if (leResult.status === 403) { res.status(403).json({ error: "LetsExchange API key invalid" }); return; }
+      if (leResult.status === 422) { res.status(422).json({ error: "LE validation error", detail: leResult.data }); return; }
+      if (!leResult.ok) { res.status(leResult.status).json({ error: "LetsExchange error", detail: leResult.data }); return; }
+
+      logger.info({
+        walletMask: `${walletAddress?.slice(0,6)}…${walletAddress?.slice(-4)}`,
+        a, b, amt, internalAmt, externalAmt, source: "split",
+      }, "hybrid swap: split settled");
+
+      return res.json({
+        success: true, source: "split",
+        requestedAmount: amt.toFixed(8),
+        assetIn: a, assetOut: b,
+        timestamp: new Date().toISOString(),
+        internal: {
+          filled:    internalAmt.toFixed(8),
+          vwap:      internalResult.rate.toFixed(8),
+          amountOut: internalResult.amtOut.toFixed(8),
+          fee:       internalResult.fee.toFixed(8),
+          feePct:    FEE_PCT * 100,
+        },
+        external: {
+          filled:    externalAmt.toFixed(8),
+          provider:  "letsexchange",
+          ...(leResult.data as object),
+        },
+      });
+    }
+
+    // ── LetsExchange-only execution ───────────────────────────────────────────
     if (!withdrawal) {
       res.status(400).json({ error: "withdrawal address is required for LetsExchange routing" }); return;
     }
