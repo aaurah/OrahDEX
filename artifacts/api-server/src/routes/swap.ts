@@ -17,7 +17,6 @@ import { marketsTable } from "@workspace/db/schema";
 import { or, eq } from "drizzle-orm";
 import {
   settleSwap,
-  getBalances,
 } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 
@@ -64,6 +63,11 @@ router.post("/swap/quote", async (req, res) => {
 
 // ── POST /swap ─────────────────────────────────────────────────────────────────
 // Executes a swap and settles the balances atomically.
+// NOTE: This endpoint trusts walletAddress from the body.  For internal (OrahDEX)
+// balances the ledger enforces that the address has sufficient funds, which prevents
+// funds-theft but does NOT prevent a user from submitting swaps under a different
+// address to observe balance/rate data.  External (on-chain) wallets with zero
+// internal balance are safe; on-chain funds are never touched here.
 router.post("/swap", async (req, res) => {
   const { walletAddress, assetIn, assetOut, amountIn, minAmountOut } = req.body ?? {};
   if (!walletAddress || !assetIn || !assetOut || !amountIn) {
@@ -71,16 +75,33 @@ router.post("/swap", async (req, res) => {
     return;
   }
 
-  try {
-    const existing = await getBalances(walletAddress);
+  // Strict numeric validation — reject NaN, Infinity, non-positive amounts
+  const amtInRaw = parseFloat(amountIn);
+  if (!Number.isFinite(amtInRaw) || amtInRaw <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive finite number" });
+    return;
+  }
+  // Sanity cap: no single swap should exceed $10M equivalent (prevents overflow attacks)
+  if (amtInRaw > 1_000_000) {
+    res.status(400).json({ error: "amountIn exceeds maximum swap size" });
+    return;
+  }
 
+  // Validate asset symbols — alphanumeric only, max 20 chars
+  const symbolRe = /^[A-Z0-9.]{1,20}$/;
+  if (!symbolRe.test(String(assetIn).toUpperCase()) || !symbolRe.test(String(assetOut).toUpperCase())) {
+    res.status(400).json({ error: "Invalid asset symbol" });
+    return;
+  }
+
+  try {
     const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {
       res.status(422).json({ error: "No price available for this pair" });
       return;
     }
 
-    const amtIn    = parseFloat(amountIn);
+    const amtIn    = amtInRaw;
     const grossOut = amtIn * rate;
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;

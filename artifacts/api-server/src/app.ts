@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import compression from "compression";
 import pinoHttp from "pino-http";
+import rateLimit from "express-rate-limit";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
@@ -50,8 +51,60 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
 }));
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+
+/* ── Rate limiting ────────────────────────────────────────────────────────────
+ * Layered approach:
+ *  - Global:  200 req / 1 min per IP  (protects all endpoints)
+ *  - Exchange mutations: 30 req / min  (orders, swap, p2p fill, LE exchange)
+ *  - Estimate/quote:    60 req / min  (rate-check calls, slightly relaxed)
+ * Skip counting for trusted health/ping endpoints to avoid alert noise.
+ */
+const globalLimiter = rateLimit({
+  windowMs:          60_000,
+  max:               200,
+  standardHeaders:   "draft-7",
+  legacyHeaders:     false,
+  skip: (req) => req.path === "/api/ping" || req.path === "/api/health" || req.path === "/api/healthz",
+  handler: (_req, res) => res.status(429).json({ error: "Too many requests — please slow down." }),
+});
+app.use(globalLimiter);
+
+/* Stricter limit for financial write operations */
+const exchangeLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             30,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
+});
+const EXCHANGE_WRITE_PATHS = [
+  "/api/swap",
+  "/api/orders",
+  "/api/p2p/intents",
+  "/api/letsexchange/exchange",
+  "/api/genesis/swap",
+  "/api/settlement/evm/session",
+  "/api/settlement/evm/confirm-lock",
+];
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== "GET" && EXCHANGE_WRITE_PATHS.some(p => req.path === p || req.path.startsWith(p + "/"))) {
+    return exchangeLimiter(req, res, next);
+  }
+  next();
+});
+
+/* Relaxed limit for estimate / quote endpoints (called on every keystroke) */
+const estimateLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             60,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler: (_req, res) => res.status(429).json({ error: "Quote rate limit reached — wait a moment." }),
+});
+app.use("/api/letsexchange/estimate", estimateLimiter);
+app.use("/api/swap/quote",            estimateLimiter);
 
 /* ── Smart cache headers for common API routes ──────────────────────────── */
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {

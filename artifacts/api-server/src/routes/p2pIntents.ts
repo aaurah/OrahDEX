@@ -209,13 +209,22 @@ router.post("/p2p/intents/:id/fill", async (req, res) => {
 router.delete("/p2p/intents/:id", async (req, res) => {
   try {
     const id   = req.params.id;
-    const addr = (req.query.walletAddress as string | undefined)?.toLowerCase();
+    // Accept walletAddress from body (preferred) or query param for backward compat.
+    // walletAddress is REQUIRED — anonymous cancellation is not permitted.
+    const rawAddr = (req.body?.walletAddress as string | undefined)
+                 ?? (req.query.walletAddress as string | undefined);
+
+    if (!rawAddr) {
+      res.status(400).json({ error: "walletAddress is required to cancel an intent" });
+      return;
+    }
+    const addr = rawAddr.toLowerCase();
 
     const [intent] = await db.select().from(p2pIntentsTable)
       .where(eq(p2pIntentsTable.intentId, id));
 
     if (!intent) { res.status(404).json({ error: "Intent not found" }); return; }
-    if (addr && intent.makerAddress !== addr) {
+    if (intent.makerAddress !== addr) {
       res.status(403).json({ error: "Only the maker can cancel this intent" }); return;
     }
     if (intent.status !== "open") {
@@ -225,6 +234,7 @@ router.delete("/p2p/intents/:id", async (req, res) => {
     await db.update(p2pIntentsTable).set({ status: "cancelled", updatedAt: new Date() })
       .where(eq(p2pIntentsTable.intentId, id));
 
+    logger.info({ id, addr }, "P2P intent cancelled by maker");
     res.json({ success: true, intentId: id, status: "cancelled" });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Cancel failed" });

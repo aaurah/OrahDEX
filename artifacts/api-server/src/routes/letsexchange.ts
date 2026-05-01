@@ -360,6 +360,11 @@ router.post("/letsexchange/exchange", async (req, res) => {
   }
   const amt = parseFloat(String(deposit_amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "deposit_amount must be positive" }); return; }
+  // Withdrawal address sanity: must be at least 10 chars and not suspiciously long
+  const withdrawalStr = String(withdrawal).trim();
+  if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
+    res.status(400).json({ error: "Invalid withdrawal address" }); return;
+  }
 
   try {
     const body: Record<string,unknown> = {
