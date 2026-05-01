@@ -2,7 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
@@ -2916,6 +2916,78 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
     }
     req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
     res.json({ success: true, rowsAffected: result.rowCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ─── LE SWAP INCOME ─────────────────────────────────────────────────────── */
+
+// GET /api/admin/le-income  – summary stats + recent swap list
+router.get("/admin/le-income", requireAdminToken, async (req, res) => {
+  try {
+    // Aggregate stats
+    const [statsRow] = await db.execute<{
+      total_swaps: string;
+      finished_swaps: string;
+      total_volume_usd: string;
+      finished_volume_usd: string;
+    }>(sql`
+      SELECT
+        COUNT(*)                                                    AS total_swaps,
+        COUNT(*) FILTER (WHERE status = 'finished')                 AS finished_swaps,
+        COALESCE(SUM(deposit_amount_usd), 0)                        AS total_volume_usd,
+        COALESCE(SUM(deposit_amount_usd) FILTER (WHERE status = 'finished'), 0) AS finished_volume_usd
+      FROM le_swaps
+    `);
+
+    // Top coins by volume
+    const topCoins = await db.execute<{ coin_from: string; coin_to: string; count: string; volume_usd: string }>(sql`
+      SELECT coin_from, coin_to,
+             COUNT(*)                      AS count,
+             COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
+      FROM le_swaps
+      GROUP BY coin_from, coin_to
+      ORDER BY volume_usd DESC
+      LIMIT 10
+    `);
+
+    // Monthly breakdown
+    const monthly = await db.execute<{ month: string; count: string; volume_usd: string }>(sql`
+      SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
+             COUNT(*)                      AS count,
+             COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
+      FROM le_swaps
+      GROUP BY month
+      ORDER BY month DESC
+      LIMIT 12
+    `);
+
+    // Recent swaps
+    const recent = await db
+      .select()
+      .from(leSwapsTable)
+      .orderBy(desc(leSwapsTable.createdAt))
+      .limit(50);
+
+    const totalVolumeUsd  = parseFloat(statsRow?.total_volume_usd   ?? "0");
+    const finishedVolUsd  = parseFloat(statsRow?.finished_volume_usd ?? "0");
+    // LetsExchange affiliate earns ~50% of their ~0.35% fee per swap
+    const COMMISSION_RATE = 0.0017; // ~0.17% of volume (50% × 0.35%)
+
+    res.json({
+      summary: {
+        totalSwaps:           Number(statsRow?.total_swaps   ?? 0),
+        finishedSwaps:        Number(statsRow?.finished_swaps ?? 0),
+        totalVolumeUsd:       totalVolumeUsd,
+        finishedVolumeUsd:    finishedVolUsd,
+        estimatedCommissionUsd: parseFloat((finishedVolUsd * COMMISSION_RATE).toFixed(2)),
+        commissionRatePct:    (COMMISSION_RATE * 100).toFixed(2),
+      },
+      topPairs:   topCoins,
+      monthly,
+      recent,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }

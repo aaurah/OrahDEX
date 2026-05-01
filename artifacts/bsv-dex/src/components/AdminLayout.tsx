@@ -128,6 +128,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/arb-bot",      label: "Arb Bot",            icon: Bot },
       { href: "/admin/seeded-pool",  label: "Seeded Pool",        icon: Database },
       { href: "/admin/transactions", label: "On-Chain Txns",      icon: Activity },
+      { href: "/admin/le-income",    label: "Swap Income",        icon: TrendingUp },
     ],
   },
   {

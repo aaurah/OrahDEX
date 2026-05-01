@@ -21,7 +21,8 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
+import { marketsTable, leSwapsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -407,6 +408,27 @@ router.post("/letsexchange/exchange", async (req, res) => {
     if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
     if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
+
+    // Persist the swap record so we can track exchange income
+    const d = data as Record<string, unknown>;
+    if (d?.transaction_id) {
+      const leUsd = getCachedLEPrices();
+      const fromUsd = leUsd[String(coin_from).toUpperCase()] ?? 0;
+      const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
+      db.insert(leSwapsTable).values({
+        id:               String(d.transaction_id),
+        coinFrom:         String(coin_from).toUpperCase(),
+        coinTo:           String(coin_to).toUpperCase(),
+        networkFrom:      String(network_from),
+        networkTo:        String(network_to),
+        depositAmount:    String(amt),
+        withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
+        depositAmountUsd: depositUsd,
+        status:           String(d.status ?? "waiting"),
+        withdrawal:       withdrawalStr,
+      }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
+    }
+
     res.json(data);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /exchange failed");
@@ -425,6 +447,19 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
     if (status === 404) { res.status(404).json({ error: "Transaction not found", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
+
+    // Sync status + withdrawal amount back to our DB record
+    const d = data as Record<string, unknown>;
+    if (d?.transaction_id && d?.status) {
+      const isFinished = ["finished", "refunded", "overdue", "emergency"].includes(String(d.status));
+      db.update(leSwapsTable).set({
+        status:           String(d.status),
+        withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : undefined,
+        completedAt:      isFinished ? new Date() : undefined,
+      } as any).where(eq(leSwapsTable.id, String(d.transaction_id)))
+        .catch(e => logger.warn({ err: e }, "le_swaps status sync failed"));
+    }
+
     res.json(data);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /status failed");

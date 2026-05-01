@@ -20,3 +20,4 @@ export * from "./evmHtlc";
 export * from "./withdrawals";
 export * from "./nft";
 export * from "./social";
+export * from "./letsexchange";

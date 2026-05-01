@@ -87,6 +87,7 @@ const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").th
 const AdminPrediction     = lazy(() => import("@/pages/admin/PredictionAdmin"));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
+const AdminLEIncome          = lazy(() => import("@/pages/admin/LEIncome").then(m => ({ default: m.AdminLEIncome })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
 const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
@@ -355,6 +356,7 @@ function Router() {
       <Route path="/admin/support/inbox">  <AdminRoute><AdminSupportInbox /></AdminRoute></Route>
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
+      <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">
