@@ -70,7 +70,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
       return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
-  if (type === "bridge") return "/bridge";
+  if (type === "bridge") return "/swap";
   if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
   if (type === "withdrawal" || type === "deposit") return "/portfolio";
   if (type === "liquidity") return "/liquidity";
@@ -1892,7 +1892,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     No {side === "buy" ? quote : base} in wallet —{" "}
                     get it via{" "}
                     <a
-                      href="/bridge"
+                      href="/swap"
                       className="text-cyan-400 underline underline-offset-2 font-semibold"
                     >
                       Bridge
@@ -1986,7 +1986,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </p>
                 {orderError.code === "DEPOSIT_REQUIRED" && (
                   <div className="ml-6 mt-0.5 flex gap-3">
-                    <a href="/bridge" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
+                    <a href="/swap" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
                       Open Bridge →
                     </a>
                     <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">

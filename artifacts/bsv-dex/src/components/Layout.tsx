@@ -36,7 +36,7 @@ const NAV_LINKS = [
 
 const NAV_MORE = [
   { href: "/p2p",       label: "P2P",       icon: Users },
-  { href: "/bridge",    label: "Bridge",    icon: Link2 },
+  { href: "/swap",      label: "Bridge",    icon: Link2 },
   { href: "/copy",      label: "CopyVault", icon: Copy },
   { href: "/keeper",    label: "Keepers",   icon: Shield },
   { href: "/fees",      label: "Revenue",   icon: TrendingUp },
@@ -144,7 +144,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
       return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
-  if (type === "bridge") return "/bridge";
+  if (type === "bridge") return "/swap";
   if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
   if (type === "withdrawal") return "/portfolio";
   if (type === "liquidity") return "/liquidity";

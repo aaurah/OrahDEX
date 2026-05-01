@@ -1568,7 +1568,7 @@ export function Swap() {
             Swap
           </button>
           <button
-            onClick={() => setLocation(isMobile ? "/deposit-bsv" : "/bridge")}
+            onClick={() => { if (isMobile) setLocation("/deposit-bsv"); else document.getElementById("lets-exchange-panel")?.scrollIntoView({ behavior: "smooth" }); }}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
           >
             <Link2 className="w-3.5 h-3.5" />
@@ -1577,7 +1577,9 @@ export function Swap() {
         </div>
 
         {/* LetsExchange Panel — 6000+ coins, non-custodial, cross-chain */}
-        <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+        <div id="lets-exchange-panel">
+          <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+        </div>
 
         {/* Divider */}
         <div className="flex items-center gap-3">
