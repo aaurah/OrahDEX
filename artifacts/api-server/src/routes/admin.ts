@@ -13,7 +13,7 @@ import { base } from "viem/chains";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
-import { updateMarketPrices } from "../lib/priceUpdater.js";
+import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
@@ -1857,6 +1857,33 @@ router.post("/restart-services", async (_req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message });
+  }
+});
+
+/* ─── LETSEXCHANGE FULL PAIR SYNC ────────────────────────────────────────── */
+
+/**
+ * POST /admin/le-sync
+ *
+ * Forces a full resync of ALL LetsExchange pairs into the DB.
+ * Fetches coins from LE API → runs sovereign price pass → upserts every
+ * coin × quote pair, updating zero-price rows with real current prices.
+ */
+router.post("/le-sync", requireAdminToken, async (_req, res) => {
+  try {
+    const start = Date.now();
+    const result = await syncAllLEPairs();
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    res.json({
+      ok: true,
+      message: `LE sync complete in ${elapsed}s`,
+      coins:    result.coins,
+      quotes:   result.quotes,
+      rows:     result.inserted,
+      elapsed,
+    });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
 });
 
