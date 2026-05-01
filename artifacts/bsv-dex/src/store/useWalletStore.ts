@@ -176,11 +176,12 @@ export const useWalletStore = create<WalletState>()(
           const evmAddr = s.internalEvmAddress ?? (s.network === 'evm' ? s.address : null);
 
           let newAddress: string | null = null;
-          if (network === 'evm')  newAddress = evmAddr;
-          if (network === 'bsv')  newAddress = s.internalBsvAddress;
-          if (network === 'btc')  newAddress = s.internalBtcAddress;
-          if (network === 'sol')  newAddress = s.internalSolAddress;
-          if (network === 'bch')  newAddress = s.internalBchAddress;
+          if (network === 'evm')       newAddress = evmAddr;
+          if (network === 'bsv')       newAddress = s.internalBsvAddress;
+          if (network === 'bsv-test')  newAddress = s.internalBsvAddress; // same keypair, testnet params
+          if (network === 'btc')       newAddress = s.internalBtcAddress;
+          if (network === 'sol')       newAddress = s.internalSolAddress;
+          if (network === 'bch')       newAddress = s.internalBchAddress;
           if (!newAddress) return {}; // no address available for this network — no-op
           return {
             network,
