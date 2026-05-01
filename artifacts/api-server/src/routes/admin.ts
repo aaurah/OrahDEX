@@ -2,7 +2,8 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
+import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
@@ -2988,6 +2989,105 @@ router.get("/admin/le-income", requireAdminToken, async (req, res) => {
       monthly,
       recent,
     });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// ── GET /admin/routing-profiles ───────────────────────────────────────────────
+// List all per-pair routing configs stored in the routing_profiles table.
+router.get("/admin/routing-profiles", requireAdminToken, async (_req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(routingProfilesTable)
+      .orderBy(routingProfilesTable.baseSymbol, routingProfilesTable.quoteSymbol);
+    res.json({ profiles: rows, count: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// ── POST /admin/routing-profiles ──────────────────────────────────────────────
+// Upsert a routing profile (insert or update on pair key conflict).
+router.post("/admin/routing-profiles", requireAdminToken, async (req, res) => {
+  const { baseSymbol, quoteSymbol, maxSlippageBps, minFillFraction,
+          maxInternalSize, oracleRequired, enabled, splitEnabled, notes } = req.body ?? {};
+  if (!baseSymbol || !quoteSymbol) {
+    res.status(400).json({ error: "baseSymbol and quoteSymbol are required" }); return;
+  }
+  try {
+    const [row] = await db
+      .insert(routingProfilesTable)
+      .values({
+        baseSymbol:      String(baseSymbol).toUpperCase(),
+        quoteSymbol:     String(quoteSymbol).toUpperCase(),
+        maxSlippageBps:  maxSlippageBps  != null ? Number(maxSlippageBps)    : 150,
+        minFillFraction: minFillFraction != null ? String(minFillFraction)   : "0.9",
+        maxInternalSize: maxInternalSize != null ? String(maxInternalSize)   : null,
+        oracleRequired:  oracleRequired  != null ? Boolean(oracleRequired)   : true,
+        enabled:         enabled         != null ? Boolean(enabled)          : true,
+        splitEnabled:    splitEnabled    != null ? Boolean(splitEnabled)     : false,
+        notes:           notes           != null ? String(notes)             : null,
+      })
+      .onConflictDoUpdate({
+        target: [routingProfilesTable.baseSymbol, routingProfilesTable.quoteSymbol],
+        set: {
+          maxSlippageBps:  sql`excluded.max_slippage_bps`,
+          minFillFraction: sql`excluded.min_fill_fraction`,
+          maxInternalSize: sql`excluded.max_internal_size`,
+          oracleRequired:  sql`excluded.oracle_required`,
+          enabled:         sql`excluded.enabled`,
+          splitEnabled:    sql`excluded.split_enabled`,
+          notes:           sql`excluded.notes`,
+          updatedAt:       sql`NOW()`,
+        },
+      })
+      .returning();
+
+    invalidatePairConfigCache(
+      String(baseSymbol).toUpperCase(),
+      String(quoteSymbol).toUpperCase(),
+    );
+    res.status(201).json({ profile: row });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+// ── PUT /admin/routing-profiles/:id ──────────────────────────────────────────
+// Partial update of a routing profile by its UUID.
+router.put("/admin/routing-profiles/:id", requireAdminToken, async (req, res) => {
+  const { id } = req.params;
+  const {
+    maxSlippageBps, minFillFraction, maxInternalSize,
+    oracleRequired, enabled, splitEnabled, notes,
+  } = req.body ?? {};
+
+  const patch: Record<string, unknown> = { updatedAt: sql`NOW()` };
+  if (maxSlippageBps  != null) patch.maxSlippageBps  = Number(maxSlippageBps);
+  if (minFillFraction != null) patch.minFillFraction  = String(minFillFraction);
+  if (maxInternalSize !== undefined) patch.maxInternalSize = maxInternalSize != null ? String(maxInternalSize) : null;
+  if (oracleRequired  != null) patch.oracleRequired  = Boolean(oracleRequired);
+  if (enabled         != null) patch.enabled         = Boolean(enabled);
+  if (splitEnabled    != null) patch.splitEnabled    = Boolean(splitEnabled);
+  if (notes           !== undefined) patch.notes     = notes != null ? String(notes) : null;
+
+  if (Object.keys(patch).length === 1) {
+    res.status(400).json({ error: "No updatable fields provided" }); return;
+  }
+
+  try {
+    const [row] = await db
+      .update(routingProfilesTable)
+      .set(patch as any)
+      .where(eq(routingProfilesTable.id, id))
+      .returning();
+
+    if (!row) { res.status(404).json({ error: "Profile not found" }); return; }
+    // Invalidate cache for this pair
+    invalidatePairConfigCache(row.baseSymbol, row.quoteSymbol);
+    res.json({ profile: row });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
