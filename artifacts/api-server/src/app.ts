@@ -17,6 +17,10 @@ import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 
 const app: Express = express();
 
+/* ── Trust proxy — required for correct IP detection behind Replit's reverse proxy
+ * Enables accurate rate-limiting and X-Forwarded-For header parsing. ────────── */
+app.set("trust proxy", 1);
+
 /* ── Compression — gzip all API responses (typically 60-80% smaller) ──── */
 app.use(compression({
   level: 6,

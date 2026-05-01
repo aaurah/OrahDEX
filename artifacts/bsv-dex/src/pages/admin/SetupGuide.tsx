@@ -7,7 +7,7 @@ import {
   DollarSign, Megaphone, Palette, ToggleLeft, Bot, Activity,
   Key, ShieldCheck, Rocket, AlertTriangle, ChevronDown,
   Save, Eye, EyeOff, ExternalLink, Mail, Lock, BellRing,
-  Layers, RefreshCw, Check,
+  Layers, RefreshCw, Check, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -96,6 +96,13 @@ const STEPS: Step[] = [
     description: "Connect Sumsub or Onfido for automated identity verification. Required for regulated regions.",
     href: "/admin/integrations", icon: ShieldCheck, priority: "recommended",
     checkIntegrations: ["sumsub_api_key"],
+  },
+  {
+    id: "letsexchange",  step: 8, label: "H",
+    title: "Bridge — LetsExchange API Key",
+    description: "Powers the Bridge tab (cross-chain swaps). Users can exchange 340+ coins without holding the target asset. Add your LetsExchange API key in Integrations.",
+    href: "/admin/integrations", icon: Link2, priority: "recommended",
+    checkIntegrations: ["letsexchange_api_key"],
   },
   {
     id: "bsv-node",     step: 10, label: "J",
