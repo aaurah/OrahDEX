@@ -1887,11 +1887,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
               {/* Low balance hint — shown when no balance available on any source */}
               {address && available === 0 && !apiBalancesLoading && (
-                <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
-                  {side === "buy"
-                    ? `No ${quote} available in wallet. Deposit or swap ${quote} on-chain.`
-                    : `No ${base} available in wallet. Buy ${base} first or deposit on-chain.`
-                  }
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
+                  <span>
+                    No {side === "buy" ? quote : base} in wallet —{" "}
+                    get it via{" "}
+                    <a
+                      href="/bridge"
+                      className="text-cyan-400 underline underline-offset-2 font-semibold"
+                    >
+                      Bridge
+                    </a>
+                    {" "}or deposit on-chain.
+                  </span>
                 </div>
               )}
               <div className="flex items-center justify-between">
@@ -1969,21 +1976,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
                     ? (usesApiBalance
-                      ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
-                      : `Deposit ${side === "sell" ? base : quote} to your wallet first. On-chain funds are required before placing orders.`)
+                      ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge (LetsExchange) to fund it, or deposit on-chain.`
+                      : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge (LetsExchange) or deposit from another wallet.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
                     ? (usesApiBalance
-                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
-                      : `Not enough ${side === "sell" ? base : quote} in your wallet. Check your on-chain balance.`)
+                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
+                      : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap for more, or deposit.`)
                     : orderError.message}
                 </p>
                 {orderError.code === "DEPOSIT_REQUIRED" && (
-                  <a
-                    href={coinWalletHref}
-                    className="ml-6 mt-0.5 text-xs font-bold text-primary underline underline-offset-2"
-                  >
-                    Open Wallet →
-                  </a>
+                  <div className="ml-6 mt-0.5 flex gap-3">
+                    <a href="/bridge" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
+                      Open Bridge →
+                    </a>
+                    <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
+                      Open Wallet →
+                    </a>
+                  </div>
                 )}
               </div>
             )}
