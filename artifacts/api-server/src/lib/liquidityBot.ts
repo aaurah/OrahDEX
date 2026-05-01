@@ -208,6 +208,8 @@ async function refreshMarket(
       txid:              null as string | null,
       signedTx:          null as string | null,
       matchedOrderId:    null as string | null,
+      isBot:             true,
+      isSynthetic:       false,
     })),
   );
 }
