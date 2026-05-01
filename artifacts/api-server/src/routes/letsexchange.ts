@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -166,6 +166,41 @@ function buildPairs(coins: NormalisedCoin[]) {
   return pairs;
 }
 
+// Helper: fetch stable LE pairs from the markets DB table.
+// Returns pairs in the same shape as buildPairs() so they're drop-in compatible.
+// Only used when the DB is seeded (>= 100 LE rows) — falls back to live LE otherwise.
+async function fetchLEPairsFromDB(): Promise<Record<string, unknown>[]> {
+  const rows = await db
+    .select({
+      symbol:                marketsTable.symbol,
+      baseAsset:             marketsTable.baseAsset,
+      quoteAsset:            marketsTable.quoteAsset,
+      lastPrice:             marketsTable.lastPrice,
+      priceChangePercent24h: marketsTable.priceChangePercent24h,
+      volume:                marketsTable.volume24h,
+    })
+    .from(marketsTable)
+    .where(and(eq(marketsTable.type, "letsexchange"), eq(marketsTable.enabled, true)));
+
+  const changeMap = getCoinChangeMap();
+  return rows.map(r => ({
+    symbol:                r.symbol,
+    baseAsset:             r.baseAsset,
+    quoteAsset:            r.quoteAsset,
+    network:               null,
+    networkName:           null,
+    image:                 null,
+    hasExtraId:            false,
+    minAmount:             null,
+    maxAmount:             null,
+    lastPrice:             parseFloat(String(r.lastPrice)) || 0,
+    priceChangePercent24h: parseFloat(String(r.priceChangePercent24h)) || (changeMap[r.baseAsset] ?? 0),
+    volume:                parseFloat(String(r.volume)) || 0,
+    type:                  "letsexchange",
+    leSource:              true,
+  }));
+}
+
 // Helper: fetch OrahDEX native spot markets from the DB
 async function fetchNativeMarkets(): Promise<Record<string, unknown>[]> {
   const rows = await db.select({
@@ -199,19 +234,36 @@ router.get("/letsexchange/pairs", async (req, res) => {
 
   const cacheKey = "le_pairs_all";
   let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
+  let coins: NormalisedCoin[] | null | undefined;  // may stay undefined in DB path
 
-  // Always resolve coins (needed both for buildPairs and for fetchLEPricesUSD)
-  let coins = cached("currencies") as NormalisedCoin[] | null;
-  if (!coins) {
+  if (!lePairs) {
+    // ── Primary: stable DB-backed pair list ────────────────────────────────
+    // The markets table is seeded once with all LE pairs and never fluctuates.
+    // This eliminates the "breathing" list problem caused by live LE API responses.
     try {
-      coins = await fetchAndCacheCurrencies();
+      const dbPairs = await fetchLEPairsFromDB();
+      if (dbPairs.length >= 100) {
+        // DB is seeded — use stable list
+        lePairs = dbPairs;
+        cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+        logger.debug({ count: dbPairs.length }, "letsexchange /pairs: served from stable DB");
+      }
     } catch (err: any) {
-      logger.error({ err }, "letsexchange /pairs coins fetch failed");
-      res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
+      logger.warn({ err }, "letsexchange /pairs: DB fetch failed, falling back to live LE");
     }
   }
 
   if (!lePairs) {
+    // ── Fallback: live LE API (only if DB is empty / not seeded yet) ───────
+    coins = cached("currencies") as NormalisedCoin[] | null;
+    if (!coins) {
+      try {
+        coins = await fetchAndCacheCurrencies();
+      } catch (err: any) {
+        logger.error({ err }, "letsexchange /pairs coins fetch failed");
+        res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
+      }
+    }
     lePairs = buildPairs(coins);
     cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
   }
@@ -279,8 +331,10 @@ router.get("/letsexchange/pairs", async (req, res) => {
 
   // Layer 2: LE live rates from shared cache (non-blocking).
   // getCachedLEPrices() returns {} on a cold cache; kick off a refresh for next time.
+  // When serving from DB we may not have coins loaded — skip the background warmup
+  // if coins isn't available (it will be warmed on the next live-fallback cycle).
   const lePrices = getCachedLEPrices();
-  if (Object.keys(lePrices).length === 0) fetchLEPricesUSD(coins).catch(() => {});
+  if (Object.keys(lePrices).length === 0 && coins) fetchLEPricesUSD(coins).catch(() => {});
   Object.assign(usdPrices, lePrices); // LE rates overwrite static fallbacks
 
   // Layer 3: DB native USDT/USDC prices (most accurate)
