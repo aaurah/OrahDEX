@@ -380,12 +380,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // External wallets hold funds on-chain; the exchange cannot debit them until
   // an order fills. We subtract open-order amounts client-side so the UI shows
   // the real "available to place new orders" figure.
+  // lockedSellQty: base asset quantity reserved in open sell orders.
   const lockedSellQty = openOrders
     .filter((o: any) => o.side === "sell" && o.symbol === symbol)
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0"), 0);
-  const lockedBuySpend = openOrders
-    .filter((o: any) => o.side === "buy" && o.symbol === symbol)
-    .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
+  // lockedBuySpend is computed AFTER lastPrice (below) because market orders have
+  // price: null and need lastPrice as a fallback to compute the correct spend amount.
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const getOrderWalletAddress = (order: any) => (
@@ -722,6 +722,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   });
 
   const lastPrice = parseFloat(ticker?.lastPrice) || 0;
+
+  // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
+  // Market orders have price: null in the DB, so we fall back to lastPrice to
+  // estimate how much quote is tied up. Without this, market buy orders would
+  // show the full on-chain balance as "available" even with an open order.
+  const lockedBuySpend = openOrders
+    .filter((o: any) => o.side === "buy" && o.symbol === symbol)
+    .reduce((sum: number, o: any) => {
+      const qty = parseFloat(o.quantity ?? "0") || 0;
+      const px  = parseFloat(o.price ?? "0") || lastPrice || 0;
+      return sum + qty * px;
+    }, 0);
+
   const change = parseFloat(ticker?.priceChangePercent) || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
