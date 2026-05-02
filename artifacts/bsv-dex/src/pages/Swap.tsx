@@ -41,6 +41,7 @@ import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
+import { BuyHistory } from "@/components/BuyHistory";
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
@@ -2272,6 +2273,9 @@ export function Swap() {
 
             {/* Existing crypto-to-crypto panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
+
+            {/* Purchase history */}
+            <BuyHistory walletAddress={address ?? null} />
 
             {/* KYC verification gate — opens before first purchase */}
             <KycModal
