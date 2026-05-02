@@ -427,6 +427,7 @@ export function SpotTrading() {
                     placeholder="Search by coin, name or chain (e.g. APE, ethereum, ETH)…"
                     value={dropSearch}
                     onChange={e => setDropSearch(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
                     className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/60 border border-border rounded-lg outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
                   />
                 </div>

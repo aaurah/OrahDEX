@@ -399,6 +399,7 @@ export function MobileMarkets() {
               placeholder="Search coins…"
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
             />
             {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
           </div>

@@ -567,6 +567,7 @@ export function Markets() {
                 placeholder={`Search ${tab === "usd" ? usdSub : meta.label} pairs…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
                 className="w-44 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary focus:w-56 transition-all"
               />
             </div>
@@ -606,6 +607,7 @@ export function Markets() {
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
                 className="w-36 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary transition-all"
               />
             </div>

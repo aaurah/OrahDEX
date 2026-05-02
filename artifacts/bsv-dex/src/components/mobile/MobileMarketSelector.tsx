@@ -482,6 +482,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               placeholder="Search by coin, name, or quote (e.g. ETH, bitcoin, BTC)"
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
             />
             {search && (
               <button onClick={() => setSearch("")}><X size={12} className="text-muted-foreground" /></button>
