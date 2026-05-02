@@ -173,41 +173,43 @@ function getRows(
   usdSub: UsdSub,
   livePrice: Map<string, NormRow>,
   favorites: Set<string>,
-  aosPairs: NormRow[],    // swap-only (AOS) pairs from LetsExchange
+  aosPairs: NormRow[],   // swap-only (AOS) pairs from LetsExchange
+  apiRows: NormRow[],    // all DB pairs normalised
 ) {
   const enrich = (mock: any[]): NormRow[] =>
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
       if (!live) return n;
-      // If API returns exactly 0 change (unseeded pair), keep the mock's realistic change value
       const chg = live.chg !== 0 ? live.chg : n.chg;
       return { ...n, price: live.price, chg };
     });
+
+  /** All DB spot pairs for a given quote currency, priced > 0, sorted by base */
+  const dbByQuote = (quote: string): NormRow[] =>
+    apiRows
+      .filter(m => m.quote === quote && m.type !== "futures" && m.price > 0)
+      .sort((a, b) => a.base.localeCompare(b.base));
 
   // Merge native rows with ONE AOS row per unique base coin (best quote for the chain).
   const mergeAOS = (native: NormRow[], keywords: string[], quotePriority: string[]): NormRow[] => {
     const seenSymbols = new Set(native.map(r => r.symbol));
     const seenBases   = new Set(native.map(r => r.base));
 
-    // Filter eligible AOS pairs: correct network + has price
     const eligible = aosPairs.filter(p => {
       const net = (p.network ?? "").toLowerCase();
       return keywords.some(kw => net.includes(kw)) && p.price > 0;
     });
 
-    // Group by base asset
     const byBase = new Map<string, NormRow[]>();
     for (const p of eligible) {
       if (!byBase.has(p.base)) byBase.set(p.base, []);
       byBase.get(p.base)!.push(p);
     }
 
-    // Pick the single best pair per coin
     const extra: NormRow[] = [];
     for (const [base, pairs] of byBase) {
-      if (seenBases.has(base)) continue; // already covered by a native pair
-
+      if (seenBases.has(base)) continue;
       let best: NormRow | undefined;
       for (const q of quotePriority) {
         best = pairs.find(p => p.quote === q);
@@ -217,36 +219,43 @@ function getRows(
       if (best && !seenSymbols.has(best.symbol)) extra.push(best);
     }
 
-    // Sort AOS additions alphabetically, then append after native rows
     extra.sort((a, b) => a.base.localeCompare(b.base));
     return [...native, ...extra];
   };
 
+  /**
+   * Chain-quote tab: use all DB pairs for `quote`, supplement with AOS extras
+   * that belong to this chain's network. Falls back to static enrich if DB is empty.
+   */
+  const chainFromDB = (quote: string, c: Cat, fallbackMock: any[]): NormRow[] => {
+    const db            = dbByQuote(quote);
+    const keywords      = CAT_NETWORKS[c] ?? [];
+    const quotePriority = CAT_PREFERRED_QUOTE[c] ?? ["USDT", "USDC"];
+    const native        = db.length > 0 ? db : enrich(fallbackMock);
+    return mergeAOS(native, keywords, quotePriority);
+  };
+
+  /**
+   * BTC / BSV tabs: all DB pairs for that quote + ALL AOS pairs quoted in it
+   * (BTC and BSV span every chain, so we don't filter by network).
+   */
+  const quoteAllPairs = (quote: string, fallbackMock: any[]): NormRow[] => {
+    const db     = dbByQuote(quote);
+    const native = db.length > 0 ? db : enrich(fallbackMock);
+    const seenSymbols = new Set(native.map(r => r.symbol));
+    const seenBases   = new Set(native.map(r => r.base));
+    const aos = aosPairs
+      .filter(p => p.quote === quote && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol))
+      .sort((a, b) => a.base.localeCompare(b.base));
+    return [...native, ...aos];
+  };
+
+  /** Category/topic tabs that are NOT chain-quote based — keep using static enrich + AOS */
   const chainRows = (mock: any[], c: Cat): NormRow[] => {
-    const native       = enrich(mock);
-    const keywords     = CAT_NETWORKS[c];
+    const native        = enrich(mock);
+    const keywords      = CAT_NETWORKS[c];
     const quotePriority = CAT_PREFERRED_QUOTE[c] ?? ["USDT", "USDC"];
     if (!keywords) return native;
-
-    // BTC and BSV are quote currencies, not chain/networks — for those tabs we want
-    // ALL LE coins that quote in that currency regardless of their own network.
-    if (c === "btc") {
-      const seenSymbols = new Set(native.map(r => r.symbol));
-      const seenBases   = new Set(native.map(r => r.base));
-      const btcAos = aosPairs
-        .filter(p => p.quote === "BTC" && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol));
-      btcAos.sort((a, b) => a.base.localeCompare(b.base));
-      return [...native, ...btcAos];
-    }
-    if (c === "bsv") {
-      const seenSymbols = new Set(native.map(r => r.symbol));
-      const seenBases   = new Set(native.map(r => r.base));
-      const bsvAos = aosPairs
-        .filter(p => p.quote === "BSV" && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol));
-      bsvAos.sort((a, b) => a.base.localeCompare(b.base));
-      return [...native, ...bsvAos];
-    }
-
     return mergeAOS(native, keywords, quotePriority);
   };
 
@@ -263,27 +272,29 @@ function getRows(
     case "favorites": return allSpot().filter(m => favorites.has(m.symbol));
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
     case "new":       return chainRows(NEW_MARKETS,   cat);
-    case "btc":       return chainRows(BTC_MARKETS,   cat);
-    case "eth":       return chainRows(ETH_MARKETS,   cat);
-    case "bnb":       return chainRows(BNB_MARKETS,   cat);
-    case "matic":     return chainRows(MATIC_MARKETS, cat);
-    case "avax":      return chainRows(AVAX_MARKETS,  cat);
-    case "arb":       return chainRows(ARB_MARKETS,   cat);
-    case "op":        return chainRows(OP_MARKETS,    cat);
-    case "ftm":       return chainRows(FTM_MARKETS,   cat);
-    case "cro":       return chainRows(CRO_MARKETS,   cat);
-    case "bch":       return chainRows(BCH_MARKETS,   cat);
-    case "bsv":       return chainRows(BSV_MARKETS,      cat);
+    // ── Chain-quote tabs: DB-backed ────────────────────────────────────────────
+    case "btc":       return quoteAllPairs("BTC",   BTC_MARKETS);
+    case "bsv":       return quoteAllPairs("BSV",   BSV_MARKETS);
+    case "eth":       return chainFromDB("ETH",   cat, ETH_MARKETS);
+    case "bnb":       return chainFromDB("BNB",   cat, BNB_MARKETS);
+    case "sol":       return chainFromDB("SOL",   cat, SOL_MARKETS);
+    case "bch":       return chainFromDB("BCH",   cat, BCH_MARKETS);
+    case "matic":     return chainFromDB("MATIC", cat, MATIC_MARKETS);
+    case "avax":      return chainFromDB("AVAX",  cat, AVAX_MARKETS);
+    case "arb":       return chainFromDB("ARB",   cat, ARB_MARKETS);
+    case "op":        return chainFromDB("OP",    cat, OP_MARKETS);
+    case "ftm":       return chainFromDB("FTM",   cat, FTM_MARKETS);
+    case "cro":       return chainFromDB("CRO",   cat, CRO_MARKETS);
+    case "mnt":       return chainFromDB("MNT",   cat, MNT_MARKETS);
+    case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
+    case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
+    case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
+    case "base":      return chainFromDB("BASE",  cat, BASE_MARKETS);
+    case "zora":      return chainRows(ZORA_MARKETS,     cat);
+    // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
-    case "sol":       return chainRows(SOL_MARKETS,      cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
     case "defi":      return chainRows(DEFI_MARKETS,     cat);
-    case "mnt":       return chainRows(MNT_MARKETS,      cat);
-    case "zk":        return chainRows(ZK_MARKETS,       cat);
-    case "scr":       return chainRows(SCR_MARKETS,      cat);
-    case "linea":     return chainRows(LINEA_MARKETS,    cat);
-    case "base":      return chainRows(BASE_MARKETS,     cat);
-    case "zora":      return chainRows(ZORA_MARKETS,     cat);
     case "gaming":    return chainRows(GAMING_MARKETS,   cat);
     case "cosmos":    return chainRows(COSMOS_MARKETS,   cat);
     case "l1":        return enrich(L1_MARKETS);
@@ -372,22 +383,25 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     })),
   [rawAosPairs]);
 
+  const apiRows = useMemo<NormRow[]>(
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+    [apiData]
+  );
+
   const livePrice = useMemo(() => new Map(
-    (apiData && Array.isArray(apiData) ? apiData : [])
-      .map(normalise)
-      .map((m: NormRow) => [m.symbol, m])
-  ), [apiData]);
+    apiRows.map((m: NormRow) => [m.symbol, m])
+  ), [apiRows]);
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
-      ...(Array.isArray(apiData) ? apiData : []).map(normalise),
-      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, aosPairs)),
+      ...apiRows,
+      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, aosPairs, apiRows)),
     ]
-      .filter(m => !m.swapOnly || m.price > 0)  // hide unpriced AOS from search too
+      .filter(m => !m.swapOnly || m.price > 0)
       .map((m: NormRow) => [m.symbol, m])
-  ).values()), [apiData, usdSub, livePrice, favorites, aosPairs]);
+  ).values()), [apiRows, usdSub, livePrice, favorites, aosPairs]);
 
-  let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs);
+  let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
 
   if (search) {
     rows = globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search));
