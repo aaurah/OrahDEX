@@ -1033,7 +1033,7 @@ export async function seedLEPairsIfNeeded() {
               inArray(marketsTable.quoteAsset, [...LE_SEED_QUOTES]),
               inArray(marketsTable.baseAsset, chunk),
             ));
-          migrated += (res.rowsAffected ?? res.changes ?? 0);
+          migrated += ((res as any).rowsAffected ?? (res as any).changes ?? 0);
         }
         if (migrated > 0) {
           logger.info({ migrated }, "Migrated existing LE pairs → type:letsexchange");

@@ -86,7 +86,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       try {
         const r = await fetch(`http://localhost:${process.env.PORT}/api/prices`);
         if (r.ok) {
-          const prices = await r.json();
+          const prices = await r.json() as Record<string, number>;
           price = prices[coinSymbol] ?? 0;
         }
       } catch { /* ignore */ }
