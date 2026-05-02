@@ -4,7 +4,7 @@ import { db, pool } from "@workspace/db";
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
-import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -921,9 +921,43 @@ router.patch("/admins/:id/2fa", (req, res) => {
 });
 
 /* ─── TRADE PAIRS ─── */
-router.get("/pairs", async (_req, res) => {
-  const allMarkets = await db.select().from(marketsTable);
-  res.json(allMarkets);
+router.get("/pairs", async (req, res) => {
+  try {
+    const limit  = Math.min(parseInt(req.query.limit  as string) || 100, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0,   0);
+    const search = ((req.query.search as string) || "").trim();
+    const type   = ((req.query.type   as string) || "").trim();
+
+    const conditions = [];
+    if (search) {
+      conditions.push(or(
+        like(marketsTable.symbol,    `%${search.toUpperCase()}%`),
+        like(marketsTable.baseAsset, `%${search.toUpperCase()}%`),
+      ));
+    }
+    if (type && type !== "all") {
+      conditions.push(eq(marketsTable.type, type));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(marketsTable)
+      .where(where);
+
+    const pairs = await db
+      .select()
+      .from(marketsTable)
+      .where(where)
+      .orderBy(marketsTable.symbol)
+      .limit(limit)
+      .offset(offset);
+
+    res.json({ pairs, total: countRow.total, limit, offset });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch pairs" });
+  }
 });
 
 router.patch("/pairs/:symbol/status", async (req, res) => {
