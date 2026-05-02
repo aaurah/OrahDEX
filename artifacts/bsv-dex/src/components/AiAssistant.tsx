@@ -26,6 +26,30 @@ const QUICK_PROMPTS = [
   "How do I read the order book?",
 ];
 
+const POS_STORAGE_KEY = "ora:assistant:pos";
+type Pos = { right: number; bottom: number };
+const DEFAULT_POS: Pos = { right: 24, bottom: 24 };
+
+function loadPos(): Pos {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(POS_STORAGE_KEY) : null;
+    if (!raw) return DEFAULT_POS;
+    const p = JSON.parse(raw);
+    if (typeof p?.right === "number" && typeof p?.bottom === "number") return p;
+  } catch {}
+  return DEFAULT_POS;
+}
+
+function clampPos(p: Pos): Pos {
+  if (typeof window === "undefined") return p;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  return {
+    right: Math.max(8, Math.min(p.right, w - 64)),
+    bottom: Math.max(8, Math.min(p.bottom, h - 64)),
+  };
+}
+
 export function AiAssistant() {
   const [open, setOpen] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -34,10 +58,49 @@ export function AiAssistant() {
   const [streaming, setStreaming] = useState(false);
   const [minimised, setMinimised] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [pos, setPos] = useState<Pos>(() => clampPos(loadPos()));
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingMsgRef = useRef<string | null>(null);
+  const dragRef = useRef<{ moved: boolean; startX: number; startY: number; startPos: Pos } | null>(null);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(pos)); } catch {}
+  }, [pos]);
+
+  useEffect(() => {
+    function onResize() { setPos(p => clampPos(p)); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  function startDrag(e: React.PointerEvent) {
+    // Don't start drag from interactive controls (buttons inside header)
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-no-drag]")) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { moved: false, startX: e.clientX, startY: e.clientY, startPos: pos };
+  }
+  function moveDrag(e: React.PointerEvent) {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    d.moved = true;
+    setPos(clampPos({ right: d.startPos.right - dx, bottom: d.startPos.bottom - dy }));
+  }
+  function endDrag(e: React.PointerEvent) {
+    const d = dragRef.current;
+    dragRef.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    // If drag moved, swallow the click that would otherwise fire
+    if (d?.moved) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
 
   const scrollBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
