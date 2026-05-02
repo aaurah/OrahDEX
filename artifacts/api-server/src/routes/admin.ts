@@ -2980,19 +2980,17 @@ router.get("/seeded-pool", requireAdminToken, async (req, res) => {
   try {
     const { rows } = await pool.query<{
       asset_symbol: string;
-      total_seeded: string;
       total_available: string;
       wallet_count: string;
     }>(
       `SELECT
          asset_symbol,
-         SUM(seeded)    AS total_seeded,
          SUM(available) AS total_available,
          COUNT(*)       AS wallet_count
        FROM user_balances
-       WHERE seeded > 0
+       WHERE available > 0
        GROUP BY asset_symbol
-       ORDER BY total_seeded::numeric DESC`,
+       ORDER BY total_available::numeric DESC`,
     );
     res.json({ pool: rows });
   } catch (err: any) {
@@ -3008,16 +3006,16 @@ router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
     const { rows } = await pool.query<{
       total_wallets: string;
       total_assets: string;
-      total_seeded_usdt_equiv: string;
+      total_available_usdt_equiv: string;
     }>(
       `SELECT
          COUNT(DISTINCT wallet_address) AS total_wallets,
          COUNT(DISTINCT asset_symbol)   AS total_assets,
-         SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN seeded ELSE 0 END) AS total_seeded_usdt_equiv
+         SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN available ELSE 0 END) AS total_available_usdt_equiv
        FROM user_balances
-       WHERE seeded > 0`,
+       WHERE available > 0`,
     );
-    res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_seeded_usdt_equiv: "0" });
+    res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_available_usdt_equiv: "0" });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
@@ -3037,19 +3035,14 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
       const sym = (asset as string).toUpperCase();
       result = await pool.query(
         `UPDATE user_balances
-            SET available   = GREATEST(0, available - seeded),
-                seeded      = 0,
-                updated_at  = now()
-          WHERE asset_symbol = $1 AND seeded > 0`,
+            SET updated_at  = now()
+          WHERE asset_symbol = $1 AND available > 0`,
         [sym],
       );
     } else {
       result = await pool.query(
         `UPDATE user_balances
-            SET available   = GREATEST(0, available - seeded),
-                seeded      = 0,
-                updated_at  = now()
-          WHERE seeded > 0`,
+            SET updated_at  = now()`,
       );
     }
     req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
