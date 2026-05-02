@@ -211,6 +211,12 @@ interface Props {
   defaultPayMethod?: FiatPayMethod;
 }
 
+const SESSION_ADDR_KEY = "orahdex_session_addr";
+function getUserWallet(evmAddress: string | null | undefined): string {
+  if (evmAddress) return evmAddress;
+  return sessionStorage.getItem(SESSION_ADDR_KEY) ?? "";
+}
+
 /* ── Main component ───────────────────────────────────────────────────────── */
 export function DirectBuyModal({
   open,
@@ -323,6 +329,7 @@ export function DirectBuyModal({
           coinSymbol: coin,
           fiatAmountUsd: fiatNum,
           walletAddress: walletAddr.trim(),
+          userWallet: getUserWallet(address),
         }),
       });
       const data = await r.json();

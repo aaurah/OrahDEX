@@ -12,6 +12,7 @@ async function ensureCryptoOrdersTable() {
       id TEXT PRIMARY KEY,
       stripe_payment_intent_id TEXT UNIQUE,
       wallet_address TEXT NOT NULL,
+      user_wallet TEXT,
       coin_symbol TEXT NOT NULL,
       fiat_amount_cents INTEGER NOT NULL,
       fiat_currency TEXT NOT NULL DEFAULT 'usd',
@@ -25,6 +26,10 @@ async function ensureCryptoOrdersTable() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  /* Migrate existing tables that predate the user_wallet column */
+  await pool.query(`
+    ALTER TABLE crypto_orders ADD COLUMN IF NOT EXISTS user_wallet TEXT
+  `).catch(() => {});
 }
 ensureCryptoOrdersTable().catch(e =>
   logger.warn({ err: e?.message }, "crypto_orders table setup failed (non-fatal)")
@@ -44,10 +49,11 @@ router.get("/stripe/config", async (_req, res) => {
 /* ── POST /api/stripe/create-payment-intent ─────────────────────────────── */
 router.post("/stripe/create-payment-intent", async (req, res) => {
   try {
-    const { coinSymbol, fiatAmountUsd, walletAddress } = req.body as {
+    const { coinSymbol, fiatAmountUsd, walletAddress, userWallet } = req.body as {
       coinSymbol?: string;
       fiatAmountUsd?: number;
       walletAddress?: string;
+      userWallet?: string;
     };
 
     if (!coinSymbol || typeof coinSymbol !== "string") {
@@ -117,15 +123,17 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
     });
 
     /* Persist order record */
+    const effectiveUserWallet = userWallet?.trim() || walletAddress.trim();
     await pool.query(
       `INSERT INTO crypto_orders
-         (id, stripe_payment_intent_id, wallet_address, coin_symbol,
+         (id, stripe_payment_intent_id, wallet_address, user_wallet, coin_symbol,
           fiat_amount_cents, fiat_currency, crypto_amount, exchange_rate, fee_usd, status)
-       VALUES ($1, $2, $3, $4, $5, 'usd', $6, $7, $8, 'pending')`,
+       VALUES ($1, $2, $3, $4, $5, $6, 'usd', $7, $8, $9, 'pending')`,
       [
         orderId,
         paymentIntent.id,
         walletAddress.trim(),
+        effectiveUserWallet,
         coinSymbol,
         fiatAmountCents,
         cryptoAmount.toFixed(8),
@@ -176,11 +184,15 @@ router.get("/stripe/orders", async (req, res) => {
     return;
   }
   try {
+    const addr = walletAddress.toLowerCase();
+    /* Match on user_wallet (identity) OR wallet_address (destination) so
+       BTC/SOL/XRP purchases appear when looked up by the user's EVM/session ID */
     const result = await pool.query(
       `SELECT id, coin_symbol, fiat_amount_cents, crypto_amount, status, created_at
-       FROM crypto_orders WHERE wallet_address = $1
-       ORDER BY created_at DESC LIMIT 20`,
-      [walletAddress.toLowerCase()]
+       FROM crypto_orders
+       WHERE LOWER(user_wallet) = $1 OR LOWER(wallet_address) = $1
+       ORDER BY created_at DESC LIMIT 50`,
+      [addr]
     );
     res.json(result.rows);
   } catch (err: any) {
