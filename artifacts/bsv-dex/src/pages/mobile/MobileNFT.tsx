@@ -17,7 +17,7 @@ import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
 
-const API = "/api";
+const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 const MODAL_ROOT_STYLE: React.CSSProperties = {
   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,

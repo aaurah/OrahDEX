@@ -16,7 +16,7 @@ import { useLocation } from "wouter";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
 
-const API = "/api";
+const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 function Portal({ children }: { children: React.ReactNode }) {
   const target = typeof document !== "undefined"
