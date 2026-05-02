@@ -17,6 +17,7 @@ import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
 import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { logger } from "../lib/logger.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export const serviceState = {
@@ -296,7 +297,7 @@ router.post("/auth/wallet", async (req, res) => {
     recovered = recoverEthAddress(stored.message, signature);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[wallet-auth] recoverEthAddress threw:", msg);
+    req.log.error({ msg }, "admin wallet-auth: recoverEthAddress threw");
     recordAuthFailure(req);
     res.status(401).json({ error: `Invalid signature format: ${msg}` });
     return;
@@ -453,14 +454,37 @@ async function buildRealUserList(): Promise<any[]> {
 
 // No pre-seeded admins — only the owner (aaurah@protonmail.com) is shown as
 // the virtual pinned row on the frontend. Any admins added via the UI live here.
-const mockAdmins: any[] = [];
+/* ── DB-backed admin list (persisted across restarts via platformSettingsTable) */
+const ADMINS_DB_KEY = "admin_admins_list";
+async function loadAdmins(): Promise<any[]> {
+  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, ADMINS_DB_KEY));
+  if (!rows.length) return [];
+  try { return JSON.parse(rows[0].value); } catch { return []; }
+}
+async function saveAdmins(admins: any[]): Promise<void> {
+  await db.insert(platformSettingsTable)
+    .values({ key: ADMINS_DB_KEY, value: JSON.stringify(admins) })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(admins), updatedAt: new Date() } });
+}
 
-const mockApiKeys = [
+/* ── DB-backed API keys (persisted across restarts via platformSettingsTable) */
+const API_KEYS_DB_KEY = "admin_api_keys_list";
+const API_KEYS_SEED = [
   { id: "key_001", name: "Public Market Feed", key: "orah_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
   { id: "key_002", name: "Trading Bot Integration", key: "orah_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
   { id: "key_003", name: "Analytics Dashboard", key: "orah_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
   { id: "key_004", name: "Legacy Integration", key: "orah_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
 ];
+async function loadApiKeys(): Promise<any[]> {
+  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, API_KEYS_DB_KEY));
+  if (!rows.length) return [...API_KEYS_SEED];
+  try { return JSON.parse(rows[0].value); } catch { return [...API_KEYS_SEED]; }
+}
+async function saveApiKeys(keys: any[]): Promise<void> {
+  await db.insert(platformSettingsTable)
+    .values({ key: API_KEYS_DB_KEY, value: JSON.stringify(keys) })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(keys), updatedAt: new Date() } });
+}
 
 /* contracts stored in DB under key "admin_contracts" */
 const CONTRACTS_DB_KEY = "admin_contracts";
@@ -875,55 +899,77 @@ router.patch("/users/:id", async (req, res) => {
   res.json({ success: true, user: updatedUser });
 });
 
-/* ─── ADMINS ─── */
-router.get("/admins", (_req, res) => res.json(mockAdmins));
-
-router.post("/admins", (req, res) => {
-  const { name, email, role, permissions } = req.body;
-  const newAdmin = {
-    id: `adm_${(mockAdmins.length + 1).toString().padStart(4, "0")}`,
-    name, email, role,
-    permissions: permissions || [],
-    lastLogin: null,
-    status: "active",
-    twoFa: false,
-  };
-  mockAdmins.push(newAdmin as any);
-  res.status(201).json(newAdmin);
+/* ─── ADMINS (DB-backed) ─── */
+router.get("/admins", async (_req, res) => {
+  try { res.json(await loadAdmins()); }
+  catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
-router.delete("/admins/:id", (req, res) => {
-  const idx = mockAdmins.findIndex(a => a.id === req.params.id);
-  if (idx === -1) { res.status(404).json({ error: "Admin not found" }); return; }
-  mockAdmins.splice(idx, 1);
-  res.json({ success: true });
+router.post("/admins", async (req, res) => {
+  try {
+    const { name, email, role, permissions } = req.body;
+    const admins = await loadAdmins();
+    const newAdmin = {
+      id: `adm_${(admins.length + 1).toString().padStart(4, "0")}`,
+      name, email, role,
+      permissions: permissions || [],
+      lastLogin: null,
+      status: "active",
+      twoFa: false,
+    };
+    admins.push(newAdmin);
+    await saveAdmins(admins);
+    res.status(201).json(newAdmin);
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
-router.patch("/admins/:id", (req, res) => {
-  const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-  const { name, email, role, permissions, status } = req.body;
-  if (name !== undefined) admin.name = name;
-  if (email !== undefined) admin.email = email;
-  if (role !== undefined) admin.role = role;
-  if (permissions !== undefined) admin.permissions = permissions;
-  if (status !== undefined) admin.status = status;
-  res.json({ success: true, admin });
+router.delete("/admins/:id", async (req, res) => {
+  try {
+    const admins = await loadAdmins();
+    const idx = admins.findIndex(a => a.id === req.params.id);
+    if (idx === -1) { res.status(404).json({ error: "Admin not found" }); return; }
+    admins.splice(idx, 1);
+    await saveAdmins(admins);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
-router.patch("/admins/:id/password", (req, res) => {
-  const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-  // In production this would hash the password; here we just acknowledge
-  res.json({ success: true });
+router.patch("/admins/:id", async (req, res) => {
+  try {
+    const admins = await loadAdmins();
+    const admin = admins.find(a => a.id === req.params.id);
+    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+    const { name, email, role, permissions, status } = req.body;
+    if (name !== undefined) admin.name = name;
+    if (email !== undefined) admin.email = email;
+    if (role !== undefined) admin.role = role;
+    if (permissions !== undefined) admin.permissions = permissions;
+    if (status !== undefined) admin.status = status;
+    await saveAdmins(admins);
+    res.json({ success: true, admin });
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
-router.patch("/admins/:id/2fa", (req, res) => {
-  const admin = mockAdmins.find(a => a.id === req.params.id);
-  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-  const { twoFa } = req.body;
-  if (typeof twoFa === "boolean") admin.twoFa = twoFa;
-  res.json({ success: true, admin });
+router.patch("/admins/:id/password", async (req, res) => {
+  try {
+    const admins = await loadAdmins();
+    const admin = admins.find(a => a.id === req.params.id);
+    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+    // Password field stored as hash in future; acknowledge for now
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+});
+
+router.patch("/admins/:id/2fa", async (req, res) => {
+  try {
+    const admins = await loadAdmins();
+    const admin = admins.find(a => a.id === req.params.id);
+    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+    const { twoFa } = req.body;
+    if (typeof twoFa === "boolean") admin.twoFa = twoFa;
+    await saveAdmins(admins);
+    res.json({ success: true, admin });
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
 /* ─── TRADE PAIRS ─── */
@@ -995,30 +1041,41 @@ router.patch("/pairs/:symbol/contracts", async (req, res) => {
   }
 });
 
-/* ─── API SETTINGS ─── */
-router.get("/api-keys", (_req, res) => res.json(mockApiKeys));
-
-router.post("/api-keys", (req, res) => {
-  const { name, type, rateLimit } = req.body;
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const rand = Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  const newKey = {
-    id: `key_${(mockApiKeys.length + 1).toString().padStart(3, "0")}`,
-    name, type, rateLimit: parseInt(rateLimit) || 100,
-    key: `orah_${type === "public" ? "pub" : "prv"}_${rand}`,
-    calls24h: 0,
-    status: "active",
-    createdAt: new Date().toISOString().split("T")[0],
-  };
-  mockApiKeys.push(newKey as any);
-  res.status(201).json(newKey);
+/* ─── API SETTINGS (DB-backed) ─── */
+router.get("/api-keys", async (_req, res) => {
+  try { res.json(await loadApiKeys()); }
+  catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
-router.delete("/api-keys/:id", (req, res) => {
-  const key = mockApiKeys.find(k => k.id === req.params.id);
-  if (!key) { res.status(404).json({ error: "Key not found" }); return; }
-  key.status = "revoked";
-  res.json({ success: true });
+router.post("/api-keys", async (req, res) => {
+  try {
+    const { name, type, rateLimit } = req.body;
+    const keys = await loadApiKeys();
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const rand = Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+    const newKey = {
+      id: `key_${(keys.length + 1).toString().padStart(3, "0")}`,
+      name, type, rateLimit: parseInt(rateLimit) || 100,
+      key: `orah_${type === "public" ? "pub" : "prv"}_${rand}`,
+      calls24h: 0,
+      status: "active",
+      createdAt: new Date().toISOString().split("T")[0],
+    };
+    keys.push(newKey);
+    await saveApiKeys(keys);
+    res.status(201).json(newKey);
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+});
+
+router.delete("/api-keys/:id", async (req, res) => {
+  try {
+    const keys = await loadApiKeys();
+    const key = keys.find(k => k.id === req.params.id);
+    if (!key) { res.status(404).json({ error: "Key not found" }); return; }
+    key.status = "revoked";
+    await saveApiKeys(keys);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err?.message }); }
 });
 
 /* ─── API CONFIGURATION (advanced settings) ─────────────────────────────── */
@@ -1803,7 +1860,7 @@ router.get("/treasury", requireAdminToken, async (_req, res) => {
       fetchedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("[treasury]", err);
+    req.log.error({ err }, "admin: treasury fetch failed");
     res.status(500).json({ error: "Failed to load treasury data" });
   }
 });
@@ -2255,7 +2312,7 @@ pool.query(`
     admin_ref   TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
   )
-`).catch(err => console.warn("mint_burn_log table init:", err.message));
+`).catch(err => logger.warn({ err: err?.message }, "admin: mint_burn_log table init failed"));
 
 /**
  * GET /admin/mint-burn-log
@@ -3005,7 +3062,7 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
 /* ─── LE SWAP INCOME ─────────────────────────────────────────────────────── */
 
 // GET /api/admin/le-income  – summary stats + recent swap list
-router.get("/admin/le-income", requireAdminToken, async (req, res) => {
+router.get("/le-income", requireAdminToken, async (req, res) => {
   try {
     // Aggregate stats
     const [statsRow] = await db.execute<{
@@ -3076,7 +3133,7 @@ router.get("/admin/le-income", requireAdminToken, async (req, res) => {
 
 // ── GET /admin/routing-profiles ───────────────────────────────────────────────
 // List all per-pair routing configs stored in the routing_profiles table.
-router.get("/admin/routing-profiles", requireAdminToken, async (_req, res) => {
+router.get("/routing-profiles", requireAdminToken, async (_req, res) => {
   try {
     const rows = await db
       .select()
@@ -3090,7 +3147,7 @@ router.get("/admin/routing-profiles", requireAdminToken, async (_req, res) => {
 
 // ── POST /admin/routing-profiles ──────────────────────────────────────────────
 // Upsert a routing profile (insert or update on pair key conflict).
-router.post("/admin/routing-profiles", requireAdminToken, async (req, res) => {
+router.post("/routing-profiles", requireAdminToken, async (req, res) => {
   const { baseSymbol, quoteSymbol, maxSlippageBps, minFillFraction,
           maxInternalSize, oracleRequired, enabled, splitEnabled, notes } = req.body ?? {};
   if (!baseSymbol || !quoteSymbol) {
@@ -3137,7 +3194,7 @@ router.post("/admin/routing-profiles", requireAdminToken, async (req, res) => {
 
 // ── PUT /admin/routing-profiles/:id ──────────────────────────────────────────
 // Partial update of a routing profile by its UUID.
-router.put("/admin/routing-profiles/:id", requireAdminToken, async (req, res) => {
+router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
   const { id } = req.params;
   const {
     maxSlippageBps, minFillFraction, maxInternalSize,

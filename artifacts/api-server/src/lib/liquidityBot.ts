@@ -255,7 +255,7 @@ async function runCycle(): Promise<void> {
         db.update(marketsTable)
           .set({ lastPrice: crossPrice.toFixed(8) })
           .where(eq(marketsTable.symbol, m.symbol))
-          .catch(() => {}),
+          .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: failed to update cross-price")),
       );
     }
     await Promise.all(crossUpdates);
