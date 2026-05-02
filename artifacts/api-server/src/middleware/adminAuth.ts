@@ -1,20 +1,75 @@
 import { randomBytes } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
+import { db } from "@workspace/db";
+import { platformSettingsTable } from "@workspace/db/schema";
+import { like, eq } from "drizzle-orm";
+
+const TOKEN_PREFIX = "admin_session:";
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const adminTokens = new Set<string>();
 
-export function generateAdminToken(): string {
+export async function hydrateAdminTokens(): Promise<void> {
+  try {
+    const rows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(like(platformSettingsTable.key, `${TOKEN_PREFIX}%`));
+    const now = Date.now();
+    let expired = 0;
+    for (const row of rows) {
+      try {
+        const { token, expiresAt } = JSON.parse(row.value) as { token: string; expiresAt: number };
+        if (expiresAt && now > expiresAt) {
+          await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
+          expired++;
+        } else {
+          adminTokens.add(token);
+        }
+      } catch { /* malformed row — skip */ }
+    }
+    console.log(`[adminAuth] Hydrated ${adminTokens.size} admin session(s) from DB (${expired} expired pruned)`);
+  } catch (err: any) {
+    console.warn("[adminAuth] Could not hydrate tokens from DB:", err?.message);
+  }
+}
+
+export async function generateAdminToken(): Promise<string> {
   const token = randomBytes(32).toString("hex");
   adminTokens.add(token);
+  const key = `${TOKEN_PREFIX}${token}`;
+  const value = JSON.stringify({ token, createdAt: Date.now(), expiresAt: Date.now() + TOKEN_TTL_MS });
+  try {
+    await db
+      .insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  } catch (err: any) {
+    console.warn("[adminAuth] Could not persist token to DB:", err?.message);
+  }
   return token;
 }
 
-export function revokeAdminToken(token: string): void {
+export async function revokeAdminToken(token: string): Promise<void> {
   adminTokens.delete(token);
+  try {
+    await db
+      .delete(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`));
+  } catch { /* best-effort */ }
 }
 
-export function revokeAllAdminTokens(): void {
+export async function revokeAllAdminTokens(): Promise<void> {
   adminTokens.clear();
+  try {
+    const rows = await db
+      .select()
+      .from(platformSettingsTable)
+      .where(like(platformSettingsTable.key, `${TOKEN_PREFIX}%`));
+    for (const row of rows) {
+      await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
+    }
+  } catch { /* best-effort */ }
 }
 
 export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {

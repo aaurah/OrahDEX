@@ -15,6 +15,7 @@ import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache } from "./routes/letsexchange.js";
+import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 
 const app: Express = express();
 
@@ -53,8 +54,8 @@ app.use(
 );
 app.use(cors({
   origin: "*",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
 }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
@@ -196,6 +197,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 /* ── Background services — each wrapped so one failure can't crash others ──── */
+hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
 warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }

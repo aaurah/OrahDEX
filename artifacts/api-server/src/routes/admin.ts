@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
+// Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
@@ -187,7 +188,7 @@ async function verifyTOTPServer(code: string, secret: string): Promise<boolean> 
  * Validates email + password against ADMIN_EMAIL / ADMIN_PASSWORD env secrets.
  * Credentials are NEVER stored in source code.
  */
-router.post("/auth", (req, res) => {
+router.post("/auth", async (req, res) => {
   if (!checkAuthRateLimit(req, res)) return;
 
   const { email, password } = req.body as { email?: string; password?: string };
@@ -207,7 +208,7 @@ router.post("/auth", (req, res) => {
     res.status(401).json({ error: "Invalid email or password." });
     return;
   }
-  const token = generateAdminToken();
+  const token = await generateAdminToken();
   res.json({ success: true, token });
 });
 
@@ -230,7 +231,7 @@ router.post("/auth/totp", async (req, res) => {
   }
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
-    const token = generateAdminToken();
+    const token = await generateAdminToken();
     res.json({ success: true, token });
   } else {
     recordAuthFailure(req);
@@ -314,15 +315,15 @@ router.post("/auth/wallet", async (req, res) => {
     return;
   }
   pendingNonces.delete(address.toLowerCase());
-  const token = generateAdminToken();
+  const token = await generateAdminToken();
   res.json({ success: true, address, token });
 });
 
 /**
  * POST /admin/auth/logout — revoke all admin tokens (server-side sign-out).
  */
-router.post("/auth/logout", (req, res) => {
-  revokeAllAdminTokens();
+router.post("/auth/logout", async (req, res) => {
+  await revokeAllAdminTokens();
   res.json({ success: true });
 });
 
