@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "@workspace/db";
 import { getUncachableStripeClient, getStripePublishableKey } from "../stripeClient.js";
 import { logger } from "../lib/logger.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router = Router();
 
@@ -213,6 +214,143 @@ router.get("/stripe/orders", async (req, res) => {
     res.json(result.rows);
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to fetch orders" });
+  }
+});
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ADMIN endpoints (require admin token)
+   List, refund, cancel and delete Stripe crypto orders.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* GET /api/admin/stripe-orders?status=&q=&limit= */
+router.get("/admin/stripe-orders", requireAdminToken, async (req, res) => {
+  try {
+    const status = String(req.query.status ?? "").trim().toLowerCase();
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? "100"), 10) || 100));
+
+    const where: string[] = [];
+    const params: any[] = [];
+    if (status && status !== "all") { params.push(status); where.push(`LOWER(status) = $${params.length}`); }
+    if (q) {
+      params.push(`%${q}%`);
+      const i = params.length;
+      where.push(`(LOWER(id) LIKE $${i} OR LOWER(stripe_payment_intent_id) LIKE $${i} OR LOWER(wallet_address) LIKE $${i} OR LOWER(user_wallet) LIKE $${i} OR LOWER(coin_symbol) LIKE $${i})`);
+    }
+    params.push(limit);
+    const sql = `
+      SELECT id, stripe_payment_intent_id, wallet_address, user_wallet, coin_symbol,
+             fiat_amount_cents, fiat_currency, crypto_amount, exchange_rate, fee_usd,
+             status, payment_method, error_message, created_at, updated_at
+        FROM crypto_orders
+        ${where.length ? "WHERE " + where.join(" AND ") : ""}
+        ORDER BY created_at DESC
+        LIMIT $${params.length}
+    `;
+    const result = await pool.query(sql, params);
+
+    const stats = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'pending')   AS pending,
+        COUNT(*) FILTER (WHERE status = 'paid')      AS paid,
+        COUNT(*) FILTER (WHERE status = 'failed')    AS failed,
+        COUNT(*) FILTER (WHERE status = 'refunded')  AS refunded,
+        COUNT(*) FILTER (WHERE status = 'canceled')  AS canceled,
+        COUNT(*) AS total,
+        COALESCE(SUM(fiat_amount_cents) FILTER (WHERE status = 'paid'), 0) AS paid_cents
+      FROM crypto_orders
+    `);
+
+    res.json({ orders: result.rows, stats: stats.rows[0] ?? {} });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "admin: list stripe orders failed");
+    res.status(500).json({ error: err?.message ?? "Failed to list orders" });
+  }
+});
+
+/* POST /api/admin/stripe-orders/:id/refund — refund the underlying PaymentIntent */
+router.post("/admin/stripe-orders/:id/refund", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, stripe_payment_intent_id, status FROM crypto_orders WHERE id = $1`,
+      [req.params.id]
+    );
+    const order = rows[0];
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (!order.stripe_payment_intent_id) { res.status(400).json({ error: "Order has no Stripe payment intent" }); return; }
+
+    const stripe = await getUncachableStripeClient();
+    const refund = await stripe.refunds.create({ payment_intent: order.stripe_payment_intent_id });
+    await pool.query(
+      `UPDATE crypto_orders SET status = 'refunded', updated_at = NOW() WHERE id = $1`,
+      [order.id]
+    );
+    logger.info({ orderId: order.id, refundId: refund.id }, "admin: stripe order refunded");
+    res.json({ ok: true, refundId: refund.id });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "admin: refund stripe order failed");
+    res.status(500).json({ error: err?.message ?? "Refund failed" });
+  }
+});
+
+/* POST /api/admin/stripe-orders/:id/cancel — cancel a pending PaymentIntent */
+router.post("/admin/stripe-orders/:id/cancel", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, stripe_payment_intent_id, status FROM crypto_orders WHERE id = $1`,
+      [req.params.id]
+    );
+    const order = rows[0];
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    if (order.stripe_payment_intent_id) {
+      try {
+        const stripe = await getUncachableStripeClient();
+        await stripe.paymentIntents.cancel(order.stripe_payment_intent_id);
+      } catch (e: any) {
+        // If Stripe says it can't be canceled (already paid/etc), surface but still mark canceled locally
+        logger.warn({ err: e?.message, orderId: order.id }, "stripe cancel returned error");
+      }
+    }
+    await pool.query(
+      `UPDATE crypto_orders SET status = 'canceled', updated_at = NOW() WHERE id = $1`,
+      [order.id]
+    );
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Cancel failed" });
+  }
+});
+
+/* DELETE /api/admin/stripe-orders/:id — delete the local DB row (does NOT touch Stripe) */
+router.delete("/admin/stripe-orders/:id", requireAdminToken, async (req, res) => {
+  try {
+    const r = await pool.query(`DELETE FROM crypto_orders WHERE id = $1`, [req.params.id]);
+    res.json({ ok: true, deleted: r.rowCount ?? 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Delete failed" });
+  }
+});
+
+/* POST /api/admin/stripe-orders/bulk-delete — body: { status?: string, olderThanDays?: number } */
+router.post("/admin/stripe-orders/bulk-delete", requireAdminToken, async (req, res) => {
+  try {
+    const { status, olderThanDays } = req.body ?? {};
+    const where: string[] = [];
+    const params: any[] = [];
+    if (typeof status === "string" && status.trim() && status !== "all") {
+      params.push(status.trim().toLowerCase());
+      where.push(`LOWER(status) = $${params.length}`);
+    }
+    if (typeof olderThanDays === "number" && olderThanDays > 0) {
+      params.push(olderThanDays);
+      where.push(`created_at < NOW() - ($${params.length} || ' days')::interval`);
+    }
+    if (!where.length) { res.status(400).json({ error: "Refusing to wipe all orders without a filter (status or olderThanDays required)" }); return; }
+    const r = await pool.query(`DELETE FROM crypto_orders WHERE ${where.join(" AND ")}`, params);
+    res.json({ ok: true, deleted: r.rowCount ?? 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Bulk delete failed" });
   }
 });
 
