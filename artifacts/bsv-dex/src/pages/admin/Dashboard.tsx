@@ -67,13 +67,15 @@ export function AdminDashboard() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["admin-stats"],
     queryFn: fetchStats,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
+    staleTime:       25_000,
   });
 
   const { data: activityRaw, isLoading: actLoading, dataUpdatedAt } = useQuery({
     queryKey: ["admin-activity"],
     queryFn: fetchActivity,
-    refetchInterval: 8_000,
+    refetchInterval: 20_000,
+    staleTime:       15_000,
   });
 
   const { data: apiKeysRaw } = useQuery({
@@ -85,7 +87,8 @@ export function AdminDashboard() {
   const { data: chatChannels } = useQuery({
     queryKey: ["admin-chat-channels"],
     queryFn: fetchChatChannels,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
+    staleTime:       25_000,
   });
 
   const activity: typeof FALLBACK_ACTIVITY = Array.isArray(activityRaw) && activityRaw.length > 0

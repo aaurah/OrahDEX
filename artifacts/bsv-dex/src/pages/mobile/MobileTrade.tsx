@@ -339,9 +339,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: myOrdersData } = useQuery({
     queryKey: ["orders", address],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`, { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
     enabled: !!address,
-    refetchInterval: 2000,
+    refetchInterval: 5_000,
+    staleTime:       4_000,
   });
 
   // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
@@ -353,9 +354,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: altOrdersData } = useQuery({
     queryKey: ["orders", altAddress],
-    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`, { cache: "no-store" }).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
     enabled: !!altAddress,
-    refetchInterval: 2000,
+    refetchInterval: 5_000,
+    staleTime:       4_000,
   });
 
   const withOwnerWallet = (rows: any, fallbackWallet: string | null | undefined) => (

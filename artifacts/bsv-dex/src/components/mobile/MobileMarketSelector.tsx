@@ -363,8 +363,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    staleTime: 10_000,
-    refetchInterval: 15_000,
+    staleTime: 25_000,
+    refetchInterval: 30_000,
   });
 
   // AOS pairs from LetsExchange — available to trade via Swap tab

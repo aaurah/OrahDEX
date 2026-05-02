@@ -43,7 +43,47 @@ export default defineConfig({
     /* Let Rolldown do automatic code splitting — manualChunks was causing
        the entry chunk to statically import 4 MB of JS (modals + pages chunks),
        blocking the app from mounting on mobile. */
-    rollupOptions: {},
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Core React runtime — always tiny, loads first
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/scheduler/")) {
+            return "vendor-react";
+          }
+          // Routing + query
+          if (id.includes("node_modules/@tanstack/") || id.includes("node_modules/wouter/")) {
+            return "vendor-query";
+          }
+          // Chart library — heavy, only needed on trading pages
+          if (id.includes("node_modules/lightweight-charts") || id.includes("node_modules/fancy-canvas")) {
+            return "vendor-charts";
+          }
+          // Crypto / wallet libs — heavy, only needed on wallet pages
+          if (
+            id.includes("node_modules/@noble/") ||
+            id.includes("node_modules/@scure/") ||
+            id.includes("node_modules/bigi") ||
+            id.includes("node_modules/bs58") ||
+            id.includes("node_modules/ecpair") ||
+            id.includes("node_modules/tiny-secp256k1")
+          ) {
+            return "vendor-crypto";
+          }
+          // UI component library
+          if (id.includes("node_modules/@radix-ui/") || id.includes("node_modules/lucide-react")) {
+            return "vendor-ui";
+          }
+          // Reown / WalletConnect — only needed when wallet modal opens
+          if (id.includes("node_modules/@reown/") || id.includes("node_modules/@walletconnect/") || id.includes("node_modules/viem/") || id.includes("node_modules/wagmi/")) {
+            return "vendor-walletconnect";
+          }
+          // Everything else in node_modules stays in a shared vendor chunk
+          if (id.includes("node_modules/")) {
+            return "vendor-misc";
+          }
+        },
+      },
+    },
   },
   server: {
     port,

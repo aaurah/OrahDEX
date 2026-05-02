@@ -164,7 +164,8 @@ export default function MobileGenesis() {
   const { data: detail } = useQuery<MarketDetail>({
     queryKey:["genesis-market",symbol],
     queryFn:async()=>{ const r=await fetch(`${BASE}/api/genesis/market/${symbol}`); if(!r.ok) throw new Error("failed"); return r.json(); },
-    refetchInterval:10_000,
+    refetchInterval:20_000,
+    staleTime:      15_000,
     enabled:!!symbol,
   });
 
