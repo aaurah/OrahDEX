@@ -2,7 +2,8 @@ import { useParams, Link } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets, useCancelOrder } from "@workspace/api-client-react";
+import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useGetMarkets, useCancelOrder, getGetOrdersQueryKey } from "@workspace/api-client-react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
@@ -288,9 +289,46 @@ export function SpotTrading() {
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
     : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
 
-  const cancelOrder = useCancelOrder({
-    mutation: {
-      onSuccess: () => { refetchOrders(); refetchAltOrders(); },
+  const queryClient = useQueryClient();
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+
+  // Optimistic cancel: immediately mark order as cancelled in cache so the user
+  // sees the change on the first click; refetch afterward to reconcile.
+  const cancelOrder = useMutation({
+    mutationFn: async ({ orderId, walletAddress: ownerWallet }: { orderId: string; walletAddress: string }) => {
+      const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const res = await fetch(`${baseUrl}/api/orders/${orderId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: ownerWallet }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Failed to cancel order");
+      return res.json();
+    },
+    onMutate: async ({ orderId }) => {
+      setCancellingIds(prev => { const n = new Set(prev); n.add(orderId); return n; });
+      const keys = [
+        getGetOrdersQueryKey({ walletAddress: address || "" }),
+        ...(altAddress ? [getGetOrdersQueryKey({ walletAddress: altAddress })] : []),
+      ];
+      await Promise.all(keys.map(k => queryClient.cancelQueries({ queryKey: k })));
+      const snapshots = keys.map(k => [k, queryClient.getQueryData(k)] as const);
+      keys.forEach(k => {
+        queryClient.setQueryData(k, (old: any) =>
+          Array.isArray(old)
+            ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled" } : o)
+            : old
+        );
+      });
+      return { snapshots };
+    },
+    onError: (_err, _vars, ctx: any) => {
+      ctx?.snapshots?.forEach(([k, v]: any) => queryClient.setQueryData(k, v));
+    },
+    onSettled: (_d, _e, vars) => {
+      setCancellingIds(prev => { const n = new Set(prev); n.delete(vars.orderId); return n; });
+      refetchOrders();
+      refetchAltOrders();
     },
   });
 
@@ -661,11 +699,15 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right">{unfilled.toFixed(4)}</td>
                             <td className="px-3 py-1.5 text-right">
                               <button
-                                onClick={() => cancelOrder.mutate({ orderId: String(o.id), data: { walletAddress: String(o.walletAddress || address || "") } })}
-                                disabled={cancelOrder.isPending}
+                                onClick={() => {
+                                  const id = String(o.id);
+                                  if (cancellingIds.has(id)) return;
+                                  cancelOrder.mutate({ orderId: id, walletAddress: String(o.walletAddress || address || "") });
+                                }}
+                                disabled={cancellingIds.has(String(o.id))}
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
                               >
-                                {cancelOrder.isPending ? "…" : "Cancel"}
+                                {cancellingIds.has(String(o.id)) ? "…" : "Cancel"}
                               </button>
                             </td>
                           </tr>
