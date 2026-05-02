@@ -18,7 +18,10 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
     );
   }
 
-  const isProduction = process.env.REPLIT_DEPLOYMENT === "1";
+  // STRIPE_ENV overrides auto-detection so live mode can be forced in dev
+  const isProduction =
+    process.env.STRIPE_ENV === "production" ||
+    process.env.REPLIT_DEPLOYMENT === "1";
   const targetEnvironment = isProduction ? "production" : "development";
 
   const url = new URL(`https://${hostname}/api/v2/connection`);
