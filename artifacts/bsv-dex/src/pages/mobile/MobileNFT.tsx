@@ -442,6 +442,9 @@ function CreatorProfileSheet({
   const [showTrade, setShowTrade] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [imgErr, setImgErr] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState<"cover" | "avatar" | null>(null);
+  const coverFileRef = useRef<HTMLInputElement>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
@@ -490,6 +493,38 @@ function CreatorProfileSheet({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
     }).catch(() => setIsFollowing(prev));
+  }
+
+  function handleQuickFile(field: "cover_url" | "avatar_url") {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const dataUrl = ev.target?.result as string;
+        quickSavePhoto(field, dataUrl);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = "";
+    };
+  }
+
+  async function quickSavePhoto(field: "cover_url" | "avatar_url", dataUrl: string) {
+    setPhotoUploading(field === "cover_url" ? "cover" : "avatar");
+    try {
+      await fetch(`${API}/social/creators/${creatorAddress}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: dataUrl }),
+      });
+      if (data) {
+        const updated = { ...data, profile: { ...data.profile, [field]: dataUrl } };
+        _profileDataCache[creatorAddress] = updated;
+        setData(updated);
+      }
+      if (field === "cover_url") setImgErr(false);
+    } catch {}
+    finally { setPhotoUploading(null); }
   }
 
   async function openFollowList(type: "followers" | "following") {
@@ -580,13 +615,50 @@ function CreatorProfileSheet({
           {!imgErr && profile.cover_url && (
             <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.7 }} onError={() => setImgErr(true)} />
           )}
+          {isSelf && (
+            <>
+              <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("cover_url")} />
+              <button
+                onClick={() => coverFileRef.current?.click()}
+                className="absolute inset-0 w-full h-full flex items-center justify-center"
+                style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
+              >
+                {photoUploading === "cover" ? (
+                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center"
+                    style={{ background: "rgba(0,0,0,0.42)", backdropFilter: "blur(4px)" }}>
+                    <Camera size={16} style={{ color: "#fff" }} />
+                  </div>
+                )}
+              </button>
+            </>
+          )}
         </div>
 
         <div className="px-4 pt-3 pb-4">
 
           {/* ── Avatar + Stats row (Instagram-style) ── */}
           <div className="flex items-center gap-4 mb-3">
-            <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+            {isSelf ? (
+              <div className="relative shrink-0" style={{ width: 80, height: 80 }}>
+                <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("avatar_url")} />
+                <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+                <button
+                  onClick={() => avatarFileRef.current?.click()}
+                  className="absolute inset-0 rounded-full flex items-center justify-center"
+                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.30)" }}
+                >
+                  {photoUploading === "avatar" ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Camera size={16} style={{ color: "#fff" }} />
+                  )}
+                </button>
+              </div>
+            ) : (
+              <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+            )}
             <div className="flex-1 grid grid-cols-3 text-center">
               <button className="active:opacity-60" onClick={() => setGridTab("posts")}>
                 <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.post_count, posts.length))}</div>
