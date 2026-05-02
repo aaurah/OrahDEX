@@ -546,7 +546,6 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [entered, setEntered] = useState(false);
   const { theme, setTheme } = useThemeStore();
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
@@ -559,11 +558,6 @@ export function LandingPage() {
   };
 
   const ThemeIcon = LAND_THEME_ICONS[safeTheme];
-
-  useEffect(() => {
-    const t = setTimeout(() => setEntered(true), 80);
-    return () => clearTimeout(t);
-  }, []);
 
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
@@ -644,14 +638,12 @@ export function LandingPage() {
         {/* Hero content */}
         <div className="relative z-10 flex flex-col items-center text-center max-w-4xl mx-auto gap-8">
           {/* Sigil */}
-          <div className={`transition-all duration-1000 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "100ms" }}>
+          <div>
             <SovereignSigil size={140} />
           </div>
 
           {/* Identity badge */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "200ms" }}>
+          <div>
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] border"
               style={{ borderColor: "#F5A623cc", color: "#F5A623", background: "rgba(245,166,35,0.08)" }}>
               <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#F5A623" }} />
@@ -660,8 +652,7 @@ export function LandingPage() {
           </div>
 
           {/* Headline */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "300ms" }}>
+          <div>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight">
               <span className="text-foreground">Trade means</span>
               <br />
@@ -673,8 +664,7 @@ export function LandingPage() {
           </div>
 
           {/* Ritual taglines */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "400ms" }}>
+          <div>
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-0 text-sm font-semibold">
               {["Identity is the engine.", "Execution is a ritual.", "Every trade is a declaration."].map((s, i) => (
                 <span key={i} className="flex items-center text-muted-foreground">
@@ -686,8 +676,7 @@ export function LandingPage() {
           </div>
 
           {/* CTAs */}
-          <div className={`flex flex-col sm:flex-row items-center gap-4 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "500ms" }}>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
             <Link
               href="/trade/BSV-USDT"
               className="group flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-base text-black transition-all hover:scale-[1.03] hover:shadow-2xl w-full sm:w-auto justify-center"
@@ -705,8 +694,7 @@ export function LandingPage() {
           </div>
 
           {/* Live stats bar */}
-          <div className={`grid grid-cols-2 sm:flex sm:flex-wrap justify-center gap-3 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "600ms" }}>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap justify-center gap-3">
             <StatPill label="Markets" value={marketCount.toLocaleString()} />
             <StatPill label="Chains" value="20+" color="text-amber-400" />
             <StatPill label="Settlement" value="BSV" color="text-blue-400" />
