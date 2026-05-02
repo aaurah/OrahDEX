@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity, Cpu, Database, Clock, Server, Zap,
@@ -8,7 +9,7 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchHealth() {
-  return fetch(`${BASE}/api/admin/health`).then(r => r.json());
+  return adminFetch(`/api/admin/health`).then(r => r.json());
 }
 
 function fmtUptime(s: number) {

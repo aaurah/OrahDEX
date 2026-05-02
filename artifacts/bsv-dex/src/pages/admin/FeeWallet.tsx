@@ -42,14 +42,14 @@ const DEFAULTS: FeeConfig = {
 };
 
 function fetchFeeWallet(): Promise<FeeConfig> {
-  return fetch(`${BASE}/api/admin/fee-wallet`).then(r => r.json()).then(d => ({
+  return adminFetch(`/api/admin/fee-wallet`).then(r => r.json()).then(d => ({
     ...DEFAULTS,
     ...d,
   })).catch(() => DEFAULTS);
 }
 
 function saveFeeWallet(cfg: FeeConfig): Promise<FeeConfig> {
-  return fetch(`${BASE}/api/admin/fee-wallet`, {
+  return adminFetch(`/api/admin/fee-wallet`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(cfg),

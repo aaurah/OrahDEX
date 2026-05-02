@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,17 +10,17 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchConfig() {
-  return fetch(`${BASE}/api/admin/liquidity/config`).then(r => r.json());
+  return adminFetch(`/api/admin/liquidity/config`).then(r => r.json());
 }
 function saveConfig(body: any) {
-  return fetch(`${BASE}/api/admin/liquidity/config`, {
+  return adminFetch(`/api/admin/liquidity/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then(r => r.json());
 }
 function resetConfig() {
-  return fetch(`${BASE}/api/admin/liquidity/reset`, { method: "POST" }).then(r => r.json());
+  return adminFetch(`/api/admin/liquidity/reset`, { method: "POST" }).then(r => r.json());
 }
 
 function Field({

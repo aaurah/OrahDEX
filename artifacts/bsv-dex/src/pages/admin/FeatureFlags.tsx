@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save, RefreshCw, Zap, AlertTriangle } from "lucide-react";
@@ -8,7 +9,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const FEATURE_PREFIX = "feature_";
 
 const fetchSiteSettings = (): Promise<Record<string, string>> =>
-  fetch(`${BASE}/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
+  adminFetch(`/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
 
 interface Flag { id: string; label: string; description: string; enabled?: boolean; beta?: boolean; danger?: boolean; }
 interface Group { title: string; icon: string; flags: Flag[]; }
@@ -178,7 +179,7 @@ export function AdminFeatureFlags() {
 
   const mutation = useMutation({
     mutationFn: async (payload: Record<string, string>) => {
-      const res = await fetch(`${BASE}/api/admin/site-settings`, {
+      const res = await adminFetch(`/api/admin/site-settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

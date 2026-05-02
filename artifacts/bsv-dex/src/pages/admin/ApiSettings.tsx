@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,8 +11,8 @@ import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const fetchConfig  = () => fetch(`${BASE}/api/admin/api-config`).then(r => r.json());
-const fetchKeys    = () => fetch(`${BASE}/api/admin/api-keys`).then(r => r.json());
+const fetchConfig  = () => adminFetch(`/api/admin/api-config`).then(r => r.json());
+const fetchKeys    = () => adminFetch(`/api/admin/api-keys`).then(r => r.json());
 
 /* ── helpers ── */
 function num(v: string | undefined, fallback = 0) {
@@ -186,7 +187,7 @@ export function AdminApiSettings() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const saveConfig = useMutation({
-    mutationFn: () => fetch(`${BASE}/api/admin/api-config`, {
+    mutationFn: () => adminFetch(`/api/admin/api-config`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg),
     }).then(r => r.json()),
     onSuccess: () => {
@@ -197,19 +198,19 @@ export function AdminApiSettings() {
   });
 
   const resetConfig = useMutation({
-    mutationFn: () => fetch(`${BASE}/api/admin/api-config/reset`, { method: "POST" }).then(r => r.json()),
+    mutationFn: () => adminFetch(`/api/admin/api-config/reset`, { method: "POST" }).then(r => r.json()),
     onSuccess: (data) => { if (data.config) { setCfg(data.config); setDirty(false); } qc.invalidateQueries({ queryKey: ["admin-api-config"] }); },
   });
 
   const addKey = useMutation({
     mutationFn: (data: any) =>
-      fetch(`${BASE}/api/admin/api-keys`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
+      adminFetch(`/api/admin/api-keys`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-api-keys"] }); setShowAdd(false); setForm({ name: "", type: "private", rateLimit: "500" }); },
   });
 
   const revokeKey = useMutation({
     mutationFn: (id: string) =>
-      fetch(`${BASE}/api/admin/api-keys/${id}`, { method: "DELETE" }).then(r => r.json()),
+      adminFetch(`/api/admin/api-keys/${id}`, { method: "DELETE" }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-api-keys"] }),
   });
 

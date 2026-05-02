@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -15,10 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const fetchIntegrations = () =>
-  fetch(`${BASE}/api/admin/integrations`).then(r => r.json()).catch(() => ({}));
+  adminFetch(`/api/admin/integrations`).then(r => r.json()).catch(() => ({}));
 
 const fetchSiteSettings = () =>
-  fetch(`${BASE}/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
+  adminFetch(`/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
 
 function useApiField(
   key: string,
@@ -299,7 +300,7 @@ function StepCard({
     for (const k of keys) {
       if (draft[k] !== undefined) current[k] = draft[k];
     }
-    const res = await fetch(`${BASE}/api/admin/integrations`, {
+    const res = await adminFetch(`/api/admin/integrations`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(current),
@@ -312,7 +313,7 @@ function StepCard({
     for (const k of keys) {
       if (draft[k] !== undefined) updates[k] = draft[k];
     }
-    const res = await fetch(`${BASE}/api/admin/site-settings`, {
+    const res = await adminFetch(`/api/admin/site-settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
@@ -649,7 +650,7 @@ export function AdminSetupGuide() {
   const handleAutoFill = async () => {
     setAutoFilling(true);
     try {
-      const res = await fetch(`${BASE}/api/admin/auto-setup`, { method: "POST" });
+      const res = await adminFetch(`/api/admin/auto-setup`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Auto-setup failed");
       refresh();

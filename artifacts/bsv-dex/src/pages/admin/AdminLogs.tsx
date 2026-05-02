@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,7 +16,7 @@ function fetchLogs(level?: string) {
   return fetch(url).then(r => r.json());
 }
 function clearLogs() {
-  return fetch(`${BASE}/api/admin/logs`, { method: "DELETE" }).then(r => r.json());
+  return adminFetch(`/api/admin/logs`, { method: "DELETE" }).then(r => r.json());
 }
 
 type Level = "all" | "info" | "warn" | "error";
