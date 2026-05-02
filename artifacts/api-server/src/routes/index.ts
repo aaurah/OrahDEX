@@ -21,6 +21,7 @@ import supportRouter from "./support.js";
 import virtualAmmRouter from "./virtualAmm.js";
 import liquidityRouter from "./liquidity.js";
 import swapRouter from "./swap.js";
+import buyRouter from "./buy.js";
 import keeperRouter from "./keeper.js";
 import p2pIntentsRouter from "./p2pIntents.js";
 import chatRouter from "./chat.js";
@@ -74,6 +75,7 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
+router.use(buyRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([
   "POST:/auth",
