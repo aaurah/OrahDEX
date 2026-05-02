@@ -234,16 +234,20 @@ export function AdminContractBuilder() {
                       )}>{c.status}</span>
                       <span className="text-[10px] bg-blue-400/10 text-blue-400 px-1.5 py-0.5 rounded font-bold">{c.network}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs font-mono text-muted-foreground truncate">{c.address}</code>
-                      <button onClick={() => copyText(c.address, c.id)} className="text-muted-foreground hover:text-primary shrink-0">
-                        {copied === c.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
+                    {c.address ? (
+                      <div className="flex items-center gap-2">
+                        <code className="text-xs font-mono text-muted-foreground truncate">{c.address}</code>
+                        <button onClick={() => copyText(c.address, c.id)} className="text-muted-foreground hover:text-primary shrink-0">
+                          {copied === c.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No on-chain address yet</p>
+                    )}
                     <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
                       <span>Supply: {parseInt(c.supply).toLocaleString()}</span>
                       <span>Decimals: {c.decimals}</span>
-                      <span>Deployed: {c.deployedAt}</span>
+                      <span>Created: {c.deployedAt}</span>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -251,9 +255,11 @@ export function AdminContractBuilder() {
                       ? <CheckCircle2 className="w-5 h-5 text-green-400" />
                       : <Clock className="w-5 h-5 text-orange-400 animate-pulse" />
                     }
-                    <button className="p-1.5 text-muted-foreground hover:text-primary rounded-lg hover:bg-primary/5 transition-colors">
-                      <ExternalLink className="w-4 h-4" />
-                    </button>
+                    {c.address && (
+                      <button className="p-1.5 text-muted-foreground hover:text-primary rounded-lg hover:bg-primary/5 transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

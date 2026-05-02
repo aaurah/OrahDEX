@@ -462,10 +462,17 @@ const mockApiKeys = [
   { id: "key_004", name: "Legacy Integration", key: "orah_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
 ];
 
-const deployedContracts: any[] = [
-  { id: "ctr_001", name: "Orah Token", symbol: "ORAH", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1ORAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "c3d4e5f6a1b2...", deployedAt: "2026-01-10" },
-  { id: "ctr_002", name: "Orah Governance", symbol: "OGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1OGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "d4e5f6a1b2c3...", deployedAt: "2026-01-20" },
-];
+/* contracts stored in DB under key "admin_contracts" */
+const CONTRACTS_DB_KEY = "admin_contracts";
+async function loadContracts(): Promise<any[]> {
+  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, CONTRACTS_DB_KEY));
+  if (!rows.length) return [];
+  try { return JSON.parse(rows[0].value); } catch { return []; }
+}
+async function saveContracts(contracts: any[]): Promise<void> {
+  await db.insert(platformSettingsTable).values({ key: CONTRACTS_DB_KEY, value: JSON.stringify(contracts) })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(contracts) } });
+}
 
 /* ─── STATS ─── */
 router.get("/stats", async (_req, res) => {
@@ -527,7 +534,7 @@ router.get("/stats", async (_req, res) => {
     activePairs: allMarkets.filter(m => m.status === "active").length,
     totalPairs: allMarkets.length,
     openOrders: openOrdersRow?.cnt ?? 0,
-    deployedContracts: deployedContracts.length,
+    deployedContracts: (await loadContracts()).length,
     revenue24h: Math.max(revenue24h, 12450.88), // floor at seed revenue
     tvl: 845000000,
     feeRate: 0.1,
@@ -1117,24 +1124,37 @@ router.post("/api-config/reset", async (_req, res) => {
 });
 
 /* ─── CONTRACTS / NEW COIN ─── */
-router.get("/contracts", (_req, res) => res.json(deployedContracts));
+router.get("/contracts", async (_req, res) => {
+  try { res.json(await loadContracts()); }
+  catch (e: any) { res.status(500).json({ error: e?.message ?? "Failed to load contracts" }); }
+});
 
-router.post("/contracts/deploy", (req, res) => {
-  const { name, symbol, network, type, supply, decimals } = req.body;
-  const newContract = {
-    id: `ctr_${(deployedContracts.length + 1).toString().padStart(3, "0")}`,
-    name, symbol, network: network || "BSV",
-    type: type || "token",
-    supply: supply?.toString() || "1000000",
-    decimals: parseInt(decimals) || 8,
-    address: `1${symbol.toUpperCase()}${Array.from({length: 34}, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[Math.floor(Math.random()*36)]).join("")}`.slice(0, 34),
-    status: "deploying",
-    txid: Array.from({length: 64}, () => "0123456789abcdef"[Math.floor(Math.random()*16)]).join(""),
-    deployedAt: new Date().toISOString().split("T")[0],
-  };
-  deployedContracts.push(newContract);
-  setTimeout(() => { newContract.status = "deployed"; }, 3000);
-  res.status(201).json(newContract);
+router.post("/contracts/deploy", async (req, res) => {
+  try {
+    const { name, symbol, network, type, supply, decimals, mintable, burnable, pausable, description } = req.body;
+    if (!name || !symbol) { res.status(400).json({ error: "name and symbol are required" }); return; }
+    const contracts = await loadContracts();
+    const newContract = {
+      id: `ctr_${Date.now()}`,
+      name: name.trim(),
+      symbol: symbol.trim().toUpperCase(),
+      network: network || "BSV",
+      type: type || "token",
+      supply: supply?.toString() || "1000000",
+      decimals: parseInt(decimals) || 8,
+      mintable: !!mintable,
+      burnable: !!burnable,
+      pausable: !!pausable,
+      description: description?.trim() || "",
+      address: "",
+      txid: "",
+      status: "pending",
+      deployedAt: new Date().toISOString().split("T")[0],
+    };
+    contracts.push(newContract);
+    await saveContracts(contracts);
+    res.status(201).json(newContract);
+  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Deploy failed" }); }
 });
 
 /* ─── FEE WALLET CONFIG ─── */
