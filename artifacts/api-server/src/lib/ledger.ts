@@ -67,18 +67,15 @@ async function ensureBalance(
 // ── Get all balances for a wallet ────────────────────────────────────────────
 
 export async function getBalances(walletAddress: string): Promise<Balance[]> {
-  const { rows } = await pool.query<{ asset_symbol: string; available: string; locked: string; seeded: string }>(
+  const { rows } = await pool.query<{ asset_symbol: string; available: string; locked: string }>(
     `SELECT asset_symbol,
-            GREATEST(0, available - COALESCE(seeded, 0)) AS available,
-            locked,
-            COALESCE(seeded, 0) AS seeded
+            available,
+            locked
      FROM user_balances
      WHERE wallet_address = $1
      ORDER BY asset_symbol`,
     [walletAddress],
   );
-  // Only return assets where the user has a real (non-seeded) balance > 0,
-  // so the portfolio view is clean and shows nothing for pure-seeded wallets.
   return rows
     .map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }))
     .filter(r => parseFloat(r.available) > 0 || parseFloat(r.locked) > 0);
@@ -399,20 +396,15 @@ export async function lockForOrder(params: {
 
     await ensureBalance(client, params.walletAddress, params.asset);
 
-    const { rows } = await client.query<{ available: string; seeded: string }>(
-      `SELECT available, COALESCE(seeded, 0) AS seeded FROM user_balances
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
        WHERE wallet_address = $1 AND asset_symbol = $2
        FOR UPDATE`,
       [params.walletAddress, params.asset],
     );
 
     const row = rows[0];
-    // Real (withdrawable) balance = available − seeded. Seeded funds are
-    // platform liquidity — users cannot trade with them directly.
-    const realAvailable = row
-      ? Math.max(0, parseFloat(row.available) - parseFloat(row.seeded)).toFixed(18)
-      : "0";
-    if (!row || lt(realAvailable, params.amount)) {
+    if (!row || lt(row.available, params.amount)) {
       throw new Error(`INSUFFICIENT_FUNDS:${params.asset}`);
     }
 
