@@ -29,7 +29,7 @@ export function AdminContractBuilder() {
     description: "",
   });
 
-  const { data: contracts = [], isLoading } = useQuery({ queryKey: ["admin-contracts"], queryFn: fetchContracts });
+  const { data: contracts = [], isLoading } = useQuery({ queryKey: ["admin-contracts"], queryFn: fetchContracts, staleTime: 0 });
 
   const deploy = useMutation({
     mutationFn: (data: any) =>
