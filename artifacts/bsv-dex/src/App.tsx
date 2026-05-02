@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { Layout } from "@/components/Layout";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -16,6 +15,7 @@ import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
+const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
@@ -439,34 +439,36 @@ function Router() {
       {/* ── Desktop layout ── */}
       {!isMobile && (
         <Route>
-          <Layout>
-            <Suspense fallback={<PageSkeleton />}>
-              <Switch>
-                <Route path="/markets"        component={Markets} />
-                <Route path="/trade/:symbol"  component={SpotTrading} />
-                <Route path="/futures/:symbol" component={FuturesTrading} />
-                <Route path="/dex"            component={DexHub} />
-                <Route path="/swap"           component={SwapPage} />
-                <Route path="/liquidity"      component={Liquidity} />
-                <Route path="/genesis"        component={GenesisLiquidity} />
-                <Route path="/p2p"            component={P2P} />
-                <Route path="/bridge"         component={BridgePage} />
-                <Route path="/copy"           component={CopyTrading} />
-                <Route path="/fees"           component={RevenuePage} />
-                <Route path="/keeper"         component={KeeperProfile} />
-                <Route path="/portfolio"      component={Portfolio} />
-                <Route path="/portfolio/:coin">
-                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
-                </Route>
-                <Route path="/nft"            component={NFTPage} />
-                <Route path="/prediction"     component={PredictionTrading} />
-                <Route path="/sovereign"      component={SovereignOverviewPage} />
-                <Route path="/settings"           component={WebSettings} />
-                <Route path="/settings/api-keys" component={UserApiKeys} />
-                <Route component={NotFound} />
-              </Switch>
-            </Suspense>
-          </Layout>
+          <Suspense fallback={<PageSkeleton />}>
+            <Layout>
+              <Suspense fallback={<PageSkeleton />}>
+                <Switch>
+                  <Route path="/markets"        component={Markets} />
+                  <Route path="/trade/:symbol"  component={SpotTrading} />
+                  <Route path="/futures/:symbol" component={FuturesTrading} />
+                  <Route path="/dex"            component={DexHub} />
+                  <Route path="/swap"           component={SwapPage} />
+                  <Route path="/liquidity"      component={Liquidity} />
+                  <Route path="/genesis"        component={GenesisLiquidity} />
+                  <Route path="/p2p"            component={P2P} />
+                  <Route path="/bridge"         component={BridgePage} />
+                  <Route path="/copy"           component={CopyTrading} />
+                  <Route path="/fees"           component={RevenuePage} />
+                  <Route path="/keeper"         component={KeeperProfile} />
+                  <Route path="/portfolio"      component={Portfolio} />
+                  <Route path="/portfolio/:coin">
+                    {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
+                  </Route>
+                  <Route path="/nft"            component={NFTPage} />
+                  <Route path="/prediction"     component={PredictionTrading} />
+                  <Route path="/sovereign"      component={SovereignOverviewPage} />
+                  <Route path="/settings"           component={WebSettings} />
+                  <Route path="/settings/api-keys" component={UserApiKeys} />
+                  <Route component={NotFound} />
+                </Switch>
+              </Suspense>
+            </Layout>
+          </Suspense>
         </Route>
       )}
     </Switch>
