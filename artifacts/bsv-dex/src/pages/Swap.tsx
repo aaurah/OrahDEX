@@ -17,6 +17,7 @@ import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
   Zap, ExternalLink, AlertTriangle, CheckCircle2,
   RefreshCw, ArrowRight, Info, Wallet, X, Link2,
+  ShoppingCart, Copy, QrCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -1351,6 +1352,487 @@ function ExchangeSwapPanel({
   );
 }
 
+// ─── Buy Crypto Panel ─────────────────────────────────────────────────────────
+
+interface BuyQuote {
+  route: "native" | "letsexchange";
+  coinToSpend: string;
+  coinToBuy: string;
+  amountToSpend: string;
+  estimatedAmountOut: string | null;
+  fee?: string;
+  feePct?: number;
+  rate?: string | null;
+  minAmount?: string | null;
+  maxAmount?: string | null;
+  rate_id?: string | null;
+  networkFrom?: string;
+  networkTo?: string;
+}
+
+interface BuyResult {
+  route: "native" | "letsexchange";
+  // native
+  amountSpent?: string;
+  amountReceived?: string;
+  fee?: string;
+  // letsexchange
+  deposit?: string;
+  deposit_extra_id?: string;
+  withdrawal_amount?: string;
+  transaction_id?: string;
+  expiration_time?: string;
+}
+
+function BuyCryptoPanel({
+  address,
+  onOpenWallet,
+}: {
+  address: string | null;
+  onOpenWallet: () => void;
+}) {
+  const { toast } = useToast();
+
+  const [coinToBuy,   setCoinToBuy]   = useState("BSV");
+  const [coinToSpend, setCoinToSpend] = useState("USDT");
+  const [amount,      setAmount]      = useState("");
+
+  const [quote,     setQuote]     = useState<BuyQuote | null>(null);
+  const [quoting,   setQuoting]   = useState(false);
+  const [quoteErr,  setQuoteErr]  = useState<string | null>(null);
+
+  // LE-specific fields shown after a LE quote
+  const [withdrawal,   setWithdrawal]   = useState("");
+  const [networkFrom,  setNetworkFrom]  = useState("");
+  const [networkTo,    setNetworkTo]    = useState("");
+
+  const [executing, setExecuting] = useState(false);
+  const [result,    setResult]    = useState<BuyResult | null>(null);
+  const [execErr,   setExecErr]   = useState<string | null>(null);
+
+  const [copied, setCopied] = useState(false);
+
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset result/error on pair change
+  useEffect(() => {
+    setQuote(null); setQuoteErr(null); setResult(null); setExecErr(null);
+    setNetworkFrom(coinToSpend);
+    setNetworkTo(coinToBuy);
+  }, [coinToBuy, coinToSpend]);
+
+  const fetchQuote = useCallback(async (val: string) => {
+    if (!val || parseFloat(val) <= 0 || coinToBuy === coinToSpend) {
+      setQuote(null); setQuoteErr(null); return;
+    }
+    setQuoting(true); setQuoteErr(null); setQuote(null); setResult(null); setExecErr(null);
+
+    const nf = networkFrom || coinToSpend;
+    const nt = networkTo   || coinToBuy;
+
+    try {
+      const r = await fetch(`${API_BASE}/buy/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          coinToSpend,
+          coinToBuy,
+          amountToSpend: parseFloat(val),
+          networkFrom: nf,
+          networkTo:   nt,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        // 422 with route:"letsexchange" means LE but network fields needed
+        if (data.route === "letsexchange") {
+          setQuoteErr(`Cross-chain pair — enter networks and destination address below to get a quote.`);
+          setQuote({ route: "letsexchange", coinToSpend, coinToBuy, amountToSpend: val, estimatedAmountOut: null });
+        } else {
+          setQuoteErr(data.error ?? "Quote failed");
+        }
+      } else {
+        setQuote(data);
+        if (data.route === "letsexchange") {
+          if (!networkFrom) setNetworkFrom(data.networkFrom ?? coinToSpend);
+          if (!networkTo)   setNetworkTo(data.networkTo   ?? coinToBuy);
+        }
+      }
+    } catch {
+      setQuoteErr("Network error — could not fetch quote");
+    }
+    setQuoting(false);
+  }, [coinToBuy, coinToSpend, networkFrom, networkTo]);
+
+  const handleAmountChange = (val: string) => {
+    setAmount(val); setResult(null); setExecErr(null);
+    if (debRef.current) clearTimeout(debRef.current);
+    debRef.current = setTimeout(() => fetchQuote(val), 500);
+  };
+
+  const handleBuy = async () => {
+    if (!amount || !quote || executing) return;
+
+    // Native route requires logged-in wallet address
+    if (quote.route === "native" && !address) { onOpenWallet(); return; }
+    // LE route requires withdrawal address
+    if (quote.route === "letsexchange" && !withdrawal.trim()) {
+      setExecErr("Enter your destination address to receive " + coinToBuy); return;
+    }
+
+    setExecuting(true); setExecErr(null); setResult(null);
+
+    const minOut = quote.estimatedAmountOut
+      ? (parseFloat(quote.estimatedAmountOut) * 0.995).toFixed(8)
+      : undefined;
+
+    const body: Record<string, unknown> = {
+      coinToSpend,
+      coinToBuy,
+      amountToSpend: parseFloat(amount),
+    };
+
+    if (quote.route === "native") {
+      body.walletAddress = address;
+      if (minOut) body.minAmountOut = minOut;
+    } else {
+      body.withdrawal  = withdrawal.trim();
+      body.networkFrom = networkFrom || coinToSpend;
+      body.networkTo   = networkTo   || coinToBuy;
+      if (quote.rate_id) body.rate_id = quote.rate_id;
+    }
+
+    try {
+      const r = await fetch(`${API_BASE}/buy/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        const msg = data.error ?? "Buy failed";
+        setExecErr(msg);
+        toast({ title: "Buy failed", description: msg, variant: "destructive" });
+      } else {
+        setResult(data);
+        setAmount(""); setQuote(null);
+        if (data.route === "native") {
+          toast({
+            title: "Purchase complete!",
+            description: `Bought ${parseFloat(data.amountReceived ?? "0").toFixed(6)} ${coinToBuy} for ${parseFloat(data.amountSpent ?? amount).toFixed(6)} ${coinToSpend}`,
+          });
+        } else {
+          toast({ title: "Order created!", description: "Send funds to the deposit address below." });
+        }
+      }
+    } catch {
+      setExecErr("Network error — please try again");
+    }
+    setExecuting(false);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const isLE     = quote?.route === "letsexchange";
+  const canBuy   = !!amount && parseFloat(amount) > 0 && !!quote && !executing;
+  const leReady  = isLE && withdrawal.trim().length >= 10;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">
+
+      {/* Header */}
+      <div className="flex items-center gap-2 text-sm font-bold">
+        <ShoppingCart className="w-4 h-4 text-emerald-400" />
+        Buy Crypto
+      </div>
+
+      {/* ─ Coin to BUY ─ */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <span className="text-xs text-muted-foreground font-medium">I want to buy</span>
+        <div className="flex items-center gap-2">
+          <ExchangeAssetPicker
+            value={coinToBuy}
+            onChange={v => { setCoinToBuy(v); setQuote(null); setAmount(""); }}
+            exclude={coinToSpend}
+            label="Buy"
+          />
+          <div className="flex-1 text-2xl font-bold text-right">
+            {quoting ? (
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground ml-auto" />
+            ) : (
+              <span className={quote?.estimatedAmountOut ? "text-emerald-400" : "text-muted-foreground/40"}>
+                {quote?.estimatedAmountOut ? parseFloat(quote.estimatedAmountOut).toFixed(6) : "0.0"}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Flip arrow */}
+      <div className="flex justify-center -my-1">
+        <button
+          onClick={() => {
+            const tmp = coinToBuy;
+            setCoinToBuy(coinToSpend);
+            setCoinToSpend(tmp);
+            setQuote(null); setAmount(""); setResult(null);
+          }}
+          className="p-2 rounded-full border border-border bg-card hover:bg-muted/60 transition-colors"
+        >
+          <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* ─ Coin to SPEND ─ */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <span className="text-xs text-muted-foreground font-medium">I will pay with</span>
+        <div className="flex items-center gap-2">
+          <ExchangeAssetPicker
+            value={coinToSpend}
+            onChange={v => { setCoinToSpend(v); setQuote(null); setAmount(""); }}
+            exclude={coinToBuy}
+            label="Spend"
+          />
+          <input
+            type="number" min="0" placeholder="0.0" value={amount}
+            onChange={e => handleAmountChange(e.target.value)}
+            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+          />
+        </div>
+      </div>
+
+      {/* ─ Quote details ─ */}
+      {quote && quote.estimatedAmountOut && (
+        <div className="rounded-xl bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs">
+          <div className="flex justify-between text-muted-foreground">
+            <span>You spend</span>
+            <span className="font-mono font-semibold text-foreground">{amount} {coinToSpend}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>You receive (est.)</span>
+            <span className="font-mono font-semibold text-emerald-400">
+              ≈ {parseFloat(quote.estimatedAmountOut).toFixed(6)} {coinToBuy}
+            </span>
+          </div>
+          {quote.rate && (
+            <div className="flex justify-between text-muted-foreground border-t border-border/30 pt-1.5">
+              <span>Rate</span>
+              <span className="font-mono">1 {coinToSpend} ≈ {parseFloat(quote.rate).toFixed(6)} {coinToBuy}</span>
+            </div>
+          )}
+          {quote.route === "native" && quote.fee && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Platform fee ({quote.feePct}%)</span>
+              <span className="font-mono">{parseFloat(quote.fee).toFixed(6)} {coinToBuy}</span>
+            </div>
+          )}
+          {quote.route === "letsexchange" && (
+            <div className="flex items-center gap-1 mt-0.5 pt-1.5 border-t border-border/30">
+              <span className="text-muted-foreground/60">Route:</span>
+              <span className="text-blue-400 font-medium">LetsExchange (cross-chain)</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─ Quote error ─ */}
+      {quoteErr && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{quoteErr}
+        </div>
+      )}
+
+      {/* ─ LE extra fields (shown when route is letsexchange) ─ */}
+      {isLE && (
+        <div className="space-y-2.5">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium">
+              Destination address <span className="text-foreground">({coinToBuy})</span>
+            </label>
+            <input
+              type="text"
+              placeholder={`Your ${coinToBuy} wallet address`}
+              value={withdrawal}
+              onChange={e => setWithdrawal(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-sm outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground font-medium">Network (from)</label>
+              <input
+                type="text"
+                placeholder={coinToSpend}
+                value={networkFrom}
+                onChange={e => { setNetworkFrom(e.target.value); setQuote(null); }}
+                className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-xs outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground font-medium">Network (to)</label>
+              <input
+                type="text"
+                placeholder={coinToBuy}
+                value={networkTo}
+                onChange={e => { setNetworkTo(e.target.value); setQuote(null); }}
+                className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-xs outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+              />
+            </div>
+          </div>
+
+          {quote && !quote.estimatedAmountOut && networkFrom && networkTo && (
+            <button
+              onClick={() => fetchQuote(amount)}
+              disabled={quoting || !amount}
+              className="w-full py-2 rounded-xl text-xs font-semibold border border-primary/40 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+            >
+              {quoting ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Getting quote…</> : "Refresh Quote"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ─ Exec error ─ */}
+      {execErr && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{execErr}
+        </div>
+      )}
+
+      {/* ─ Native success ─ */}
+      {result && result.route === "native" && (
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+            <CheckCircle2 className="w-4 h-4" /> Purchase Complete
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Spent</span>
+              <span className="font-mono font-semibold text-foreground">{parseFloat(result.amountSpent ?? "0").toFixed(6)} {coinToSpend}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>Received</span>
+              <span className="font-mono font-semibold text-emerald-400">{parseFloat(result.amountReceived ?? "0").toFixed(6)} {coinToBuy}</span>
+            </div>
+            {result.fee && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Fee</span>
+                <span className="font-mono">{parseFloat(result.fee).toFixed(6)} {coinToBuy}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─ LE success: deposit address card ─ */}
+      {result && result.route === "letsexchange" && result.deposit && (
+        <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
+            <QrCode className="w-4 h-4" /> Send Funds to Complete
+          </div>
+          <div className="space-y-2 text-xs">
+            <p className="text-muted-foreground">
+              Send exactly <span className="font-mono font-bold text-foreground">{amount} {coinToSpend}</span> to this deposit address:
+            </p>
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/50 border border-border/60">
+              <span className="flex-1 font-mono text-[11px] break-all text-foreground">{result.deposit}</span>
+              <button
+                onClick={() => copyToClipboard(result.deposit!)}
+                className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            {result.deposit_extra_id && (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <span className="text-amber-400 font-medium shrink-0">Memo / Tag:</span>
+                <span className="flex-1 font-mono text-[11px] break-all text-foreground">{result.deposit_extra_id}</span>
+                <button onClick={() => copyToClipboard(result.deposit_extra_id!)} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {result.withdrawal_amount && (
+              <div className="flex justify-between text-muted-foreground pt-1 border-t border-border/30">
+                <span>You will receive (est.)</span>
+                <span className="font-mono font-semibold text-emerald-400">{parseFloat(result.withdrawal_amount).toFixed(6)} {coinToBuy}</span>
+              </div>
+            )}
+            {result.transaction_id && (
+              <p className="text-muted-foreground/50 pt-0.5">TX ID: <span className="font-mono">{result.transaction_id}</span></p>
+            )}
+          </div>
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            Send only <strong>{coinToSpend}</strong> on the correct network. Wrong asset or network = lost funds.
+          </div>
+        </div>
+      )}
+
+      {/* ─ CTA button ─ */}
+      {!result && (
+        <>
+          {coinToBuy === coinToSpend ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Select different coins
+            </button>
+          ) : !amount || parseFloat(amount) <= 0 ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Enter an amount
+            </button>
+          ) : quoting ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Getting quote…
+            </button>
+          ) : !quote ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              No route found for this pair
+            </button>
+          ) : isLE && !leReady ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Enter destination address to continue
+            </button>
+          ) : !address && quote.route === "native" ? (
+            <button onClick={onOpenWallet}
+              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 transition-all">
+              Connect Wallet to Buy
+            </button>
+          ) : (
+            <button
+              onClick={handleBuy}
+              disabled={executing || !canBuy || (isLE && !leReady)}
+              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {executing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                : <><ShoppingCart className="w-4 h-4" /> Buy {coinToBuy}</>}
+            </button>
+          )}
+        </>
+      )}
+
+      {result && (
+        <button
+          onClick={() => { setResult(null); setQuote(null); setAmount(""); setWithdrawal(""); }}
+          className="w-full py-2.5 rounded-xl text-xs font-semibold border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-colors"
+        >
+          New Purchase
+        </button>
+      )}
+
+      <p className="text-[11px] text-muted-foreground/50 text-center">
+        {isLE ? "Cross-chain via LetsExchange · Non-custodial" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
+      </p>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
@@ -1366,6 +1848,8 @@ export function Swap() {
   const isOrahWallet = provider === "orah-wallet";
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
+
+  const [activeTab, setActiveTab] = useState<"swap" | "buy">("swap");
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
   // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
@@ -1559,10 +2043,16 @@ export function Swap() {
     <div className="min-h-screen bg-background flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* Swap / Bridge tab selector */}
+        {/* Swap / Bridge / Buy tab selector */}
         <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40">
           <button
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-background border border-border/60 shadow-sm text-foreground"
+            onClick={() => setActiveTab("swap")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
+              activeTab === "swap"
+                ? "bg-background border border-border/60 shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+            )}
           >
             <ArrowUpDown className="w-3.5 h-3.5" />
             Swap
@@ -1574,7 +2064,27 @@ export function Swap() {
             <Link2 className="w-3.5 h-3.5" />
             Bridge
           </button>
+          <button
+            onClick={() => setActiveTab("buy")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
+              activeTab === "buy"
+                ? "bg-background border border-border/60 shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+            )}
+          >
+            <ShoppingCart className="w-3.5 h-3.5" />
+            Buy
+          </button>
         </div>
+
+        {/* Buy tab */}
+        {activeTab === "buy" && (
+          <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
+        )}
+
+        {/* Swap tab content */}
+        {activeTab === "swap" && (<>
 
         {/* OrahBridge Panel — 6000+ coins, non-custodial, cross-chain */}
         <div id="lets-exchange-panel">
@@ -1826,6 +2336,8 @@ export function Swap() {
             Pools <ArrowRight className="w-3 h-3" />
           </a>
         </div>
+
+        </>)}
       </div>
     </div>
   );
