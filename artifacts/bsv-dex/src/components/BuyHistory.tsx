@@ -178,10 +178,13 @@ export function BuyHistory({ walletAddress }: Props) {
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-lg overflow-hidden">
-      {/* Header */}
-      <button
+      {/* Header — using div to avoid nested-button HTML violation */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setVisible(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition"
+        onKeyDown={e => e.key === "Enter" && setVisible(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition cursor-pointer"
       >
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-violet-400" />
@@ -204,7 +207,7 @@ export function BuyHistory({ walletAddress }: Props) {
             ? <ChevronUp className="w-4 h-4 text-muted-foreground" />
             : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
         </div>
-      </button>
+      </div>
 
       {visible && (
         <div className="px-3 pb-3 border-t border-border/50">

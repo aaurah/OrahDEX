@@ -2313,8 +2313,8 @@ export function Swap() {
             {/* Crypto-to-crypto buy panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
 
-            {/* Purchase history */}
-            <BuyHistory walletAddress={address ?? null} />
+            {/* Purchase history — use EVM address or session identity so BTC/SOL orders appear */}
+            <BuyHistory walletAddress={address ?? sessionStorage.getItem("orahdex_session_addr")} />
 
             {/* KYC gate */}
             <KycModal
