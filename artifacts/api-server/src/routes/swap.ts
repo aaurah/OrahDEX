@@ -425,11 +425,9 @@ router.post("/swap/execute", async (req, res) => {
     }
     logger.error({ err }, "swap/execute failed");
     res.status(500).json({ error: "Internal server error" });
+    return;
   }
 });
-
-// ── Helper: resolve exchange rate A→B ─────────────────────────────────────────
-// Looks up A/B or B/A in the marketsTable and returns the A→B rate.
 async function resolveRate(assetIn: string, assetOut: string): Promise<number | null> {
   const STABLES = new Set(["USDT", "USDC", "BUSD", "TUSD"]);
 

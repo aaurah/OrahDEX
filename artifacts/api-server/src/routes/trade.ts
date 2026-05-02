@@ -615,6 +615,8 @@ router.post("/trade/exchange/quote", async (req, res) => {
 router.post("/trade/exchange", async (req, res) => {
   const body = req.body ?? {};
   const walletAddress = body.walletAddress;
+  const signature = body.signature;
+  const nonce = body.nonce;
 
   if (!walletAddress) {
     res.status(400).json({ error: "walletAddress is required" });

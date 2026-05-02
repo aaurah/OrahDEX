@@ -1796,7 +1796,7 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
 });
 
 /* ─── TREASURY — exchange wallets + internal ledger totals ──────────────── */
-router.get("/treasury", requireAdminToken, async (_req, res) => {
+router.get("/treasury", requireAdminToken, async (req, res) => {
   try {
     // 1. BSV Settlement Wallet (real on-chain balance)
     const wallet = await getOrCreateWallet();
@@ -2187,7 +2187,7 @@ router.patch("/markets/:symbol/status", async (req, res) => {
  */
 router.patch("/markets/:symbol/enabled", requireAdminToken, async (req, res) => {
   try {
-    const symbol  = decodeURIComponent(req.params.symbol);
+    const symbol  = decodeURIComponent(String(req.params.symbol));
     const enabled = req.body?.enabled;
     if (typeof enabled !== "boolean") {
       res.status(400).json({ error: "enabled must be a boolean" }); return;
@@ -3065,7 +3065,7 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
 router.get("/le-income", requireAdminToken, async (req, res) => {
   try {
     // Aggregate stats
-    const [statsRow] = await db.execute<{
+    const statsResult = await db.execute<{
       total_swaps: string;
       finished_swaps: string;
       total_volume_usd: string;
@@ -3078,9 +3078,10 @@ router.get("/le-income", requireAdminToken, async (req, res) => {
         COALESCE(SUM(deposit_amount_usd) FILTER (WHERE status = 'finished'), 0) AS finished_volume_usd
       FROM le_swaps
     `);
+    const statsRow = statsResult.rows[0];
 
     // Top coins by volume
-    const topCoins = await db.execute<{ coin_from: string; coin_to: string; count: string; volume_usd: string }>(sql`
+    const topCoinsResult = await db.execute<{ coin_from: string; coin_to: string; count: string; volume_usd: string }>(sql`
       SELECT coin_from, coin_to,
              COUNT(*)                      AS count,
              COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
@@ -3091,7 +3092,7 @@ router.get("/le-income", requireAdminToken, async (req, res) => {
     `);
 
     // Monthly breakdown
-    const monthly = await db.execute<{ month: string; count: string; volume_usd: string }>(sql`
+    const monthlyResult = await db.execute<{ month: string; count: string; volume_usd: string }>(sql`
       SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
              COUNT(*)                      AS count,
              COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
@@ -3122,8 +3123,8 @@ router.get("/le-income", requireAdminToken, async (req, res) => {
         estimatedCommissionUsd: parseFloat((finishedVolUsd * COMMISSION_RATE).toFixed(2)),
         commissionRatePct:    (COMMISSION_RATE * 100).toFixed(2),
       },
-      topPairs:   topCoins,
-      monthly,
+      topPairs:   topCoinsResult.rows,
+      monthly:    monthlyResult.rows,
       recent,
     });
   } catch (err: any) {
@@ -3195,7 +3196,7 @@ router.post("/routing-profiles", requireAdminToken, async (req, res) => {
 // ── PUT /admin/routing-profiles/:id ──────────────────────────────────────────
 // Partial update of a routing profile by its UUID.
 router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const {
     maxSlippageBps, minFillFraction, maxInternalSize,
     oracleRequired, enabled, splitEnabled, notes,
