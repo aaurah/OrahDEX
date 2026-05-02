@@ -7,13 +7,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 function fetchLogs(level?: string) {
   const url = level && level !== "all"
-    ? `${BASE}/api/admin/logs?level=${level}&limit=200`
-    : `${BASE}/api/admin/logs?limit=200`;
-  return fetch(url).then(r => r.json());
+    ? `/api/admin/logs?level=${level}&limit=200`
+    : `/api/admin/logs?limit=200`;
+  return adminFetch(url).then(r => r.json());
 }
 function clearLogs() {
   return adminFetch(`/api/admin/logs`, { method: "DELETE" }).then(r => r.json());
