@@ -720,17 +720,22 @@ router.get("/transactions", async (_req, res) => {
     const { search, chain, type, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
     const PAGE = parseInt(page), LIMIT = parseInt(limit);
 
-    /* 1. Real trades from tradesTable */
-    const rawTrades = await db.select().from(tradesTable)
-      .orderBy(desc(tradesTable.timestamp))
-      .limit(500);
+    /* 1 & 2: Run both DB queries in parallel */
+    const [rawTrades, rawOrders] = await Promise.all([
+      db.select().from(tradesTable).orderBy(desc(tradesTable.timestamp)).limit(500),
+      db.select().from(ordersTable)
+        .where(and(isNotNull(ordersTable.txid), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
+        .orderBy(desc(ordersTable.createdAt))
+        .limit(200),
+    ]);
 
     const tradeTxs = rawTrades.map(t => {
       const isBsv = !!(t.walletAddress && !t.walletAddress.startsWith("0x"));
       const chain = isBsv ? "BSV" : "ETH";
+      const safeId = (t.id ?? "").replace(/-/g, "").padEnd(64, "0");
       return {
         id: `trade-${t.id}`,
-        txHash: t.txid ?? `0x${t.id.replace(/-/g, "").padEnd(64, "0")}`,
+        txHash: t.txid ?? `0x${safeId}`,
         chain,
         type: "settlement",
         status: "confirmed",
@@ -753,12 +758,6 @@ router.get("/transactions", async (_req, res) => {
         hasTxid: !!t.txid,
       };
     });
-
-    /* 2. BSV settlement orders (orders with txid) */
-    const rawOrders = await db.select().from(ordersTable)
-      .where(and(isNotNull(ordersTable.txid), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(200);
 
     const settlementTxs = rawOrders.map(o => ({
       id: `order-${o.id}`,
