@@ -242,7 +242,7 @@ function getRows(
    */
   const quoteAllPairs = (quote: string, fallbackMock: any[]): NormRow[] => {
     const db     = dbByQuote(quote);
-    const native = db.length > 0 ? db : enrich(fallbackMock);
+    const native = db.length > 0 ? db : enrich(fallbackMock).filter(m => m.price > 0);
     const seenSymbols = new Set(native.map(r => r.symbol));
     const seenBases   = new Set(native.map(r => r.base));
     const aos = aosPairs
@@ -264,7 +264,7 @@ function getRows(
   const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
   const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol) && p.price > 0);
   const allSpot = () => [
-    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures"),
+    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures" && m.price > 0),
     ...aosOnly,
   ];
 
