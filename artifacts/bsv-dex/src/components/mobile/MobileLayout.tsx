@@ -161,7 +161,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
       </Suspense>
-      {!chatOpen && (
+      {!chatOpen && !location.startsWith("/nft") && (
         <button
           onClick={() => setChatOpen(true)}
           title="Live Support"
@@ -171,7 +171,9 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           <MessageCircle size={20} className="text-white" />
         </button>
       )}
-      <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
+      {!location.startsWith("/nft") && (
+        <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }
