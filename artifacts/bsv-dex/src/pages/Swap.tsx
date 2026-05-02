@@ -40,6 +40,7 @@ import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
+import { KycModal } from "@/components/KycModal";
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
@@ -1929,9 +1930,37 @@ export function Swap() {
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
 
+  const [kycModalOpen,  setKycModalOpen]            = useState(false);
+  const [kycVerified,   setKycVerified]             = useState<boolean | null>(null);
+  const [kycPending,    setKycPending]              = useState<FiatPayMethod | null>(null);
+
+  // Check KYC status whenever a wallet is connected
+  useEffect(() => {
+    if (!address) { setKycVerified(null); return; }
+    fetch(`${API_BASE}/kyc/status?walletAddress=${encodeURIComponent(address)}`)
+      .then(r => r.json())
+      .then(d => setKycVerified(!!d.verified))
+      .catch(() => setKycVerified(false));
+  }, [address]);
+
   function openFiatModal(method: FiatPayMethod) {
-    setFiatModalMethod(method);
-    setFiatModalOpen(true);
+    if (!kycVerified) {
+      // Gate: require KYC before first purchase
+      setKycPending(method);
+      setKycModalOpen(true);
+    } else {
+      setFiatModalMethod(method);
+      setFiatModalOpen(true);
+    }
+  }
+
+  function handleKycVerified() {
+    setKycVerified(true);
+    if (kycPending) {
+      setFiatModalMethod(kycPending);
+      setKycPending(null);
+      setFiatModalOpen(true);
+    }
   }
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
@@ -2243,6 +2272,14 @@ export function Swap() {
 
             {/* Existing crypto-to-crypto panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
+
+            {/* KYC verification gate — opens before first purchase */}
+            <KycModal
+              open={kycModalOpen}
+              walletAddress={address ?? ""}
+              onClose={() => { setKycModalOpen(false); setKycPending(null); }}
+              onVerified={handleKycVerified}
+            />
 
             {/* Fiat on-ramp modal — Coinbase-style direct purchase via Stripe */}
             <DirectBuyModal

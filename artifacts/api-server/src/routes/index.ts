@@ -36,6 +36,7 @@ import feeRevenueRouter from "./feeRevenue.js";
 import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stripeCheckoutRouter from "./stripeCheckout.js";
+import kycRouter from "./kyc.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -113,6 +114,7 @@ router.use(creatorCoinsRouter);
 router.use(predictionRouter);
 router.use(letsexchangeRouter);
 router.use(stripeCheckoutRouter);
+router.use(kycRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
