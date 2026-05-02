@@ -293,6 +293,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
   const fetch = useCallback(async () => {
     if (!address || !chainId) return;
+    const resolvedChainId: number = chainId;
 
     setLoading(true);
     try {
@@ -304,12 +305,12 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
             const { getBalance } = await import("@wagmi/core");
             const result = await getBalance(config, {
               address: address as `0x${string}`,
-              chainId,
+              chainId: resolvedChainId,
             });
             return Number(result.value) / 1e18;
           } catch { /* fall through to rpcCall */ }
         }
-        const hex = await rpcCall("eth_getBalance", [address, "latest"], chainId);
+        const hex = await rpcCall("eth_getBalance", [address, "latest"], resolvedChainId);
         return Number(BigInt(hex)) / 1e18;
       }
 

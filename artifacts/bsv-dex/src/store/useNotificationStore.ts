@@ -17,7 +17,8 @@ export type NotifType =
   | "info"
   | "warning"
   | "success"
-  | "error";
+  | "error"
+  | "deposit";
 
 export interface AppNotification {
   id: string;

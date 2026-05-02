@@ -588,7 +588,7 @@ export function WithdrawSheet({
         hash = await walletClient.sendTransaction({
           to:    walletSendRecipient.trim() as `0x${string}`,
           value: parseEther(walletSendAmount),
-        });
+        } as any);
       } else {
         hash = await walletClient.writeContract({
           address:      walletSendToken.address as `0x${string}`,
@@ -598,7 +598,7 @@ export function WithdrawSheet({
             walletSendRecipient.trim() as `0x${string}`,
             parseUnits(walletSendAmount, walletSendToken.decimals),
           ],
-        });
+        } as any);
       }
 
       setWalletSendTxHash(hash);

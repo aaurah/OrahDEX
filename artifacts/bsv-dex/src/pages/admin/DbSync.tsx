@@ -54,19 +54,19 @@ export function AdminDbSync() {
     summary: HealthSummary; walletsByNetwork: any[]; topBalanceWallets: WalletRow[]; recentMintBurn: MintBurnRow[];
   }>({
     queryKey: ["admin-db-health"],
-    queryFn:  () => adminFetch(`${API}/api/admin/db-health`),
+    queryFn:  () => adminFetch(`${API}/api/admin/db-health`).then(r => r.json()),
     staleTime: 30_000,
   });
 
   const { data: walletList, isFetching: walletListFetching, refetch: refetchWallets } = useQuery<{ wallets: WalletRow[]; total: number }>({
     queryKey: ["admin-ledger-wallets", search],
-    queryFn:  () => adminFetch(`${API}/api/admin/ledger-wallets?limit=100&search=${encodeURIComponent(search)}`),
+    queryFn:  () => adminFetch(`${API}/api/admin/ledger-wallets?limit=100&search=${encodeURIComponent(search)}`).then(r => r.json()),
     staleTime: 30_000,
   });
 
   const { data: detail, isFetching: detailFetching } = useQuery<WalletDetail>({
     queryKey: ["admin-wallet-detail", detailAddr],
-    queryFn:  () => adminFetch(`${API}/api/admin/wallet-detail/${encodeURIComponent(detailAddr)}`),
+    queryFn:  () => adminFetch(`${API}/api/admin/wallet-detail/${encodeURIComponent(detailAddr)}`).then(r => r.json()),
     enabled:  !!detailAddr && view === "detail",
   });
 

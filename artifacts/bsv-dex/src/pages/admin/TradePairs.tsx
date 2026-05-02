@@ -132,7 +132,7 @@ export function AdminTradePairs() {
   const [editFees,     setEditFees]     = useState<string | null>(null);
   const [feeForm,      setFeeForm]      = useState({ maker: "", taker: "" });
   const [contractPair, setContractPair] = useState<Market | null>(null);
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const fetchPairs = useCallback(() => {
     const params = new URLSearchParams({
