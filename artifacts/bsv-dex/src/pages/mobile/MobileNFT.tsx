@@ -803,7 +803,7 @@ function CreatorProfileSheet({
                     style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
                     {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
                   </button>
-                  <button onClick={() => setDmPeer({ address: creatorAddress, name: profile.username, avatar: profile.avatar_url })}
+                  <button onClick={(e) => { e.stopPropagation(); setDmPeer({ address: creatorAddress, name: profile.username || shortAddr(creatorAddress), avatar: profile.avatar_url }); }}
                     aria-label="Message"
                     className="px-3 py-3 rounded-xl font-bold text-sm flex items-center justify-center"
                     style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
@@ -994,9 +994,10 @@ function CreatorProfileSheet({
                       {!isMe && (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setFollowList(null);
-                              setDmPeer({ address: addr, name: displayName, avatar: u.avatar_url });
+                              setTimeout(() => setDmPeer({ address: addr, name: displayName, avatar: u.avatar_url }), 0);
                             }}
                             aria-label="Message"
                             className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60"
