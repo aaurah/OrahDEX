@@ -3,6 +3,60 @@ import { pool } from "@workspace/db";
 import { getUncachableStripeClient, getStripePublishableKey } from "../stripeClient.js";
 import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
+import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
+
+/* Coin → LetsExchange network mapping (must mirror webhookHandlers.ts) */
+const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
+  BTC:   { coin: "BTC",   network: "BTC"   },
+  ETH:   { coin: "ETH",   network: "ETH"   },
+  BSV:   { coin: "BSV",   network: "BSV"   },
+  BNB:   { coin: "BNB",   network: "BEP20" },
+  SOL:   { coin: "SOL",   network: "SOL"   },
+  XRP:   { coin: "XRP",   network: "XRP"   },
+  ADA:   { coin: "ADA",   network: "ADA"   },
+  DOGE:  { coin: "DOGE",  network: "DOGE"  },
+  DOT:   { coin: "DOT",   network: "DOT"   },
+  AVAX:  { coin: "AVAX",  network: "AVAX"  },
+  MATIC: { coin: "MATIC", network: "POL"   },
+  USDT:  { coin: "USDT",  network: "ERC20" },
+  USDC:  { coin: "USDC",  network: "ERC20" },
+  LINK:  { coin: "LINK",  network: "ERC20" },
+  UNI:   { coin: "UNI",   network: "ERC20" },
+};
+
+/* Ask LE: "for `netUsdt` USDT (ERC-20), how much TARGET coin do we get?"
+   Returns { coinAmount, ratePerCoin } where ratePerCoin = USD price the
+   customer effectively pays per unit (so the UI's "rate" matches reality). */
+async function quoteFromLE(coinSymbol: string, netUsdt: number): Promise<{ coinAmount: number; ratePerCoin: number } | null> {
+  const meta = LE_COIN_NETWORK[coinSymbol.toUpperCase()];
+  if (!meta) return null;
+  try {
+    const body = {
+      from:         "USDT",
+      to:           meta.coin,
+      network_from: "ERC20",
+      network_to:   meta.network,
+      amount:       parseFloat(netUsdt.toFixed(4)),
+      affiliate_id: AFFILIATE_ID,
+    };
+    const res = await leRequest("/v1/info", "POST", body);
+    if (!res.ok || !res.data) return null;
+    const d = res.data as Record<string, unknown>;
+    // LE returns either `amount` (coin out) or `rate` (coin per 1 USDT)
+    const coinAmount = parseFloat(String(d.amount ?? "")) || 0;
+    const rate       = parseFloat(String(d.rate   ?? "")) || 0;
+    if (coinAmount > 0) {
+      return { coinAmount, ratePerCoin: netUsdt / coinAmount };
+    }
+    if (rate > 0) {
+      return { coinAmount: netUsdt * rate, ratePerCoin: 1 / rate };
+    }
+    return null;
+  } catch (e: any) {
+    logger.warn({ err: e?.message, coinSymbol }, "LE price quote failed");
+    return null;
+  }
+}
 
 const router = Router();
 
@@ -77,39 +131,54 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       return;
     }
 
-    /* Fetch live price from internal prices store */
-    let price = 0;
-    try {
-      const priceRes = await pool.query(
-        `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
-        [`${coinSymbol}/USDT`]
-      );
-      if (priceRes.rows.length > 0) {
-        price = parseFloat(priceRes.rows[0].last_price ?? "0");
-      }
-    } catch { /* fallback below */ }
-
-    /* Fallback: call internal /api/prices */
-    if (!price) {
-      try {
-        const r = await fetch(`http://localhost:${process.env.PORT}/api/prices`);
-        if (r.ok) {
-          const prices = await r.json() as Record<string, number>;
-          price = prices[coinSymbol] ?? 0;
-        }
-      } catch { /* ignore */ }
-    }
-
-    if (!price || price <= 0) {
-      res.status(422).json({ error: `Price unavailable for ${coinSymbol} — try again shortly` });
-      return;
-    }
-
     const FEE_RATE = 0.015; // 1.5% OrahDEX fee
     const fee = fiatAmountUsd * FEE_RATE;
     const netUsd = fiatAmountUsd - fee;
-    const cryptoAmount = netUsd / price;
     const fiatAmountCents = Math.round(fiatAmountUsd * 100);
+
+    /* PRIMARY: Quote directly from LetsExchange so the customer is shown
+       the exact amount they'll actually receive (matches the swap that
+       fulfillOrder will create after payment). */
+    let price = 0;
+    let cryptoAmount = 0;
+    let priceSource: "letsexchange" | "markets" | "internal_prices" = "letsexchange";
+
+    const leQuote = await quoteFromLE(coinSymbol, netUsd);
+    if (leQuote && leQuote.coinAmount > 0 && leQuote.ratePerCoin > 0) {
+      price = leQuote.ratePerCoin;
+      cryptoAmount = leQuote.coinAmount;
+    } else {
+      /* FALLBACK 1: internal markets table (may be stale) */
+      try {
+        const priceRes = await pool.query(
+          `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
+          [`${coinSymbol}/USDT`]
+        );
+        if (priceRes.rows.length > 0) {
+          price = parseFloat(priceRes.rows[0].last_price ?? "0");
+          if (price > 0) priceSource = "markets";
+        }
+      } catch { /* fallback below */ }
+
+      /* FALLBACK 2: internal /api/prices */
+      if (!price) {
+        try {
+          const r = await fetch(`http://localhost:${process.env.PORT}/api/prices`);
+          if (r.ok) {
+            const prices = await r.json() as Record<string, number>;
+            price = prices[coinSymbol] ?? 0;
+            if (price > 0) priceSource = "internal_prices";
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!price || price <= 0) {
+        res.status(422).json({ error: `Price unavailable for ${coinSymbol} — try again shortly` });
+        return;
+      }
+      cryptoAmount = netUsd / price;
+    }
+    logger.info({ coinSymbol, fiatAmountUsd, netUsd, price, cryptoAmount, priceSource }, "Stripe checkout price quote");
 
     const stripe = await getUncachableStripeClient();
 
@@ -159,6 +228,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       exchangeRate: price.toString(),
       feeUsd: fee.toFixed(2),
       netUsd: netUsd.toFixed(2),
+      priceSource,
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to create payment intent");
