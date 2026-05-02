@@ -37,5 +37,9 @@
         "GHSA-848j-6mx2-7j84"
       ]
     }
+  },
+  "dependencies": {
+    "stripe": "^22.1.0",
+    "stripe-replit-sync": "^1.0.0"
   }
 }
