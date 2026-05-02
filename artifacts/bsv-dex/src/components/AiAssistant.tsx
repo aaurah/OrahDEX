@@ -226,16 +226,24 @@ export function AiAssistant() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button (draggable) */}
       <button
-        onClick={() => setOpen(true)}
+        onPointerDown={startDrag}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onClick={(e) => {
+          if (dragRef.current) { e.preventDefault(); return; }
+          setOpen(true);
+        }}
+        style={{ right: pos.right, bottom: pos.bottom, touchAction: "none" }}
         className={cn(
-          "fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl",
+          "fixed z-50 w-14 h-14 rounded-full shadow-2xl cursor-grab active:cursor-grabbing",
           "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-300 hover:to-emerald-500",
-          "flex items-center justify-center transition-all duration-200 hover:scale-110",
+          "flex items-center justify-center transition-colors duration-200",
           open && "hidden"
         )}
-        title="Ask Ora — AI Trading Assistant"
+        title="Ask Ora — drag to move"
       >
         <Bot className="w-6 h-6 text-black" />
         {unread > 0 && (
@@ -247,13 +255,22 @@ export function AiAssistant() {
 
       {/* Chat panel */}
       {open && (
-        <div className={cn(
-          "fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl shadow-2xl border border-white/10",
-          "bg-[#0a0f0a] transition-all duration-200",
-          minimised ? "w-72 h-14" : "w-[380px] h-[580px] max-h-[85vh]"
+        <div
+          style={{ right: pos.right, bottom: pos.bottom }}
+          className={cn(
+            "fixed z-50 flex flex-col rounded-2xl shadow-2xl border border-white/10",
+            "bg-[#0a0f0a] transition-colors duration-200",
+            minimised ? "w-72 h-14" : "w-[380px] h-[580px] max-h-[85vh]"
         )}>
-          {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-gradient-to-r from-green-950/80 to-emerald-950/80 rounded-t-2xl shrink-0">
+          {/* Header (drag handle) */}
+          <div
+            onPointerDown={startDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            style={{ touchAction: "none" }}
+            className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-gradient-to-r from-green-950/80 to-emerald-950/80 rounded-t-2xl shrink-0 cursor-grab active:cursor-grabbing select-none"
+          >
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4 text-black" />
             </div>
@@ -264,11 +281,11 @@ export function AiAssistant() {
               </div>
               <p className="text-[10px] text-green-400">AI Trading Intelligence · OrahDEX</p>
             </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setMinimised(m => !m)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+            <div className="flex items-center gap-1" data-no-drag>
+              <button data-no-drag onClick={() => setMinimised(m => !m)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
                 <ChevronDown className={cn("w-4 h-4 transition-transform", minimised && "rotate-180")} />
               </button>
-              <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+              <button data-no-drag onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
