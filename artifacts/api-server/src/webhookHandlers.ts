@@ -9,13 +9,13 @@
  *   3. Store the LE deposit address + transaction ID in the order
  *   4. Update order status to "processing"
  *
- * The LE deposit address is where OrahDEX must send USDT (from the hot wallet
- * or manually) to trigger the actual crypto delivery to the user.
+ * The LE deposit address is where OrahDEX must send USDT (from the hot wallet)
+ * to trigger the actual crypto delivery to the user.
  */
 
+import Stripe from "stripe";
 import { pool } from "@workspace/db";
 import { leRequest, AFFILIATE_ID } from "./lib/lePriceCache.js";
-import { getStripeSync } from "./stripeClient.js";
 import { logger } from "./lib/logger.js";
 
 // ── Column migration — runs once at startup ────────────────────────────────────
@@ -34,8 +34,6 @@ async function ensureFulfillmentColumns(): Promise<void> {
 ensureFulfillmentColumns();
 
 // ── Coin → LetsExchange network mapping ───────────────────────────────────────
-// coin_to / network_to used when creating a USDT → target exchange on LE.
-// Verified against the LE /v2/coins response; update if LE changes their codes.
 const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
   BTC:   { coin: "BTC",   network: "BTC"   },
   ETH:   { coin: "ETH",   network: "ETH"   },
@@ -55,7 +53,7 @@ const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
 };
 
 // ── Core fulfillment logic ─────────────────────────────────────────────────────
-async function fulfillOrder(paymentIntentId: string, metadata: Record<string, string>): Promise<void> {
+export async function fulfillOrder(paymentIntentId: string, metadata: Record<string, string>): Promise<void> {
   const { orderId, coinSymbol, walletAddress } = metadata;
   if (!orderId || !coinSymbol || !walletAddress) {
     logger.warn({ orderId, paymentIntentId }, "Fulfillment: missing metadata — cannot process");
@@ -99,10 +97,10 @@ async function fulfillOrder(paymentIntentId: string, metadata: Record<string, st
 
   try {
     const leBody: Record<string, unknown> = {
-      float:               true,                     // flexible rate — no lock
+      float:               true,
       coin_from:           "USDT",
       coin_to:             leMeta.coin,
-      network_from:        "ERC20",                  // USDT on Ethereum — most liquid
+      network_from:        "ERC20",
       network_to:          leMeta.network,
       deposit_amount:      parseFloat(netUsd.toFixed(4)),
       withdrawal:          walletAddress.trim(),
@@ -145,7 +143,7 @@ async function fulfillOrder(paymentIntentId: string, metadata: Record<string, st
 
     logger.info(
       { orderId, leTxId, leDepositAddr, coin: coinSymbol },
-      "Fulfillment: LE exchange created — send USDT to deposit address to trigger delivery"
+      "Fulfillment: LE exchange created — deposit USDT to trigger delivery"
     );
   } catch (err: any) {
     logger.error({ err: err?.message, orderId }, "Fulfillment: unexpected error");
@@ -157,8 +155,6 @@ async function fulfillOrder(paymentIntentId: string, metadata: Record<string, st
 }
 
 // ── Sync a single order's LE status from the LE API ───────────────────────────
-// Called from the order-status polling endpoint so the frontend always gets
-// the latest LE state without a separate background job.
 export async function syncLeStatus(orderId: string): Promise<void> {
   const res = await pool.query(
     `SELECT le_transaction_id, le_status, status FROM crypto_orders WHERE id = $1`,
@@ -167,19 +163,17 @@ export async function syncLeStatus(orderId: string): Promise<void> {
   if (!res.rows.length) return;
   const { le_transaction_id: leTxId, le_status: leStatus, status } = res.rows[0];
 
-  // Only sync while LE is in-flight
   if (!leTxId || status === "completed" || status === "failed") return;
-  // Don't hammer LE for terminal states we already know
   if (leStatus === "finished" || leStatus === "failed" || leStatus === "refunded") return;
 
   try {
     const { ok, data } = await leRequest(`/v1/transaction/${leTxId}`);
     if (!ok || !data) return;
-    const d         = data as Record<string, unknown>;
+    const d           = data as Record<string, unknown>;
     const newLeStatus = String(d.status ?? leStatus);
-    const hashOut   = d.hash_out ? String(d.hash_out) : null;
+    const hashOut     = d.hash_out ? String(d.hash_out) : null;
 
-    let newStatus = status as string;
+    let newStatus   = status as string;
     let fulfilledAt: Date | null = null;
 
     if (newLeStatus === "finished") {
@@ -207,33 +201,53 @@ export async function syncLeStatus(orderId: string): Promise<void> {
   }
 }
 
+// ── Stripe signature verification (no external sync library needed) ────────────
+function verifyStripeSignature(payload: Buffer, signature: string): Stripe.Event {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const secretKey     = process.env.STRIPE_SECRET_KEY;
+
+  if (!secretKey) throw new Error("STRIPE_SECRET_KEY not set");
+
+  const stripe = new Stripe(secretKey, { apiVersion: "2025-08-27.basil" as any });
+
+  if (webhookSecret) {
+    // Full signature verification when secret is available
+    return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+  }
+
+  // No webhook secret yet — parse without verification (log warning)
+  logger.warn(
+    "STRIPE_WEBHOOK_SECRET not set — skipping signature verification. " +
+    "Configure it in Secrets for production security."
+  );
+  return JSON.parse(payload.toString()) as Stripe.Event;
+}
+
 // ── Exported webhook handler ───────────────────────────────────────────────────
 export class WebhookHandlers {
   static async processWebhook(payload: Buffer, signature: string): Promise<void> {
     if (!Buffer.isBuffer(payload)) {
       throw new Error(
         "STRIPE WEBHOOK ERROR: Payload must be a Buffer. " +
-        "Received type: " + typeof payload + ". " +
-        "FIX: Ensure webhook route is registered BEFORE app.use(express.json())."
+        "Received type: " + typeof payload
       );
     }
 
-    // 1. Let stripe-replit-sync verify the signature and sync to DB
-    const sync = await getStripeSync();
-    await sync.processWebhook(payload, signature);
-
-    // 2. Also handle our own fulfillment (signature already verified above)
+    let event: Stripe.Event;
     try {
-      const event = JSON.parse(payload.toString()) as { type: string; data: { object: Record<string, unknown> } };
-      if (event.type === "payment_intent.succeeded") {
-        const pi = event.data.object;
-        const metadata = (pi.metadata as Record<string, string>) ?? {};
-        const piId     = String(pi.id ?? "");
-        // Fire-and-forget — webhook must respond quickly
-        void fulfillOrder(piId, metadata);
-      }
-    } catch (parseErr: any) {
-      logger.warn({ err: parseErr?.message }, "Webhook: failed to parse event for fulfillment (non-fatal)");
+      event = verifyStripeSignature(payload, signature);
+    } catch (err: any) {
+      logger.error({ err: err?.message }, "Stripe webhook signature verification failed");
+      throw new Error(`Webhook signature error: ${err?.message}`);
+    }
+
+    logger.info({ type: event.type }, "Stripe webhook received");
+
+    if (event.type === "payment_intent.succeeded") {
+      const pi       = event.data.object as Stripe.PaymentIntent;
+      const metadata = pi.metadata as Record<string, string>;
+      // Fire-and-forget — webhook must respond quickly
+      void fulfillOrder(pi.id, metadata);
     }
   }
 }
