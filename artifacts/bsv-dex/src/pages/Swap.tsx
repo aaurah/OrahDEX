@@ -1913,7 +1913,7 @@ function BuyCryptoPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Swap — OrahDEX", description: "Swap tokens cross-chain and on-chain via OrahDEX" });
+  useSEO({ title: "Exchange — OrahDEX", description: "Buy, swap & bridge crypto in one place — OrahDEX Exchange" });
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
