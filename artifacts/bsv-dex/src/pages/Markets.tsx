@@ -685,9 +685,7 @@ export function Markets() {
                   const isUp  = chg >= 0;
                   const tradeHref = tab === "futures"
                     ? `/futures/${m.symbol.replace(/\//g, "-")}`
-                    : m.type === "letsexchange"
-                      ? `/swap?from=${base}&to=${quote}`
-                      : `/trade/${m.symbol.replace(/\//g, "-")}`;
+                    : `/trade/${m.symbol.replace(/\//g, "-")}`;
 
                   const priceUSD = toUSD(price, quote);
                   const btcCellVal = base === "BTC" ? "1 BTC" : fmtBTC(priceUSD);
@@ -861,9 +859,7 @@ function CoinDetailPanel({
   const isFutures = tab === "futures";
   const tradeHref = isFutures
     ? `/futures/${coin.symbol.replace(/\//g, "-")}`
-    : coin.type === "letsexchange"
-      ? `/swap?from=${coin.baseAsset}&to=${coin.quoteAsset}`
-      : `/trade/${coin.symbol.replace(/\//g, "-")}`;
+    : `/trade/${coin.symbol.replace(/\//g, "-")}`;
 
   return (
     <>
