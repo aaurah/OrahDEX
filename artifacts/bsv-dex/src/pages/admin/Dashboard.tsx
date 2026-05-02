@@ -260,11 +260,11 @@ export function AdminDashboard() {
           </h3>
           <div className="space-y-3">
             {/* Dynamic alerts from stats */}
-            {stats && stats.openOrders > 50 && (
+            {stats && stats.openOrders > 500 && (
               <div className="flex items-start gap-3 p-3 rounded-xl border text-sm bg-orange-400/5 border-orange-400/20">
                 <span className="text-orange-400 shrink-0 mt-0.5">⚠</span>
                 <div className="flex-1">
-                  <p className="text-foreground">{stats.openOrders} open orders pending settlement</p>
+                  <p className="text-foreground">{stats.openOrders} user orders pending settlement</p>
                   <p className="text-xs text-muted-foreground mt-0.5">just now</p>
                 </div>
               </div>

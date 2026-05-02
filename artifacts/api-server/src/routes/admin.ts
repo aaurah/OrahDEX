@@ -500,7 +500,7 @@ router.get("/stats", async (_req, res) => {
   }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
 
   const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` })
-    .from(ordersTable).where(eq(ordersTable.status, "open"));
+    .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
 
   // AI stats
   const [convRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations);
@@ -549,9 +549,9 @@ router.get("/stats", async (_req, res) => {
 
 router.get("/trade-analytics", async (_req, res) => {
   try {
-    const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "open"));
-    const [filledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "filled"));
-    const [cancelledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "cancelled"));
+    const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
+    const [filledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "filled"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
+    const [cancelledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "cancelled"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
     const [totalOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
 
     const [openVolumeRow] = await db.select({
@@ -1825,7 +1825,7 @@ router.get("/health", async (_req, res) => {
     const now        = Date.now();
 
     const [openCount] = await db.select({ cnt: sql<number>`count(*)::int` })
-      .from(ordersTable).where(eq(ordersTable.status, "open"));
+      .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
     const allMarkets   = await db.select().from(marketsTable);
     const activeMarkets= allMarkets.filter(m => m.status === "active").length;
 
