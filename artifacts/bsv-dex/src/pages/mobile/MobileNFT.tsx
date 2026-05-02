@@ -426,12 +426,13 @@ const _profileMintsCache: Record<string, any[]> = {};
 const _profileHoldingsCache: Record<string, any[]> = {};
 
 function CreatorProfileSheet({
-  creatorAddress, currentUserAddress, onClose, onOpenPost,
+  creatorAddress, currentUserAddress, onClose, onOpenPost, onOpenCreator,
 }: {
   creatorAddress: string;
   currentUserAddress?: string;
   onClose: () => void;
   onOpenPost: (p: Post) => void;
+  onOpenCreator?: (a: string) => void;
 }) {
   const cached = _profileDataCache[creatorAddress] ?? null;
   const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(cached);
@@ -441,7 +442,9 @@ function CreatorProfileSheet({
   const [isFollowing, setIsFollowing] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-  const [showDm, setShowDm] = useState(false);
+  const [dmPeer, setDmPeer] = useState<{ address: string; name: string; avatar?: string } | null>(null);
+  const [myFollowingSet, setMyFollowingSet] = useState<Set<string>>(new Set());
+  const [followBusy, setFollowBusy] = useState<Set<string>>(new Set());
   const [imgErr, setImgErr] = useState(false);
   const [photoUploading, setPhotoUploading] = useState<"cover" | "avatar" | null>(null);
   const coverFileRef = useRef<HTMLInputElement>(null);
@@ -532,6 +535,43 @@ function CreatorProfileSheet({
     const res = await fetch(`${API}/social/creators/${creatorAddress}/${type}`).catch(() => null);
     const items = res?.ok ? await res.json() : [];
     setFollowList({ type, items });
+    // Hydrate which of these the current user already follows so we can show
+    // the right Follow / Following label on each row.
+    if (currentUserAddress) {
+      const r = await fetch(`${API}/social/creators/${currentUserAddress}/following`).catch(() => null);
+      const myFollowing: any[] = r?.ok ? await r.json() : [];
+      setMyFollowingSet(new Set(myFollowing.map(u => String(u.address).toLowerCase())));
+    }
+  }
+
+  async function toggleFollowAddr(addr: string) {
+    if (!currentUserAddress || addr.toLowerCase() === currentUserAddress.toLowerCase()) return;
+    const key = addr.toLowerCase();
+    if (followBusy.has(key)) return;
+    setFollowBusy(prev => { const n = new Set(prev); n.add(key); return n; });
+    const wasFollowing = myFollowingSet.has(key);
+    // Optimistic
+    setMyFollowingSet(prev => {
+      const n = new Set(prev);
+      if (wasFollowing) n.delete(key); else n.add(key);
+      return n;
+    });
+    try {
+      await fetch(`${API}/social/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ follower: currentUserAddress, following: addr }),
+      });
+    } catch {
+      // Revert on failure
+      setMyFollowingSet(prev => {
+        const n = new Set(prev);
+        if (wasFollowing) n.add(key); else n.delete(key);
+        return n;
+      });
+    } finally {
+      setFollowBusy(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
   }
 
   async function openStatSheet(type: "holders" | "holding") {
@@ -763,7 +803,7 @@ function CreatorProfileSheet({
                     style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
                     {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
                   </button>
-                  <button onClick={() => setShowDm(true)}
+                  <button onClick={() => setDmPeer({ address: creatorAddress, name: profile.username, avatar: profile.avatar_url })}
                     aria-label="Message"
                     className="px-3 py-3 rounded-xl font-bold text-sm flex items-center justify-center"
                     style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
@@ -894,13 +934,13 @@ function CreatorProfileSheet({
       </div>
 
       {showTrade && <TradeSheet creator={profile} onClose={() => setShowTrade(false)} />}
-      {showDm && currentUserAddress && (
+      {dmPeer && currentUserAddress && (
         <DmSheet
           me={currentUserAddress}
-          peer={creatorAddress}
-          peerName={profile.username}
-          peerAvatar={profile.avatar_url}
-          onClose={() => setShowDm(false)}
+          peer={dmPeer.address}
+          peerName={dmPeer.name}
+          peerAvatar={dmPeer.avatar}
+          onClose={() => setDmPeer(null)}
         />
       )}
       {showEdit && (
@@ -925,16 +965,62 @@ function CreatorProfileSheet({
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {followList.items.length === 0 ? (
                   <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {followList.type} yet</div>
-                ) : followList.items.map((u: any) => (
-                  <div key={u.address} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
-                    <Avatar src={u.avatar_url} name={u.username ?? u.address} size={36} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{u.username ?? shortAddr(u.address)}</p>
-                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(u.address)}</p>
+                ) : followList.items.map((u: any) => {
+                  const addr = String(u.address ?? "");
+                  if (!addr) return null;
+                  const key = addr.toLowerCase();
+                  const isMe = currentUserAddress && key === currentUserAddress.toLowerCase();
+                  const followingThem = myFollowingSet.has(key);
+                  const busy = followBusy.has(key);
+                  const displayName = u.username ?? shortAddr(addr);
+                  return (
+                    <div key={addr} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                      <button
+                        onClick={() => {
+                          setFollowList(null);
+                          if (onOpenCreator) onOpenCreator(addr);
+                        }}
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left active:opacity-60"
+                      >
+                        <Avatar src={u.avatar_url} name={displayName} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{displayName}</p>
+                            {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
+                          </div>
+                          <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(addr)}</p>
+                        </div>
+                      </button>
+                      {!isMe && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => {
+                              setFollowList(null);
+                              setDmPeer({ address: addr, name: displayName, avatar: u.avatar_url });
+                            }}
+                            aria-label="Message"
+                            className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60"
+                            style={{ background: "var(--color-surface-2,rgba(255,255,255,0.06))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}
+                          >
+                            <MessageCircle size={13} />
+                          </button>
+                          <button
+                            onClick={() => toggleFollowAddr(addr)}
+                            disabled={busy || !currentUserAddress}
+                            className="px-3 h-8 rounded-full text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
+                            style={{
+                              background: followingThem ? "transparent" : "var(--color-accent)",
+                              color: followingThem ? "var(--color-text)" : "#000",
+                              border: followingThem ? "1px solid var(--color-border)" : "none",
+                            }}
+                          >
+                            {followingThem ? <><UserCheck size={11} />Following</> : <><UserPlus size={11} />Follow</>}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -2971,6 +3057,7 @@ export function MobileNFT() {
             if (activeTab === "profile") setActiveTab("feed");
           }}
           onOpenPost={p => { setCreatorAddress(null); openPost(p); }}
+          onOpenCreator={openCreator}
         />
       )}
       {detailPost && (
