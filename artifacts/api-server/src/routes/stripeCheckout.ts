@@ -158,12 +158,21 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
   }
 });
 
-/* ── GET /api/stripe/order/:id — check order status ─────────────────────── */
+/* ── GET /api/stripe/order/:id — check order status (syncs LE status live) ── */
 router.get("/stripe/order/:id", async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Sync LE status before returning so the client always gets the freshest state
+    const { syncLeStatus } = await import("../webhookHandlers.js");
+    await syncLeStatus(id).catch(() => {});
+
     const result = await pool.query(
-      `SELECT * FROM crypto_orders WHERE id = $1`,
+      `SELECT id, coin_symbol, fiat_amount_cents, fiat_currency,
+              crypto_amount, exchange_rate, fee_usd, status, payment_method,
+              error_message, le_transaction_id, le_deposit_address,
+              le_deposit_extra_id, le_status, fulfilled_at, created_at, updated_at
+       FROM crypto_orders WHERE id = $1`,
       [id]
     );
     if (result.rows.length === 0) {
