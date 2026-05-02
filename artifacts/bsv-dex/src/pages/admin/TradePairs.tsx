@@ -4,8 +4,8 @@ import { ToggleLeft, ToggleRight, Pencil, Check, X, Plus, Trash2, FileCode, Sear
 import { cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { KNOWN_CONTRACTS } from "@/lib/contracts";
+import { adminFetch } from "@/lib/adminFetch";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const PAGE_SIZE = 100;
 
 type Market = {
@@ -139,9 +139,9 @@ export function AdminTradePairs() {
       limit:  String(PAGE_SIZE),
       offset: String(page * PAGE_SIZE),
     });
-    if (search)              params.set("search", search);
+    if (search)               params.set("search", search);
     if (typeFilter !== "all") params.set("type",   typeFilter);
-    return fetch(`${BASE}/api/admin/pairs?${params}`).then(r => r.json()) as Promise<PairsResponse>;
+    return adminFetch(`/api/admin/pairs?${params}`).then(r => r.json()) as Promise<PairsResponse>;
   }, [page, search, typeFilter]);
 
   const { data, isLoading } = useQuery<PairsResponse>({
@@ -169,7 +169,7 @@ export function AdminTradePairs() {
 
   const toggleStatus = useMutation({
     mutationFn: ({ symbol, status }: { symbol: string; status: string }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/status`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }).then(r => r.json()),
@@ -178,7 +178,7 @@ export function AdminTradePairs() {
 
   const updateFees = useMutation({
     mutationFn: ({ symbol }: { symbol: string }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/fees`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/fees`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ makerFee: feeForm.maker, takerFee: feeForm.taker }),
       }).then(r => r.json()),
@@ -187,7 +187,7 @@ export function AdminTradePairs() {
 
   const updateContracts = useMutation({
     mutationFn: ({ symbol, contractAddresses }: { symbol: string; contractAddresses: Record<string, string> }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/contracts`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/contracts`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contractAddresses }),
       }).then(r => r.json()),
