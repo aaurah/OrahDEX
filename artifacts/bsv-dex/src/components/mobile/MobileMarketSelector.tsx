@@ -16,6 +16,7 @@ import {
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn, marketMatchesQuery } from "@/lib/utils";
+import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -619,20 +620,36 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                     </button>
 
                     {/* Pair name + badges */}
-                    <button onClick={() => pick(m)} className="flex-1 text-left">
-                      <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
-                        {m.base}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
-                      {m.type === "futures" && (
-                        <span className="ml-1 text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
-                      )}
-                      {m.swapOnly && (
-                        <span className="ml-1 text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
-                      )}
-                      {isActive && (
-                        <span className="ml-1.5 text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
-                      )}
+                    <button onClick={() => pick(m)} className="flex-1 text-left min-w-0">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
+                          {m.base}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
+                        {m.type === "futures" && (
+                          <span className="text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
+                        )}
+                        {m.swapOnly && (
+                          <span className="text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
+                        )}
+                        {isActive && (
+                          <span className="text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
+                        )}
+                      </div>
+                      {(() => {
+                        const info = getCoinInfo(m.base);
+                        if (!info) return null;
+                        return (
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            <span className="text-[9px] text-muted-foreground/60 truncate max-w-[120px]">{info.description.split("—")[0].trim()}</span>
+                            {info.tags.slice(0, 1).map(tag => (
+                              <span key={tag} className={cn("text-[8px] font-semibold px-1 py-px rounded border leading-none", getTagColor(tag))}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </button>
 
                     {/* Price */}
