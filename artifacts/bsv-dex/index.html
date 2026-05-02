@@ -103,17 +103,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root">
-      <div id="app-shell" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0d0d12;gap:16px;">
-        <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style="animation:spin 1s linear infinite;">
-          <circle cx="20" cy="20" r="17" stroke="#7c3aed" stroke-width="3" stroke-linecap="round" stroke-dasharray="80 27" />
-        </svg>
-        <span style="font-family:system-ui,sans-serif;font-size:13px;color:#6b7280;letter-spacing:.04em;">Loading OrahDEX…</span>
-      </div>
-    </div>
+    <div id="root"></div>
     <div id="modal-root" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;"></div>
-    <style>#app-shell{transition:opacity .2s}@keyframes spin{to{transform:rotate(360deg)}}</style>
-
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
