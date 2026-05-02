@@ -506,8 +506,11 @@ function CreatorProfileSheet({
     return () => { cancelled = true; };
   }, [currentUserAddress, creatorAddress]);
 
+  const followInFlight = useRef(false);
   async function toggleFollow() {
     if (!currentUserAddress || isSelf) return;
+    if (followInFlight.current) return; // guard against rapid double-taps
+    followInFlight.current = true;
     const prev = isFollowing;
     setIsFollowing(!prev); // optimistic
     try {
@@ -529,6 +532,8 @@ function CreatorProfileSheet({
       });
     } catch {
       setIsFollowing(prev);
+    } finally {
+      followInFlight.current = false;
     }
   }
 
@@ -2620,7 +2625,7 @@ function DmSheet({ me, peer, peerName, peerAvatar, onClose }: {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "hsl(var(--background))" }}>
+    <div className="fixed inset-0 z-[300] flex flex-col" style={{ background: "hsl(var(--background))" }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-3 py-3 shrink-0 border-b" style={{ borderColor: "var(--color-border)" }}>
         <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
