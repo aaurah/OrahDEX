@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark, Plug2, Printer, Database,
+  Landmark, Plug2, Printer, Database, CreditCard,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -121,6 +121,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/db-sync",      label: "DB Sync & Health",   icon: ShieldCheck,     badge: "NEW" },
       { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database },
       { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
+      { href: "/admin/stripe-orders", label: "Stripe Orders",     icon: CreditCard, badge: "NEW" },
       { href: "/admin/treasury",     label: "Treasury",           icon: Landmark },
       { href: "/admin/mint-burn",    label: "Mint & Burn",        icon: Printer },
       { href: "/admin/fee-wallet",   label: "Fee Wallet",         icon: Wallet },

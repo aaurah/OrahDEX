@@ -68,6 +68,7 @@ const AdminApiSettings    = lazy(() => import("@/pages/admin/ApiSettings").then(
 const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").then(m => ({ default: m.AdminContractBuilder })));
 const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
 const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
+const AdminStripeOrders   = lazy(() => import("@/pages/admin/StripeOrders").then(m => ({ default: m.AdminStripeOrders })));
 const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
 const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
 const AdminArbBot         = lazy(() => import("@/pages/admin/ArbBot").then(m => ({ default: m.AdminArbBot })));
@@ -328,6 +329,7 @@ function Router() {
       <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
+      <Route path="/admin/stripe-orders"><AdminRoute><AdminStripeOrders /></AdminRoute></Route>
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
       <Route path="/admin/ledger">    <AdminRoute><AdminLedgerManager /></AdminRoute></Route>
       <Route path="/admin/db-sync">   <AdminRoute><AdminDbSync /></AdminRoute></Route>
