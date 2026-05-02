@@ -973,7 +973,7 @@ export function MobilePortfolio() {
 
           {/* DeFi tab */}
           {tab === "defi" && (
-            lpPositions.length === 0 && lockedEntries.length === 0 ? (
+            lpPositions.length === 0 && openOrders.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <Droplets className="w-8 h-8 opacity-30 mb-1" />
                 <p className="text-sm font-medium">No DeFi positions yet</p>
@@ -982,64 +982,84 @@ export function MobilePortfolio() {
             ) : (
               <div className="flex flex-col gap-3 mb-4">
 
-                {/* ── In Exchange Orders (busy coins) ───────────────────── */}
-                {lockedEntries.length > 0 && (
+                {/* ── In Exchange Orders — shown per order, always visible ─ */}
+                {openOrders.length > 0 && (
                   <div className="bg-orange-500/5 border border-orange-500/25 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
                         <svg className="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                         <span className="text-sm font-bold text-orange-300">In Exchange</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wide">Reserved</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wide">Open</span>
                       </div>
-                      <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
+                      {lockedTotalUsd > 0 && (
+                        <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
+                      )}
                     </div>
                     <p className="text-[10px] text-muted-foreground mb-3">
-                      Coins locked in your open orders. Released when orders fill or are cancelled.
+                      Coins reserved for your open orders. Released when orders fill or are cancelled.
                     </p>
-                    <div className="space-y-2.5">
-                      {lockedEntries.map(([token, v]) => {
-                        const isStable = STABLES.has(token);
-                        const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
-                        const usdVal = v.amount * p;
-                        const color = ASSET_COLORS[token] ?? "#6B7280";
+                    <div className="space-y-2">
+                      {openOrders.map((o: any) => {
+                        const parts = (o.symbol ?? "").split("/");
+                        const orderBase  = parts[0] ?? "";
+                        const orderQuote = parts[1] ?? "USDT";
+                        const qty   = parseFloat(o.quantity ?? o.qty ?? "0") || 0;
+                        const price = parseFloat(o.price ?? "0") || 0;
+                        const isMarket = !o.price || o.type === "market";
+                        const isBuy  = o.side === "buy";
+                        const lockedAsset  = isBuy ? orderQuote : orderBase;
+                        const ordInLocked = lockedByAsset[lockedAsset]?.orders.find((x: any) => String(x.id) === String(o.id));
+                        const lockedAmount = isBuy
+                          ? (ordInLocked ? ordInLocked.price * ordInLocked.qty : 0)
+                          : qty;
+                        const assetColor = ASSET_COLORS[lockedAsset] ?? "#6B7280";
                         return (
-                          <div key={token} className="flex items-start gap-3">
+                          <div key={o.id} className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
                             <div
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border mt-0.5"
-                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                              className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
+                              style={{ backgroundColor: assetColor + "22", borderColor: assetColor + "44", color: assetColor }}
                             >
-                              {token[0]}
+                              {lockedAsset[0]}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-foreground">{token}</span>
-                                <div className="text-right">
-                                  <div className="text-xs font-mono text-foreground">
-                                    {v.amount > 0
-                                      ? v.amount.toLocaleString(undefined, { maximumFractionDigits: v.amount < 0.001 ? 8 : 6 })
-                                      : "—"}
-                                  </div>
-                                  {usdVal > 0 && <div className="text-[10px] text-muted-foreground">≈ {formatQuoteAmount(usdVal, quoteCurrency)}</div>}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-foreground">{o.symbol}</span>
+                                <span
+                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{
+                                    backgroundColor: isBuy ? "#22c55e18" : "#ef444418",
+                                    color: isBuy ? "#22c55e" : "#ef4444",
+                                  }}
+                                >
+                                  {o.side?.toUpperCase()}
+                                </span>
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
+                                  {(o.type ?? "limit").toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                <span className="font-mono">{qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
+                                <span className="ml-1">{orderBase}</span>
+                                {!isMarket && price > 0 && (
+                                  <span className="ml-1 text-muted-foreground/70">@ {price < 1 ? price.toFixed(6) : price.toLocaleString(undefined, { maximumFractionDigits: 4 })} {orderQuote}</span>
+                                )}
+                                {isMarket && <span className="ml-1 text-muted-foreground/70">at market</span>}
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              {lockedAmount > 0 && (
+                                <div className="text-xs font-mono font-bold text-orange-300">
+                                  {lockedAmount.toLocaleString(undefined, { maximumFractionDigits: lockedAmount < 0.001 ? 8 : 6 })}
+                                  <span className="text-[9px] font-normal text-muted-foreground ml-0.5">{lockedAsset}</span>
                                 </div>
-                              </div>
-                              <div className="text-[10px] text-muted-foreground mt-0.5 space-y-0.5">
-                                {v.orders.map(o => (
-                                  <div key={o.id} className="flex items-center gap-1 flex-wrap">
-                                    <span
-                                      className="font-bold px-1 py-0.5 rounded text-[9px]"
-                                      style={{
-                                        backgroundColor: o.side === "buy" ? "#22c55e18" : "#ef444418",
-                                        color: o.side === "buy" ? "#22c55e" : "#ef4444",
-                                      }}
-                                    >
-                                      {o.side.toUpperCase()}
-                                    </span>
-                                    <span>{o.type.toUpperCase()}</span>
-                                    <span>{o.qty.toLocaleString(undefined, { maximumFractionDigits: 6 })} {o.symbol?.split("/")[0]}</span>
-                                    {o.price > 0 && <span className="text-muted-foreground/70">@ {o.price < 1 ? o.price.toFixed(6) : o.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>}
-                                  </div>
-                                ))}
-                              </div>
+                              )}
+                              <button
+                                onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
+                                disabled={cancellingId === String(o.id)}
+                                className="mt-1 text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold disabled:opacity-40 transition-all"
+                              >
+                                {cancellingId === String(o.id) ? "…" : "Cancel"}
+                              </button>
                             </div>
                           </div>
                         );
