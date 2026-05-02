@@ -324,7 +324,7 @@ router.get("/markets/:symbol/candles", async (req, res) => {
   try {
     const symbol   = normSymbol(req.params.symbol);
     const interval = (req.query.interval as string) || "1h";
-    const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1000);
+    const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1500);
 
     // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
     let market: (typeof marketsTable.$inferSelect) | undefined;
