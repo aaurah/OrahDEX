@@ -114,4 +114,6 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
+  clearScreen: false,
+  logLevel: "info",
 });
