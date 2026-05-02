@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
   faviconUrl: "",
   footerText: "© 2026 OrahDEX. All rights reserved.",
   metaTagline: "The world's fastest BSV-settled exchange.",
+  exchangeMode: "hybrid",
   defaultTheme: "dark",
   defaultFont: "Inter",
   // Colors
@@ -224,6 +225,17 @@ export function AdminSiteSettings() {
             </Field>
             <Field label="Slogan / Tagline" description="Short tagline shown in the hero and metadata">
               <Input value={settings.slogan} onChange={set("slogan")} placeholder="Trade means DEX" />
+            </Field>
+            <Field label="Exchange Mode" description="Controls how orders are routed — DEX uses the internal orderbook only, Hybrid routes between internal and external CEX liquidity, CEX routes all orders to connected CEX accounts">
+              <select
+                value={settings.exchangeMode}
+                onChange={e => set("exchangeMode")(e.target.value)}
+                className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="dex">DEX — Internal orderbook only</option>
+                <option value="hybrid">Hybrid — Internal + external CEX routing</option>
+                <option value="cex">CEX — Route all orders to connected CEX</option>
+              </select>
             </Field>
             <Field label="Logo" description="Upload or provide a URL for the exchange logo">
               <div className="space-y-3">
