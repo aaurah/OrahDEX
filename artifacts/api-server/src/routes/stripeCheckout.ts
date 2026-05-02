@@ -60,8 +60,15 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       res.status(400).json({ error: "coinSymbol is required" });
       return;
     }
-    if (!fiatAmountUsd || fiatAmountUsd < 10) {
-      res.status(400).json({ error: "Minimum purchase amount is $10" });
+    // LetsExchange enforces a $120 USDT minimum on the *deposit* amount.
+    // After our 1.5% fee, deposit = fiatUsd * 0.985, so the user-facing min must be
+    // ceil(120 / 0.985) = $122 to guarantee the swap is accepted.
+    if (!fiatAmountUsd || fiatAmountUsd < 122) {
+      res.status(400).json({
+        error: "Minimum purchase amount for direct checkout is $122 USD. For smaller amounts, use a partner provider (Ramp Network from $5, Alchemy Pay from $10, Transak from $15).",
+        minUsd: 122,
+        suggestPartnerProvider: true,
+      });
       return;
     }
     if (!walletAddress || walletAddress.trim().length < 15) {
