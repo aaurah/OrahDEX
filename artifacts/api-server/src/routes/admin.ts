@@ -549,29 +549,34 @@ router.get("/stats", async (_req, res) => {
 
 router.get("/trade-analytics", async (_req, res) => {
   try {
-    const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
-    const [filledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "filled"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
-    const [cancelledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(and(eq(ordersTable.status, "cancelled"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
-    const [totalOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
+    // Run all DB queries in parallel — single aggregation + two paginated fetches
+    const [summaryRow, allOrders, allTrades, activePairsRow] = await Promise.all([
+      // One query for all counts + volumes (no bot orders)
+      db.select({
+        total:          sql<number>`count(*)::int`,
+        openCnt:        sql<number>`count(*) filter (where ${ordersTable.status} = 'open')::int`,
+        filledCnt:      sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
+        cancelledCnt:   sql<number>`count(*) filter (where ${ordersTable.status} = 'cancelled')::int`,
+        openVol:        sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)) filter (where ${ordersTable.status} = 'open'),0)`,
+        filledVol:      sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)) filter (where ${ordersTable.status} = 'filled'),0)`,
+      }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")),
 
-    const [openVolumeRow] = await db.select({
-      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
-    }).from(ordersTable).where(eq(ordersTable.status, "open"));
+      // Recent user orders
+      db.select().from(ordersTable)
+        .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
+        .orderBy(desc(ordersTable.createdAt))
+        .limit(300),
 
-    const [filledVolumeRow] = await db.select({
-      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
-    }).from(ordersTable).where(eq(ordersTable.status, "filled"));
+      // Recent trades
+      db.select().from(tradesTable)
+        .orderBy(desc(tradesTable.timestamp))
+        .limit(300),
 
-    const allOrders = await db.select().from(ordersTable)
-      .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
-      .orderBy(desc(ordersTable.createdAt))
-      .limit(300);
+      // Active pairs count — cheap aggregate, no full table scan
+      db.select({ cnt: sql<number>`count(*)::int` }).from(marketsTable).where(eq(marketsTable.status, "active")),
+    ]);
 
-    const allTrades = await db.select().from(tradesTable)
-      .orderBy(desc(tradesTable.timestamp))
-      .limit(300);
-
-    const allMarkets = await db.select().from(marketsTable);
+    const s = summaryRow[0];
 
     const orderSummaries = allOrders.map(o => ({
       id: o.id,
@@ -608,32 +613,26 @@ router.get("/trade-analytics", async (_req, res) => {
       }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
     ).sort((a, b) => b.volume - a.volume).slice(0, 20);
 
-    const limitBreakdown = allOrders.reduce((acc, o) => {
-      const key = o.type ?? "unknown";
-      acc[key] ??= { type: key, count: 0, volume: 0 };
-      acc[key].count += 1;
-      acc[key].volume += Number(o.total ?? 0);
-      return acc;
-    }, {} as Record<string, { type: string; count: number; volume: number }>);
-
-    const liquidityOrders = allOrders.filter(o => String(o.walletAddress ?? "").toUpperCase().includes("BOT") || String(o.walletAddress ?? "").toUpperCase().includes("LIQUIDITY"));
-    const liquidityDepth = allMarkets.map(m => ({
-      symbol: m.symbol,
-      lastPrice: m.lastPrice,
-      status: m.status,
-      liquidityOrders: liquidityOrders.filter(o => o.symbol === m.symbol).length,
-    }));
+    const limitBreakdown = Object.values(
+      allOrders.reduce((acc, o) => {
+        const key = o.type ?? "unknown";
+        acc[key] ??= { type: key, count: 0, volume: 0 };
+        acc[key].count += 1;
+        acc[key].volume += Number(o.total ?? 0);
+        return acc;
+      }, {} as Record<string, { type: string; count: number; volume: number }>)
+    ).sort((a, b) => b.volume - a.volume);
 
     res.json({
       summary: {
-        totalOrders: totalOrdersRow?.cnt ?? 0,
-        openOrders: openOrdersRow?.cnt ?? 0,
-        filledOrders: filledOrdersRow?.cnt ?? 0,
-        cancelledOrders: cancelledOrdersRow?.cnt ?? 0,
-        openVolume: Number(openVolumeRow?.vol ?? 0),
-        filledVolume: Number(filledVolumeRow?.vol ?? 0),
-        totalTrades: allTrades.length,
-        activePairs: allMarkets.filter(m => m.status === "active").length,
+        totalOrders:    s?.total ?? 0,
+        openOrders:     s?.openCnt ?? 0,
+        filledOrders:   s?.filledCnt ?? 0,
+        cancelledOrders: s?.cancelledCnt ?? 0,
+        openVolume:     Number(s?.openVol ?? 0),
+        filledVolume:   Number(s?.filledVol ?? 0),
+        totalTrades:    allTrades.length,
+        activePairs:    activePairsRow[0]?.cnt ?? 0,
       },
       orders: orderSummaries,
       trades: allTrades.map(t => ({
@@ -649,8 +648,8 @@ router.get("/trade-analytics", async (_req, res) => {
         timestamp: t.timestamp,
       })),
       pairStats,
-      limitBreakdown: Object.values(limitBreakdown).sort((a, b) => b.volume - a.volume),
-      liquidityDepth,
+      limitBreakdown,
+      liquidityDepth: [],
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to build trade analytics" });
