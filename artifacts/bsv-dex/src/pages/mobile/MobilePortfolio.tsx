@@ -201,7 +201,7 @@ const POOL_LABELS_MOBILE: Record<string, string> = {
   "jst-usdt":  "JST / USDT",  "trx-btc":   "TRX / BTC",
 };
 
-interface MarketRow { symbol: string; baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+interface MarketRow { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; }
 
 function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({
@@ -432,6 +432,7 @@ export function MobilePortfolio() {
   // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
   // For SELL orders: base asset is reserved (e.g. 0.003 ETH locked for a sell)
   // For BUY  orders: quote asset is reserved (price × qty USDT)
+  const STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","FDUSD","USDD","oUSD"]);
   const openOrders = myOrders.filter(o => o.status === "open" || o.status === "pending");
   const lockedByAsset: Record<string, { amount: number; orders: { id: string; symbol: string; side: string; qty: number; price: number; type: string }[] }> = {};
   for (const order of openOrders) {
@@ -448,16 +449,23 @@ export function MobilePortfolio() {
     } else {
       const qty   = parseFloat(order.quantity) || parseFloat(order.qty) || 0;
       const price = parseFloat(order.price) || 0;
-      const cost  = price > 0 ? price * qty : 0;
-      if (cost > 0 && quote) {
+      // For market buy orders price is null/0 — estimate cost via USDT cross-rate
+      let cost = price > 0 ? price * qty : 0;
+      let estimatedPrice = price;
+      if (cost === 0 && qty > 0) {
+        const basePriceUsdt  = prices?.[base]?.lastPrice  ?? 0;
+        const quotePriceUsdt = STABLES.has(quote) ? 1 : (prices?.[quote]?.lastPrice ?? 0);
+        estimatedPrice = quotePriceUsdt > 0 ? basePriceUsdt / quotePriceUsdt : 0;
+        cost = estimatedPrice > 0 ? estimatedPrice * qty : 0;
+      }
+      if (qty > 0 && quote) {
         if (!lockedByAsset[quote]) lockedByAsset[quote] = { amount: 0, orders: [] };
         lockedByAsset[quote].amount += cost;
-        lockedByAsset[quote].orders.push({ id: order.id, symbol: order.symbol, side: "buy", qty, price, type: order.type ?? "limit" });
+        lockedByAsset[quote].orders.push({ id: order.id, symbol: order.symbol, side: "buy", qty, price: estimatedPrice, type: order.type ?? "market" });
       }
     }
   }
   const lockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
-  const STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","FDUSD","USDD","oUSD"]);
   const lockedTotalUsd = lockedEntries.reduce((s, [token, v]) => {
     const p = STABLES.has(token) ? 1 : (prices?.[token]?.lastPrice ?? 0);
     return s + v.amount * p;
@@ -883,9 +891,9 @@ export function MobilePortfolio() {
                   : t === "defi" ? "DeFi"
                   : t === "orders" ? "Orders"
                   : <><History size={11} className="shrink-0" />History</>}
-                {t === "defi" && lpPositions.length > 0 && (
+                {t === "defi" && (lpPositions.length + openOrders.length) > 0 && (
                   <span className="w-4 h-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
-                    {lpPositions.length}
+                    {lpPositions.length + openOrders.length}
                   </span>
                 )}
               </button>
@@ -965,14 +973,81 @@ export function MobilePortfolio() {
 
           {/* DeFi tab */}
           {tab === "defi" && (
-            lpPositions.length === 0 ? (
+            lpPositions.length === 0 && lockedEntries.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <Droplets className="w-8 h-8 opacity-30 mb-1" />
                 <p className="text-sm font-medium">No DeFi positions yet</p>
-                <p className="text-xs opacity-60 text-center">Add liquidity to a pool to get started</p>
+                <p className="text-xs opacity-60 text-center">Place orders or add liquidity to get started</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3 mb-4">
+
+                {/* ── In Exchange Orders (busy coins) ───────────────────── */}
+                {lockedEntries.length > 0 && (
+                  <div className="bg-orange-500/5 border border-orange-500/25 rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span className="text-sm font-bold text-orange-300">In Exchange</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wide">Reserved</span>
+                      </div>
+                      <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mb-3">
+                      Coins locked in your open orders. Released when orders fill or are cancelled.
+                    </p>
+                    <div className="space-y-2.5">
+                      {lockedEntries.map(([token, v]) => {
+                        const isStable = STABLES.has(token);
+                        const p = isStable ? 1 : (prices?.[token]?.lastPrice ?? 0);
+                        const usdVal = v.amount * p;
+                        const color = ASSET_COLORS[token] ?? "#6B7280";
+                        return (
+                          <div key={token} className="flex items-start gap-3">
+                            <div
+                              className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border mt-0.5"
+                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                            >
+                              {token[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-foreground">{token}</span>
+                                <div className="text-right">
+                                  <div className="text-xs font-mono text-foreground">
+                                    {v.amount > 0
+                                      ? v.amount.toLocaleString(undefined, { maximumFractionDigits: v.amount < 0.001 ? 8 : 6 })
+                                      : "—"}
+                                  </div>
+                                  {usdVal > 0 && <div className="text-[10px] text-muted-foreground">≈ {formatQuoteAmount(usdVal, quoteCurrency)}</div>}
+                                </div>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5 space-y-0.5">
+                                {v.orders.map(o => (
+                                  <div key={o.id} className="flex items-center gap-1 flex-wrap">
+                                    <span
+                                      className="font-bold px-1 py-0.5 rounded text-[9px]"
+                                      style={{
+                                        backgroundColor: o.side === "buy" ? "#22c55e18" : "#ef444418",
+                                        color: o.side === "buy" ? "#22c55e" : "#ef4444",
+                                      }}
+                                    >
+                                      {o.side.toUpperCase()}
+                                    </span>
+                                    <span>{o.type.toUpperCase()}</span>
+                                    <span>{o.qty.toLocaleString(undefined, { maximumFractionDigits: 6 })} {o.symbol?.split("/")[0]}</span>
+                                    {o.price > 0 && <span className="text-muted-foreground/70">@ {o.price < 1 ? o.price.toFixed(6) : o.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
 
                 {/* DeFi summary row — only when LP positions exist */}
                 {lpPositions.length > 0 && (
