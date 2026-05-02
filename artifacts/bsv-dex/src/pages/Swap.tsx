@@ -1926,7 +1926,7 @@ export function Swap() {
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"swap" | "buy">("swap");
+  const [activeTab, setActiveTab] = useState<"buy" | "swap" | "bridge">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
@@ -2156,128 +2156,154 @@ export function Swap() {
     <div className="min-h-screen bg-background flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* Swap / Bridge / Buy tab selector */}
-        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40">
-          <button
-            onClick={() => setActiveTab("swap")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
-              activeTab === "swap"
-                ? "bg-background border border-border/60 shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/60",
-            )}
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            Swap
-          </button>
-          <button
-            onClick={() => { if (isMobile) setLocation("/deposit-bsv"); else document.getElementById("lets-exchange-panel")?.scrollIntoView({ behavior: "smooth" }); }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
-          >
-            <Link2 className="w-3.5 h-3.5" />
-            Bridge
-          </button>
-          <button
-            onClick={() => setActiveTab("buy")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold transition-colors",
-              activeTab === "buy"
-                ? "bg-background border border-border/60 shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/60",
-            )}
-          >
-            <ShoppingCart className="w-3.5 h-3.5" />
-            Buy
-          </button>
+        {/* Tab selector — Buy · Swap · Bridge */}
+        <div className="flex items-center gap-1 p-1 bg-muted/40 rounded-2xl border border-border/40 backdrop-blur-sm">
+          {([ 
+            { key: "buy",    label: "Buy",    icon: <ShoppingCart className="w-3.5 h-3.5" />,  gradient: "from-blue-500 to-violet-600" },
+            { key: "swap",   label: "Swap",   icon: <ArrowUpDown className="w-3.5 h-3.5" />,   gradient: "from-violet-500 to-fuchsia-600" },
+            { key: "bridge", label: "Bridge", icon: <Link2 className="w-3.5 h-3.5" />,         gradient: "from-emerald-500 to-teal-500" },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
+                activeTab === tab.key
+                  ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg shadow-primary/20`
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Buy tab */}
+        {/* ═══════════════ BUY TAB ═══════════════ */}
         {activeTab === "buy" && (
           <>
-            {/* ── Fiat Payment Methods ── */}
-            <div className="rounded-2xl border border-border bg-card shadow-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-bold">
-                  <CreditCard className="w-4 h-4 text-blue-400" />
-                  Buy with Fiat
+            {/* Hero card */}
+            <div className="relative rounded-3xl overflow-hidden border border-blue-500/20 shadow-2xl">
+              {/* Background gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-violet-600/15 to-fuchsia-600/10" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent" />
+
+              <div className="relative p-5 space-y-4">
+                {/* Title row */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight">Buy Crypto</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">Instant purchase · Best rates · 150+ countries</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-muted-foreground/60 font-medium">15+ providers</span>
+
+                {/* Trust strips */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { icon: "⚡", label: "Instant" },
+                    { icon: "🔒", label: "Secure" },
+                    { icon: "💳", label: "No fees*" },
+                  ].map(t => (
+                    <div key={t.label} className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-semibold text-muted-foreground">
+                      <span>{t.icon}</span> {t.label}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Payment method cards — 2×2 */}
+                <div className="grid grid-cols-2 gap-2.5">
+
+                  {/* Credit Card — featured */}
+                  <button
+                    onClick={() => openFiatModal("card")}
+                    className="group relative col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-blue-500/40 bg-gradient-to-r from-blue-600/25 to-violet-600/20 hover:from-blue-600/35 hover:to-violet-600/30 hover:border-blue-400/60 transition-all active:scale-[0.99] shadow-lg"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shrink-0">
+                      <CreditCard className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black">Credit / Debit Card</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">RECOMMENDED</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Visa · Mastercard · Amex · Instant</p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+
+                  {/* Apple Pay */}
+                  <button
+                    onClick={() => openFiatModal("apple")}
+                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-zinc-900/80 to-zinc-800/60 hover:border-white/25 hover:from-zinc-800/90 hover:to-zinc-700/70 transition-all active:scale-95 shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                      <svg viewBox="0 0 24 24" className="w-6 h-6 fill-black"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-white">Apple Pay</p>
+                      <p className="text-[9px] text-muted-foreground">Touch ID · Face ID</p>
+                    </div>
+                  </button>
+
+                  {/* Google Pay */}
+                  <button
+                    onClick={() => openFiatModal("google")}
+                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-slate-900/80 to-slate-800/60 hover:border-blue-400/30 hover:from-slate-800/90 hover:to-slate-700/70 transition-all active:scale-95 shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                      <svg viewBox="0 0 24 24" className="w-6 h-6">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold">Google Pay</p>
+                      <p className="text-[9px] text-muted-foreground">1-tap · Secure</p>
+                    </div>
+                  </button>
+
+                  {/* Bank Transfer */}
+                  <button
+                    onClick={() => openFiatModal("bank")}
+                    className="group col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-gradient-to-r from-emerald-950/40 to-teal-950/30 hover:border-emerald-500/30 hover:from-emerald-950/60 hover:to-teal-950/50 transition-all active:scale-[0.99] shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow shrink-0">
+                      <Building2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="text-sm font-bold">Bank Transfer</p>
+                      <p className="text-[11px] text-muted-foreground">SEPA · ACH · Wire · 1–3 days</p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground/50 text-center pb-1">
+                  *Network fees apply · Powered by Stripe · Best rate guarantee
+                </p>
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Instantly buy crypto with your preferred payment method. Best rates from MoonPay, Transak, Ramp, Banxa &amp; more.
-              </p>
-
-              {/* 2×2 grid of payment method cards */}
-              <div className="grid grid-cols-2 gap-2.5">
-
-                {/* Apple Pay */}
-                <button
-                  onClick={() => openFiatModal("apple")}
-                  className="group flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-gradient-to-br from-zinc-900 to-zinc-800 hover:border-white/30 hover:from-zinc-800 hover:to-zinc-700 transition-all active:scale-95"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow">
-                    <svg viewBox="0 0 24 24" className="w-6 h-6 fill-black"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-                  </div>
-                  <span className="text-xs font-bold text-white">Apple Pay</span>
-                  <span className="text-[9px] text-muted-foreground">Instant · Touch ID</span>
-                </button>
-
-                {/* Google Pay */}
-                <button
-                  onClick={() => openFiatModal("google")}
-                  className="group flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-gradient-to-br from-blue-950/60 to-blue-900/40 hover:border-blue-500/40 hover:from-blue-900/60 hover:to-blue-800/40 transition-all active:scale-95"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shadow">
-                    <svg viewBox="0 0 24 24" className="w-6 h-6"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                  </div>
-                  <span className="text-xs font-bold text-foreground">Google Pay</span>
-                  <span className="text-[9px] text-muted-foreground">Instant · Secure</span>
-                </button>
-
-                {/* Credit / Debit Card */}
-                <button
-                  onClick={() => openFiatModal("card")}
-                  className="group flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-gradient-to-br from-violet-950/60 to-purple-900/40 hover:border-violet-500/40 hover:from-violet-900/60 hover:to-purple-800/40 transition-all active:scale-95"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow">
-                    <CreditCard className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-xs font-bold text-foreground">Credit Card</span>
-                  <span className="text-[9px] text-muted-foreground">Visa · MC · Amex</span>
-                </button>
-
-                {/* Bank Transfer */}
-                <button
-                  onClick={() => openFiatModal("bank")}
-                  className="group flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-gradient-to-br from-emerald-950/60 to-green-900/40 hover:border-emerald-500/40 hover:from-emerald-900/60 hover:to-green-800/40 transition-all active:scale-95"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow">
-                    <Building2 className="w-5 h-5 text-white" />
-                  </div>
-                  <span className="text-xs font-bold text-foreground">Bank Transfer</span>
-                  <span className="text-[9px] text-muted-foreground">SEPA · ACH · Wire</span>
-                </button>
-              </div>
-
-              <p className="text-[10px] text-muted-foreground/50 text-center">
-                Powered by MoonPay, Transak, Ramp, Banxa, Simplex &amp; more · Best rate guarantee
-              </p>
             </div>
 
             {/* Divider */}
             <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border/40" />
-              <span className="text-[11px] text-muted-foreground/60 font-medium">or swap with crypto</span>
-              <div className="flex-1 h-px bg-border/40" />
+              <div className="flex-1 h-px bg-border/30" />
+              <span className="text-[11px] text-muted-foreground/50 font-medium px-1">or buy with crypto</span>
+              <div className="flex-1 h-px bg-border/30" />
             </div>
 
-            {/* Existing crypto-to-crypto panel */}
+            {/* Crypto-to-crypto buy panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
 
             {/* Purchase history */}
             <BuyHistory walletAddress={address ?? null} />
 
-            {/* KYC verification gate — opens before first purchase */}
+            {/* KYC gate */}
             <KycModal
               open={kycModalOpen}
               walletAddress={address ?? ""}
@@ -2285,7 +2311,7 @@ export function Swap() {
               onVerified={handleKycVerified}
             />
 
-            {/* Fiat on-ramp modal — Coinbase-style direct purchase via Stripe */}
+            {/* Direct buy modal */}
             <DirectBuyModal
               open={fiatModalOpen}
               onClose={() => setFiatModalOpen(false)}
@@ -2294,19 +2320,47 @@ export function Swap() {
           </>
         )}
 
-        {/* Swap tab content */}
+        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
+        {activeTab === "bridge" && (
+          <div className="space-y-4">
+            {/* Bridge hero */}
+            <div className="relative rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/15 via-teal-600/10 to-cyan-600/5" />
+              <div className="relative p-5 pb-3 space-y-1">
+                <h2 className="text-xl font-black tracking-tight">Cross-Chain Bridge</h2>
+                <p className="text-xs text-muted-foreground">6,000+ coins · Non-custodial · Best rates across chains</p>
+                <div className="flex items-center gap-4 pt-2 pb-1">
+                  {[["🌐","Multi-chain"],["⚡","Fast swaps"],["🔐","Non-custodial"]].map(([icon,label]) => (
+                    <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                      <span>{icon}</span>{label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div id="lets-exchange-panel">
+              <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════ SWAP TAB ═══════════════ */}
         {activeTab === "swap" && (<>
 
-        {/* OrahBridge Panel — 6000+ coins, non-custodial, cross-chain */}
-        <div id="lets-exchange-panel">
-          <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
-        </div>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap on-chain</span>
-          <div className="flex-1 h-px bg-border/40" />
+        {/* Swap hero label */}
+        <div className="relative rounded-3xl overflow-hidden border border-violet-500/20 shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-600/15 via-fuchsia-600/10 to-pink-600/5" />
+          <div className="relative p-5 pb-3 space-y-1">
+            <h2 className="text-xl font-black tracking-tight">On-Chain Swap</h2>
+            <p className="text-xs text-muted-foreground">DEX swap · Best price routing · Your keys, your crypto</p>
+            <div className="flex items-center gap-4 pt-2 pb-1">
+              {[["⚡","Uniswap V3"],["🛡️","Non-custodial"],["🔄","Best route"]].map(([icon,label]) => (
+                <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                  <span>{icon}</span>{label}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <>
