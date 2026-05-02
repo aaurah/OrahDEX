@@ -68,6 +68,7 @@ export function AdminStripeOrders() {
   const [q, setQ] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [deliveryModal, setDeliveryModal] = useState<StripeOrder | null>(null);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin", "stripe-orders", statusFilter, q],
@@ -126,15 +127,13 @@ export function AdminStripeOrders() {
     },
     onSuccess: (j: any) => {
       qc.invalidateQueries({ queryKey: ["admin", "stripe-orders"] });
-      const o = j?.order;
+      const o = j?.order as StripeOrder | undefined;
       if (o?.le_deposit_address) {
-        window.alert(
-          `Fulfillment created.\n\nSend USDT (ERC20) to:\n${o.le_deposit_address}\n\nLE Tx: ${o.le_transaction_id ?? "—"}\nStatus: ${o.le_status ?? o.status}`
-        );
+        setDeliveryModal(o);
       } else if (o?.error_message) {
-        window.alert(`Fulfillment failed: ${o.error_message}`);
+        window.alert(`Fulfillment failed:\n\n${o.error_message}\n\nCheck that LETSEXCHANGE_API_KEY is set, the coin is supported, and the customer wallet is valid.`);
       } else {
-        window.alert("Fulfillment triggered. Check the row for LE deposit address.");
+        window.alert("Fulfillment endpoint returned no deposit address. Check API server logs for the LetsExchange response.");
       }
     },
   });
@@ -301,11 +300,20 @@ export function AdminStripeOrders() {
                     </td>
                     <td className="px-3 py-2 align-top">
                       <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px]", meta.cls)}>
-                        <StatusIcon className="w-3 h-3" />
+                        <StatusIcon className={cn("w-3 h-3", o.status === "processing" && "animate-spin")} />
                         {meta.label}
                       </span>
+                      {o.le_deposit_address && (
+                        <button
+                          onClick={() => setDeliveryModal(o)}
+                          className="mt-1 block text-[10px] text-sky-400 hover:text-sky-300 underline truncate max-w-[200px] font-mono text-left"
+                          title="Show full LE deposit address"
+                        >
+                          → USDT: {shorten(o.le_deposit_address, 10, 8)}
+                        </button>
+                      )}
                       {o.error_message && (
-                        <div className="mt-1 text-[10px] text-red-400 max-w-[180px] truncate" title={o.error_message}>{o.error_message}</div>
+                        <div className="mt-1 text-[10px] text-red-400 max-w-[200px] truncate" title={o.error_message}>{o.error_message}</div>
                       )}
                     </td>
                     <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">{fmtDate(o.created_at)}</td>
@@ -365,6 +373,109 @@ export function AdminStripeOrders() {
           </table>
         </div>
       </div>
+
+      {deliveryModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setDeliveryModal(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-xs text-emerald-400 font-semibold uppercase tracking-wide">Send Coins to Customer</div>
+                <h2 className="text-xl font-bold mt-1">Deliver {deliveryModal.coin_symbol} via LetsExchange</h2>
+                <p className="text-xs text-muted-foreground mt-1">Order {shorten(deliveryModal.id, 10, 6)}</p>
+              </div>
+              <button
+                onClick={() => setDeliveryModal(null)}
+                className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3">
+              <div className="text-[11px] uppercase font-semibold text-amber-300 mb-2">Step 1 — Send USDT (ERC-20) to this address</div>
+              <div className="bg-black/40 rounded-lg p-3 font-mono text-sm break-all text-emerald-300 select-all">
+                {deliveryModal.le_deposit_address}
+              </div>
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(deliveryModal.le_deposit_address ?? "");
+                    setCopiedId("modal-addr");
+                    setTimeout(() => setCopiedId(null), 1500);
+                  }}
+                  className="flex-1 px-3 py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-sm hover:bg-emerald-500/25 flex items-center justify-center gap-2"
+                >
+                  {copiedId === "modal-addr" ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy address</>}
+                </button>
+                <a
+                  href={`https://etherscan.io/address/${deliveryModal.le_deposit_address}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="px-3 py-2 rounded-lg bg-secondary border border-border text-sm hover:bg-secondary/80"
+                >
+                  Etherscan ↗
+                </a>
+              </div>
+              {deliveryModal.le_deposit_extra_id && (
+                <div className="mt-2 text-xs">
+                  <span className="text-amber-300 font-semibold">Memo / Extra ID:</span>{" "}
+                  <span className="font-mono">{deliveryModal.le_deposit_extra_id}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-secondary/40 p-3">
+                <div className="text-[10px] uppercase text-muted-foreground">Amount to send</div>
+                <div className="text-lg font-bold text-amber-300 mt-1">
+                  ≈ ${((deliveryModal.fiat_amount_cents / 100) * (1 - 0.015)).toFixed(2)}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">USDT (ERC-20)</div>
+              </div>
+              <div className="rounded-lg bg-secondary/40 p-3">
+                <div className="text-[10px] uppercase text-muted-foreground">Customer receives</div>
+                <div className="text-lg font-bold text-emerald-300 mt-1">
+                  {Number(deliveryModal.crypto_amount).toLocaleString(undefined, { maximumFractionDigits: 8 })} {deliveryModal.coin_symbol}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">delivered automatically</div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/60 bg-card/60 p-3 space-y-2">
+              <div>
+                <div className="text-[10px] uppercase text-muted-foreground">Customer wallet ({deliveryModal.coin_symbol})</div>
+                <div className="font-mono text-xs break-all mt-0.5">{deliveryModal.wallet_address}</div>
+              </div>
+              {deliveryModal.le_transaction_id && (
+                <div>
+                  <div className="text-[10px] uppercase text-muted-foreground">LetsExchange Tx ID</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{deliveryModal.le_transaction_id}</span>
+                    <a
+                      href={`https://letsexchange.io/transaction/${deliveryModal.le_transaction_id}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-[11px] text-sky-400 hover:text-sky-300 underline"
+                    >
+                      Track ↗
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="text-xs text-muted-foreground border-t border-border/50 pt-3">
+              <strong className="text-foreground">How it works:</strong> Once your USDT deposit confirms on Ethereum,
+              LetsExchange automatically swaps it and sends {deliveryModal.coin_symbol} to the customer's wallet.
+              Status will update to <em>completed</em> here when delivery finishes.
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-lg border border-border/50 bg-secondary/20 p-3 text-xs text-muted-foreground space-y-1">
         <div><strong className="text-emerald-400">Send coins</strong> — manually creates a LetsExchange swap and returns a USDT-ERC20 deposit address. Send USDT to that address from your hot wallet to deliver crypto to the customer.</div>
