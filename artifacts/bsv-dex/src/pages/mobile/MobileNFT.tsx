@@ -611,9 +611,9 @@ function CreatorProfileSheet({
       <div className="flex-1 overflow-y-auto">
 
         {/* ── Cover image ── */}
-        <div className="relative h-28 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
+        <div className="relative h-28 shrink-0" style={{ background: "linear-gradient(180deg,#0a0a0a 0%,#111111 100%)" }}>
           {!imgErr && profile.cover_url && (
-            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.7 }} onError={() => setImgErr(true)} />
+            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           )}
           {isSelf && (
             <>
@@ -623,13 +623,8 @@ function CreatorProfileSheet({
                 className="absolute inset-0 w-full h-full flex items-center justify-center"
                 style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
               >
-                {photoUploading === "cover" ? (
+                {photoUploading === "cover" && (
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center"
-                    style={{ background: "rgba(0,0,0,0.42)", backdropFilter: "blur(4px)" }}>
-                    <Camera size={16} style={{ color: "#fff" }} />
-                  </div>
                 )}
               </button>
             </>
@@ -647,12 +642,10 @@ function CreatorProfileSheet({
                 <button
                   onClick={() => avatarFileRef.current?.click()}
                   className="absolute inset-0 rounded-full flex items-center justify-center"
-                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.30)" }}
+                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
                 >
-                  {photoUploading === "avatar" ? (
+                  {photoUploading === "avatar" && (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Camera size={16} style={{ color: "#fff" }} />
                   )}
                 </button>
               </div>
