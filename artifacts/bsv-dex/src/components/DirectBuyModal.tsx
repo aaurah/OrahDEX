@@ -139,7 +139,11 @@ const DIRECT_BUY_COINS: CoinDef[] = [
   },
 ];
 
-const QUICK_AMOUNTS = ["50", "100", "250", "500", "1000"];
+const QUICK_AMOUNTS = ["125", "250", "500", "1000", "2500"];
+// LetsExchange enforces a $120 USDT minimum on the *deposit* amount.
+// After our 1.5% fee, deposit = fiatUsd * 0.985, so the user-facing min must be
+// ceil(120 / 0.985) = $122 to guarantee the swap is accepted.
+const DIRECT_MIN_USD = 122;
 const FEE_RATE = 0.015; // 1.5%
 
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
@@ -210,6 +214,9 @@ interface Props {
   onClose: () => void;
   defaultCoin?: string;
   defaultPayMethod?: FiatPayMethod;
+  /** Optional: invoked when the user wants to switch to partner providers
+   *  (deep-link onramps with lower minimums — Ramp $5, Alchemy $10, Transak $15) */
+  onSwitchToProviders?: () => void;
 }
 
 const SESSION_ADDR_KEY = "orahdex_session_addr";
@@ -224,12 +231,13 @@ export function DirectBuyModal({
   onClose,
   defaultCoin = "BTC",
   defaultPayMethod = "card",
+  onSwitchToProviders,
 }: Props) {
   const { address } = useWalletStore();
 
   const [step,          setStep]          = useState<Step>("amount");
   const [coin,          setCoin]          = useState(defaultCoin);
-  const [fiatAmount,    setFiatAmount]    = useState("100");
+  const [fiatAmount,    setFiatAmount]    = useState("150");
   const [walletAddr,    setWalletAddr]    = useState("");
   const [showCoinList,  setShowCoinList]  = useState(false);
 
@@ -275,7 +283,7 @@ export function DirectBuyModal({
     setStep("amount");
     const startCoin = defaultCoin;
     setCoin(startCoin);
-    setFiatAmount("100");
+    setFiatAmount("150");
     const startDef = DIRECT_BUY_COINS.find(c => c.symbol === startCoin);
     setWalletAddr(startDef?.chain === "evm" && address ? address : "");
     setShowCoinList(false);
@@ -345,7 +353,7 @@ export function DirectBuyModal({
   const isEvm        = coinDef?.chain === "evm";
   const isReady      = !!pubKey && !pubKeyErr;
   const addrValid    = walletAddr.trim().length >= 15 && (coinDef?.addressRegex?.test(walletAddr.trim()) ?? true);
-  const canPreview   = fiatNum >= 10 && addrValid && isReady;
+  const canPreview   = fiatNum >= DIRECT_MIN_USD && addrValid && isReady;
 
   /* ── Payment method label ────────────────────────────────────────────────── */
   const methodLabel: Record<FiatPayMethod, string> = {
@@ -545,11 +553,11 @@ export function DirectBuyModal({
                   <span className="text-2xl font-bold text-muted-foreground/60">$</span>
                   <input
                     type="number"
-                    min="10"
+                    min={DIRECT_MIN_USD}
                     step="10"
                     value={fiatAmount}
                     onChange={e => setFiatAmount(e.target.value)}
-                    placeholder="100"
+                    placeholder="150"
                     className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/30"
                   />
                   <span className="text-sm font-semibold text-muted-foreground">USD</span>
@@ -573,7 +581,7 @@ export function DirectBuyModal({
               </div>
 
               {/* Price preview card */}
-              {price > 0 && fiatNum >= 10 && (
+              {price > 0 && fiatNum >= DIRECT_MIN_USD && (
                 <div className="rounded-xl bg-muted/30 border border-border/40 divide-y divide-border/30 text-sm overflow-hidden">
                   <div className="flex justify-between px-4 py-2.5 text-muted-foreground">
                     <span>Current price</span>
@@ -593,8 +601,26 @@ export function DirectBuyModal({
                   </div>
                 </div>
               )}
-              {fiatNum > 0 && fiatNum < 10 && (
-                <p className="text-xs text-amber-400 text-center">Minimum purchase is $10</p>
+              {fiatNum > 0 && fiatNum < DIRECT_MIN_USD && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+                    <div className="text-xs text-amber-300 leading-relaxed">
+                      <span className="font-semibold">Direct checkout minimum is ${DIRECT_MIN_USD}.</span>
+                      {" "}Our swap partner (LetsExchange) requires at least $120 after fees.
+                    </div>
+                  </div>
+                  {onSwitchToProviders && (
+                    <button
+                      type="button"
+                      onClick={() => { onClose(); onSwitchToProviders(); }}
+                      className="w-full py-2 rounded-lg text-xs font-bold bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 transition flex items-center justify-center gap-1.5"
+                    >
+                      Buy ${fiatNum.toFixed(0)} via partner provider (from $5)
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* Wallet address — chain-aware */}
@@ -691,8 +717,8 @@ export function DirectBuyModal({
                   <><Loader2 className="w-4 h-4 animate-spin" /> Creating order…</>
                 ) : !isReady ? (
                   "Stripe not connected"
-                ) : fiatNum < 10 ? (
-                  "Minimum purchase is $10"
+                ) : fiatNum < DIRECT_MIN_USD ? (
+                  `Minimum is $${DIRECT_MIN_USD}`
                 ) : walletAddr.trim().length < 15 ? (
                   "Enter your wallet address"
                 ) : (

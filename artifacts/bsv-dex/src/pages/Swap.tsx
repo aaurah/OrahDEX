@@ -1930,6 +1930,7 @@ export function Swap() {
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
+  const [buyCryptoOpen, setBuyCryptoOpen]           = useState(false);
 
   const [kycModalOpen,  setKycModalOpen]            = useState(false);
   const SESSION_KYC_KEY = "orahdex_kyc_verified";
@@ -2324,10 +2325,18 @@ export function Swap() {
               onVerified={handleKycVerified}
             />
 
-            {/* Direct buy modal */}
+            {/* Direct buy modal (Stripe + LetsExchange — $120 min) */}
             <DirectBuyModal
               open={fiatModalOpen}
               onClose={() => setFiatModalOpen(false)}
+              defaultPayMethod={fiatModalMethod}
+              onSwitchToProviders={() => setBuyCryptoOpen(true)}
+            />
+
+            {/* Partner-provider modal (Ramp/Transak/MoonPay/etc — from $5) */}
+            <BuyCryptoModal
+              open={buyCryptoOpen}
+              onClose={() => setBuyCryptoOpen(false)}
               defaultPayMethod={fiatModalMethod}
             />
           </>
