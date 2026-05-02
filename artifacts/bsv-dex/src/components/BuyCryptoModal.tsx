@@ -12,6 +12,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   defaultCoin?: string;
+  defaultPayMethod?: PayMethod;
 }
 
 interface EvmChain {
@@ -300,7 +301,7 @@ type Step = "connect" | "coin" | "method" | "quote" | "checkout";
 const STEPS: Step[] = ["connect","coin","method","quote","checkout"];
 const STEP_LABELS = ["Connect","Select","Pay","Quote","Confirm"];
 
-export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
+export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayMethod }: Props) {
   const { address, provider: walletProvider, chainId: connectedChainId } = useWalletStore();
   const connectWallet = useWalletStore(s => s.connect);
 
@@ -340,13 +341,14 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
   useEffect(() => {
     if (open) {
       setStep(address ? "coin" : "connect");
-      setCoin(defaultCoin); setSearch(""); setAmount("100"); setPayMethod("card");
+      setCoin(defaultCoin); setSearch(""); setAmount("100");
+      setPayMethod(defaultPayMethod ?? "card");
       setProviderId(""); setNativeAddr(""); setAddrErr(null); setSwitchErr(null); setSwitchedChainId(null);
       setNotFoundWalletId(null); setManualEvmAddr(""); setManualEvmErr(null);
       setBsvSubStep("list"); setBsvHandle(""); setHandleState("idle"); setHandleErr(null);
       setManualBsvAddr(""); setManualBsvWallet("bsv");
     }
-  }, [open, defaultCoin]);
+  }, [open, defaultCoin, defaultPayMethod]);
 
   useEffect(() => { if (step === "connect" && address) setStep("coin"); }, [address, step]);
   useEffect(() => { setNativeAddr(""); setAddrErr(null); setSwitchErr(null); setSwitchedChainId(null); }, [coin]);
