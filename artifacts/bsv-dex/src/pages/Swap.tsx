@@ -258,8 +258,8 @@ async function tryQuoteOnRpc(
         functionName: "quoteExactInputSingle",
         args: [{ tokenIn, tokenOut, amountIn, fee: fee as 100|500|3000|10000, sqrtPriceLimitX96: 0n }],
       });
-      if ((result as bigint[])[0] > 0n) {
-        return { amountOut: (result as bigint[])[0], gasEstimate: (result as bigint[])[3], fee };
+      if ((result as unknown as bigint[])[0] > 0n) {
+        return { amountOut: (result as unknown as bigint[])[0], gasEstimate: (result as unknown as bigint[])[3], fee };
       }
     } catch {}
   }
@@ -315,7 +315,7 @@ async function executeSwap(
   if (!isEthIn) {
     const currentAllowance = await checkAllowance(fromToken.address, userAddress, routerAddr, chainId);
     if (currentAllowance < amountIn) {
-      await coreWriteContract(config, {
+      await coreWriteContract(config!, {
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
@@ -336,7 +336,7 @@ async function executeSwap(
       functionName: "unwrapWETH9",
       args: [amountOutMin, userAddress],
     });
-    return await coreWriteContract(config, {
+    return await coreWriteContract(config!, {
       address: routerAddr,
       abi: SWAP_ROUTER_ABI,
       functionName: "multicall",
@@ -346,7 +346,7 @@ async function executeSwap(
     });
   }
 
-  return await coreWriteContract(config, {
+  return await coreWriteContract(config!, {
     address: routerAddr,
     abi: SWAP_ROUTER_ABI,
     functionName: "exactInputSingle",

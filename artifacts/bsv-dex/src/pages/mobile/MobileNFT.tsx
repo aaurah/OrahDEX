@@ -480,7 +480,7 @@ function CreatorProfileSheet({
       .catch(() => {});
     fetch(`${API}/social/holdings/${creatorAddress}`)
       .then(r => r.ok ? r.json() : {})
-      .then(d => { const h = Array.isArray(d.holdings) ? d.holdings : []; _profileHoldingsCache[creatorAddress] = h; setHoldingItems(h); })
+      .then(d => { const data = d as { holdings?: any[] }; const h = Array.isArray(data.holdings) ? data.holdings : []; _profileHoldingsCache[creatorAddress] = h; setHoldingItems(h); })
       .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 

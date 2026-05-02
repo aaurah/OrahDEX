@@ -837,8 +837,8 @@ function CoinDetailPanel({
 }) {
   const base  = coin.baseAsset ?? coin.symbol.split(/[-/]/)[0];
   const quote = coin.quoteAsset ?? coin.symbol.split(/[-/]/)[1];
-  const price = parseFloat(coin.lastPrice) || 0;
-  const chg   = parseFloat(coin.priceChangePercent24h) || 0;
+  const price = parseFloat(String(coin.lastPrice)) || 0;
+  const chg   = parseFloat(String(coin.priceChangePercent24h)) || 0;
   const isUp  = chg >= 0;
   const priceUSD = toUSD(price, quote);
   const isFutures = tab === "futures";
@@ -922,10 +922,10 @@ function CoinDetailPanel({
             </p>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: "High", value: qPrice(parseFloat(coin.high24h) || 0), color: "text-green-400" },
-                { label: "Low",  value: qPrice(parseFloat(coin.low24h) || 0),  color: "text-red-400" },
-                { label: "Volume", value: formatVolume(parseFloat(coin.volume24h) || 0), color: "text-foreground" },
-                { label: "Market Cap", value: coin.marketCap ? formatVolume(parseFloat(coin.marketCap) || 0) : "—", color: "text-foreground" },
+                { label: "High", value: qPrice(parseFloat(String(coin.high24h ?? 0)) || 0), color: "text-green-400" },
+                { label: "Low",  value: qPrice(parseFloat(String(coin.low24h ?? 0)) || 0),  color: "text-red-400" },
+                { label: "Volume", value: formatVolume(parseFloat(String(coin.volume24h ?? 0)) || 0), color: "text-foreground" },
+                { label: "Market Cap", value: coin.marketCap ? formatVolume(parseFloat(String(coin.marketCap)) || 0) : "—", color: "text-foreground" },
               ].map(s => (
                 <div key={s.label} className="bg-background/50 rounded-lg p-2">
                   <p className="text-[10px] text-muted-foreground">{s.label}</p>

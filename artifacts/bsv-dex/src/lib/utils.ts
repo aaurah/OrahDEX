@@ -93,7 +93,7 @@ export const COIN_NAMES: Record<string, string> = {
   FLOKI: "floki inu",      TRUMP: "trump meme",           STRK:  "starknet",
   EIGEN: "eigenlayer",     ZRO:   "layerzero",            MNT:   "mantle",
   BEAM:  "beam",           PRIME: "echelon prime",        PIXEL: "pixels game",
-  ARB:   "arbitrum",       BASE:  "base chain",           ZK:    "zksync",
+  BASE:  "base chain",      ZK:    "zksync",
   SCR:   "scroll",         LINEA: "linea",                GBP:   "british pound sterling",
   EUR:   "euro",           AUD:   "australian dollar",    JPY:   "japanese yen",
 };

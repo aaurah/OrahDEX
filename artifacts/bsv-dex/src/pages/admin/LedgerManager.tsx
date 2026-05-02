@@ -70,26 +70,26 @@ export function AdminLedgerManager() {
   // ── queries ────────────────────────────────────────────────────────────────
   const { data: balances = [], isFetching: balFetching, refetch: refetchBal } = useQuery<LedgerBalance[]>({
     queryKey: ["admin-ledger-balance", activeAddr],
-    queryFn:  () => adminFetch(`${API}/api/admin/user-exchange-balance/${encodeURIComponent(activeAddr)}`),
+    queryFn:  () => adminFetch(`${API}/api/admin/user-exchange-balance/${encodeURIComponent(activeAddr)}`).then(r => r.json()),
     enabled:  !!activeAddr,
     staleTime: 0,
   });
 
   const { data: walletsData, isFetching: walletsFetching, refetch: refetchWallets } = useQuery<{ wallets: WalletRow[]; total: number }>({
     queryKey: ["admin-ledger-wallets", walletSearch],
-    queryFn:  () => adminFetch(`${API}/api/admin/ledger-wallets?limit=50&search=${encodeURIComponent(walletSearch)}`),
+    queryFn:  () => adminFetch(`${API}/api/admin/ledger-wallets?limit=50&search=${encodeURIComponent(walletSearch)}`).then(r => r.json()),
     staleTime: 30_000,
   });
 
   const { data: pendingWithdrawals = [], refetch: refetchWd } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals-pending"],
-    queryFn:  () => adminFetch(`${API}/api/admin/withdrawals?status=pending`),
+    queryFn:  () => adminFetch(`${API}/api/admin/withdrawals?status=pending`).then(r => r.json()),
     refetchInterval: 15_000,
   });
 
   const { data: auditLog = [], refetch: refetchAudit } = useQuery<AuditRow[]>({
     queryKey: ["admin-ledger-audit"],
-    queryFn:  () => adminFetch(`${API}/api/admin/ledger-audit`),
+    queryFn:  () => adminFetch(`${API}/api/admin/ledger-audit`).then(r => r.json()),
     staleTime: 10_000,
   });
 
