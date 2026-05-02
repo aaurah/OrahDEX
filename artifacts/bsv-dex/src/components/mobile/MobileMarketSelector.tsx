@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight } from "lucide-react";
+import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight, Info } from "lucide-react";
+import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import {
@@ -332,6 +333,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [search, setSearch]   = useState("");
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
+  const [infoCoin, setInfoCoin] = useState<string | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("market_favorites");
@@ -620,38 +622,46 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                       <CoinLogo symbol={m.base} size={28} />
                     </button>
 
-                    {/* Pair name + badges */}
-                    <button onClick={() => pick(m)} className="flex-1 text-left min-w-0">
-                      <div className="flex items-center gap-1 flex-wrap">
-                        <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
-                          {m.base}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
-                        {m.type === "futures" && (
-                          <span className="text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
-                        )}
-                        {m.swapOnly && (
-                          <span className="text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
-                        )}
-                        {isActive && (
-                          <span className="text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
-                        )}
-                      </div>
+                    {/* Pair name + badges + clickable description */}
+                    <div className="flex-1 text-left min-w-0">
+                      <button onClick={() => pick(m)} className="block w-full text-left">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={cn("text-[13px] font-semibold", isActive ? "text-primary" : "text-foreground")}>
+                            {m.base}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">/{m.quote}</span>
+                          {m.type === "futures" && (
+                            <span className="text-[8px] font-bold text-green-400 bg-green-500/15 px-1 py-0.5 rounded">PERP</span>
+                          )}
+                          {m.swapOnly && (
+                            <span className="text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
+                          )}
+                          {isActive && (
+                            <span className="text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
+                          )}
+                        </div>
+                      </button>
                       {(() => {
                         const info = getCoinInfo(m.base);
-                        if (!info) return null;
                         return (
-                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                            <span className="text-[9px] text-muted-foreground/60 truncate max-w-[120px]">{info.description.split("—")[0].trim()}</span>
-                            {info.tags.slice(0, 1).map(tag => (
-                              <span key={tag} className={cn("text-[8px] font-semibold px-1 py-px rounded border leading-none", getTagColor(tag))}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setInfoCoin(m.base); }}
+                            className="group flex items-start gap-1 mt-0.5 w-full text-left"
+                            aria-label={`About ${m.base}`}
+                          >
+                            <span className="text-[10px] text-muted-foreground/70 line-clamp-2 flex-1 group-hover:text-foreground/90 group-active:text-foreground transition leading-snug">
+                              {info?.description ?? "Tap to view details"}
+                            </span>
+                            <Info className="w-3 h-3 shrink-0 mt-0.5 text-primary/50 group-hover:text-primary transition" />
+                            {info?.tags.slice(0, 1).map(tag => (
+                              <span key={tag} className={cn("text-[8px] font-semibold px-1 py-px rounded border leading-none mt-0.5 shrink-0", getTagColor(tag))}>
                                 {tag}
                               </span>
                             ))}
-                          </div>
+                          </button>
                         );
                       })()}
-                    </button>
+                    </div>
 
                     {/* Price */}
                     <button onClick={() => pick(m)} className="w-24 text-right pr-2">
@@ -680,6 +690,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           })()}
         </div>
       </div>
+      <CoinInfoSheet symbol={infoCoin} onClose={() => setInfoCoin(null)} />
     </>
   );
 }
