@@ -6,7 +6,7 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell, Tag,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell, Tag, Send as SendIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -441,6 +441,7 @@ function CreatorProfileSheet({
   const [isFollowing, setIsFollowing] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showDm, setShowDm] = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const [photoUploading, setPhotoUploading] = useState<"cover" | "avatar" | null>(null);
   const coverFileRef = useRef<HTMLInputElement>(null);
@@ -756,11 +757,19 @@ function CreatorProfileSheet({
                 <BarChart2 size={14} /> Trade
               </button>
               {!isSelf && (
-                <button onClick={toggleFollow}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
-                  style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                  {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
-                </button>
+                <>
+                  <button onClick={toggleFollow}
+                    className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
+                    style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                    {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
+                  </button>
+                  <button onClick={() => setShowDm(true)}
+                    aria-label="Message"
+                    className="px-3 py-3 rounded-xl font-bold text-sm flex items-center justify-center"
+                    style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                    <MessageCircle size={14} />
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -885,6 +894,15 @@ function CreatorProfileSheet({
       </div>
 
       {showTrade && <TradeSheet creator={profile} onClose={() => setShowTrade(false)} />}
+      {showDm && currentUserAddress && (
+        <DmSheet
+          me={currentUserAddress}
+          peer={creatorAddress}
+          peerName={profile.username}
+          peerAvatar={profile.avatar_url}
+          onClose={() => setShowDm(false)}
+        />
+      )}
       {showEdit && (
         <EditProfileSheet
           address={creatorAddress}
@@ -2390,6 +2408,163 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
         )}
       </div>
     </div>
+  );
+}
+
+/* ─── DIRECT MESSAGE SHEET ─────────────────────────────────────────────────── */
+function dmChannelFor(a: string, b: string): string {
+  return `dm:${[a.toLowerCase(), b.toLowerCase()].sort().join(":")}`;
+}
+
+function DmSheet({ me, peer, peerName, peerAvatar, onClose }: {
+  me: string; peer: string; peerName: string; peerAvatar?: string; onClose: () => void;
+}) {
+  const channel = useMemo(() => dmChannelFor(me, peer), [me, peer]);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [online, setOnline] = useState(false);
+  const [cryptoReady, setCryptoReady] = useState(false);
+  const [error, setError] = useState("");
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    deriveChannelKey(channel).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
+  }, [channel]);
+
+  useEffect(() => {
+    if (!cryptoReady) return;
+    const src = new EventSource(`${API}/chat/channels/${encodeURIComponent(channel)}/stream`);
+    src.onopen = () => setOnline(true);
+    src.onerror = () => setOnline(false);
+    src.onmessage = async (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "backfill") {
+          const msgs: ChatMsg[] = data.messages ?? [];
+          setMessages(msgs);
+          const entries = await Promise.all(
+            msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
+          );
+          setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+        } else if (data.id) {
+          setMessages(prev => prev.find(m => m.id === data.id) ? prev : [...prev, data]);
+          const plain = await decryptMessage(cryptoKeyRef.current!, data.text);
+          setDecrypted(prev => ({ ...prev, [data.id]: plain }));
+        }
+      } catch {}
+    };
+    return () => src.close();
+  }, [cryptoReady, channel]);
+
+  useEffect(() => {
+    if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function send() {
+    const txt = input.trim();
+    if (!txt || sending || !cryptoKeyRef.current) return;
+    setInput("");
+    setSending(true);
+    setError("");
+    try {
+      const displayName = `${me.slice(0, 6)}…${me.slice(-4)}`;
+      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
+      const res = await fetch(`${API}/chat/channels/${encodeURIComponent(channel)}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: encrypted, wallet: me, displayName, role: "trader" }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) setError(d.error ?? "Failed to send");
+    } catch { setError("Network error"); }
+    finally { setSending(false); inputRef.current?.focus(); }
+  }
+
+  function fmtTime(ts: number) {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "hsl(var(--background))" }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-3 py-3 shrink-0 border-b" style={{ borderColor: "var(--color-border)" }}>
+        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
+          <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
+        </button>
+        <Avatar src={peerAvatar} name={peerName} size={36} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-sm truncate" style={{ color: "var(--color-text)" }}>{peerName}</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono shrink-0" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>🔒 E2E</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "var(--color-accent)" : "#666" }} />
+            <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{online ? "live" : "connecting…"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+        {!cryptoReady && (
+          <div className="text-center text-[10px] py-4" style={{ color: "var(--color-text-secondary)" }}>🔒 Initialising encryption…</div>
+        )}
+        {cryptoReady && messages.length === 0 && (
+          <div className="text-center py-16">
+            <MessageCircle size={36} style={{ color: "var(--color-text-secondary)", margin: "0 auto 10px" }} />
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Say hi to {peerName}</p>
+            <p className="text-[11px] mt-1" style={{ color: "var(--color-text-secondary)" }}>Messages are end-to-end encrypted.</p>
+          </div>
+        )}
+        {messages.map(msg => {
+          const isMe = msg.wallet.toLowerCase() === me.toLowerCase();
+          const plain = decrypted[msg.id] ?? (msg.text.startsWith("enc:") ? "🔒…" : msg.text);
+          return (
+            <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[78%]">
+                <div className="px-3 py-2 rounded-2xl text-[13px] leading-snug break-words"
+                  style={{
+                    background: isMe ? "var(--color-accent)" : "var(--color-surface)",
+                    color: isMe ? "#000" : "var(--color-text)",
+                    borderBottomRightRadius: isMe ? 4 : undefined,
+                    borderBottomLeftRadius: !isMe ? 4 : undefined,
+                  }}>
+                  {plain}
+                </div>
+                <div className={`text-[9px] mt-0.5 ${isMe ? "text-right" : "text-left"}`} style={{ color: "var(--color-text-secondary)" }}>
+                  {fmtTime(msg.ts)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Composer */}
+      {error && (
+        <div className="px-3 py-1.5 text-[10px] text-center" style={{ background: "rgba(255,80,80,0.12)", color: "#ff5555" }}>{error}</div>
+      )}
+      <div className="flex items-center gap-2 px-3 py-2.5 shrink-0 border-t" style={{ borderColor: "var(--color-border)", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+        <input ref={inputRef} value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder={cryptoReady ? `Message ${peerName}…` : "Initialising…"}
+          disabled={!cryptoReady || sending}
+          className="flex-1 px-3 py-2.5 rounded-full text-[13px] outline-none border"
+          style={{ background: "var(--color-surface)", color: "var(--color-text)", borderColor: "var(--color-border)" }} />
+        <button onClick={send} disabled={!input.trim() || sending || !cryptoReady}
+          className="w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-40"
+          style={{ background: "var(--color-accent)", color: "#000" }}>
+          <SendIcon size={16} />
+        </button>
+      </div>
+    </div>,
+    document.body
   );
 }
 
