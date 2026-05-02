@@ -73,9 +73,11 @@ const TYPES: TxType[] = ["deposit", "withdrawal", "settlement", "contract"];
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 function shortHash(h: string) {
+  if (!h || h.length < 18) return h ?? "—";
   return h.slice(0, 10) + "..." + h.slice(-8);
 }
 function shortAddr(a: string) {
+  if (!a || a.length < 14) return a ?? "—";
   return a.slice(0, 8) + "..." + a.slice(-6);
 }
 function timeAgo(iso: string) {

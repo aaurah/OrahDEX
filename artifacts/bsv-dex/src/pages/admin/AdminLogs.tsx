@@ -61,11 +61,12 @@ export function AdminLogsPage() {
   const [search, setSearch]           = useState("");
   const [cleared, setCleared]         = useState(false);
 
-  const { data: logs = [], isLoading, refetch } = useQuery({
+  const { data: rawLogs, isLoading, refetch } = useQuery({
     queryKey:        ["admin-logs", levelFilter],
     queryFn:         () => fetchLogs(levelFilter),
     refetchInterval: 15_000,
   });
+  const logs: any[] = Array.isArray(rawLogs) ? rawLogs : [];
 
   const clearMut = useMutation({
     mutationFn: clearLogs,
