@@ -1932,16 +1932,28 @@ export function Swap() {
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
 
   const [kycModalOpen,  setKycModalOpen]            = useState(false);
-  const [kycVerified,   setKycVerified]             = useState<boolean | null>(null);
+  const SESSION_KYC_KEY = "orahdex_kyc_verified";
+  const [kycVerified,   setKycVerified]             = useState<boolean>(() =>
+    sessionStorage.getItem(SESSION_KYC_KEY) === "true"
+  );
   const [kycPending,    setKycPending]              = useState<FiatPayMethod | null>(null);
 
-  // Check KYC status whenever a wallet is connected
+  // Check KYC status whenever a wallet is connected; session flag short-circuits the fetch
   useEffect(() => {
-    if (!address) { setKycVerified(null); return; }
+    if (sessionStorage.getItem(SESSION_KYC_KEY) === "true") {
+      setKycVerified(true);
+      return;
+    }
+    if (!address) return;
     fetch(`${API_BASE}/kyc/status?walletAddress=${encodeURIComponent(address)}`)
       .then(r => r.json())
-      .then(d => setKycVerified(!!d.verified))
-      .catch(() => setKycVerified(false));
+      .then(d => {
+        if (d.verified) {
+          sessionStorage.setItem(SESSION_KYC_KEY, "true");
+          setKycVerified(true);
+        }
+      })
+      .catch(() => {});
   }, [address]);
 
   function openFiatModal(method: FiatPayMethod) {
@@ -1956,6 +1968,7 @@ export function Swap() {
   }
 
   function handleKycVerified() {
+    sessionStorage.setItem(SESSION_KYC_KEY, "true");
     setKycVerified(true);
     if (kycPending) {
       setFiatModalMethod(kycPending);

@@ -344,8 +344,20 @@ function SelfieCapture({
   );
 }
 
+/* ── Resolve an effective wallet address, falling back to a session ID ────── */
+const SESSION_ADDR_KEY = "orahdex_session_addr";
+function resolveKycAddress(walletAddress: string): string {
+  if (walletAddress && walletAddress.trim().length >= 10) return walletAddress.trim();
+  const existing = sessionStorage.getItem(SESSION_ADDR_KEY);
+  if (existing) return existing;
+  const sessionId = "session_" + crypto.randomUUID().replace(/-/g, "");
+  sessionStorage.setItem(SESSION_ADDR_KEY, sessionId);
+  return sessionId;
+}
+
 /* ── Main modal ──────────────────────────────────────────────────────────── */
 export function KycModal({ open, walletAddress, onClose, onVerified }: Props) {
+  const effectiveAddr = resolveKycAddress(walletAddress);
   const [step,        setStep]        = useState<Step>("info");
   const [firstName,   setFirstName]   = useState("");
   const [lastName,    setLastName]    = useState("");
@@ -399,7 +411,7 @@ export function KycModal({ open, walletAddress, onClose, onVerified }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          walletAddress,
+          walletAddress: effectiveAddr,
           firstName:          firstName.trim(),
           lastName:           lastName.trim(),
           dateOfBirth:        dob,
