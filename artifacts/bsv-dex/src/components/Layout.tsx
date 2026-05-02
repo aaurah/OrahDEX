@@ -24,7 +24,7 @@ const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
 const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
-  { href: "/swap",                   label: "Swap",       icon: ArrowUpDown },
+  { href: "/swap",                   label: "Exchange",   icon: Waves },
   { href: "/trade/BSV-USDT",         label: "Trade",      icon: ArrowRightLeft },
   { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
   { href: "/markets",                label: "Markets",    icon: Activity },
@@ -36,7 +36,6 @@ const NAV_LINKS = [
 
 const NAV_MORE = [
   { href: "/p2p",       label: "P2P",       icon: Users },
-  { href: "/swap",      label: "Bridge",    icon: Link2 },
   { href: "/copy",      label: "CopyVault", icon: Copy },
   { href: "/keeper",    label: "Keepers",   icon: Shield },
   { href: "/fees",      label: "Revenue",   icon: TrendingUp },
