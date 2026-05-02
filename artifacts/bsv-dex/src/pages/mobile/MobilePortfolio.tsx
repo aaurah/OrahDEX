@@ -207,7 +207,7 @@ function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({
     queryKey: ["portfolio-mobile-prices"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
+      const res = await fetch(`${BASE}/api/markets`);
       if (!res.ok) throw new Error("price fetch failed");
       const rows: MarketRow[] = await res.json();
       // Only use USDT-quoted pairs so non-USDT cross rates don't corrupt prices
@@ -313,7 +313,8 @@ export function MobilePortfolio() {
     queryKey: ["portfolio-orders", ledgerAddress],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(ledgerAddress || "")}`).then(r => r.json()),
     enabled: !!ledgerAddress,
-    refetchInterval: 2000,
+    refetchInterval: 5_000,
+    staleTime:       4_000,
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
 

@@ -93,7 +93,8 @@ export function AdminSystemHealth() {
   const { data, isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey:        ["admin-health"],
     queryFn:         fetchHealth,
-    refetchInterval: 10_000,
+    refetchInterval: 20_000,
+    staleTime:       15_000,
   });
 
   const lastUpdated = dataUpdatedAt

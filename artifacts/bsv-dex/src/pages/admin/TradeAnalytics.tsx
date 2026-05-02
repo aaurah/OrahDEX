@@ -32,7 +32,8 @@ export function AdminTradeAnalytics() {
       const r = await adminFetch(`/api/admin/trade-analytics`);
       return r.ok ? r.json() : null;
     },
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
+    staleTime:       25_000,
   });
 
   const orders = Array.isArray(data?.orders) ? data.orders : [];

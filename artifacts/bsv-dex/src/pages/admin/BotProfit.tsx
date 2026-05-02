@@ -205,7 +205,8 @@ export function AdminBotProfit() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
+    staleTime:       25_000,
   });
 
   const { data: wallet, refetch: refetchWallet } = useQuery<BsvWallet>({

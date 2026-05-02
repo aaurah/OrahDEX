@@ -64,7 +64,7 @@ export function AdminLogsPage() {
   const { data: rawLogs, isLoading, refetch } = useQuery({
     queryKey:        ["admin-logs", levelFilter],
     queryFn:         () => fetchLogs(levelFilter),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
   const logs: any[] = Array.isArray(rawLogs) ? rawLogs : [];
 

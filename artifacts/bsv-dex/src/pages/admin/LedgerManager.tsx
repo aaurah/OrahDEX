@@ -84,7 +84,7 @@ export function AdminLedgerManager() {
   const { data: pendingWithdrawals = [], refetch: refetchWd } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals-pending"],
     queryFn:  () => adminFetch(`${API}/api/admin/withdrawals?status=pending`).then(r => r.json()),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 
   const { data: auditLog = [], refetch: refetchAudit } = useQuery<AuditRow[]>({

@@ -23,10 +23,23 @@ class TtlCache<T> {
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
 }
 
-const marketsCache    = new TtlCache<any[]>(10_000);   // 10 s
+const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price-updater interval
 const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
 const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
 const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+
+// ETag store for markets — maps cacheKey → weak ETag string
+const marketsETag = new Map<string, string>();
+function makeETag(data: any[]): string {
+  // Fast hash: XOR of length + spot-check a few records
+  let h = data.length * 2654435761;
+  for (let i = 0; i < Math.min(data.length, 20); i++) {
+    const p = Math.floor(i * data.length / 20);
+    h ^= (data[p].lastPrice * 1e6) | 0;
+    h = (h >>> 16) ^ (h * 0x45d9f3b | 0);
+  }
+  return `"m${(h >>> 0).toString(36)}"`;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -124,7 +137,19 @@ router.get("/markets", async (req, res) => {
 
   const cacheKey = types.length ? `filtered:${types.sort().join(",")}` : "all";
   const cached = marketsCache.get(cacheKey);
-  if (cached) { res.json(cached); return; }
+
+  if (cached) {
+    const etag = marketsETag.get(cacheKey);
+    if (etag) {
+      res.setHeader("ETag", etag);
+      if (req.headers["if-none-match"] === etag) {
+        res.status(304).end();
+        return;
+      }
+    }
+    res.json(cached);
+    return;
+  }
 
   try {
     // Always filter by enabled=true — this is the stability guarantee.
@@ -156,7 +181,14 @@ router.get("/markets", async (req, res) => {
       takerFee:              parseFloat(m.takerFee),
     }));
 
+    const etag = makeETag(result);
     marketsCache.set(cacheKey, result);
+    marketsETag.set(cacheKey, etag);
+    res.setHeader("ETag", etag);
+    if (req.headers["if-none-match"] === etag) {
+      res.status(304).end();
+      return;
+    }
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
