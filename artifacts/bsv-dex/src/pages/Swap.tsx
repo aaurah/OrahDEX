@@ -39,6 +39,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { DirectBuyModal } from "@/components/DirectBuyModal";
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
@@ -2243,8 +2244,8 @@ export function Swap() {
             {/* Existing crypto-to-crypto panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
 
-            {/* Fiat on-ramp modal */}
-            <BuyCryptoModal
+            {/* Fiat on-ramp modal — Coinbase-style direct purchase via Stripe */}
+            <DirectBuyModal
               open={fiatModalOpen}
               onClose={() => setFiatModalOpen(false)}
               defaultPayMethod={fiatModalMethod}

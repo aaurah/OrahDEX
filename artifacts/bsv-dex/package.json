@@ -85,6 +85,8 @@
     "@reown/appkit-adapter-wagmi": "^1.8.19",
     "@scure/bip32": "^2.0.1",
     "@scure/bip39": "^2.0.1",
+    "@stripe/react-stripe-js": "^6.3.0",
+    "@stripe/stripe-js": "^9.4.0",
     "@wagmi/core": "^3.4.1",
     "@workspace/integrations-openai-ai-react": "workspace:*",
     "buffer": "^6.0.3",

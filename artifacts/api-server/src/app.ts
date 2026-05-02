@@ -16,6 +16,7 @@ import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
+import { WebhookHandlers } from "./webhookHandlers.js";
 
 const app: Express = express();
 
@@ -57,6 +58,29 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
 }));
+
+/* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
+   Stripe requires the raw request body (Buffer) to verify the signature.
+   Any body-parsing middleware applied before this route will break verification.
+── */
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    if (!sig || typeof sig !== "string") {
+      res.status(400).json({ error: "Missing stripe-signature header" });
+      return;
+    }
+    try {
+      await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+      res.json({ received: true });
+    } catch (err: any) {
+      res.status(400).json({ error: err?.message ?? "Webhook processing failed" });
+    }
+  }
+);
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
