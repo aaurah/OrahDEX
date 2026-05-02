@@ -41,7 +41,7 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
     throw new Error(`Stripe credentials fetch failed: ${response.status} ${response.statusText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as any;
   const settings = data.items?.[0]?.settings;
 
   if (!settings?.publishable || !settings?.secret) {

@@ -122,7 +122,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.method !== "GET" && EXCHANGE_WRITE_PATHS.some(p => req.path === p || req.path.startsWith(p + "/"))) {
     return exchangeLimiter(req, res, next);
   }
-  next();
+  return next();
 });
 
 /* Relaxed limit for estimate / quote endpoints (called on every keystroke) */
