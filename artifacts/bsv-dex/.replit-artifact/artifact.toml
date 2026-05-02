@@ -23,6 +23,10 @@ kind = "web"
   serve = "static"
 
   [[services.production.rewrites]]
+  from = "/assets/*"
+  to = "/assets/:splat"
+
+  [[services.production.rewrites]]
   from = "/*"
   to = "/index.html"
 
