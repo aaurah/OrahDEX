@@ -16,7 +16,7 @@ import {
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight, BarChart2, ExternalLink, Info } from "lucide-react";
+import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight, BarChart2, ExternalLink, Info, Globe } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
@@ -24,6 +24,7 @@ import { AiInsightsBar } from "@/components/AiInsightsBar";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -715,11 +716,25 @@ export function Markets() {
                                 <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
                               )}
                             </div>
-                            <ContractAddressBadge
-                              baseAsset={base}
-                              dbAddresses={(m as MarketRow).contractAddresses}
-                              variant="full"
-                            />
+                            {(() => {
+                              const info = getCoinInfo(base);
+                              return info ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-muted-foreground/70 leading-tight max-w-[180px] truncate">{info.description}</span>
+                                  {info.tags.slice(0, 2).map(tag => (
+                                    <span key={tag} className={cn("text-[9px] font-semibold px-1 py-px rounded border leading-none", getTagColor(tag))}>
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <ContractAddressBadge
+                                  baseAsset={base}
+                                  dbAddresses={(m as MarketRow).contractAddresses}
+                                  variant="full"
+                                />
+                              );
+                            })()}
                           </div>
                         </button>
                       </td>
@@ -915,6 +930,37 @@ function CoinDetailPanel({
 
         {/* Stats */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {/* About / description */}
+          {(() => {
+            const info = getCoinInfo(base);
+            if (!info) return null;
+            return (
+              <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                  <Info className="w-3 h-3" /> About {info.name}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{info.description}</p>
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {info.tags.map(tag => (
+                    <span key={tag} className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded border leading-none", getTagColor(tag))}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                {info.website && (
+                  <a
+                    href={info.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+                  >
+                    <Globe className="w-3 h-3" /> {info.website.replace(/^https?:\/\//, "")}
+                  </a>
+                )}
+              </div>
+            );
+          })()}
+
           {/* 24h stats */}
           <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
