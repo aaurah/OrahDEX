@@ -787,8 +787,10 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
 
-      {/* Ora — AI Trading Assistant (site-wide floating chat) */}
-      <Suspense fallback={null}><AiAssistant /></Suspense>
+      {/* Ora — AI Trading Assistant (site-wide floating chat) — hidden on NFT page so it doesn't cover the chat/DM send button */}
+      {!location.startsWith("/nft") && (
+        <Suspense fallback={null}><AiAssistant /></Suspense>
+      )}
 
     </div>
   );
