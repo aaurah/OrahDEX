@@ -748,20 +748,14 @@ function CreatorProfileSheet({
               </div>
             </div>
 
-            {/* Trade + Edit Profile / Follow buttons — always visible */}
+            {/* Trade + Follow buttons — always visible (Edit profile lives in the Settings gear) */}
             <div className="flex gap-2">
               <button onClick={() => setShowTrade(true)}
                 className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
                 style={{ background: "var(--color-accent)", color: "#000" }}>
                 <BarChart2 size={14} /> Trade
               </button>
-              {isSelf ? (
-                <button onClick={() => setShowEdit(true)}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
-                  style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                  <Edit3 size={14} /> Edit profile
-                </button>
-              ) : (
+              {!isSelf && (
                 <button onClick={toggleFollow}
                   className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
                   style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
