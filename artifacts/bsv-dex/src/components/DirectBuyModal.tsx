@@ -16,23 +16,126 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
 import { API_BASE } from "@/lib/api";
 
+/* ── Chain types & address metadata ──────────────────────────────────────── */
+type ChainType = "evm" | "bitcoin" | "bsv" | "solana" | "xrp" | "cardano" | "dogecoin" | "polkadot";
+
+interface CoinDef {
+  symbol: string;
+  name: string;
+  chain: ChainType;
+  addressLabel: string;      // label above address field
+  addressPlaceholder: string;
+  addressHint: string;       // shown below field as helper
+  addressRegex: RegExp;      // basic format check
+}
+
 /* ── Supported coins for direct purchase ──────────────────────────────────── */
-const DIRECT_BUY_COINS = [
-  { symbol: "BTC",  name: "Bitcoin" },
-  { symbol: "ETH",  name: "Ethereum" },
-  { symbol: "BSV",  name: "Bitcoin SV" },
-  { symbol: "BNB",  name: "BNB" },
-  { symbol: "SOL",  name: "Solana" },
-  { symbol: "XRP",  name: "XRP" },
-  { symbol: "ADA",  name: "Cardano" },
-  { symbol: "AVAX", name: "Avalanche" },
-  { symbol: "DOGE", name: "Dogecoin" },
-  { symbol: "MATIC","name": "Polygon" },
-  { symbol: "DOT",  name: "Polkadot" },
-  { symbol: "USDT", name: "Tether" },
-  { symbol: "USDC", name: "USD Coin" },
-  { symbol: "LINK", name: "Chainlink" },
-  { symbol: "UNI",  name: "Uniswap" },
+const DIRECT_BUY_COINS: CoinDef[] = [
+  {
+    symbol: "BTC", name: "Bitcoin", chain: "bitcoin",
+    addressLabel: "Your Bitcoin (BTC) address",
+    addressPlaceholder: "bc1q... or 1... or 3...",
+    addressHint: "Native SegWit (bc1q...), Legacy (1...) or P2SH (3...) address",
+    addressRegex: /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,90}$/,
+  },
+  {
+    symbol: "ETH", name: "Ethereum", chain: "evm",
+    addressLabel: "Your Ethereum (ETH) address",
+    addressPlaceholder: "0x...",
+    addressHint: "EVM-compatible address starting with 0x",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "BSV", name: "Bitcoin SV", chain: "bsv",
+    addressLabel: "Your Bitcoin SV (BSV) address",
+    addressPlaceholder: "1...",
+    addressHint: "Legacy Bitcoin SV address starting with 1",
+    addressRegex: /^1[a-zA-HJ-NP-Z0-9]{25,34}$/,
+  },
+  {
+    symbol: "BNB", name: "BNB", chain: "evm",
+    addressLabel: "Your BNB Smart Chain address",
+    addressPlaceholder: "0x...",
+    addressHint: "BNB Smart Chain address (same format as Ethereum — 0x...)",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "SOL", name: "Solana", chain: "solana",
+    addressLabel: "Your Solana (SOL) address",
+    addressPlaceholder: "e.g. 7dHbW...",
+    addressHint: "Base58 Solana address, ~44 characters",
+    addressRegex: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+  },
+  {
+    symbol: "XRP", name: "XRP", chain: "xrp",
+    addressLabel: "Your XRP Ledger address",
+    addressPlaceholder: "r...",
+    addressHint: "XRP address starting with r, 25–35 characters",
+    addressRegex: /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/,
+  },
+  {
+    symbol: "ADA", name: "Cardano", chain: "cardano",
+    addressLabel: "Your Cardano (ADA) address",
+    addressPlaceholder: "addr1...",
+    addressHint: "Shelley-era address starting with addr1",
+    addressRegex: /^addr1[a-z0-9]{50,100}$/,
+  },
+  {
+    symbol: "AVAX", name: "Avalanche", chain: "evm",
+    addressLabel: "Your Avalanche (AVAX) C-Chain address",
+    addressPlaceholder: "0x...",
+    addressHint: "Avalanche C-Chain address (EVM format — 0x...)",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "DOGE", name: "Dogecoin", chain: "dogecoin",
+    addressLabel: "Your Dogecoin (DOGE) address",
+    addressPlaceholder: "D...",
+    addressHint: "Dogecoin address starting with D, 34 characters",
+    addressRegex: /^D[a-zA-HJ-NP-Z0-9]{32,34}$/,
+  },
+  {
+    symbol: "MATIC", name: "Polygon", chain: "evm",
+    addressLabel: "Your Polygon (MATIC) address",
+    addressPlaceholder: "0x...",
+    addressHint: "Polygon address (EVM format — 0x...)",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "DOT", name: "Polkadot", chain: "polkadot",
+    addressLabel: "Your Polkadot (DOT) address",
+    addressPlaceholder: "1...",
+    addressHint: "Polkadot SS58 address, ~48 characters",
+    addressRegex: /^1[a-zA-Z0-9]{47,48}$/,
+  },
+  {
+    symbol: "USDT", name: "Tether", chain: "evm",
+    addressLabel: "Your Ethereum address (for USDT ERC-20)",
+    addressPlaceholder: "0x...",
+    addressHint: "USDT will be sent as ERC-20 on Ethereum — use your 0x address",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "USDC", name: "USD Coin", chain: "evm",
+    addressLabel: "Your Ethereum address (for USDC ERC-20)",
+    addressPlaceholder: "0x...",
+    addressHint: "USDC will be sent as ERC-20 on Ethereum — use your 0x address",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "LINK", name: "Chainlink", chain: "evm",
+    addressLabel: "Your Ethereum (LINK) address",
+    addressPlaceholder: "0x...",
+    addressHint: "EVM address on Ethereum — 0x...",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
+  {
+    symbol: "UNI", name: "Uniswap", chain: "evm",
+    addressLabel: "Your Ethereum (UNI) address",
+    addressPlaceholder: "0x...",
+    addressHint: "EVM address on Ethereum — 0x...",
+    addressRegex: /^0x[a-fA-F0-9]{40}$/,
+  },
 ];
 
 const QUICK_AMOUNTS = ["50", "100", "250", "500", "1000"];
@@ -120,7 +223,7 @@ export function DirectBuyModal({
   const [step,          setStep]          = useState<Step>("amount");
   const [coin,          setCoin]          = useState(defaultCoin);
   const [fiatAmount,    setFiatAmount]    = useState("100");
-  const [walletAddr,    setWalletAddr]    = useState(address ?? "");
+  const [walletAddr,    setWalletAddr]    = useState("");
   const [showCoinList,  setShowCoinList]  = useState(false);
 
   const [prices,        setPrices]        = useState<Record<string, number> | null>(null);
@@ -137,13 +240,25 @@ export function DirectBuyModal({
   const [createErr,     setCreateErr]     = useState<string | null>(null);
   const [payErr,        setPayErr]        = useState<string | null>(null);
 
+  /* Auto-fill address when coin changes: EVM coins → connected wallet, others → clear */
+  useEffect(() => {
+    const def = DIRECT_BUY_COINS.find(c => c.symbol === coin);
+    if (def?.chain === "evm" && address) {
+      setWalletAddr(address);
+    } else if (def?.chain !== "evm") {
+      setWalletAddr("");
+    }
+  }, [coin, address]);
+
   /* Reset whenever modal opens */
   useEffect(() => {
     if (!open) return;
     setStep("amount");
-    setCoin(defaultCoin);
+    const startCoin = defaultCoin;
+    setCoin(startCoin);
     setFiatAmount("100");
-    setWalletAddr(address ?? "");
+    const startDef = DIRECT_BUY_COINS.find(c => c.symbol === startCoin);
+    setWalletAddr(startDef?.chain === "evm" && address ? address : "");
     setShowCoinList(false);
     setClientSecret(null);
     setOrderId(null);
@@ -181,9 +296,11 @@ export function DirectBuyModal({
   const fee          = fiatNum * FEE_RATE;
   const netUsd       = fiatNum - fee;
   const cryptoAmt    = price > 0 ? netUsd / price : 0;
-  const coinDef      = DIRECT_BUY_COINS.find(c => c.symbol === coin);
+  const coinDef      = DIRECT_BUY_COINS.find(c => c.symbol === coin)!;
+  const isEvm        = coinDef?.chain === "evm";
   const isReady      = !!pubKey && !pubKeyErr;
-  const canPreview   = fiatNum >= 10 && walletAddr.trim().length >= 15 && isReady;
+  const addrValid    = walletAddr.trim().length >= 15 && (coinDef?.addressRegex?.test(walletAddr.trim()) ?? true);
+  const canPreview   = fiatNum >= 10 && addrValid && isReady;
 
   /* ── Payment method label ────────────────────────────────────────────────── */
   const methodLabel: Record<FiatPayMethod, string> = {
@@ -434,25 +551,80 @@ export function DirectBuyModal({
                 <p className="text-xs text-amber-400 text-center">Minimum purchase is $10</p>
               )}
 
-              {/* Wallet address */}
+              {/* Wallet address — chain-aware */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Your {coin} wallet address
+                  {coinDef?.addressLabel ?? `Your ${coin} address`}
                 </label>
-                <input
-                  type="text"
-                  value={walletAddr}
-                  onChange={e => setWalletAddr(e.target.value)}
-                  placeholder={`Paste your ${coin} address to receive crypto`}
-                  className="w-full px-4 py-3 rounded-xl border border-border bg-secondary/40 text-sm font-mono outline-none focus:border-primary/40 transition placeholder:text-muted-foreground/40"
-                />
-                {address && walletAddr !== address && (
+
+                {/* Chain badge */}
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-semibold border",
+                  isEvm
+                    ? "bg-violet-500/10 border-violet-500/20 text-violet-300"
+                    : "bg-amber-500/10 border-amber-500/20 text-amber-300"
+                )}>
+                  <span>{isEvm ? "🔷" : "⛓️"}</span>
+                  <span>
+                    {isEvm
+                      ? `${coin} is an EVM coin — your connected wallet address is auto-filled`
+                      : `${coin} runs on its own chain — paste your ${coin}-compatible address below`}
+                  </span>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={walletAddr}
+                    onChange={e => setWalletAddr(e.target.value)}
+                    placeholder={coinDef?.addressPlaceholder ?? `Your ${coin} address`}
+                    className={cn(
+                      "w-full px-4 py-3 rounded-xl border bg-secondary/40 text-sm font-mono outline-none transition placeholder:text-muted-foreground/40",
+                      walletAddr.trim().length >= 15 && !coinDef?.addressRegex?.test(walletAddr.trim())
+                        ? "border-red-500/50 focus:border-red-500/70"
+                        : walletAddr.trim().length >= 15 && coinDef?.addressRegex?.test(walletAddr.trim())
+                          ? "border-emerald-500/40 focus:border-emerald-500/60"
+                          : "border-border focus:border-primary/40"
+                    )}
+                  />
+                  {/* Valid tick */}
+                  {addrValid && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Hint text */}
+                <p className="text-[10px] text-muted-foreground/70 px-1">
+                  {coinDef?.addressHint}
+                </p>
+
+                {/* Format warning */}
+                {walletAddr.trim().length >= 15 && !coinDef?.addressRegex?.test(walletAddr.trim()) && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-red-400 px-1">
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    This doesn't look like a valid {coin} address — please double-check.
+                  </div>
+                )}
+
+                {/* Use connected EVM wallet shortcut */}
+                {isEvm && address && walletAddr.toLowerCase() !== address.toLowerCase() && (
                   <button
                     onClick={() => setWalletAddr(address)}
-                    className="text-[11px] text-primary font-semibold hover:underline"
+                    className="text-[11px] text-primary font-semibold hover:underline flex items-center gap-1"
                   >
-                    Use connected wallet: {address.slice(0, 8)}…{address.slice(-6)}
+                    ↩ Use connected wallet: {address.slice(0, 8)}…{address.slice(-6)}
                   </button>
+                )}
+
+                {/* Non-EVM warning if user pastes an 0x address */}
+                {!isEvm && walletAddr.trim().startsWith("0x") && (
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] text-red-400">
+                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                    You entered an EVM (0x) address, but {coin} uses its own address format.
+                    Please paste your actual {coin} wallet address.
+                  </div>
                 )}
               </div>
 
