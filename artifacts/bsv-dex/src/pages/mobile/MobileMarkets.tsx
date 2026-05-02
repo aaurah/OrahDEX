@@ -161,8 +161,8 @@ function getCatRows(
 
   switch (cat) {
     case "all":       return [
-      ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures"),
-      ...lePairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol)),
+      ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0),
+      ...lePairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol) && p.price > 0),
     ];
     case "favorites": return [
       ...enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol)),
@@ -199,7 +199,7 @@ function getCatRows(
     case "scr":       return enrich(SCR_MARKETS);
     case "mnt":       return enrich(MNT_MARKETS);
     case "bsv": {
-      const native = enrich(BSV_MARKETS);
+      const native = enrich(BSV_MARKETS).filter(m => m.price > 0);
       const seenBases = new Set(native.map(r => r.base));
       const seenSymbols = new Set(native.map(r => r.symbol));
       const extra = lePairs
