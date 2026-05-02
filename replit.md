@@ -40,7 +40,7 @@ The platform features specific coin color schemes, a WalletConnectModal for real
 - **Liquidity Balance Source**: `useBackendBalances` fetches balances from `/api/portfolio` for internal wallets, while external EVM wallets use on-chain balances. Simulated deposit mode now properly deducts balances server-side.
 - **Mobile Navigation**: Features main tabs (Markets, Trade, Futures, Mkt Hub, More) and a "More" drawer for additional features.
 - **Exchange Revenue & Fee System**: Centralized fee accumulation in `feeCollector.ts` records platform fees into the `keeper_earnings` table. An API endpoint `/api/revenue` provides aggregated platform revenue, and `/api/fee-schedule` details public fee tiers.
-- **Admin Panel**: Features an updated Dashboard with Quick Actions, dynamic system alerts, an "API Settings" page, and improved integrations management. Feature flags are now database-persisted via `/api/admin/site-settings`.
+- **Admin Panel**: Features an updated Dashboard with Quick Actions, dynamic system alerts, an "API Settings" page, and improved integrations management. Feature flags are now database-persisted via `/api/admin/site-settings`. Admin list (`/api/admin/admins`) and API keys (`/api/admin/api-keys`) are now DB-backed (stored in `platform_settings`) so data persists across server restarts. Double-prefix route path bugs fixed for `/api/admin/le-income` and `/api/admin/routing-profiles`. All `console.log/warn/error` calls replaced with structured pino logger throughout `adminAuth.ts` and `admin.ts`.
 
 ## Feature Specifications
 

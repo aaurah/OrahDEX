@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { like, eq } from "drizzle-orm";
+import { logger } from "../lib/logger.js";
 
 const TOKEN_PREFIX = "admin_session:";
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -28,9 +29,9 @@ export async function hydrateAdminTokens(): Promise<void> {
         }
       } catch { /* malformed row — skip */ }
     }
-    console.log(`[adminAuth] Hydrated ${adminTokens.size} admin session(s) from DB (${expired} expired pruned)`);
+    logger.info({ sessions: adminTokens.size, expired }, "adminAuth: hydrated admin sessions from DB");
   } catch (err: any) {
-    console.warn("[adminAuth] Could not hydrate tokens from DB:", err?.message);
+    logger.warn({ err: err?.message }, "adminAuth: could not hydrate tokens from DB");
   }
 }
 
@@ -45,7 +46,7 @@ export async function generateAdminToken(): Promise<string> {
       .values({ key, value })
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
   } catch (err: any) {
-    console.warn("[adminAuth] Could not persist token to DB:", err?.message);
+    logger.warn({ err: err?.message }, "adminAuth: could not persist token to DB");
   }
   return token;
 }
