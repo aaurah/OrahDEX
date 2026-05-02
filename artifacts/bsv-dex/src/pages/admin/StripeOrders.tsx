@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Search, CreditCard, CheckCircle2, XCircle, Clock,
-  RotateCcw, Trash2, Ban, Copy, Check, Loader2, AlertTriangle,
+  RotateCcw, Trash2, Ban, Copy, Check, Loader2, AlertTriangle, Send,
 } from "lucide-react";
 import { adminFetch } from "@/lib/adminFetch";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,10 @@ interface StripeOrder {
   status: string;
   payment_method: string | null;
   error_message: string | null;
+  le_transaction_id?: string | null;
+  le_deposit_address?: string | null;
+  le_deposit_extra_id?: string | null;
+  le_status?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -36,11 +40,13 @@ interface StripeStats {
 }
 
 const STATUS_META: Record<string, { label: string; cls: string; icon: any }> = {
-  pending:  { label: "Pending",  cls: "bg-amber-500/15 text-amber-400 border-amber-500/25",   icon: Clock },
-  paid:     { label: "Paid",     cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", icon: CheckCircle2 },
-  failed:   { label: "Failed",   cls: "bg-red-500/15 text-red-400 border-red-500/25",         icon: XCircle },
-  refunded: { label: "Refunded", cls: "bg-violet-500/15 text-violet-400 border-violet-500/25", icon: RotateCcw },
-  canceled: { label: "Canceled", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/25",     icon: Ban },
+  pending:    { label: "Pending",    cls: "bg-amber-500/15 text-amber-400 border-amber-500/25",   icon: Clock },
+  paid:       { label: "Paid",       cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", icon: CheckCircle2 },
+  processing: { label: "Processing", cls: "bg-sky-500/15 text-sky-400 border-sky-500/25",        icon: Loader2 },
+  completed:  { label: "Completed",  cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", icon: CheckCircle2 },
+  failed:     { label: "Failed",     cls: "bg-red-500/15 text-red-400 border-red-500/25",         icon: XCircle },
+  refunded:   { label: "Refunded",   cls: "bg-violet-500/15 text-violet-400 border-violet-500/25", icon: RotateCcw },
+  canceled:   { label: "Canceled",   cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/25",     icon: Ban },
 };
 
 function fmtMoney(cents: number, ccy: string) {
@@ -107,6 +113,39 @@ export function AdminStripeOrders() {
     mutationFn: async (id: string) => {
       const r = await adminFetch(`/api/admin/stripe-orders/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error ?? "Delete failed");
+      return r.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "stripe-orders"] }),
+  });
+  const fulfillM = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await adminFetch(`/api/admin/stripe-orders/${encodeURIComponent(id)}/fulfill`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error ?? "Fulfillment failed");
+      return j;
+    },
+    onSuccess: (j: any) => {
+      qc.invalidateQueries({ queryKey: ["admin", "stripe-orders"] });
+      const o = j?.order;
+      if (o?.le_deposit_address) {
+        window.alert(
+          `Fulfillment created.\n\nSend USDT (ERC20) to:\n${o.le_deposit_address}\n\nLE Tx: ${o.le_transaction_id ?? "—"}\nStatus: ${o.le_status ?? o.status}`
+        );
+      } else if (o?.error_message) {
+        window.alert(`Fulfillment failed: ${o.error_message}`);
+      } else {
+        window.alert("Fulfillment triggered. Check the row for LE deposit address.");
+      }
+    },
+  });
+  const markM = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const r = await adminFetch(`/api/admin/stripe-orders/${encodeURIComponent(id)}/mark`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error ?? "Update failed");
       return r.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "stripe-orders"] }),
@@ -272,6 +311,25 @@ export function AdminStripeOrders() {
                     <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">{fmtDate(o.created_at)}</td>
                     <td className="px-3 py-2 align-top">
                       <div className="flex items-center justify-end gap-1">
+                        {(o.status === "paid" || o.status === "failed" || o.status === "pending") && (
+                          <button
+                            disabled={isBusy}
+                            onClick={() => withBusy(o.id, () => fulfillM.mutateAsync(o.id), `Manually create a LetsExchange swap to deliver ${o.coin_symbol} to the customer's wallet?`)}
+                            className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
+                            title="Manually trigger crypto delivery via LetsExchange"
+                          >
+                            <Send className="w-3 h-3" /> Send coins
+                          </button>
+                        )}
+                        {o.le_deposit_address && (
+                          <button
+                            onClick={() => copy(o.le_deposit_address!)}
+                            className="px-2 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] hover:bg-sky-500/20 flex items-center gap-1"
+                            title={`Copy LE deposit address (send USDT here): ${o.le_deposit_address}`}
+                          >
+                            <Copy className="w-3 h-3" /> LE addr
+                          </button>
+                        )}
                         {canRefund && (
                           <button
                             disabled={isBusy}
@@ -308,10 +366,12 @@ export function AdminStripeOrders() {
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        <strong>Refund</strong> issues a refund through Stripe. <strong>Cancel</strong> aborts a pending payment intent.
-        <strong> Clear</strong> removes the local row only; Stripe records remain in your Stripe dashboard.
-      </p>
+      <div className="rounded-lg border border-border/50 bg-secondary/20 p-3 text-xs text-muted-foreground space-y-1">
+        <div><strong className="text-emerald-400">Send coins</strong> — manually creates a LetsExchange swap and returns a USDT-ERC20 deposit address. Send USDT to that address from your hot wallet to deliver crypto to the customer.</div>
+        <div><strong className="text-violet-300">Refund</strong> — issues a real refund through Stripe (paid orders only).</div>
+        <div><strong className="text-amber-300">Cancel</strong> — cancels a pending Stripe payment intent.</div>
+        <div><strong className="text-red-300">Clear</strong> — deletes the local DB row only; the Stripe payment record remains in your Stripe dashboard.</div>
+      </div>
     </div>
   );
 }
