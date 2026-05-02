@@ -4,7 +4,10 @@ import { withdrawalRequestsTable, platformSettingsTable } from "@workspace/db/sc
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
-import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { processWithdrawal, EVM_USE_TESTNET } from "../lib/withdrawalProcessor.js";
+import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
+import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
+import { createPublicClient, http } from "viem";
 import {
   issueWithdrawChallenge,
   verifyWithdrawSignature,
@@ -214,14 +217,22 @@ router.post("/withdrawals", async (req, res) => {
 // Returns ALL withdrawal requests for the admin panel, newest first.
 router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   try {
-    const { rows } = await pool.query<{
-      id: string; wallet_address: string; asset: string; amount: string;
-      network: string; network_label: string | null; recipient: string;
-      fee: string | null; status: string; txid: string | null;
-      note: string | null; created_at: Date; processed_at: Date | null;
-    }>(
-      `SELECT * FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
-    );
+    // Honor ?status=pending  or  ?status=pending,cancelled,failed  to filter rows.
+    // Without it we return every row (legacy behavior).
+    const statusParam = (req.query.status as string | undefined)?.trim();
+    const allowed = ["pending", "processing", "completed", "cancelled", "failed"];
+    const statuses = statusParam
+      ? statusParam.split(",").map(s => s.trim().toLowerCase()).filter(s => allowed.includes(s))
+      : [];
+
+    const { rows } = statuses.length
+      ? await pool.query<any>(
+          `SELECT * FROM withdrawal_requests WHERE status = ANY($1) ORDER BY created_at DESC LIMIT 500`,
+          [statuses],
+        )
+      : await pool.query<any>(
+          `SELECT * FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
+        );
 
     res.json(rows.map(r => ({
       id:           r.id,
@@ -241,6 +252,161 @@ router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "admin/withdrawals: failed to fetch all");
     res.status(500).json({ error: "Failed to fetch withdrawal requests" });
+  }
+});
+
+// ── POST /admin/withdrawals/:id/retry ─────────────────────────────────────────
+// Re-attempt processing for a single withdrawal. Works for rows in 'pending',
+// 'cancelled', or 'failed'. If the row was previously cancelled (and balance
+// already refunded) the user balance is re-deducted before re-attempting so the
+// books stay correct.
+router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{
+      id: string; wallet_address: string; asset: string; amount: string;
+      network: string; recipient: string; status: string;
+    }>(
+      `SELECT id, wallet_address, asset, amount, network, recipient, status
+         FROM withdrawal_requests WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    if (!rows.length) {
+      await client.query("ROLLBACK");
+      res.status(404).json({ error: "Withdrawal request not found" });
+      return;
+    }
+    const wr = rows[0];
+    if (wr.status === "completed") {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "This withdrawal is already completed." });
+      return;
+    }
+
+    // If the row was cancelled, the user's balance was refunded earlier — we
+    // need to re-debit before re-trying so we don't pay them twice.
+    if (wr.status === "cancelled") {
+      const { rows: balRows } = await client.query<{ available: string }>(
+        `SELECT available FROM user_balances
+          WHERE wallet_address = $1 AND asset_symbol = $2 FOR UPDATE`,
+        [wr.wallet_address, wr.asset],
+      );
+      const available = parseFloat(balRows[0]?.available ?? "0");
+      const amount = parseFloat(wr.amount);
+      if (available < amount) {
+        await client.query("ROLLBACK");
+        res.status(400).json({
+          error: `Cannot retry: user only has ${available} ${wr.asset} available, ` +
+                 `but withdrawal needs ${amount}. Refund was already credited; ` +
+                 `they may have spent it.`,
+        });
+        return;
+      }
+      await client.query(
+        `UPDATE user_balances SET available = available - $1, updated_at = now()
+          WHERE wallet_address = $2 AND asset_symbol = $3`,
+        [amount.toString(), wr.wallet_address, wr.asset],
+      );
+    }
+
+    await client.query(
+      `UPDATE withdrawal_requests SET status = 'processing', note = 'Manual retry by admin' WHERE id = $1`,
+      [id],
+    );
+    await client.query("COMMIT");
+
+    // Fire the on-chain attempt asynchronously and respond fast.
+    setImmediate(async () => {
+      try {
+        const result = await processWithdrawal({
+          asset:     wr.asset,
+          amount:    parseFloat(wr.amount),
+          network:   wr.network,
+          recipient: wr.recipient,
+        });
+        if (result.status === "completed" && result.txid) {
+          await pool.query(
+            `UPDATE withdrawal_requests
+                SET status = 'completed', txid = $1, note = $2, processed_at = now()
+              WHERE id = $3`,
+            [result.txid, result.explorer ?? null, id],
+          );
+        } else {
+          await pool.query(
+            `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
+            [result.note ?? "Retry: still pending", id],
+          );
+        }
+      } catch (err: any) {
+        await pool.query(
+          `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
+          [`Retry failed: ${err?.message ?? err}`, id],
+        );
+      }
+    });
+
+    req.log.info({ id, prevStatus: wr.status }, "withdrawals: retry initiated");
+    res.json({ id, status: "processing", message: "Retry initiated. Refresh in a few seconds." });
+  } catch (err: any) {
+    await client.query("ROLLBACK").catch(() => {});
+    req.log.error({ err: err?.message, id }, "withdrawals: retry failed");
+    res.status(500).json({ error: err?.message ?? "Retry failed" });
+  } finally {
+    client.release();
+  }
+});
+
+// ── GET /admin/hot-wallet-status ──────────────────────────────────────────────
+// Returns the system's EVM and BSV hot wallet addresses plus their current
+// on-chain native balance per chain. Read-only — no keys exposed.
+router.get("/admin/hot-wallet-status", requireAdminToken, async (req, res) => {
+  try {
+    const evmAddress = await getEvmHotWalletAddress();
+
+    // Probe each chain's native balance in parallel. We hard-code the list here
+    // because EVM_REGISTRY isn't exported; this matches the chains the app uses.
+    const CHAINS = [
+      { key: "ETH",     id: 1,        name: "Ethereum",         rpc: process.env.ETH_RPC_URL      ?? "https://ethereum.publicnode.com",       symbol: "ETH" },
+      { key: "SEPOLIA", id: 11155111, name: "Sepolia (testnet)",rpc: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia.publicnode.com", symbol: "ETH" },
+      { key: "BASE",    id: 8453,     name: "Base",             rpc: process.env.BASE_RPC_URL     ?? "https://base.publicnode.com",           symbol: "ETH" },
+      { key: "ARB",     id: 42161,    name: "Arbitrum",         rpc: process.env.ARB_RPC_URL      ?? "https://arbitrum-one.publicnode.com",   symbol: "ETH" },
+      { key: "OP",      id: 10,       name: "Optimism",         rpc: process.env.OP_RPC_URL       ?? "https://optimism.publicnode.com",       symbol: "ETH" },
+      { key: "BNB",     id: 56,       name: "BNB Chain",        rpc: process.env.BSC_RPC_URL      ?? "https://bsc.publicnode.com",            symbol: "BNB" },
+      { key: "MATIC",   id: 137,      name: "Polygon",          rpc: process.env.POLYGON_RPC_URL  ?? "https://polygon.publicnode.com",        symbol: "MATIC" },
+    ];
+
+    const evmBalances = await Promise.all(CHAINS.map(async c => {
+      try {
+        const client = createPublicClient({ transport: http(c.rpc) });
+        const wei    = await client.getBalance({ address: evmAddress as `0x${string}` });
+        return { ...c, balance: Number(wei) / 1e18, error: null as string | null };
+      } catch (err: any) {
+        return { ...c, balance: 0, error: err?.message ?? "RPC error" };
+      }
+    }));
+
+    // BSV hot wallet
+    let bsvAddress = "", bsvBalance = 0, bsvError: string | null = null;
+    try {
+      const w   = await getOrCreateWallet();
+      const bal = await fetchWalletBalance(w.address);
+      bsvAddress = w.address;
+      bsvBalance = bal.totalSatoshis / 1e8;
+    } catch (err: any) {
+      bsvError = err?.message ?? "BSV RPC error";
+    }
+
+    res.json({
+      evmAddress,
+      testnetMode: EVM_USE_TESTNET,
+      chains: evmBalances,
+      bsv: { address: bsvAddress, balance: bsvBalance, error: bsvError },
+    });
+  } catch (err: any) {
+    req.log.error({ err: err?.message }, "admin/hot-wallet-status: failed");
+    res.status(500).json({ error: err?.message ?? "Failed to fetch hot wallet status" });
   }
 });
 
