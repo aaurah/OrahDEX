@@ -10,6 +10,7 @@ import type { StripeElementsOptions } from "@stripe/stripe-js";
 import {
   X, ChevronDown, Loader2, AlertTriangle, ShoppingCart,
   CheckCircle2, Info, Lock, CreditCard, Building2, ArrowRight,
+  Clock, Zap, Send, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -246,6 +247,18 @@ export function DirectBuyModal({
   const [createErr,     setCreateErr]     = useState<string | null>(null);
   const [payErr,        setPayErr]        = useState<string | null>(null);
 
+  /* Live order fulfillment tracking */
+  const [orderStatus,   setOrderStatus]   = useState<{
+    status: string;
+    le_transaction_id: string | null;
+    le_deposit_address: string | null;
+    le_status: string | null;
+    fulfilled_at: string | null;
+    error_message: string | null;
+    crypto_amount: string | null;
+  } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   /* Auto-fill address when coin changes: EVM coins → connected wallet, others → clear */
   useEffect(() => {
     const def = DIRECT_BUY_COINS.find(c => c.symbol === coin);
@@ -271,7 +284,33 @@ export function DirectBuyModal({
     setOrderDetails(null);
     setCreateErr(null);
     setPayErr(null);
+    setOrderStatus(null);
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, [open, defaultCoin, address]);
+
+  /* Poll order status when on the success screen */
+  useEffect(() => {
+    if (step !== "success" || !orderId) return;
+
+    const poll = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/stripe/order/${orderId}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        setOrderStatus(data);
+        // Stop polling once terminal
+        if (data.status === "completed" || data.status === "failed") {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        }
+      } catch { /* ignore network hiccups */ }
+    };
+
+    poll(); // immediate first fetch
+    pollRef.current = setInterval(poll, 4000);
+    return () => {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, [step, orderId]);
 
   /* Fetch live prices */
   useEffect(() => {
@@ -721,59 +760,179 @@ export function DirectBuyModal({
             </div>
           )}
 
-          {/* ════════ STEP 3: SUCCESS ════════ */}
-          {step === "success" && (
-            <div className="text-center space-y-4 py-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center mx-auto animate-in zoom-in duration-500">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400" />
-              </div>
+          {/* ════════ STEP 3: SUCCESS + LIVE FULFILLMENT TRACKING ════════ */}
+          {step === "success" && (() => {
+            const s       = orderStatus?.status ?? "pending";
+            const leStatus = orderStatus?.le_status ?? null;
+            const leTxId  = orderStatus?.le_transaction_id ?? null;
+            const leAddr  = orderStatus?.le_deposit_address ?? null;
+            const isDone  = s === "completed";
+            const isFailed = s === "failed";
+            const cryptoReceived = orderStatus?.crypto_amount ?? orderDetails?.cryptoAmount ?? null;
 
-              <div>
-                <h3 className="text-xl font-bold">Payment Successful!</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Your order has been received and is being processed.
-                </p>
-              </div>
+            /* Stage pipeline */
+            type Stage = { key: string; label: string; sub: string; icon: React.ReactNode };
+            const stages: Stage[] = [
+              {
+                key: "paid",
+                label: "Payment Confirmed",
+                sub: "Stripe processed your payment",
+                icon: <CheckCircle2 className="w-4 h-4" />,
+              },
+              {
+                key: "exchange",
+                label: "Exchange Created",
+                sub: leTxId ? `LE order ${leTxId.slice(0, 8)}…` : "Creating exchange order…",
+                icon: <Zap className="w-4 h-4" />,
+              },
+              {
+                key: "processing",
+                label: "Processing",
+                sub: leStatus ? `Exchange status: ${leStatus}` : "Waiting for network confirmation",
+                icon: <Clock className="w-4 h-4" />,
+              },
+              {
+                key: "delivered",
+                label: "Delivered",
+                sub: isDone ? `${coin} sent to your wallet` : "Sending crypto…",
+                icon: <Send className="w-4 h-4" />,
+              },
+            ];
 
-              {/* Order details */}
-              <div className="rounded-xl bg-muted/30 border border-border/40 divide-y divide-border/30 text-sm text-left overflow-hidden">
-                <div className="flex justify-between px-4 py-2.5 text-muted-foreground">
-                  <span>Amount paid</span>
-                  <span className="font-bold text-foreground">${fiatNum.toFixed(2)} USD</span>
+            const stageIndex = isDone ? 4
+              : isFailed       ? -1
+              : leTxId         ? (leStatus && leStatus !== "waiting" ? 3 : 2)
+              : s === "processing" ? 2
+              : 1; // pending — payment just confirmed
+
+            return (
+              <div className="space-y-4 py-2">
+
+                {/* Header icon */}
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  {isDone ? (
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/15 border-2 border-emerald-500/40 flex items-center justify-center animate-in zoom-in duration-500">
+                      <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                    </div>
+                  ) : isFailed ? (
+                    <div className="w-14 h-14 rounded-full bg-red-500/15 border-2 border-red-500/40 flex items-center justify-center">
+                      <AlertTriangle className="w-7 h-7 text-red-400" />
+                    </div>
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-blue-500/15 border-2 border-blue-500/30 flex items-center justify-center">
+                      <Loader2 className="w-7 h-7 text-blue-400 animate-spin" />
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <h3 className="text-lg font-bold">
+                      {isDone ? "Crypto Delivered!" : isFailed ? "Order Failed" : "Payment Confirmed"}
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {isDone
+                        ? `${coin} has been sent to your wallet`
+                        : isFailed
+                          ? (orderStatus?.error_message ?? "Something went wrong — contact support")
+                          : "Your exchange is being processed…"}
+                    </p>
+                  </div>
                 </div>
-                {orderDetails && (
-                  <div className="flex justify-between px-4 py-2.5 font-bold">
-                    <span className="text-muted-foreground">You receive</span>
-                    <span className="text-emerald-400">
-                      ≈ {parseFloat(orderDetails.cryptoAmount).toFixed(6)} {coin}
-                    </span>
+
+                {/* Stage pipeline */}
+                <div className="rounded-xl bg-muted/20 border border-border/40 overflow-hidden divide-y divide-border/30">
+                  {stages.map((stage, i) => {
+                    const done    = i < stageIndex;
+                    const active  = i === stageIndex;
+                    const pending = i > stageIndex && !isFailed;
+                    return (
+                      <div key={stage.key} className={cn(
+                        "flex items-center gap-3 px-4 py-2.5 text-sm transition-colors",
+                        done   && "bg-emerald-500/5",
+                        active && "bg-blue-500/8",
+                        (pending || isFailed) && "opacity-40",
+                      )}>
+                        <div className={cn(
+                          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px]",
+                          done   && "bg-emerald-500/20 text-emerald-400",
+                          active && "bg-blue-500/20 text-blue-400",
+                          (pending || isFailed) && "bg-muted text-muted-foreground",
+                        )}>
+                          {done ? <CheckCircle2 className="w-4 h-4" /> : active && !isFailed
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : stage.icon}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("font-semibold text-[12px]", done && "text-emerald-400", active && "text-blue-300")}>{stage.label}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{stage.sub}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Order summary row */}
+                <div className="rounded-xl bg-muted/30 border border-border/40 divide-y divide-border/30 text-sm overflow-hidden">
+                  <div className="flex justify-between px-4 py-2">
+                    <span className="text-muted-foreground text-xs">Amount paid</span>
+                    <span className="font-bold text-xs">${fiatNum.toFixed(2)} USD</span>
+                  </div>
+                  {cryptoReceived && (
+                    <div className="flex justify-between px-4 py-2">
+                      <span className="text-muted-foreground text-xs">You receive</span>
+                      <span className="font-bold text-xs text-emerald-400">≈ {parseFloat(cryptoReceived).toFixed(6)} {coin}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between px-4 py-2">
+                    <span className="text-muted-foreground text-xs">Destination</span>
+                    <span className="font-mono text-[10px]">{walletAddr.slice(0, 10)}…{walletAddr.slice(-8)}</span>
+                  </div>
+                  {orderId && (
+                    <div className="flex justify-between px-4 py-2">
+                      <span className="text-muted-foreground text-xs">Order ID</span>
+                      <span className="font-mono text-[10px]">{orderId.slice(0, 8)}…</span>
+                    </div>
+                  )}
+                  {leTxId && (
+                    <div className="flex justify-between items-center px-4 py-2">
+                      <span className="text-muted-foreground text-xs">Exchange ID</span>
+                      <a
+                        href={`https://letsexchange.io/en/exchange-status/${leTxId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                      >
+                        {leTxId.slice(0, 12)}… <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* Deposit address info for admin (only shown while processing) */}
+                {leAddr && !isDone && !isFailed && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-300">
+                    <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">Action required</p>
+                      <p className="mt-0.5 opacity-80">Send USDT (ERC-20) to the exchange deposit address to complete delivery. Contact support with your Order ID if you need help.</p>
+                    </div>
                   </div>
                 )}
-                <div className="flex justify-between px-4 py-2.5 text-muted-foreground">
-                  <span>Sending to</span>
-                  <span className="font-mono text-[11px]">{walletAddr.slice(0, 12)}…{walletAddr.slice(-8)}</span>
-                </div>
-                {orderId && (
-                  <div className="flex justify-between px-4 py-2.5 text-muted-foreground">
-                    <span>Order ID</span>
-                    <span className="font-mono text-[10px]">{orderId.slice(0, 8)}…</span>
+
+                {!isDone && !isFailed && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 text-xs text-blue-300">
+                    <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    Crypto is typically delivered within 10–30 minutes. This screen updates automatically.
                   </div>
                 )}
-              </div>
 
-              <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 text-xs text-blue-300 text-left">
-                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                Crypto will be sent to your wallet within 10–30 minutes after payment confirmation. Check your wallet balance.
+                <button
+                  onClick={onClose}
+                  className="w-full py-3 rounded-xl font-bold text-sm bg-primary text-primary-foreground hover:opacity-90 transition"
+                >
+                  {isDone ? "Done" : "Close & Track Later"}
+                </button>
               </div>
-
-              <button
-                onClick={onClose}
-                className="w-full py-3 rounded-xl font-bold text-sm bg-primary text-primary-foreground hover:opacity-90 transition"
-              >
-                Done
-              </button>
-            </div>
-          )}
+            );
+          })()}
 
         </div>
       </div>
