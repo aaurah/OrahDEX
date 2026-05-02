@@ -332,6 +332,63 @@ router.delete("/admin/stripe-orders/:id", requireAdminToken, async (req, res) =>
   }
 });
 
+/* POST /api/admin/stripe-orders/:id/fulfill — manually trigger crypto delivery
+   Creates a LetsExchange swap (USDT → coin → customer wallet) for this order.
+   Use when the Stripe webhook didn't fire or the previous fulfillment failed. */
+router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, stripe_payment_intent_id, wallet_address, coin_symbol, status, le_transaction_id
+         FROM crypto_orders WHERE id = $1`,
+      [req.params.id]
+    );
+    const order = rows[0];
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    // Force the order back to 'pending' so fulfillOrder will process it
+    await pool.query(
+      `UPDATE crypto_orders SET status = 'pending', error_message = NULL, updated_at = NOW() WHERE id = $1`,
+      [order.id]
+    );
+
+    const { fulfillOrder } = await import("../webhookHandlers.js");
+    await fulfillOrder(order.stripe_payment_intent_id ?? `manual:${order.id}`, {
+      orderId: order.id,
+      coinSymbol: order.coin_symbol,
+      walletAddress: order.wallet_address,
+    });
+
+    const { rows: updated } = await pool.query(
+      `SELECT id, status, le_transaction_id, le_deposit_address, le_deposit_extra_id,
+              le_status, error_message, crypto_amount
+         FROM crypto_orders WHERE id = $1`,
+      [order.id]
+    );
+    logger.info({ orderId: order.id }, "admin: manual fulfillment triggered");
+    res.json({ ok: true, order: updated[0] });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "admin: manual fulfillment failed");
+    res.status(500).json({ error: err?.message ?? "Fulfillment failed" });
+  }
+});
+
+/* POST /api/admin/stripe-orders/:id/mark-paid — force-set status (e.g. for manual reconciliation) */
+router.post("/admin/stripe-orders/:id/mark", requireAdminToken, async (req, res) => {
+  try {
+    const newStatus = String(req.body?.status ?? "").trim().toLowerCase();
+    const allowed = ["pending", "paid", "processing", "failed", "refunded", "canceled", "completed"];
+    if (!allowed.includes(newStatus)) { res.status(400).json({ error: `status must be one of ${allowed.join(", ")}` }); return; }
+    const r = await pool.query(
+      `UPDATE crypto_orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, status`,
+      [newStatus, req.params.id]
+    );
+    if (!r.rowCount) { res.status(404).json({ error: "Order not found" }); return; }
+    res.json({ ok: true, order: r.rows[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Update failed" });
+  }
+});
+
 /* POST /api/admin/stripe-orders/bulk-delete — body: { status?: string, olderThanDays?: number } */
 router.post("/admin/stripe-orders/bulk-delete", requireAdminToken, async (req, res) => {
   try {
