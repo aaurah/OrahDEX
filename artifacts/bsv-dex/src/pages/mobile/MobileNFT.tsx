@@ -488,15 +488,48 @@ function CreatorProfileSheet({
       .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 
+  // Hydrate "are we following this creator?" so the header button label is correct.
+  useEffect(() => {
+    if (!currentUserAddress || currentUserAddress.toLowerCase() === creatorAddress.toLowerCase()) {
+      setIsFollowing(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API}/social/creators/${currentUserAddress}/following`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => {
+        if (cancelled) return;
+        const target = creatorAddress.toLowerCase();
+        setIsFollowing(rows.some(u => String(u.address ?? "").toLowerCase() === target));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentUserAddress, creatorAddress]);
+
   async function toggleFollow() {
-    if (!currentUserAddress) return;
+    if (!currentUserAddress || isSelf) return;
     const prev = isFollowing;
-    setIsFollowing(!prev);
-    await fetch(`${API}/social/follow`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
-    }).catch(() => setIsFollowing(prev));
+    setIsFollowing(!prev); // optimistic
+    try {
+      const r = await fetch(`${API}/social/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
+      });
+      const d = await r.json().catch(() => ({}));
+      // Trust the server's authoritative state (backend toggles).
+      if (typeof d?.following === "boolean") setIsFollowing(d.following);
+      // Also keep the row-list set in sync so the followers/following sheet
+      // shows the right Follow / Following label after toggling from the header.
+      const key = creatorAddress.toLowerCase();
+      setMyFollowingSet(prevSet => {
+        const n = new Set(prevSet);
+        if (d?.following) n.add(key); else n.delete(key);
+        return n;
+      });
+    } catch {
+      setIsFollowing(prev);
+    }
   }
 
   function handleQuickFile(field: "cover_url" | "avatar_url") {
@@ -557,11 +590,22 @@ function CreatorProfileSheet({
       return n;
     });
     try {
-      await fetch(`${API}/social/follow`, {
+      const r = await fetch(`${API}/social/follow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ follower: currentUserAddress, following: addr }),
       });
+      const d = await r.json().catch(() => ({}));
+      // Reconcile with the server's authoritative state.
+      if (typeof d?.following === "boolean") {
+        setMyFollowingSet(prev => {
+          const n = new Set(prev);
+          if (d.following) n.add(key); else n.delete(key);
+          return n;
+        });
+        // If the row matches the currently viewed creator, sync the header too.
+        if (addr.toLowerCase() === creatorAddress.toLowerCase()) setIsFollowing(d.following);
+      }
     } catch {
       // Revert on failure
       setMyFollowingSet(prev => {
