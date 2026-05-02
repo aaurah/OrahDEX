@@ -1,0 +1,141 @@
+/**
+ * Standalone escrow deployer — uses ethers.js directly (no hardhat network stack)
+ * so it works with Node 24's native fetch, avoiding the undici@8 issue.
+ *
+ * Run:
+ *   node scripts/deploy-escrow-standalone.mjs
+ */
+
+import { ethers } from "ethers";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, "..");
+
+// ── Config ────────────────────────────────────────────────────────────────────
+const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY;
+if (!DEPLOYER_PRIVATE_KEY) throw new Error("DEPLOYER_PRIVATE_KEY not set");
+
+// Try several public Sepolia RPCs in order
+const SEPOLIA_RPCS = [
+  "https://eth-sepolia.public.blastapi.io",
+  "https://sepolia.drpc.org",
+  "https://endpoints.omniatech.io/v1/eth/sepolia/public",
+  "https://1rpc.io/sepolia",
+];
+
+// ── Load compiled artifact ────────────────────────────────────────────────────
+const artifactPath = join(
+  ROOT,
+  "artifacts-hardhat/contracts/OrahDEXEscrow.sol/OrahDEXEscrow.json"
+);
+const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
+const { abi, bytecode } = artifact;
+
+// ── Try RPCs until one works ──────────────────────────────────────────────────
+async function makeProvider() {
+  for (const rpcUrl of SEPOLIA_RPCS) {
+    try {
+      console.log(`Trying RPC: ${rpcUrl} ...`);
+      const provider = new ethers.JsonRpcProvider(rpcUrl, 11155111, {
+        staticNetwork: true,
+      });
+      // Quick liveness check
+      const block = await Promise.race([
+        provider.getBlockNumber(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      console.log(`  ✓ Connected — block ${block}`);
+      return provider;
+    } catch (err) {
+      console.warn(`  ✗ Failed: ${err.message}`);
+    }
+  }
+  throw new Error("All Sepolia RPCs failed");
+}
+
+async function main() {
+  console.log("\n=== OrahDEXEscrow Deployment (standalone) ===");
+
+  const provider = await makeProvider();
+  const wallet   = new ethers.Wallet(DEPLOYER_PRIVATE_KEY, provider);
+
+  const balance  = await provider.getBalance(wallet.address);
+  console.log(`\nDeployer: ${wallet.address}`);
+  console.log(`Balance:  ${ethers.formatEther(balance)} ETH`);
+  if (balance === 0n) throw new Error("Deployer has no ETH — fund it from a Sepolia faucet");
+
+  const relayerAddress = wallet.address; // deployer = relayer for testnet
+
+  console.log("\nDeploying OrahDEXEscrow...");
+  const factory  = new ethers.ContractFactory(abi, bytecode, wallet);
+  const contract = await factory.deploy(relayerAddress);
+  console.log(`  tx: ${contract.deploymentTransaction()?.hash}`);
+
+  const deployed = await contract.waitForDeployment();
+  const escrowAddr = await deployed.getAddress();
+  console.log(`  ✓ Deployed at: ${escrowAddr}`);
+
+  // ── Persist addresses ─────────────────────────────────────────────────────
+  const deploymentsDir = join(ROOT, "deployments");
+  const deployFile     = join(deploymentsDir, "11155111.json");
+  let existing = {};
+  if (existsSync(deployFile)) existing = JSON.parse(readFileSync(deployFile, "utf8"));
+
+  const updated = {
+    ...existing,
+    escrow:    escrowAddr,
+    relayer:   relayerAddress,
+    updatedAt: new Date().toISOString(),
+  };
+  mkdirSync(deploymentsDir, { recursive: true });
+  writeFileSync(deployFile, JSON.stringify(updated, null, 2));
+  console.log(`\nSaved → deployments/11155111.json`);
+
+  // ── Sync to frontend ──────────────────────────────────────────────────────
+  const frontendDir = join(ROOT, "..", "bsv-dex", "src", "lib", "deployments");
+  mkdirSync(frontendDir, { recursive: true });
+  writeFileSync(join(frontendDir, "11155111.json"), JSON.stringify(updated, null, 2));
+  console.log(`Synced  → bsv-dex/src/lib/deployments/11155111.json`);
+
+  // ── Write ABI + address TypeScript module ─────────────────────────────────
+  const escrowAbi = [
+    "function lockETH(bytes32 orderId) external payable",
+    "function lockERC20(bytes32 orderId, address token, uint256 amount) external",
+    "function release(bytes32 orderId, address recipient) external",
+    "function cancel(bytes32 orderId) external",
+    "function getDeposit(bytes32 orderId) external view returns (tuple(address depositor, address token, uint256 amount, uint64 lockedAt, bool released))",
+    "function getDepositorOrders(address depositor) external view returns (bytes32[])",
+    "event OrderLocked(bytes32 indexed orderId, address indexed depositor, address indexed token, uint256 amount)",
+    "event OrderReleased(bytes32 indexed orderId, address indexed recipient, address token, uint256 amount)",
+    "event OrderCancelled(bytes32 indexed orderId, address indexed depositor, address token, uint256 amount)",
+  ];
+
+  const tsContent = `// AUTO-GENERATED by deploy-escrow-standalone.mjs — do not edit manually
+// Deployed: ${new Date().toISOString()}
+
+export const ESCROW_ABI = ${JSON.stringify(escrowAbi, null, 2)} as const;
+
+/** Escrow contract address per EVM chainId */
+export const ESCROW_ADDRESSES: Record<number, string> = {
+  11155111: "${escrowAddr}",  // Sepolia testnet
+};
+
+/** The OrahDEX relayer address that can release / cancel escrow deposits */
+export const RELAYER_ADDRESS = "${relayerAddress}";
+
+export const ESCROW_CHAIN_ID = 11155111;
+`;
+  const tsOut = join(ROOT, "..", "bsv-dex", "src", "lib", "escrowConfig.ts");
+  writeFileSync(tsOut, tsContent);
+  console.log(`ABI+addresses → bsv-dex/src/lib/escrowConfig.ts`);
+
+  console.log("\n✓ Done!");
+  console.log(`Escrow:  ${escrowAddr}`);
+  console.log(`Explorer: https://sepolia.etherscan.io/address/${escrowAddr}`);
+  console.log(`Relayer: ${relayerAddress}`);
+}
+
+main().catch(err => { console.error(err); process.exit(1); });

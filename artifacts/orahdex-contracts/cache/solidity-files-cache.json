@@ -585,6 +585,47 @@
         "IWETH",
         "OrahRouter02"
       ]
+    },
+    "/home/runner/workspace/artifacts/orahdex-contracts/contracts/OrahDEXEscrow.sol": {
+      "lastModificationDate": 1777724288713,
+      "contentHash": "a89e33fe885e7ff4717ef05e87805f07",
+      "sourceName": "contracts/OrahDEXEscrow.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.20"
+      ],
+      "artifacts": [
+        "OrahDEXEscrow"
+      ]
     }
   }
 }
