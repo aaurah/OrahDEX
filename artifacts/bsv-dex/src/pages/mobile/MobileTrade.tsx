@@ -18,6 +18,8 @@ import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } 
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
+import { useEscrow } from "@/hooks/useEscrow";
+import { hasEscrow } from "@/lib/escrow";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -476,7 +478,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     avgFillPrice: number;
     filledQty: number;
     fee: number;
+    quantity: number;
+    price: number;
   } | null>(null);
+  const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(null);
+  const { escrowAvailable, status: escrowStatus, lockOrder, isLoading: escrowLoading } = useEscrow();
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
@@ -532,9 +538,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
 
+      setEscrowTx(null);
       setOrderResult({
         tradeId, matched, txid, explorerUrl,
         side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee,
+        quantity: Number(ordQtyDisplay) || 0,
+        price:    Number(ordPriceDisplay) || 0,
       });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
@@ -1969,6 +1978,67 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   >
                     View on chain <Link2 size={12} />
                   </a>
+                )}
+
+                {/* On-chain escrow lock — only for open (unmatched) orders on Sepolia */}
+                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && (
+                  <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
+                    <p className="text-[11px] text-blue-300/80">
+                      Lock funds on-chain so your balance shows in Rabby, imToken &amp; other DeFi wallets.
+                    </p>
+                    <button
+                      disabled={escrowLoading}
+                      onClick={async () => {
+                        if (!orderResult.tradeId) return;
+                        const usePrice = orderResult.price > 0 ? orderResult.price : lastPrice;
+                        const result = await lockOrder({
+                          orderId:  orderResult.tradeId,
+                          side:     orderResult.side as "buy" | "sell",
+                          base:     orderResult.base,
+                          quote:    orderResult.quoteSymbol,
+                          quantity: orderResult.quantity || orderResult.filledQty || 0,
+                          price:    usePrice,
+                        });
+                        if (result) setEscrowTx(result);
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
+                        "bg-violet-600/20 text-violet-300 border border-violet-500/30",
+                        "hover:bg-violet-600/30 active:opacity-70",
+                        escrowLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {escrowLoading ? (
+                        <>
+                          <span className="animate-spin inline-block w-3 h-3 border-2 border-violet-300/30 border-t-violet-300 rounded-full" />
+                          {escrowStatus === "approving" ? "Approving token…" : "Locking on-chain…"}
+                        </>
+                      ) : (
+                        <>
+                          <Link2 size={11} />
+                          Lock funds on Sepolia
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Escrow lock success */}
+                {!orderResult.matched && escrowTx && (
+                  <div className="pt-1.5 border-t border-violet-500/20 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] text-violet-300 font-bold">
+                      <CheckCircle2 size={11} />
+                      Funds locked on Sepolia
+                    </div>
+                    <a
+                      href={escrowTx.explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 font-medium"
+                    >
+                      View escrow on Etherscan <Link2 size={10} />
+                    </a>
+                  </div>
                 )}
               </div>
             )}
