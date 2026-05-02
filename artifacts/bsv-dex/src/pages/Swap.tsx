@@ -1412,7 +1412,31 @@ function BuyCryptoPanel({
 
   const [copied, setCopied] = useState(false);
 
+  // OrahDEX internal (custodial) balance for the spend coin
+  const [internalBal,       setInternalBal]       = useState<number | null>(null);
+  const [internalBalLoaded, setInternalBalLoaded] = useState(false);
+
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch OrahDEX ledger balance whenever wallet or spend coin changes
+  const fetchInternalBal = useCallback(async () => {
+    if (!address) { setInternalBal(null); setInternalBalLoaded(false); return; }
+    try {
+      const r = await fetch(`${API_BASE}/balances?walletAddress=${address}`);
+      if (r.ok) {
+        const data = await r.json();
+        const rows: { asset: string; available: string }[] = Array.isArray(data) ? data : (data.balances ?? []);
+        const row = rows.find(b => b.asset.toUpperCase() === coinToSpend.toUpperCase());
+        setInternalBal(row ? parseFloat(row.available) : 0);
+        setInternalBalLoaded(true);
+      }
+    } catch { /* ignore */ }
+  }, [address, coinToSpend]);
+
+  useEffect(() => {
+    setInternalBal(null); setInternalBalLoaded(false);
+    fetchInternalBal();
+  }, [fetchInternalBal]);
 
   // Reset result/error on pair change
   useEffect(() => {
@@ -1510,12 +1534,18 @@ function BuyCryptoPanel({
       });
       const data = await r.json();
       if (!r.ok) {
-        const msg = data.error ?? "Buy failed";
+        let msg = data.error ?? "Buy failed";
+        // Give a clear actionable message for insufficient OrahDEX balance
+        if (data.error === "Insufficient balance" || r.status === 422) {
+          const asset = data.asset ?? coinToSpend;
+          msg = `Insufficient OrahDEX balance — you need to deposit ${asset} into your OrahDEX account first. Your on-chain wallet balance is separate from your exchange balance.`;
+        }
         setExecErr(msg);
-        toast({ title: "Buy failed", description: msg, variant: "destructive" });
+        toast({ title: "Insufficient balance", description: `Deposit ${data.asset ?? coinToSpend} to your OrahDEX account to use the Buy feature.`, variant: "destructive" });
       } else {
         setResult(data);
         setAmount(""); setQuote(null);
+        fetchInternalBal();
         if (data.route === "native") {
           toast({
             title: "Purchase complete!",
@@ -1590,7 +1620,24 @@ function BuyCryptoPanel({
 
       {/* ─ Coin to SPEND ─ */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-2">
-        <span className="text-xs text-muted-foreground font-medium">I will pay with</span>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground font-medium">I will pay with</span>
+          {address && internalBalLoaded && (
+            <span className="text-muted-foreground/70">
+              OrahDEX balance:{" "}
+              <span className={cn(
+                "font-mono font-semibold",
+                internalBal != null && internalBal > 0 ? "text-emerald-400" : "text-muted-foreground",
+              )}>
+                {internalBal != null ? (internalBal < 0.0001 && internalBal > 0 ? internalBal.toFixed(8) : internalBal.toFixed(4)) : "0.0000"}
+              </span>{" "}
+              {coinToSpend}
+              {internalBal != null && internalBal <= 0 && (
+                <a href="/deposit" className="ml-1.5 text-primary font-semibold hover:underline">Deposit →</a>
+              )}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <ExchangeAssetPicker
             value={coinToSpend}
@@ -1604,6 +1651,20 @@ function BuyCryptoPanel({
             className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
           />
         </div>
+        {/* MAX button — only when there's a positive OrahDEX balance */}
+        {address && internalBal != null && internalBal > 0 && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                const val = internalBal.toFixed(8).replace(/\.?0+$/, "") || "0";
+                handleAmountChange(val);
+              }}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary/15 border border-primary/40 text-primary hover:bg-primary/25 active:bg-primary/30 transition-colors"
+            >
+              MAX
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ─ Quote details ─ */}
@@ -1700,8 +1761,19 @@ function BuyCryptoPanel({
 
       {/* ─ Exec error ─ */}
       {execErr && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{execErr}
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{execErr}</span>
+          </div>
+          {execErr.includes("OrahDEX balance") && (
+            <a
+              href="/deposit"
+              className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary font-semibold hover:bg-primary/20 transition-colors"
+            >
+              Deposit {coinToSpend} to OrahDEX <ArrowRight className="w-3 h-3" />
+            </a>
+          )}
         </div>
       )}
 
