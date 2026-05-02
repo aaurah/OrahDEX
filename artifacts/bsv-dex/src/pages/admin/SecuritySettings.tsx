@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import {
   Save, RefreshCw, Shield, Plus, Trash2, AlertTriangle, Lock,
@@ -218,7 +219,7 @@ export function AdminSecuritySettings() {
   const loadVault = async () => {
     setVaultLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/security-vault`);
+      const r = await adminFetch(`/api/admin/security-vault`);
       const d = await r.json();
       if (r.ok) setVault(d);
     } finally { setVaultLoading(false); }
@@ -231,7 +232,7 @@ export function AdminSecuritySettings() {
   const handleRegenBsv = async () => {
     setRegenerating(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/security-vault/regenerate-bsv`, { method: "POST" });
+      const r = await adminFetch(`/api/admin/security-vault/regenerate-bsv`, { method: "POST" });
       const d = await r.json();
       if (r.ok) {
         setVault(v => v ? { ...v, bsvWallet: d } : v);
@@ -251,7 +252,7 @@ export function AdminSecuritySettings() {
   const loadWhitelist = async () => {
     setWlLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`);
+      const r = await adminFetch(`/api/admin/wallet-whitelist`);
       const d = await r.json();
       if (r.ok) setWhitelist(d.addresses ?? []);
     } finally { setWlLoading(false); }
@@ -279,7 +280,7 @@ export function AdminSecuritySettings() {
   const saveWhitelist = async () => {
     setWlSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`, {
+      const r = await adminFetch(`/api/admin/wallet-whitelist`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ addresses: whitelist }),

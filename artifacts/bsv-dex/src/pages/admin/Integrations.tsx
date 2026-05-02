@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,10 +68,10 @@ const DEFAULTS: IntegrationSettings = {
 };
 
 const fetchIntegrations = (): Promise<IntegrationSettings> =>
-  fetch(`${BASE}/api/admin/integrations`).then(r => r.json());
+  adminFetch(`/api/admin/integrations`).then(r => r.json());
 
 const saveIntegrations = (data: IntegrationSettings) =>
-  fetch(`${BASE}/api/admin/integrations`, {
+  adminFetch(`/api/admin/integrations`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -224,7 +225,7 @@ export function AdminIntegrations() {
   const testSmtpMutation = useMutation({
     mutationFn: async () => {
       await saveIntegrations(form);
-      return fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
+      return adminFetch(`/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
     },
     onSuccess: (data: { success: boolean; error?: string }) => {
       setSmtpTestResult(data);
@@ -239,7 +240,7 @@ export function AdminIntegrations() {
 
   const autoEmailMutation = useMutation({
     mutationFn: () =>
-      fetch(`${BASE}/api/admin/auto-setup-email`, { method: "POST" }).then(r => r.json()),
+      adminFetch(`/api/admin/auto-setup-email`, { method: "POST" }).then(r => r.json()),
     onSuccess: (data: { success: boolean; user?: string; pass?: string; host?: string; port?: number; from?: string; error?: string }) => {
       if (!data.success) {
         toast({ title: "Failed", description: data.error ?? "Could not create test account", variant: "destructive" });

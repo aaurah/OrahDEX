@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -230,7 +231,7 @@ export function AdminTransactions() {
         ...(statusFilter !== "all" && { status: statusFilter }),
         ...(search && { search }),
       });
-      const r = await fetch(`${BASE}/api/admin/transactions?${params}`);
+      const r = await adminFetch(`/api/admin/transactions?${params}`);
       return r.ok ? r.json() : { transactions: [], total: 0 };
     },
     refetchInterval: 30_000,

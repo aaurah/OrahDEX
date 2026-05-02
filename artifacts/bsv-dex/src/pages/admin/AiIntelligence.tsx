@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -456,7 +457,7 @@ function ConversationStats() {
   const { data } = useQuery({
     queryKey: ["admin-ai-conv-stats"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/admin/stats`);
+      const r = await adminFetch(`/api/admin/stats`);
       return r.json();
     },
     refetchInterval: 30000,

@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,7 +11,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { generateTOTP } from "@/lib/totp";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const fetchAdmins = () => fetch(`${BASE}/api/admin/admins`).then(r => r.json());
+const fetchAdmins = () => adminFetch(`/api/admin/admins`).then(r => r.json());
 
 const ROLE_COLORS: Record<string, string> = {
   superadmin: "bg-red-400/10 text-red-400 border-red-400/20",
@@ -32,7 +33,7 @@ function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () =
 
   // Load TOTP setup data from server (secret never hardcoded in source)
   useEffect(() => {
-    fetch(`${BASE}/api/admin/auth/totp-uri`)
+    adminFetch(`/api/admin/auth/totp-uri`)
       .then(r => r.json())
       .then(d => {
         setTotpQrUrl(d.qrUrl ?? "");
@@ -185,7 +186,7 @@ function ResetPasswordModal({ admin, onClose }: { admin: { id: string; name: str
     if (newPw.length < 8) { setError("Password must be at least 8 characters."); return; }
     if (newPw !== confirm) { setError("Passwords do not match."); return; }
     setError("");
-    await fetch(`${BASE}/api/admin/admins/${admin.id}/password`, {
+    await adminFetch(`/api/admin/admins/${admin.id}/password`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: newPw }),
@@ -318,7 +319,7 @@ function EditAdminModal({
       setTimeout(onClose, 1200);
       return;
     }
-    const res = await fetch(`${BASE}/api/admin/admins/${admin.id}`, {
+    const res = await adminFetch(`/api/admin/admins/${admin.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -504,7 +505,7 @@ export function AdminAdmins() {
 
   const addAdmin = useMutation({
     mutationFn: (data: any) =>
-      fetch(`${BASE}/api/admin/admins`, {
+      adminFetch(`/api/admin/admins`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -518,13 +519,13 @@ export function AdminAdmins() {
 
   const removeAdmin = useMutation({
     mutationFn: (id: string) =>
-      fetch(`${BASE}/api/admin/admins/${id}`, { method: "DELETE" }).then(r => r.json()),
+      adminFetch(`/api/admin/admins/${id}`, { method: "DELETE" }).then(r => r.json()),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-admins"] }),
   });
 
   const toggle2FAAPI = useMutation({
     mutationFn: ({ id, enable }: { id: string; enable: boolean }) =>
-      fetch(`${BASE}/api/admin/admins/${id}/2fa`, {
+      adminFetch(`/api/admin/admins/${id}/2fa`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ twoFa: enable }),

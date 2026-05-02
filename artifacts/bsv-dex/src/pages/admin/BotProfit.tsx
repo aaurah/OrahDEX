@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -200,7 +201,7 @@ export function AdminBotProfit() {
   const { data, isLoading, refetch } = useQuery<BotProfitData>({
     queryKey: ["admin-bot-profit"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/admin/bot-profit`);
+      const r = await adminFetch(`/api/admin/bot-profit`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -210,7 +211,7 @@ export function AdminBotProfit() {
   const { data: wallet, refetch: refetchWallet } = useQuery<BsvWallet>({
     queryKey: ["admin-bsv-wallet"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/admin/bsv-wallet`);
+      const r = await adminFetch(`/api/admin/bsv-wallet`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -219,7 +220,7 @@ export function AdminBotProfit() {
 
   const withdrawMut = useMutation({
     mutationFn: async (body: { amount: number; address: string; network: string }) => {
-      const r = await fetch(`${BASE}/api/admin/bot-profit/withdraw`, {
+      const r = await adminFetch(`/api/admin/bot-profit/withdraw`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -245,7 +246,7 @@ export function AdminBotProfit() {
 
   const addrMut = useMutation({
     mutationFn: async (customAddress: string) => {
-      const r = await fetch(`${BASE}/api/admin/bsv-wallet`, {
+      const r = await adminFetch(`/api/admin/bsv-wallet`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ customAddress }),
@@ -266,7 +267,7 @@ export function AdminBotProfit() {
 
   const sendMut = useMutation({
     mutationFn: async (body: { toAddress: string; bsv: number }) => {
-      const r = await fetch(`${BASE}/api/admin/bsv-wallet/send`, {
+      const r = await adminFetch(`/api/admin/bsv-wallet/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

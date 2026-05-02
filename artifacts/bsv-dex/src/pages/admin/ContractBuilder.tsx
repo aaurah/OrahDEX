@@ -1,10 +1,11 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Plus, X, CheckCircle2, Clock, ExternalLink, Copy, Check, Zap, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const fetchContracts = () => fetch(`${BASE}/api/admin/contracts`).then(r => r.json());
+const fetchContracts = () => adminFetch(`/api/admin/contracts`).then(r => r.json());
 
 const TOKEN_TYPES = [
   { id: "token", label: "Fungible Token", desc: "Standard BSV token (BSV-20 compatible)", icon: "💰" },
@@ -32,7 +33,7 @@ export function AdminContractBuilder() {
 
   const deploy = useMutation({
     mutationFn: (data: any) =>
-      fetch(`${BASE}/api/admin/contracts/deploy`, {
+      adminFetch(`/api/admin/contracts/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

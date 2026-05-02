@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect, useRef } from "react";
 import {
   Mail, MessageCircle, Inbox, HelpCircle, Save, Plus,
@@ -77,7 +78,7 @@ function EmailSetupTab() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch(`${BASE}/api/admin/support/settings`)
+    adminFetch(`/api/admin/support/settings`)
       .then(r => r.json())
       .then(data => {
         setSettings(s => ({ ...s, ...data }));
@@ -89,7 +90,7 @@ function EmailSetupTab() {
   const save = async () => {
     setSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/settings`, {
+      const r = await adminFetch(`/api/admin/support/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -231,7 +232,7 @@ function LiveChatTab() {
 
   useEffect(() => {
     loadChannels();
-    fetch(`${BASE}/api/admin/support/settings`)
+    adminFetch(`/api/admin/support/settings`)
       .then(r => r.json())
       .then(d => {
         if (d.support_telegram_url) setTelegramUrl(d.support_telegram_url);
@@ -278,7 +279,7 @@ function LiveChatTab() {
   const saveLinks = async () => {
     setSavingLinks(true);
     try {
-      await fetch(`${BASE}/api/admin/support/settings`, {
+      await adminFetch(`/api/admin/support/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ support_telegram_url: telegramUrl, support_discord_url: discordUrl }),
@@ -533,7 +534,7 @@ function TicketsTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/tickets`);
+      const r = await adminFetch(`/api/admin/support/tickets`);
       setTickets(await r.json());
     } catch { /* silent */ }
     finally { setLoading(false); }
@@ -547,7 +548,7 @@ function TicketsTab() {
     if (!selected || !reply.trim()) return;
     setReplying(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/tickets/${selected.id}`, {
+      const r = await adminFetch(`/api/admin/support/tickets/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminReply: reply.trim() }),
@@ -566,7 +567,7 @@ function TicketsTab() {
 
   const updateStatus = async (id: number, status: string) => {
     try {
-      const r = await fetch(`${BASE}/api/admin/support/tickets/${id}`, {
+      const r = await adminFetch(`/api/admin/support/tickets/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -583,7 +584,7 @@ function TicketsTab() {
   const deleteTicket = async (id: number) => {
     if (!confirm("Delete this ticket permanently?")) return;
     try {
-      await fetch(`${BASE}/api/admin/support/tickets/${id}`, { method: "DELETE" });
+      await adminFetch(`/api/admin/support/tickets/${id}`, { method: "DELETE" });
       setTickets(ts => ts.filter(t => t.id !== id));
       if (selected?.id === id) setSelected(null);
       toast({ title: "Ticket deleted" });
@@ -770,7 +771,7 @@ function FaqsTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/faqs`);
+      const r = await adminFetch(`/api/admin/support/faqs`);
       setFaqs(await r.json());
     } catch { /* silent */ }
     finally { setLoading(false); }
@@ -785,7 +786,7 @@ function FaqsTab() {
     }
     setSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/faqs`, {
+      const r = await adminFetch(`/api/admin/support/faqs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newFaq),
@@ -803,7 +804,7 @@ function FaqsTab() {
   const updateFaq = async (faq: Faq) => {
     setSaving(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/faqs/${faq.id}`, {
+      const r = await adminFetch(`/api/admin/support/faqs/${faq.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(faq),
@@ -819,7 +820,7 @@ function FaqsTab() {
 
   const togglePublish = async (faq: Faq) => {
     try {
-      const r = await fetch(`${BASE}/api/admin/support/faqs/${faq.id}`, {
+      const r = await adminFetch(`/api/admin/support/faqs/${faq.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPublished: !faq.isPublished }),
@@ -832,7 +833,7 @@ function FaqsTab() {
   const deleteFaq = async (id: number) => {
     if (!confirm("Delete this FAQ?")) return;
     try {
-      await fetch(`${BASE}/api/admin/support/faqs/${id}`, { method: "DELETE" });
+      await adminFetch(`/api/admin/support/faqs/${id}`, { method: "DELETE" });
       setFaqs(f => f.filter(x => x.id !== id));
       toast({ title: "FAQ deleted" });
     } catch {
@@ -1002,7 +1003,7 @@ function NotificationsTab() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    fetch(`${BASE}/api/admin/support/settings`)
+    adminFetch(`/api/admin/support/settings`)
       .then(r => r.json())
       .then(data => { setSettings(s => ({ ...s, ...data })); setLoaded(true); })
       .catch(() => setLoaded(true));
@@ -1011,7 +1012,7 @@ function NotificationsTab() {
   const save = async () => {
     setSaving(true);
     try {
-      await fetch(`${BASE}/api/admin/support/settings`, {
+      await adminFetch(`/api/admin/support/settings`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings),
       });
       toast({ title: "Notification settings saved" });
@@ -1023,7 +1024,7 @@ function NotificationsTab() {
   const test = async (channel: string, payload: Record<string, string>) => {
     setTesting(channel);
     try {
-      const r = await fetch(`${BASE}/api/admin/support/notifications/test`, {
+      const r = await adminFetch(`/api/admin/support/notifications/test`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, ...payload }),
       });

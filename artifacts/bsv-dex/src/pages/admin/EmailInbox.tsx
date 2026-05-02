@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -93,19 +94,19 @@ export function AdminEmailInbox() {
 
   const { data: emails = [], isLoading, refetch } = useQuery<Email[]>({
     queryKey: ["admin-mail", folder],
-    queryFn: () => fetch(`${BASE}/api/admin/mail?folder=${folder}`).then(r => r.json()),
+    queryFn: () => adminFetch(`/api/admin/mail?folder=${folder}`).then(r => r.json()),
     refetchInterval: 30000,
   });
 
   const { data: smtpStatus } = useQuery<{ configured: boolean; host?: string; isTestAccount?: boolean; user?: string }>({
     queryKey: ["smtp-status"],
-    queryFn: () => fetch(`${BASE}/api/admin/mail/smtp-status`).then(r => r.json()),
+    queryFn: () => adminFetch(`/api/admin/mail/smtp-status`).then(r => r.json()),
     staleTime: 60_000,
   });
 
   const patchEmail = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Email> }) =>
-      fetch(`${BASE}/api/admin/mail/${id}`, {
+      adminFetch(`/api/admin/mail/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -115,7 +116,7 @@ export function AdminEmailInbox() {
 
   const deleteEmail = useMutation({
     mutationFn: (id: number) =>
-      fetch(`${BASE}/api/admin/mail/${id}`, { method: "DELETE" }),
+      adminFetch(`/api/admin/mail/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setSelected(null);
@@ -125,7 +126,7 @@ export function AdminEmailInbox() {
 
   const sendEmail = useMutation({
     mutationFn: (data: typeof compose) =>
-      fetch(`${BASE}/api/admin/mail`, {
+      adminFetch(`/api/admin/mail`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
