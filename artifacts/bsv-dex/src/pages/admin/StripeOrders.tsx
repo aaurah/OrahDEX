@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Search, CreditCard, CheckCircle2, XCircle, Clock,
   RotateCcw, Trash2, Ban, Copy, Check, Loader2, AlertTriangle, Send,
+  MoreHorizontal, DollarSign, PlayCircle, Flag,
 } from "lucide-react";
 import { adminFetch } from "@/lib/adminFetch";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,7 @@ export function AdminStripeOrders() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deliveryModal, setDeliveryModal] = useState<StripeOrder | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["admin", "stripe-orders", statusFilter, q],
@@ -318,52 +320,107 @@ export function AdminStripeOrders() {
                     </td>
                     <td className="px-3 py-2 align-top text-xs text-muted-foreground whitespace-nowrap">{fmtDate(o.created_at)}</td>
                     <td className="px-3 py-2 align-top">
-                      <div className="flex items-center justify-end gap-1">
-                        {(o.status === "paid" || o.status === "failed" || o.status === "pending") && (
-                          <button
-                            disabled={isBusy}
-                            onClick={() => withBusy(o.id, () => fulfillM.mutateAsync(o.id), `Manually create a LetsExchange swap to deliver ${o.coin_symbol} to the customer's wallet?`)}
-                            className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
-                            title="Manually trigger crypto delivery via LetsExchange"
-                          >
-                            <Send className="w-3 h-3" /> Send coins
-                          </button>
-                        )}
-                        {o.le_deposit_address && (
-                          <button
-                            onClick={() => copy(o.le_deposit_address!)}
-                            className="px-2 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] hover:bg-sky-500/20 flex items-center gap-1"
-                            title={`Copy LE deposit address (send USDT here): ${o.le_deposit_address}`}
-                          >
-                            <Copy className="w-3 h-3" /> LE addr
-                          </button>
-                        )}
-                        {canRefund && (
-                          <button
-                            disabled={isBusy}
-                            onClick={() => withBusy(o.id, () => refundM.mutateAsync(o.id), `Refund ${fmtMoney(o.fiat_amount_cents, o.fiat_currency)} to the customer via Stripe?`)}
-                            className="px-2 py-1 rounded bg-violet-500/10 border border-violet-500/30 text-violet-300 text-[11px] hover:bg-violet-500/20 disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <RotateCcw className="w-3 h-3" /> Refund
-                          </button>
-                        )}
-                        {canCancel && (
-                          <button
-                            disabled={isBusy}
-                            onClick={() => withBusy(o.id, () => cancelM.mutateAsync(o.id), "Cancel this pending order?")}
-                            className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] hover:bg-amber-500/20 disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <Ban className="w-3 h-3" /> Cancel
-                          </button>
-                        )}
+                      <div className="flex items-center justify-end gap-1 flex-wrap">
                         <button
                           disabled={isBusy}
-                          onClick={() => withBusy(o.id, () => deleteM.mutateAsync(o.id), "Delete this order from the local database? Stripe is not affected.")}
-                          className="px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] hover:bg-red-500/20 disabled:opacity-50 flex items-center gap-1"
+                          onClick={() => withBusy(o.id, () => fulfillM.mutateAsync(o.id), `Manually create a LetsExchange swap to deliver ${o.coin_symbol} to the customer's wallet?`)}
+                          className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
+                          title="Manually trigger crypto delivery via LetsExchange"
                         >
-                          {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          Clear
+                          <Send className="w-3 h-3" /> Send coins
                         </button>
+                        {o.le_deposit_address && (
+                          <button
+                            onClick={() => setDeliveryModal(o)}
+                            className="px-2 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] hover:bg-sky-500/20 flex items-center gap-1"
+                            title="Show LE deposit address"
+                          >
+                            <Copy className="w-3 h-3" /> Address
+                          </button>
+                        )}
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenMenuId(openMenuId === o.id ? null : o.id)}
+                            className="px-2 py-1 rounded bg-secondary border border-border/60 text-[11px] hover:bg-secondary/70 flex items-center gap-1"
+                            title="More actions"
+                          >
+                            <MoreHorizontal className="w-3 h-3" /> More
+                          </button>
+                          {openMenuId === o.id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                              <div className="absolute right-0 mt-1 w-56 z-50 bg-card border border-border rounded-lg shadow-2xl overflow-hidden">
+                                <div className="px-3 py-1.5 text-[10px] uppercase font-semibold text-muted-foreground border-b border-border/50 bg-secondary/40">
+                                  Mark status
+                                </div>
+                                {[
+                                  { v: "pending",    label: "Pending",    icon: Clock,        cls: "text-amber-400" },
+                                  { v: "paid",       label: "Paid",       icon: DollarSign,   cls: "text-emerald-400" },
+                                  { v: "processing", label: "Processing", icon: PlayCircle,   cls: "text-sky-400" },
+                                  { v: "completed",  label: "Completed",  icon: CheckCircle2, cls: "text-emerald-400" },
+                                  { v: "failed",     label: "Failed",     icon: XCircle,      cls: "text-red-400" },
+                                  { v: "refunded",   label: "Refunded",   icon: RotateCcw,    cls: "text-violet-400" },
+                                  { v: "canceled",   label: "Canceled",   icon: Ban,          cls: "text-zinc-400" },
+                                ].map(s => {
+                                  const Icon = s.icon;
+                                  return (
+                                    <button
+                                      key={s.v}
+                                      disabled={o.status === s.v}
+                                      onClick={() => { setOpenMenuId(null); withBusy(o.id, () => markM.mutateAsync({ id: o.id, status: s.v })); }}
+                                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/60 disabled:opacity-40 flex items-center gap-2"
+                                    >
+                                      <Flag className={cn("w-3 h-3", s.cls)} />
+                                      Mark as <span className={cn("font-semibold", s.cls)}>{s.label}</span>
+                                      {o.status === s.v && <Check className="w-3 h-3 ml-auto text-emerald-400" />}
+                                    </button>
+                                  );
+                                })}
+                                <div className="border-t border-border/50">
+                                  {canRefund && (
+                                    <button
+                                      onClick={() => { setOpenMenuId(null); withBusy(o.id, () => refundM.mutateAsync(o.id), `Refund ${fmtMoney(o.fiat_amount_cents, o.fiat_currency)} via Stripe?`); }}
+                                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-violet-500/10 text-violet-300 flex items-center gap-2"
+                                    >
+                                      <RotateCcw className="w-3 h-3" /> Refund via Stripe
+                                    </button>
+                                  )}
+                                  {canCancel && (
+                                    <button
+                                      onClick={() => { setOpenMenuId(null); withBusy(o.id, () => cancelM.mutateAsync(o.id), "Cancel this pending order?"); }}
+                                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-amber-500/10 text-amber-300 flex items-center gap-2"
+                                    >
+                                      <Ban className="w-3 h-3" /> Cancel payment intent
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => { setOpenMenuId(null); copy(o.id); }}
+                                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/60 flex items-center gap-2"
+                                  >
+                                    <Copy className="w-3 h-3" /> Copy order ID
+                                  </button>
+                                  {o.stripe_payment_intent_id && (
+                                    <a
+                                      href={`https://dashboard.stripe.com/payments/${o.stripe_payment_intent_id}`}
+                                      target="_blank" rel="noopener noreferrer"
+                                      onClick={() => setOpenMenuId(null)}
+                                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/60 flex items-center gap-2"
+                                    >
+                                      <CreditCard className="w-3 h-3" /> Open in Stripe ↗
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => { setOpenMenuId(null); withBusy(o.id, () => deleteM.mutateAsync(o.id), "Delete this order from the local database? Stripe is not affected."); }}
+                                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-red-500/10 text-red-300 flex items-center gap-2 border-t border-border/50"
+                                  >
+                                    <Trash2 className="w-3 h-3" /> Clear from DB
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {isBusy && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
                       </div>
                     </td>
                   </tr>
