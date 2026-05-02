@@ -6,9 +6,20 @@ import {
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
+const sepolia: AppKitNetwork = {
+  id:              11155111,
+  name:            "Sepolia",
+  caipNetworkId:   "eip155:11155111",
+  chainNamespace:  "eip155",
+  nativeCurrency:  { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls:         { default: { http: ["https://ethereum-sepolia-rpc.publicnode.com"] } },
+  blockExplorers:  { default: { name: "Etherscan", url: "https://sepolia.etherscan.io" } },
+  testnet:         true,
+};
+
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos,
+  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
 ];
 
 let _modal: ReturnType<typeof createAppKit> | null = null;

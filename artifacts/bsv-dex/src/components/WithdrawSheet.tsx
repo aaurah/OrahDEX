@@ -46,9 +46,10 @@ import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: string }[] = [
-  { id: 1,    label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
-  { id: 8453, label: "Base",             short: "Base",     color: "#0052FF" },
-  { id: 56,   label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
+  { id: 1,        label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
+  { id: 8453,     label: "Base",             short: "Base",     color: "#0052FF" },
+  { id: 56,       label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
+  { id: 11155111, label: "Sepolia Testnet",  short: "Sepolia",  color: "#9B59B6" },
 ];
 
 // ── wallet-send chain & token registry ───────────────────────────────────────
@@ -56,13 +57,14 @@ interface WalletChain  { id: number; name: string; symbol: string; color: string
 interface WalletToken  { symbol: string; decimals: number; isNative: boolean; address: string | null; color: string }
 
 const WALLET_CHAINS: WalletChain[] = [
-  { id: 8453,  name: "Base",      symbol: "ETH",  color: "#0052FF", explorer: "https://basescan.org/tx/" },
-  { id: 1,     name: "Ethereum",  symbol: "ETH",  color: "#627EEA", explorer: "https://etherscan.io/tx/" },
-  { id: 56,    name: "BSC",       symbol: "BNB",  color: "#F0B90B", explorer: "https://bscscan.com/tx/" },
-  { id: 42161, name: "Arbitrum",  symbol: "ETH",  color: "#28A0F0", explorer: "https://arbiscan.io/tx/" },
-  { id: 10,    name: "Optimism",  symbol: "ETH",  color: "#FF0420", explorer: "https://optimistic.etherscan.io/tx/" },
-  { id: 137,   name: "Polygon",   symbol: "POL",  color: "#8247E5", explorer: "https://polygonscan.com/tx/" },
-  { id: 43114, name: "Avalanche", symbol: "AVAX", color: "#E84142", explorer: "https://snowtrace.io/tx/" },
+  { id: 8453,     name: "Base",      symbol: "ETH",  color: "#0052FF", explorer: "https://basescan.org/tx/" },
+  { id: 1,        name: "Ethereum",  symbol: "ETH",  color: "#627EEA", explorer: "https://etherscan.io/tx/" },
+  { id: 56,       name: "BSC",       symbol: "BNB",  color: "#F0B90B", explorer: "https://bscscan.com/tx/" },
+  { id: 42161,    name: "Arbitrum",  symbol: "ETH",  color: "#28A0F0", explorer: "https://arbiscan.io/tx/" },
+  { id: 10,       name: "Optimism",  symbol: "ETH",  color: "#FF0420", explorer: "https://optimistic.etherscan.io/tx/" },
+  { id: 137,      name: "Polygon",   symbol: "POL",  color: "#8247E5", explorer: "https://polygonscan.com/tx/" },
+  { id: 43114,    name: "Avalanche", symbol: "AVAX", color: "#E84142", explorer: "https://snowtrace.io/tx/" },
+  { id: 11155111, name: "Sepolia",   symbol: "ETH",  color: "#9B59B6", explorer: "https://sepolia.etherscan.io/tx/" },
 ];
 
 const WALLET_TOKENS: Record<number, WalletToken[]> = {
@@ -102,6 +104,12 @@ const WALLET_TOKENS: Record<number, WalletToken[]> = {
     { symbol: "AVAX", decimals: 18, isNative: true,  address: null,                                       color: "#E84142" },
     { symbol: "USDC", decimals: 6,  isNative: false, address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", color: "#3B82F6" },
     { symbol: "USDT", decimals: 6,  isNative: false, address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", color: "#22C55E" },
+  ],
+  11155111: [
+    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", color: "#3B82F6" },
+    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", color: "#22C55E" },
+    { symbol: "WBTC", decimals: 8,  isNative: false, address: "0x29f2D40B0605204364af54EC677bD022dA425d03", color: "#F97316" },
   ],
 };
 

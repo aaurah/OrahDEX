@@ -6,22 +6,24 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
 
 const NETWORKS = [
-  { id: "evm-eth",  label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1", type: "evm" },
-  { id: "evm-bsc",  label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1", type: "evm" },
-  { id: "evm-poly", label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2", type: "evm" },
-  { id: "evm-arb",  label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
-  { id: "evm-op",   label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2", type: "evm" },
-  { id: "evm-base", label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
-  { id: "evm-zk",   label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3", type: "evm" },
-  { id: "bsv",      label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV", type: "bsv" },
+  { id: "evm-eth",     label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1",      type: "evm" },
+  { id: "evm-bsc",     label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1",      type: "evm" },
+  { id: "evm-poly",    label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2",      type: "evm" },
+  { id: "evm-arb",     label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2",      type: "evm" },
+  { id: "evm-op",      label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2",      type: "evm" },
+  { id: "evm-base",    label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2",      type: "evm" },
+  { id: "evm-zk",      label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3",      type: "evm" },
+  { id: "evm-sepolia", label: "Sepolia Testnet",  symbol: "ETH",  color: "violet", badge: "Testnet", type: "evm" },
+  { id: "bsv",         label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV",     type: "bsv" },
 ];
 
 const BADGE_COLOR: Record<string, string> = {
-  blue:   "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
-  violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
-  red:    "bg-red-500/10 text-red-400 border-red-500/30",
-  amber:  "bg-green-500/10 text-green-400 border-green-500/30",
+  blue:    "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  yellow:  "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+  violet:  "bg-violet-500/10 text-violet-400 border-violet-500/30",
+  red:     "bg-red-500/10 text-red-400 border-red-500/30",
+  amber:   "bg-green-500/10 text-green-400 border-green-500/30",
+  testnet: "bg-purple-500/10 text-purple-400 border-purple-500/30",
 };
 
 function QRCodeImage({ address }: { address: string }) {
