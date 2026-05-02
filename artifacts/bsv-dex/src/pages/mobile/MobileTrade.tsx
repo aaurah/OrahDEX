@@ -691,9 +691,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
+    '1Y':  { apiInterval: '1d', limit: 365 },
+    '2Y':  { apiInterval: '1w', limit: 104 },
+    '5Y':  { apiInterval: '1w', limit: 261 },
+    '10Y': { apiInterval: '1M', limit: 120 },
+  };
+  const mobilePreset = MOBILE_RANGE_PRESET_MAP[interval];
+  const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
+  const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
+
   const { data: candles = [] } = useQuery({
     queryKey: ["candles", symbol, interval],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=150`).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`).then(r => r.json()),
     refetchInterval: 30000,
     staleTime: 20000,
   });
@@ -1171,7 +1181,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── TIMEFRAME + INDICATOR ROW ── */}
         <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
           {/* Timeframe pills */}
-          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d"] as const).map(iv => (
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y"]).map(iv => (
             <button
               key={iv}
               onClick={() => handleIntervalChange(iv)}

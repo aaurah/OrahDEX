@@ -34,7 +34,17 @@ const INTERVALS = [
   { id: '2h', label: '2h' }, { id: '4h', label: '4h' }, { id: '6h', label: '6h' },
   { id: '12h', label: '12h' }, { id: '1d', label: '1D' }, { id: '3d', label: '3D' },
   { id: '1w', label: '1W' }, { id: '1M', label: '1M' },
+  { id: '1Y', label: '1Y' }, { id: '2Y', label: '2Y' },
+  { id: '5Y', label: '5Y' }, { id: '10Y', label: '10Y' },
 ];
+
+/* Map long-range presets → actual API interval + candle limit */
+const RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
+  '1Y':  { apiInterval: '1d', limit: 365 },
+  '2Y':  { apiInterval: '1w', limit: 104 },
+  '5Y':  { apiInterval: '1w', limit: 261 },
+  '10Y': { apiInterval: '1M', limit: 120 },
+};
 
 /* ── Chart type definitions ─────────────────────────────────────────────── */
 const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
@@ -288,8 +298,12 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   /* ── Fetch candles ──────────────────────────────────────────────────── */
   const fetchCandles = useCallback(async () => {
     try {
-      const limit = ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
-      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${interval}&limit=${limit}`;
+      const preset = RANGE_PRESET_MAP[interval];
+      const apiInterval = preset ? preset.apiInterval : interval;
+      const limit = preset
+        ? preset.limit
+        : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
+      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
