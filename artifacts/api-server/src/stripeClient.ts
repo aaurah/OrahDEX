@@ -1,9 +1,16 @@
-// Stripe client — uses Replit Connectors credential proxy
-// Fields: settings.publishable (publishable key), settings.secret (secret key)
-// Environment: development (test mode) vs production (live mode)
+// Stripe client — reads keys from environment secrets (STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY)
+// Falls back to Replit Connectors proxy if env vars are not set.
 import Stripe from "stripe";
 
 async function getCredentials(): Promise<{ publishableKey: string; secretKey: string }> {
+  const secretKey     = process.env.STRIPE_SECRET_KEY;
+  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+
+  if (secretKey && publishableKey) {
+    return { secretKey, publishableKey };
+  }
+
+  // ── Fallback: Replit Connectors proxy ────────────────────────────────────
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
@@ -13,12 +20,10 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
 
   if (!hostname || !xReplitToken) {
     throw new Error(
-      "Stripe integration not connected. " +
-      "Open the Integrations tab and connect your Stripe account."
+      "Stripe not configured. Set STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY in Secrets."
     );
   }
 
-  // STRIPE_ENV overrides auto-detection so live mode can be forced in dev
   const isProduction =
     process.env.STRIPE_ENV === "production" ||
     process.env.REPLIT_DEPLOYMENT === "1";
@@ -48,8 +53,8 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
 
   if (!settings?.publishable || !settings?.secret) {
     throw new Error(
-      `Stripe ${targetEnvironment} connection not found or missing keys. ` +
-      "Reconnect Stripe from the Integrations tab."
+      `Stripe ${targetEnvironment} connection not found. ` +
+      "Set STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY in Secrets."
     );
   }
 
@@ -59,7 +64,7 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
   };
 }
 
-// WARNING: Never cache this client — tokens expire.
+// WARNING: Never cache this client — tokens may rotate.
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getCredentials();
   return new Stripe(secretKey, { apiVersion: "2025-08-27.basil" as any });
