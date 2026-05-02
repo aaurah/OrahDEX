@@ -516,32 +516,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         )}
 
-        {/* BTC Swap Hub banner */}
-        {!search && cat === "btc" && (() => {
-          const btcSwapCount = rows.filter(m => m.swapOnly).length;
-          return btcSwapCount > 0 ? (
-            <div className="flex items-center gap-2 px-4 py-2 bg-orange-500/8 border-b border-orange-500/20 shrink-0">
-              <ArrowLeftRight size={12} className="text-orange-400 shrink-0" />
-              <span className="text-[11px] font-bold text-orange-400">BTC Swap Hub</span>
-              <span className="text-[10px] text-orange-400/70">— {btcSwapCount} coins available</span>
-              <span className="ml-auto text-[9px] text-orange-400/50">⚡ auto-routed</span>
-            </div>
-          ) : null;
-        })()}
-
-        {/* BSV Swap Hub banner */}
-        {!search && cat === "bsv" && (() => {
-          const bsvSwapCount = rows.filter(m => m.swapOnly).length;
-          return bsvSwapCount > 0 ? (
-            <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/8 border-b border-yellow-500/20 shrink-0">
-              <ArrowLeftRight size={12} className="text-yellow-400 shrink-0" />
-              <span className="text-[11px] font-bold text-yellow-400">⚡ BSV Swap Hub</span>
-              <span className="text-[10px] text-yellow-400/70">— {bsvSwapCount} coins available</span>
-              <span className="ml-auto text-[9px] text-yellow-400/50">auto-routed</span>
-            </div>
-          ) : null;
-        })()}
-
         {/* USD sub-tabs */}
         {!search && cat === "usd" && (
           <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/40 shrink-0">
