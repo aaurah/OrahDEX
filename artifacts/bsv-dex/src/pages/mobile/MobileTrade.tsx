@@ -276,7 +276,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
@@ -2078,6 +2078,50 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           Lock funds on Sepolia
                         </>
                       )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Wrong chain — offer one-tap switch to Sepolia (where escrow is deployed) */}
+                {!orderResult.matched && orderResult.tradeId && !escrowTx && isEvm && !escrowAvailable && (
+                  <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
+                    <p className="text-[11px] text-amber-300/80">
+                      On-chain locking is only deployed on Sepolia testnet right now.
+                      Switch chains to lock these funds on-chain.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (provider === "orah-wallet") {
+                          // In-app wallet: just update chainId, no popup needed
+                          switchChain(11155111);
+                        } else {
+                          // Injected / Reown: ask the wallet to switch
+                          const eth = (window as any).ethereum;
+                          if (eth) {
+                            try {
+                              await eth.request({
+                                method: "wallet_switchEthereumChain",
+                                params: [{ chainId: "0xaa36a7" }],
+                              });
+                              switchChain(11155111);
+                            } catch (e) {
+                              toast({
+                                title: "Switch failed",
+                                description: "Open your wallet and switch to Sepolia, then try again.",
+                                variant: "destructive",
+                              });
+                            }
+                          }
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
+                        "bg-amber-600/20 text-amber-300 border border-amber-500/30",
+                        "hover:bg-amber-600/30 active:opacity-70",
+                      )}
+                    >
+                      <Link2 size={11} />
+                      Switch to Sepolia to lock
                     </button>
                   </div>
                 )}
