@@ -18,6 +18,7 @@ import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
+import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
 
 const app: Express = express();
@@ -209,8 +210,11 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
+app.use("/api", apiKeyAuth);
+app.use("/v1", apiKeyAuth);
 app.use("/api", router);
 app.use("/v1", v1Router);
+startApiKeyCounterFlusher();
 
 /* ── Global Express error handler — catches any sync/async route throw ─────── */
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

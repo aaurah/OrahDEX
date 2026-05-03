@@ -468,22 +468,21 @@ async function saveAdmins(admins: any[]): Promise<void> {
 }
 
 /* ── DB-backed API keys (persisted across restarts via platformSettingsTable) */
-const API_KEYS_DB_KEY = "admin_api_keys_list";
-const API_KEYS_SEED = [
-  { id: "key_001", name: "Public Market Feed", key: "orah_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
-  { id: "key_002", name: "Trading Bot Integration", key: "orah_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
-  { id: "key_003", name: "Analytics Dashboard", key: "orah_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
-  { id: "key_004", name: "Legacy Integration", key: "orah_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
-];
-async function loadApiKeys(): Promise<any[]> {
-  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, API_KEYS_DB_KEY));
-  if (!rows.length) return [...API_KEYS_SEED];
-  try { return JSON.parse(rows[0].value); } catch { return [...API_KEYS_SEED]; }
+import {
+  loadStoredApiKeys as loadApiKeys,
+  withApiKeysLock,
+  invalidateApiKeyCache,
+  sha256Hex,
+  type StoredApiKey,
+} from "../middleware/apiKeyAuth.js";
+
+function makeKeyPreview(key: string): string {
+  return key.length > 16 ? `${key.slice(0, 12)}…${key.slice(-4)}` : key;
 }
-async function saveApiKeys(keys: any[]): Promise<void> {
-  await db.insert(platformSettingsTable)
-    .values({ key: API_KEYS_DB_KEY, value: JSON.stringify(keys) })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(keys), updatedAt: new Date() } });
+
+function publicKeyView(k: StoredApiKey): Omit<StoredApiKey, "key" | "keyHash"> & { keyPreview: string } {
+  const { key: _k, keyHash: _h, ...rest } = k;
+  return { ...rest, keyPreview: k.keyPreview ?? (k.key ? makeKeyPreview(k.key) : "orah_…") };
 }
 
 /* contracts stored in DB under key "admin_contracts" */
@@ -1050,39 +1049,75 @@ router.patch("/pairs/:symbol/contracts", async (req, res) => {
 
 /* ─── API SETTINGS (DB-backed) ─── */
 router.get("/api-keys", async (_req, res) => {
-  try { res.json(await loadApiKeys()); }
-  catch (err: any) { res.status(500).json({ error: err?.message }); }
+  try {
+    const keys = await loadApiKeys();
+    res.json(keys.map(publicKeyView));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
 });
 
 router.post("/api-keys", async (req, res) => {
   try {
-    const { name, type, rateLimit } = req.body;
-    const keys = await loadApiKeys();
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    const rand = Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-    const newKey = {
-      id: `key_${(keys.length + 1).toString().padStart(3, "0")}`,
-      name, type, rateLimit: parseInt(rateLimit) || 100,
-      key: `orah_${type === "public" ? "pub" : "prv"}_${rand}`,
-      calls24h: 0,
-      status: "active",
-      createdAt: new Date().toISOString().split("T")[0],
-    };
-    keys.push(newKey);
-    await saveApiKeys(keys);
-    res.status(201).json(newKey);
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+    const name = String(req.body?.name ?? "").trim();
+    const type = req.body?.type === "public" ? "public" : "private";
+    const rateLimitRaw = Number(req.body?.rateLimit);
+    const rateLimit =
+      Number.isFinite(rateLimitRaw) && rateLimitRaw >= 10 && rateLimitRaw <= 10_000
+        ? Math.floor(rateLimitRaw)
+        : 100;
+
+    if (!name || name.length > 100) {
+      res.status(400).json({ error: "name is required (1-100 chars)" });
+      return;
+    }
+
+    const rand = crypto.randomBytes(24).toString("base64url");
+    const key = `orah_${type === "public" ? "pub" : "prv"}_${rand}`;
+
+    const created = await withApiKeysLock(async (keys) => {
+      const id = `key_${crypto.randomBytes(8).toString("hex")}`;
+      const newKey: StoredApiKey = {
+        id,
+        name,
+        type,
+        rateLimit,
+        keyHash: sha256Hex(key),
+        keyPreview: makeKeyPreview(key),
+        calls24h: 0,
+        status: "active",
+        createdAt: new Date().toISOString().split("T")[0],
+        lastUsedAt: null,
+      };
+      keys.push(newKey);
+      return { keys, result: newKey };
+    });
+    invalidateApiKeyCache();
+
+    // Return cleartext key ONCE — the server only stores the hash from now on.
+    res.status(201).json({ ...publicKeyView(created), key, oneTimeReveal: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
 });
 
 router.delete("/api-keys/:id", async (req, res) => {
   try {
-    const keys = await loadApiKeys();
-    const key = keys.find(k => k.id === req.params.id);
-    if (!key) { res.status(404).json({ error: "Key not found" }); return; }
-    key.status = "revoked";
-    await saveApiKeys(keys);
+    const result = await withApiKeysLock(async (keys) => {
+      const idx = keys.findIndex((k) => k.id === req.params.id);
+      if (idx === -1) return { keys, result: { ok: false } };
+      keys[idx] = { ...keys[idx], status: "revoked" };
+      return { keys, result: { ok: true } };
+    });
+    invalidateApiKeyCache();
+    if (!result.ok) {
+      res.status(404).json({ error: "Key not found" });
+      return;
+    }
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
 });
 
 /* ─── API CONFIGURATION (advanced settings) ─────────────────────────────── */

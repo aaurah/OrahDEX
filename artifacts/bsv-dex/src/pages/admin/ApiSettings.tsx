@@ -183,8 +183,8 @@ export function AdminApiSettings() {
   /* API key UI */
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: "", type: "private", rateLimit: "500" });
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [revealKey, setRevealKey] = useState<{ key: string; name: string } | null>(null);
+  const [revealCopied, setRevealCopied] = useState(false);
 
   const saveConfig = useMutation({
     mutationFn: () => adminFetch(`/api/admin/api-config`, {
@@ -205,7 +205,13 @@ export function AdminApiSettings() {
   const addKey = useMutation({
     mutationFn: (data: any) =>
       adminFetch(`/api/admin/api-keys`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-api-keys"] }); setShowAdd(false); setForm({ name: "", type: "private", rateLimit: "500" }); },
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["admin-api-keys"] });
+      setShowAdd(false);
+      const generatedName = form.name;
+      setForm({ name: "", type: "private", rateLimit: "500" });
+      if (data?.key) setRevealKey({ key: data.key, name: generatedName || data.name || "API Key" });
+    },
   });
 
   const revokeKey = useMutation({
@@ -214,15 +220,12 @@ export function AdminApiSettings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-api-keys"] }),
   });
 
-  const toggleVisible = (id: string) =>
-    setVisibleKeys(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const copyKey = (key: string, id: string) => {
-    navigator.clipboard.writeText(key);
-    setCopiedKey(id); setTimeout(() => setCopiedKey(null), 2000);
+  const copyRevealKey = () => {
+    if (!revealKey) return;
+    navigator.clipboard.writeText(revealKey.key);
+    setRevealCopied(true);
+    setTimeout(() => setRevealCopied(false), 2000);
   };
-
-  const maskKey = (key: string) => key.slice(0, 12) + "••••••••••••" + key.slice(-4);
 
   const [webhookSecretVisible, setWebhookSecretVisible] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -652,6 +655,51 @@ export function AdminApiSettings() {
                 </button>
               </div>
 
+              {/* One-time reveal modal — shown immediately after generation */}
+              {revealKey && (
+                <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-card border border-amber-400/40 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-lg flex items-center gap-2">
+                        <Key className="w-5 h-5 text-amber-400" /> Save Your API Key Now
+                      </h3>
+                      <button
+                        onClick={() => setRevealKey(null)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="bg-amber-400/10 border border-amber-400/30 rounded-xl p-3 mb-4 text-xs text-amber-200">
+                      This key for <strong>{revealKey.name}</strong> is shown only once. The server stores
+                      only a hash — if you close this dialog without copying it, you will need to revoke
+                      and regenerate.
+                    </div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <code className="flex-1 text-xs font-mono break-all bg-secondary border border-border rounded-xl px-3 py-2.5">
+                        {revealKey.key}
+                      </code>
+                      <button
+                        onClick={copyRevealKey}
+                        className="shrink-0 flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-2.5 rounded-xl text-xs font-semibold hover:scale-[1.02] transition-all"
+                      >
+                        {revealCopied ? (
+                          <><Check className="w-3.5 h-3.5" /> Copied</>
+                        ) : (
+                          <><Copy className="w-3.5 h-3.5" /> Copy</>
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setRevealKey(null)}
+                      className="w-full bg-secondary border border-border py-2.5 rounded-xl text-sm font-semibold hover:border-primary/40"
+                    >
+                      I've saved it — Close
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Generate modal */}
               {showAdd && (
                 <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -714,19 +762,17 @@ export function AdminApiSettings() {
                         </div>
                         <div className="flex items-center gap-2">
                           <code className="text-xs font-mono text-muted-foreground bg-secondary px-2 py-1 rounded">
-                            {visibleKeys.has(k.id) ? k.key : maskKey(k.key)}
+                            {k.keyPreview ?? (k.key ? `${k.key.slice(0,12)}…${k.key.slice(-4)}` : "orah_…")}
                           </code>
-                          <button onClick={() => toggleVisible(k.id)} className="text-muted-foreground hover:text-foreground">
-                            {visibleKeys.has(k.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                          <button onClick={() => copyKey(k.key, k.id)} className="text-muted-foreground hover:text-primary">
-                            {copiedKey === k.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
+                          <span className="text-[10px] text-muted-foreground italic">hash-only · cannot be re-displayed</span>
                         </div>
                         <div className="flex items-center gap-4 mt-2 text-[11px] text-muted-foreground flex-wrap">
-                          <span className="flex items-center gap-1"><Activity className="w-3 h-3" />{k.calls24h.toLocaleString()} calls/24h</span>
+                          <span className="flex items-center gap-1"><Activity className="w-3 h-3" />{(k.calls24h ?? 0).toLocaleString()} calls/24h</span>
                           <span className="flex items-center gap-1"><Gauge className="w-3 h-3" />Limit: {k.rateLimit} req/min</span>
                           <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Created: {k.createdAt}</span>
+                          {k.lastUsedAt && (
+                            <span className="flex items-center gap-1"><Activity className="w-3 h-3" />Last used: {new Date(k.lastUsedAt).toLocaleString()}</span>
+                          )}
                         </div>
                       </div>
                       {k.status === "active" && (
