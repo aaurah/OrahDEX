@@ -487,6 +487,32 @@ router.post("/p2p/intents/:id/fill", async (req, res) => {
     if (intent.makerAddress === takerAddress.toLowerCase()) {
       res.status(400).json({ error: "Cannot fill your own intent" }); return;
     }
+    // ── Private-trade enforcement ──────────────────────────────────────────
+    // Direct-trade UI lets makers gate an intent to a single counterparty by
+    // storing `terms = "private:<lowercased-address>"`. That gate MUST be
+    // enforced on the server too, otherwise anyone can bypass the UI and
+    // call the fill endpoint directly.
+    const termsStr = (intent.terms ?? "").trim();
+    if (termsStr.toLowerCase().startsWith("private:")) {
+      const allowed = termsStr.slice("private:".length).trim().toLowerCase();
+      // Strict semantics: if the maker tagged the intent as private but
+      // didn't (or no longer) carries a target address, treat the intent as
+      // unfillable rather than silently public. Without this guard, a stray
+      // `terms: "private:"` would let *anyone* fill what the maker intended
+      // to be a gated trade.
+      if (!allowed) {
+        res.status(409).json({
+          error: "This intent is marked private but has no counterparty set — ask the maker to repost",
+        });
+        return;
+      }
+      if (allowed !== takerAddress.toLowerCase()) {
+        res.status(403).json({
+          error: "This is a private trade — only the named counterparty can fill it",
+        });
+        return;
+      }
+    }
     if (intent.status !== "open") {
       res.status(409).json({ error: `Intent is already ${intent.status}` }); return;
     }

@@ -832,7 +832,10 @@ export function P2P() {
       if (!r.ok) throw new Error(data.error ?? "Fill failed");
       qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
       qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
-      alert("Trade filled! Both parties' balances have been updated.");
+      // Be truthful: the fill endpoint marks the intent as accepted but does
+      // not move funds — settlement is coordinated off-chain between the two
+      // wallets. Don't claim balances changed.
+      alert("Trade accepted! Coordinate settlement with the maker — funds are not moved automatically by this offer.");
     } catch (e: any) {
       alert(e.message ?? "Fill failed");
     } finally {
@@ -1384,9 +1387,21 @@ export function P2P() {
                 </div>
                 {openDirectIntents.map(intent => {
                   const isOwnOffer = walletAddress && intent.makerAddress.toLowerCase() === walletAddress.toLowerCase();
-                  const isPrivate = intent.terms?.startsWith("private:");
-                  const privateTarget = isPrivate ? intent.terms!.replace("private:", "") : null;
-                  const canFill = !isOwnOffer && (!isPrivate || (walletAddress && privateTarget === walletAddress.toLowerCase()));
+                  // Mirror the server's parsing exactly: trim, case-insensitive
+                  // prefix, then trim+lowercase the address. Any divergence
+                  // here causes the Accept button to be shown when the server
+                  // will 403, or hidden when the server would allow.
+                  const trimmedTerms = (intent.terms ?? "").trim();
+                  const isPrivate = trimmedTerms.toLowerCase().startsWith("private:");
+                  const privateTarget = isPrivate
+                    ? trimmedTerms.slice("private:".length).trim().toLowerCase()
+                    : null;
+                  const canFill = !isOwnOffer && (
+                    !isPrivate
+                      ? true
+                      : !!privateTarget && !!walletAddress
+                          && privateTarget === walletAddress.toLowerCase()
+                  );
                   const expiresAt = new Date(intent.expiresAt);
                   const minsLeft = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 60000));
                   const timeLabel = minsLeft > 60 * 24 ? `${Math.floor(minsLeft/1440)}d` : minsLeft > 60 ? `${Math.floor(minsLeft/60)}h` : `${minsLeft}m`;
@@ -1495,7 +1510,7 @@ export function P2P() {
             {[
               { icon: Send,         title: "Create an Offer",    desc: "Choose what you give and what you want. Set your own rate. Optionally restrict to a specific wallet address for a private trade." },
               { icon: Copy,         title: "Share the Link",     desc: "Copy the unique trade link and send it to your counterparty — or leave the offer open for anyone in the market to fill." },
-              { icon: CheckCircle2, title: "Instant Settlement", desc: "When filled, both sides settle atomically on OrahDEX internal ledger. No slippage, no gas, instant confirmation." },
+              { icon: CheckCircle2, title: "Off-Chain Settlement", desc: "Accepting an offer signals agreement on price and amount. The two wallets then settle the actual transfer between themselves — no slippage, no gas." },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4 p-5 bg-card border border-border rounded-2xl">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -1521,9 +1536,13 @@ export function P2P() {
                 <Lock className="w-4 h-4 text-primary" />
                 <span className="text-sm font-bold text-foreground">HTLC Atomic Swap</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold">Trustless</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold uppercase tracking-wider">Preview</span>
               </div>
               <p className="text-xs text-muted-foreground">
                 Swap crypto directly with a counterparty using Hash Time-Locked Contracts — no custodian, no wrapped tokens. Both sides lock funds simultaneously; revealing the secret preimage unlocks both.
+              </p>
+              <p className="text-[11px] text-amber-400/80 mt-1">
+                This screen is a protocol walkthrough — pressing “Initiate” simulates the four HTLC steps so you can see how a real swap would flow. No funds move and no on-chain transaction is broadcast.
               </p>
             </div>
 
@@ -1588,7 +1607,7 @@ export function P2P() {
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Settlement</span>
-                    <span className="text-green-400 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> BSV on-chain</span>
+                    <span className="text-amber-300 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> Preview only — would settle BSV on-chain</span>
                   </div>
                 </div>
               )}
@@ -1602,7 +1621,7 @@ export function P2P() {
                   { icon: <Lock className="w-3.5 h-3.5"/>,    label: `You lock ${atomicAmt||"0"} ${atomicFrom}`, detail: `HTLC script with hash H = ${htlcHash.slice(0,8)}…` },
                   { icon: <Link2 className="w-3.5 h-3.5"/>,   label: `Counterparty locks ${atomicOutput.toFixed(6)||"0"} ${atomicTo}`, detail: "Same hash H used — funds are mirrored on both chains" },
                   { icon: <Unlock className="w-3.5 h-3.5"/>,  label: "You reveal preimage S → unlock their funds", detail: "Revealing S on destination triggers your side" },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Swap complete — BSV Settlement recorded", detail: "OP_RETURN on BSV chain confirms the atomic swap" },
+                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Walkthrough complete — protocol illustrated", detail: "In a real swap, an OP_RETURN on BSV would record the settlement" },
                 ].map((step, i) => (
                   <div key={i} className={cn(
                     "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all",
@@ -1639,8 +1658,8 @@ export function P2P() {
               className="w-full py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-orange-600 to-primary text-white flex items-center justify-center gap-2.5 shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {htlcRunning
-                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Executing HTLC…</>
-                : <><Lock className="w-5 h-5" /> Initiate HTLC Swap</>
+                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Simulating HTLC…</>
+                : <><Lock className="w-5 h-5" /> Run HTLC Walkthrough</>
               }
             </button>
           </div>
