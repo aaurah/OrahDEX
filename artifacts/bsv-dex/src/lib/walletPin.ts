@@ -23,6 +23,7 @@
 
 const VERIFIER_KEY  = "orahdex_pin_verifier_v1";
 const WALLETS_KEY   = "orahdex_imported_wallets_v1";
+const DERIVED_KEY   = "orahdex_derived_addresses_v1";
 const VERIFIER_PLAINTEXT = "orahdex-pin-ok";
 const PBKDF2_ITER   = 600_000;
 const PRF_SALT      = new TextEncoder().encode("orahdex-import-prf-v1");
@@ -206,6 +207,48 @@ export function deleteImportedWallet(address: string): void {
     w => w.address.toLowerCase() !== address.toLowerCase(),
   );
   localStorage.setItem(WALLETS_KEY, JSON.stringify(all));
+  // Also drop any cached derived addresses for this wallet
+  try {
+    const map = readDerivedMap();
+    delete map[address.toLowerCase()];
+    localStorage.setItem(DERIVED_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
+
+// ─── Derived public addresses cache (BTC / BCH / BSV / SOL …) ────────────────
+//
+// These are PUBLIC addresses derived from the seed during create/import/login.
+// Persisting them in plain JSON lets the wallet UI show per-chain QR codes
+// without re-prompting the user for PIN/passkey on every visit.
+
+export interface DerivedAddresses {
+  evm?: string;
+  btc?: string;
+  bch?: string;
+  bsv?: string;
+  sol?: string;
+  tron?: string;
+}
+
+function readDerivedMap(): Record<string, DerivedAddresses> {
+  try {
+    const raw = localStorage.getItem(DERIVED_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+export function saveDerivedAddresses(address: string, addrs: DerivedAddresses): void {
+  if (!address) return;
+  const map = readDerivedMap();
+  const k = address.toLowerCase();
+  map[k] = { ...(map[k] ?? {}), ...addrs };
+  localStorage.setItem(DERIVED_KEY, JSON.stringify(map));
+}
+
+export function getDerivedAddresses(address: string | null | undefined): DerivedAddresses | null {
+  if (!address) return null;
+  const map = readDerivedMap();
+  return map[address.toLowerCase()] ?? null;
 }
 
 // ─── Encrypt + store (PIN flow) ──────────────────────────────────────────────

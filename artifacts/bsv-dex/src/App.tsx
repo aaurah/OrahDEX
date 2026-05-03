@@ -24,6 +24,7 @@ const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: 
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
 const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
+const WalletPage   = lazy(() => import("@/pages/Wallet"));
 const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
 const SwapPage     = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
@@ -420,6 +421,7 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
+                <Route path="/wallet"     component={WalletPage} />
                 <Route path="/portfolio"  component={MobilePortfolio} />
                 <Route path="/portfolio/:coin">
                   {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
@@ -458,6 +460,7 @@ function Router() {
                   <Route path="/copy"           component={CopyTrading} />
                   <Route path="/fees"           component={RevenuePage} />
                   <Route path="/keeper"         component={KeeperProfile} />
+                  <Route path="/wallet"         component={WalletPage} />
                   <Route path="/portfolio"      component={Portfolio} />
                   <Route path="/portfolio/:coin">
                     {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
