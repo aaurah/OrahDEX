@@ -20,6 +20,7 @@ import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { hasEscrow } from "@/lib/escrow";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -280,6 +281,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
+  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
+  // directly from its on-chain balance — no exchange deposit required.
+  // Only non-EVM Orah chains (BSV/BTC/SOL) still use the internal ledger.
+  const isSelfCustodyEvm = isEvm && !!address;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
@@ -313,7 +318,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
   // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
   // internal exchange balances for assets accumulated via exchange trades.
-  const usesApiBalance = isOrahWallet;
+  const usesApiBalance = isOrahWallet && !isEvm;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -1025,7 +1030,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     let evmSignature: string | undefined;
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
-    if (isExternalEvm) {
+    if (isSelfCustodyEvm) {
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -1043,7 +1048,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ].join("\n");
 
       try {
-        evmSignature = await signMessageAsync({ message: orderMsg });
+        if (isOrahWallet) {
+          // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
+          const account = await getViemAccountForAddress(address!, {
+            title:    "Authorize trade",
+            subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
+          });
+          evmSignature = await account.signMessage!({ message: orderMsg });
+        } else {
+          evmSignature = await signMessageAsync({ message: orderMsg });
+        }
       } catch (signErr: any) {
         const msg: string = signErr?.message ?? "";
         toast({
@@ -1069,7 +1083,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       stopPrice: useStop,
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
-      walletSource:   isOrahWallet ? "orah" : "external",
+      walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
       evmSignature,
@@ -1922,34 +1936,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
-              {/* Two-ledger gap hint — Orah Wallet users sometimes have on-chain
-                  balance that hasn't been credited to the internal exchange ledger.
-                  Surface BOTH numbers so users don't think their funds are lost. */}
-              {address && usesApiBalance && (() => {
-                const onChain  = side === "buy" ? walletQuoteBalance : walletBaseBalance;
-                const tradable = side === "buy" ? internalQuoteBalance : internalBaseBalance;
-                const gap = onChain - tradable;
-                if (gap <= 1e-9) return null;
-                return (
-                  <button
-                    onClick={() => setFundingSheetOpen(true)}
-                    className="w-full flex items-center justify-between gap-2 text-[10px] leading-tight px-2 py-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/15 transition-colors text-left"
-                  >
-                    <span>
-                      In your wallet:&nbsp;
-                      <span className="font-semibold tabular-nums">
-                        {onChain.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })} {availableSym}
-                      </span>
-                      {" "}— deposit{" "}
-                      <span className="font-semibold tabular-nums">
-                        {gap.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })}
-                      </span>
-                      {" "}to trade with full balance
-                    </span>
-                    <Plus size={12} strokeWidth={3} className="shrink-0" />
-                  </button>
-                );
-              })()}
               {/* Low balance hint — shown when no balance available on any source */}
               {address && available === 0 && !apiBalancesLoading && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
