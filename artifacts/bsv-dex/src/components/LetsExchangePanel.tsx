@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, Lock, Wallet, Trash2, ArrowRight,
+  Clock, Lock, Wallet, Trash2, ArrowRight, History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
