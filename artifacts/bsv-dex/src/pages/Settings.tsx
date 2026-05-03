@@ -5,8 +5,11 @@ import {
   CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
-  Settings as SettingsIcon, Key, Volume2,
+  Settings as SettingsIcon, Key, Volume2, KeyRound, Wallet as WalletIcon,
 } from "lucide-react";
+import { getImportedWallet } from "@/lib/walletPin";
+import { listPasskeyWallets } from "@/lib/passkeyWallet";
+import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -118,6 +121,12 @@ export function WebSettings() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
+  const [revealOpen, setRevealOpen] = useState(false);
+  const imported = address ? getImportedWallet(address) : null;
+  const passkeyOwned = address
+    ? listPasskeyWallets().some(w => w.address.toLowerCase() === address.toLowerCase())
+    : false;
+  const canBackup = !!imported || passkeyOwned;
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
@@ -154,6 +163,22 @@ export function WebSettings() {
                 label="Network"
                 value={network === "evm" ? "EVM (Ethereum Compatible)" : network === "bsv" ? "Bitcoin SV" : network === "tron" ? "TRON" : network === "sol" ? "Solana" : String(network)}
               />
+              <Row
+                icon={WalletIcon}
+                iconColor="#22c55e"
+                label="Open wallet"
+                value="All chains, send / receive, swap, history"
+                onClick={() => navigate("/wallet")}
+              />
+              {canBackup && (
+                <Row
+                  icon={KeyRound}
+                  iconColor="#f59e0b"
+                  label="Back up wallet"
+                  value={`Reveal recovery phrase / private key · ${imported?.protectedBy === "pin" ? "PIN" : "passkey"} required`}
+                  onClick={() => setRevealOpen(true)}
+                />
+              )}
               <Row
                 icon={LogOut}
                 iconColor="#ef4444"
@@ -450,6 +475,7 @@ export function WebSettings() {
           </div>
         );
       })()}
+      <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address ?? null} />
     </div>
   );
 }

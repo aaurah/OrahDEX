@@ -55,8 +55,8 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
 
   const bitcoinKey = root.derive("m/44'/0'/0'/0/0");
   const btc = deriveP2PKH(bitcoinKey);
-  const bch = btc;
   const bsv = btc;
+  const bch = deriveCashAddr(bitcoinKey);
   const sol = deriveSolanaAddress(seed);
 
   return { evm, btc, bch, bsv, sol };

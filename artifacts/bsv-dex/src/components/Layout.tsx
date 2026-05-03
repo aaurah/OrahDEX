@@ -35,6 +35,7 @@ const NAV_LINKS = [
   { href: "/dex",                    label: "Mkt Hub",    icon: Layers },
   { href: "/prediction",             label: "Predict",    icon: Target },
   { href: "/nft",                    label: "NFT",        icon: Sparkles },
+  { href: "/wallet",                 label: "Wallet",     icon: Wallet },
   { href: "/portfolio",              label: "Portfolio",  icon: LayoutDashboard },
 ];
 

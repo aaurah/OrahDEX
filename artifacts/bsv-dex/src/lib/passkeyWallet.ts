@@ -21,6 +21,7 @@
  */
 
 import { generateMnemonic, deriveAllAddresses } from "./seedPhrase";
+import { saveDerivedAddresses } from "./walletPin";
 
 const STORAGE_KEY  = "orahdex_passkey_wallets_v1";
 const RP_NAME      = "OrahDEX";
@@ -277,6 +278,9 @@ export async function registerPasskeyWallet(
   };
 
   saveWallet(wallet);
+  saveDerivedAddresses(addrs.evm, {
+    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+  });
 
   // Silently back up to server (encrypted — safe to store remotely)
   pushBackupToServer(wallet);
@@ -367,6 +371,9 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
     address = addrs.evm;
     chains  = { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv };
+    saveDerivedAddresses(addrs.evm, {
+      evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    });
   } else {
     // Legacy format: raw EVM private key (0x...)
     const { privateKeyToAccount } = await import("viem/accounts");
@@ -389,6 +396,32 @@ export async function loginWithPasskey(): Promise<LoginResult> {
  * The code is valid for 10 minutes and can be used ONCE on the new device.
  * Use this when automatic cloud backup doesn't apply (e.g. iPhone → Android).
  */
+/**
+ * Reveal the underlying secret (BIP39 mnemonic or 0x private key) of a
+ * passkey-protected wallet. Triggers a fresh WebAuthn assertion — userVerification
+ * is required, and decryption happens only on this device.
+ *
+ * Used by RevealSecretSheet so passkey-only wallets can also export their seed.
+ */
+export async function revealPasskeyWalletSecret(address: string): Promise<string> {
+  const wallets = listPasskeyWallets();
+  const wallet  = wallets.find(w => w.address.toLowerCase() === address.toLowerCase());
+  if (!wallet) throw new Error("Passkey wallet not found on this device");
+
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      allowCredentials: [{ id: b642buf(url2b64(wallet.credentialId)), type: "public-key" }],
+      userVerification: "required",
+      timeout:          60_000,
+    },
+  }) as PublicKeyCredential | null;
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  return decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+}
+
 export async function generateTransferCode(credentialId: string): Promise<string> {
   const wallets = listPasskeyWallets();
   const wallet  = wallets.find(w => w.credentialId === credentialId);

@@ -29,6 +29,7 @@ import {
   validatePin,
   storeWithPin,
   storeWithPasskey,
+  saveDerivedAddresses,
   createImportPasskey,
   PIN_MIN_LEN,
   PIN_MAX_LEN,
@@ -49,6 +50,7 @@ interface WalletDef {
 
 const EVM_WALLETS: WalletDef[] = [
   { id: "metamask",  name: "MetaMask",       icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains",         popular: true,  installUrl: "https://metamask.io/download/" },
+  { id: "rabby",     name: "Rabby",           icon: "🐰", description: "Multi-chain EVM wallet by DeBank — power users",        popular: true,  installUrl: "https://rabby.io/" },
   { id: "coinbase",  name: "Coinbase Wallet", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains",             popular: true,  installUrl: "https://www.coinbase.com/wallet/downloads" },
   { id: "trust",     name: "Trust Wallet",    icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins",          popular: true,  installUrl: "https://trustwallet.com/download" },
   { id: "okx",       name: "OKX Wallet",      icon: "⭕", description: "Web3 gateway by OKX — all EVM networks",               popular: false, installUrl: "https://www.okx.com/web3" },
@@ -58,7 +60,11 @@ const EVM_WALLETS: WalletDef[] = [
   { id: "imtoken",   name: "imToken",         icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…",   popular: false, installUrl: "https://token.im/download" },
   { id: "guarda",    name: "Guarda Wallet",   icon: "🟢", description: "EVM + BSV + 400k+ assets supported",                   popular: false, installUrl: "https://guarda.com/desktop/" },
   { id: "atomic",    name: "Atomic Wallet",   icon: "⚛️", description: "500+ coins — EVM all layers + BSV + more",             popular: false, installUrl: "https://atomicwallet.io/downloads" },
-  { id: "ledger",    name: "Ledger",          icon: "🔒", description: "Hardware wallet — cold storage",                        popular: false, installUrl: "https://www.ledger.com/ledger-live" },
+  { id: "ledger",    name: "Ledger",          icon: "🔒", description: "Cold wallet — Nano S Plus / Nano X / Stax via USB",     popular: true,  installUrl: "https://www.ledger.com/ledger-live" },
+  { id: "trezor",    name: "Trezor",          icon: "🛡️", description: "Cold wallet — Model One / Model T / Safe via Trezor Suite", popular: false, installUrl: "https://trezor.io/start" },
+  { id: "keystone",  name: "Keystone",        icon: "🧊", description: "Air-gapped cold wallet — QR-code signing, no USB",       popular: false, installUrl: "https://keyst.one/" },
+  { id: "gridplus",  name: "GridPlus Lattice1", icon: "🟦", description: "Pro-grade cold wallet — multi-account hardware vault",  popular: false, installUrl: "https://gridplus.io/products/grid-lattice1" },
+  { id: "walletconnect", name: "WalletConnect", icon: "🔗", description: "Scan a QR — connect any of 300+ mobile wallets",       popular: false },
 ];
 
 const BSV_WALLETS: WalletDef[] = [
@@ -186,7 +192,8 @@ function getEvmProvider(walletId: string): any {
   const eth = (window as any).ethereum;
   if (!eth) return null;
   if (Array.isArray(eth.providers) && eth.providers.length > 0) {
-    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask) ?? eth.providers[0];
+    if (walletId === "rabby")    return eth.providers.find((p: any) => p.isRabby) ?? null;
+    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask && !p.isRabby) ?? eth.providers[0];
     if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
     if (walletId === "trust") return eth.providers.find((p: any) => p.isTrust) ?? null;
     return eth.providers[0];
@@ -1035,6 +1042,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     try {
       const addrs = await deriveAllAddresses(mnemonic);
       setHdAddresses(addrs);
+      saveDerivedAddresses(addrs.evm, {
+        evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+      });
       connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
@@ -1120,6 +1130,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      saveDerivedAddresses(address, {
+        evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+      });
     }
     setImportStep("done");
     const delay = secretType === "mnemonic" ? 2500 : 1500;
