@@ -284,6 +284,20 @@ function getPublicClient(chainId: number) {
   });
 }
 
+/**
+ * Fetch the freshest nonce from the network using the "pending" tag so
+ * that recent (just-confirmed or in-mempool) transactions are reflected.
+ * Without this, viem can pick a stale nonce after the user just sent a tx
+ * and the node hasn't surfaced it on the "latest" block yet → "nonce too low".
+ */
+async function freshNonce(chainId: number, address: string): Promise<number> {
+  const pub = getPublicClient(chainId);
+  return await pub.getTransactionCount({
+    address: address as `0x${string}`,
+    blockTag: "pending",
+  });
+}
+
 export async function lockEthViaOrah(
   orderId:   string,
   rawAmount: bigint,
@@ -293,10 +307,12 @@ export async function lockEthViaOrah(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
   const client = await getOrahWalletClient(from, chainId);
+  const nonce  = await freshNonce(chainId, from);
   const txHash = await client.sendTransaction({
     to:    escrow,
     value: rawAmount,
     data:  buildLockEthCalldata(orderId),
+    nonce,
   } as any);
   await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
@@ -314,17 +330,21 @@ export async function lockErc20ViaOrah(
   const client = await getOrahWalletClient(from, chainId);
   const pub    = getPublicClient(chainId);
 
-  // Step 1: approve
+  // Step 1: approve — fetch nonce first
+  const approveNonce = await freshNonce(chainId, from);
   const approveTx = await client.sendTransaction({
     to:   tokenAddress as `0x${string}`,
     data: buildApproveCalldata(escrow, rawAmount),
+    nonce: approveNonce,
   } as any);
   await pub.waitForTransactionReceipt({ hash: approveTx });
 
-  // Step 2: lockERC20
+  // Step 2: lockERC20 — re-fetch nonce so we follow the approve tx
+  const lockNonce = await freshNonce(chainId, from);
   const txHash = await client.sendTransaction({
     to:   escrow,
     data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
+    nonce: lockNonce,
   } as any);
   await pub.waitForTransactionReceipt({ hash: txHash });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
@@ -338,9 +358,11 @@ export async function cancelEscrowViaOrah(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
   const client = await getOrahWalletClient(from, chainId);
+  const nonce  = await freshNonce(chainId, from);
   const txHash = await client.sendTransaction({
     to:   escrow,
     data: buildCancelCalldata(orderId),
+    nonce,
   } as any);
   await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
