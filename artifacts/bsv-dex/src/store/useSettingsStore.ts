@@ -83,6 +83,16 @@ interface SettingsState {
   setSoundEnabled: (v: boolean) => void;
   hapticsEnabled: boolean;
   setHapticsEnabled: (v: boolean) => void;
+  // Browser/OS push notifications when tab is in background.
+  desktopEnabled: boolean;
+  setDesktopEnabled: (v: boolean) => void;
+  // Do Not Disturb: timestamp until which sound/vibration/desktop are silenced.
+  // null = off, Number.MAX_SAFE_INTEGER = indefinite.
+  dndUntil: number | null;
+  setDndUntil: (v: number | null) => void;
+  // Categories the user has muted (no FX, no desktop, still appear in feed).
+  mutedCategories: string[];
+  setMutedCategories: (v: string[]) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -94,6 +104,12 @@ export const useSettingsStore = create<SettingsState>()(
       setSoundEnabled: (v) => set({ soundEnabled: v }),
       hapticsEnabled: true,
       setHapticsEnabled: (v) => set({ hapticsEnabled: v }),
+      desktopEnabled: false,
+      setDesktopEnabled: (v) => set({ desktopEnabled: v }),
+      dndUntil: null,
+      setDndUntil: (v) => set({ dndUntil: v }),
+      mutedCategories: [],
+      setMutedCategories: (v) => set({ mutedCategories: v }),
     }),
     { name: "orahdex-settings-v1" }
   )

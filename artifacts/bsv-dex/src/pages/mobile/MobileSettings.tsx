@@ -6,6 +6,7 @@ import {
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key, Volume2,
 } from "lucide-react";
+import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
@@ -223,6 +224,7 @@ export function MobileSettings() {
           label="Haptic Feedback"
           rightEl={<Toggle value={hapticsEnabled} onChange={setHapticsEnabled} />}
         />
+        <NotificationAdvancedRows Row={Row} Toggle={Toggle} />
       </Section>
 
 
