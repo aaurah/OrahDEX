@@ -1139,23 +1139,32 @@ function CreatorProfileSheet({
                 {statSheet.items.length === 0 ? (
                   <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {statSheet.type === "holders" ? "holders" : "holdings"} yet</div>
                 ) : statSheet.type === "holders" ? statSheet.items.map((h: any, i: number) => (
-                  <div key={h.holder ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                  <button
+                    key={h.holder ?? i}
+                    onClick={() => { if (h.holder) { setStatSheet(null); navigate(`/nft/${h.holder}`); } }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl active:opacity-60 text-left"
+                    style={{ background: "var(--color-surface)" }}>
                     <div className="w-6 text-center text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>#{i + 1}</div>
-                    <Avatar src={undefined} name={h.username ?? h.holder} size={32} />
+                    <Avatar src={h.avatar_url} name={h.username ?? h.holder} size={32} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon holder"}</p>
+                      <p className="text-[10px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(h.holder)}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
-                  </div>
+                  </button>
                 )) : statSheet.items.map((h: any, i: number) => (
-                  <div key={h.coin_creator ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                  <button
+                    key={h.coin_creator ?? i}
+                    onClick={() => { if (h.coin_creator) { setStatSheet(null); navigate(`/nft/${h.coin_creator}`); } }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl active:opacity-60 text-left"
+                    style={{ background: "var(--color-surface)" }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0" style={{ background: "var(--color-accent)", color: "#000" }}>{h.symbol?.slice(0, 3)}</div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon"}</p>
                       <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{isAddrLikeSymbol(h.symbol) ? "" : `${h.symbol} · `}{`$${parseFloat(h.price_usd || "0").toFixed(4)}`}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
