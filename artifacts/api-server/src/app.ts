@@ -11,6 +11,8 @@ import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startArbBot } from "./lib/arbBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
 import { startBsvChainMonitor, getBsvChainStatus } from "./lib/bsvChainMonitor.js";
+import { startBsvDepositWatcher } from "./lib/bsvDepositWatcher.js";
+import { startEvmDepositWatcher } from "./lib/evmDepositWatcher.js";
 import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
@@ -228,6 +230,8 @@ try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startL
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
 try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
 try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
+try { startBsvDepositWatcher();   } catch (e) { logger.error({ err: e }, "startBsvDepositWatcher failed to init"); }
+try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startEvmDepositWatcher failed to init"); }
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
