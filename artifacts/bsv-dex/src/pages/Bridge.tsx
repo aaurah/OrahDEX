@@ -10,7 +10,7 @@ import {
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { cn } from "@/lib/utils";
-import { useGetMarkets } from "@workspace/api-client-react";
+import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
 

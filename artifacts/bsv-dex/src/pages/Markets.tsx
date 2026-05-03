@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
-import { useGetMarkets } from "@workspace/api-client-react";
+import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
 import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,

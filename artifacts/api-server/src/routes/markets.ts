@@ -136,11 +136,26 @@ router.get("/markets", async (req, res) => {
     types = rawType.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
   }
 
-  const cacheKey = types.length ? `filtered:${types.sort().join(",")}` : "all";
-  const cached = marketsCache.get(cacheKey);
+  // Optional pagination — used by the staged-load on the frontend so the
+  // first paint shows the top ~1000 tradeable markets immediately while the
+  // remaining ~35 000 stream in afterwards. The full sorted list is built
+  // and cached once; ?limit / ?offset just slice it. Order is stable:
+  //   pinned DESC, hasPrice DESC, volume24h DESC.
+  const rawLimit  = req.query.limit  as string | undefined;
+  const rawOffset = req.query.offset as string | undefined;
+  const limit     = rawLimit  ? Math.max(1, Math.min(50_000, parseInt(rawLimit,  10) || 0)) : null;
+  const offset    = rawOffset ? Math.max(0,                  parseInt(rawOffset, 10) || 0)  : 0;
 
+  const baseKey  = types.length ? `filtered:${types.sort().join(",")}` : "all";
+  const cacheKey = baseKey; // we cache the full sorted list once and slice from it
+
+  const sliced = (full: any[]) =>
+    limit == null ? full : full.slice(offset, offset + limit);
+
+  const cached = marketsCache.get(cacheKey);
   if (cached) {
-    const etag = marketsETag.get(cacheKey);
+    const out  = sliced(cached);
+    const etag = (marketsETag.get(cacheKey) ?? "").replace(/"$/, `:${offset}:${limit ?? "*"}"`);
     if (etag) {
       res.setHeader("ETag", etag);
       if (req.headers["if-none-match"] === etag) {
@@ -148,7 +163,8 @@ router.get("/markets", async (req, res) => {
         return;
       }
     }
-    res.json(cached);
+    res.setHeader("X-Total-Count", String(cached.length));
+    res.json(out);
     return;
   }
 
@@ -182,15 +198,28 @@ router.get("/markets", async (req, res) => {
       takerFee:              parseFloat(m.takerFee),
     }));
 
+    // Stable priority sort: pinned first, then any market with a real price,
+    // then by 24h volume. Ensures the top ~1000 returned to a paginated
+    // request are the ones a user will actually see/trade.
+    result.sort((a, b) => {
+      const pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      const ha = a.lastPrice > 0 ? 1 : 0, hb = b.lastPrice > 0 ? 1 : 0;
+      if (ha !== hb) return hb - ha;
+      return (b.volume24h || 0) - (a.volume24h || 0);
+    });
+
     const etag = makeETag(result);
     marketsCache.set(cacheKey, result);
     marketsETag.set(cacheKey, etag);
-    res.setHeader("ETag", etag);
-    if (req.headers["if-none-match"] === etag) {
+    const sliceEtag = etag.replace(/"$/, `:${offset}:${limit ?? "*"}"`);
+    res.setHeader("ETag", sliceEtag);
+    res.setHeader("X-Total-Count", String(result.length));
+    if (req.headers["if-none-match"] === sliceEtag) {
       res.status(304).end();
       return;
     }
-    res.json(result);
+    res.json(sliced(result));
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
     res.status(500).json({ error: "Internal server error" });
