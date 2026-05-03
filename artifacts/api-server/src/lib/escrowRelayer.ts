@@ -218,11 +218,46 @@ export interface SettleEscrowMatchResult {
  * Release both legs atomically *from the relayer's POV*. Network-level
  * atomicity is not possible (two separate txs), but the contract guarantees
  * that each release is one-shot and safe to retry on revert.
+ *
+ * ── SAFETY GATE ──────────────────────────────────────────────────────────
+ * Both legs must be locked in escrow BEFORE we release either one. If only
+ * one side locked, releasing it would send their funds to a counterparty
+ * who never deposited anything → unilateral loss. This check is the only
+ * thing protecting users from that, since the contract itself can't see
+ * the other chain or the matching order.
+ *
+ * Returns `skipped` legs (with reason) when the match isn't safe to release
+ * automatically. The caller should leave the user funds in escrow and
+ * surface a clear message — the user can then call cancel() to recover.
  */
 export async function settleEscrowMatch(
   p: SettleEscrowMatchParams,
-): Promise<SettleEscrowMatchResult> {
+): Promise<SettleEscrowMatchResult & { bothLocked: boolean; skipReason?: string }> {
+  // Pre-flight: confirm BOTH sides have a live, unreleased deposit.
+  const [sellerDep, buyerDep] = await Promise.all([
+    getEscrowDeposit(p.sellerOrderId, p.chainId),
+    getEscrowDeposit(p.buyerOrderId,  p.chainId),
+  ]);
+
+  const sellerLocked = !!sellerDep && !sellerDep.released;
+  const buyerLocked  = !!buyerDep  && !buyerDep.released;
+
+  if (!sellerLocked || !buyerLocked) {
+    const missing = !sellerLocked && !buyerLocked
+      ? "neither side locked"
+      : !sellerLocked
+        ? `seller did not lock (orderId ${p.sellerOrderId})`
+        : `buyer did not lock (orderId ${p.buyerOrderId})`;
+    return {
+      bothLocked: false,
+      skipReason: `unsafe to release: ${missing}`,
+      baseLeg:  { ok: false, reason: `safety gate: ${missing}` },
+      quoteLeg: { ok: false, reason: `safety gate: ${missing}` },
+    };
+  }
+
+  // Both locked → safe to release each leg.
   const baseLeg  = await releaseEscrow(p.sellerOrderId, p.buyerAddress,  p.chainId);
   const quoteLeg = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, p.chainId);
-  return { baseLeg, quoteLeg };
+  return { bothLocked: true, baseLeg, quoteLeg };
 }
