@@ -19,7 +19,7 @@ import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanRece
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
-import { hasEscrow } from "@/lib/escrow";
+import { hasEscrow, chainLabel } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
 /* ── Notifications drawer — backed by the real notification store ── */
@@ -2034,7 +2034,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </a>
                 )}
 
-                {/* On-chain escrow lock — only for open (unmatched) orders on Sepolia */}
+                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed */}
                 {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && (
                   <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
                     <p className="text-[11px] text-blue-300/80">
@@ -2075,39 +2075,37 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       ) : (
                         <>
                           <Link2 size={11} />
-                          Lock funds on Sepolia
+                          Lock funds on {chainLabel(walletChainId)}
                         </>
                       )}
                     </button>
                   </div>
                 )}
 
-                {/* Wrong chain — offer one-tap switch to Sepolia (where escrow is deployed) */}
+                {/* Wrong chain — offer one-tap switch to Ethereum mainnet (where escrow is deployed) */}
                 {!orderResult.matched && orderResult.tradeId && !escrowTx && isEvm && !escrowAvailable && (
                   <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
                     <p className="text-[11px] text-amber-300/80">
-                      On-chain locking is only deployed on Sepolia testnet right now.
-                      Switch chains to lock these funds on-chain.
+                      On-chain locking isn't available on {chainLabel(walletChainId)}. Switch to
+                      Ethereum mainnet (or Sepolia testnet) to lock these funds on-chain.
                     </p>
                     <button
                       onClick={async () => {
                         if (provider === "orah-wallet") {
-                          // In-app wallet: just update chainId, no popup needed
-                          switchChain(11155111);
+                          switchChain(1);
                         } else {
-                          // Injected / Reown: ask the wallet to switch
                           const eth = (window as any).ethereum;
                           if (eth) {
                             try {
                               await eth.request({
                                 method: "wallet_switchEthereumChain",
-                                params: [{ chainId: "0xaa36a7" }],
+                                params: [{ chainId: "0x1" }],
                               });
-                              switchChain(11155111);
+                              switchChain(1);
                             } catch (e) {
                               toast({
                                 title: "Switch failed",
-                                description: "Open your wallet and switch to Sepolia, then try again.",
+                                description: "Open your wallet and switch to Ethereum, then try again.",
                                 variant: "destructive",
                               });
                             }
@@ -2121,7 +2119,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       )}
                     >
                       <Link2 size={11} />
-                      Switch to Sepolia to lock
+                      Switch to Ethereum to lock
                     </button>
                   </div>
                 )}
@@ -2140,7 +2138,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <div className="pt-1.5 border-t border-violet-500/20 space-y-1">
                     <div className="flex items-center gap-1.5 text-[11px] text-violet-300 font-bold">
                       <CheckCircle2 size={11} />
-                      Funds locked on Sepolia
+                      Funds locked on {chainLabel(walletChainId)}
                     </div>
                     <a
                       href={escrowTx.explorerUrl}
