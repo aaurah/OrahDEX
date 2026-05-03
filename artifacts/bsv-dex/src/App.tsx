@@ -219,7 +219,11 @@ function Router() {
     const eth = (window as any).ethereum;
 
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
-    if (network === "evm" && storedProvider !== "reown") {
+    // Skip the injected-wallet liveness check for:
+    //   • reown      → handled by its own subscription below
+    //   • orah-wallet → in-app self-custodial wallet, address derived locally
+    //                   from the PIN/passkey secret — never depends on window.ethereum
+    if (network === "evm" && storedProvider !== "reown" && storedProvider !== "orah-wallet") {
       if (!eth) {
         disconnect();
       } else {
@@ -243,6 +247,9 @@ function Router() {
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
       if (p === "reown") return;
+      // Orah Wallet is self-custodial and independent of window.ethereum —
+      // ignore injected wallet account events for it.
+      if (p === "orah-wallet") return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
