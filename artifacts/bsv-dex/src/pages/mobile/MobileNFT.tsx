@@ -258,9 +258,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        const params = mode === "buy"
+        const params = (mode === "buy"
           ? `type=buy&bsv_amount=${bsvAmount}`
-          : `type=sell&token_amount=${tokenAmount}`;
+          : `type=sell&token_amount=${tokenAmount}`) + `&payment_asset=${nativeSymbol}`;
         const r = await fetch(`${API}/social/quote/${creator.address}?${params}`);
         if (r.ok) setQuote(await r.json());
       } catch {}
@@ -280,6 +280,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
           trader: address, trade_type: mode,
           bsv_amount: mode === "buy" ? parseFloat(bsvAmount) : undefined,
           token_amount: mode === "sell" ? parseFloat(tokenAmount) : undefined,
+          payment_asset: nativeSymbol,
         }),
       });
       const d = await res.json();
