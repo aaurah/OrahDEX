@@ -256,6 +256,9 @@ async function verifySpotFunding(
 
   // ── Orah internal ledger ────────────────────────────────────────────────
   // Lock funds from user_balances — returns INSUFFICIENT_FUNDS if balance is too low.
+  // Settlement (settleTrade) requires this lock to exist, so we cannot accept
+  // an Orah order without it. Imported seed-phrase wallets with on-chain funds
+  // must deposit first; the client surfaces a DEPOSIT_REQUIRED prompt for that.
   try {
     await lockForOrder({ walletAddress, asset, amount });
     return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
