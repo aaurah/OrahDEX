@@ -285,7 +285,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // directly from its on-chain balance — no exchange deposit required.
   // Only non-EVM Orah chains (BSV/BTC/SOL) still use the internal ledger.
   const isSelfCustodyEvm = isEvm && !!address;
-  const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
+  // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
+  // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
+  // shows 0 even though the wallet holds funds.
+  const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
