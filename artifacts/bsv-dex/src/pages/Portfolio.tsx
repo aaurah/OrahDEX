@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -879,6 +880,11 @@ export function Portfolio() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* ── Buy-Crypto Purchase History ────────────────────────────────── */}
+        <div className="mt-8">
+          <BuyHistory walletAddress={address ?? sessionStorage.getItem("orahdex_session_addr")} />
         </div>
 
         {/* ── LP Positions ───────────────────────────────────────────────── */}
