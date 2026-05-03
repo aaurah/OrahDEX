@@ -726,20 +726,32 @@ function CreatorProfileSheet({
       <div className="flex-1 overflow-y-auto">
 
         {/* ── Cover image ── */}
-        <div className="relative h-28 shrink-0" style={{ background: "linear-gradient(180deg,#0a0a0a 0%,#111111 100%)" }}>
+        <div className="relative h-32 shrink-0" style={{ background: "linear-gradient(180deg,#0a0a0a 0%,#1a1a1a 100%)" }}>
           {!imgErr && profile.cover_url && (
             <img src={profile.cover_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           )}
           {isSelf && (
-            <button
-              onClick={() => setQuickCaptureField("cover_url")}
-              className="absolute inset-0 w-full h-full flex items-center justify-center group"
-              style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
-            >
-              {photoUploading === "cover"
-                ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <Camera size={18} className="opacity-0 group-hover:opacity-90 group-active:opacity-90 text-white" />}
-            </button>
+            <>
+              <button
+                onClick={() => setQuickCaptureField("cover_url")}
+                aria-label="Change cover photo"
+                className="absolute inset-0 w-full h-full"
+                style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "transparent" }}
+              />
+              {photoUploading === "cover" ? (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                </div>
+              ) : (
+                <button
+                  onClick={() => setQuickCaptureField("cover_url")}
+                  className="absolute bottom-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
+                  style={{ background: "rgba(0,0,0,0.7)", color: "#fff", backdropFilter: "blur(8px)" }}
+                >
+                  <Camera size={12} /> {profile.cover_url ? "Change cover" : "Add cover"}
+                </button>
+              )}
+            </>
           )}
           <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("cover_url")} />
         </div>
@@ -754,13 +766,20 @@ function CreatorProfileSheet({
                 <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
                 <button
                   onClick={() => setQuickCaptureField("avatar_url")}
-                  className="absolute inset-0 rounded-full flex items-center justify-center group"
-                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
+                  aria-label="Change profile picture"
+                  className="absolute inset-0 rounded-full flex items-center justify-center"
+                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "transparent" }}
                 >
-                  {photoUploading === "avatar"
-                    ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <Camera size={16} className="opacity-0 group-hover:opacity-90 group-active:opacity-90 text-white" />}
+                  {photoUploading === "avatar" && (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  )}
                 </button>
+                {photoUploading !== "avatar" && (
+                  <div className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full flex items-center justify-center pointer-events-none"
+                       style={{ background: "var(--color-accent)", border: "2px solid var(--color-bg)" }}>
+                    <Camera size={12} color="#000" />
+                  </div>
+                )}
               </div>
             ) : (
               <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
