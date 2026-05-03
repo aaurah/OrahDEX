@@ -19,6 +19,7 @@ import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanRece
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
+import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { hasEscrow, chainLabel } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
@@ -517,7 +518,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     price: number;
   } | null>(null);
   const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(null);
-  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg } = useEscrow();
+  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult } = useEscrow();
+  // Lock-funds confirmation dialog (opens when user taps "Lock funds on X")
+  const [lockDialogOpen, setLockDialogOpen]   = useState(false);
+  const [pendingLockParams, setPendingLockParams] = useState<{
+    orderId: string; side: "buy" | "sell"; base: string; quote: string;
+    quantity: number; price: number;
+  } | null>(null);
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
@@ -2066,10 +2073,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     </p>
                     <button
                       disabled={escrowLoading}
-                      onClick={async () => {
+                      onClick={() => {
                         if (!orderResult.tradeId) return;
                         const usePrice = orderResult.price > 0 ? orderResult.price : lastPrice;
-                        const result = await lockOrder({
+                        // Open the confirmation dialog instead of locking
+                        // immediately. The dialog calls lockOrder() only when
+                        // the user clicks "Confirm & Lock".
+                        setPendingLockParams({
                           orderId:  orderResult.tradeId,
                           side:     orderResult.side as "buy" | "sell",
                           base:     orderResult.base,
@@ -2077,12 +2087,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           quantity: orderResult.quantity || orderResult.filledQty || 0,
                           price:    usePrice,
                         });
-                        if (result) {
-                          setEscrowTx(result);
-                          // Refresh on-chain balances so the deduction shows immediately
-                          // in OrahDEX (Rabby/MetaMask update on their own next poll).
-                          setTimeout(() => { refreshEvmBalances(); }, 1500);
-                        }
+                        setLockDialogOpen(true);
                       }}
                       className={cn(
                         "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
@@ -2459,6 +2464,28 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
       {/* ── SHARE TOAST ── */}
       <ShareToast visible={shareToastVisible} copied={shareCopied} />
+
+      {/* ── LOCK FUNDS DIALOG (confirmation + live status) ── */}
+      <LockFundsDialog
+        open={lockDialogOpen}
+        onOpenChange={setLockDialogOpen}
+        order={pendingLockParams}
+        chainId={walletChainId ?? null}
+        status={escrowStatus}
+        errorMsg={escrowErrorMsg}
+        txResult={escrowTxResult}
+        onConfirm={async () => {
+          if (!pendingLockParams) return null;
+          const result = await lockOrder(pendingLockParams);
+          if (result) {
+            setEscrowTx(result);
+            // Refresh on-chain balances so the deduction shows immediately
+            // (Rabby/MetaMask refresh on their own next poll).
+            setTimeout(() => { refreshEvmBalances(); }, 1500);
+          }
+          return result;
+        }}
+      />
 
     </div>
   );
