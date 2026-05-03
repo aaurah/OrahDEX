@@ -12,6 +12,7 @@ import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
+import { settleEscrowMatch, isEscrowChain } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
@@ -523,6 +524,93 @@ router.post("/orders", async (req, res) => {
         lastCrossChain         = fillResult.isCrossChain;
         lastOpReturnPayload    = fillResult.opReturnPayload;
         // Note: HTLC registration with watcher is handled inside settleSpotFill()
+
+        // ── OrahDEXEscrow on-chain release (preferred non-custodial path) ─────
+        // Both parties lock their funds into the OrahDEXEscrow contract before
+        // matching (via the LockFundsDialog popup). When a match happens, the
+        // relayer (= deployer wallet, EVM_WALLET_SECRET) calls release() for
+        // each leg: seller's locked base → buyer's wallet, buyer's locked
+        // quote → seller's wallet. This completes the atomic swap on-chain
+        // without ever touching the internal ledger for the matched amount.
+        if (bothEvmExternal) {
+          const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
+            ? Number(body.chainId)
+            : 1;  // default to Ethereum mainnet (where escrow is deployed)
+
+          if (isEscrowChain(releaseChainId)) {
+            // Determine which order id belongs to which side. `id` is the
+            // incoming order; `match.id` is the counter-order being consumed.
+            const buyerOrderId  = side === "buy"  ? id : match.id;
+            const sellerOrderId = side === "sell" ? id : match.id;
+
+            try {
+              const result = await settleEscrowMatch({
+                buyerOrderId,
+                sellerOrderId,
+                buyerAddress,
+                sellerAddress,
+                chainId: releaseChainId,
+              });
+              req.log.info(
+                {
+                  tradeId,
+                  chainId:  releaseChainId,
+                  baseLeg:  result.baseLeg,
+                  quoteLeg: result.quoteLeg,
+                },
+                "orders: escrow release attempted for both legs",
+              );
+              // Notify both parties when on-chain release succeeded.
+              if (result.baseLeg.ok && result.baseLeg.txHash) {
+                pushNotification(buyerAddress, {
+                  type:  "settlement_onchain",
+                  title: "On-chain settlement",
+                  body:  `Received ${fillQty.toFixed(6)} ${symbol.split("/")[0]} on-chain.`,
+                  pair:  symbol,
+                  txid:  result.baseLeg.txHash,
+                  side:  "buy",
+                });
+              }
+              if (result.quoteLeg.ok && result.quoteLeg.txHash) {
+                pushNotification(sellerAddress, {
+                  type:  "settlement_onchain",
+                  title: "On-chain settlement",
+                  body:  `Received ${(fillQty * fillPrice).toFixed(2)} ${symbol.split("/")[1] ?? "USDT"} on-chain.`,
+                  pair:  symbol,
+                  txid:  result.quoteLeg.txHash,
+                  side:  "sell",
+                });
+              }
+              // If at least one leg actually broadcast, we have an on-chain
+              // settlement and can skip the legacy HTLC session for this fill.
+              if (result.baseLeg.ok || result.quoteLeg.ok) {
+                // Skip HTLC by pretending we've already opened a session.
+                lastEvmHtlcSession = lastEvmHtlcSession ?? null as any;
+                // Use the first available release tx hash as the canonical
+                // settlement reference for this fill.
+                const onchainTxid =
+                  (result.baseLeg.ok ? result.baseLeg.txHash : null) ??
+                  (result.quoteLeg.ok ? result.quoteLeg.txHash : null);
+                if (onchainTxid) {
+                  // Override the placeholder htlc-pending- txid with the real one.
+                  await db.update(ordersTable)
+                    .set({ txid: onchainTxid })
+                    .where(eq(ordersTable.id, id));
+                  await db.update(ordersTable)
+                    .set({ txid: onchainTxid })
+                    .where(eq(ordersTable.id, match.id));
+                  settlementTxid = onchainTxid;
+                  lastTxid       = onchainTxid;
+                }
+              }
+            } catch (relErr: any) {
+              req.log.error(
+                { err: relErr?.message, tradeId, chainId: releaseChainId },
+                "orders: escrow release failed — falling through to HTLC path",
+              );
+            }
+          }
+        }
 
         // ── EVM HTLC atomic settlement (non-custodial wallet-to-wallet) ───────
         // Required for all EVM/EVM external fills.  Both parties lock their funds
