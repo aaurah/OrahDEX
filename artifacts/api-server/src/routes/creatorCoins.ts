@@ -16,6 +16,27 @@ const INIT_VIRTUAL_TOKENS = TOTAL_SUPPLY + 73_000_191;
 const POSTGRES_UNDEFINED_COLUMN_ERROR = "42703";
 
 
+/* ── Multi-asset payment helpers ───────────────────────────────────────────── */
+/**
+ * Look up live USD price for an asset symbol from the markets table.
+ * Returns null if the asset has no USD pair (caller should reject the trade).
+ * BSV always returns the rough peg used elsewhere in this module.
+ */
+async function getAssetUsdPrice(symbol: string): Promise<number | null> {
+  const s = symbol.toUpperCase();
+  if (s === "USDT" || s === "USDC" || s === "USD") return 1;
+  // Prefer USDT pair, fall back to USDC.
+  const { rows } = await pool.query(
+    `SELECT last_price FROM markets
+     WHERE base_asset = $1 AND quote_asset IN ('USDT','USDC')
+     ORDER BY CASE quote_asset WHEN 'USDT' THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [s],
+  );
+  const px = parseFloat(rows[0]?.last_price ?? "0");
+  return Number.isFinite(px) && px > 0 ? px : null;
+}
+
 /* ── vAMM helpers ──────────────────────────────────────────────────────────── */
 function calcBuy(vBsv: number, vTok: number, bsvIn: number) {
   const fee = bsvIn * 0.01;
@@ -198,7 +219,20 @@ router.post("/social/creators/:address/trade", async (req, res) => {
     try {
       await client.query("BEGIN");
       const { address } = req.params;
-      const { trader, trade_type, bsv_amount, token_amount } = req.body as Record<string, any>;
+      const { trader, trade_type, bsv_amount, token_amount, payment_asset } = req.body as Record<string, any>;
+      const payAsset = String(payment_asset ?? "BSV").toUpperCase();
+      // Conversion ratio: 1 unit of payAsset = `payAssetPerBsv` BSV.
+      // For payAsset = BSV this is 1. For others we use live USD prices.
+      let payAssetPerBsv = 1;
+      if (payAsset !== "BSV") {
+        const [payUsd, bsvUsd] = await Promise.all([getAssetUsdPrice(payAsset), getAssetUsdPrice("BSV")]);
+        if (!payUsd || !bsvUsd) {
+          await client.query("ROLLBACK");
+          res.status(400).json({ error: `No live price for ${payAsset} or BSV` });
+          return;
+        }
+        payAssetPerBsv = payUsd / bsvUsd;
+      }
       if (!trader || !trade_type) {
         await client.query("ROLLBACK");
         res.status(400).json({ error: "trader and trade_type required" });
@@ -225,30 +259,32 @@ router.post("/social/creators/:address/trade", async (req, res) => {
       let newVBsv: number, newVTok: number, tokensExchanged: number, bsvExchanged: number, pricePerToken: number;
 
       if (trade_type === "buy") {
-        const bsvIn = parseFloat(String(bsv_amount));
-        if (!Number.isFinite(bsvIn) || bsvIn <= 0) {
+        // Client sends `bsv_amount` as the amount in payAsset units (named for legacy reasons).
+        const payIn = parseFloat(String(bsv_amount));
+        if (!Number.isFinite(payIn) || payIn <= 0) {
           await client.query("ROLLBACK");
-          res.status(400).json({ error: "bsv_amount must be greater than 0" });
+          res.status(400).json({ error: "amount must be greater than 0" });
           return;
         }
+        const bsvIn = payIn * payAssetPerBsv;
 
         const { rows: bsvRows } = await client.query(
           // Seeded funds are demo liquidity and should not be spendable by users.
           `SELECT GREATEST(0, available - COALESCE(seeded, 0)) AS available
            FROM user_balances
-           WHERE wallet_address = $1 AND asset_symbol = 'BSV'
+           WHERE wallet_address = $1 AND asset_symbol = $2
           FOR UPDATE`,
-          [trader],
+          [trader, payAsset],
         );
         if (!bsvRows.length) {
           await client.query("ROLLBACK");
-          res.status(400).json({ error: "Insufficient BSV balance" });
+          res.status(400).json({ error: `Insufficient ${payAsset} balance` });
           return;
         }
-        const availableBsv = parseFloat((bsvRows[0] as { available?: string } | undefined)?.available ?? "0");
-        if (availableBsv < bsvIn) {
+        const availablePay = parseFloat((bsvRows[0] as { available?: string } | undefined)?.available ?? "0");
+        if (availablePay < payIn) {
           await client.query("ROLLBACK");
-          res.status(400).json({ error: "Insufficient BSV balance" });
+          res.status(400).json({ error: `Insufficient ${payAsset} balance` });
           return;
         }
 
@@ -260,8 +296,8 @@ router.post("/social/creators/:address/trade", async (req, res) => {
         await client.query(
           `UPDATE user_balances
            SET available = available - $1, updated_at = NOW()
-           WHERE wallet_address = $2 AND asset_symbol = 'BSV'`,
-          [bsvIn.toFixed(8), trader],
+           WHERE wallet_address = $2 AND asset_symbol = $3`,
+          [payIn.toFixed(18), trader, payAsset],
         );
 
         // update holding
@@ -312,12 +348,14 @@ router.post("/social/creators/:address/trade", async (req, res) => {
           [tokensExchanged, address, trader],
         );
 
+        // Credit proceeds in the same payment asset the user is trading with.
+        const payOut = bsvExchanged / payAssetPerBsv;
         await client.query(
           `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
-           VALUES ($1, 'BSV', $2, '0', NOW())
+           VALUES ($1, $3, $2, '0', NOW())
            ON CONFLICT (wallet_address, asset_symbol)
            DO UPDATE SET available = user_balances.available + $2, updated_at = NOW()`,
-          [trader, bsvExchanged.toFixed(8)],
+          [trader, payOut.toFixed(18), payAsset],
         );
       }
 
@@ -379,14 +417,24 @@ router.get("/social/quote/:address", async (req, res) => {
     const vBsv = parseFloat(coin.virtual_bsv);
     const vTok = parseFloat(coin.virtual_tokens);
 
+    const payAsset = String((req.query.payment_asset as string) ?? "BSV").toUpperCase();
+    let payAssetPerBsv = 1;
+    if (payAsset !== "BSV") {
+      const [payUsd, bsvUsd] = await Promise.all([getAssetUsdPrice(payAsset), getAssetUsdPrice("BSV")]);
+      if (!payUsd || !bsvUsd) { res.status(400).json({ error: `No live price for ${payAsset}` }); return; }
+      payAssetPerBsv = payUsd / bsvUsd;
+    }
+
     if (type === "buy") {
-      const bsvIn = parseFloat(bsv_amount ?? "0.01");
+      const payIn = parseFloat(bsv_amount ?? "0.01");
+      const bsvIn = payIn * payAssetPerBsv;
       const calc = calcBuy(vBsv, vTok, bsvIn);
       res.json({ tokensOut: calc.tokensOut, fee: calc.fee, priceImpact: (bsvIn / vBsv * 100).toFixed(2) });
     } else {
       const tokensIn = parseFloat(token_amount ?? "1000000");
       const calc = calcSell(vBsv, vTok, tokensIn);
-      res.json({ bsvOut: calc.bsvOut.toFixed(8), fee: calc.fee, priceImpact: (tokensIn / vTok * 100).toFixed(2) });
+      const payOut = calc.bsvOut / payAssetPerBsv;
+      res.json({ bsvOut: payOut.toFixed(18), fee: calc.fee, priceImpact: (tokensIn / vTok * 100).toFixed(2) });
     }
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
