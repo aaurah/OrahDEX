@@ -47,6 +47,48 @@ The platform features specific coin color schemes, a WalletConnectModal for real
 
 The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/BTC/SOL/TRON) with 210 live price symbols. Trading features include various order types, real-time order books, TradingView charts, and dynamic fee displays. Futures trading offers leverage, cross/isolated margin, live mark/index prices, and funding rates. Wallet Connect supports multiple BSV wallets and Reown AppKit for EVM. Balance guards prevent overdrafts, and a push notification system is implemented. The Admin AI Intelligence panel offers model selection, prompt preview, insights, trade signals, and a chat tester. The Ticker API provides comprehensive market data. OrahNFT is a social NFT marketplace on BSV inscriptions, with live social DB tables and a real-time Community Chat. Fiat on-ramp supports 6 providers.
 
+# Pending Operational Tasks (resume later)
+
+**Status as of 2026-05-03:** Two user withdrawals are queued and waiting on hot-wallet funding. The exchange code is fully fixed; only on-chain funds are missing. To resume, send the funds and reply with the txids — no further code changes needed.
+
+## Owner action items
+
+User wallet: `0x67C7f23eE49B6417661748F23F743C0B274039e2` (the only impacted user; total liability = the two amounts below).
+
+### 1. Pending ETH withdrawal — 0.00936 ETH on Base
+- Withdrawal record exists in `withdrawal_requests` (status=pending), debited from internal balance.
+- New EVM hot wallet address: `0x5A391a3A2d6d885C412FE24be624126694de08dA` (currently 0 ETH).
+- **To complete:** either
+  - (A) Send 0.00937 ETH on Base → hot wallet `0x5A391a…08dA`, then admin clicks Retry, OR
+  - (B) Send 0.00936 ETH on Base directly to user `0x67C7…39e2`, then admin clicks "Mark Completed" (route fixed: `PATCH /admin/withdrawals/:id/status`).
+
+### 2. Pending BSV withdrawal — 0.01738667 BSV
+- Withdrawal id: `346c4554-2744-4a9b-99a3-18a1d5d3fa5c`, status=pending, debited.
+- BSV hot wallet: `1AwPYErieoPjPekmcFkGuTpx3VfyS5oAg6` (currently 0 BSV).
+- Destination: `1H27XapmBqKA5zhKgZtp9dxkT9BxZgEAx6`.
+- **To complete:** same A/B options as ETH above (fund hot wallet + Retry, or send direct + Mark Completed).
+
+### 3. Permanent loss (already written off)
+- Original EVM hot wallet `0xE81209…27704` holds 0.00936 ETH on Base but its private key was lost when the original `EVM_WALLET_SECRET` was lost. Funds are unrecoverable (~$30). No action possible.
+
+### 4. Unbacked ADA balance
+- User has 123.107 ADA in internal `user_balances` but OrahDEX has no Cardano integration. This balance has no on-chain backing and cannot be withdrawn. Decide whether to zero it out or build Cardano support.
+
+## What was fixed in this session (already deployed)
+
+- **Hot-wallet key/address mismatch**: `exchangeHotWallet.ts` now auto-detects when the operator pasted the private key into `EVM_WALLET_SECRET` instead of `EXCHANGE_HOT_WALLET_KEY` and uses it (with a warn log). Fix is permanent in code.
+- **Admin "Mark Completed" route**: alias `PATCH /admin/withdrawals/:id/status` added in `routes/withdrawals.ts` (was 404'ing).
+- **BSV deposit watcher** (`lib/bsvDepositWatcher.ts`): polls WhatsOnChain every 60 s, credits user BSV balance for new deposits to per-user custodial addresses. New table `bsv_deposits_credited` for dedup.
+- **EVM deposit watcher** (`lib/evmDepositWatcher.ts`): polls Base/Eth/Arb/Op/BNB/Polygon every 90 s, credits user balance after 6 confirmations. Wei kept as bigint end-to-end (lossless precision). Reuses `evm_deposits_verified` with synthetic key `sweep:{chainId}:{addr}`.
+- Both watchers wired into `app.ts` startup with `_busy` guards and insert-then-`SELECT FOR UPDATE` to prevent first-credit races.
+
+## Known deferrals (not blocking)
+
+- No auto-sweep from per-user deposit addresses → hot wallet (operator funds hot wallet manually for now).
+- No multi-instance leader lock on watchers (single API instance today; add Postgres advisory lock if scaling horizontally).
+- No ERC-20 deposit detection (native gas tokens only; ERC-20 still uses manual `POST /deposit/verify`).
+- `mockup-sandbox` workflow fails on port collision (8081 in use) — unrelated to exchange functionality.
+
 # External Dependencies
 
 - **Monorepo Tool**: pnpm workspaces
