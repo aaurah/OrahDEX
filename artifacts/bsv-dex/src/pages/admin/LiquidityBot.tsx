@@ -158,16 +158,16 @@ export function AdminLiquidityBot() {
               <button
                 onClick={() => set("enabled", !current.enabled)}
                 className={cn(
-                  "relative w-11 h-6 rounded-full transition-all border",
+                  "relative shrink-0 inline-flex items-center w-12 h-7 rounded-full transition-all border",
                   current.enabled
                     ? "bg-green-400/20 border-green-400/40"
                     : "bg-white/5 border-border"
                 )}
               >
                 <span className={cn(
-                  "absolute top-0.5 w-5 h-5 rounded-full transition-transform",
+                  "block w-5 h-5 rounded-full shadow-md transition-transform duration-200",
                   current.enabled
-                    ? "translate-x-5 bg-green-400"
+                    ? "translate-x-[22px] bg-green-400"
                     : "translate-x-0.5 bg-muted-foreground"
                 )} />
               </button>
