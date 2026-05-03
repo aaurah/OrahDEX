@@ -2181,7 +2181,7 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
                         <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>
-                          {c.username && !/^0x[0-9a-f]+$/i.test(c.username) ? c.username : "Anon creator"}
+                          {c.username && !/^0x[0-9a-f]+$/i.test(c.username) && !/^[13][a-km-zA-HJ-NP-Z1-9]{8,}$/.test(c.username) ? c.username : "Anon creator"}
                         </span>
                         {c.is_verified && <BadgeCheck size={11} style={{ color: "var(--color-accent)" }} />}
                       </div>
