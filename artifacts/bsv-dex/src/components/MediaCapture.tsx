@@ -232,12 +232,10 @@ function CameraPanel({ preview, setPreview }: { preview: string; setPreview: (s:
           Or pick from library
           <input type="file" accept="image/*" style={HIDDEN_INPUT} onChange={onNativeFile} />
         </label>
-        {os === "desktop" && (
-          <button onClick={() => { setFallback(false); start(facing); }}
-            className="text-[11px] underline" style={{ color: "var(--color-text-secondary, #aaa)" }}>
-            Try webcam again
-          </button>
-        )}
+        <button onClick={() => { setFallback(false); start(facing); }}
+          className="mt-1 text-[11px] underline" style={{ color: "var(--color-text-secondary, #aaa)" }}>
+          Try in-app camera again
+        </button>
       </div>
     );
   }
