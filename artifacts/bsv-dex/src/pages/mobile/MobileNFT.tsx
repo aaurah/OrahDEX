@@ -574,6 +574,8 @@ function CreatorProfileSheet({
     };
   }
 
+  const [quickCaptureField, setQuickCaptureField] = useState<null | "cover_url" | "avatar_url">(null);
+
   async function quickSavePhoto(field: "cover_url" | "avatar_url", dataUrl: string) {
     setPhotoUploading(field === "cover_url" ? "cover" : "avatar");
     try {
@@ -729,19 +731,17 @@ function CreatorProfileSheet({
             <img src={profile.cover_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           )}
           {isSelf && (
-            <>
-              <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("cover_url")} />
-              <button
-                onClick={() => coverFileRef.current?.click()}
-                className="absolute inset-0 w-full h-full flex items-center justify-center"
-                style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
-              >
-                {photoUploading === "cover" && (
-                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                )}
-              </button>
-            </>
+            <button
+              onClick={() => setQuickCaptureField("cover_url")}
+              className="absolute inset-0 w-full h-full flex items-center justify-center group"
+              style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
+            >
+              {photoUploading === "cover"
+                ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <Camera size={18} className="opacity-0 group-hover:opacity-90 group-active:opacity-90 text-white" />}
+            </button>
           )}
+          <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("cover_url")} />
         </div>
 
         <div className="px-4 pt-3 pb-4">
@@ -753,13 +753,13 @@ function CreatorProfileSheet({
                 <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("avatar_url")} />
                 <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
                 <button
-                  onClick={() => avatarFileRef.current?.click()}
-                  className="absolute inset-0 rounded-full flex items-center justify-center"
+                  onClick={() => setQuickCaptureField("avatar_url")}
+                  className="absolute inset-0 rounded-full flex items-center justify-center group"
                   style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)" }}
                 >
-                  {photoUploading === "avatar" && (
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  )}
+                  {photoUploading === "avatar"
+                    ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <Camera size={16} className="opacity-0 group-hover:opacity-90 group-active:opacity-90 text-white" />}
                 </button>
               </div>
             ) : (
@@ -1026,6 +1026,13 @@ function CreatorProfileSheet({
           }}
         />
       )}
+      <MediaCapture
+        open={!!quickCaptureField}
+        onClose={() => setQuickCaptureField(null)}
+        onSelect={(dataUrl) => { if (quickCaptureField) quickSavePhoto(quickCaptureField, dataUrl); }}
+        accept="image/*"
+        initialTab="camera"
+      />
       {followList && (
         <Portal>
           <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setFollowList(null)}>
@@ -1166,6 +1173,17 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   const [coverMode, setCoverMode] = useState<"url" | "file">("url");
   const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url || "");
   const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
+  const [captureField, setCaptureField] = useState<null | "avatar" | "cover">(null);
+
+  function applyCapture(dataUrl: string) {
+    if (captureField === "avatar") {
+      setAvatarPreview(dataUrl);
+      setForm(f => ({ ...f, avatar_url: dataUrl }));
+    } else if (captureField === "cover") {
+      setCoverPreview(dataUrl);
+      setForm(f => ({ ...f, cover_url: dataUrl }));
+    }
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -1274,9 +1292,18 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
               <img src={coverPreview} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
             </div>
           )}
+          <button type="button" onClick={() => setCaptureField("cover")}
+            className="w-full mb-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+            style={{ background: "var(--color-accent)", color: "#000" }}>
+            <Camera size={12} /> Camera
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Sparkles size={12} /> AI
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Upload size={12} /> Upload
+          </button>
           <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
             <button style={tabBtn(coverMode === "url")} onClick={() => setCoverMode("url")}><Link size={11} className="inline mr-1" />URL</button>
-            <button style={tabBtn(coverMode === "file")} onClick={() => setCoverMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+            <button style={tabBtn(coverMode === "file")} onClick={() => setCoverMode("file")}><Upload size={11} className="inline mr-1" />File</button>
           </div>
           {coverMode === "url" ? (
             <input style={inp} placeholder="https://… cover image URL" value={form.cover_url}
@@ -1301,9 +1328,18 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
               </div>
             </div>
           )}
+          <button type="button" onClick={() => setCaptureField("avatar")}
+            className="w-full mb-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+            style={{ background: "var(--color-accent)", color: "#000" }}>
+            <Camera size={12} /> Camera
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Sparkles size={12} /> AI
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Upload size={12} /> Upload
+          </button>
           <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
             <button style={tabBtn(avatarMode === "url")} onClick={() => setAvatarMode("url")}><Link size={11} className="inline mr-1" />URL</button>
-            <button style={tabBtn(avatarMode === "file")} onClick={() => setAvatarMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+            <button style={tabBtn(avatarMode === "file")} onClick={() => setAvatarMode("file")}><Upload size={11} className="inline mr-1" />File</button>
           </div>
           {avatarMode === "url" ? (
             <input style={inp} placeholder="https://… avatar URL" value={form.avatar_url}
@@ -1425,6 +1461,13 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
         </div>
       )}
+      <MediaCapture
+        open={!!captureField}
+        onClose={() => setCaptureField(null)}
+        onSelect={applyCapture}
+        accept="image/*"
+        initialTab="camera"
+      />
     </div>
     </Portal>
   );

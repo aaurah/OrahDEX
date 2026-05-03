@@ -85,6 +85,21 @@ app.post(
   }
 );
 
+// Image-bearing endpoints (camera/AI base64 data-URLs ≈ 3-6 MB) get a higher
+// body-size cap; everything else stays at the safer 1 MB to limit DoS surface.
+const LARGE_BODY_PATHS = new Set([
+  "/api/social/ai/image",
+  "/api/social/posts",
+]);
+const LARGE_BODY_RE = /^\/api\/social\/creators\/[^/]+\/update$/;
+const largeJson = express.json({ limit: "12mb" });
+const largeForm = express.urlencoded({ extended: true, limit: "12mb" });
+app.use((req, res, next) => {
+  if (LARGE_BODY_PATHS.has(req.path) || LARGE_BODY_RE.test(req.path)) {
+    return largeJson(req, res, (err) => err ? next(err) : largeForm(req, res, next));
+  }
+  next();
+});
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
