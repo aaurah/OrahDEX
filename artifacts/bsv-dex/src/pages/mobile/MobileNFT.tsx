@@ -384,7 +384,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                     </button>
                   ))}
                 </div>
-                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {fmtNum(quote.tokensOut)} {creator.symbol} · impact {quote.priceImpact}%</p>}
+                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {fmtNum(quote.tokensOut)} {isAddrLikeSymbol(creator.symbol) ? "tokens" : creator.symbol} · impact {quote.priceImpact}%</p>}
               </div>
             ) : (
               <div className="mb-3">
