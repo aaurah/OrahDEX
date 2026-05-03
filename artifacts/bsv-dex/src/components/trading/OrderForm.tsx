@@ -350,7 +350,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // Fetch real on-chain token balances for the connected EVM wallet
   const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances } = useEvmBalances(
     isEvm ? address : null,
-    isEvm ? chainId : null
+    isEvm ? (chainId ?? 1) : null
   );
 
   // External EVM wallet = MetaMask/WalletConnect that is NOT the Orah-managed internal wallet.
