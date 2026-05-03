@@ -14,6 +14,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
@@ -239,7 +240,7 @@ export function MobilePortfolio() {
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
-  const [historySubTab, setHistorySubTab] = useState<"trades" | "bridge" | "swaps">("trades");
+  const [historySubTab, setHistorySubTab] = useState<"trades" | "bridge" | "swaps" | "buys">("trades");
   const [bridgeHistory, setBridgeHistory] = useState<any[]>(() => {
     try { return JSON.parse(localStorage.getItem("le_swap_history") ?? "[]"); } catch { return []; }
   });
@@ -1220,18 +1221,19 @@ export function MobilePortfolio() {
           {/* History tab */}
           {tab === "history" && (
             <>
-              {/* Sub-tab chips: Trades / Bridge / Swaps */}
-              <div className="flex gap-2 mb-3">
+              {/* Sub-tab chips: Trades / Bridge / Coin Travel / Buys */}
+              <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
                 {([
                   { key: "trades", label: "Trades"       },
                   { key: "bridge", label: "Bridge"       },
                   { key: "swaps",  label: "Coin Travel"  },
+                  { key: "buys",   label: "Buys"         },
                 ] as const).map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => setHistorySubTab(key)}
                     className={cn(
-                      "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
+                      "flex-1 min-w-[72px] py-2 rounded-xl text-xs font-bold border transition-all",
                       historySubTab === key
                         ? "bg-primary/15 border-primary/40 text-primary"
                         : "bg-card border-border text-muted-foreground"
@@ -1241,6 +1243,15 @@ export function MobilePortfolio() {
                   </button>
                 ))}
               </div>
+
+              {/* ── BUYS (fiat → crypto purchases) ─────────────────────── */}
+              {historySubTab === "buys" && (
+                <BuyHistory
+                  walletAddress={[address, internalEvmAddress, sessionStorage.getItem("orahdex_session_addr")]
+                    .filter((s): s is string => !!s && s.length >= 6)
+                    .join(",") || null}
+                />
+              )}
 
               {/* ── TRADES ─────────────────────────────────────────────── */}
               {historySubTab === "trades" && (
