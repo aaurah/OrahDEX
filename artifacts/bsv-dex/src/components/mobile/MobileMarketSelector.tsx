@@ -395,20 +395,23 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     apiRows.map((m: NormRow) => [m.symbol, m])
   ), [apiRows]);
 
-  const globalRows = useMemo(() => Array.from(new Map(
-    [
-      ...apiRows,
-      ...CATS.flatMap(c => getRows(c.id, usdSub, livePrice, favorites, aosPairs, apiRows)),
-    ]
-      .filter(m => !m.swapOnly || m.price > 0)
-      .map((m: NormRow) => [m.symbol, m])
-  ).values()), [apiRows, usdSub, livePrice, favorites, aosPairs]);
+  // Lightweight global pool used ONLY when the user is searching.
+  // We dedupe directly from apiRows + aosPairs instead of fanning out across
+  // 36 categories — that fan-out crashed mobile Safari with ~30k AOS pairs.
+  const globalRows = useMemo<NormRow[]>(() => {
+    if (!search) return [];
+    const merged = new Map<string, NormRow>();
+    for (const m of apiRows) merged.set(m.symbol, m);
+    for (const p of aosPairs) {
+      if (p.price <= 0) continue;
+      if (!merged.has(p.symbol)) merged.set(p.symbol, p);
+    }
+    return Array.from(merged.values());
+  }, [search, apiRows, aosPairs]);
 
-  let rows = getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
-
-  if (search) {
-    rows = globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search));
-  }
+  let rows: NormRow[] = search
+    ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
+    : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
@@ -417,6 +420,14 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     if (sortKey === "chg")   v = a.chg - b.chg;
     return sortDir === "asc" ? v : -v;
   });
+
+  // Mobile Safari cannot render thousands of rows without crashing
+  // ("a problem repeatedly occurred"). Cap the visible list and surface a
+  // hint when there are more results than we drew.
+  const MAX_RENDER = 300;
+  const totalRows  = rows.length;
+  const truncated  = totalRows > MAX_RENDER;
+  if (truncated) rows = rows.slice(0, MAX_RENDER);
 
   const toggleSort = (k: "base"|"price"|"chg") => {
     if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -496,7 +507,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         {search ? (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
             <span className="text-[11px] font-bold text-primary bg-primary/15 px-2.5 py-1 rounded-full">
-              🔍 All chains · {rows.length} result{rows.length !== 1 ? "s" : ""}
+              🔍 All chains · {totalRows} result{totalRows !== 1 ? "s" : ""}
             </span>
             <span className="text-[10px] text-muted-foreground">Every chain &amp; quote asset</span>
           </div>
@@ -688,6 +699,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               );
             });
           })()}
+          {truncated && (
+            <div className="px-4 py-3 text-center text-[11px] text-muted-foreground border-t border-border/30">
+              Showing first {MAX_RENDER} of {totalRows} matches.
+              {search ? " Refine your search to narrow results." : " Pick a category tab to narrow results."}
+            </div>
+          )}
         </div>
       </div>
       <CoinInfoSheet symbol={infoCoin} onClose={() => setInfoCoin(null)} />
