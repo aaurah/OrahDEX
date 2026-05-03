@@ -121,8 +121,22 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
   error:              "text-red-400",
 };
 
+const SEEN_ANN_KEY = "orahdex_announcements_seen_v1";
+
+function loadSeenAnnouncements(): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SEEN_ANN_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch { return new Set(); }
+}
+
+function saveSeenAnnouncements(ids: Set<string>) {
+  try { localStorage.setItem(SEEN_ANN_KEY, JSON.stringify([...ids])); } catch { /* ignore */ }
+}
+
 function usePlatformAnnouncements() {
   const [notifs, setNotifs] = useState<PlatformNotif[]>([]);
+  const [seen, setSeen] = useState<Set<string>>(() => loadSeenAnnouncements());
   useEffect(() => {
     const load = () => {
       try {
@@ -134,7 +148,14 @@ function usePlatformAnnouncements() {
     window.addEventListener("storage", load);
     return () => window.removeEventListener("storage", load);
   }, []);
-  return notifs;
+  const unseenCount = notifs.filter(n => !seen.has(n.id)).length;
+  const markAllSeen = () => {
+    const next = new Set(seen);
+    notifs.forEach(n => next.add(n.id));
+    setSeen(next);
+    saveSeenAnnouncements(next);
+  };
+  return { notifs, unseenCount, markAllSeen };
 }
 
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
@@ -199,9 +220,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const { data: bsvChain } = useBsvChain();
   const bsvOnline = bsvChain?.online ?? false;
   const bsvBlock  = bsvChain?.blockHeight ?? 0;
-  const announcements = usePlatformAnnouncements();
+  const { notifs: announcements, unseenCount: announcementsUnseen, markAllSeen: markAnnouncementsSeen } = usePlatformAnnouncements();
   const { notifications, addNotification, markRead, markAllRead, clearAll, unreadCount } = useNotificationStore();
-  const unread = unreadCount() + announcements.length;
+  const unread = unreadCount() + announcementsUnseen;
   const lastPollRef = useRef<number>(0);
 
   /* Poll /api/notifications every 20 s when wallet is connected */
@@ -422,7 +443,10 @@ export function Layout({ children }: { children: ReactNode }) {
             <button
               onClick={() => {
                 setNotifOpen(o => !o);
-                if (!notifOpen) markAllRead();
+                if (!notifOpen) {
+                  markAllRead();
+                  markAnnouncementsSeen();
+                }
               }}
               className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
               title={dndActive ? "Notifications (Do Not Disturb on)" : "Notifications"}
