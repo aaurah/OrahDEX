@@ -433,14 +433,42 @@ export async function unlockFunds(params: {
   asset:         string;
   amount:        string;
 }): Promise<void> {
-  await pool.query(
-    `UPDATE user_balances
-     SET locked     = GREATEST(locked - $1, 0),
-         available  = available + LEAST(locked, $1),
-         updated_at = now()
-     WHERE wallet_address = $2 AND asset_symbol = $3`,
-    [params.amount, params.walletAddress, params.asset],
-  );
+  // Lock the row, read its current locked value, then move the smaller of
+  // (requested, locked) from locked → available in a single statement inside
+  // an explicit transaction. This prevents the previous bug where two separate
+  // UPDATEs could leave funds stranded if anything failed between them.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ locked: string }>(
+      `SELECT locked FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2 FOR UPDATE`,
+      [params.walletAddress, params.asset],
+    );
+    if (rows.length === 0) {
+      await client.query("COMMIT");
+      return;
+    }
+    const lockedNum  = parseFloat(rows[0]!.locked) || 0;
+    const requested  = parseFloat(params.amount)   || 0;
+    const moveAmount = Math.min(lockedNum, Math.max(0, requested));
+    if (moveAmount > 0) {
+      await client.query(
+        `UPDATE user_balances
+         SET locked     = locked - $1,
+             available  = available + $1,
+             updated_at = now()
+         WHERE wallet_address = $2 AND asset_symbol = $3`,
+        [moveAmount.toFixed(18), params.walletAddress, params.asset],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Settle a matched trade (locked → available for both parties) ──────────────

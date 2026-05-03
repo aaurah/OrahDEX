@@ -109,13 +109,23 @@ router.post("/swap", async (req, res) => {
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
-    // Slippage check
-    if (minAmountOut && amtOut < parseFloat(minAmountOut)) {
+    // Slippage check.
+    // If the client supplied minAmountOut, enforce it strictly. Otherwise
+    // apply a server-side default cap (5% below the quoted output) so a
+    // malformed/malicious request without a min cannot be filled at any
+    // arbitrarily bad rate. Clients should always send a real minAmountOut
+    // computed from a fresh quote — this is a safety net, not a substitute.
+    const DEFAULT_MAX_SLIPPAGE = 0.05; // 5%
+    const effectiveMinOut = minAmountOut != null && minAmountOut !== ""
+      ? parseFloat(minAmountOut)
+      : grossOut * (1 - DEFAULT_MAX_SLIPPAGE);
+    if (Number.isFinite(effectiveMinOut) && amtOut < effectiveMinOut) {
       res.status(422).json({
         error:    "Slippage exceeded",
         code:     "SLIPPAGE_EXCEEDED",
         amtOut:   amtOut.toFixed(8),
-        minOut:   parseFloat(minAmountOut).toFixed(8),
+        minOut:   effectiveMinOut.toFixed(8),
+        defaulted: minAmountOut == null || minAmountOut === "",
       });
       return;
     }

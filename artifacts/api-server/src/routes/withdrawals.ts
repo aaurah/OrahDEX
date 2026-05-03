@@ -188,8 +188,46 @@ router.post("/withdrawals", async (req, res) => {
             [result.note, id],
           );
         }
-      } catch (autoErr) {
-        req.log.warn({ autoErr, id }, "withdrawals: auto-processing error (staying pending)");
+      } catch (autoErr: any) {
+        // Auto-processing threw — refund the user's available balance and mark
+        // the request as failed in a single transaction so it cannot be retried
+        // by an admin without first being reset. Without this, the user's
+        // funds were debited but no on-chain send happened, leaving them stuck.
+        const refundClient = await pool.connect();
+        try {
+          await refundClient.query("BEGIN");
+          // Only refund + fail if still pending — guards against a race where
+          // a parallel retry already advanced the row to processing/completed.
+          const { rows: stillPending } = await refundClient.query(
+            `SELECT 1 FROM withdrawal_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
+            [id],
+          );
+          if (stillPending.length > 0) {
+            await refundClient.query(
+              `UPDATE user_balances
+               SET available = available + $1, updated_at = now()
+               WHERE wallet_address = $2 AND asset_symbol = $3`,
+              [parsed.toString(), walletAddress, asset],
+            );
+            await refundClient.query(
+              `UPDATE withdrawal_requests
+               SET status = 'failed',
+                   note   = $1,
+                   processed_at = now()
+               WHERE id = $2`,
+              [`Auto-process failed: ${(autoErr?.message ?? "unknown").slice(0, 200)}`, id],
+            );
+            req.log.warn({ autoErr, id }, "withdrawals: auto-process failed — balance refunded, request marked failed");
+          }
+          await refundClient.query("COMMIT");
+        } catch (refundErr) {
+          await refundClient.query("ROLLBACK").catch(() => {});
+          // Last resort: log loudly so operators can intervene. This is the
+          // only path where funds remain debited; should be vanishingly rare.
+          req.log.error({ refundErr, autoErr, id }, "withdrawals: AUTO-REFUND FAILED — manual intervention required");
+        } finally {
+          refundClient.release();
+        }
       }
     });
 
