@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -425,9 +426,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   } | null>(null);
   // EVM HTLC session ID — set when a matched fill requires on-chain atomic lock
   const [evmHtlcSessionId, setEvmHtlcSessionId] = useState<string | null>(null);
-  const [slippage, setSlippage] = useState(0.5);
+  const slippageBpsStore = useSettingsStore((s) => s.slippageBps);
+  const setSlippageBpsStore = useSettingsStore((s) => s.setSlippageBps);
+  const [slippage, setSlippageLocal] = useState(() => +(slippageBpsStore / 100).toFixed(2));
+  const setSlippage = (v: number) => {
+    setSlippageLocal(v);
+    setSlippageBpsStore(Math.round(v * 100));
+  };
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
+  // Sync local slippage if store changes externally (e.g. user edits in Settings).
+  useEffect(() => {
+    const next = +(slippageBpsStore / 100).toFixed(2);
+    setSlippageLocal((cur) => (cur !== next ? next : cur));
+  }, [slippageBpsStore]);
 
   // ── Cross-chain receive address ──────────────────────────────────────────────
   const [receiveAddress, setReceiveAddress] = useState("");

@@ -9,6 +9,7 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKET
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
 import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE } from "@/lib/api";
@@ -151,7 +152,14 @@ export function FuturesTrading() {
   const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
 
-  const [leverage, setLeverage] = useState(20);
+  const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
+  const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);
+  const [leverage, setLeverageLocal] = useState(defaultLeverage);
+  const setLeverage = (v: number) => {
+    setLeverageLocal(v);
+    setDefaultLeverage(v);
+  };
+  useEffect(() => { setLeverageLocal((cur) => (cur !== defaultLeverage ? defaultLeverage : cur)); }, [defaultLeverage]);
   const [marginMode, setMarginMode] = useState<"cross" | "isolated">("cross");
   const [showLeverageModal, setShowLeverageModal] = useState(false);
   const [orderType, setOrderType] = useState<"limit" | "market" | "stop">("limit");
