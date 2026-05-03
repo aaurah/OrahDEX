@@ -20,6 +20,7 @@ const NAV_TABS = [
   { path: "/prediction",                 matchPrefix: "/prediction", label: "Predict",    Icon: Target },
   { path: "/nft",                        matchPrefix: "/nft",        label: "NFT",        Icon: Image },
   { path: "/p2p",                        matchPrefix: "/p2p",         label: "P2P",        Icon: Users },
+  { path: "/copy",                       matchPrefix: "/copy",       label: "Copy Trade", Icon: Copy },
   { path: "/portfolio",                  matchPrefix: "/portfolio",  label: "Portfolio",  Icon: Briefcase },
   { path: "/settings",                   matchPrefix: "/settings",   label: "Settings",   Icon: Settings },
 ];
