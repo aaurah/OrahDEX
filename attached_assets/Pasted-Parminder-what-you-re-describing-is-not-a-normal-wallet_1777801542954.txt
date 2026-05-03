@@ -1,0 +1,274 @@
+Parminder — what you’re describing is not a normal wallet.
+
+You’re describing a unified sovereign wallet architecture that combines:
+
+• WalletConnect
+• Private‑key import
+• PIN‑locked local vault
+• Passkey (WebAuthn) wallet
+• MPC‑style passkey recovery
+• Multi‑chain support (EVM, Tron, Solana, BSV, BTC, BCH)
+• Fork‑aligned addresses (BTC/BSV/BCH same address)
+• All chains in one UX like imToken / OKX Wallet / Rabby
+
+
+This is absolutely buildable — but only if you design it as a single identity‑anchored wallet core with multiple signing backends.
+
+Below is the correct architecture for what you want.
+
+---
+
+⭐ THE WALLET YOU WANT = 1 WALLET, 4 SIGNING ENGINES
+
+Your wallet must support four signing modes, all under one identity:
+
+1. Imported Private Key (raw key)
+
+• User imports a private key or seed phrase
+• Stored encrypted with PIN + device key
+• Decrypted only in memory
+• Works for all chains derived from that key
+
+
+2. Passkey Wallet (WebAuthn)
+
+• Keypair generated in secure enclave
+• Private key never leaves device
+• Authentication via FaceID / TouchID / PIN
+• Perfect for EVM, Solana, Tron, BTC, BSV, BCH
+
+
+3. MPC‑style Passkey Recovery
+
+• Passkey + server share
+• If user loses device → recover using identity
+• No seed phrase needed
+
+
+4. WalletConnect (external wallets)
+
+• Connect MetaMask, OKX, Trust, imToken, TronLink, etc.
+• For users who don’t want to import keys
+
+
+All four must be unified under one identity and one wallet UI.
+
+---
+
+⭐ MULTICHAIN SUPPORT (ALL CHAINS)
+
+Your wallet must support:
+
+EVM chains
+
+• ETH
+• BNB
+• Polygon
+• Arbitrum
+• Base
+• Optimism
+• Avalanche
+• Linea
+• Scroll
+• Mantle
+• All EVM RPCs
+
+
+Non‑EVM chains
+
+• Tron (TRX, USDT‑TRC20)
+• Solana
+• Bitcoin
+• Bitcoin Cash
+• Bitcoin SV
+
+
+Fork‑aligned addresses
+
+BTC / BCH / BSV all use the same private key
+→ So you can generate:
+
+BTC address
+BSV address
+BCH address
+
+
+from the same key.
+
+This is exactly what you want.
+
+---
+
+⭐ THE CORRECT WALLET CORE (THE ENGINE)
+
+You need a single wallet core that can:
+
+✔ Derive keys
+
+✔ Store keys
+
+✔ Sign transactions
+
+✔ Route to correct chain signer
+
+✔ Handle passkey + PIN + imported key
+
+✔ Expose a unified API to OrahDEX
+
+The wallet core should look like this:
+
+wallet/
+  core/
+    index.ts
+    keyring.ts
+    signer.ts
+    storage.ts
+    passkey.ts
+    pinVault.ts
+  chains/
+    evm.ts
+    tron.ts
+    solana.ts
+    bitcoin.ts
+    bsv.ts
+    bch.ts
+  connectors/
+    walletconnect.ts
+    passkey.ts
+    importedKey.ts
+
+
+---
+
+⭐ HOW SIGNING WORKS FOR EACH CHAIN
+
+EVM
+
+• Use ethers.js signer
+• Works with imported key or passkey
+
+
+Tron
+
+• Use TronWeb
+• Sign with imported key or passkey
+
+
+Solana
+
+• Use @solana/web3.js
+• Sign with imported key or passkey
+
+
+BTC / BSV / BCH
+
+• Use bitcoinjs-lib
+• Same private key → 3 different address formats
+• Sign UTXO transactions
+
+
+---
+
+⭐ SECURITY MODEL
+
+PIN Vault
+
+• Private key encrypted with AES‑256
+• Key derived from PIN + device key
+• Stored in localStorage or IndexedDB
+
+
+Passkey Wallet
+
+• Private key stored in secure enclave
+• Authentication via WebAuthn
+• No seed phrase
+• No export
+• Perfect for beginners
+
+
+MPC Recovery
+
+• Passkey share + server share
+• Identity‑based recovery
+• No seed phrase needed
+
+
+---
+
+⭐ HOW IT LOOKS IN OrahDEX
+
+Wallet Options
+
+• Import Wallet
+• Create Passkey Wallet
+• Connect Wallet (WalletConnect)
+• Restore with Identity
+
+
+Once connected:
+
+• All chains visible
+• All balances visible
+• All addresses derived
+• All signing handled automatically
+
+
+User experience = imToken + OKX + Rabby combined
+
+---
+
+⭐ YES — THIS IS 100% BUILDABLE
+
+And you already have:
+
+• Passkey login
+• WalletConnect
+• Import wallet
+• Identity
+• Multichain RPC
+• BTC/BSV/BCH mapping
+• Orah Wallet UI
+
+
+You are very close.
+
+What you need next is:
+
+---
+
+⭐ NEXT STEPS (I can generate the code for each)
+
+1. Build the wallet core (keyring + signer + storage)
+
+2. Add passkey wallet creation
+
+3. Add PIN vault encryption
+
+4. Add BTC/BSV/BCH unified derivation
+
+5. Add Tron + Solana signers
+
+6. Add unified wallet API for OrahDEX
+
+---
+
+⭐ Tell me what you want next:
+
+🔹 Full architecture diagram
+
+🔹 Full code for the wallet core
+
+🔹 Full code for passkey wallet
+
+🔹 Full code for PIN vault
+
+🔹 Full code for BTC/BSV/BCH unified derivation
+
+🔹 Full code for Tron signer
+
+🔹 Full code for Solana signer
+
+🔹 Full UI flow for Orah Wallet
+
+Just tell me which one you want and I’ll build it.
