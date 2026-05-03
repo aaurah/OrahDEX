@@ -21,6 +21,9 @@ import {
   lockEthViaOrah,
   lockErc20ViaOrah,
   cancelEscrowViaOrah,
+  lockEthViaReown,
+  lockErc20ViaReown,
+  cancelEscrowViaReown,
   EscrowTxResult,
 } from "@/lib/escrow";
 
@@ -45,6 +48,11 @@ export function useEscrow() {
   const { address, chainId: walletChainId, provider } = useWalletStore();
   const isEvm        = !!address?.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
+  const isReown      = provider === "reown";
+  // Injected wallets (MetaMask / Rabby browser ext): only when window.ethereum
+  // is present AND we aren't using Reown / Orah. Reown wallets often live on
+  // mobile via WalletConnect with no window.ethereum.
+  const hasInjected  = typeof window !== "undefined" && !!(window as any).ethereum;
   const chainId = walletChainId ?? 0;
   // Escrow is available for any EVM wallet (Orah self-custody OR external) on a
   // chain where the OrahDEX escrow contract is deployed.
@@ -74,15 +82,24 @@ export function useEscrow() {
       if (asset.address === null) {
         // Native ETH
         setStatus("locking");
-        result = isOrahWallet
-          ? await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId)
-          : await lockEthViaInjected(params.orderId, asset.rawAmount, address, chainId);
+        if (isOrahWallet) {
+          result = await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId);
+        } else if (isReown || !hasInjected) {
+          // Reown/WalletConnect (mobile wallets like imToken) — no window.ethereum
+          result = await lockEthViaReown(params.orderId, asset.rawAmount, chainId);
+        } else {
+          result = await lockEthViaInjected(params.orderId, asset.rawAmount, address, chainId);
+        }
       } else {
         // ERC-20: approve then lock
         setStatus("approving");
-        result = isOrahWallet
-          ? await lockErc20ViaOrah(params.orderId, asset.address, asset.rawAmount, address, chainId)
-          : await lockErc20ViaInjected(params.orderId, asset.address, asset.rawAmount, address, chainId);
+        if (isOrahWallet) {
+          result = await lockErc20ViaOrah(params.orderId, asset.address, asset.rawAmount, address, chainId);
+        } else if (isReown || !hasInjected) {
+          result = await lockErc20ViaReown(params.orderId, asset.address, asset.rawAmount, chainId);
+        } else {
+          result = await lockErc20ViaInjected(params.orderId, asset.address, asset.rawAmount, address, chainId);
+        }
       }
 
       setStatus("success");
@@ -104,9 +121,14 @@ export function useEscrow() {
     try {
       setErrorMsg(null);
       setStatus("cancelling");
-      const result = isOrahWallet
-        ? await cancelEscrowViaOrah(orderId, address, chainId)
-        : await cancelEscrowViaInjected(orderId, address, chainId);
+      let result: EscrowTxResult;
+      if (isOrahWallet) {
+        result = await cancelEscrowViaOrah(orderId, address, chainId);
+      } else if (isReown || !hasInjected) {
+        result = await cancelEscrowViaReown(orderId, chainId);
+      } else {
+        result = await cancelEscrowViaInjected(orderId, address, chainId);
+      }
       setStatus("success");
       setTxResult(result);
       return result;
