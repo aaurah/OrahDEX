@@ -18,6 +18,13 @@ const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 type Tab = "camera" | "ai" | "upload";
 
+// iOS Safari ignores clicks on `<input type=file>` when display:none.
+// Use a visually-hidden style that still allows the native picker to open.
+const HIDDEN_INPUT: React.CSSProperties = {
+  position: "absolute", inset: 0, width: "100%", height: "100%",
+  opacity: 0, cursor: "pointer", appearance: "none",
+};
+
 function detectOS(): "ios" | "android" | "desktop" {
   if (typeof navigator === "undefined") return "desktop";
   const ua = navigator.userAgent || "";
@@ -216,10 +223,14 @@ function CameraPanel({ preview, setPreview }: { preview: string; setPreview: (s:
         <p className="text-xs text-center" style={{ color: "var(--color-text-secondary, #aaa)" }}>
           {error ? `Camera blocked — ${error}` : "Use your device's camera"}
         </p>
-        <label className="px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer flex items-center gap-2"
+        <label className="relative px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer flex items-center gap-2 overflow-hidden"
                style={{ background: "var(--color-accent, #00ff88)", color: "#000" }}>
           <Camera size={14} /> Open camera
-          <input type="file" accept="image/*" capture={facing} className="hidden" onChange={onNativeFile} />
+          <input type="file" accept="image/*" capture={facing} style={HIDDEN_INPUT} onChange={onNativeFile} />
+        </label>
+        <label className="text-[11px] underline cursor-pointer relative" style={{ color: "var(--color-text-secondary, #aaa)" }}>
+          Or pick from library
+          <input type="file" accept="image/*" style={HIDDEN_INPUT} onChange={onNativeFile} />
         </label>
         {os === "desktop" && (
           <button onClick={() => { setFallback(false); start(facing); }}
@@ -387,10 +398,10 @@ function UploadPanel({ preview, setPreview, accept }: { preview: string; setPrev
       {preview
         ? <img src={preview} alt="" className="w-full rounded-xl" style={{ maxHeight: "50vh", objectFit: "contain" }} />
         : <ImageIcon size={42} style={{ color: "var(--color-text-secondary, #aaa)" }} />}
-      <label className="px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer flex items-center gap-2"
+      <label className="relative px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer flex items-center gap-2 overflow-hidden"
              style={{ background: "var(--color-accent, #00ff88)", color: "#000" }}>
         <Upload size={14} /> {preview ? "Choose different file" : "Choose file"}
-        <input type="file" accept={accept} className="hidden" onChange={handle} />
+        <input type="file" accept={accept} style={HIDDEN_INPUT} onChange={handle} />
       </label>
     </div>
   );
