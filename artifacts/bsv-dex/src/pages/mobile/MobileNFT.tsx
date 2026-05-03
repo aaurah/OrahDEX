@@ -2482,6 +2482,19 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   const [sort, setSort] = useState<"hot" | "new" | "top">("hot");
   const [category, setCategory] = useState("all");
   const [feedChain, setFeedChain] = useState("all");
+  const switchChain = useWalletStore(s => s.switchChain);
+
+  // Smart chain switch: picking an EVM chain in the filter also flips the
+  // connected wallet so trading/minting on what you see hits the right network.
+  // Non-EVM chains just filter the feed.
+  const EVM_CHAIN_IDS_FEED: Record<string, number> = {
+    ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
+  };
+  function pickChain(c: string) {
+    setFeedChain(c);
+    const id = EVM_CHAIN_IDS_FEED[c];
+    if (id) switchChain(id);
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -2521,7 +2534,7 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
         </div>
         <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
           {[{key:"all",label:"All Chains",color:"#888"}, ...CHAINS.map(c => ({ key: c, label: c, color: CHAIN_COLOR[c] ?? "#888" }))].map(({ key, label, color }) => (
-            <button key={key} onClick={() => setFeedChain(key)}
+            <button key={key} onClick={() => pickChain(key)}
               className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap shrink-0 transition-all"
               style={{
                 background: feedChain === key ? `${color}22` : "var(--color-surface)",

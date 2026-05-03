@@ -128,8 +128,17 @@ const CAT_ICONS: Record<string, string> = {
   all: "🌐", art: "🎨", generative: "⚡", relics: "🏛️",
   utility: "🔧", governance: "🗳️", bridge: "🌉", ai: "🤖",
 };
-const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
-const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
+const CHAINS = ["BSV", "ETH", "BASE", "BNB", "MATIC", "ARB", "OP", "SOL", "BTC", "BCH"];
+const CHAIN_COLOR: Record<string, string> = {
+  BSV: "#00ff88", ETH: "#627eea", BASE: "#0052ff", BNB: "#f3ba2f",
+  MATIC: "#8247e5", ARB: "#12aaff", OP: "#ff0420", SOL: "#9945ff",
+  BTC: "#f7931a", BCH: "#4caf50",
+};
+// Chain → EVM chainId. Non-EVM chains (BSV/SOL/BTC/BCH) are intentionally absent
+// so the wallet keeps its current network for those — only the feed filter changes.
+const EVM_CHAIN_IDS_FOR_NFT: Record<string, number> = {
+  ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
+};
 const HIGH_PRICE_IMPACT_THRESHOLD_PERCENT = 3;
 
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
@@ -341,18 +350,32 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<"hot" | "new" | "top">("hot");
   const [cat, setCat] = useState("all");
-  const [chain, setChain] = useState("BSV");
+  const [chain, setChain] = useState("all");
+  const switchChain = useWalletStore(s => s.switchChain);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ sort, limit: "50" });
       if (cat !== "all") params.set("category", cat);
+      if (chain !== "all") params.set("chain", chain);
       const r = await fetch(`${API}/social/feed?${params}`);
       if (r.ok) { const d = await r.json(); setPosts(d.posts ?? d); }
     } catch {} finally { setLoading(false); }
   }, [sort, cat, chain]);
   useEffect(() => { load(); }, [load]);
+
+  // Smart chain switch: when the user picks an EVM chain in the filter, also
+  // flip the connected wallet to that chain so trading/minting hits the right
+  // network without an extra step. Non-EVM chains (BSV/SOL/BTC/BCH) just filter
+  // the feed; the wallet keeps whatever provider it has.
+  function pickChain(c: string) {
+    setChain(c);
+    const id = EVM_CHAIN_IDS_FOR_NFT[c];
+    if (id) switchChain(id);
+  }
+
+  const chainOpts = [{ key: "all", label: "All", color: "#888" }, ...CHAINS.map(c => ({ key: c, label: c, color: CHAIN_COLOR[c] ?? "#888" }))];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -365,12 +388,23 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
             </button>
           ))}
         </div>
-        <div className="ml-auto flex gap-1">
-          {CHAINS.map(c => (
-            <button key={c} onClick={() => setChain(c)}
-              className={`px-2 py-0.5 rounded text-[9px] font-bold ${chain === c ? "opacity-100" : "opacity-40"}`}
-              style={{ color: CHAIN_COLOR[c] }}>{c}</button>
-          ))}
+        <div className="ml-auto flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {chainOpts.map(({ key, label, color }) => {
+            const active = chain === key;
+            return (
+              <button key={key} onClick={() => pickChain(key)}
+                title={key === "all" ? "Show all chains" : `Filter ${label} & switch wallet`}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap shrink-0 transition-all"
+                style={{
+                  background: active ? `${color}22` : "transparent",
+                  color: active ? color : "var(--color-text-secondary)",
+                  border: active ? `1px solid ${color}60` : "1px solid transparent",
+                }}>
+                {key !== "all" && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />}
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="flex shrink-0 gap-1 px-4 py-1.5 overflow-x-auto">
