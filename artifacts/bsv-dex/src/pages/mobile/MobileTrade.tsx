@@ -288,7 +288,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
-  const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
+  const { balances: evmTokenBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -493,7 +493,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     price: number;
   } | null>(null);
   const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(null);
-  const { escrowAvailable, status: escrowStatus, lockOrder, isLoading: escrowLoading } = useEscrow();
+  const { escrowAvailable, status: escrowStatus, lockOrder, isLoading: escrowLoading, errorMsg: escrowErrorMsg } = useEscrow();
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
@@ -2053,7 +2053,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           quantity: orderResult.quantity || orderResult.filledQty || 0,
                           price:    usePrice,
                         });
-                        if (result) setEscrowTx(result);
+                        if (result) {
+                          setEscrowTx(result);
+                          // Refresh on-chain balances so the deduction shows immediately
+                          // in OrahDEX (Rabby/MetaMask update on their own next poll).
+                          setTimeout(() => { refreshEvmBalances(); }, 1500);
+                        }
                       }}
                       className={cn(
                         "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
@@ -2074,6 +2079,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         </>
                       )}
                     </button>
+                  </div>
+                )}
+
+                {/* Escrow lock error */}
+                {!orderResult.matched && !escrowTx && escrowStatus === "error" && escrowErrorMsg && (
+                  <div className="pt-1.5 border-t border-red-500/20">
+                    <p className="text-[11px] text-red-400 font-medium">
+                      Lock failed: {escrowErrorMsg}
+                    </p>
                   </div>
                 )}
 

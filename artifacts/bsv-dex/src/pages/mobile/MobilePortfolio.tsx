@@ -1017,21 +1017,38 @@ export function MobilePortfolio() {
             ) : (
               <div className="flex flex-col gap-3 mb-4">
 
-                {/* ── In Exchange Orders — shown per order, always visible ─ */}
-                {openOrders.length > 0 && (
-                  <div className="bg-orange-500/5 border border-orange-500/25 rounded-2xl p-4">
+                {/* ── Open Orders — for self-custody EVM these are signed intents,
+                       for everyone else they reserve internal-ledger funds ─────── */}
+                {openOrders.length > 0 && (() => {
+                  const isSelfCustodyEvm = !!address?.startsWith("0x");
+                  return (
+                  <div className={cn(
+                    "border rounded-2xl p-4",
+                    isSelfCustodyEvm
+                      ? "bg-blue-500/5 border-blue-500/25"
+                      : "bg-orange-500/5 border-orange-500/25",
+                  )}>
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <svg className="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span className="text-sm font-bold text-orange-300">In Exchange</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wide">Open</span>
+                        <svg className={cn("w-3.5 h-3.5", isSelfCustodyEvm ? "text-blue-400" : "text-orange-400")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span className={cn("text-sm font-bold", isSelfCustodyEvm ? "text-blue-300" : "text-orange-300")}>
+                          {isSelfCustodyEvm ? "Open Orders" : "In Exchange"}
+                        </span>
+                        <span className={cn(
+                          "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide",
+                          isSelfCustodyEvm
+                            ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                            : "bg-orange-500/20 text-orange-400 border-orange-500/30",
+                        )}>Open</span>
                       </div>
-                      {lockedTotalUsd > 0 && (
+                      {!isSelfCustodyEvm && lockedTotalUsd > 0 && (
                         <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
                       )}
                     </div>
                     <p className="text-[10px] text-muted-foreground mb-3">
-                      Coins reserved for your open orders. Released when orders fill or are cancelled.
+                      {isSelfCustodyEvm
+                        ? "Signed intents — funds stay in your wallet until the order fills."
+                        : "Coins reserved for your open orders. Released when orders fill or are cancelled."}
                     </p>
                     <div className="space-y-2">
                       {openOrders.map((o: any) => {
@@ -1101,7 +1118,8 @@ export function MobilePortfolio() {
                       })}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
 
                 {/* DeFi summary row — only when LP positions exist */}
