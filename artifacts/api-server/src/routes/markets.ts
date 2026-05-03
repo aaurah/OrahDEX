@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
 import { logger } from "../lib/logger.js";
@@ -567,16 +568,25 @@ router.get("/markets/:symbol/trades", async (req, res) => {
   }
 });
 
-// ─── /api/prices — real Binance-sourced USD prices (never internal order book) ─
-const pricesCache = new TtlCache<Record<string, number>>(15_000); // 15 s
+// ─── /api/prices — live USD spot prices ──────────────────────────────────────
+// BTC/ETH/BSV come from Coinbase (with Binance fallback) via fetchKeyPrices();
+// every other tracked symbol falls back to FALLBACK_PRICES so the response stays
+// fully populated for callers that iterate the full coin list.
+const pricesCache = new TtlCache<Record<string, number>>(60_000); // 60 s
 
-router.get("/prices", (_req, res) => {
+router.get("/prices", async (_req, res) => {
   const cached = pricesCache.get("all");
   if (cached) { res.json(cached); return; }
   const out: Record<string, number> = {};
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (usd > 0) out[sym] = usd;
   }
+  try {
+    const live = await fetchKeyPrices();
+    for (const [sym, v] of Object.entries(live)) {
+      if (v && typeof v.usd === "number" && v.usd > 0) out[sym] = v.usd;
+    }
+  } catch { /* fall through to FALLBACK_PRICES already populated */ }
   pricesCache.set("all", out);
   res.json(out);
 });
