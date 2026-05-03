@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { OrahInline } from "@/components/BrandLogo";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -1061,13 +1062,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
   const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={handleClose} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
+            onClick={handleClose} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2621,6 +2622,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
