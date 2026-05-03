@@ -196,25 +196,48 @@ router.get("/social/creators/:address", async (req, res) => {
 /* ── POST /social/creators/:address/update ────────────────────────────────── */
 router.post("/social/creators/:address/update", async (req, res) => {
   try {
-    const { address } = req.params;
-    const { username, bio, avatar_url, cover_url, website, twitter, instagram } = req.body as Record<string, string>;
-    await pool.query(
-      `INSERT INTO creator_profiles (address, username, bio, avatar_url, cover_url, website, twitter, instagram)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (address) DO UPDATE SET
-         username = COALESCE(EXCLUDED.username, creator_profiles.username),
-         bio = COALESCE(EXCLUDED.bio, creator_profiles.bio),
-         avatar_url = COALESCE(EXCLUDED.avatar_url, creator_profiles.avatar_url),
-         cover_url = COALESCE(EXCLUDED.cover_url, creator_profiles.cover_url),
-         website = COALESCE(EXCLUDED.website, creator_profiles.website),
-         twitter = COALESCE(EXCLUDED.twitter, creator_profiles.twitter),
-         instagram = COALESCE(EXCLUDED.instagram, creator_profiles.instagram),
-         updated_at = NOW()`,
-      [address, username, bio, avatar_url, cover_url, website, twitter, instagram],
+    const addr = (req.params.address ?? "").toLowerCase();
+    if (!addr) return res.status(400).json({ error: "address required" });
+    const body = req.body as Record<string, string | null | undefined>;
+    // Treat undefined as "leave alone"; treat empty string / null as "explicit clear".
+    const norm = (v: string | null | undefined) =>
+      v === undefined ? undefined : (v === null || v === "" ? null : v);
+    const fields = {
+      username:  norm(body.username),
+      bio:       norm(body.bio),
+      avatar_url:norm(body.avatar_url),
+      cover_url: norm(body.cover_url),
+      website:   norm(body.website),
+      twitter:   norm(body.twitter),
+      instagram: norm(body.instagram),
+    };
+    // Update by lowercased address (canonical) — collapses any case-variant rows.
+    const sets: string[] = []; const vals: unknown[] = [addr]; let i = 2;
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) continue;
+      sets.push(`${k} = $${i++}`);
+      vals.push(v);
+    }
+    if (sets.length === 0) return res.json({ success: true });
+    sets.push("updated_at = NOW()");
+
+    const { rowCount } = await pool.query(
+      `UPDATE creator_profiles SET ${sets.join(", ")} WHERE LOWER(address) = $1`,
+      vals,
     );
+    if (rowCount === 0) {
+      // First-time profile create
+      await pool.query(
+        `INSERT INTO creator_profiles (address, username, bio, avatar_url, cover_url, website, twitter, instagram)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (address) DO NOTHING`,
+        [addr, fields.username, fields.bio, fields.avatar_url, fields.cover_url, fields.website, fields.twitter, fields.instagram],
+      );
+    }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    console.error("creator update failed:", err);
+    res.status(500).json({ error: "Update failed" });
   }
 });
 
