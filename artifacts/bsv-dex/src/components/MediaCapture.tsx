@@ -76,7 +76,7 @@ export function MediaCapture({ open, onClose, onSelect, accept = "image/*", init
           {([
             { id: "camera", label: "Camera", icon: Camera },
             { id: "ai",     label: "AI",     icon: Sparkles },
-            { id: "upload", label: "Upload", icon: Upload },
+            { id: "upload", label: "Photos", icon: ImageIcon },
           ] as const).map(({ id, label, icon: Icon }) => {
             const active = tab === id;
             return (
@@ -284,6 +284,13 @@ function CameraPanel({ preview, setPreview }: { preview: string; setPreview: (s:
           <RotateCcw size={18} />
         </button>
       </div>
+
+      {/* Always-available "from device" escape hatch */}
+      <label className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold cursor-pointer overflow-hidden"
+             style={{ background: "rgba(0,0,0,0.6)", color: "#fff", backdropFilter: "blur(8px)" }}>
+        <ImageIcon size={12} /> Photos
+        <input type="file" accept="image/*" style={HIDDEN_INPUT} onChange={onNativeFile} />
+      </label>
     </div>
   );
 }
