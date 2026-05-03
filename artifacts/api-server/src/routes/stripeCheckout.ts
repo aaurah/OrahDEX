@@ -315,23 +315,30 @@ router.get("/stripe/order/:id", async (req, res) => {
   }
 });
 
-/* ── GET /api/stripe/orders — list recent orders for a wallet ────────────── */
+/* ── GET /api/stripe/orders — list recent orders for one or more identities
+   `walletAddress` accepts a comma-separated list so Portfolio can include
+   both the connected wallet and the session identity. ───────────────────── */
 router.get("/stripe/orders", async (req, res) => {
-  const { walletAddress } = req.query;
-  if (!walletAddress || typeof walletAddress !== "string") {
+  const raw = req.query.walletAddress;
+  if (!raw || typeof raw !== "string") {
     res.status(400).json({ error: "walletAddress query param required" });
     return;
   }
   try {
-    const addr = walletAddress.toLowerCase();
+    const addrs = Array.from(new Set(
+      raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length >= 6)
+    ));
+    if (!addrs.length) { res.json([]); return; }
+
     /* Match on user_wallet (identity) OR wallet_address (destination) so
        BTC/SOL/XRP purchases appear when looked up by the user's EVM/session ID */
     const result = await pool.query(
       `SELECT id, coin_symbol, fiat_amount_cents, crypto_amount, status, created_at
        FROM crypto_orders
-       WHERE LOWER(user_wallet) = $1 OR LOWER(wallet_address) = $1
+       WHERE LOWER(user_wallet) = ANY($1::text[])
+          OR LOWER(wallet_address) = ANY($1::text[])
        ORDER BY created_at DESC LIMIT 50`,
-      [addr]
+      [addrs]
     );
     res.json(result.rows);
   } catch (err: any) {

@@ -882,9 +882,15 @@ export function Portfolio() {
           </div>
         </div>
 
-        {/* ── Buy-Crypto Purchase History ────────────────────────────────── */}
+        {/* ── Buy-Crypto Purchase History ──────────────────────────────────
+           Pass BOTH the connected wallet AND the session identity so orders
+           bought from any prior wallet/network still appear here. */}
         <div className="mt-8">
-          <BuyHistory walletAddress={address ?? sessionStorage.getItem("orahdex_session_addr")} />
+          <BuyHistory
+            walletAddress={[address, sessionStorage.getItem("orahdex_session_addr")]
+              .filter((s): s is string => !!s && s.length >= 6)
+              .join(",") || null}
+          />
         </div>
 
         {/* ── LP Positions ───────────────────────────────────────────────── */}
