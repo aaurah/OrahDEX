@@ -7,6 +7,7 @@ import {
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
   Settings as SettingsIcon, Key, Volume2,
 } from "lucide-react";
+import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
@@ -235,6 +236,7 @@ export function WebSettings() {
             value="Vibrate on notifications (mobile, system permitting)"
             rightEl={<Toggle value={hapticsEnabled} onChange={setHapticsEnabled} />}
           />
+          <NotificationAdvancedRows Row={Row} Toggle={Toggle} />
         </Section>
 
         {/* ── API Access ── */}

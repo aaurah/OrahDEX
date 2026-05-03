@@ -1,14 +1,15 @@
 /**
- * Notification feedback effects (sound + vibration).
+ * Notification feedback effects (sound + vibration + desktop push).
  *
- * - Sound: a short two-tone "ding" synthesised via Web Audio API (no asset
- *   download). Falls back silently on unsupported browsers.
- * - Vibration: uses navigator.vibrate; honours the OS-level vibration setting
- *   automatically. Falls back silently on iOS Safari (no support).
+ * All effects are gated on user preferences:
+ *  - per-category mute (skip everything for that category)
+ *  - Do Not Disturb (skip sound/vibration/desktop, still log to feed)
+ *  - master sound / haptics / desktop toggles
  *
- * Both are gated on user preferences read from useSettingsStore.
+ * Falls back silently on any unsupported browser/OS combination.
  */
-import type { NotifType } from "@/store/useNotificationStore";
+import type { NotifType, AppNotification } from "@/store/useNotificationStore";
+import { CATEGORY_OF } from "@/lib/notificationCategories";
 
 let _ctx: AudioContext | null = null;
 
@@ -20,7 +21,6 @@ function getCtx(): AudioContext | null {
       if (!Ctor) return null;
       _ctx = new Ctor();
     }
-    // Browsers suspend the context until a user gesture; resume best-effort.
     if (_ctx.state === "suspended") void _ctx.resume();
     return _ctx;
   } catch {
@@ -39,7 +39,6 @@ function playTones(tones: ToneSpec[]) {
     const gain = ctx.createGain();
     osc.type = tone.type ?? "sine";
     osc.frequency.value = tone.freq;
-    // Quick attack, exponential decay = pleasant chime.
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(tone.gain, t + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + tone.dur);
@@ -50,18 +49,15 @@ function playTones(tones: ToneSpec[]) {
   }
 }
 
-/** Choose a tone palette based on the notification type. */
 function tonesFor(type: NotifType): ToneSpec[] {
   switch (type) {
     case "error":
     case "warning":
-      // Descending two-tone alert.
       return [
         { freq: 660, dur: 0.12, gain: 0.18, type: "triangle" },
         { freq: 440, dur: 0.18, gain: 0.18, type: "triangle" },
       ];
     case "price_alert":
-      // Bright triple-chime so it stands out from order events.
       return [
         { freq: 880,  dur: 0.08, gain: 0.16 },
         { freq: 1175, dur: 0.08, gain: 0.16 },
@@ -70,13 +66,11 @@ function tonesFor(type: NotifType): ToneSpec[] {
     case "success":
     case "order_filled":
     case "deposit":
-      // Cheerful ascending two-tone.
       return [
         { freq: 784,  dur: 0.10, gain: 0.16 },
         { freq: 1047, dur: 0.16, gain: 0.16 },
       ];
     default:
-      // Neutral single soft chime.
       return [{ freq: 880, dur: 0.18, gain: 0.14 }];
   }
 }
@@ -93,16 +87,30 @@ function vibratePattern(type: NotifType): number | number[] {
   }
 }
 
-/**
- * Public API: play sound + vibration for a notification.
- * Call sites pass the user prefs so we don't re-import zustand here.
- */
-export function playNotificationFx(
-  type: NotifType,
-  prefs: { sound: boolean; haptics: boolean },
-) {
+export interface NotificationPrefs {
+  sound: boolean;
+  haptics: boolean;
+  desktop: boolean;
+  dndUntil: number | null;
+  mutedCategories: string[];
+}
+
+function isDndActive(prefs: NotificationPrefs): boolean {
+  if (prefs.dndUntil === null) return false;
+  return Date.now() < prefs.dndUntil;
+}
+
+function isMuted(type: NotifType, prefs: NotificationPrefs): boolean {
+  return prefs.mutedCategories.includes(CATEGORY_OF[type]);
+}
+
+/** Play sound + vibration. Honours DND, mute, and master toggles. */
+export function playNotificationFx(type: NotifType, prefs: NotificationPrefs) {
+  if (isMuted(type, prefs)) return;
+  if (isDndActive(prefs)) return;
+
   if (prefs.sound) {
-    try { playTones(tonesFor(type)); } catch { /* ignore audio errors */ }
+    try { playTones(tonesFor(type)); } catch { /* ignore */ }
   }
   if (prefs.haptics) {
     try {
@@ -115,9 +123,60 @@ export function playNotificationFx(
 }
 
 /**
- * Prime the audio context on first user gesture (most browsers require this).
- * Mounted once at app boot via useNotificationFxPrimer.
+ * Show a native browser/OS notification when the tab is in the background.
+ * Honours DND, mute, master desktop toggle, and notification permission.
  */
+export function showDesktopNotification(
+  entry: AppNotification,
+  prefs: NotificationPrefs,
+  onClick?: () => void,
+) {
+  if (!prefs.desktop) return;
+  if (isMuted(entry.type, prefs)) return;
+  if (isDndActive(prefs)) return;
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  // Don't double-notify when the user is actively looking at the tab.
+  if (typeof document !== "undefined" && document.visibilityState === "visible") return;
+
+  try {
+    const n = new Notification(entry.title, {
+      body: entry.body,
+      tag: entry.id,         // dedupes if the same notification is re-fired
+      icon: "/favicon.ico",
+      silent: !prefs.sound,  // honour the user's sound choice for the OS layer
+    });
+    n.onclick = () => {
+      try { window.focus(); } catch { /* ignore */ }
+      onClick?.();
+      n.close();
+    };
+    // Auto-close non-critical notifications after 8s so the OS center stays tidy.
+    if (entry.type !== "error" && entry.type !== "warning") {
+      window.setTimeout(() => { try { n.close(); } catch { /* ignore */ } }, 8000);
+    }
+  } catch { /* ignore */ }
+}
+
+/** Request browser notification permission. Returns the resulting state. */
+export async function requestDesktopPermission(): Promise<NotificationPermission | "unsupported"> {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  if (Notification.permission === "granted") return "granted";
+  if (Notification.permission === "denied")  return "denied";
+  try {
+    const result = await Notification.requestPermission();
+    return result;
+  } catch {
+    return "default";
+  }
+}
+
+export function getDesktopPermission(): NotificationPermission | "unsupported" {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
+/** Prime the audio context on first user gesture (browsers require this). */
 export function primeAudioContext() {
   const ctx = getCtx();
   if (!ctx) return;

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { playNotificationFx } from "@/lib/notificationFx";
+import { playNotificationFx, showDesktopNotification } from "@/lib/notificationFx";
 import { useSettingsStore } from "@/store/useSettingsStore";
 
 export type NotifType =
@@ -65,11 +65,20 @@ export const useNotificationStore = create<NotificationState>()(
         set((s) => ({
           notifications: [entry, ...s.notifications].slice(0, 100),
         }));
-        // Fire sound + vibration based on user prefs (silently no-ops if disabled
-        // or if the browser/OS doesn't support the API).
+        // Fire sound + vibration + desktop push based on user prefs.
+        // Honours DND, per-category mute, and master toggles. Silently no-ops if
+        // disabled or the browser/OS doesn't support the API.
         try {
-          const { soundEnabled, hapticsEnabled } = useSettingsStore.getState();
-          playNotificationFx(entry.type, { sound: soundEnabled, haptics: hapticsEnabled });
+          const s = useSettingsStore.getState();
+          const prefs = {
+            sound:           s.soundEnabled,
+            haptics:         s.hapticsEnabled,
+            desktop:         s.desktopEnabled,
+            dndUntil:        s.dndUntil,
+            mutedCategories: s.mutedCategories,
+          };
+          playNotificationFx(entry.type, prefs);
+          showDesktopNotification(entry, prefs);
         } catch { /* never let FX break the store */ }
       },
 
