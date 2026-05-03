@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, Lock, Wallet, History, Trash2, ArrowRight,
+  Clock, Lock, Wallet, Trash2, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -1185,8 +1185,6 @@ export function LetsExchangePanel({
   const [creating,   setCreating]   = useState(false);
   const [createError, setCreateError] = useState<string|null>(null);
   const [order,      setOrder]      = useState<OrderResult|null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [historyCount, setHistoryCount] = useState(() => loadHistory().length);
 
   useEffect(() => {
     let cancelled = false;
@@ -1235,7 +1233,6 @@ export function LetsExchangePanel({
       }
       const newOrder = d as OrderResult;
       addHistoryEntry(newOrder);
-      setHistoryCount(loadHistory().length);
       setOrder(newOrder);
       setStep(3);
     } catch { setCreateError("Network error — please try again"); }
@@ -1287,25 +1284,6 @@ export function LetsExchangePanel({
               Connect Wallet
             </button>
           ) : null}
-          {/* History toggle */}
-          <button
-            type="button"
-            onClick={() => setShowHistory(v => !v)}
-            className={cn(
-              "relative flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-semibold border transition-colors",
-              showHistory
-                ? "bg-muted/60 border-border/60 text-foreground"
-                : "bg-muted/30 border-border/40 text-muted-foreground/70 hover:bg-muted/60 hover:text-muted-foreground/80",
-            )}
-          >
-            <History className="w-3 h-3" />
-            History
-            {historyCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-emerald-500 text-[9px] text-black font-bold flex items-center justify-center">
-                {historyCount}
-              </span>
-            )}
-          </button>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
             {coins.length}+ coins
           </span>
@@ -1313,9 +1291,7 @@ export function LetsExchangePanel({
       </div>
 
       <div className="px-4 pb-4 pt-2">
-        {showHistory ? (
-          <HistoryView onClose={() => setShowHistory(false)} />
-        ) : (
+        {(
           <>
             {createError && (
               <div className="mb-4 rounded-xl bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-400 flex items-start gap-2">
@@ -1337,7 +1313,7 @@ export function LetsExchangePanel({
             )}
             {step === 3 && order && fromCoin && toCoin && (
               <StepDeposit order={order} fromCoin={fromCoin} toCoin={toCoin}
-                onBack={() => setStep(2)} onReset={() => { handleReset(); setHistoryCount(loadHistory().length); }} />
+                onBack={() => setStep(2)} onReset={() => { handleReset(); }} />
             )}
           </>
         )}
