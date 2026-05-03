@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
@@ -271,6 +272,7 @@ export function Portfolio() {
   const [hideBalances, setHideBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
+  const [resumeBuy, setResumeBuy] = useState<{ coin: string; usd: string } | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; color: string } | null>(null);
   const [copiedAddr, setCopiedAddr] = useState(false);
@@ -510,6 +512,14 @@ export function Portfolio() {
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
+      <DirectBuyModal
+        open={!!resumeBuy}
+        onClose={() => setResumeBuy(null)}
+        defaultCoin={resumeBuy?.coin ?? "BTC"}
+        defaultFiatUsd={resumeBuy?.usd}
+        defaultPayMethod="card"
+        onSwitchToProviders={() => { setResumeBuy(null); setBuyCryptoOpen(true); }}
+      />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network, chainId);
         const sameNetwork = assetNet.network === (network ?? "evm");
@@ -890,6 +900,10 @@ export function Portfolio() {
             walletAddress={[address, sessionStorage.getItem("orahdex_session_addr")]
               .filter((s): s is string => !!s && s.length >= 6)
               .join(",") || null}
+            onResume={(o) => setResumeBuy({
+              coin: o.coin_symbol,
+              usd: (o.fiat_amount_cents / 100).toFixed(2),
+            })}
           />
         </div>
 

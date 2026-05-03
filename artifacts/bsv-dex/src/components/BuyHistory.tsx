@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   History, RefreshCw, CheckCircle2, Clock, XCircle,
-  TrendingUp, ChevronDown, ChevronUp, ExternalLink,
+  TrendingUp, ChevronDown, ChevronUp, ExternalLink, PlayCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE } from "@/lib/api";
@@ -78,12 +78,13 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: diffDay > 365 ? "numeric" : undefined });
 }
 
-function OrderRow({ order }: { order: Order }) {
+function OrderRow({ order, onResume }: { order: Order; onResume?: (o: Order) => void }) {
   const [expanded, setExpanded] = useState(false);
   const statusConf = STATUS_CONFIG[order.status] ?? STATUS_CONFIG["pending"];
   const usd = (order.fiat_amount_cents / 100).toFixed(2);
   const crypto = parseFloat(order.crypto_amount);
   const cryptoDisplay = crypto < 0.0001 ? crypto.toExponential(4) : crypto.toFixed(6).replace(/\.?0+$/, "");
+  const canResume = !!onResume && (order.status === "pending" || order.status === "failed" || order.status === "canceled");
 
   return (
     <div className={cn(
@@ -132,6 +133,15 @@ function OrderRow({ order }: { order: Order }) {
               <p className="text-sm font-bold">{cryptoDisplay} {order.coin_symbol}</p>
             </div>
           </div>
+          {canResume && (
+            <button
+              onClick={() => onResume!(order)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:opacity-90 active:opacity-80 transition"
+            >
+              <PlayCircle className="w-4 h-4" />
+              {order.status === "pending" ? "Complete payment" : "Try again"}
+            </button>
+          )}
           <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
             <span className="font-mono truncate max-w-[200px]">Order {order.id.slice(0, 8)}…{order.id.slice(-6)}</span>
             <button
@@ -149,9 +159,12 @@ function OrderRow({ order }: { order: Order }) {
 
 interface Props {
   walletAddress: string | null;
+  /** Called when the user clicks "Complete payment" / "Try again" on a pending or failed order.
+   *  The parent should re-open the buy modal pre-filled with that coin and USD amount. */
+  onResume?: (order: Order) => void;
 }
 
-export function BuyHistory({ walletAddress }: Props) {
+export function BuyHistory({ walletAddress, onResume }: Props) {
   const [orders,   setOrders]   = useState<Order[]>([]);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
@@ -243,7 +256,7 @@ export function BuyHistory({ walletAddress }: Props) {
 
           {orders.length > 0 && (
             <div className="space-y-2 mt-3">
-              {orders.map(o => <OrderRow key={o.id} order={o} />)}
+              {orders.map(o => <OrderRow key={o.id} order={o} onResume={onResume} />)}
             </div>
           )}
         </div>

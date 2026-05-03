@@ -215,6 +215,8 @@ interface Props {
   onClose: () => void;
   defaultCoin?: string;
   defaultPayMethod?: FiatPayMethod;
+  /** Optional pre-filled USD amount (e.g. when resuming a pending order from history) */
+  defaultFiatUsd?: string;
   /** Optional: invoked when the user wants to switch to partner providers
    *  (deep-link onramps with lower minimums — Ramp $5, Alchemy $10, Transak $15) */
   onSwitchToProviders?: () => void;
@@ -232,13 +234,25 @@ export function DirectBuyModal({
   onClose,
   defaultCoin = "BTC",
   defaultPayMethod = "card",
+  defaultFiatUsd,
   onSwitchToProviders,
 }: Props) {
   const { address } = useWalletStore();
 
   const [step,          setStep]          = useState<Step>("amount");
   const [coin,          setCoin]          = useState(defaultCoin);
-  const [fiatAmount,    setFiatAmount]    = useState("150");
+  const [fiatAmount,    setFiatAmount]    = useState(defaultFiatUsd || "150");
+
+  /* When parent passes a new defaultCoin/defaultFiatUsd while opening (e.g. "Resume"
+     from purchase history), reflect that in the modal state. */
+  useEffect(() => {
+    if (open) {
+      setCoin(defaultCoin);
+      if (defaultFiatUsd) setFiatAmount(defaultFiatUsd);
+      setStep("amount");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultCoin, defaultFiatUsd]);
   const [walletAddr,    setWalletAddr]    = useState("");
   const [showCoinList,  setShowCoinList]  = useState(false);
 
