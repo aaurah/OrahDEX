@@ -114,6 +114,10 @@ export interface EscrowDeposit {
  */
 export async function findEscrowChain(orderId: string): Promise<number | null> {
   const chainIds = Object.keys(ESCROW_ADDRESSES).map(Number);
+  // ── Fail-closed: any per-chain RPC error throws. ─────────────────────
+  // We intentionally do NOT use allSettled here — if even one chain we
+  // can't read, we can't tell whether the deposit is there. The caller
+  // (orders.ts precheck) catches this and skips the match.
   const results = await Promise.all(
     chainIds.map(async (cid) => {
       const dep = await getEscrowDeposit(orderId, cid);
@@ -134,26 +138,29 @@ export async function getEscrowDeposit(
   if (!chain || !rpc) return null;
 
   const pub = createPublicClient({ chain, transport: http(rpc) });
-  try {
-    const data = await pub.readContract({
-      address: escrow,
-      abi: ESCROW_ABI,
-      functionName: "getDeposit",
-      args: [orderIdToBytes32(orderId)],
-    }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
+  // ── FAIL-CLOSED: do NOT swallow RPC errors here. ─────────────────────
+  // The contract returns a zero-depositor struct when no deposit exists,
+  // so a successful read with depositor=0x0 means "no deposit." A thrown
+  // error means "RPC unreachable / unknown state" and the caller MUST
+  // decide whether to retry or gate the trade. Returning null on error
+  // would let RPC outages look identical to "no deposit" → unsafe
+  // settlement decisions.
+  const data = await pub.readContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "getDeposit",
+    args: [orderIdToBytes32(orderId)],
+  }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
 
-    const depositor = data[0];
-    if (depositor === "0x0000000000000000000000000000000000000000") return null;
-    return {
-      depositor,
-      token:    data[1],
-      amount:   data[2],
-      lockedAt: Number(data[3]),
-      released: data[4],
-    };
-  } catch {
-    return null;
-  }
+  const depositor = data[0];
+  if (depositor === "0x0000000000000000000000000000000000000000") return null;
+  return {
+    depositor,
+    token:    data[1],
+    amount:   data[2],
+    lockedAt: Number(data[3]),
+    released: data[4],
+  };
 }
 
 // ── Write: release ────────────────────────────────────────────────────────────
@@ -250,19 +257,29 @@ export interface SettleEscrowMatchResult {
  * surface a clear message — the user can then call cancel() to recover.
  */
 export async function settleEscrowMatch(
-  p: SettleEscrowMatchParams,
+  p: SettleEscrowMatchParams & {
+    /** Optional pre-resolved chain hints (from orders.ts precheck) — when
+     *  provided, we skip re-scanning all chains and reuse the precheck's
+     *  decision so the per-request settlement view is consistent. */
+    prefetchedSellerChain?: number | null;
+    prefetchedBuyerChain?:  number | null;
+  },
 ): Promise<SettleEscrowMatchResult & {
   bothLocked: boolean;
   skipReason?: string;
   resolvedChainId?: number;
 }> {
   // ── Auto-detect: which chain does each leg live on? ─────────────────────
-  // Don't trust the caller's chainId hint; scan all deployed escrows.
-  // This is what makes the system robust against wallets switching chains
-  // mid-flow and against a buyer/seller using different L2s.
+  // Reuse precheck values when provided to avoid double-scanning all chains
+  // (which would double the RPC cost AND can yield contradictory decisions
+  // under flaky RPC). Falls back to scan when no hint provided.
   const [sellerChain, buyerChain] = await Promise.all([
-    findEscrowChain(p.sellerOrderId),
-    findEscrowChain(p.buyerOrderId),
+    p.prefetchedSellerChain !== undefined
+      ? Promise.resolve(p.prefetchedSellerChain)
+      : findEscrowChain(p.sellerOrderId),
+    p.prefetchedBuyerChain !== undefined
+      ? Promise.resolve(p.prefetchedBuyerChain)
+      : findEscrowChain(p.buyerOrderId),
   ]);
 
   // Case 1: neither side actually locked → safe no-op.
