@@ -753,13 +753,20 @@ router.get("/transactions", async (_req, res) => {
         .limit(200),
     ]);
 
+    const isRealOnChainTxidStr = (t: string | null | undefined): boolean =>
+      !!t &&
+      !t.startsWith("local:") &&
+      !t.startsWith("htlc-pending-") &&
+      !t.startsWith("exchange:");
+
     const tradeTxs = rawTrades.map(t => {
       const isBsv = !!(t.walletAddress && !t.walletAddress.startsWith("0x"));
       const chain = isBsv ? "BSV" : "ETH";
       const safeId = (t.id ?? "").replace(/-/g, "").padEnd(64, "0");
+      const realOnChain = isRealOnChainTxidStr(t.txid);
       return {
         id: `trade-${t.id}`,
-        txHash: t.txid ?? `0x${safeId}`,
+        txHash: realOnChain ? t.txid! : (t.txid?.replace(/^local:/, "") ?? `0x${safeId}`),
         chain,
         type: "settlement",
         status: "confirmed",
@@ -779,13 +786,13 @@ router.get("/transactions", async (_req, res) => {
         side: t.side,
         price: t.price,
         note: `${t.symbol} ${t.side?.toUpperCase()} @ $${parseFloat(t.price as string).toFixed(4)} — DEX trade`,
-        hasTxid: !!t.txid,
+        hasTxid: realOnChain,
       };
     });
 
     const settlementTxs = rawOrders.map(o => ({
       id: `order-${o.id}`,
-      txHash: o.txid!,
+      txHash: isRealOnChainTxidStr(o.txid) ? o.txid! : (o.txid ?? "").replace(/^local:/, ""),
       chain: "BSV",
       type: "settlement",
       status: "confirmed",
@@ -805,7 +812,7 @@ router.get("/transactions", async (_req, res) => {
       side: o.side,
       price: o.price,
       note: `${o.symbol} ${o.side?.toUpperCase()} @ $${parseFloat(o.price as string || "0").toFixed(4)} — OP_RETURN settlement`,
-      hasTxid: true,
+      hasTxid: isRealOnChainTxidStr(o.txid),
     }));
 
     /* Merge & deduplicate by txHash */
