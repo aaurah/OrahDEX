@@ -466,31 +466,46 @@ router.post("/prediction/claim", async (req, res) => {
 
       const claims: Array<{ id: string; payout: number }> = [];
 
-      for (const bet of userBets) {
-        const betAmount   = parseFloat(bet.amount);
-        const betLeverage = bet.leverage;
-        let   betPayout   = 0;
+      // Helper: leverage-weighted bet weight. Higher leverage → larger share of the pool.
+      const weightOf = (amt: number, lev: number) => {
+        const bonus = Math.min(Math.max(lev - 1, 0) * 0.05, 5); // 1x→0, 100x→4.95
+        return amt * (1 + bonus);
+      };
 
-        if (round.winner === bet.position) {
-          const ownSide   = bet.position === "bull" ? round.bullAmount : round.bearAmount;
-          const multiplier = ownSide > 0 ? (round.totalAmount / ownSide) : 2;
+      if (round.winner === null) {
+        // Refund-only round (price unchanged or no winning side bet) — return original stake
+        for (const bet of userBets) {
+          const refund = parseFloat(bet.amount);
+          claims.push({ id: bet.id, payout: refund });
+          totalPayout += refund;
+        }
+      } else {
+        // Compute the TOTAL leverage-weighted stake of ALL winning bets in this round
+        // (across every user) so we can distribute the pool proportionally and
+        // guarantee Σ payouts === round.totalAmount.
+        const { rows: winningRows } = await client.query<{ amount: string; leverage: number }>(
+          `SELECT amount, leverage FROM prediction_bets
+           WHERE round_id = $1 AND symbol = $2 AND position = $3`,
+          [roundId, sym, round.winner],
+        );
+        let totalWeight = 0;
+        for (const r of winningRows) {
+          totalWeight += weightOf(parseFloat(r.amount), r.leverage);
+        }
 
-          // Cap leverage bonus: leverage 1-100 gives 0–4.95x additional multiplier
-          // (formula: (leverage-1) * 0.05), capped at 5. Total effective multiplier
-          // is at most multiplier * 6, and the hard pool cap below prevents creation of funds.
-          const leverageBonus = Math.min((betLeverage - 1) * 0.05, 5);
-          const rawPayout     = betAmount * multiplier * (1 + leverageBonus);
-          // Hard cap: winner's payout cannot exceed the full pool
-          betPayout = Math.min(rawPayout, round.totalAmount);
-          totalPayout += betPayout;
-        } else if (round.winner === null) {
-          betPayout    = betAmount;
+        for (const bet of userBets) {
+          let betPayout = 0;
+          if (bet.position === round.winner && totalWeight > 0) {
+            const w = weightOf(parseFloat(bet.amount), bet.leverage);
+            betPayout = (w / totalWeight) * round.totalAmount;
+          }
+          // Losers get 0; their stake stays in the pool.
+          claims.push({ id: bet.id, payout: betPayout });
           totalPayout += betPayout;
         }
-        claims.push({ id: bet.id, payout: betPayout });
       }
 
-      // Cap total payout across all bets to the round pool
+      // Belt-and-suspenders: pool can never be exceeded
       totalPayout = Math.min(totalPayout, round.totalAmount);
       claimCount  = claims.length;
 
