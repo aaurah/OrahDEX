@@ -769,9 +769,9 @@ export function MobilePortfolio() {
             <div className="bg-blue-500/5 border border-blue-500/25 rounded-2xl p-3 flex items-start gap-2">
               <svg className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-blue-300">Non-custodial — no funds locked</p>
+                <p className="text-xs font-bold text-blue-300">Self-custody — your keys, your funds</p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
-                  Your {rawLockedEntries.length} open order{rawLockedEntries.length === 1 ? " is a signed intent" : "s are signed intents"}. Funds stay in your wallet (Rabby/MetaMask) until the order fills. Cancel anytime — nothing to release.
+                  {rawLockedEntries.length} open order{rawLockedEntries.length === 1 ? "" : "s"}. Funds for unlocked orders stay in your wallet; locked orders are held in the on-chain escrow contract until the trade settles or you cancel.
                 </p>
               </div>
             </div>
