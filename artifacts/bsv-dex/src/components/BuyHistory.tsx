@@ -15,12 +15,15 @@ interface Order {
   created_at: string;
 }
 
+const COMPLETED_CONFIG = {
+  label: "Completed",
+  icon: <CheckCircle2 className="w-3.5 h-3.5" />,
+  className: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+};
 const STATUS_CONFIG: Record<string, { label: string; icon: React.ReactNode; className: string }> = {
-  succeeded: {
-    label: "Completed",
-    icon: <CheckCircle2 className="w-3.5 h-3.5" />,
-    className: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  },
+  // Server returns "completed" once fulfillment is done; keep "succeeded" as legacy alias.
+  completed: COMPLETED_CONFIG,
+  succeeded: COMPLETED_CONFIG,
   pending: {
     label: "Pending",
     icon: <Clock className="w-3.5 h-3.5" />,
