@@ -181,18 +181,25 @@ export function Layout({ children }: { children: ReactNode }) {
   usePriceAlertsWatcher();
 
   // Most browsers suspend AudioContext until a user gesture. Prime it on the
-  // first interaction so notification sounds play immediately afterwards.
+  // first interaction (iOS Safari requires touchstart specifically + a silent
+  // buffer play, which primeAudioContext does internally).
   useEffect(() => {
     const onGesture = () => {
       primeAudioContext();
       window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("touchstart", onGesture);
       window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("click", onGesture);
     };
-    window.addEventListener("pointerdown", onGesture, { once: true });
-    window.addEventListener("keydown", onGesture, { once: true });
+    window.addEventListener("pointerdown", onGesture, { passive: true });
+    window.addEventListener("touchstart", onGesture, { passive: true });
+    window.addEventListener("keydown", onGesture);
+    window.addEventListener("click", onGesture);
     return () => {
       window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("touchstart", onGesture);
       window.removeEventListener("keydown", onGesture);
+      window.removeEventListener("click", onGesture);
     };
   }, []);
 
