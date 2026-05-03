@@ -129,12 +129,27 @@ export interface EscrowTxResult {
 }
 
 const EXPLORER_BASE: Record<number, string> = {
+  // Mainnets
+  1:        "https://etherscan.io",
+  137:      "https://polygonscan.com",
+  56:       "https://bscscan.com",
+  8453:     "https://basescan.org",
+  42161:    "https://arbiscan.io",
+  10:       "https://optimistic.etherscan.io",
+  43114:    "https://snowtrace.io",
+  324:      "https://explorer.zksync.io",
+  // Testnets
   11155111: "https://sepolia.etherscan.io",
   84532:    "https://sepolia.basescan.org",
+  421614:   "https://sepolia.arbiscan.io",
+  11155420: "https://sepolia-optimism.etherscan.io",
+  80002:    "https://amoy.polygonscan.com",
+  97:       "https://testnet.bscscan.com",
+  43113:    "https://testnet.snowtrace.io",
 };
 
 function explorerTxUrl(chainId: number, txHash: string): string {
-  const base = EXPLORER_BASE[chainId] ?? "https://sepolia.etherscan.io";
+  const base = EXPLORER_BASE[chainId] ?? "https://etherscan.io";
   return `${base}/tx/${txHash}`;
 }
 
