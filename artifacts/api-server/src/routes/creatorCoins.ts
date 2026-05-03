@@ -156,7 +156,7 @@ router.get("/social/creators/:address", async (req, res) => {
       return;
     }
 
-    const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }] = await Promise.all([
+    const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }, { rows: holdingsRows }] = await Promise.all([
       pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]),
       pool.query(
         `SELECT ch.holder, ch.amount, cp.username, cp.avatar_url
@@ -178,10 +178,21 @@ router.get("/social/creators/:address", async (req, res) => {
          JOIN social_posts sp ON pm.post_id = sp.id
          WHERE LOWER(sp.creator) = $1`, [address],
       ),
+      // Coins this user is holding (excluding their own coin)
+      pool.query(
+        `SELECT ch.coin_creator, ch.amount, cc.symbol, cc.price_usd, cp.username, cp.avatar_url
+         FROM coin_holdings ch
+         LEFT JOIN creator_coins cc ON LOWER(cc.creator_address) = LOWER(ch.coin_creator)
+         LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(ch.coin_creator)
+         WHERE LOWER(ch.holder) = $1 AND ch.amount > 0
+         ORDER BY ch.amount DESC`, [address],
+      ),
     ]);
 
     const nftMarketCap = parseFloat(nftStats[0]?.nft_market_cap_usd ?? 0);
     const nftHolderCount = parseInt(nftHolders[0]?.nft_holder_count ?? 0, 10);
+    const realHolderCount = topHolders.length;
+    const holdingCount = holdingsRows.length;
 
     const raw = profiles[0];
     const profile = {
@@ -190,10 +201,11 @@ router.get("/social/creators/:address", async (req, res) => {
       // If DEX coin has no market cap yet, use NFT mint value instead
       market_cap_usd: (raw.market_cap_usd > 0 ? raw.market_cap_usd : 0) + nftMarketCap,
       ath_usd: Math.max(raw.ath_usd ?? 0, nftMarketCap),
-      // If DEX coin has no holders yet, show NFT buyers instead
-      holder_count: Math.max(raw.holder_count ?? 0, nftHolderCount),
+      // Use the real live count from coin_holdings, falling back to NFT buyers
+      holder_count: Math.max(realHolderCount, nftHolderCount),
+      holding_count: holdingCount,
     };
-    res.json({ profile, posts, topHolders, trades });
+    res.json({ profile, posts, topHolders, trades, holdings: holdingsRows });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
