@@ -498,7 +498,14 @@ function CreatorProfileSheet({
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
       .then(r => r.json())
-      .then(d => { _profileDataCache[creatorAddress] = d; setData(d); })
+      .then(d => {
+        _profileDataCache[creatorAddress] = d;
+        setData(d);
+        if (Array.isArray(d?.holdings)) {
+          _profileHoldingsCache[creatorAddress] = d.holdings;
+          setHoldingItems(d.holdings);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
     fetch(`${API}/social/profile/${creatorAddress}`)
@@ -794,7 +801,7 @@ function CreatorProfileSheet({
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
               </button>
               <button className="active:opacity-60" onClick={() => openStatSheet("holding")}>
-                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(holdingItems.length)}</div>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.holding_count ?? 0, holdingItems.length))}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holding</div>
               </button>
             </div>
