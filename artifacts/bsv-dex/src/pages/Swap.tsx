@@ -41,7 +41,6 @@ import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
-import { BuyHistory } from "@/components/BuyHistory";
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
@@ -2327,8 +2326,7 @@ export function Swap() {
             {/* Crypto-to-crypto buy panel */}
             <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
 
-            {/* Purchase history — use EVM address or session identity so BTC/SOL orders appear */}
-            <BuyHistory walletAddress={address ?? sessionStorage.getItem("orahdex_session_addr")} />
+            {/* Purchase history is shown on the Portfolio tab. */}
 
             {/* KYC gate */}
             <KycModal
