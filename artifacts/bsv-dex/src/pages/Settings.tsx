@@ -14,6 +14,8 @@ import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
+import { usePriceAlertsStore } from "@/store/usePriceAlertsStore";
+import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -97,7 +99,11 @@ export function WebSettings() {
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
   const [, navigate] = useLocation();
-  const [notifications, setNotifications] = useState(true);
+  const alertsEnabled = usePriceAlertsStore((s) => s.enabled);
+  const setAlertsEnabled = usePriceAlertsStore((s) => s.setEnabled);
+  const alertsCount = usePriceAlertsStore((s) => s.alerts.length);
+  const activeAlerts = usePriceAlertsStore((s) => s.alerts.filter((a) => a.triggeredAt === null).length);
+  const [showAlerts, setShowAlerts] = useState(false);
   const [haptics, setHaptics] = useState(true);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
@@ -202,8 +208,17 @@ export function WebSettings() {
           <Row
             icon={Bell}
             label="Price Alerts"
-            value="Get notified on significant price moves"
-            rightEl={<Toggle value={notifications} onChange={setNotifications} />}
+            value={
+              alertsCount === 0
+                ? "Tap to set a target price for any coin"
+                : `${activeAlerts} active · ${alertsCount} total · tap to manage`
+            }
+            onClick={() => setShowAlerts(true)}
+            rightEl={
+              <span onClick={(e) => e.stopPropagation()}>
+                <Toggle value={alertsEnabled} onChange={setAlertsEnabled} />
+              </span>
+            }
           />
           <Row
             icon={Activity}
@@ -280,6 +295,8 @@ export function WebSettings() {
           </div>
         </div>
       </div>
+
+      <PriceAlertsDialog open={showAlerts} onOpenChange={setShowAlerts} />
 
       {/* Quote Currency Picker Modal */}
       {showCurrencyPicker && (() => {
