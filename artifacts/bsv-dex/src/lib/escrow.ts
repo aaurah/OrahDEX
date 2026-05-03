@@ -292,6 +292,43 @@ function getPublicClient(chainId: number) {
 }
 
 /**
+ * Read the escrow contract to check whether `orderId` is already locked
+ * on-chain. Used after a page refresh (mobile Safari kills tabs when imToken
+ * takes over) to detect that a user actually completed the lock while we
+ * thought they were mid-flow.
+ *
+ * Returns `null` when no escrow exists on the chain or the order has never
+ * been locked. Returns the deposit struct when funds are sitting in escrow.
+ */
+export async function checkEscrowDeposit(
+  orderId: string,
+  chainId: number,
+): Promise<{ depositor: string; token: string; amount: bigint; lockedAt: number; released: boolean } | null> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) return null;
+  try {
+    const pub = getPublicClient(chainId);
+    const data = await pub.readContract({
+      address: escrow,
+      abi: ESCROW_ABI,
+      functionName: "getDeposit",
+      args: [orderIdToBytes32(orderId)],
+    }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
+    const depositor = data[0];
+    if (!depositor || depositor === "0x0000000000000000000000000000000000000000") return null;
+    return {
+      depositor,
+      token:    data[1],
+      amount:   data[2],
+      lockedAt: Number(data[3]),
+      released: data[4],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch the freshest nonce from the network using the "pending" tag so
  * that recent (just-confirmed or in-mempool) transactions are reflected.
  * Without this, viem can pick a stale nonce after the user just sent a tx

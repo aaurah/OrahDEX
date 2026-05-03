@@ -20,7 +20,7 @@ import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
-import { hasEscrow, chainLabel } from "@/lib/escrow";
+import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
 /* ── Notifications drawer — backed by the real notification store ── */
@@ -503,6 +503,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Dedup guard — prevents double banner/toast when the same fill event fires twice
   const lastProcessedTradeIdRef = useRef<string | null>(null);
 
+  // Pre-read sessionStorage once so initial state can hydrate from it.
+  const _bootLockFlow: any = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem("orahdex:lockFlow:v1");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  })();
   const [orderResult, setOrderResult] = useState<{
     tradeId: string | null;
     matched: boolean;
@@ -516,15 +524,74 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     fee: number;
     quantity: number;
     price: number;
-  } | null>(null);
-  const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(null);
+  } | null>(_bootLockFlow?.order ?? null);
+  const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(_bootLockFlow?.tx ?? null);
   const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult } = useEscrow();
   // Lock-funds confirmation dialog (opens when user taps "Lock funds on X")
-  const [lockDialogOpen, setLockDialogOpen]   = useState(false);
+  // ── Persistence: mobile Safari kills the tab when the user opens imToken
+  // to sign, so we save the in-flight lock state to sessionStorage and
+  // re-hydrate it when the tab reloads. After hydration we also poll the
+  // escrow contract once to detect locks that *did* complete while we were away.
+  const LOCK_FLOW_KEY = "orahdex:lockFlow:v1";
+  type LockFlowSnapshot = {
+    open:    boolean;
+    params:  { orderId: string; side: "buy" | "sell"; base: string; quote: string; quantity: number; price: number; } | null;
+    tx:      { txHash: string; explorerUrl: string } | null;
+    order:   any | null;  // orderResult, so the open-order card stays visible
+  };
+  const initialLockFlow: LockFlowSnapshot | null = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem(LOCK_FLOW_KEY);
+      return raw ? (JSON.parse(raw) as LockFlowSnapshot) : null;
+    } catch { return null; }
+  })();
+  const [lockDialogOpen, setLockDialogOpen]   = useState<boolean>(initialLockFlow?.open ?? false);
   const [pendingLockParams, setPendingLockParams] = useState<{
     orderId: string; side: "buy" | "sell"; base: string; quote: string;
     quantity: number; price: number;
-  } | null>(null);
+  } | null>(initialLockFlow?.params ?? null);
+
+  // ── Persist lock-flow snapshot to sessionStorage on every change ──────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const snap: LockFlowSnapshot = {
+      open:   lockDialogOpen,
+      params: pendingLockParams,
+      tx:     escrowTx,
+      order:  orderResult,
+    };
+    // Only persist while a lock flow is "live" — otherwise clear it so we
+    // don't re-open the dialog on the next visit.
+    const isLive = lockDialogOpen || !!escrowTx || (!!pendingLockParams && !!orderResult && !orderResult.matched);
+    if (isLive) {
+      try { window.sessionStorage.setItem(LOCK_FLOW_KEY, JSON.stringify(snap)); } catch {}
+    } else {
+      try { window.sessionStorage.removeItem(LOCK_FLOW_KEY); } catch {}
+    }
+  }, [lockDialogOpen, pendingLockParams, escrowTx, orderResult]);
+
+  // ── On mount: if we restored a pending lock, check on-chain whether the
+  // tx already completed while the tab was backgrounded. If so, jump straight
+  // to "success" so the user sees their funds locked instead of the confirm
+  // screen offering to re-lock (which would revert with "already locked").
+  useEffect(() => {
+    if (!pendingLockParams || escrowTx || !walletChainId) return;
+    let cancelled = false;
+    (async () => {
+      const dep = await checkEscrowDeposit(pendingLockParams.orderId, walletChainId);
+      if (cancelled || !dep || dep.released) return;
+      setEscrowTx({
+        txHash: "",  // unknown — but the contract confirms funds are sitting in escrow
+        explorerUrl: `https://etherscan.io/address/0xeE234cEb85697b64800E696699b7841e00413B4f`,
+      });
+      // Refresh on-chain balances so the deduction shows immediately
+      setTimeout(() => { refreshEvmBalances(); }, 500);
+    })();
+    return () => { cancelled = true; };
+  // intentionally only on mount + when chainId resolves
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletChainId]);
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
