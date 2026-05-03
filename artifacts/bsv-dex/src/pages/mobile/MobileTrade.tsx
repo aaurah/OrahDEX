@@ -407,6 +407,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+      // Step 1 (best-effort): release any on-chain escrow lock so the user
+      // gets their coins back. This prompts the wallet to sign cancel(orderId).
+      // If the order has no on-chain deposit (older orders, off-chain only),
+      // the contract reverts with "no deposit" — we swallow that and continue.
+      if (escrowAvailable) {
+        try {
+          await cancelOrderOnChain(orderId);
+        } catch (e: any) {
+          const msg = String(e?.message ?? "").toLowerCase();
+          // Only swallow "nothing to refund" errors — surface real failures
+          // (user rejection, network issue, etc) so funds aren't lost silently.
+          const isMissingDeposit =
+            msg.includes("no deposit") ||
+            msg.includes("already settled") ||
+            msg.includes("already released");
+          if (!isMissingDeposit) throw e;
+        }
+      }
+      // Step 2: tell the server to remove the order from the orderbook.
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -435,13 +454,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       }
       return { prev, prevAlt };
     },
-    onError: (_err, _vars, context: any) => {
+    onError: (err: any, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
       }
       if (altAddress && context?.prevAlt !== undefined) {
         queryClient.setQueryData(["orders", altAddress], context.prevAlt);
       }
+      toast({
+        title: "Cancel failed",
+        description: String(err?.message ?? "Could not cancel order"),
+        variant: "destructive",
+      });
     },
     onSettled: () => {
       setCancellingId(null);
@@ -493,7 +517,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     price: number;
   } | null>(null);
   const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(null);
-  const { escrowAvailable, status: escrowStatus, lockOrder, isLoading: escrowLoading, errorMsg: escrowErrorMsg } = useEscrow();
+  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg } = useEscrow();
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
