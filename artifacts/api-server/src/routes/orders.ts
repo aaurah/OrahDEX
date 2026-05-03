@@ -140,7 +140,16 @@ router.post("/orders", async (req, res) => {
     const id            = crypto.randomUUID();
     const price         = rawPrice;
     const total         = price ? price * quantity : undefined;
-    const fee           = (total || 0) * 0.001;
+    // Look up the per-market taker fee so the recorded order fee matches what
+    // the matching engine and ledger will actually deduct on settlement.
+    // Falls back to 0.1% if the market row is missing or the fee column is unset.
+    let feeRate = 0.001;
+    try {
+      const [feeMkt] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+      const tf = feeMkt ? parseFloat(feeMkt.takerFee) : NaN;
+      if (Number.isFinite(tf) && tf >= 0) feeRate = tf;
+    } catch { /* fall back to default */ }
+    const fee           = (total || 0) * feeRate;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
     const walletSource: "external" | "orah" =
