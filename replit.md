@@ -74,6 +74,17 @@ User wallet: `0x67C7f23eE49B6417661748F23F743C0B274039e2` (the only impacted use
 ### 4. Unbacked ADA balance
 - User has 123.107 ADA in internal `user_balances` but OrahDEX has no Cardano integration. This balance has no on-chain backing and cannot be withdrawn. Decide whether to zero it out or build Cardano support.
 
+## Copy Trade hardening (latest session)
+
+- **Orchestrator now actually runs.** `copyOrchestrator.onTradeSettled` is invoked from `spotSettlement.settleSpotFill` for both buyer and seller after the ledger settles (fire-and-forget so copy bookkeeping never fails the underlying trade). `startCopyOrchestrator()` boots from `app.ts`.
+- **Removed hardcoded `"orah-internal"` secret.** `/copy/vaults/:id/trade` now strictly requires `ORCHESTRATOR_SECRET` (≥16 chars). `/copy/vaults/:id/sync-price` accepts admin token (`x-admin-token`) OR `ORCHESTRATOR_SECRET`. Verified via curl: 403 for old fallback.
+- **`POST /copy/vaults` now requires admin token** + validates `feeRate ∈ [0, 0.5]`, `minDeposit > 0`, `maxCapacity > 0` when set.
+- **Deposit is fully transactional**: BEGIN → `pg_advisory_xact_lock(vaultId)` → `SELECT … FOR UPDATE` of vault + balance → debit USDT → upsert position (one row per `(vault, wallet)`) → update vault TVL/shares/followers → COMMIT. Rolls back on any failure; no orphan debits, no double-counted followers.
+- **Withdraw re-reads vault + position under advisory lock + `FOR UPDATE`** so a concurrent `/sync-price` can't change `share_price` between the read and the payout. Adds dust guard.
+- **Mirror trade no longer fakes TVL/sharePrice updates.** It records the trade row + bumps `totalTrades` only; share-price changes happen via `/sync-price` against real holdings. Skips when `traderPortfolioValue` is unknown rather than guessing with `*10`.
+- **Admin UI** (`CopyVaultAdmin.tsx`) sends `x-admin-token` header on create + sync-price toggle; no longer transmits the old shared secret.
+- Known deferral: `winRate` / `monthPnlPct` columns are read by the leaderboard but never computed — needs a periodic stats job.
+
 ## What was fixed in this session (already deployed)
 
 - **Hot-wallet key/address mismatch**: `exchangeHotWallet.ts` now auto-detects when the operator pasted the private key into `EVM_WALLET_SECRET` instead of `EXCHANGE_HOT_WALLET_KEY` and uses it (with a warn log). Fix is permanent in code.

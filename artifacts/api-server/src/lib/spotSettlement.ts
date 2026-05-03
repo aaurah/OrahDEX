@@ -37,6 +37,7 @@ import {
 } from "./htlc.js";
 import { getBsvChainStatus } from "./bsvChainMonitor.js";
 import { settleTrade } from "./ledger.js";
+import { onTradeSettled as copyVaultOnTradeSettled } from "./copyOrchestrator.js";
 import { registerHtlc } from "./htlcWatcher.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -231,6 +232,25 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill");
     throw err;
   }
+
+  // ── 5b. CopyVault hook: mirror this trade into any vault led by buyer/seller ─
+  // Fire-and-forget — copy bookkeeping must never fail the underlying fill.
+  void copyVaultOnTradeSettled({
+    traderAddress: buyerAddress,
+    symbol: pair,
+    side: "buy",
+    price: fillPrice,
+    quantity: fillQty,
+    orderId: newOrderId,
+  }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (buy) failed"));
+  void copyVaultOnTradeSettled({
+    traderAddress: sellerAddress,
+    symbol: pair,
+    side: "sell",
+    price: fillPrice,
+    quantity: fillQty,
+    orderId: matchOrder.id,
+  }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (sell) failed"));
 
   // ── 6. Register HTLC with watcher (Relayer Keeper notifications) ─────────
   if (isCrossChain && htlcResult?.htlcAddress && broadcastTxid) {
