@@ -12,11 +12,11 @@
  */
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Camera, Sparkles, Upload, X, RefreshCw, Zap, ZapOff, RotateCcw, Check, Image as ImageIcon } from "lucide-react";
+import { Camera, Sparkles, Upload, X, RefreshCw, Zap, ZapOff, RotateCcw, Check, Image as ImageIcon, FolderOpen } from "lucide-react";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
-type Tab = "camera" | "ai" | "upload";
+type Tab = "camera" | "ai" | "photos" | "files";
 
 // iOS Safari ignores clicks on `<input type=file>` when display:none.
 // Use a visually-hidden style that still allows the native picker to open.
@@ -75,8 +75,9 @@ export function MediaCapture({ open, onClose, onSelect, accept = "image/*", init
         <div className="flex gap-1 p-2 border-b" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
           {([
             { id: "camera", label: "Camera", icon: Camera },
+            { id: "photos", label: "Photos", icon: ImageIcon },
+            { id: "files",  label: "Files",  icon: FolderOpen },
             { id: "ai",     label: "AI",     icon: Sparkles },
-            { id: "upload", label: "Photos", icon: ImageIcon },
           ] as const).map(({ id, label, icon: Icon }) => {
             const active = tab === id;
             return (
@@ -100,8 +101,11 @@ export function MediaCapture({ open, onClose, onSelect, accept = "image/*", init
           {tab === "ai" && (
             <AIPanel preview={preview} setPreview={setPreview} />
           )}
-          {tab === "upload" && (
-            <UploadPanel preview={preview} setPreview={setPreview} accept={accept} />
+          {tab === "photos" && (
+            <UploadPanel preview={preview} setPreview={setPreview} accept="image/*" mode="photos" />
+          )}
+          {tab === "files" && (
+            <UploadPanel preview={preview} setPreview={setPreview} accept={accept === "image/*" ? "*/*" : accept} mode="files" />
           )}
         </div>
 
@@ -390,22 +394,42 @@ function AIPanel({ preview, setPreview }: { preview: string; setPreview: (s: str
 
 /* ── Upload panel ─────────────────────────────────────────────────────────── */
 
-function UploadPanel({ preview, setPreview, accept }: { preview: string; setPreview: (s: string) => void; accept: string }) {
+function UploadPanel({ preview, setPreview, accept, mode = "photos" }:
+  { preview: string; setPreview: (s: string) => void; accept: string; mode?: "photos" | "files" }) {
+  const [fileName, setFileName] = useState("");
+  const [fileType, setFileType] = useState("");
+
   function handle(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
+    setFileName(f.name); setFileType(f.type);
     const r = new FileReader();
     r.onload = ev => setPreview(String(ev.target?.result ?? ""));
     r.readAsDataURL(f);
   }
 
+  const Icon = mode === "files" ? FolderOpen : ImageIcon;
+  const isImage = !preview || fileType.startsWith("image/") || preview.startsWith("data:image");
+  const ctaLabel = mode === "files"
+    ? (preview ? "Choose different file" : "Browse files")
+    : (preview ? "Choose different photo" : "Choose photo");
+  const helper = mode === "files"
+    ? "Pick anything from your device — Files app, Drive, downloads."
+    : "Pick from your photo library.";
+
   return (
     <div className="p-6 flex flex-col items-center justify-center gap-3" style={{ minHeight: 280 }}>
-      {preview
+      {preview && isImage
         ? <img src={preview} alt="" className="w-full rounded-xl" style={{ maxHeight: "50vh", objectFit: "contain" }} />
-        : <ImageIcon size={42} style={{ color: "var(--color-text-secondary, #aaa)" }} />}
+        : preview
+          ? <div className="text-center">
+              <FolderOpen size={42} style={{ color: "var(--color-accent, #00ff88)", margin: "0 auto" }} />
+              <p className="text-xs mt-2 break-all" style={{ color: "var(--color-text, #fff)" }}>{fileName}</p>
+            </div>
+          : <Icon size={42} style={{ color: "var(--color-text-secondary, #aaa)" }} />}
+      <p className="text-[11px] text-center" style={{ color: "var(--color-text-secondary, #aaa)" }}>{helper}</p>
       <label className="relative px-5 py-2.5 rounded-xl text-sm font-bold cursor-pointer flex items-center gap-2 overflow-hidden"
              style={{ background: "var(--color-accent, #00ff88)", color: "#000" }}>
-        <Upload size={14} /> {preview ? "Choose different file" : "Choose file"}
+        <Upload size={14} /> {ctaLabel}
         <input type="file" accept={accept} style={HIDDEN_INPUT} onChange={handle} />
       </label>
     </div>
