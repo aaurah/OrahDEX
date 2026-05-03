@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, DollarSign, ArrowRightLeft, RefreshCw,
   CheckCircle, Clock, BarChart3, Calendar, Copy, Check,
+  ExternalLink, Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { adminFetch } from "@/lib/adminFetch";
@@ -52,6 +53,11 @@ const fmtDate = (iso: string) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
 };
 
+// LetsExchange's public status page. Paste any transaction_id at the
+// end and the page renders the same "Check exchange status" widget the
+// user sees on letsexchange.io.
+const LE_STATUS_URL = (id: string) => `https://letsexchange.io/transaction/${encodeURIComponent(id)}`;
+
 const STATUS_COLORS: Record<string, string> = {
   finished:   "text-green-400",
   waiting:    "text-yellow-400",
@@ -77,8 +83,62 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
+function ExchangeIdLookup() {
+  const [id, setId] = useState("");
+  const trimmed = id.trim();
+  const open = () => {
+    if (!trimmed) return;
+    window.open(LE_STATUS_URL(trimmed), "_blank", "noopener,noreferrer");
+  };
+  const paste = async () => {
+    try {
+      const txt = (await navigator.clipboard.readText()).trim();
+      if (txt) setId(txt);
+    } catch { /* clipboard blocked */ }
+  };
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-zinc-400 font-semibold">
+        <Search className="w-3.5 h-3.5 text-emerald-400" /> Look up any Exchange ID on LetsExchange
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={id}
+          onChange={e => setId(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") open(); }}
+          placeholder="Paste Exchange ID (LetsExchange transaction_id)…"
+          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={paste}
+          className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold border border-zinc-700"
+        >
+          Paste
+        </button>
+        <button
+          type="button"
+          onClick={open}
+          disabled={!trimmed}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 disabled:opacity-40"
+        >
+          <ExternalLink className="w-3.5 h-3.5" /> Open on letsexchange.io
+        </button>
+      </div>
+      <p className="text-[11px] text-zinc-500">
+        The Exchange ID is the <span className="font-mono">transaction_id</span> returned when a Bridge swap is created.
+        Each row in <span className="font-semibold text-zinc-300">Recent</span> below has a copy + open button to jump to that swap's
+        LetsExchange status page.
+      </p>
+    </div>
+  );
+}
+
 export function AdminLEIncome() {
   const [tab, setTab] = useState<"overview" | "pairs" | "monthly" | "recent">("overview");
+  const [recentFilter, setRecentFilter] = useState("");
 
   const { data, isFetching, error, refetch } = useQuery<IncomeData>({
     queryKey: ["admin-le-income"],
@@ -152,6 +212,9 @@ export function AdminLEIncome() {
           />
         </div>
       )}
+
+      {/* Quick Exchange-ID lookup */}
+      <ExchangeIdLookup />
 
       {/* Commission note */}
       <div className="bg-emerald-900/20 border border-emerald-800/50 rounded-lg p-4 text-sm text-emerald-300">
@@ -269,11 +332,31 @@ export function AdminLEIncome() {
       )}
 
       {tab === "recent" && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+              <input
+                value={recentFilter}
+                onChange={e => setRecentFilter(e.target.value)}
+                placeholder="Filter by Exchange ID, coin, or payout address…"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+            <span className="text-xs text-zinc-500">
+              {(() => {
+                const all = data?.recent ?? [];
+                const f = recentFilter.trim().toLowerCase();
+                const n = f ? all.filter(s => [s.id, s.coinFrom, s.coinTo, s.withdrawal].some(v => (v ?? "").toLowerCase().includes(f))).length : all.length;
+                return `${n} of ${all.length}`;
+              })()}
+            </span>
+          </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm min-w-[760px]">
             <thead>
               <tr className="border-b border-zinc-800 text-zinc-400 text-xs uppercase tracking-wider">
-                <th className="text-left px-4 py-3">ID</th>
+                <th className="text-left px-4 py-3">Exchange ID</th>
                 <th className="text-left px-4 py-3">Pair</th>
                 <th className="text-right px-4 py-3">Amount</th>
                 <th className="text-right px-4 py-3">USD</th>
@@ -282,11 +365,26 @@ export function AdminLEIncome() {
               </tr>
             </thead>
             <tbody>
-              {(data?.recent ?? []).map(swap => (
+              {(() => {
+                const all = data?.recent ?? [];
+                const f = recentFilter.trim().toLowerCase();
+                return f
+                  ? all.filter(s => [s.id, s.coinFrom, s.coinTo, s.withdrawal].some(v => (v ?? "").toLowerCase().includes(f)))
+                  : all;
+              })().map(swap => (
                 <tr key={swap.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
                   <td className="px-4 py-3 font-mono text-zinc-400 text-xs">
-                    {swap.id.slice(0, 10)}…
+                    <span className="text-zinc-300" title={swap.id}>{swap.id.slice(0, 10)}…</span>
                     <CopyBtn text={swap.id} />
+                    <a
+                      href={LE_STATUS_URL(swap.id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 inline-flex text-zinc-500 hover:text-emerald-400 align-middle"
+                      title="Open on letsexchange.io"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </td>
                   <td className="px-4 py-3 font-mono text-zinc-300 text-xs">
                     {swap.coinFrom} → {swap.coinTo}
@@ -319,6 +417,7 @@ export function AdminLEIncome() {
               )}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>
