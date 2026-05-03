@@ -346,6 +346,64 @@ router.get("/stripe/orders", async (req, res) => {
   }
 });
 
+/* ── DELETE /api/stripe/orders/:id — user-scoped delete for pending/failed/cancelled
+   Requires `walletAddress` query (comma-separated) for ownership; refuses when
+   the order is already completed/processing/paid (those carry real money or
+   in-flight crypto and must NEVER be hidden by users). Cancels the underlying
+   Stripe PaymentIntent if one exists. ────────────────────────────────────── */
+router.delete("/stripe/orders/:id", async (req, res) => {
+  const raw = req.query.walletAddress;
+  if (!raw || typeof raw !== "string") {
+    res.status(400).json({ error: "walletAddress query param required" });
+    return;
+  }
+  const addrs = Array.from(new Set(
+    raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length >= 6)
+  ));
+  if (!addrs.length) { res.status(400).json({ error: "walletAddress invalid" }); return; }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, stripe_payment_intent_id, status, user_wallet, wallet_address
+         FROM crypto_orders WHERE id = $1`,
+      [req.params.id]
+    );
+    const order = rows[0];
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    /* Ownership check */
+    const ownerOk = addrs.includes((order.user_wallet ?? "").toLowerCase()) ||
+                    addrs.includes((order.wallet_address ?? "").toLowerCase());
+    if (!ownerOk) { res.status(403).json({ error: "Not your order" }); return; }
+
+    /* Only deletable while not yet fulfilled */
+    const status = String(order.status ?? "").toLowerCase();
+    const DELETABLE = new Set(["pending", "failed", "canceled", "cancelled"]);
+    if (!DELETABLE.has(status)) {
+      res.status(409).json({
+        error: `Cannot delete a ${status} order — completed and processing purchases are permanent.`,
+      });
+      return;
+    }
+
+    /* Best-effort cancel of the Stripe PaymentIntent so it can't later succeed */
+    if (order.stripe_payment_intent_id) {
+      try {
+        const stripe = await getUncachableStripeClient();
+        await stripe.paymentIntents.cancel(order.stripe_payment_intent_id);
+      } catch (e: any) {
+        logger.warn({ err: e?.message, orderId: order.id }, "user delete: stripe cancel failed");
+      }
+    }
+
+    await pool.query(`DELETE FROM crypto_orders WHERE id = $1`, [order.id]);
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "user delete stripe order failed");
+    res.status(500).json({ error: err?.message ?? "Delete failed" });
+  }
+});
+
 /* ─────────────────────────────────────────────────────────────────────────────
    ADMIN endpoints (require admin token)
    List, refund, cancel and delete Stripe crypto orders.
