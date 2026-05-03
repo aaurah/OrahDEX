@@ -608,6 +608,104 @@ export function peekLiquidityChallengePoolId(walletAddress: string): string | nu
   return stored.poolId;
 }
 
+// ── P2P intent nonce store ───────────────────────────────────────────────────
+// Single-use nonces for POST /p2p/intents, POST /p2p/intents/:id/fill,
+// DELETE /p2p/intents/:id. Bound to (action, target) so a captured challenge
+// for one intent cannot be replayed against a different intent.
+//
+// `target` semantics:
+//   action="post"   → SHA-256 hex of `${tokenIn}|${tokenOut}|${amountIn}|${minAmountOut}`
+//   action="fill"   → intentId
+//   action="cancel" → intentId
+
+interface P2PNonce {
+  nonce:     string;
+  message:   string;
+  action:    "post" | "fill" | "cancel";
+  target:    string;
+  expiresAt: number;
+}
+
+const p2pNonces = new Map<string, P2PNonce>();
+
+const P2P_NONCE_TTL_MS = 5 * 60 * 1_000;
+const P2P_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of p2pNonces.entries()) {
+    if (v.expiresAt < now) p2pNonces.delete(k);
+  }
+}, P2P_NONCE_SWEEP).unref();
+
+/** Hash the canonical fields of a post-intent challenge target. */
+export function hashP2PPostTarget(params: {
+  tokenIn: string; tokenOut: string; amountIn: string; minAmountOut: string;
+}): string {
+  const canon = `${params.tokenIn.toUpperCase()}|${params.tokenOut.toUpperCase()}|${params.amountIn}|${params.minAmountOut}`;
+  return crypto.createHash("sha256").update(canon, "utf8").digest("hex");
+}
+
+export function issueP2PChallenge(params: {
+  walletAddress: string;
+  action:        "post" | "fill" | "cancel";
+  target:        string;
+}): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts    = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX P2P ${params.action}\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Target: ${params.target}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  p2pNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    action:    params.action,
+    target:    params.target,
+    expiresAt: Date.now() + P2P_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyP2PSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  action:        "post" | "fill" | "cancel";
+  target:        string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = p2pNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "P2P challenge expired or not found. " +
+      "Request a fresh challenge via POST /p2p/challenge.",
+    );
+  }
+  if (stored.nonce !== params.nonce) {
+    throw new Error("P2P nonce mismatch.");
+  }
+  if (stored.action !== params.action) {
+    throw new Error(
+      `P2P challenge was issued for '${stored.action}', not '${params.action}'.`,
+    );
+  }
+  if (stored.target !== params.target) {
+    throw new Error(
+      `P2P challenge target mismatch — challenge was bound to a different intent.`,
+    );
+  }
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  p2pNonces.delete(addr);
+}
+
 // ── Consumed order nonce store ────────────────────────────────────────────────
 // Tracks used (walletAddress, nonce) pairs for spot orders to prevent replay.
 // Entries are pruned lazily once their expiry has passed.

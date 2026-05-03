@@ -15,6 +15,56 @@ import { cn, formatPrice } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/**
+ * Fetch + sign a P2P challenge for an external EVM wallet.
+ * Returns { nonce, signature } or { } for non-EVM (BSV/SOL) wallets,
+ * which the API treats as fall-through.
+ *
+ * Throws if signing fails so the caller can surface a clear error.
+ */
+async function signP2PIfNeeded(params: {
+  walletAddress: string;
+  network:       string | null;
+  action:        "post" | "fill" | "cancel";
+  targetFields:  Record<string, string>;
+}): Promise<{ nonce?: string; signature?: string }> {
+  const { walletAddress, network, action, targetFields } = params;
+  // Only external EVM wallets need a signature. The server treats
+  // internal-EVM wallets (server-provisioned) as fall-through, but it'll
+  // still ask for a sig if the address looks like 0x… and isn't in the
+  // internal registry. Easiest: always sign for EVM wallets; the server
+  // will accept either path.
+  const isEvm = network === "evm" && /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
+  if (!isEvm) return {};
+
+  const challengeRes = await fetch(`${BASE}/api/p2p/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, action, ...targetFields }),
+  });
+  if (!challengeRes.ok) {
+    const e = await challengeRes.json().catch(() => ({}));
+    throw new Error(e.error ?? "Failed to obtain P2P challenge");
+  }
+  const { nonce, message } = await challengeRes.json() as { nonce: string; message: string };
+
+  const { signMessage } = await import("@wagmi/core");
+  const { getWagmiConfig } = await import("@/lib/reown");
+  const cfg = getWagmiConfig();
+  if (!cfg) throw new Error("Wallet not initialised. Please refresh and reconnect.");
+
+  let signature: string;
+  try {
+    signature = await signMessage(cfg, { account: walletAddress as `0x${string}`, message });
+  } catch (err: any) {
+    if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
+      throw new Error("Signature rejected. Action cancelled.");
+    }
+    throw new Error(err?.message ?? "Wallet signature failed");
+  }
+  return { nonce, signature };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Side = "buy" | "sell";
@@ -387,7 +437,7 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
   const [posted, setPosted] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
-  const { address: walletAddress } = useWalletStore();
+  const { address: walletAddress, network: walletNetwork } = useWalletStore();
   const qc = useQueryClient();
 
   const togglePayment = (m: string) =>
@@ -568,21 +618,32 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
                     ? (availAmt * 0.9)   // buyer intents: willing to give FIAT, get coin
                     : (availAmt * 0.9);  // seller intents: willing to give coin
 
-                  const makerAddr = walletAddress ?? `anon-${Math.random().toString(36).slice(2,8)}`;
+                  if (!walletAddress) {
+                    throw new Error("Connect a wallet to post an ad.");
+                  }
+                  const tokenIn   = adSide === "buy" ? fiat : coin;
+                  const tokenOut  = adSide === "buy" ? coin : fiat;
+                  const amountIn  = String(adSide === "buy" ? parseFloat(maxLimit || "1000") : availAmt);
+                  const minAmountOut = String(minAmtOut);
+                  const auth = await signP2PIfNeeded({
+                    walletAddress, network: walletNetwork, action: "post",
+                    targetFields: { tokenIn, tokenOut, amountIn, minAmountOut },
+                  });
                   const r = await fetch(`${BASE}/api/p2p/intents`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      makerAddress:  makerAddr,
-                      tokenIn:       adSide === "buy" ? fiat  : coin,
-                      tokenOut:      adSide === "buy" ? coin  : fiat,
-                      amountIn:      String(adSide === "buy" ? parseFloat(maxLimit || "1000") : availAmt),
-                      minAmountOut:  String(minAmtOut),
+                      makerAddress:  walletAddress,
+                      tokenIn,
+                      tokenOut,
+                      amountIn,
+                      minAmountOut,
                       price:         String(price),
                       fiat,
                       paymentMethods: selectedPayments.join(","),
                       terms,
                       expiresInMs: 24 * 60 * 60 * 1000,
+                      ...auth,
                     }),
                   });
                   if (!r.ok) {
@@ -680,7 +741,7 @@ export function P2P() {
   const [dtCancelId,  setDtCancelId]  = useState<string | null>(null);
   const [dtFilterCoin, setDtFilterCoin] = useState<DirectCoin | "ALL">("ALL");
 
-  const { address: walletAddress } = useWalletStore();
+  const { address: walletAddress, network: walletNetwork } = useWalletStore();
   const { open: openWalletModal }  = useWalletModalStore();
   const qcDirect = useQueryClient();
 
@@ -724,6 +785,10 @@ export function P2P() {
     if (!dtGiveAmt || !dtWantAmt || parseFloat(dtGiveAmt) <= 0 || parseFloat(dtWantAmt) <= 0) return;
     setDtPosting(true);
     try {
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "post",
+        targetFields: { tokenIn: dtGiveCoin, tokenOut: dtWantCoin, amountIn: dtGiveAmt, minAmountOut: dtWantAmt },
+      });
       const body = {
         makerAddress: walletAddress,
         tokenIn:  dtGiveCoin,
@@ -732,6 +797,7 @@ export function P2P() {
         minAmountOut: dtWantAmt,
         expiresInMs: dtExpiry,
         terms: dtCounterparty ? `private:${dtCounterparty.toLowerCase()}` : "",
+        ...auth,
       };
       const r = await fetch(`${BASE}/api/p2p/intents`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -754,9 +820,13 @@ export function P2P() {
     setDtFilling(true);
     setDtFillId(intentId);
     try {
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "fill",
+        targetFields: { intentId },
+      });
       const r = await fetch(`${BASE}/api/p2p/intents/${intentId}/fill`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ takerAddress: walletAddress, amountOut: wantAmt }),
+        body: JSON.stringify({ takerAddress: walletAddress, amountOut: wantAmt, ...auth }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Fill failed");
@@ -775,7 +845,15 @@ export function P2P() {
     if (!walletAddress) return;
     setDtCancelId(intentId);
     try {
-      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}?walletAddress=${walletAddress}`, { method: "DELETE" });
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "cancel",
+        targetFields: { intentId },
+      });
+      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress, ...auth }),
+      });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Cancel failed");
       qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
