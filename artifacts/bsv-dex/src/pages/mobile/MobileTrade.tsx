@@ -634,6 +634,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const headerUnread = useNotificationStore((s) => s.notifications.filter(n => !n.read).length);
   const [shareToastVisible, setShareToastVisible] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [side, setSide] = useState<Side>("buy");
@@ -1111,7 +1112,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           {/* Bell with unread badge */}
           <button onClick={() => setNotifOpen(true)} className="relative p-0.5">
             <Bell size={17} />
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
+            {headerUnread > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
+            )}
           </button>
           <button onClick={() => setStarred(s => !s)}>
             <Star size={17} className={starred ? "fill-green-400 text-green-400" : ""} />
