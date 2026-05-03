@@ -214,6 +214,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }
   }, [isOpen]);
 
+  // Lock body scroll while modal is open (prevents page bleed-through on mobile)
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [isOpen]);
+
   const [view, setView] = useState<View>("landing");
   const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -1053,12 +1067,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={handleClose} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl pointer-events-auto overflow-hidden flex flex-col max-h-[90vh]"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full sm:max-w-lg bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl pointer-events-auto overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90dvh] pb-[env(safe-area-inset-bottom)]"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
