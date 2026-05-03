@@ -63,6 +63,14 @@ interface Creator {
 interface Holding { coin_creator: string; holder: string; amount: number; username: string; symbol: string; price_usd: number; market_cap_usd: number; }
 
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+// Auto-generated coin symbols are the last few uppercase hex chars of the
+// creator's wallet address. Treat those as addresses so we hide them when a
+// real handle exists — trading is keyed off the handle, not the raw address.
+function isAddrLikeSymbol(s?: string) {
+  if (!s) return true;
+  const t = s.trim();
+  return t.length === 0 || /^[0-9A-F]{4,8}$/.test(t);
+}
 const MIN_ADDRESS_LIKE_LENGTH = 24;
 function isAddressLike(value: string) {
   const v = value.trim();
@@ -282,7 +290,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Avatar src={creator.avatar_url} name={creator.username} size={28} />
-                <span className="font-bold text-foreground">${creator.symbol}</span>
+                <span className="font-bold text-foreground">{creator.username || (isAddrLikeSymbol(creator.symbol) ? "Anon" : `$${creator.symbol}`)}</span>
               </div>
               <button onClick={onClose}><X size={20} className="text-muted-foreground" /></button>
             </div>
@@ -1027,7 +1035,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                 ) : (
                   holders.length > 0 ? holders.map(h => (
                     <div key={h.holder} className="flex items-center justify-between p-2 rounded-xl border border-border">
-                      <span className="text-xs font-mono text-muted-foreground">{shortAddr(h.holder)}</span>
+                      <span className="text-xs font-medium text-muted-foreground truncate">{(h as any).username ?? "Anon holder"}</span>
                       <span className="text-xs font-bold text-foreground">{fmtNum(h.amount)}</span>
                     </div>
                   )) : <p className="text-xs text-muted-foreground text-center py-4">No holders</p>
