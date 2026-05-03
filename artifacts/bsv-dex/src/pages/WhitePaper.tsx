@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.5.0";
-const PUBLISH_DATE = "17 April 2026";
+const VERSION = "4.6.0";
+const PUBLISH_DATE = "3 May 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -792,6 +792,9 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
                 <p>
                   OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Decimal places are computed as: <code className="text-green-400 text-[10px]">precision = max(2, ⌊log₁₀(price)⌋ × −1)</code> — so a price of $0.00042 renders to 5dp, $71,000 to 2dp. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
                 </p>
+                <p>
+                  <strong>Per-market dynamic fees (v4.6):</strong> Order placement now reads <code className="text-green-400 text-[10px]">takerFee</code> from the <code className="text-green-400 text-[10px]">markets</code> table for the relevant symbol (with a 0.1% fallback when the column is unset), so the fee written onto the order row matches what the matching engine and ledger actually deduct on settlement. Admin-tuned market fees take effect immediately, with no client-side or server-side redeploy.
+                </p>
               </Sub>
               <Sub title="7.2 Perpetual Futures — Up to 100x Leverage">
                 <p>OrahDEX perpetual futures are settled against mark prices computed from the Sovereign Price Engine:</p>
@@ -819,11 +822,15 @@ Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
 Position PnL  = (Exit Price − Entry Price) × Size × Direction
               (Direction: +1 for long, -1 for short)
 
-Liquidation Price (long):          [MaintenanceMargin = 0.005 = 0.5% of notional, default]
-  L_price = Entry Price × (1 − 1/Leverage + MaintenanceMargin)
+Liquidation Price (long):          [MaintenanceMargin (mmr) = 0.005 = 0.5% of notional, default]
+  L_price = Entry Price × (1 − (1 − mmr) / Leverage)
 
-Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional, default]
-  L_price = Entry Price × (1 + 1/Leverage − MaintenanceMargin)
+Liquidation Price (short):         [MaintenanceMargin (mmr) = 0.005 = 0.5% of notional, default]
+  L_price = Entry Price × (1 + (1 − mmr) / Leverage)
+
+  (Standard isolated-margin formula: liquidation occurs when the position's
+   loss equals (1 − mmr) of the posted margin, leaving the maintenance buffer
+   for the protocol to safely unwind. Equivalent price move = (1 − mmr) / Leverage.)
 
 Liquidation pipeline:
   1. Application server monitors mark price every 1 second for all open positions.
@@ -836,6 +843,8 @@ Liquidation Penalty:
   penalty = positionSize × penaltyRate   (penaltyRate = 0.50% of notional, default)
   Penalty is paid to the liquidation executor (Keeper), incentivising timely execution.`}</Code>
                 <p className="text-xs text-muted-foreground mt-2"><strong>Funding rate — economic rationale:</strong> The funding rate mechanism ensures perpetual futures prices converge to the underlying index price. When the perpetual price trades above index, longs pay shorts — incentivising shorts and disincentivising longs until prices revert. When perpetual trades below index, shorts pay longs — the reverse. The rate (1/3 coefficient, paid every 8 hours) is sized to create real economic pressure without being punitive to directional traders.</p>
+                <p className="text-xs text-muted-foreground mt-2"><strong>Funding-rate settlement (v4.6):</strong> Each 8-hour cycle the funding engine atomically debits each open position's locked margin by <code className="text-green-400 text-[10px]">qty × markPrice × fundingRate</code> (under <code className="text-green-400 text-[10px]">SELECT … FOR UPDATE</code> on the per-wallet margin row), records the charge on the position's <code className="text-green-400 text-[10px]">fundingFee</code> field, and reduces the position's <code className="text-green-400 text-[10px]">margin</code> accordingly. Underfunded positions are charged what's available and surfaced for the next liquidation tick. Funding is now real — not an internal accounting counter.</p>
+                <p className="text-xs text-muted-foreground mt-2"><strong>Dynamic taker fees (v4.6):</strong> Open and close fees on perpetuals read the per-market <code className="text-green-400 text-[10px]">takerFee</code> column from the markets table on every fill (with a 0.05% safety fallback), so any adjustment in the admin panel propagates to live execution without a redeploy.</p>
               </Sub>
               <Sub title="7.3 P2P Trading — Fiat ↔ Crypto with HTLC Escrow">
                 <p>Direct peer-to-peer trading with custom payment methods (bank transfer, mobile money, local fiat). Trades are secured by BSV HTLC escrow: funds are locked on-chain before the seller releases, and the HTLC self-refunds if the buyer fails to confirm within the time lock. OrahDEX's decentralised arbitration panel resolves disputes based on on-chain evidence.</p>
@@ -999,21 +1008,38 @@ High-Water Mark:
               </Sub>
               <Sub title="10.2 Payout Mechanism">
                 <p>
-                  Payouts follow a parimutuel (pool-based) model where the total pool is distributed among winners:
+                  Payouts follow a strict proportional pool distribution where every winning bet receives a leverage-weighted share of the round's total pool. The mathematics guarantee that the sum of all payouts equals the pool exactly — no winner can ever drain it ahead of others, and no funds can be created from thin air:
                 </p>
-                <pre className="bg-black/30 border border-border/30 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre">{`payout = (effectiveStake / winningPool) × totalPool
-effectiveStake = baseAmount × leverage
+                <pre className="bg-black/30 border border-border/30 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre">{`weight(bet)        = baseAmount × (1 + leverageBonus)
+                     leverageBonus = min((leverage − 1) × 0.05, 5)
+                     (1×→0,  100×→4.95)
+
+totalWeight        = Σ weight(bet) over all winning bets in the round
+payout(bet)        = weight(bet) / totalWeight × totalPool
+
+Σ payout(bet)      = totalPool        (guaranteed by construction)
+
+Refund-only round (winner = null, e.g. close == lock):
+  payout(bet)      = baseAmount       (original stake returned)
 
 Example:
-  Total Pool = $10,000
-  Bull Pool  = $4,000 (40%) → Bull Payout = 2.50x
-  Bear Pool  = $6,000 (60%) → Bear Payout = 1.67x
+  Total Pool   = $10,000
+  Winning side = Bull, with three bets:
+    A: $100 @  10× → weight = 100 × (1 + 0.45)  = 145
+    B: $200 @ 100× → weight = 200 × (1 + 4.95)  = 1,190
+    C: $400 @   1× → weight = 400 × (1 + 0)     = 400
+  totalWeight = 1,735
 
-  User bets $100 UP @ 10x leverage
-  effectiveStake = $1,000
-  If UP wins: payout = ($1,000 / $4,000) × $10,000 = $2,500`}</pre>
+  Payouts:
+    A → 145   / 1,735 × $10,000 ≈ $835.73
+    B → 1,190 / 1,735 × $10,000 ≈ $6,858.79
+    C → 400   / 1,735 × $10,000 ≈ $2,305.48
+  Σ                              = $10,000.00`}</pre>
                 <p>
-                  The leverage multiplier amplifies both the effective stake contribution and the proportional payout claim — but the maximum loss is always capped at the base bet amount, making leveraged prediction trading a bounded-risk instrument.
+                  The leverage bonus amplifies a winning bet's share of the pool but is mathematically bounded so the pool is never overdrawn; losing bets contribute their full stake to the winners' pool. Maximum loss is always capped at the base bet amount, making leveraged prediction trading a bounded-risk instrument.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <strong>v4.6 fairness upgrade:</strong> Earlier versions computed each winner's payout independently and capped only the per-bet payout, which allowed the first claimer to drain the pool while later winners received nothing. The new proportional model distributes the pool atomically across all winning bets.
                 </p>
               </Sub>
               <Sub title="10.3 Technical Integration">
@@ -1255,7 +1281,16 @@ OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
                   <li>Open-source protocol code — no security through obscurity</li>
                 </ul>
               </Sub>
-              <Sub title="13.4 Protocol-Level Attack Mitigations">
+              <Sub title="13.4 Money-Handling Integrity (v4.6)">
+                <p>Four independent ledger-level guarantees were strengthened in this release. Each addresses a real-money correctness bug surfaced by an end-to-end audit:</p>
+                <ul className="list-disc list-inside space-y-1.5 ml-1">
+                  <li><strong>Withdrawal auto-refund.</strong> If on-chain processing throws after the user's balance has already been debited, the request is now atomically refunded and marked <code className="text-green-400 text-[10px]">failed</code> under a <code className="text-green-400 text-[10px]">SELECT … FOR UPDATE</code> guard — no withdrawal can remain stuck in <code className="text-green-400 text-[10px]">pending</code> with debited funds.</li>
+                  <li><strong>Default swap slippage cap.</strong> When a client omits <code className="text-green-400 text-[10px]">minAmountOut</code>, the swap engine enforces a server-side 5% maximum slippage from the quoted output, so a malformed or malicious request can no longer be filled at any arbitrarily bad rate.</li>
+                  <li><strong>Atomic ledger unlock.</strong> The <code className="text-green-400 text-[10px]">unlockFunds</code> primitive (used on order cancel and refund paths) is now a single transaction that locks the row, reads the locked value, and moves the smaller of (requested, locked) from <code className="text-green-400 text-[10px]">locked → available</code>. Funds can no longer be stranded between two separate updates.</li>
+                  <li><strong>Proportional prediction payouts.</strong> Prediction round payouts are distributed as a leverage-weighted share of the total pool such that <code className="text-green-400 text-[10px]">Σ payouts ≡ pool</code> by construction — no claimer can drain ahead of others, no money is created.</li>
+                </ul>
+              </Sub>
+              <Sub title="13.5 Protocol-Level Attack Mitigations">
                 <p className="font-semibold text-sm mb-2">Futures Liquidation — 3-Sample Confirmation Window</p>
                 <p>The liquidation engine uses a 3-sample confirmation window to prevent single-tick mark-price manipulation from triggering liquidations. A position is only liquidated when the mark price crosses the liquidation threshold for three consecutive 1-second samples. A single manipulated tick cannot trigger liquidation.</p>
 
