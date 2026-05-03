@@ -89,26 +89,51 @@ async function fetchBtcUsd(): Promise<number> {
   return FALLBACK_PRICES["BTC"] ?? 70000;
 }
 
-/* ── Fetch key prices from Binance + WhatsOnChain ──────────────────────────── */
+/* ── Fetch key prices from Coinbase (primary) + Binance (fallback) + WoC ──── */
+// Coinbase Exchange public stats endpoint isn't geo-restricted from most regions,
+// while Binance is blocked from many cloud regions including Replit. We try
+// Coinbase first; if it fails, fall back to Binance, then to FALLBACK_PRICES.
+async function fetchSpotPair(symbol: string): Promise<{ usd: number; change24h: number } | null> {
+  // Coinbase Exchange — gives last price + 24h open for change%
+  try {
+    const r = await fetch(`https://api.exchange.coinbase.com/products/${symbol}-USD/stats`,
+      { signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const d = await r.json() as { last?: string; open?: string };
+      const usd = parseFloat(d.last ?? "0");
+      const open = parseFloat(d.open ?? "0");
+      if (usd > 0) {
+        const change24h = open > 0 ? ((usd - open) / open) * 100 : 0;
+        return { usd, change24h };
+      }
+    }
+  } catch {}
+  // Binance fallback (works in some regions)
+  try {
+    const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`,
+      { signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const d = await r.json() as { lastPrice?: string; priceChangePercent?: string };
+      const usd = parseFloat(d.lastPrice ?? "0");
+      if (usd > 0) return { usd, change24h: parseFloat(d.priceChangePercent ?? "0") };
+    }
+  } catch {}
+  return null;
+}
+
 async function fetchKeyPrices() {
   const results: Record<string, { usd: number; change24h: number }> = {
     USDT: { usd: 1, change24h: 0 },
     USDC: { usd: 1, change24h: 0 },
   };
   try {
-    const [btcRes, ethRes, bsvRes] = await Promise.allSettled([
-      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", { signal: AbortSignal.timeout(4000) }),
-      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", { signal: AbortSignal.timeout(4000) }),
-      fetch(`${BSV_NET.wocBase}/exchangerate`,                             { signal: AbortSignal.timeout(4000) }),
+    const [btc, eth, bsvRes] = await Promise.allSettled([
+      fetchSpotPair("BTC"),
+      fetchSpotPair("ETH"),
+      fetch(`${BSV_NET.wocBase}/exchangerate`, { signal: AbortSignal.timeout(4000) }),
     ]);
-    if (btcRes.status === "fulfilled" && btcRes.value.ok) {
-      const d = await btcRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
-      results["BTC"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["BTC"] ?? 70000), change24h: parseFloat(d.priceChangePercent ?? "0") };
-    }
-    if (ethRes.status === "fulfilled" && ethRes.value.ok) {
-      const d = await ethRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
-      results["ETH"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["ETH"] ?? 2152), change24h: parseFloat(d.priceChangePercent ?? "0") };
-    }
+    if (btc.status === "fulfilled" && btc.value) results["BTC"] = btc.value;
+    if (eth.status === "fulfilled" && eth.value) results["ETH"] = eth.value;
     if (bsvRes.status === "fulfilled" && bsvRes.value.ok) {
       const d = await bsvRes.value.json() as { rate?: number };
       if (d.rate && d.rate > 0) {
