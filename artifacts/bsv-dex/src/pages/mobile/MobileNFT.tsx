@@ -224,6 +224,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
+  const nativeSymbol = isEvm && !isOrahWallet ? (nativeEvmBalance?.symbol ?? "ETH") : "BSV";
   const availableLabel = isEvm && !isOrahWallet
     ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
@@ -351,7 +352,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {mode === "buy" ? (
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>BSV to spend</label>
+                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>{nativeSymbol} to spend</label>
                   {availableLabel && (
                     <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
                       Available: <span className="font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
@@ -361,7 +362,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientFunds ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="0.001" step="0.001" value={bsvAmount} onChange={e => setBsvAmount(e.target.value)} />
-                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>BSV</span>
+                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{nativeSymbol}</span>
                 </div>
                 {insufficientFunds && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient balance</p>}
                 <div className="flex gap-1.5 mt-1.5">
@@ -390,7 +391,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                   <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{creator.symbol}</span>
                 </div>
                 {insufficientTokens && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient token balance</p>}
-                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} BSV · impact {quote.priceImpact}%</p>}
+                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} {nativeSymbol} · impact {quote.priceImpact}%</p>}
               </div>
             )}
 
