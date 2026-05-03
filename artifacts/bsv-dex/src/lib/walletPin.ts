@@ -75,15 +75,18 @@ function url2b64(url: string): string {
   return pad === 0 ? s : s + "=".repeat(4 - pad);
 }
 
-function randomBytes(n: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(n));
+function randomBytes(n: number): Uint8Array<ArrayBuffer> {
+  const ab = new ArrayBuffer(n);
+  const u  = new Uint8Array(ab);
+  crypto.getRandomValues(u);
+  return u as Uint8Array<ArrayBuffer>;
 }
 
 // ─── Key derivation ──────────────────────────────────────────────────────────
 
 async function deriveKeyFromPin(
   pin:   string,
-  salt:  Uint8Array,
+  salt:  Uint8Array<ArrayBuffer>,
   usage: "encrypt" | "decrypt",
 ): Promise<CryptoKey> {
   const km = await crypto.subtle.importKey(
@@ -105,7 +108,7 @@ async function deriveKeyFromPin(
 /** Convert a 32-byte authenticator PRF secret into an AES-GCM key via HKDF. */
 async function deriveKeyFromPrf(
   prfSecret: ArrayBuffer,
-  salt:      Uint8Array,
+  salt:      Uint8Array<ArrayBuffer>,
   usage:     "encrypt" | "decrypt",
 ): Promise<CryptoKey> {
   const km = await crypto.subtle.importKey(
