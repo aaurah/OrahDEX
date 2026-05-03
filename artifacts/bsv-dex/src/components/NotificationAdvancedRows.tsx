@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Monitor, BellOff, Filter, CheckCircle2, X } from "lucide-react";
+import { Monitor, BellOff, Filter, CheckCircle2, X, Play, Info as InfoIcon } from "lucide-react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "@/lib/notificationCategories";
 import {
   requestDesktopPermission,
   getDesktopPermission,
+  playTestNotification,
+  hasVibrationSupport,
 } from "@/lib/notificationFx";
 import { cn } from "@/lib/utils";
 
@@ -56,8 +58,45 @@ export function NotificationAdvancedRows({ Row, Toggle }: {
     else setMuted([...muted, cat]);
   };
 
+  const vibrationSupported = hasVibrationSupport();
+
   return (
     <>
+      {/* Test button — verify sound + vibration are actually firing */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/40">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+            <Play className="w-4 h-4 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">Test Notification</p>
+            <p className="text-[11px] text-muted-foreground">
+              {vibrationSupported
+                ? "Tap to test sound + vibration"
+                : "Tap to test sound (vibration not supported on iOS Safari)"}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={playTestNotification}
+          className="px-3 py-1.5 text-[11px] font-semibold rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity shrink-0"
+        >
+          Test
+        </button>
+      </div>
+
+      {/* iOS-specific note */}
+      {!vibrationSupported && (
+        <div className="px-4 py-2 border-b border-border/40 bg-amber-500/5">
+          <div className="flex items-start gap-2">
+            <InfoIcon className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[10px] text-amber-400/90 leading-relaxed">
+              iOS limitation: vibration isn't available in Safari. Sound also requires your iPhone's silent switch to be <b>off</b> and the page to have been tapped at least once.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Desktop notifications */}
       <Row
         icon={Monitor}

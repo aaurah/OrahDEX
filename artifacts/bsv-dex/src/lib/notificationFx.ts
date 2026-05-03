@@ -12,6 +12,7 @@ import type { NotifType, AppNotification } from "@/store/useNotificationStore";
 import { CATEGORY_OF } from "@/lib/notificationCategories";
 
 let _ctx: AudioContext | null = null;
+let _unlocked = false;
 
 function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -26,6 +27,26 @@ function getCtx(): AudioContext | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * iOS Safari requires a synchronous user-gesture call that both resumes the
+ * AudioContext AND plays a (silent) buffer before any subsequent audio will
+ * actually be audible. Call this from inside a pointerdown/touchstart handler.
+ */
+function unlockIosAudio() {
+  const ctx = getCtx();
+  if (!ctx || _unlocked) return;
+  try {
+    if (ctx.state === "suspended") void ctx.resume();
+    // Play a 1-sample silent buffer — the "iOS unlock trick".
+    const buf = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0);
+    _unlocked = true;
+  } catch { /* ignore */ }
 }
 
 interface ToneSpec { freq: number; dur: number; gain: number; type?: OscillatorType }
@@ -178,7 +199,21 @@ export function getDesktopPermission(): NotificationPermission | "unsupported" {
 
 /** Prime the audio context on first user gesture (browsers require this). */
 export function primeAudioContext() {
-  const ctx = getCtx();
-  if (!ctx) return;
-  if (ctx.state === "suspended") void ctx.resume();
+  unlockIosAudio();
+}
+
+/** Play a sample chime so the user can verify their sound/haptics setup. */
+export function playTestNotification() {
+  unlockIosAudio();
+  try { playTones(tonesFor("price_alert")); } catch { /* ignore */ }
+  try {
+    const nav = typeof navigator !== "undefined" ? navigator : null;
+    if (nav && typeof nav.vibrate === "function") nav.vibrate(vibratePattern("price_alert"));
+  } catch { /* ignore */ }
+}
+
+/** True when navigator.vibrate exists (iOS Safari does not support it). */
+export function hasVibrationSupport(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return typeof navigator.vibrate === "function";
 }
