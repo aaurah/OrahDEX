@@ -1044,6 +1044,34 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         </div>
 
+        {/* Two-ledger gap hint — Orah Wallet trades from the internal exchange
+            ledger, but the user's actual on-chain balance may be higher. Surface
+            both so users don't think their funds are lost. */}
+        {address && usesApiBalance && (() => {
+          const onChain  = side === "buy" ? walletQuote : walletBase;
+          const tradable = side === "buy" ? internalQuote : internalBase;
+          const gap = onChain - tradable;
+          if (gap <= 1e-9) return null;
+          return (
+            <a
+              href="/wallet"
+              className="flex items-center justify-between gap-2 text-[11px] leading-tight px-2.5 py-2 rounded-lg bg-cyan-500/8 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/12 transition-colors -mt-0.5"
+            >
+              <span>
+                In your wallet:&nbsp;
+                <span className="font-semibold font-mono">
+                  {onChain.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym}
+                </span>
+                {" "}— deposit{" "}
+                <span className="font-semibold font-mono">
+                  {gap.toLocaleString("en-US", { maximumFractionDigits: 6 })}
+                </span>
+                {" "}to trade with full balance
+              </span>
+              <span className="text-cyan-300 font-semibold shrink-0">Open wallet →</span>
+            </a>
+          );
+        })()}
         {/* Low balance hint */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">

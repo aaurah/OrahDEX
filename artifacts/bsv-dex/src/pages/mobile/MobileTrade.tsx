@@ -1922,6 +1922,34 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
+              {/* Two-ledger gap hint — Orah Wallet users sometimes have on-chain
+                  balance that hasn't been credited to the internal exchange ledger.
+                  Surface BOTH numbers so users don't think their funds are lost. */}
+              {address && usesApiBalance && (() => {
+                const onChain  = side === "buy" ? walletQuoteBalance : walletBaseBalance;
+                const tradable = side === "buy" ? internalQuoteBalance : internalBaseBalance;
+                const gap = onChain - tradable;
+                if (gap <= 1e-9) return null;
+                return (
+                  <button
+                    onClick={() => setFundingSheetOpen(true)}
+                    className="w-full flex items-center justify-between gap-2 text-[10px] leading-tight px-2 py-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/15 transition-colors text-left"
+                  >
+                    <span>
+                      In your wallet:&nbsp;
+                      <span className="font-semibold tabular-nums">
+                        {onChain.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })} {availableSym}
+                      </span>
+                      {" "}— deposit{" "}
+                      <span className="font-semibold tabular-nums">
+                        {gap.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })}
+                      </span>
+                      {" "}to trade with full balance
+                    </span>
+                    <Plus size={12} strokeWidth={3} className="shrink-0" />
+                  </button>
+                );
+              })()}
               {/* Low balance hint — shown when no balance available on any source */}
               {address && available === 0 && !apiBalancesLoading && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
