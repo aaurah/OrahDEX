@@ -333,7 +333,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             )}
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
+                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} ${isAddrLikeSymbol(creator.symbol) ? "tokens" : `$${creator.symbol}`}` : `${safePrice(quote.bsvOut)} ${nativeSymbol}`}</span></div>
                 <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD_PERCENT ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
