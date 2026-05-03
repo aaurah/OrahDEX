@@ -2,6 +2,12 @@ import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { issueTradeChallenge, verifyTradeSignature } from "../lib/walletAuth.js";
+import { isInternalEvmWallet } from "../lib/internalEvmWallet.js";
+
+function isEvmAddress(s: unknown): s is string {
+  return typeof s === "string" && /^0x[0-9a-fA-F]{40}$/.test(s);
+}
 
 const router: IRouter = Router();
 function uid() { return crypto.randomUUID(); }
@@ -212,9 +218,60 @@ router.post("/social/creators/:address/update", async (req, res) => {
   }
 });
 
+/* ── POST /social/trade/challenge ─────────────────────────────────────────── */
+// Mint a single-use, 5-minute signing challenge for a creator-coin trade.
+// External EVM wallets must sign this and pass nonce+signature to /trade.
+router.post("/social/trade/challenge", (req, res) => {
+  try {
+    const { walletAddress, creator, side, amount, asset } = req.body as Record<string, any>;
+    if (!isEvmAddress(walletAddress)) { res.status(400).json({ error: "walletAddress must be a 0x… EVM address" }); return; }
+    if (!isEvmAddress(creator) && typeof creator !== "string") { res.status(400).json({ error: "creator is required" }); return; }
+    if (side !== "buy" && side !== "sell") { res.status(400).json({ error: "side must be buy or sell" }); return; }
+    const amt = String(amount ?? "");
+    if (!amt || !Number.isFinite(parseFloat(amt))) { res.status(400).json({ error: "amount is required" }); return; }
+    const a = String(asset ?? "BSV").toUpperCase();
+    const challenge = issueTradeChallenge({ walletAddress, creator: String(creator), side, amount: amt, asset: a });
+    res.json(challenge);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to issue challenge" });
+  }
+});
+
 /* ── POST /social/creators/:address/trade ─────────────────────────────────── */
 router.post("/social/creators/:address/trade", async (req, res) => {
   try {
+    // ── Require a signed challenge for external EVM traders ────────────────
+    const reqTrader = (req.body as any)?.trader;
+    if (isEvmAddress(reqTrader)) {
+      const internal = await isInternalEvmWallet(reqTrader);
+      const sig   = (req.body as any)?.signature;
+      const nonce = (req.body as any)?.nonce;
+      if (!internal) {
+        if (typeof sig !== "string" || typeof nonce !== "string") {
+          const recheck = await isInternalEvmWallet(reqTrader);
+          if (!recheck) {
+            res.status(401).json({ error: "Signed challenge required. Call POST /api/social/trade/challenge first." });
+            return;
+          }
+        } else {
+          const side = (req.body as any)?.trade_type;
+          const amount = side === "buy"
+            ? String((req.body as any)?.bsv_amount ?? "")
+            : String((req.body as any)?.token_amount ?? "");
+          const asset = String((req.body as any)?.payment_asset ?? "BSV").toUpperCase();
+          try {
+            verifyTradeSignature({
+              walletAddress: reqTrader, nonce, signature: sig,
+              creator: req.params.address, side, amount, asset,
+            });
+          } catch (e: any) {
+            res.status(401).json({ error: e?.message ?? "Invalid signature" });
+            return;
+          }
+        }
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

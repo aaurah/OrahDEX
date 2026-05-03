@@ -706,6 +706,86 @@ export function verifyP2PSignature(params: {
   p2pNonces.delete(addr);
 }
 
+// ── Creator-coin trade nonce store ───────────────────────────────────────────
+// Single-use, 5-minute nonces for POST /social/creators/:address/trade.
+// Bound to (action, creator, side, amount) so a captured challenge cannot be
+// replayed against a different trade.
+
+interface TradeNonce {
+  nonce:     string;
+  message:   string;
+  creator:   string;   // creator address (lowercase)
+  side:      "buy" | "sell";
+  amount:    string;   // raw input amount (paymentAsset units for buy, tokens for sell)
+  asset:     string;   // payment asset symbol (uppercase)
+  expiresAt: number;
+}
+
+const tradeNonces = new Map<string, TradeNonce>();
+const TRADE_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of tradeNonces.entries()) {
+    if (v.expiresAt < now) tradeNonces.delete(k);
+  }
+}, TRADE_NONCE_TTL_MS).unref();
+
+export function issueTradeChallenge(params: {
+  walletAddress: string;
+  creator:       string;
+  side:          "buy" | "sell";
+  amount:        string;
+  asset:         string;
+}): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts    = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX trade\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Creator: ${params.creator}\n` +
+    `Side: ${params.side}\n` +
+    `Amount: ${params.amount} ${params.asset.toUpperCase()}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  tradeNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    creator:   params.creator.toLowerCase(),
+    side:      params.side,
+    amount:    params.amount,
+    asset:     params.asset.toUpperCase(),
+    expiresAt: Date.now() + TRADE_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyTradeSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  creator:       string;
+  side:          "buy" | "sell";
+  amount:        string;
+  asset:         string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = tradeNonces.get(addr);
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error("Trade challenge expired or not found. Request a fresh challenge.");
+  }
+  if (stored.nonce !== params.nonce)               throw new Error("Trade nonce mismatch.");
+  if (stored.creator !== params.creator.toLowerCase()) throw new Error("Trade challenge creator mismatch.");
+  if (stored.side !== params.side)                 throw new Error("Trade challenge side mismatch.");
+  if (stored.amount !== params.amount)             throw new Error("Trade challenge amount mismatch.");
+  if (stored.asset !== params.asset.toUpperCase()) throw new Error("Trade challenge asset mismatch.");
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  tradeNonces.delete(addr);
+}
+
 // ── Consumed order nonce store ────────────────────────────────────────────────
 // Tracks used (walletAddress, nonce) pairs for spot orders to prevent replay.
 // Entries are pruned lazily once their expiry has passed.

@@ -15,6 +15,7 @@ import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { useLocation } from "wouter";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
+import { signTradeIfNeeded } from "@/lib/tradeSig";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -255,6 +256,13 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
     if (!canTrade) return;
     setLoading(true); setError("");
     try {
+      const amountStr = mode === "buy"
+        ? String(parseFloat(bsvAmount))
+        : String(parseFloat(tokenAmount));
+      const sig = await signTradeIfNeeded({
+        walletAddress: address, network, isOrahWallet,
+        creator: creator.address, side: mode, amount: amountStr, asset: nativeSymbol,
+      });
       const res = await fetch(`${API}/social/creators/${creator.address}/trade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,6 +271,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
           bsv_amount: mode === "buy" ? parseFloat(bsvAmount) : undefined,
           token_amount: mode === "sell" ? parseFloat(tokenAmount) : undefined,
           payment_asset: nativeSymbol,
+          ...(sig.nonce && sig.signature ? { nonce: sig.nonce, signature: sig.signature } : {}),
         }),
       });
       const d = await res.json();
