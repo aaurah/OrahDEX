@@ -2180,12 +2180,16 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
                     <Avatar src={c.avatar_url} name={c.username} size={38} ring />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
-                        <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{c.username}</span>
+                        <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>
+                          {c.username && !/^0x[0-9a-f]+$/i.test(c.username) ? c.username : "Anon creator"}
+                        </span>
                         {c.is_verified && <BadgeCheck size={11} style={{ color: "var(--color-accent)" }} />}
                       </div>
                       <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
-                        <span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>
-                        {" "}· {fmtNum(c.holder_count ?? 0)} holders · <ChainBadge chain="BSV" />
+                        {!isAddrLikeSymbol(c.symbol) && (
+                          <><span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>{" · "}</>
+                        )}
+                        {fmtNum(c.holder_count ?? 0)} holders · <ChainBadge chain="BSV" />
                       </div>
                     </div>
                     <div className="text-right shrink-0">
