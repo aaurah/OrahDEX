@@ -79,6 +79,10 @@ export type QuoteCurrencyCode = string;
 interface SettingsState {
   quoteCurrency: QuoteCurrencyCode;
   setQuoteCurrency: (code: QuoteCurrencyCode) => void;
+  soundEnabled: boolean;
+  setSoundEnabled: (v: boolean) => void;
+  hapticsEnabled: boolean;
+  setHapticsEnabled: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -86,6 +90,10 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       quoteCurrency: "USDT",
       setQuoteCurrency: (code) => set({ quoteCurrency: code }),
+      soundEnabled: true,
+      setSoundEnabled: (v) => set({ soundEnabled: v }),
+      hapticsEnabled: true,
+      setHapticsEnabled: (v) => set({ hapticsEnabled: v }),
     }),
     { name: "orahdex-settings-v1" }
   )

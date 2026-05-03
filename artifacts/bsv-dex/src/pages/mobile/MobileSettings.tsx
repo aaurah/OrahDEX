@@ -4,7 +4,7 @@ import {
   Activity, LogOut, Info, FileText, ChevronRight,
   CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
-  Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key,
+  Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key, Volume2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -100,13 +100,16 @@ export function MobileSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
+  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const [, navigate] = useLocation();
   const alertsEnabled = usePriceAlertsStore((s) => s.enabled);
   const setAlertsEnabled = usePriceAlertsStore((s) => s.setEnabled);
   const alertsCount = usePriceAlertsStore((s) => s.alerts.length);
   const activeAlerts = usePriceAlertsStore((s) => s.alerts.filter((a) => a.triggeredAt === null).length);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [haptics, setHaptics] = useState(true);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
 
@@ -211,9 +214,14 @@ export function MobileSettings() {
           }
         />
         <Row
+          icon={Volume2}
+          label="Notification Sound"
+          rightEl={<Toggle value={soundEnabled} onChange={setSoundEnabled} />}
+        />
+        <Row
           icon={Activity}
           label="Haptic Feedback"
-          rightEl={<Toggle value={haptics} onChange={setHaptics} />}
+          rightEl={<Toggle value={hapticsEnabled} onChange={setHapticsEnabled} />}
         />
       </Section>
 
