@@ -57,9 +57,14 @@ export function MediaCapture({ open, onClose, onSelect, accept = "image/*", init
     onClose();
   }
 
+  const portalTarget = typeof document !== "undefined"
+    ? (document.getElementById("modal-root") ?? document.body)
+    : null;
+  if (!portalTarget) return null;
+
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center"
-         style={{ background: "rgba(0,0,0,0.85)" }} onClick={onClose}>
+    <div className="fixed inset-0 flex items-end sm:items-center justify-center"
+         style={{ background: "rgba(0,0,0,0.85)", zIndex: 2147483647, pointerEvents: "auto" }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
            className="w-full sm:max-w-lg sm:rounded-2xl rounded-t-3xl flex flex-col"
            style={{ background: "var(--color-bg, #0a0a0a)", maxHeight: "92vh", border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -117,7 +122,7 @@ export function MediaCapture({ open, onClose, onSelect, accept = "image/*", init
         )}
       </div>
     </div>,
-    document.body,
+    portalTarget,
   );
 }
 
