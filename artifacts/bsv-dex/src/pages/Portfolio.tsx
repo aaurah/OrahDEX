@@ -11,6 +11,7 @@ import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { BuyHistory } from "@/components/BuyHistory";
+import { BridgeHistory } from "@/components/BridgeHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -905,6 +906,11 @@ export function Portfolio() {
               usd: (o.fiat_amount_cents / 100).toFixed(2),
             })}
           />
+        </div>
+
+        {/* ── Bridge / Cross-Chain Swap History ───────────────────────── */}
+        <div className="mt-6">
+          <BridgeHistory />
         </div>
 
         {/* ── LP Positions ───────────────────────────────────────────────── */}
