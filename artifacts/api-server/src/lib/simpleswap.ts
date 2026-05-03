@@ -21,16 +21,19 @@ const API_KEY = process.env.SIMPLESWAP_API_KEY ?? "";
 
 /* OrahDEX coin symbol → SimpleSwap currency ticker.
    Tickers verified against SimpleSwap's `/get_all_currencies` endpoint. */
+/* Verified live against /get_all_currencies + /get_estimated (May 2026).
+   DOT is intentionally absent: SimpleSwap has no clean native-Polkadot ticker
+   (only `dotassethub` / `dotbsc`), so DOT small-orders are unsupported; orders
+   ≥ $122 still fulfill via LetsExchange. */
 export const SS_COIN_TICKER: Record<string, string> = {
   BTC:   "btc",
   ETH:   "eth",
   BSV:   "bsv",
-  BNB:   "bnbbsc",
+  BNB:   "bnb-bsc",
   SOL:   "sol",
   XRP:   "xrp",
   ADA:   "ada",
   DOGE:  "doge",
-  DOT:   "dot",
   AVAX:  "avaxc",
   MATIC: "pol",
   USDT:  "usdterc20",
