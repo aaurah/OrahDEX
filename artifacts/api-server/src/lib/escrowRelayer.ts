@@ -104,6 +104,25 @@ export interface EscrowDeposit {
   released:  boolean;
 }
 
+/**
+ * Scan every deployed escrow contract for a deposit matching this orderId.
+ * Returns the chainId where the deposit lives, or null when no chain has it.
+ *
+ * This is what makes "auto-detect chain" work: users can lock on any chain
+ * where escrow is deployed, and the relayer finds them without having to
+ * trust the order metadata. Reads are parallel so total time is ~max(rpc).
+ */
+export async function findEscrowChain(orderId: string): Promise<number | null> {
+  const chainIds = Object.keys(ESCROW_ADDRESSES).map(Number);
+  const results = await Promise.all(
+    chainIds.map(async (cid) => {
+      const dep = await getEscrowDeposit(orderId, cid);
+      return dep && !dep.released ? cid : null;
+    }),
+  );
+  return results.find((c): c is number => c !== null) ?? null;
+}
+
 export async function getEscrowDeposit(
   orderId: string,
   chainId: number,
@@ -232,32 +251,60 @@ export interface SettleEscrowMatchResult {
  */
 export async function settleEscrowMatch(
   p: SettleEscrowMatchParams,
-): Promise<SettleEscrowMatchResult & { bothLocked: boolean; skipReason?: string }> {
-  // Pre-flight: confirm BOTH sides have a live, unreleased deposit.
-  const [sellerDep, buyerDep] = await Promise.all([
-    getEscrowDeposit(p.sellerOrderId, p.chainId),
-    getEscrowDeposit(p.buyerOrderId,  p.chainId),
+): Promise<SettleEscrowMatchResult & {
+  bothLocked: boolean;
+  skipReason?: string;
+  resolvedChainId?: number;
+}> {
+  // ── Auto-detect: which chain does each leg live on? ─────────────────────
+  // Don't trust the caller's chainId hint; scan all deployed escrows.
+  // This is what makes the system robust against wallets switching chains
+  // mid-flow and against a buyer/seller using different L2s.
+  const [sellerChain, buyerChain] = await Promise.all([
+    findEscrowChain(p.sellerOrderId),
+    findEscrowChain(p.buyerOrderId),
   ]);
 
-  const sellerLocked = !!sellerDep && !sellerDep.released;
-  const buyerLocked  = !!buyerDep  && !buyerDep.released;
-
-  if (!sellerLocked || !buyerLocked) {
-    const missing = !sellerLocked && !buyerLocked
-      ? "neither side locked"
-      : !sellerLocked
-        ? `seller did not lock (orderId ${p.sellerOrderId})`
-        : `buyer did not lock (orderId ${p.buyerOrderId})`;
+  // Case 1: neither side actually locked → safe no-op.
+  if (sellerChain === null && buyerChain === null) {
     return {
       bothLocked: false,
-      skipReason: `unsafe to release: ${missing}`,
-      baseLeg:  { ok: false, reason: `safety gate: ${missing}` },
-      quoteLeg: { ok: false, reason: `safety gate: ${missing}` },
+      skipReason: "neither side has a live escrow deposit",
+      baseLeg:  { ok: false, reason: "safety gate: neither side locked" },
+      quoteLeg: { ok: false, reason: "safety gate: neither side locked" },
     };
   }
 
-  // Both locked → safe to release each leg.
-  const baseLeg  = await releaseEscrow(p.sellerOrderId, p.buyerAddress,  p.chainId);
-  const quoteLeg = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, p.chainId);
-  return { bothLocked: true, baseLeg, quoteLeg };
+  // Case 2: only one side locked → DO NOT release. Their funds stay safe
+  // in escrow; user can call cancel() to recover. Releasing would send
+  // their funds to a counterparty who paid nothing.
+  if (sellerChain === null || buyerChain === null) {
+    const missing = sellerChain === null ? "seller" : "buyer";
+    return {
+      bothLocked: false,
+      skipReason: `${missing} did not complete on-chain lock`,
+      baseLeg:  { ok: false, reason: `safety gate: ${missing} did not lock` },
+      quoteLeg: { ok: false, reason: `safety gate: ${missing} did not lock` },
+    };
+  }
+
+  // Case 3: both locked but on DIFFERENT chains → no protocol can move
+  // tokens across chains within a single contract call. We need a real
+  // cross-chain bridge (LayerZero/Across/HTLC) to settle this safely.
+  // Until that's built, leave funds in their respective escrows.
+  if (sellerChain !== buyerChain) {
+    return {
+      bothLocked: false,
+      skipReason: `cross-chain settlement not supported (seller on ${sellerChain}, buyer on ${buyerChain})`,
+      baseLeg:  { ok: false, reason: `cross-chain: seller=${sellerChain} buyer=${buyerChain}` },
+      quoteLeg: { ok: false, reason: `cross-chain: seller=${sellerChain} buyer=${buyerChain}` },
+      resolvedChainId: sellerChain,
+    };
+  }
+
+  // Case 4: both locked on the same chain → safe to release each leg.
+  const chainId = sellerChain;
+  const baseLeg  = await releaseEscrow(p.sellerOrderId, p.buyerAddress,  chainId);
+  const quoteLeg = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, chainId);
+  return { bothLocked: true, baseLeg, quoteLeg, resolvedChainId: chainId };
 }

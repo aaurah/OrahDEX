@@ -554,12 +554,37 @@ router.post("/orders", async (req, res) => {
               req.log.info(
                 {
                   tradeId,
-                  chainId:  releaseChainId,
+                  hintChainId: releaseChainId,
+                  resolvedChainId: result.resolvedChainId,
+                  bothLocked: result.bothLocked,
+                  skipReason: result.skipReason,
                   baseLeg:  result.baseLeg,
                   quoteLeg: result.quoteLeg,
                 },
                 "orders: escrow release attempted for both legs",
               );
+
+              // ── Surface safety-gate failures to BOTH users ────────────────
+              // If we skipped release because one side didn't lock (or chains
+              // mismatched), tell the user clearly. Their funds — if locked —
+              // remain safe in escrow; they can cancel to recover.
+              if (!result.bothLocked && result.skipReason) {
+                const friendly = result.skipReason.includes("cross-chain")
+                  ? "Match found on different chains — cross-chain settlement coming soon. Cancel to refund your locked funds."
+                  : result.skipReason.includes("seller did not")
+                    ? "Counterparty (seller) didn't complete on-chain lock. If you locked, your funds are safe — cancel to refund."
+                    : result.skipReason.includes("buyer did not")
+                      ? "Counterparty (buyer) didn't complete on-chain lock. If you locked, your funds are safe — cancel to refund."
+                      : "Match could not settle on-chain. Funds locked in escrow remain safe — cancel to refund.";
+                for (const addr of [buyerAddress, sellerAddress]) {
+                  pushNotification(addr, {
+                    type:  "settlement_skipped",
+                    title: "On-chain settlement skipped",
+                    body:  friendly,
+                    pair:  symbol,
+                  });
+                }
+              }
               // Notify both parties when on-chain release succeeded.
               if (result.baseLeg.ok && result.baseLeg.txHash) {
                 pushNotification(buyerAddress, {
