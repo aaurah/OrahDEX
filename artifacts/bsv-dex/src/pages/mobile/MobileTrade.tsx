@@ -387,13 +387,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
   const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
 
-  // ── Compute amounts locked in open orders for THIS market ──────────────────
+  // ── Compute amounts locked in open orders ACROSS ALL markets ──────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
-  // an order fills. We subtract open-order amounts client-side so the UI shows
-  // the real "available to place new orders" figure.
-  // lockedSellQty: base asset quantity reserved in open sell orders.
-  const lockedSellQty = openOrders
-    .filter((o: any) => o.side === "sell" && o.symbol === symbol)
+  // an order fills. We must subtract every open order that locks the same
+  // asset, not just orders on the current pair — e.g. an open BUY on APE/ETH
+  // locks ETH, and that same ETH can't be used to BUY 0G on 0G/ETH.
+  // For sells the base of each order locks; for buys the quote of each order locks.
+  const allOpenOrders = myOrders.filter((o: any) => o.status === "open");
+  const lockedSellQty = allOpenOrders
+    .filter((o: any) => o.side === "sell" && (String(o.symbol).split("/")[0] || "").toUpperCase() === base.toUpperCase())
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0"), 0);
   // lockedBuySpend is computed AFTER lastPrice (below) because market orders have
   // price: null and need lastPrice as a fallback to compute the correct spend amount.
@@ -756,11 +758,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Market orders have price: null in the DB, so we fall back to lastPrice to
   // estimate how much quote is tied up. Without this, market buy orders would
   // show the full on-chain balance as "available" even with an open order.
-  const lockedBuySpend = openOrders
-    .filter((o: any) => o.side === "buy" && o.symbol === symbol)
+  // Sum quote spend across ALL open buy orders whose quote asset matches the
+  // current quote — e.g. on 0G/ETH, an open BUY on APE/ETH also locks ETH.
+  const lockedBuySpend = allOpenOrders
+    .filter((o: any) => o.side === "buy" && (String(o.symbol).split("/")[1] || "").toUpperCase() === quote.toUpperCase())
     .reduce((sum: number, o: any) => {
       const qty = parseFloat(o.quantity ?? "0") || 0;
-      const px  = parseFloat(o.price ?? "0") || lastPrice || 0;
+      // For cross-pair locks we cannot reuse the current market's lastPrice as
+      // a fallback. Limit orders carry an explicit price; market orders have
+      // already debited at fill time, so price=null orders are very rare here.
+      const px  = parseFloat(o.price ?? "0") || 0;
       return sum + qty * px;
     }, 0);
 
