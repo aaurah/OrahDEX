@@ -158,7 +158,13 @@ router.get("/social/creators/:address", async (req, res) => {
 
     const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }] = await Promise.all([
       pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]),
-      pool.query("SELECT holder, amount FROM coin_holdings WHERE LOWER(coin_creator) = $1 ORDER BY amount DESC LIMIT 5", [address]),
+      pool.query(
+        `SELECT ch.holder, ch.amount, cp.username, cp.avatar_url
+         FROM coin_holdings ch
+         LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(ch.holder)
+         WHERE LOWER(ch.coin_creator) = $1 AND ch.amount > 0
+         ORDER BY ch.amount DESC LIMIT 50`, [address],
+      ),
       pool.query("SELECT * FROM coin_trades WHERE LOWER(coin_creator) = $1 ORDER BY created_at DESC LIMIT 20", [address]),
       // NFT market cap: sum of (mint_count * mint_price_usd) across all posts
       pool.query(
