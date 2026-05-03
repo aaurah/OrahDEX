@@ -8,9 +8,16 @@
  */
 
 import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http } from "viem";
+import {
+  sendTransaction as wagmiSendTransaction,
+  waitForTransactionReceipt as wagmiWaitForTxReceipt,
+  getTransactionCount as wagmiGetTxCount,
+  switchChain as wagmiSwitchChain,
+  getAccount as wagmiGetAccount,
+} from "@wagmi/core";
 import { ESCROW_ADDRESSES, ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "./onChainLiquidity";
-import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "./reown";
+import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "./reown";
 import { getViemAccountForAddress } from "./walletSigner";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -365,6 +372,110 @@ export async function cancelEscrowViaOrah(
     nonce,
   } as any);
   await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+// ── Reown / WalletConnect path (mobile wallets like imToken / Rabby Mobile) ──
+// These wallets connect via WalletConnect and DO NOT inject window.ethereum,
+// so eth_sendTransaction calls have to go through wagmi-core against the
+// Reown AppKit's wagmiConfig.
+
+/** Ensure the wagmi connector is on the right chain before sending a tx. */
+async function ensureWagmiChain(chainId: number) {
+  const config = getWagmiConfig();
+  if (!config) throw new Error("Wallet connector not initialized");
+  const acct = wagmiGetAccount(config);
+  if (acct.chainId !== chainId) {
+    await wagmiSwitchChain(config, { chainId });
+  }
+  return config;
+}
+
+export async function lockEthViaReown(
+  orderId:   string,
+  rawAmount: bigint,
+  chainId:   number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const config = await ensureWagmiChain(chainId);
+  const acct = wagmiGetAccount(config);
+  if (!acct.address) throw new Error("No connected wallet");
+
+  const nonce = await wagmiGetTxCount(config, {
+    address: acct.address,
+    blockTag: "pending",
+    chainId,
+  });
+  const txHash = await wagmiSendTransaction(config, {
+    to:    escrow,
+    value: rawAmount,
+    data:  buildLockEthCalldata(orderId),
+    nonce,
+    chainId,
+  } as any);
+  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+export async function lockErc20ViaReown(
+  orderId:      string,
+  tokenAddress: string,
+  rawAmount:    bigint,
+  chainId:      number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const config = await ensureWagmiChain(chainId);
+  const acct = wagmiGetAccount(config);
+  if (!acct.address) throw new Error("No connected wallet");
+
+  // Step 1: approve
+  const approveNonce = await wagmiGetTxCount(config, {
+    address: acct.address, blockTag: "pending", chainId,
+  });
+  const approveTx = await wagmiSendTransaction(config, {
+    to:   tokenAddress as `0x${string}`,
+    data: buildApproveCalldata(escrow, rawAmount),
+    nonce: approveNonce,
+    chainId,
+  } as any);
+  await wagmiWaitForTxReceipt(config, { hash: approveTx, chainId });
+
+  // Step 2: lockERC20 — re-fetch nonce after approve confirms
+  const lockNonce = await wagmiGetTxCount(config, {
+    address: acct.address, blockTag: "pending", chainId,
+  });
+  const txHash = await wagmiSendTransaction(config, {
+    to:   escrow,
+    data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
+    nonce: lockNonce,
+    chainId,
+  } as any);
+  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+export async function cancelEscrowViaReown(
+  orderId: string,
+  chainId: number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const config = await ensureWagmiChain(chainId);
+  const acct = wagmiGetAccount(config);
+  if (!acct.address) throw new Error("No connected wallet");
+
+  const nonce = await wagmiGetTxCount(config, {
+    address: acct.address, blockTag: "pending", chainId,
+  });
+  const txHash = await wagmiSendTransaction(config, {
+    to:   escrow,
+    data: buildCancelCalldata(orderId),
+    nonce,
+    chainId,
+  } as any);
+  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
