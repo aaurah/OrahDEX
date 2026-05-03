@@ -155,6 +155,30 @@ function explorerTxUrl(chainId: number, txHash: string): string {
   return `${base}/tx/${txHash}`;
 }
 
+/** Human-readable chain name used in escrow lock UI strings. */
+const CHAIN_LABELS: Record<number, string> = {
+  1:        "Ethereum",
+  137:      "Polygon",
+  56:       "BSC",
+  8453:     "Base",
+  42161:    "Arbitrum",
+  10:       "Optimism",
+  43114:    "Avalanche",
+  324:      "zkSync",
+  11155111: "Sepolia",
+  84532:    "Base Sepolia",
+  421614:   "Arbitrum Sepolia",
+  11155420: "Optimism Sepolia",
+  80002:    "Polygon Amoy",
+  97:       "BSC Testnet",
+  43113:    "Avalanche Fuji",
+};
+
+export function chainLabel(chainId: number | null | undefined): string {
+  if (!chainId) return "this network";
+  return CHAIN_LABELS[chainId] ?? `chain ${chainId}`;
+}
+
 /**
  * Lock native ETH in the escrow using window.ethereum (injected wallet).
  * Throws if the user rejects or the transaction fails.
