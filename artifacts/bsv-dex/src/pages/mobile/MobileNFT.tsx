@@ -301,8 +301,8 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             </h3>
             <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
               {mode === "buy"
-                ? `${fmtNum(success.tokensExchanged)} ${creator.symbol} for ${success.bsvExchanged} BSV`
-                : `${fmtNum(success.tokensExchanged)} ${creator.symbol} → ${success.bsvExchanged} BSV`}
+                ? `${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : creator.symbol} for ${success.bsvExchanged} ${nativeSymbol}`
+                : `${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : creator.symbol} → ${success.bsvExchanged} ${nativeSymbol}`}
             </p>
             <div className="rounded-xl p-3 mb-4" style={{ background: "var(--color-surface)" }}>
               <div className="text-xs" style={{ color: "var(--color-text-secondary)" }}>New market cap</div>
@@ -399,7 +399,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientTokens ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="1" step="1000" value={tokenAmount} onChange={e => setTokenAmount(e.target.value)} />
-                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{creator.symbol}</span>
+                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{isAddrLikeSymbol(creator.symbol) ? (creator.username || "TOKENS") : creator.symbol}</span>
                 </div>
                 {insufficientTokens && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient token balance</p>}
                 {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} {nativeSymbol} · impact {quote.priceImpact}%</p>}
