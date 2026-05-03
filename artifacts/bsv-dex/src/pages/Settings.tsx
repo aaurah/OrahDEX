@@ -17,6 +17,7 @@ import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
 import { usePriceAlertsStore } from "@/store/usePriceAlertsStore";
 import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
+import { SlippagePicker, LeveragePicker } from "@/components/TradingDefaultsPickers";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -99,6 +100,12 @@ export function WebSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
+  const slippageBps = useSettingsStore((s) => s.slippageBps);
+  const setSlippageBps = useSettingsStore((s) => s.setSlippageBps);
+  const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
+  const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);
+  const [showSlippage, setShowSlippage] = useState(false);
+  const [showLeverage, setShowLeverage] = useState(false);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
   const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
@@ -162,8 +169,18 @@ export function WebSettings() {
 
         {/* ── Trading ── */}
         <Section title="Trading">
-          <Row icon={Percent} label="Default Slippage" value="0.5%" />
-          <Row icon={Zap} label="Default Leverage" value="10x" />
+          <Row
+            icon={Percent}
+            label="Default Slippage"
+            value={`${(slippageBps / 100).toString()}% · used on market orders`}
+            onClick={() => setShowSlippage(true)}
+          />
+          <Row
+            icon={Zap}
+            label="Default Leverage"
+            value={`${defaultLeverage}x · pre-fills Futures & Prediction`}
+            onClick={() => setShowLeverage(true)}
+          />
           <Row
             icon={DollarSign}
             label="Quote Currency"
@@ -308,6 +325,18 @@ export function WebSettings() {
       </div>
 
       <PriceAlertsDialog open={showAlerts} onOpenChange={setShowAlerts} />
+      <SlippagePicker
+        open={showSlippage}
+        onClose={() => setShowSlippage(false)}
+        valueBps={slippageBps}
+        onSave={setSlippageBps}
+      />
+      <LeveragePicker
+        open={showLeverage}
+        onClose={() => setShowLeverage(false)}
+        value={defaultLeverage}
+        onSave={setDefaultLeverage}
+      />
 
       {/* Quote Currency Picker Modal */}
       {showCurrencyPicker && (() => {

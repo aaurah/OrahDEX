@@ -96,6 +96,9 @@ interface SettingsState {
   // Slippage tolerance in basis points (50 = 0.5%). Capped at 5000 (50%).
   slippageBps: number;
   setSlippageBps: (v: number) => void;
+  // Default leverage multiplier used by Futures & Prediction (1–100).
+  defaultLeverage: number;
+  setDefaultLeverage: (v: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -115,6 +118,8 @@ export const useSettingsStore = create<SettingsState>()(
       setMutedCategories: (v) => set({ mutedCategories: v }),
       slippageBps: 50,
       setSlippageBps: (v) => set({ slippageBps: Math.max(0, Math.min(5000, Math.floor(v))) }),
+      defaultLeverage: 10,
+      setDefaultLeverage: (v) => set({ defaultLeverage: Math.max(1, Math.min(100, Math.round(v))) }),
     }),
     { name: "orahdex-settings-v1" }
   )
