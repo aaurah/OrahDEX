@@ -96,7 +96,7 @@ interface HistoryEntry {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const API = API_BASE;
-const RATE_REFRESH = 10;
+const RATE_REFRESH = 60;
 const LS_KEY = "le_swap_history";
 
 // ─── Module-level coin cache ──────────────────────────────────────────────────
@@ -544,15 +544,20 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
       {/* You get */}
       <div className="rounded-xl bg-muted/40 p-3 mb-3">
         <p className="text-xs text-muted-foreground mb-2">You Get</p>
-        <div className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 min-h-[52px] flex items-center">
-          {estLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/60" />
-          ) : estimate ? (
+        <div className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 min-h-[52px] flex items-center justify-between gap-2">
+          {/* Keep the previous estimate visible during background refetches so the
+              UI doesn't flash. Only show a full spinner on the very first load. */}
+          {estimate ? (
             <span className="text-xl font-bold text-emerald-400 font-mono">{fmtNum(estimate.amount, 8)}</span>
+          ) : estLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/60" />
           ) : estError ? (
             <span className="text-sm text-red-400/80">{estError}</span>
           ) : (
             <span className="text-xl font-bold text-muted-foreground/40">≈</span>
+          )}
+          {estimate && estLoading && (
+            <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/40 shrink-0" />
           )}
         </div>
         <CoinPicker coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
@@ -807,7 +812,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         <div>
           <div className="flex items-center gap-2">
             <p className="text-xs text-muted-foreground">Step 3/3</p>
-            {!isDone && <Countdown key={refreshKey} seconds={15} onEnd={() => setRefreshKey(k => k + 1)} />}
+            {!isDone && <Countdown key={refreshKey} seconds={30} onEnd={() => setRefreshKey(k => k + 1)} />}
           </div>
           <h2 className="text-lg font-bold text-foreground">Send by one transaction</h2>
         </div>
