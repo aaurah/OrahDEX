@@ -33,7 +33,7 @@ import type { Account } from "viem";
 import { writeContract as coreWriteContract } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
-import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
@@ -592,8 +592,10 @@ function GasTopUpPanel({
       const amtOutMin = gasQuote.amountOut * 95n / 100n;
       let hash: `0x${string}`;
       if (isOrahWallet) {
-        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to top up gas…" });
-        const account = await getViemAccountForOrahWallet(address as `0x${string}`);
+        const account = await getViemAccountForAddress(address as `0x${string}`, {
+          title: "Authorize gas top-up",
+          subtitle: "Unlock your imported OrahDEX wallet to sign the gas top-up swap.",
+        });
         hash = await executeSwapWithLocalAccount(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`, account, chainName, nativeSymbol);
       } else {
         hash = await executeSwap(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`);
@@ -2118,11 +2120,13 @@ export function Swap() {
       let hash: `0x${string}`;
 
       if (isOrahWallet) {
-        // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
-        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
+        // Imported / passkey wallet → unified signer (PIN modal or biometric assertion)
         let account: Account;
         try {
-          account = await getViemAccountForOrahWallet(address);
+          account = await getViemAccountForAddress(address, {
+            title: "Authorize swap",
+            subtitle: "Unlock your imported OrahDEX wallet to sign this on-chain swap.",
+          });
         } catch (authErr: any) {
           const msg: string = authErr?.message ?? "";
           if (msg.startsWith("NO_PASSKEY_WALLET")) {

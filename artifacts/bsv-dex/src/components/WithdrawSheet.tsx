@@ -38,7 +38,7 @@ import {
 import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
 import { CHAIN_RPC_URLS } from "@/lib/reown";
-import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -519,8 +519,10 @@ export function WithdrawSheet({
     setDepFromWalletSending(true);
     setDepFromWalletError(null);
     try {
-      toast({ title: "Biometric authentication", description: "Authenticate with Face ID / Touch ID to sign the deposit…" });
-      const account = await getViemAccountForOrahWallet(walletAddress);
+      const account = await getViemAccountForAddress(walletAddress, {
+        title: "Authorize deposit",
+        subtitle: `Unlock your imported OrahDEX wallet to send ${depFromWalletAmount} ${nativeSymbol}.`,
+      });
       const { createWalletClient, http, parseEther } = await import("viem");
       const chainDef = {
         id:             depositChain.id,
@@ -597,8 +599,10 @@ export function WithdrawSheet({
     setWalletSending(true);
     setWalletSendError(null);
     try {
-      toast({ title: "Biometric authentication", description: "Authenticate with Face ID / Touch ID to sign the transfer…" });
-      const account = await getViemAccountForOrahWallet(walletAddress);
+      const account = await getViemAccountForAddress(walletAddress, {
+        title: "Authorize transfer",
+        subtitle: `Unlock your imported OrahDEX wallet to send ${walletSendAmount} ${walletSendToken.symbol}.`,
+      });
 
       const { createWalletClient, http, parseEther, parseUnits } = await import("viem");
       // build minimal chain object viem needs
