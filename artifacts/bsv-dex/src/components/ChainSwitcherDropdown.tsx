@@ -10,7 +10,7 @@ interface ChainDef {
   key: string;
   name: string;
   symbol: string;
-  badge: "L1" | "L2" | "L3";
+  badge: "L1" | "L2" | "L3" | "TEST";
   icon: string;
   color: string;
   rpcUrl: string;
@@ -311,6 +311,20 @@ const EVM_CHAINS: ChainDef[] = [
     nativeName: "Sonic",
     nativeDecimals: 18,
   },
+  /* ─── Testnets ─────────────────────────────────────────────── */
+  {
+    id: 11155111,
+    key: "sepolia",
+    name: "Sepolia (Testnet)",
+    symbol: "ETH",
+    badge: "TEST",
+    icon: "⟠",
+    color: "text-emerald-400",
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    blockExplorerUrl: "https://sepolia.etherscan.io",
+    nativeName: "Sepolia Ether",
+    nativeDecimals: 18,
+  },
 ];
 
 const OTHER_CHAINS = [
@@ -325,6 +339,7 @@ const BADGE_COLORS: Record<string, string> = {
   L1: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   L2: "bg-violet-500/15 text-violet-400 border-violet-500/30",
   L3: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  TEST: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
 };
 
 interface Props {
@@ -469,6 +484,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
     "L1 — Base Chains": EVM_CHAINS.filter(c => c.badge === "L1"),
     "L2 — Rollups & Sidechains": EVM_CHAINS.filter(c => c.badge === "L2"),
     "L3 — App Chains": EVM_CHAINS.filter(c => c.badge === "L3"),
+    "Testnets": EVM_CHAINS.filter(c => c.badge === "TEST"),
   };
 
   function ChainRow({ chain, compact = false }: { chain: ChainDef; compact?: boolean }) {
