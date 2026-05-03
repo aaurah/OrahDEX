@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   History, RefreshCw, CheckCircle2, Clock, XCircle,
-  TrendingUp, ChevronDown, ChevronUp, ExternalLink, PlayCircle,
+  TrendingUp, ChevronDown, ChevronUp, ExternalLink, PlayCircle, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE } from "@/lib/api";
@@ -78,13 +78,22 @@ function formatDate(iso: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: diffDay > 365 ? "numeric" : undefined });
 }
 
-function OrderRow({ order, onResume }: { order: Order; onResume?: (o: Order) => void }) {
+function OrderRow({
+  order, onResume, onDelete, deleting,
+}: {
+  order: Order;
+  onResume?: (o: Order) => void;
+  onDelete?: (o: Order) => void;
+  deleting?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const statusConf = STATUS_CONFIG[order.status] ?? STATUS_CONFIG["pending"];
   const usd = (order.fiat_amount_cents / 100).toFixed(2);
   const crypto = parseFloat(order.crypto_amount);
   const cryptoDisplay = crypto < 0.0001 ? crypto.toExponential(4) : crypto.toFixed(6).replace(/\.?0+$/, "");
-  const canResume = !!onResume && (order.status === "pending" || order.status === "failed" || order.status === "canceled");
+  const isDeletable = order.status === "pending" || order.status === "failed" || order.status === "canceled" || order.status === "cancelled";
+  const canResume = !!onResume && isDeletable;
+  const canDelete = !!onDelete && isDeletable;
 
   return (
     <div className={cn(
@@ -133,14 +142,36 @@ function OrderRow({ order, onResume }: { order: Order; onResume?: (o: Order) => 
               <p className="text-sm font-bold">{cryptoDisplay} {order.coin_symbol}</p>
             </div>
           </div>
-          {canResume && (
-            <button
-              onClick={() => onResume!(order)}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:opacity-90 active:opacity-80 transition"
-            >
-              <PlayCircle className="w-4 h-4" />
-              {order.status === "pending" ? "Complete payment" : "Try again"}
-            </button>
+          {(canResume || canDelete) && (
+            <div className="flex gap-2">
+              {canResume && (
+                <button
+                  onClick={() => onResume!(order)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 text-white text-xs font-bold shadow-md shadow-emerald-600/20 hover:opacity-90 active:opacity-80 transition"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  {order.status === "pending" ? "Complete payment" : "Try again"}
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    if (deleting) return;
+                    if (window.confirm(`Delete this ${order.status} order? This can't be undone.`)) {
+                      onDelete!(order);
+                    }
+                  }}
+                  disabled={deleting}
+                  title="Delete order"
+                  className="shrink-0 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold hover:bg-red-500/20 active:opacity-80 transition disabled:opacity-50"
+                >
+                  {deleting
+                    ? <RefreshCw className="w-4 h-4 animate-spin" />
+                    : <Trash2 className="w-4 h-4" />}
+                  Delete
+                </button>
+              )}
+            </div>
           )}
           <div className="flex items-center justify-between text-[11px] text-muted-foreground px-1">
             <span className="font-mono truncate max-w-[200px]">Order {order.id.slice(0, 8)}…{order.id.slice(-6)}</span>
@@ -165,10 +196,31 @@ interface Props {
 }
 
 export function BuyHistory({ walletAddress, onResume }: Props) {
-  const [orders,   setOrders]   = useState<Order[]>([]);
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
-  const [visible,  setVisible]  = useState(true);
+  const [orders,    setOrders]    = useState<Order[]>([]);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState<string | null>(null);
+  const [visible,   setVisible]   = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteOrder = useCallback(async (order: Order) => {
+    if (!walletAddress) return;
+    setDeletingId(order.id);
+    try {
+      const r = await fetch(
+        `${API_BASE}/stripe/orders/${encodeURIComponent(order.id)}?walletAddress=${encodeURIComponent(walletAddress)}`,
+        { method: "DELETE" }
+      );
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body?.error || "Delete failed");
+      }
+      setOrders(prev => prev.filter(o => o.id !== order.id));
+    } catch (e: any) {
+      window.alert(e?.message || "Could not delete this order.");
+    } finally {
+      setDeletingId(null);
+    }
+  }, [walletAddress]);
 
   const fetchOrders = useCallback(async () => {
     if (!walletAddress) { setOrders([]); return; }
@@ -256,7 +308,15 @@ export function BuyHistory({ walletAddress, onResume }: Props) {
 
           {orders.length > 0 && (
             <div className="space-y-2 mt-3">
-              {orders.map(o => <OrderRow key={o.id} order={o} onResume={onResume} />)}
+              {orders.map(o => (
+                <OrderRow
+                  key={o.id}
+                  order={o}
+                  onResume={onResume}
+                  onDelete={deleteOrder}
+                  deleting={deletingId === o.id}
+                />
+              ))}
             </div>
           )}
         </div>
