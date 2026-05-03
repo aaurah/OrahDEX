@@ -1075,6 +1075,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       evmSignature,
       nonce:  orderNonce,
       expiry: orderExpiry,
+      chainId: walletChainId ?? undefined,
     } as any);
   }
 

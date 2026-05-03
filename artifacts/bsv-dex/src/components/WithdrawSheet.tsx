@@ -303,6 +303,26 @@ export function WithdrawSheet({
     }
   }, [open, defaultRecipient, initialTab]);
 
+  // ── live OrahDEX ledger balance for this asset ───────────────────────────
+  // Fetches the user_balances row directly so the displayed "OrahDEX Balance"
+  // is always the custodial ledger amount, never the on-chain wallet balance
+  // that may be passed in via the `available` prop.
+  const { data: ledgerBal } = useQuery<{ available: string }>({
+    queryKey: ["withdraw-ledger-balance", walletAddress, asset],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${encodeURIComponent(walletAddress)}`, { cache: "no-store" });
+      if (!r.ok) return { available: "0" };
+      return r.json();
+    },
+    enabled: !!walletAddress && !!asset && open,
+    refetchInterval: open ? 10_000 : false,
+    staleTime: 5_000,
+  });
+  const ledgerAvailable = parseFloat(ledgerBal?.available ?? "0") || 0;
+  // Use the live ledger value when we have one; fall back to the prop only
+  // before the first fetch returns.
+  const exchangeAvailable = ledgerBal !== undefined ? ledgerAvailable : available;
+
   // ── deposit address ──────────────────────────────────────────────────────
   const { data: depositData, isLoading: depositLoading, refetch: refetchDeposit } =
     useQuery<DepositAddressResponse>({
@@ -428,7 +448,7 @@ export function WithdrawSheet({
 
   // ── withdraw logic ───────────────────────────────────────────────────────
   const parsedAmount    = parseFloat(amount) || 0;
-  const exceedsBalance  = parsedAmount > available;
+  const exceedsBalance  = parsedAmount > exchangeAvailable;
 
   const isValidRecipient = (() => {
     const r = recipient.trim();
@@ -1157,7 +1177,7 @@ export function WithdrawSheet({
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">OrahDEX Balance</span>
                     <span className="font-bold font-mono" style={{ color }}>
-                      {available.toLocaleString(undefined, { maximumFractionDigits: available < 0.0001 ? 8 : 6 })} {asset}
+                      {exchangeAvailable.toLocaleString(undefined, { maximumFractionDigits: exchangeAvailable < 0.0001 ? 8 : 6 })} {asset}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1178,7 +1198,7 @@ export function WithdrawSheet({
                     />
                     <button
                       type="button"
-                      onClick={() => setAmount(available.toFixed(available < 0.0001 ? 8 : 6))}
+                      onClick={() => setAmount(exchangeAvailable.toFixed(exchangeAvailable < 0.0001 ? 8 : 6))}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
                     >
                       MAX

@@ -635,7 +635,7 @@ export function MobilePortfolio() {
           <WithdrawSheet
             open={withdrawOpen}
             onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-            walletAddress={address ?? ""}
+            walletAddress={ledgerAddress ?? ""}
             defaultRecipient={sameNetwork ? (address ?? "") : ""}
             asset={withdrawAsset.asset}
             available={withdrawAsset.available}
