@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
@@ -356,10 +357,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // Non-custodial model: external EVM wallets trade directly from their connected on-chain balance.
   const isExternalEvm = isEvm && !isOrahWallet;
 
-  // Only the Orah internal wallet uses the API ledger balance.
-  // All external wallets (EVM, BSV, BTC, SOL) use their on-chain wallet balance directly —
-  // no deposit step required.
-  const usesApiBalance = isOrahWallet;
+  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
+  // directly from its on-chain balance. Only non-EVM Orah chains use ledger.
+  const usesApiBalance = isOrahWallet && !isEvm;
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
@@ -779,7 +779,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     let evmSignature: string | undefined;
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
-    if (isExternalEvm) {
+    if (isEvm && address) {
       // Generate a random nonce and a 5-minute expiry
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
@@ -799,7 +799,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
       try {
         setSigningOrder(true);
-        evmSignature = await signMessageAsync({ message: orderMsg });
+        if (isOrahWallet) {
+          // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
+          const account = await getViemAccountForAddress(address!, {
+            title:    "Authorize trade",
+            subtitle: `${side.toUpperCase()} ${amount} ${base} on ${symbol}`,
+          });
+          evmSignature = await account.signMessage!({ message: orderMsg });
+        } else {
+          evmSignature = await signMessageAsync({ message: orderMsg });
+        }
       } catch (signErr: any) {
         setSigningOrder(false);
         const msg: string = signErr?.message ?? "";
@@ -826,7 +835,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
-          walletSource:   isOrahWallet ? "orah" : "external",
+          walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
@@ -1044,34 +1053,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         </div>
 
-        {/* Two-ledger gap hint — Orah Wallet trades from the internal exchange
-            ledger, but the user's actual on-chain balance may be higher. Surface
-            both so users don't think their funds are lost. */}
-        {address && usesApiBalance && (() => {
-          const onChain  = side === "buy" ? walletQuote : walletBase;
-          const tradable = side === "buy" ? internalQuote : internalBase;
-          const gap = onChain - tradable;
-          if (gap <= 1e-9) return null;
-          return (
-            <a
-              href="/wallet"
-              className="flex items-center justify-between gap-2 text-[11px] leading-tight px-2.5 py-2 rounded-lg bg-cyan-500/8 border border-cyan-500/25 text-cyan-300 hover:bg-cyan-500/12 transition-colors -mt-0.5"
-            >
-              <span>
-                In your wallet:&nbsp;
-                <span className="font-semibold font-mono">
-                  {onChain.toLocaleString("en-US", { maximumFractionDigits: 6 })} {availableSym}
-                </span>
-                {" "}— deposit{" "}
-                <span className="font-semibold font-mono">
-                  {gap.toLocaleString("en-US", { maximumFractionDigits: 6 })}
-                </span>
-                {" "}to trade with full balance
-              </span>
-              <span className="text-cyan-300 font-semibold shrink-0">Open wallet →</span>
-            </a>
-          );
-        })()}
         {/* Low balance hint */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
