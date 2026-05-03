@@ -525,7 +525,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-4 lg:p-6 pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-6 overflow-auto">
           {children}
         </main>
       </div>
