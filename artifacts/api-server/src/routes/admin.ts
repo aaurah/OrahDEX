@@ -2040,6 +2040,125 @@ router.post("/le-sync", requireAdminToken, async (_req, res) => {
   }
 });
 
+/* ─── LETSEXCHANGE PARTNER / AFFILIATE ID ────────────────────────────────
+ *
+ * GET  /api/admin/letsexchange/affiliate
+ *   Decodes the active LETSEXCHANGE_API_KEY (a JWT) and returns the
+ *   partner / affiliate ID that LetsExchange embeds in its `data.id`
+ *   payload. This is the same ID OrahDEX sends as `affiliate_id` on
+ *   every /v1/info and /v1/transaction call, and is what shows up in
+ *   the partner dashboard at letsexchange.io.
+ *
+ * POST /api/admin/letsexchange/test
+ *   Body: { apiKey?: string }
+ *   Decodes a candidate key (without saving it) and pings LE /v2/coins
+ *   to verify it is live. Useful to validate a new key before clicking
+ *   Save All in the integrations panel.
+ */
+function decodeLeJwt(jwt: string): {
+  partnerId: string | null;
+  email: string | null;
+  expiresAt: number | null;
+  expired: boolean;
+  error: string | null;
+} {
+  if (!jwt || !jwt.includes(".")) {
+    return { partnerId: null, email: null, expiresAt: null, expired: false, error: "Not a JWT" };
+  }
+  try {
+    const parts = jwt.split(".");
+    if (parts.length < 2) return { partnerId: null, email: null, expiresAt: null, expired: false, error: "Malformed JWT" };
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const id = payload?.data?.id ?? payload?.sub ?? null;
+    const email = payload?.data?.email ?? payload?.email ?? null;
+    const exp = typeof payload?.exp === "number" ? payload.exp * 1000 : null;
+    const expired = exp != null && exp < Date.now();
+    return {
+      partnerId: id != null ? String(id) : null,
+      email: email ? String(email) : null,
+      expiresAt: exp,
+      expired,
+      error: null,
+    };
+  } catch (err: any) {
+    return { partnerId: null, email: null, expiresAt: null, expired: false, error: err?.message ?? "Decode failed" };
+  }
+}
+
+async function loadActiveLeKey(): Promise<{ key: string; source: "env" | "db" | "none" }> {
+  const envKey = (process.env.LETSEXCHANGE_API_KEY ?? "").trim();
+  if (envKey) return { key: envKey, source: "env" };
+  try {
+    const rows = await db.select().from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "letsexchange_api_key"));
+    const dbKey = (rows[0]?.value ?? "").trim();
+    if (dbKey) return { key: dbKey, source: "db" };
+  } catch { /* ignore */ }
+  return { key: "", source: "none" };
+}
+
+router.get("/letsexchange/affiliate", requireAdminToken, async (_req, res) => {
+  const { key, source } = await loadActiveLeKey();
+  if (!key) {
+    res.json({
+      configured: false,
+      source,
+      partnerId: null,
+      affiliateUrl: null,
+      dashboardUrl: "https://letsexchange.io/affiliate",
+      signupUrl: "https://letsexchange.io/affiliate",
+      message: "No LETSEXCHANGE_API_KEY set. Sign up at letsexchange.io/affiliate to get one.",
+    });
+    return;
+  }
+  const decoded = decodeLeJwt(key);
+  res.json({
+    configured: true,
+    source,
+    partnerId: decoded.partnerId,
+    partnerEmail: decoded.email,
+    expiresAt: decoded.expiresAt,
+    expired: decoded.expired,
+    decodeError: decoded.error,
+    // The affiliate ID is what LetsExchange uses in their referral URL —
+    // anyone landing on letsexchange.io with ?ref=<partnerId> is tracked
+    // back to your dashboard.
+    affiliateUrl: decoded.partnerId ? `https://letsexchange.io/?ref=${decoded.partnerId}` : null,
+    dashboardUrl: "https://letsexchange.io/affiliate",
+  });
+});
+
+router.post("/letsexchange/test", requireAdminToken, async (req, res) => {
+  const candidate = typeof req.body?.apiKey === "string" && req.body.apiKey.trim().length > 0
+    ? String(req.body.apiKey).trim()
+    : (await loadActiveLeKey()).key;
+  if (!candidate) {
+    res.status(400).json({ ok: false, error: "No API key provided and none configured" });
+    return;
+  }
+  const decoded = decodeLeJwt(candidate);
+  try {
+    const r = await fetch("https://api.letsexchange.io/api/v2/coins", {
+      headers: { Authorization: `Bearer ${candidate}`, Accept: "application/json" },
+    });
+    const live = r.ok;
+    res.json({
+      ok: live && !!decoded.partnerId,
+      httpStatus: r.status,
+      partnerId: decoded.partnerId,
+      partnerEmail: decoded.email,
+      expired: decoded.expired,
+      message: live
+        ? (decoded.partnerId
+            ? `Key is live. Partner ID ${decoded.partnerId} will be credited for every swap.`
+            : "Key reaches LetsExchange but no partner ID could be decoded — commission may not be tracked.")
+        : `LetsExchange returned HTTP ${r.status}. The key is invalid or revoked.`,
+    });
+  } catch (err: any) {
+    res.status(502).json({ ok: false, error: err?.message ?? "Network error reaching LetsExchange" });
+  }
+});
+
 /* ─── LIQUIDITY BOT CONFIG ───────────────────────────────────────────────── */
 const DEFAULT_LIQUIDITY_CONFIG = {
   enabled:         true,
