@@ -7,9 +7,11 @@
  * Contract:  OrahDEXEscrow @ Sepolia 0x4deb6023abD9E1C640aDa35201be8ff591d21cF2
  */
 
-import { encodeFunctionData, keccak256, toBytes, erc20Abi } from "viem";
+import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http } from "viem";
 import { ESCROW_ADDRESSES, ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "./onChainLiquidity";
+import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "./reown";
+import { getViemAccountForAddress } from "./walletSigner";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -215,6 +217,108 @@ export async function lockErc20ViaInjected(
       data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
     }],
   });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+// ── Orah Wallet (in-app key) signing path ──────────────────────────────────────
+// Uses viem's WalletClient with a local Account derived from the user's stored
+// PIN/passkey-protected secret. Sends transactions through the public RPC for
+// the active chain — no injected wallet required.
+
+function rpcTransport(chainId: number) {
+  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
+  if (!url) throw new Error(`No RPC URL for chainId ${chainId}`);
+  return http(url);
+}
+
+function inlineChain(chainId: number) {
+  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
+  return {
+    id: chainId,
+    name: `chain-${chainId}`,
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: { default: { http: [url] }, public: { http: [url] } },
+  } as const;
+}
+
+async function getOrahWalletClient(from: string, chainId: number) {
+  const account = await getViemAccountForAddress(from, {
+    title:    "Authorize on-chain lock",
+    subtitle: "Move funds to the OrahDEX escrow contract.",
+  });
+  return createWalletClient({
+    account,
+    chain: inlineChain(chainId) as any,
+    transport: rpcTransport(chainId),
+  });
+}
+
+function getPublicClient(chainId: number) {
+  return createPublicClient({
+    chain: inlineChain(chainId) as any,
+    transport: rpcTransport(chainId),
+  });
+}
+
+export async function lockEthViaOrah(
+  orderId:   string,
+  rawAmount: bigint,
+  from:      string,
+  chainId:   number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const client = await getOrahWalletClient(from, chainId);
+  const txHash = await client.sendTransaction({
+    to:    escrow,
+    value: rawAmount,
+    data:  buildLockEthCalldata(orderId),
+  } as any);
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+export async function lockErc20ViaOrah(
+  orderId:      string,
+  tokenAddress: string,
+  rawAmount:    bigint,
+  from:         string,
+  chainId:      number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const client = await getOrahWalletClient(from, chainId);
+  const pub    = getPublicClient(chainId);
+
+  // Step 1: approve
+  const approveTx = await client.sendTransaction({
+    to:   tokenAddress as `0x${string}`,
+    data: buildApproveCalldata(escrow, rawAmount),
+  } as any);
+  await pub.waitForTransactionReceipt({ hash: approveTx });
+
+  // Step 2: lockERC20
+  const txHash = await client.sendTransaction({
+    to:   escrow,
+    data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
+  } as any);
+  await pub.waitForTransactionReceipt({ hash: txHash });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+export async function cancelEscrowViaOrah(
+  orderId: string,
+  from:    string,
+  chainId: number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
+  const client = await getOrahWalletClient(from, chainId);
+  const txHash = await client.sendTransaction({
+    to:   escrow,
+    data: buildCancelCalldata(orderId),
+  } as any);
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
