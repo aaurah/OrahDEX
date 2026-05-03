@@ -471,11 +471,19 @@ export function MobilePortfolio() {
       }
     }
   }
-  const lockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
+  // Self-custody EVM: open orders are signed intents, NOT on-chain locks.
+  // Funds remain fully available in the user's wallet (Rabby/MetaMask) until
+  // the order fills. Showing a "Busy in Trade" reservation here is misleading
+  // because the on-chain balance is unchanged. Hide the bucket entirely for
+  // self-custody EVM users.
+  const isSelfCustodyEvm = network === "evm";
+  const rawLockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
+  const lockedEntries = isSelfCustodyEvm ? [] : rawLockedEntries;
   const lockedTotalUsd = lockedEntries.reduce((s, [token, v]) => {
     const p = STABLES.has(token) ? 1 : (prices?.[token]?.lastPrice ?? 0);
     return s + v.amount * p;
   }, 0);
+  const hasOpenIntents = isSelfCustodyEvm && rawLockedEntries.length > 0;
 
   // ── BUCKET 1: Wallet balance (real on-chain, minus OrahDEX-consumed amounts) ──
   const total = tokensTotal;
@@ -755,6 +763,19 @@ export function MobilePortfolio() {
               </>
             )}
           </div>
+
+          {/* Self-custody info banner: open orders are signed intents only */}
+          {hasOpenIntents && (
+            <div className="bg-blue-500/5 border border-blue-500/25 rounded-2xl p-3 flex items-start gap-2">
+              <svg className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-blue-300">Non-custodial — no funds locked</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
+                  Your {rawLockedEntries.length} open order{rawLockedEntries.length === 1 ? " is a signed intent" : "s are signed intents"}. Funds stay in your wallet (Rabby/MetaMask) until the order fills. Cancel anytime — nothing to release.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* ── BUCKET 2: Busy in Trade (locked in open limit/stop orders) ───── */}
           {lockedEntries.length > 0 && (

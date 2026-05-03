@@ -891,8 +891,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const internalQuoteBalance = apiBalances[quote] ?? 0;
   const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
   const grossBuyBalance  = usesApiBalance ? internalQuoteBalance : walletQuoteBalance;
-  const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
-  const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
+  // Self-custody EVM (Orah Wallet on EVM, or external wallet): open orders are
+  // signed intents — funds remain on-chain in the wallet until fill. We DO NOT
+  // subtract UI-side locks from displayed balance because nothing is actually
+  // locked on-chain. (For internal-ledger mode, gross already excludes locks.)
+  const sellBalance = grossSellBalance;
+  const buyBalance  = grossBuyBalance;
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
@@ -1898,6 +1902,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     Address confirmed — funds will be sent to this address after settlement.
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Non-custodial mode banner: explain that orders don't lock funds */}
+            {isEvm && (
+              <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
+                <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div className="text-[10px] leading-relaxed text-blue-300/90">
+                  <span className="font-bold text-blue-300">Non-custodial.</span> Available reflects your real on-chain wallet balance. Orders are signed intents — funds stay in your wallet (Rabby/MetaMask) until fill.
+                  {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
+                </div>
               </div>
             )}
 
