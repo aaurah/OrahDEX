@@ -227,7 +227,7 @@ function fmtVol(v: number) {
   return v.toFixed(2);
 }
 
-const INDICATORS = ["MA", "EMA", "BOLL", "KDJ"] as const;
+const INDICATORS = ["MA", "EMA", "BOLL"] as const;
 type IndicatorName = typeof INDICATORS[number];
 
 // Maps tab name → Chart sub-panel indicator (null = overlay only, no sub-chart change)
@@ -235,7 +235,6 @@ const INDICATOR_TO_SUB: Record<IndicatorName, "macd" | "rsi" | "stoch" | "cci" |
   MA:   null,    // main-chart overlay
   EMA:  null,    // main-chart overlay
   BOLL: null,    // main-chart overlay
-  KDJ:  "stoch",
 };
 const PERIODS = [
   { label: "Today", key: "today" },
