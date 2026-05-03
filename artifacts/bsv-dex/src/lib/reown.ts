@@ -213,13 +213,14 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
 
 /* ── Fallback RPC endpoints (tried when primary is rate-limited) ─────── */
 export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
-  1:     "https://ethereum.publicnode.com",
-  56:    "https://bsc-dataseed.binance.org",
-  137:   "https://rpc.ankr.com/polygon",
-  42161: "https://arb1.arbitrum.io/rpc",
-  10:    "https://mainnet.optimism.io",
-  8453:  "https://mainnet.base.org",
-  43114: "https://api.avax.network/ext/bc/C/rpc",
+  1:        "https://ethereum.publicnode.com",
+  56:       "https://bsc-dataseed.binance.org",
+  137:      "https://rpc.ankr.com/polygon",
+  42161:    "https://arb1.arbitrum.io/rpc",
+  10:       "https://mainnet.optimism.io",
+  8453:     "https://mainnet.base.org",
+  43114:    "https://api.avax.network/ext/bc/C/rpc",
+  11155111: "https://eth-sepolia.public.blastapi.io",
 };
 
 /**

@@ -47,16 +47,17 @@ type FiatPayMethod = "apple" | "google" | "card" | "bank";
 // ─── Chain config ────────────────────────────────────────────────────────────
 
 const DEX_CHAINS = [
-  { id: 1,     name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://etherscan.io/tx/",         color: "#627EEA" },
-  { id: 8453,  name: "Base",     nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://basescan.org/tx/",         color: "#0052FF" },
-  { id: 56,    name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",   explorer: "https://bscscan.com/tx/",          color: "#F0B90B" },
-  { id: 42161, name: "Arbitrum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://arbiscan.io/tx/",          color: "#28A0F0" },
-  { id: 10,    name: "Optimism", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://optimistic.etherscan.io/tx/", color: "#FF0420" },
-  { id: 137,   name: "Polygon",  nativeSymbol: "POL",  logo: "MATIC", explorer: "https://polygonscan.com/tx/",      color: "#8247E5" },
-  { id: 43114, name: "Avalanche",nativeSymbol: "AVAX", logo: "AVAX",  explorer: "https://snowtrace.io/tx/",         color: "#E84142" },
+  { id: 1,        name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://etherscan.io/tx/",            color: "#627EEA", testnet: false },
+  { id: 8453,     name: "Base",     nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://basescan.org/tx/",            color: "#0052FF", testnet: false },
+  { id: 56,       name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",   explorer: "https://bscscan.com/tx/",             color: "#F0B90B", testnet: false },
+  { id: 42161,    name: "Arbitrum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://arbiscan.io/tx/",             color: "#28A0F0", testnet: false },
+  { id: 10,       name: "Optimism", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://optimistic.etherscan.io/tx/", color: "#FF0420", testnet: false },
+  { id: 137,      name: "Polygon",  nativeSymbol: "POL",  logo: "MATIC", explorer: "https://polygonscan.com/tx/",         color: "#8247E5", testnet: false },
+  { id: 43114,    name: "Avalanche",nativeSymbol: "AVAX", logo: "AVAX",  explorer: "https://snowtrace.io/tx/",            color: "#E84142", testnet: false },
+  { id: 11155111, name: "Sepolia",  nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://sepolia.etherscan.io/tx/",    color: "#8A92B2", testnet: true  },
 ] as const;
 
-type SupportedChainId = 1 | 8453 | 56 | 42161 | 10 | 137 | 43114;
+type SupportedChainId = 1 | 8453 | 56 | 42161 | 10 | 137 | 43114 | 11155111;
 
 // ─── Token list ───────────────────────────────────────────────────────────────
 
@@ -145,38 +146,50 @@ const TOKENS: Record<SupportedChainId, Token[]> = {
     { symbol: "QI",   name: "BENQI",           decimals: 18, address: "0x8729438EB15e2C8B576fCc6AeCdA6A148776C0F5" },
     { symbol: "GMX",  name: "GMX",             decimals: 18, address: "0x62edc0692BD897D2295872a9FFCac5425011c661" },
   ],
+  // ── Sepolia testnet ──────────────────────────────────────────────────────
+  // Faucet-funded test tokens. Liquidity is thin — quotes may fail on most pairs.
+  11155111: [
+    { symbol: "ETH",  name: "Sepolia Ether",   decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "WETH", name: "Wrapped Ether",   decimals: 18, address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14" },
+    { symbol: "USDC", name: "USD Coin (Circle)", decimals: 6, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
+    { symbol: "LINK", name: "Chainlink",       decimals: 18, address: "0x779877A7B0D9E8603169DdbD7836e478b4624789" },
+    { symbol: "UNI",  name: "Uniswap",         decimals: 18, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" },
+  ],
 };
 
 // ─── Contract addresses ───────────────────────────────────────────────────────
 
 const QUOTER_V2: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  8453:  "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
-  56:    "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
-  42161: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  10:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  137:   "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  43114: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
+  1:        "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  8453:     "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+  56:       "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  42161:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  10:       "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  137:      "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  43114:    "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
+  11155111: "0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3",  // Uniswap V3 QuoterV2 on Sepolia
 };
 
 const SWAP_ROUTER: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  8453:  "0x2626664c2603336E57B271c5C0b26F421741e481",
-  56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
-  42161: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  10:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  137:   "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  43114: "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+  1:        "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  8453:     "0x2626664c2603336E57B271c5C0b26F421741e481",
+  56:       "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  42161:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  10:       "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  137:      "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  43114:    "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+  11155111: "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E",  // Uniswap V3 SwapRouter02 on Sepolia
 };
 
 const WETH: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  8453:  "0x4200000000000000000000000000000000000006",
-  56:    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-  42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-  10:    "0x4200000000000000000000000000000000000006",
-  137:   "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-  43114: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+  1:        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  8453:     "0x4200000000000000000000000000000000000006",
+  56:       "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  42161:    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  10:       "0x4200000000000000000000000000000000000006",
+  137:      "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+  43114:    "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+  11155111: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",  // Sepolia WETH9
 };
 
 const FEE_TIERS = [100, 500, 3000, 10000];
@@ -2402,6 +2415,11 @@ export function Swap() {
                   >
                     <CoinLogo symbol={c.logo} size={14} />
                     {c.name}
+                    {c.testnet && (
+                      <span className="ml-0.5 px-1 py-px rounded bg-amber-500/15 text-amber-400 text-[9px] font-bold tracking-wide uppercase">
+                        Test
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
