@@ -22,6 +22,17 @@ import {
   listPasskeyWallets,
   generateTransferCode,
 } from "@/lib/passkeyWallet";
+import {
+  hasPin,
+  setPin as setPinSecure,
+  verifyPin,
+  validatePin,
+  storeWithPin,
+  storeWithPasskey,
+  createImportPasskey,
+  PIN_MIN_LEN,
+  PIN_MAX_LEN,
+} from "@/lib/walletPin";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { LedgerConnectPanel } from "@/components/LedgerConnectPanel";
@@ -190,7 +201,7 @@ function getEvmProvider(walletId: string): any {
 type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr";
 type ConnectTab = "reown" | "bsv" | "tron" | "ledger";
 type CreateStep = "generate" | "done";
-type ImportStep = "enter" | "done";
+type ImportStep = "enter" | "secure" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji?: string }[] = [
   { id: "reown",  label: "EVM Wallets" },
@@ -267,6 +278,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [importAddress, setImportAddress] = useState("");
   const [importMode, setImportMode] = useState<"seed" | "privatekey">("seed");
   const [importPrivKey, setImportPrivKey] = useState("");
+
+  /* secure-import (PIN/passkey) state */
+  const [pendingImport, setPendingImport] = useState<{
+    secret:     string;
+    secretType: "mnemonic" | "privatekey";
+    address:    string;
+    addrs:      HdWalletAddresses | null;
+  } | null>(null);
+  const [secureMode, setSecureMode] = useState<"pin" | "passkey">("pin");
+  const [pinHasExisting, setPinHasExisting] = useState(false);
+  const [pinValue, setPinValue] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
 
   /* evm extras */
   const [evmChain, setEvmChain] = useState("eth");
@@ -426,6 +451,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         setImportError(null);
         setImportMode("seed");
         setImportPrivKey("");
+        setPendingImport(null);
+        setPinValue("");
+        setPinConfirm("");
+        setPinError(null);
+        setSecureMode("pin");
         setConnecting(null);
         setConnected(null);
         setConnectError(null);
@@ -464,6 +494,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setImportError(null);
       setImportMode("seed");
       setImportPrivKey("");
+      setPendingImport(null);
+      setPinValue("");
+      setPinConfirm("");
+      setPinError(null);
+      setSecureMode("pin");
       setConnecting(null);
       setConnected(null);
       setConnectError(null);
@@ -1013,7 +1048,21 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }
   };
 
-  /* ── Import wallet — seed phrase ──────────────────────────────────────────── */
+  /* ── Begin secure-import flow (PIN/passkey gate) ─────────────────────────── */
+  const beginSecureImport = (args: {
+    secret: string; secretType: "mnemonic"|"privatekey";
+    address: string; addrs: HdWalletAddresses | null;
+  }) => {
+    setPendingImport(args);
+    setPinValue("");
+    setPinConfirm("");
+    setPinError(null);
+    setPinHasExisting(hasPin());
+    setSecureMode("pin");
+    setImportStep("secure");
+  };
+
+  /* ── Import wallet — seed phrase (stage for PIN/passkey gate) ────────────── */
   const handleImport = async () => {
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
@@ -1023,20 +1072,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const addrs = await deriveAllAddresses(result.words);
       setHdAddresses(addrs);
       setImportAddress(addrs.evm);
-      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
-      setInternalEvmAddress(addrs.evm);
-      setInternalBsvAddress(addrs.bsv);
-      setInternalBchAddress(addrs.bch);
-      setInternalBtcAddress(addrs.btc);
-      setInternalSolAddress(addrs.sol);
-      setImportStep("done");
-      setTimeout(() => goToPrep(addrs.evm, "evm", "orah-wallet"), 2500);
+      beginSecureImport({
+        secret: result.words.join(" "),
+        secretType: "mnemonic",
+        address: addrs.evm,
+        addrs,
+      });
     } finally {
       setHdDeriving(false);
     }
   };
 
-  /* ── Import wallet — EVM private key ─────────────────────────────────────── */
+  /* ── Import wallet — EVM private key (stage for PIN/passkey gate) ────────── */
   const handleImportPrivateKey = async () => {
     const raw = importPrivKey.trim();
     const pk = raw.startsWith("0x") ? raw : `0x${raw}`;
@@ -1054,10 +1101,82 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
     setImportAddress(addr);
-    connect({ address: addr, provider: "orah-wallet", network: "evm", chainId: 1 });
-    setInternalEvmAddress(addr);
+    beginSecureImport({
+      secret: pk,
+      secretType: "privatekey",
+      address: addr,
+      addrs: null,
+    });
+  };
+
+  /* ── Finalize import after PIN/passkey is set ────────────────────────────── */
+  const finalizeImport = () => {
+    if (!pendingImport) return;
+    const { address, addrs, secretType } = pendingImport;
+    connect({ address, provider: "orah-wallet", network: "evm", chainId: 1 });
+    setInternalEvmAddress(address);
+    if (addrs) {
+      setInternalBsvAddress(addrs.bsv);
+      setInternalBchAddress(addrs.bch);
+      setInternalBtcAddress(addrs.btc);
+      setInternalSolAddress(addrs.sol);
+    }
     setImportStep("done");
-    setTimeout(() => goToPrep(addr, "evm", "orah-wallet"), 1500);
+    const delay = secretType === "mnemonic" ? 2500 : 1500;
+    setTimeout(() => goToPrep(address, "evm", "orah-wallet"), delay);
+  };
+
+  const handleConfirmPin = async () => {
+    if (!pendingImport) return;
+    setPinError(null);
+    setPinBusy(true);
+    try {
+      if (pinHasExisting) {
+        if (!(await verifyPin(pinValue))) {
+          setPinError("Incorrect PIN");
+          return;
+        }
+      } else {
+        const v = validatePin(pinValue);
+        if (!v.valid) { setPinError(v.error ?? "Invalid PIN"); return; }
+        if (pinValue !== pinConfirm) { setPinError("PINs do not match"); return; }
+        await setPinSecure(pinValue);
+      }
+      await storeWithPin({
+        address:    pendingImport.address,
+        secret:     pendingImport.secret,
+        secretType: pendingImport.secretType,
+        pin:        pinValue,
+        label:      "Imported Orah Wallet",
+      });
+      finalizeImport();
+    } catch (err: any) {
+      setPinError(err?.message ?? "Failed to secure wallet");
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
+  const handleConfirmPasskey = async () => {
+    if (!pendingImport) return;
+    setPinError(null);
+    setPinBusy(true);
+    try {
+      const { credentialId, prfSecret } = await createImportPasskey("Orah Imported Wallet");
+      await storeWithPasskey({
+        address:    pendingImport.address,
+        secret:     pendingImport.secret,
+        secretType: pendingImport.secretType,
+        prfSecret,
+        passkeyId:  credentialId,
+        label:      "Imported Orah Wallet",
+      });
+      finalizeImport();
+    } catch (err: any) {
+      setPinError(err?.message ?? "Passkey setup cancelled");
+    } finally {
+      setPinBusy(false);
+    }
   };
 
   const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
@@ -1528,7 +1647,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl mt-3">
                                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                                 <p className="text-xs text-amber-300/80 leading-relaxed">
-                                  Your private key never leaves your device. OrahDEX processes it locally only to derive your address — it is never stored or sent.
+                                  Your private key never leaves your device. OrahDEX will encrypt it on this device with your PIN or passkey before saving — it is never sent anywhere.
                                 </p>
                               </div>
                               <button
@@ -1591,6 +1710,156 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             </div>
                           )}
                         </>
+                      )}
+
+                      {importStep === "secure" && pendingImport && (
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-3 p-3.5 bg-primary/8 border border-primary/20 rounded-xl">
+                            <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                            <div className="text-xs text-foreground/90 leading-relaxed">
+                              <p className="font-bold text-primary mb-0.5">Secure your imported wallet</p>
+                              <p className="text-muted-foreground">
+                                {pinHasExisting
+                                  ? "Enter your OrahDEX PIN to encrypt and save this wallet on this device."
+                                  : `Set a ${PIN_MIN_LEN}–${PIN_MAX_LEN} digit PIN (or use your device passkey) to encrypt this wallet on this device. You'll need it for future signing.`}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Mode toggle — show passkey option only on supported devices and only when no PIN exists yet */}
+                          {!pinHasExisting && passkeySupported && (
+                            <div className="flex gap-1 p-1 bg-white/5 rounded-xl border border-border">
+                              <button
+                                onClick={() => { setSecureMode("pin"); setPinError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  secureMode === "pin" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Key className="w-3.5 h-3.5" /> PIN
+                              </button>
+                              <button
+                                onClick={() => { setSecureMode("passkey"); setPinError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  secureMode === "passkey" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Fingerprint className="w-3.5 h-3.5" /> Passkey
+                              </button>
+                            </div>
+                          )}
+
+                          {secureMode === "pin" ? (
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1.5">
+                                  {pinHasExisting ? "OrahDEX PIN" : "Choose a PIN"}
+                                </p>
+                                <input
+                                  type="password"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  maxLength={PIN_MAX_LEN}
+                                  autoFocus
+                                  value={pinValue}
+                                  onChange={e => { setPinValue(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+                                  placeholder="••••"
+                                  className={cn(
+                                    "w-full bg-white/3 border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-foreground focus:outline-none transition-all",
+                                    pinError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                                  )}
+                                />
+                              </div>
+                              {!pinHasExisting && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1.5">Confirm PIN</p>
+                                  <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    maxLength={PIN_MAX_LEN}
+                                    value={pinConfirm}
+                                    onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+                                    placeholder="••••"
+                                    className={cn(
+                                      "w-full bg-white/3 border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-foreground focus:outline-none transition-all",
+                                      pinError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                                    )}
+                                  />
+                                </div>
+                              )}
+                              {pinError && (
+                                <p className="text-xs text-red-400 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3 h-3" /> {pinError}
+                                </p>
+                              )}
+                              <button
+                                onClick={handleConfirmPin}
+                                disabled={pinBusy || pinValue.length < PIN_MIN_LEN || (!pinHasExisting && pinConfirm.length < PIN_MIN_LEN)}
+                                className={cn(
+                                  "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                                  !pinBusy && pinValue.length >= PIN_MIN_LEN && (pinHasExisting || pinConfirm.length >= PIN_MIN_LEN)
+                                    ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                {pinBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Securing…</> : (pinHasExisting ? "Unlock & Import" : "Set PIN & Import")}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="flex flex-col items-center gap-3 py-4">
+                                <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center">
+                                  <Fingerprint className="w-8 h-8 text-primary" />
+                                </div>
+                                <p className="text-sm text-center text-muted-foreground max-w-xs leading-relaxed">
+                                  Use Face ID, Touch ID, Windows Hello, or your device's biometric to encrypt and protect this wallet.
+                                </p>
+                              </div>
+                              {pinError && (
+                                <p className="text-xs text-red-400 flex items-center gap-1.5 justify-center">
+                                  <AlertTriangle className="w-3 h-3" /> {pinError}
+                                </p>
+                              )}
+                              <button
+                                onClick={handleConfirmPasskey}
+                                disabled={pinBusy}
+                                className={cn(
+                                  "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                                  !pinBusy
+                                    ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                {pinBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for Passkey…</> : "Continue with Passkey"}
+                              </button>
+                            </div>
+                          )}
+
+                          <button
+                            onClick={() => { setImportStep("enter"); setPendingImport(null); setPinValue(""); setPinConfirm(""); setPinError(null); }}
+                            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            ← Back
+                          </button>
+                        </div>
+                      )}
+
+                      {importStep === "done" && !hdAddresses && pendingImport && (
+                        <div className="py-6 flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center">
+                            <CheckCircle2 className="w-8 h-8 text-primary" />
+                          </div>
+                          <div className="text-center">
+                            <h3 className="text-xl font-bold">Wallet Imported & Secured!</h3>
+                            <p className="text-xs text-muted-foreground mt-1">EVM address active</p>
+                          </div>
+                          <div className="w-full p-3 rounded-xl bg-blue-500/8 border border-blue-500/20">
+                            <p className="text-[10px] text-muted-foreground mb-0.5">EVM</p>
+                            <p className="text-xs font-mono text-foreground truncate">{pendingImport.address}</p>
+                          </div>
+                        </div>
                       )}
 
                       {importStep === "done" && hdAddresses && (
