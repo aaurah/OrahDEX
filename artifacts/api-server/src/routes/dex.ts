@@ -121,7 +121,7 @@ async function fetchSpotPair(symbol: string): Promise<{ usd: number; change24h: 
   return null;
 }
 
-async function fetchKeyPrices() {
+export async function fetchKeyPrices() {
   const results: Record<string, { usd: number; change24h: number }> = {
     USDT: { usd: 1, change24h: 0 },
     USDC: { usd: 1, change24h: 0 },
