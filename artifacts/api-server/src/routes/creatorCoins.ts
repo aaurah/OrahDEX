@@ -316,8 +316,10 @@ router.post("/social/creators/:address/trade", async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const { address } = req.params;
-      const { trader, trade_type, bsv_amount, token_amount, payment_asset } = req.body as Record<string, any>;
+      const address = (req.params.address ?? "").toLowerCase();
+      const rawBody = req.body as Record<string, any>;
+      const trader = String(rawBody.trader ?? "").toLowerCase();
+      const { trade_type, bsv_amount, token_amount, payment_asset } = rawBody;
       const payAsset = String(payment_asset ?? "BSV").toUpperCase();
       // Conversion ratio: 1 unit of payAsset = `payAssetPerBsv` BSV.
       // For payAsset = BSV this is 1. For others we use live USD prices.
@@ -342,7 +344,7 @@ router.post("/social/creators/:address/trade", async (req, res) => {
         return;
       }
 
-      const { rows: coins } = await client.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
+      const { rows: coins } = await client.query("SELECT * FROM creator_coins WHERE LOWER(creator_address) = $1", [address]);
       if (!coins.length) {
         await client.query("ROLLBACK");
         res.status(404).json({ error: "Coin not found" });
@@ -370,7 +372,7 @@ router.post("/social/creators/:address/trade", async (req, res) => {
           // Seeded funds are demo liquidity and should not be spendable by users.
           `SELECT GREATEST(0, available - COALESCE(seeded, 0)) AS available
            FROM user_balances
-           WHERE wallet_address = $1 AND asset_symbol = $2
+           WHERE LOWER(wallet_address) = $1 AND asset_symbol = $2
           FOR UPDATE`,
           [trader, payAsset],
         );
@@ -394,7 +396,7 @@ router.post("/social/creators/:address/trade", async (req, res) => {
         await client.query(
           `UPDATE user_balances
            SET available = available - $1, updated_at = NOW()
-           WHERE wallet_address = $2 AND asset_symbol = $3`,
+           WHERE LOWER(wallet_address) = $2 AND asset_symbol = $3`,
           [payIn.toFixed(18), trader, payAsset],
         );
 
@@ -419,7 +421,7 @@ router.post("/social/creators/:address/trade", async (req, res) => {
         const { rows: holdingRows } = await client.query(
           `SELECT amount
            FROM coin_holdings
-           WHERE coin_creator = $1 AND holder = $2
+           WHERE LOWER(coin_creator) = $1 AND LOWER(holder) = $2
           FOR UPDATE`,
           [address, trader],
         );
@@ -442,7 +444,7 @@ router.post("/social/creators/:address/trade", async (req, res) => {
 
         await client.query(
           `UPDATE coin_holdings SET amount = amount - $1, updated_at = NOW()
-            WHERE coin_creator = $2 AND holder = $3`,
+            WHERE LOWER(coin_creator) = $2 AND LOWER(holder) = $3`,
           [tokensExchanged, address, trader],
         );
 
@@ -464,14 +466,14 @@ router.post("/social/creators/:address/trade", async (req, res) => {
       const newAth = Math.max(parseFloat(coin.ath_usd ?? "0"), newPriceUsd);
 
       const { rows: holdersCount } = await client.query(
-        "SELECT COUNT(*) as cnt FROM coin_holdings WHERE coin_creator = $1 AND amount > 0", [address],
+        "SELECT COUNT(*) as cnt FROM coin_holdings WHERE LOWER(coin_creator) = $1 AND amount > 0", [address],
       );
 
       await client.query(
         `UPDATE creator_coins SET virtual_bsv = $1, virtual_tokens = $2, price_bsv = $3, price_usd = $4,
          market_cap_usd = $5, ath_usd = $6, circulating_supply = $7,
          volume_24h_usd = volume_24h_usd + $8, trade_count = trade_count + 1,
-         holder_count = $9 WHERE creator_address = $10`,
+         holder_count = $9 WHERE LOWER(creator_address) = $10`,
         [newVBsv.toFixed(8), Math.floor(newVTok), newPrice.toFixed(12), newPriceUsd.toFixed(8),
          newMcap, newAth.toFixed(8), Math.max(0, newCirculating), (bsvExchanged * BSV_USD).toFixed(2),
          holdersCount[0].cnt, address],
@@ -507,9 +509,9 @@ router.post("/social/creators/:address/trade", async (req, res) => {
 /* ── GET /social/quote/:address ───────────────────────────────────────────── */
 router.get("/social/quote/:address", async (req, res) => {
   try {
-    const { address } = req.params;
+    const address = (req.params.address ?? "").toLowerCase();
     const { type = "buy", bsv_amount, token_amount } = req.query as Record<string, string>;
-    const { rows: coins } = await pool.query("SELECT * FROM creator_coins WHERE creator_address = $1", [address]);
+    const { rows: coins } = await pool.query("SELECT * FROM creator_coins WHERE LOWER(creator_address) = $1", [address]);
     if (!coins.length) { res.status(404).json({ error: "Coin not found" }); return; }
     const coin = coins[0];
     const vBsv = parseFloat(coin.virtual_bsv);
@@ -542,21 +544,24 @@ router.get("/social/quote/:address", async (req, res) => {
 /* ── POST /social/follow ──────────────────────────────────────────────────── */
 router.post("/social/follow", async (req, res) => {
   try {
-    const { follower, following } = req.body as Record<string, string>;
+    const body = req.body as Record<string, string>;
+    const follower = (body.follower ?? "").toLowerCase();
+    const following = (body.following ?? "").toLowerCase();
     if (!follower || !following) { res.status(400).json({ error: "follower and following required" }); return; }
+    if (follower === following) { res.status(400).json({ error: "cannot follow yourself" }); return; }
 
     const { rows: existing } = await pool.query(
-      "SELECT id FROM social_follows WHERE follower = $1 AND following = $2", [follower, following],
+      "SELECT id FROM social_follows WHERE LOWER(follower) = $1 AND LOWER(following) = $2", [follower, following],
     );
     if (existing.length > 0) {
-      await pool.query("DELETE FROM social_follows WHERE follower = $1 AND following = $2", [follower, following]);
-      await pool.query("UPDATE creator_profiles SET follower_count = GREATEST(0, follower_count - 1) WHERE address = $1", [following]);
-      await pool.query("UPDATE creator_profiles SET following_count = GREATEST(0, following_count - 1) WHERE address = $1", [follower]);
+      await pool.query("DELETE FROM social_follows WHERE LOWER(follower) = $1 AND LOWER(following) = $2", [follower, following]);
+      await pool.query("UPDATE creator_profiles SET follower_count = GREATEST(0, follower_count - 1) WHERE LOWER(address) = $1", [following]);
+      await pool.query("UPDATE creator_profiles SET following_count = GREATEST(0, following_count - 1) WHERE LOWER(address) = $1", [follower]);
       res.json({ following: false });
     } else {
       await pool.query("INSERT INTO social_follows (id, follower, following) VALUES ($1,$2,$3)", [uid(), follower, following]);
-      await pool.query("UPDATE creator_profiles SET follower_count = follower_count + 1 WHERE address = $1", [following]);
-      await pool.query("UPDATE creator_profiles SET following_count = following_count + 1 WHERE address = $1", [follower]);
+      await pool.query("UPDATE creator_profiles SET follower_count = follower_count + 1 WHERE LOWER(address) = $1", [following]);
+      await pool.query("UPDATE creator_profiles SET following_count = following_count + 1 WHERE LOWER(address) = $1", [follower]);
       res.json({ following: true });
     }
   } catch (err: any) {
@@ -567,12 +572,13 @@ router.post("/social/follow", async (req, res) => {
 /* ── GET /social/creators/:address/holders ──────────────────────────────── */
 router.get("/social/creators/:address/holders", async (req, res) => {
   try {
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows } = await pool.query(
-      `SELECT ch.holder, ch.amount, cp.username
+      `SELECT ch.holder, ch.amount, cp.username, cp.avatar_url
        FROM coin_holdings ch
-       LEFT JOIN creator_profiles cp ON ch.holder = cp.address
-       WHERE ch.coin_creator = $1 AND ch.amount > 0
-       ORDER BY ch.amount DESC LIMIT 50`, [req.params.address],
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(ch.holder)
+       WHERE LOWER(ch.coin_creator) = $1 AND ch.amount > 0
+       ORDER BY ch.amount DESC LIMIT 50`, [address],
     );
     res.json(rows);
   } catch (err: any) {
@@ -583,12 +589,13 @@ router.get("/social/creators/:address/holders", async (req, res) => {
 /* ── GET /social/creators/:address/followers ─────────────────────────────── */
 router.get("/social/creators/:address/followers", async (req, res) => {
   try {
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows } = await pool.query(
       `SELECT sf.follower as address, cp.username, cp.avatar_url, cp.is_verified
        FROM social_follows sf
-       LEFT JOIN creator_profiles cp ON sf.follower = cp.address
-       WHERE sf.following = $1
-       ORDER BY sf.created_at DESC LIMIT 100`, [req.params.address],
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(sf.follower)
+       WHERE LOWER(sf.following) = $1
+       ORDER BY sf.created_at DESC LIMIT 100`, [address],
     );
     res.json(rows);
   } catch (err: any) {
@@ -599,12 +606,13 @@ router.get("/social/creators/:address/followers", async (req, res) => {
 /* ── GET /social/creators/:address/following ─────────────────────────────── */
 router.get("/social/creators/:address/following", async (req, res) => {
   try {
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows } = await pool.query(
       `SELECT sf.following as address, cp.username, cp.avatar_url, cp.is_verified
        FROM social_follows sf
-       LEFT JOIN creator_profiles cp ON sf.following = cp.address
-       WHERE sf.follower = $1
-       ORDER BY sf.created_at DESC LIMIT 100`, [req.params.address],
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(sf.following)
+       WHERE LOWER(sf.follower) = $1
+       ORDER BY sf.created_at DESC LIMIT 100`, [address],
     );
     res.json(rows);
   } catch (err: any) {
@@ -615,13 +623,14 @@ router.get("/social/creators/:address/following", async (req, res) => {
 /* ── GET /social/holdings/:address ───────────────────────────────────────── */
 router.get("/social/holdings/:address", async (req, res) => {
   try {
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows } = await pool.query(
-      `SELECT ch.*, cp.username, cc.symbol, cc.price_usd, cc.market_cap_usd
+      `SELECT ch.*, cp.username, cp.avatar_url, cc.symbol, cc.price_usd, cc.market_cap_usd
        FROM coin_holdings ch
-       JOIN creator_profiles cp ON ch.coin_creator = cp.address
-       JOIN creator_coins cc ON ch.coin_creator = cc.creator_address
-       WHERE ch.holder = $1 AND ch.amount > 0
-       ORDER BY (ch.amount::numeric * cc.price_usd::numeric) DESC`, [req.params.address],
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(ch.coin_creator)
+       LEFT JOIN creator_coins cc ON LOWER(cc.creator_address) = LOWER(ch.coin_creator)
+       WHERE LOWER(ch.holder) = $1 AND ch.amount > 0
+       ORDER BY (ch.amount::numeric * COALESCE(cc.price_usd::numeric, 0)) DESC`, [address],
     );
     res.json({ holdings: rows });
   } catch (err: any) {
@@ -632,9 +641,10 @@ router.get("/social/holdings/:address", async (req, res) => {
 /* ── GET /social/holdings/:holderAddress/coin/:creatorAddress ─────────────── */
 router.get("/social/holdings/:holderAddress/coin/:creatorAddress", async (req, res) => {
   try {
-    const { holderAddress, creatorAddress } = req.params;
+    const holderAddress = (req.params.holderAddress ?? "").toLowerCase();
+    const creatorAddress = (req.params.creatorAddress ?? "").toLowerCase();
     const { rows } = await pool.query(
-      "SELECT amount FROM coin_holdings WHERE holder = $1 AND coin_creator = $2",
+      "SELECT amount FROM coin_holdings WHERE LOWER(holder) = $1 AND LOWER(coin_creator) = $2",
       [holderAddress, creatorAddress],
     );
     res.json({ amount: parseFloat(rows[0]?.amount ?? "0") });
@@ -689,7 +699,7 @@ router.delete("/social/creators/:address", async (req, res) => {
   let client: SqlClient | null = null;
   try {
     client = await pool.connect() as SqlClient;
-    const { address } = req.params;
+    const address = (req.params.address ?? "").toLowerCase();
     const { confirm } = req.body as Record<string, string>;
     if (confirm !== "DELETE") {
       res.status(400).json({ error: "Confirmation required — send { confirm: 'DELETE' }" });
@@ -700,53 +710,38 @@ router.delete("/social/creators/:address", async (req, res) => {
     const postOwnerColumn = await resolveColumn(client, "social_posts", ["creator", "author"]);
     const commentAuthorColumn = await resolveColumn(client, "post_comments", ["wallet_address", "author"]);
 
-    await client.query("DELETE FROM social_follows WHERE follower = $1 OR following = $1", [address]);
-    await client.query("DELETE FROM post_likes WHERE wallet_address = $1", [address]);
-    await client.query("DELETE FROM post_mints WHERE minter = $1", [address]);
+    await client.query("DELETE FROM social_follows WHERE LOWER(follower) = $1 OR LOWER(following) = $1", [address]);
+    await client.query("DELETE FROM post_likes WHERE LOWER(wallet_address) = $1", [address]);
+    await client.query("DELETE FROM post_mints WHERE LOWER(minter) = $1", [address]);
 
     if (commentAuthorColumn) {
       if (commentAuthorColumn === "wallet_address") {
-        await client.query("DELETE FROM post_comments WHERE wallet_address = $1", [address]);
+        await client.query("DELETE FROM post_comments WHERE LOWER(wallet_address) = $1", [address]);
       } else if (commentAuthorColumn === "author") {
-        await client.query("DELETE FROM post_comments WHERE author = $1", [address]);
+        await client.query("DELETE FROM post_comments WHERE LOWER(author) = $1", [address]);
       }
     }
 
     if (postOwnerColumn) {
-      if (postOwnerColumn === "creator") {
-        await client.query(
-          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
-          [address],
-        );
-        await client.query(
-          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
-          [address],
-        );
-        await client.query(
-          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE creator = $1)`,
-          [address],
-        );
-        await client.query("DELETE FROM social_posts WHERE creator = $1", [address]);
-      } else if (postOwnerColumn === "author") {
-        await client.query(
-          `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
-          [address],
-        );
-        await client.query(
-          `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
-          [address],
-        );
-        await client.query(
-          `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE author = $1)`,
-          [address],
-        );
-        await client.query("DELETE FROM social_posts WHERE author = $1", [address]);
-      }
+      const col = postOwnerColumn;
+      await client.query(
+        `DELETE FROM post_likes WHERE post_id IN (SELECT id FROM social_posts WHERE LOWER(${col}) = $1)`,
+        [address],
+      );
+      await client.query(
+        `DELETE FROM post_mints WHERE post_id IN (SELECT id FROM social_posts WHERE LOWER(${col}) = $1)`,
+        [address],
+      );
+      await client.query(
+        `DELETE FROM post_comments WHERE post_id IN (SELECT id FROM social_posts WHERE LOWER(${col}) = $1)`,
+        [address],
+      );
+      await client.query(`DELETE FROM social_posts WHERE LOWER(${col}) = $1`, [address]);
     }
 
-    await client.query("DELETE FROM coin_holdings WHERE holder = $1 OR coin_creator = $1", [address]);
-    await client.query("DELETE FROM creator_coins WHERE creator_address = $1", [address]);
-    await client.query("DELETE FROM creator_profiles WHERE address = $1", [address]);
+    await client.query("DELETE FROM coin_holdings WHERE LOWER(holder) = $1 OR LOWER(coin_creator) = $1", [address]);
+    await client.query("DELETE FROM creator_coins WHERE LOWER(creator_address) = $1", [address]);
+    await client.query("DELETE FROM creator_profiles WHERE LOWER(address) = $1", [address]);
     await client.query("COMMIT");
     res.json({ ok: true });
   } catch (err: any) {

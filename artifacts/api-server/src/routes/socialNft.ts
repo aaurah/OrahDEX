@@ -299,14 +299,14 @@ router.get("/social/trending", async (req, res) => {
 router.get("/social/profile/:address", async (req, res) => {
 
   try {
-    const { address } = req.params;
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows: posts } = await pool.query(
-      "SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address],
+      "SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address],
     );
     const { rows: mints } = await pool.query(
       `SELECT pm.*, sp.title, sp.image_url, sp.creator_name, sp.mint_currency
        FROM post_mints pm JOIN social_posts sp ON pm.post_id = sp.id
-       WHERE pm.minter = $1 ORDER BY pm.created_at DESC`, [address],
+       WHERE LOWER(pm.minter) = $1 ORDER BY pm.created_at DESC`, [address],
     );
     const totalLikes = posts.reduce((s: number, p: any) => s + (p.like_count ?? 0), 0);
     const totalMints = posts.reduce((s: number, p: any) => s + (p.mint_count ?? 0), 0);
