@@ -35,6 +35,24 @@ export interface LpPosition {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * Normalize a wallet address for ledger storage / lookup.
+ * EVM addresses (0x-prefixed) are case-insensitive on chain — the checksum
+ * casing is purely a display convention. We lowercase them so a single user
+ * never ends up with multiple ledger rows (one per casing variant) which
+ * caused "Insufficient funds" failures when the order endpoint locked funds
+ * with a different casing than the deposit credited.
+ *
+ * Non-EVM addresses (BSV legacy, BTC bech32, BCH cashaddr, Tron, Solana)
+ * are case-sensitive and pass through unchanged.
+ */
+function normAddr(addr: string): string {
+  if (typeof addr !== "string") return addr;
+  return addr.startsWith("0x") || addr.startsWith("0X")
+    ? addr.toLowerCase()
+    : addr;
+}
+
 function big(n: string | number): bigint {
   // We keep amounts as strings in the DB.  Use comparison helpers below.
   return 0n; // placeholder; we rely on DB for arithmetic
@@ -60,7 +78,7 @@ async function ensureBalance(
     `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
      VALUES ($1, $2, '0', '0', now())
      ON CONFLICT (wallet_address, asset_symbol) DO NOTHING`,
-    [walletAddress, asset],
+    [normAddr(walletAddress), asset],
   );
 }
 
@@ -74,7 +92,7 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
      FROM user_balances
      WHERE wallet_address = $1
      ORDER BY asset_symbol`,
-    [walletAddress],
+    [normAddr(walletAddress)],
   );
   return rows
     .map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }))
@@ -285,6 +303,7 @@ export async function ensureSeedForAsset(
   asset:         string,
   neededAmount:  string,
 ): Promise<void> {
+  walletAddress = normAddr(walletAddress);
   const needed = parseFloat(neededAmount);
   // Run inside a transaction with a row lock so two concurrent callers
   // cannot both read the same balance and both decide to seed.
@@ -343,7 +362,7 @@ export async function creditAvailable(
      VALUES ($1, $2, $3, '0', now())
      ON CONFLICT (wallet_address, asset_symbol)
      DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
-    [walletAddress, asset, amount],
+    [normAddr(walletAddress), asset, amount],
   );
 }
 
@@ -354,6 +373,7 @@ export async function debitAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
+  walletAddress = normAddr(walletAddress);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -390,6 +410,7 @@ export async function lockForOrder(params: {
   asset:         string;
   amount:        string;
 }): Promise<void> {
+  params = { ...params, walletAddress: normAddr(params.walletAddress) };
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -429,6 +450,15 @@ export async function lockForOrder(params: {
 // ── Unlock funds (locked → available — e.g. on order cancel) ─────────────────
 
 export async function unlockFunds(params: {
+  walletAddress: string;
+  asset:         string;
+  amount:        string;
+}): Promise<void> {
+  params = { ...params, walletAddress: normAddr(params.walletAddress) };
+  return _unlockFundsImpl(params);
+}
+
+async function _unlockFundsImpl(params: {
   walletAddress: string;
   asset:         string;
   amount:        string;
@@ -490,7 +520,9 @@ export async function settleTrade(params: {
   price:         string;   // fill price
   feePct?:       number;   // fraction e.g. 0.001 = 0.1%
 }): Promise<void> {
-  const { buyerAddress, sellerAddress, baseAsset, quoteAsset, amount, price, feePct = 0.001 } = params;
+  const buyerAddress  = normAddr(params.buyerAddress);
+  const sellerAddress = normAddr(params.sellerAddress);
+  const { baseAsset, quoteAsset, amount, price, feePct = 0.001 } = params;
   const cost    = (parseFloat(amount) * parseFloat(price)).toFixed(18);
   const buyFee  = (parseFloat(amount) * feePct).toFixed(18);
   const sellFee = (parseFloat(cost)   * feePct).toFixed(18);
@@ -600,7 +632,8 @@ export async function settleSwap(params: {
   amountIn:      string;
   amountOut:     string;
 }): Promise<void> {
-  const { walletAddress, assetIn, assetOut, amountIn, amountOut } = params;
+  const walletAddress = normAddr(params.walletAddress);
+  const { assetIn, assetOut, amountIn, amountOut } = params;
 
   const client = await pool.connect();
   try {
