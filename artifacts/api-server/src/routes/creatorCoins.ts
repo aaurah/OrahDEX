@@ -126,12 +126,12 @@ router.get("/social/creators", async (req, res) => {
 router.get("/social/creators/:address", async (req, res) => {
 
   try {
-    const { address } = req.params;
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows: profiles } = await pool.query(
       `SELECT cp.*, cc.symbol, cc.name as coin_name, cc.price_usd, cc.market_cap_usd, cc.ath_usd, cc.volume_24h_usd, cc.holder_count, cc.trade_count, cc.circulating_supply, cc.virtual_bsv, cc.virtual_tokens, cc.price_bsv, cc.total_supply
        FROM creator_profiles cp
-       LEFT JOIN creator_coins cc ON cp.address = cc.creator_address
-       WHERE cp.address = $1`, [address],
+       LEFT JOIN creator_coins cc ON LOWER(cp.address) = LOWER(cc.creator_address)
+       WHERE LOWER(cp.address) = $1`, [address],
     );
 
     if (!profiles.length) {
@@ -147,9 +147,9 @@ router.get("/social/creators/:address", async (req, res) => {
       );
       const { rows: newProfile } = await pool.query(
         `SELECT cp.*, cc.symbol, cc.name as coin_name, cc.price_usd, cc.market_cap_usd, cc.ath_usd, cc.virtual_bsv, cc.virtual_tokens, cc.price_bsv, cc.holder_count, cc.circulating_supply, cc.total_supply
-         FROM creator_profiles cp LEFT JOIN creator_coins cc ON cp.address = cc.creator_address WHERE cp.address = $1`, [address],
+         FROM creator_profiles cp LEFT JOIN creator_coins cc ON LOWER(cp.address) = LOWER(cc.creator_address) WHERE LOWER(cp.address) = $1`, [address],
       );
-      const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address]);
+      const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]);
       const profile = newProfile[0] ?? null;
       if (profile) profile.post_count = posts.length;
       res.json({ profile, posts, topHolders: [], trades: [] });
@@ -157,20 +157,20 @@ router.get("/social/creators/:address", async (req, res) => {
     }
 
     const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }] = await Promise.all([
-      pool.query("SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address]),
-      pool.query("SELECT holder, amount FROM coin_holdings WHERE coin_creator = $1 ORDER BY amount DESC LIMIT 5", [address]),
-      pool.query("SELECT * FROM coin_trades WHERE coin_creator = $1 ORDER BY created_at DESC LIMIT 20", [address]),
+      pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]),
+      pool.query("SELECT holder, amount FROM coin_holdings WHERE LOWER(coin_creator) = $1 ORDER BY amount DESC LIMIT 5", [address]),
+      pool.query("SELECT * FROM coin_trades WHERE LOWER(coin_creator) = $1 ORDER BY created_at DESC LIMIT 20", [address]),
       // NFT market cap: sum of (mint_count * mint_price_usd) across all posts
       pool.query(
         `SELECT COALESCE(SUM(mint_count * mint_price_usd), 0) AS nft_market_cap_usd
-         FROM social_posts WHERE creator = $1`, [address],
+         FROM social_posts WHERE LOWER(creator) = $1`, [address],
       ),
       // NFT holders: distinct minters across all creator's posts
       pool.query(
         `SELECT COUNT(DISTINCT pm.minter) AS nft_holder_count
          FROM post_mints pm
          JOIN social_posts sp ON pm.post_id = sp.id
-         WHERE sp.creator = $1`, [address],
+         WHERE LOWER(sp.creator) = $1`, [address],
       ),
     ]);
 
