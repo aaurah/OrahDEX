@@ -81,3 +81,7 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
   }
   next();
 }
+
+export function isValidAdminToken(token: unknown): boolean {
+  return typeof token === "string" && token.length > 0 && adminTokens.has(token);
+}
