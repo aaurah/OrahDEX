@@ -2088,45 +2088,14 @@ function ChainBadge({ chain }: { chain: string }) {
   );
 }
 
-function ExternalNFTCard({ item, onLink }: { item: any; onLink: (url: string) => void }) {
-  const [imgErr, setImgErr] = useState(false);
-  const price = typeof item.mint_price === "number" ? item.mint_price : parseFloat(item.mint_price ?? "0");
-  return (
-    <button onClick={() => onLink(item.external_url)} className="flex items-center gap-3 p-3 rounded-xl w-full text-left active:opacity-75 transition-all"
-      style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-      <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0" style={{ background: "var(--color-surface-2, #1a1a2e)" }}>
-        {!imgErr ? <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
-          : <div className="w-full h-full flex items-center justify-center text-2xl">🖼️</div>}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{item.title}</span>
-          <ChainBadge chain={item.chain} />
-        </div>
-        <div className="text-xs truncate" style={{ color: "var(--color-text-secondary)" }}>{item.creator_name}</div>
-        <div className="text-[10px] mt-0.5" style={{ color: "#aaa" }}>{item.marketplace}</div>
-      </div>
-      <div className="text-right shrink-0">
-        {price > 0 && <div className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{price < 0.001 ? price.toExponential(2) : price.toFixed(4)}</div>}
-        {price > 0 && <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{item.mint_currency}</div>}
-        <ExternalLink size={11} className="mt-1 ml-auto" style={{ color: "var(--color-text-secondary)" }} />
-      </div>
-    </button>
-  );
-}
-
 function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<{ creators: any[]; posts: Post[] } | null>(null);
   const [coins, setCoins] = useState<any[]>([]);
   const [loadingCoins, setLoadingCoins] = useState(true);
-  const [external, setExternal] = useState<{ zora: any[]; magicEden: any[] } | null>(null);
-  const [loadingExt, setLoadingExt] = useState(true);
-  const [exploreSection, setExploreSection] = useState<"coins" | "zora" | "sol">("coins");
 
   useEffect(() => {
     fetch(`${API}/social/trending-coins`).then(r => r.json()).then(d => setCoins(d.coins ?? [])).catch(() => {}).finally(() => setLoadingCoins(false));
-    fetch(`${API}/social/external/trending`).then(r => r.json()).then(d => setExternal({ zora: d.zora ?? [], magicEden: d.magicEden ?? [] })).catch(() => setExternal({ zora: [], magicEden: [] })).finally(() => setLoadingExt(false));
   }, []);
 
   useEffect(() => {
@@ -2137,9 +2106,6 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
     return () => clearTimeout(t);
   }, [q]);
 
-  function openExternal(url: string) {
-    window.open(url, "_blank", "noopener");
-  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -2154,21 +2120,8 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 
       <div className="flex-1 overflow-y-auto px-3 pb-28">
         {!q && (
-          <>
-            {/* Section toggle pills */}
-            <div className="flex gap-2 mb-3 mt-1">
-              {([["coins", "🔥 BSV Creator Coins"], ["zora", "⚡ Zora · Base · ETH"], ["sol", "🌊 Magic Eden · SOL"]] as const).map(([key, label]) => (
-                <button key={key} onClick={() => setExploreSection(key)}
-                  className="flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all"
-                  style={{ background: exploreSection === key ? "var(--color-accent)" : "var(--color-surface)", color: exploreSection === key ? "#000" : "var(--color-text-secondary)" }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {exploreSection === "coins" && (
-              <>
-                {loadingCoins ? (
+          <div className="mt-1">
+            {loadingCoins ? (
                   <div className="flex items-center justify-center h-24"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>
                 ) : coins.length === 0 ? (
                   <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>No creator coins yet</div>
@@ -2199,39 +2152,7 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
                     <ChevronRight size={14} style={{ color: "var(--color-text-secondary)" }} />
                   </button>
                 ))}
-              </>
-            )}
-
-            {exploreSection === "zora" && (
-              <>
-                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Live trending mints from Zora, Base & Ethereum</div>
-                {loadingExt ? (
-                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#0052ff" }} /></div>
-                ) : (external?.zora ?? []).length === 0 ? (
-                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Zora — try again</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {(external?.zora ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
-                  </div>
-                )}
-              </>
-            )}
-
-            {exploreSection === "sol" && (
-              <>
-                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Top 24h collections from Magic Eden · Solana</div>
-                {loadingExt ? (
-                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#9945ff" }} /></div>
-                ) : (external?.magicEden ?? []).length === 0 ? (
-                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Magic Eden — try again</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {(external?.magicEden ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
-                  </div>
-                )}
-              </>
-            )}
-          </>
+          </div>
         )}
 
         {results && (
