@@ -239,6 +239,8 @@ export function MobilePortfolio() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [directBuyOpen, setDirectBuyOpen] = useState(false);
+  const [directBuyCoin, setDirectBuyCoin] = useState<string>("BTC");
+  const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
@@ -620,7 +622,9 @@ export function MobilePortfolio() {
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
       <DirectBuyModal
         open={directBuyOpen}
-        onClose={() => setDirectBuyOpen(false)}
+        onClose={() => { setDirectBuyOpen(false); setDirectBuyUsd(undefined); }}
+        defaultCoin={directBuyCoin}
+        defaultFiatUsd={directBuyUsd}
         defaultPayMethod="card"
         onSwitchToProviders={() => setBuyCryptoOpen(true)}
       />
@@ -1258,6 +1262,11 @@ export function MobilePortfolio() {
                   walletAddress={[address, internalEvmAddress, sessionStorage.getItem("orahdex_session_addr")]
                     .filter((s): s is string => !!s && s.length >= 6)
                     .join(",") || null}
+                  onResume={(o) => {
+                    setDirectBuyCoin(o.coin_symbol);
+                    setDirectBuyUsd((o.fiat_amount_cents / 100).toFixed(2));
+                    setDirectBuyOpen(true);
+                  }}
                 />
               )}
 
