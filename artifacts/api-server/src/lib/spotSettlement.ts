@@ -190,6 +190,12 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid");
   }
 
+  // Mark unbroadcast (local-only) settlement txids so the UI doesn't link
+  // them to WhatsOnChain (which would 404). Real broadcasts stay un-prefixed.
+  if (!wasRealBroadcast && !broadcastTxid.startsWith("local:")) {
+    broadcastTxid = `local:${broadcastTxid}`;
+  }
+
   log.info(
     {
       txid:           broadcastTxid,
