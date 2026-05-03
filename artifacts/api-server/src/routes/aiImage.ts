@@ -4,6 +4,7 @@
  * Returns a base64 data-URL the client can drop directly into <img>.
  */
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { generateImageBuffer } from "@workspace/integrations-openai-ai-server/image";
 import { logger } from "../lib/logger.js";
 
@@ -13,7 +14,17 @@ const MAX_PROMPT = 1000;
 type Size = "1024x1024" | "1024x1536" | "1536x1024";
 const VALID_SIZES = new Set<Size>(["1024x1024", "1024x1536", "1536x1024"]);
 
-router.post("/social/ai/image", async (req, res) => {
+// Strict per-IP throttle — gpt-image-1 is expensive (~$0.04/image).
+const aiImageLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) =>
+    res.status(429).json({ error: "Too many image requests — please wait a minute." }),
+});
+
+router.post("/social/ai/image", aiImageLimiter, async (req, res) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const promptRaw = typeof body.prompt === "string" ? body.prompt.trim() : "";
@@ -30,9 +41,14 @@ router.post("/social/ai/image", async (req, res) => {
     const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
     res.json({ image: dataUrl, size });
   } catch (err: any) {
-    logger.error({ err }, "AI image generation failed");
-    const msg = err?.message ?? "Image generation failed";
-    res.status(500).json({ error: msg });
+    // Log full detail server-side; return a generic message to clients to avoid
+    // leaking upstream provider internals or auth diagnostics.
+    logger.error({ err: err?.message, stack: err?.stack }, "AI image generation failed");
+    const status = err?.status === 400 ? 400 : 500;
+    const safeMsg = status === 400
+      ? "Prompt rejected. Try rephrasing without disallowed content."
+      : "Image generation is temporarily unavailable. Please try again.";
+    res.status(status).json({ error: safeMsg });
   }
 });
 

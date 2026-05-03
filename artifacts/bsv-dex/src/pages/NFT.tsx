@@ -889,6 +889,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   const [createForm, setCreateForm] = useState({ username: "", bio: "", avatar_url: "", website: "" });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [avatarCaptureOpen, setAvatarCaptureOpen] = useState(false);
   const isViewingOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
   const hybrid = useHybridBalance(60_000);
 
@@ -960,12 +961,31 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   rows={3}
                   className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary resize-none"
                 />
+                {createForm.avatar_url && (
+                  <div className="flex justify-center">
+                    <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "2px solid #00ff88" }}>
+                      <img src={createForm.avatar_url} alt="" className="w-full h-full object-cover"
+                           onError={() => setCreateForm(p => ({ ...p, avatar_url: "" }))} />
+                    </div>
+                  </div>
+                )}
+                <button type="button" onClick={() => setAvatarCaptureOpen(true)}
+                  className="w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+                  style={{ background: "#00ff88", color: "#000" }}>
+                  <Camera size={12} /> Camera
+                  <span style={{ opacity: 0.5 }}>•</span>
+                  <Sparkles size={12} /> AI
+                  <span style={{ opacity: 0.5 }}>•</span>
+                  <ImageIcon size={12} /> Upload
+                </button>
                 <input
                   value={createForm.avatar_url}
                   onChange={e => setCreateForm(prev => ({ ...prev, avatar_url: e.target.value }))}
-                  placeholder="Avatar URL"
+                  placeholder="…or paste avatar URL"
                   className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
                 />
+                <MediaCapture open={avatarCaptureOpen} onClose={() => setAvatarCaptureOpen(false)}
+                  onSelect={(dataUrl) => setCreateForm(p => ({ ...p, avatar_url: dataUrl }))} />
                 <input
                   value={createForm.website}
                   onChange={e => setCreateForm(prev => ({ ...prev, website: e.target.value }))}
