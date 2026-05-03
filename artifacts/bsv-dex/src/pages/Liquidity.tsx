@@ -9,6 +9,7 @@ import {
   Calculator, ArrowRight, Code2, ExternalLink, CheckCircle2, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances, type TokenBalance } from "@/hooks/useEvmBalances";
@@ -55,10 +56,13 @@ function useBackendBalances(address: string | null) {
   return { balances, refresh: fetchBalances, loading };
 }
 
-// ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
-// e.g. 0.3% pool fee → 0.25% to LPs + 0.05% to protocol (mirrors Uniswap v2)
-const LP_FEE_RATIO       = 5 / 6;
-const PROTOCOL_FEE_RATIO = 1 / 6;
+// ─── Pool-fee distribution ───────────────────────────────────────────────────
+// OrahPair currently routes the entire 0.30% swap fee to liquidity providers
+// (no _mintFee path is enabled). Keep these constants so the breakdown UI is
+// honest: 100% to LPs, 0% to protocol treasury until a fee-on-mint is added
+// in a future contract upgrade.
+const LP_FEE_RATIO       = 1;
+const PROTOCOL_FEE_RATIO = 0;
 
 function lpFee(poolFee: number)       { return poolFee * LP_FEE_RATIO; }
 function protocolFee(poolFee: number) { return poolFee * PROTOCOL_FEE_RATIO; }
@@ -415,6 +419,7 @@ function LiquidityModal({
     setTxStatus({ step: "idle" });
 
     const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
+    const slippageBps = useSettingsStore.getState().slippageBps;
 
     // ── OrahDEX native AMM deposit (OrahRouter02) ───────────────────────────
     if (mode === "orah_amm") {
@@ -425,6 +430,7 @@ function LiquidityModal({
         amountB: nB,
         address,
         chainId: targetChainId,
+        slippageBps,
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
@@ -460,6 +466,7 @@ function LiquidityModal({
         amountB: nB,
         address,
         chainId: targetChainId,
+        slippageBps,
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
@@ -567,6 +574,7 @@ function LiquidityModal({
     // ── OrahDEX native AMM — real on-chain LP token burn via OrahRouter02 ───
     if (removeMode === "orah_amm") {
       const lpTokenAddress = pool ? (userPositions[pool.id]?.lpTokenAddress) : undefined;
+      const slippageBps = useSettingsStore.getState().slippageBps;
       await removeLiquidityOrahAmm({
         base:  pool.base,
         quote: pool.quote,
@@ -574,6 +582,7 @@ function LiquidityModal({
         address,
         chainId: targetChainId,
         lpTokenAddress,
+        slippageBps,
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {

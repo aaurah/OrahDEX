@@ -17,6 +17,7 @@ import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
+  addLiquidityOrahAmm, removeLiquidityOrahAmm,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 
@@ -75,9 +76,12 @@ const SPOT: Record<string, number> = {
   TRX: 0.24, BTT: 0.0000009, WIN: 0.00006, JST: 0.025,
 };
 
-// ─── Protocol fee split: 5/6 to LPs, 1/6 to protocol treasury ────────────────
-const LP_FEE_RATIO       = 5 / 6;
-const PROTOCOL_FEE_RATIO = 1 / 6;
+// ─── Pool-fee distribution ───────────────────────────────────────────────────
+// OrahPair currently routes the entire 0.30% swap fee to liquidity providers
+// (no _mintFee path is enabled). 100% LP / 0% protocol until a fee-on-mint is
+// enabled in a future contract upgrade.
+const LP_FEE_RATIO       = 1;
+const PROTOCOL_FEE_RATIO = 0;
 function lpFee(poolFee: number)       { return poolFee * LP_FEE_RATIO; }
 function protocolFee(poolFee: number) { return poolFee * PROTOCOL_FEE_RATIO; }
 
@@ -314,6 +318,42 @@ function LiquidityModal({
     setTxStatus({ step: "idle" });
 
     const mode = getLiquidityMode(chainId, pool.base, pool.quote, walletProvider);
+    const slippageBps = useSettingsStore.getState().slippageBps;
+
+    if (mode === "orah_amm") {
+      await addLiquidityOrahAmm({
+        base:    pool.base,
+        quote:   pool.quote,
+        amountA: nA,
+        amountB: nB,
+        address,
+        chainId: chainId!,
+        slippageBps,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            addPosition(address, pool.id, s.lpTokens ?? lpTokens, s.valueUsd ?? valueUsd, {
+              txHash:         s.txHash,
+              chainId:        chainId ?? undefined,
+              lpTokenAddress: s.lpTokenAddress,
+            });
+            refreshEvmBalances();
+            refreshBackendBalances();
+            toast({
+              title: "Liquidity added on-chain!",
+              description: `OrahRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP tokens minted.`,
+            });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Added",
+              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP minted.`,
+            });
+          }
+        },
+      });
+      setSubmitting(false);
+      return;
+    }
 
     if (mode === "on_chain") {
       await addLiquidityOnChain({
@@ -323,6 +363,7 @@ function LiquidityModal({
         amountB: nB,
         address,
         chainId: chainId!,
+        slippageBps,
         onStatus: (s) => {
           setTxStatus(s);
           if (s.step === "success") {
@@ -397,6 +438,47 @@ function LiquidityModal({
   const handleRemove = useCallback(async () => {
     if (!pool || submitting || !walletConnected || !address) return;
     setSubmitting(true);
+
+    const removeMode = getLiquidityMode(chainId, pool.base, pool.quote, walletProvider);
+    const slippageBps = useSettingsStore.getState().slippageBps;
+
+    if (removeMode === "orah_amm") {
+      const userPositions = useLiquidityStore.getState().getUserPositions(address);
+      const lpTokenAddress = userPositions[pool.id]?.lpTokenAddress;
+      await removeLiquidityOrahAmm({
+        base:  pool.base,
+        quote: pool.quote,
+        pct,
+        address,
+        chainId: chainId!,
+        lpTokenAddress,
+        slippageBps,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success") {
+            removePositionPct(address, pool.id, pct);
+            refreshEvmBalances();
+            toast({
+              title: "Liquidity removed!",
+              description: `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool. Tokens returned to your wallet.`,
+            });
+            addNotification({
+              type:  "liquidity",
+              title: "Liquidity Removed",
+              body:  `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool. Tokens returned to your wallet.`,
+            });
+            onClose();
+          }
+          if (s.step === "error") {
+            toast({ title: "Remove failed", description: s.error, variant: "destructive" });
+          }
+        },
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    // ── Simulated fallback (non-OrahAMM chains) ───────────────────────────
     await new Promise(r => setTimeout(r, 1500));
     removePositionPct(address, pool.id, pct);
     setSubmitting(false);
@@ -410,7 +492,7 @@ function LiquidityModal({
       body:  `Withdrew ${pct}% from the ${pool.base}/${pool.quote} pool.`,
     });
     onClose();
-  }, [pool, pct, submitting, walletConnected, address, removePositionPct, toast, addNotification, onClose]);
+  }, [pool, pct, submitting, walletConnected, address, chainId, walletProvider, refreshEvmBalances, removePositionPct, toast, addNotification, onClose]);
 
   if (!pool) return null;
 
