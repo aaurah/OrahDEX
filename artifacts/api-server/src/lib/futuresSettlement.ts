@@ -38,21 +38,34 @@
  *
  * ── Leverage and liquidation price ───────────────────────────────────────────
  *
- *   For LONG:  liquidationPrice = entryPrice * (1 - 1/leverage + maintenanceMarginRate)
- *   For SHORT: liquidationPrice = entryPrice * (1 + 1/leverage - maintenanceMarginRate)
+ *   Standard isolated-margin perp formula (loss = margin * (1 - mmr)):
+ *     LONG:  liquidationPrice = entryPrice * (1 - (1 - mmr) / leverage)
+ *     SHORT: liquidationPrice = entryPrice * (1 + (1 - mmr) / leverage)
  *
  *   maintenanceMarginRate = 0.005 (0.5%)
  */
 
 import { pool, db } from "@workspace/db";
-import { futuresPositionsTable } from "@workspace/db/schema";
+import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const MAINTENANCE_MARGIN_RATE = 0.005;   // 0.5%
-const TAKER_FEE_RATE          = 0.0005;  // 0.05%
+const MAINTENANCE_MARGIN_RATE   = 0.005;   // 0.5%
+const DEFAULT_TAKER_FEE_RATE    = 0.0005;  // 0.05% — fallback when market row has no fee
+
+/** Look up the taker fee for a perp symbol from the markets table; falls back to the constant. */
+async function getTakerFeeRate(symbol: string): Promise<number> {
+  try {
+    const baseSym = symbol.replace("-PERP", "");
+    const [m] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, baseSym));
+    const fee = m ? parseFloat(m.takerFee) : NaN;
+    return Number.isFinite(fee) && fee >= 0 ? fee : DEFAULT_TAKER_FEE_RATE;
+  } catch {
+    return DEFAULT_TAKER_FEE_RATE;
+  }
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -99,10 +112,14 @@ export function computeLiquidationPrice(
   leverage:   number,
   side:       "long" | "short",
 ): number {
-  const mmr = MAINTENANCE_MARGIN_RATE;
+  // Standard isolated-margin liquidation: position is closed when loss
+  // equals (1 - mmr) of the posted margin, leaving the maintenance buffer
+  // for the protocol to safely unwind. Equivalent price move = (1 - mmr)/leverage.
+  const mmr  = MAINTENANCE_MARGIN_RATE;
+  const move = (1 - mmr) / leverage;
   return side === "long"
-    ? entryPrice * (1 - 1 / leverage + mmr)
-    : entryPrice * (1 + 1 / leverage - mmr);
+    ? entryPrice * (1 - move)
+    : entryPrice * (1 + move);
 }
 
 // ── Margin bucket helpers ─────────────────────────────────────────────────────
@@ -269,7 +286,8 @@ export async function openFuturesPosition(
 
   const liquidationPrice = computeLiquidationPrice(entryPrice, leverage, side);
   const notionalValue    = quantity * entryPrice;
-  const openingFee       = notionalValue * TAKER_FEE_RATE;
+  const takerFeeRate     = await getTakerFeeRate(symbol);
+  const openingFee       = notionalValue * takerFeeRate;
   const positionId       = crypto.randomUUID();
   const unrealizedPnl    = 0;
   const txid             = crypto.createHash("sha256")
@@ -315,10 +333,10 @@ export async function closeFuturesPosition(
     await client.query("BEGIN");
 
     const { rows: posRows } = await client.query<{
-      id: string; wallet_address: string; side: string;
+      id: string; wallet_address: string; symbol: string; side: string;
       entry_price: string; quantity: string; margin: string; status: string;
     }>(
-      `SELECT id, wallet_address, side, entry_price, quantity, margin, status
+      `SELECT id, wallet_address, symbol, side, entry_price, quantity, margin, status
        FROM futures_positions WHERE id = $1 FOR UPDATE`,
       [positionId],
     );
@@ -334,7 +352,8 @@ export async function closeFuturesPosition(
     const priceDiff     = markPrice - entryPrice;
     const dirMult       = pos.side === "long" ? 1 : -1;
     const realizedPnl   = dirMult * priceDiff * quantity;
-    const closingFee    = markPrice * quantity * TAKER_FEE_RATE;
+    const takerFeeRate  = await getTakerFeeRate(pos.symbol);
+    const closingFee    = markPrice * quantity * takerFeeRate;
     const returnedMargin = Math.max(0, margin + realizedPnl - closingFee);
 
     const { rowCount: marginRows } = await client.query(
