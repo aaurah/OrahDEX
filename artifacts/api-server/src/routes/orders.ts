@@ -12,7 +12,7 @@ import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
-import { settleEscrowMatch, isEscrowChain } from "../lib/escrowRelayer.js";
+import { settleEscrowMatch, isEscrowChain, findEscrowChain } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
@@ -441,6 +441,88 @@ router.post("/orders", async (req, res) => {
         );
         const bothEvmExternal = incomingIsEvmExternal && matchIsEvmExternal;
 
+        // ─────────────────────────────────────────────────────────────────────
+        // ESCROW INTEGRITY PRECHECK — runs BEFORE any DB writes / fillResult.
+        // ─────────────────────────────────────────────────────────────────────
+        // `release(orderId)` drains the WHOLE deposit, so once any escrow
+        // deposit exists for either order, the only safe settlement is a
+        // single fill that consumes both orders completely. Anything else
+        // (partial fill, cross-chain mismatch, one-sided lock) would leave
+        // funds either over-released or unreachable. We must skip this match
+        // entirely — no DB updates, no fillResult — and let the user cancel
+        // their order to refund. Detected escrow chains are reused later to
+        // avoid double-scanning all chains.
+        //
+        // Note on `bothEvmExternal=false` orders: bots / internal-ledger
+        // counterparties can never have an escrow deposit (only self-custody
+        // EVM users do), so this gate doesn't apply to them.
+        let prefetchedSellerChain: number | null = null;
+        let prefetchedBuyerChain:  number | null = null;
+        let escrowAnyDeposit = false;
+        if (bothEvmExternal) {
+          try {
+            const buyerOrderId  = side === "buy"  ? id : match.id;
+            const sellerOrderId = side === "sell" ? id : match.id;
+            [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
+              findEscrowChain(buyerOrderId),
+              findEscrowChain(sellerOrderId),
+            ]);
+            escrowAnyDeposit =
+              prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
+          } catch (err: any) {
+            // Fail-closed: if we can't read any escrow chain, assume the
+            // worst (deposit might exist) and gate the trade. Better to
+            // skip a match than to risk releasing locked funds blindly.
+            req.log.error(
+              { err: err?.message, incomingId: id, matchId: match.id },
+              "orders: escrow precheck RPC failure — failing closed (skipping match)",
+            );
+            continue;
+          }
+
+          if (escrowAnyDeposit) {
+            const incomingFullyConsumed = (remainingQty - fillQty) <= 0.000001;
+            const matchFullyConsumed    = (matchAvail   - fillQty) <= 0.000001;
+            if (!incomingFullyConsumed || !matchFullyConsumed) {
+              // Locked funds + partial fill → skip THIS match entirely.
+              // Order remains open; another match attempt may succeed.
+              for (const addr of [buyerAddress, sellerAddress]) {
+                pushNotification(addr, {
+                  type:  "settlement_skipped",
+                  title: "Partial fill against locked funds",
+                  body:  "Found a match but escrow holds the full order amount and only a partial fill is available. Cancel to refund and re-place at the available size.",
+                  pair:  symbol,
+                });
+              }
+              req.log.warn(
+                { incomingId: id, matchId: match.id, fillQty, remainingQty, matchAvail },
+                "orders: escrow precheck — partial fill against locked funds, skipping match",
+              );
+              continue;  // try next match
+            }
+            // Different chains? → can't settle, skip match.
+            if (
+              prefetchedBuyerChain !== null &&
+              prefetchedSellerChain !== null &&
+              prefetchedBuyerChain !== prefetchedSellerChain
+            ) {
+              for (const addr of [buyerAddress, sellerAddress]) {
+                pushNotification(addr, {
+                  type:  "settlement_skipped",
+                  title: "Cross-chain match",
+                  body:  `Match found across different chains (${prefetchedSellerChain} vs ${prefetchedBuyerChain}) — cross-chain settlement is coming soon. Cancel to refund.`,
+                  pair:  symbol,
+                });
+              }
+              req.log.warn(
+                { incomingId: id, matchId: match.id, sellerChain: prefetchedSellerChain, buyerChain: prefetchedBuyerChain },
+                "orders: escrow precheck — cross-chain mismatch, skipping match",
+              );
+              continue;  // try next match
+            }
+          }
+        }
+
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         if (bothEvmExternal) {
@@ -532,12 +614,64 @@ router.post("/orders", async (req, res) => {
         // each leg: seller's locked base → buyer's wallet, buyer's locked
         // quote → seller's wallet. This completes the atomic swap on-chain
         // without ever touching the internal ledger for the matched amount.
+        //
+        // ── Status flags (drive HTLC suppression below) ───────────────────────
+        //   escrowSettled  → both legs released on-chain; HTLC must NOT run
+        //   escrowGated    → escrow-locked funds exist but couldn't release
+        //                    (partial fill, one-sided lock, cross-chain); HTLC
+        //                    must NOT run because that would create a parallel
+        //                    settlement against the same locked funds. Funds
+        //                    stay safe in escrow; user cancels to refund.
+        let escrowSettled = false;
+        let escrowGated   = false;
+
         if (bothEvmExternal) {
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
             ? Number(body.chainId)
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
 
-          if (isEscrowChain(releaseChainId)) {
+          // ── Pre-flight: does ANY escrow deposit exist for either order? ─
+          // If yes, escrow is the binding settlement venue: never fall back
+          // to HTLC because the locked funds can't be in two places at once.
+          const [incomingEscrowChain, matchEscrowChain] = await Promise.all([
+            findEscrowChain(id),
+            findEscrowChain(match.id),
+          ]).catch(() => [null, null] as [number | null, number | null]);
+          const anyEscrowDeposit =
+            incomingEscrowChain !== null || matchEscrowChain !== null;
+
+          // ── Partial-fill safety: release(orderId) drains the WHOLE deposit. ─
+          // We must only call it when this single fill consumes BOTH orders
+          // fully. Otherwise the first partial fill would send the entire
+          // locked amount to one counterparty — direct funds-loss bug.
+          //
+          // NOTE: `remainingQty` was already decremented at line ~513
+          // (`remainingQty -= fillQty`). So the post-fill remainder for the
+          // incoming order IS `remainingQty` itself — do NOT subtract fillQty
+          // again or you double-count and let partial fills slip through.
+          const epsilon = 0.000001;
+          const isIncomingFullyFilled = remainingQty <= epsilon;
+          const isFullMatchFill       = isMatchFullyFilled && isIncomingFullyFilled;
+
+          if (anyEscrowDeposit && !isFullMatchFill) {
+            // Locked funds + partial fill → we can't safely release a portion.
+            // Block HTLC fallback and notify users to cancel for a refund.
+            escrowGated = true;
+            for (const addr of [buyerAddress, sellerAddress]) {
+              pushNotification(addr, {
+                type:  "settlement_skipped",
+                title: "Partial fill against locked funds",
+                body:  "Your match is a partial fill but escrow holds the full amount. Cancel the order to refund locked funds, then re-place at a size that matches available liquidity.",
+                pair:  symbol,
+              });
+            }
+            req.log.warn(
+              { tradeId, incomingId: id, matchId: match.id, fillQty, remainingQty, matchAvail },
+              "orders: escrow gated — partial fill against locked funds, HTLC fallback suppressed",
+            );
+          }
+
+          if (isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
             // Determine which order id belongs to which side. `id` is the
             // incoming order; `match.id` is the counter-order being consumed.
             const buyerOrderId  = side === "buy"  ? id : match.id;
@@ -550,6 +684,10 @@ router.post("/orders", async (req, res) => {
                 buyerAddress,
                 sellerAddress,
                 chainId: releaseChainId,
+                // Reuse precheck values to keep the per-request settlement
+                // decision deterministic and avoid contradictory re-scans.
+                prefetchedBuyerChain,
+                prefetchedSellerChain,
               });
               req.log.info(
                 {
@@ -567,22 +705,34 @@ router.post("/orders", async (req, res) => {
               // ── Surface safety-gate failures to BOTH users ────────────────
               // If we skipped release because one side didn't lock (or chains
               // mismatched), tell the user clearly. Their funds — if locked —
-              // remain safe in escrow; they can cancel to recover.
+              // remain safe in escrow; they can cancel to recover. Also set
+              // escrowGated so HTLC path is suppressed when at least one side
+              // has actual locked funds (skipReason mentions "did not lock"
+              // or "cross-chain"; "neither side" → fall through to HTLC).
               if (!result.bothLocked && result.skipReason) {
+                const isNeitherSide = result.skipReason.includes("neither side");
+                if (!isNeitherSide) {
+                  // At least one side has locked funds → block HTLC fallback.
+                  escrowGated = true;
+                }
                 const friendly = result.skipReason.includes("cross-chain")
                   ? "Match found on different chains — cross-chain settlement coming soon. Cancel to refund your locked funds."
                   : result.skipReason.includes("seller did not")
                     ? "Counterparty (seller) didn't complete on-chain lock. If you locked, your funds are safe — cancel to refund."
                     : result.skipReason.includes("buyer did not")
                       ? "Counterparty (buyer) didn't complete on-chain lock. If you locked, your funds are safe — cancel to refund."
-                      : "Match could not settle on-chain. Funds locked in escrow remain safe — cancel to refund.";
-                for (const addr of [buyerAddress, sellerAddress]) {
-                  pushNotification(addr, {
-                    type:  "settlement_skipped",
-                    title: "On-chain settlement skipped",
-                    body:  friendly,
-                    pair:  symbol,
-                  });
+                      : isNeitherSide
+                        ? null  // suppress notification — legacy/bot trade, HTLC will handle it
+                        : "Match could not settle on-chain. Funds locked in escrow remain safe — cancel to refund.";
+                if (friendly) {
+                  for (const addr of [buyerAddress, sellerAddress]) {
+                    pushNotification(addr, {
+                      type:  "settlement_skipped",
+                      title: "On-chain settlement skipped",
+                      body:  friendly,
+                      pair:  symbol,
+                    });
+                  }
                 }
               }
               // Notify both parties when on-chain release succeeded.
@@ -606,11 +756,40 @@ router.post("/orders", async (req, res) => {
                   side:  "sell",
                 });
               }
-              // If at least one leg actually broadcast, we have an on-chain
-              // settlement and can skip the legacy HTLC session for this fill.
+              // If BOTH legs released, we have a complete on-chain settlement
+              // and the HTLC fallback must be suppressed.
+              if (result.baseLeg.ok && result.quoteLeg.ok) {
+                escrowSettled = true;
+              }
+              // ── Single-leg release: still suppress HTLC ─────────────────
+              // If only one leg broadcast (other failed mid-flight on RPC,
+              // nonce, revert, etc.) we are in a half-settled state. Running
+              // HTLC now would create a parallel claim against funds that
+              // are already partly released. Block HTLC and surface to user
+              // — the relayer's idempotent retry will pick up the failed leg
+              // on the next match attempt (release() is one-shot per orderId).
+              if ((result.baseLeg.ok || result.quoteLeg.ok) && !escrowSettled) {
+                escrowGated = true;
+                req.log.error(
+                  {
+                    tradeId,
+                    baseLegOk:  result.baseLeg.ok,
+                    quoteLegOk: result.quoteLeg.ok,
+                    baseReason:  result.baseLeg.reason,
+                    quoteReason: result.quoteLeg.reason,
+                  },
+                  "orders: ESCROW HALF-SETTLED — only one leg released, HTLC suppressed, manual reconciliation required",
+                );
+                for (const addr of [buyerAddress, sellerAddress]) {
+                  pushNotification(addr, {
+                    type:  "settlement_skipped",
+                    title: "Settlement needs review",
+                    body:  "One side of the trade settled on-chain but the other failed. Support has been notified — your funds are not at risk. Please contact support if not resolved within 1 hour.",
+                    pair:  symbol,
+                  });
+                }
+              }
               if (result.baseLeg.ok || result.quoteLeg.ok) {
-                // Skip HTLC by pretending we've already opened a session.
-                lastEvmHtlcSession = lastEvmHtlcSession ?? null as any;
                 // Use the first available release tx hash as the canonical
                 // settlement reference for this fill.
                 const onchainTxid =
@@ -629,9 +808,29 @@ router.post("/orders", async (req, res) => {
                 }
               }
             } catch (relErr: any) {
+              // FAIL-CLOSED: if escrow release threw and a deposit exists,
+              // we MUST suppress HTLC. Otherwise HTLC could lock more funds
+              // and create a parallel claim against the escrow deposit.
+              if (escrowAnyDeposit) {
+                escrowGated = true;
+                for (const addr of [buyerAddress, sellerAddress]) {
+                  pushNotification(addr, {
+                    type:  "settlement_skipped",
+                    title: "Settlement error",
+                    body:  "Couldn't reach the chain to settle — please try again in a moment, or cancel to refund locked funds.",
+                    pair:  symbol,
+                  });
+                }
+              }
               req.log.error(
-                { err: relErr?.message, tradeId, chainId: releaseChainId },
-                "orders: escrow release failed — falling through to HTLC path",
+                {
+                  err: relErr?.message,
+                  tradeId,
+                  chainId: releaseChainId,
+                  escrowGated,
+                  escrowAnyDeposit,
+                },
+                "orders: escrow release threw — HTLC suppressed when deposit exists",
               );
             }
           }
@@ -642,7 +841,11 @@ router.post("/orders", async (req, res) => {
         // into the OrahDEXHTLC contract on-chain; the OrahDEX relayer calls
         // reveal() once both locks are confirmed, completing the atomic swap.
         // Internal ledger settlement is skipped for this path (funds stay on-chain).
-        if (bothEvmExternal && !lastEvmHtlcSession) {
+        // Suppress HTLC when escrow already settled OR escrow holds funds
+        // we can't safely release (partial fill, one-sided lock, cross-chain).
+        // Running HTLC in those cases would create a parallel claim against
+        // the same locked funds — the very bug the safety gate prevents.
+        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum).
           // Validate chainId: must be a positive integer present in EVM_CHAINS.
           const rawChainId = body.chainId ? Number(body.chainId) : 1;
