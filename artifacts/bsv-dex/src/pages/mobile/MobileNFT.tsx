@@ -66,6 +66,15 @@ interface Holding { coin_creator: string; holder: string; amount: number; userna
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+// Auto-generated coin symbols are the last few uppercase hex chars of the
+// creator's wallet address (e.g. "67C7F"). Treat those as addresses so we hide
+// them whenever a real handle is present — trading is keyed off the handle, the
+// raw address never needs to be visible to traders.
+function isAddrLikeSymbol(s?: string) {
+  if (!s) return true;
+  const t = s.trim();
+  return t.length === 0 || /^[0-9A-F]{4,8}$/.test(t);
+}
 const MIN_ADDRESS_LIKE_LENGTH = 24;
 function isAddressLike(value: string) {
   const v = value.trim();
@@ -310,7 +319,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                   <span className="font-bold" style={{ color: "var(--color-text)" }}>{creator.username}</span>
                   {creator.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
                 </div>
-                <div className="text-xs font-mono" style={{ color: "var(--color-accent)" }}>{creator.symbol}</div>
+                {!isAddrLikeSymbol(creator.symbol) && (
+                  <div className="text-xs font-mono" style={{ color: "var(--color-accent)" }}>${creator.symbol}</div>
+                )}
               </div>
               <button onClick={onClose}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
             </div>
@@ -1038,7 +1049,9 @@ function CreatorProfileSheet({
                             <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{displayName}</p>
                             {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
                           </div>
-                          <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(addr)}</p>
+                          {!u.username && (
+                            <p className="text-[11px] truncate" style={{ color: "var(--color-text-secondary)" }}>no handle yet</p>
+                          )}
                         </div>
                       </button>
                       {!isMe && (
@@ -1093,8 +1106,7 @@ function CreatorProfileSheet({
                     <div className="w-6 text-center text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>#{i + 1}</div>
                     <Avatar src={undefined} name={h.username ?? h.holder} size={32} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.holder)}</p>
-                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(h.holder)}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon holder"}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
                   </div>
@@ -1102,8 +1114,8 @@ function CreatorProfileSheet({
                   <div key={h.coin_creator ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0" style={{ background: "var(--color-accent)", color: "#000" }}>{h.symbol?.slice(0, 3)}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.coin_creator)}</p>
-                      <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{h.symbol} · ${parseFloat(h.price_usd || "0").toFixed(4)}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon"}</p>
+                      <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{isAddrLikeSymbol(h.symbol) ? "" : `${h.symbol} · `}{`$${parseFloat(h.price_usd || "0").toFixed(4)}`}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
                   </div>
@@ -1428,7 +1440,7 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
             <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{post.creator_name}</span>
             {post.is_verified && <BadgeCheck size={12} style={{ color: "var(--color-accent)" }} />}
           </button>
-          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(post.creator)} · {timeAgo(post.created_at)}</div>
+          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(post.created_at)}</div>
         </div>
         <div className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>BSV</div>
       </div>
