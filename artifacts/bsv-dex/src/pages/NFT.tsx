@@ -280,7 +280,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <div className="text-5xl mb-3">{mode === "buy" ? "🚀" : "💸"}</div>
             <h3 className="text-xl font-bold mb-1 text-foreground">{mode === "buy" ? "Bought!" : "Sold!"}</h3>
             <p className="text-sm mb-4 text-muted-foreground">
-              {mode === "buy" ? `+${fmtNum(success.tokensExchanged)} $${creator.symbol}` : `+${safePrice(success.bsvExchanged)} BSV`}
+              {mode === "buy" ? `+${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}` : `+${safePrice(success.bsvExchanged)} ${nativeSymbol}`}
             </p>
             <p className="text-[10px] text-muted-foreground mb-4">New market cap: {fmtUsd(success.newMarketCap)}</p>
             <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
@@ -341,7 +341,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <button onClick={doTrade} disabled={loading || !canTrade}
               className="w-full mt-4 py-3 rounded-xl font-bold text-sm disabled:opacity-50 transition-all"
               style={{ background: insufficientFunds || insufficientTokens ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444", color: insufficientFunds || insufficientTokens ? "#fff" : "#000" }}>
-              {loading ? "Processing…" : insufficientFunds ? "Insufficient Balance" : insufficientTokens ? "Insufficient Tokens" : `${mode === "buy" ? "Buy" : "Sell"} $${creator.symbol}`}
+              {loading ? "Processing…" : insufficientFunds ? "Insufficient Balance" : insufficientTokens ? "Insufficient Tokens" : `${mode === "buy" ? "Buy" : "Sell"} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}`}
             </button>
           </>
         )}
@@ -765,7 +765,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-foreground">{creator.username}</h2>
                   {creator.is_verified && <BadgeCheck size={18} className="text-primary" />}
-                  <span className="text-sm font-bold text-primary">${creator.symbol}</span>
+                  {!isAddrLikeSymbol(creator.symbol) && <span className="text-sm font-bold text-primary">${creator.symbol}</span>}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{creator.bio || "No bio"}</p>
               </div>
@@ -963,14 +963,14 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   <Avatar src={creator.avatar_url} name={creator.username} size={48} ring={creator.is_verified} />
                   <div className="flex-1">
                     <div className="flex items-center gap-1">
-                      <span className="font-bold text-foreground">{creator.username || shortAddr(creator.address)}</span>
+                      <span className="font-bold text-foreground">{creator.username || "Anon"}</span>
                       {creator.is_verified && <BadgeCheck size={14} className="text-primary" />}
                     </div>
-                    <span className="text-sm font-bold text-primary">${creator.symbol}</span>
+                    {!isAddrLikeSymbol(creator.symbol) && <span className="text-sm font-bold text-primary">${creator.symbol}</span>}
                   </div>
                   <button onClick={() => setShowTrade(true)}
                     className="px-4 py-2 rounded-xl text-xs font-bold" style={{ background: "#00ff88", color: "#000" }}>
-                    Trade ${creator.symbol}
+                    Trade {isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}
                   </button>
                 </div>
                 {creator.bio && <p className="text-xs text-muted-foreground mb-3">{creator.bio}</p>}
