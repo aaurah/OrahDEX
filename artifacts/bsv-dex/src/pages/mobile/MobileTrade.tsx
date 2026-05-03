@@ -655,6 +655,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         price:    Number(ordPriceDisplay) || 0,
       });
       setAmount("");
+
+      // ── Auto-open the lock-funds confirmation popup the moment the order
+      // is placed — so the user sees the popup directly after tapping
+      // Buy/Sell instead of having to find a separate "Lock funds on ETH"
+      // button. Only open for unmatched (open) orders on a chain where
+      // escrow is deployed, and only when self-custody escrow is available.
+      if (!matched && tradeId && escrowAvailable && hasEscrow(walletChainId ?? 0)) {
+        const usePrice = Number(ordPriceDisplay) > 0 ? Number(ordPriceDisplay) : lastPrice;
+        setPendingLockParams({
+          orderId:  tradeId,
+          side:     ordSide as "buy" | "sell",
+          base:     ordBase,
+          quote:    ordQuote,
+          quantity: Number(ordQtyDisplay) || 0,
+          price:    usePrice,
+        });
+        setLockDialogOpen(true);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
