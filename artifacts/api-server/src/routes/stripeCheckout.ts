@@ -4,6 +4,12 @@ import { getUncachableStripeClient, getStripePublishableKey } from "../stripeCli
 import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
+import { quoteFromSS, getSsRange, isSimpleSwapConfigured, SS_COIN_TICKER } from "../lib/simpleswap.js";
+
+/* Small-order threshold: orders with net USDT under this amount route to
+   SimpleSwap (≈$10 min). At/above, they route to LetsExchange ($120 min after fee). */
+const LE_THRESHOLD_USD = 122;
+const SS_FLOOR_USD     = 10;
 
 /* Coin → LetsExchange network mapping (must mirror webhookHandlers.ts) */
 const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
@@ -85,6 +91,11 @@ async function ensureCryptoOrdersTable() {
   await pool.query(`
     ALTER TABLE crypto_orders ADD COLUMN IF NOT EXISTS user_wallet TEXT
   `).catch(() => {});
+  /* Provider column must exist before any INSERT below — don't rely on the
+     webhookHandlers side-effect migration winning the race at startup. */
+  await pool.query(`
+    ALTER TABLE crypto_orders ADD COLUMN IF NOT EXISTS provider TEXT
+  `).catch(() => {});
 }
 ensureCryptoOrdersTable().catch(e =>
   logger.warn({ err: e?.message }, "crypto_orders table setup failed (non-fatal)")
@@ -115,14 +126,16 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       res.status(400).json({ error: "coinSymbol is required" });
       return;
     }
-    // LetsExchange enforces a $120 USDT minimum on the *deposit* amount.
-    // After our 1.5% fee, deposit = fiatUsd * 0.985, so the user-facing min must be
-    // ceil(120 / 0.985) = $122 to guarantee the swap is accepted.
-    if (!fiatAmountUsd || fiatAmountUsd < 122) {
+    /* Two-tier fulfillment:
+         - Orders ≥ $122 USD route to LetsExchange (its $120 USDT deposit min).
+         - Orders $10–$121 route to SimpleSwap (≈$10 USDT min, varies per coin).
+       Effective floor depends on whether SimpleSwap is configured. */
+    const ssAvailable = isSimpleSwapConfigured() && !!SS_COIN_TICKER[(coinSymbol ?? "").toUpperCase()];
+    const minAllowed = ssAvailable ? SS_FLOOR_USD : LE_THRESHOLD_USD;
+    if (!fiatAmountUsd || fiatAmountUsd < minAllowed) {
       res.status(400).json({
-        error: "Minimum purchase amount for direct checkout is $122 USD. For smaller amounts, use a partner provider (Ramp Network from $5, Alchemy Pay from $10, Transak from $15).",
-        minUsd: 122,
-        suggestPartnerProvider: true,
+        error: `Minimum purchase amount is $${minAllowed} USD.`,
+        minUsd: minAllowed,
       });
       return;
     }
@@ -136,17 +149,53 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
     const netUsd = fiatAmountUsd - fee;
     const fiatAmountCents = Math.round(fiatAmountUsd * 100);
 
-    /* PRIMARY: Quote directly from LetsExchange so the customer is shown
-       the exact amount they'll actually receive (matches the swap that
-       fulfillOrder will create after payment). */
+    /* Pick fulfillment provider by order size, then quote from that provider so
+       the customer is shown the exact amount they'll actually receive. */
+    let provider: "letsexchange" | "simpleswap" =
+      ssAvailable && fiatAmountUsd < LE_THRESHOLD_USD ? "simpleswap" : "letsexchange";
+
+    /* Enforce SimpleSwap's per-coin range BEFORE creating a Stripe PI.
+       SS min varies by coin and can exceed our $10 floor. If the order is too
+       small for SS but big enough for LE, fall through to LE; otherwise reject
+       so the customer is never charged for an unfillable swap. */
+    if (provider === "simpleswap") {
+      const range = await getSsRange(coinSymbol);
+      if (range && range.min > 0 && netUsd < range.min) {
+        const grossNeeded = Math.ceil(range.min / (1 - FEE_RATE));
+        if (grossNeeded < LE_THRESHOLD_USD) {
+          res.status(400).json({
+            error: `Minimum for ${coinSymbol} is $${grossNeeded} USD.`,
+            minUsd: grossNeeded,
+          });
+          return;
+        }
+        // SS min is high enough that LE is the only viable backend.
+        provider = "letsexchange";
+        if (fiatAmountUsd < LE_THRESHOLD_USD) {
+          res.status(400).json({
+            error: `Minimum for ${coinSymbol} is $${LE_THRESHOLD_USD} USD.`,
+            minUsd: LE_THRESHOLD_USD,
+          });
+          return;
+        }
+      }
+      if (range?.max && netUsd > range.max) {
+        // Order exceeds SS max — promote to LE if it fits the LE floor.
+        if (fiatAmountUsd >= LE_THRESHOLD_USD) provider = "letsexchange";
+      }
+    }
+
     let price = 0;
     let cryptoAmount = 0;
-    let priceSource: "letsexchange" | "markets" | "internal_prices" = "letsexchange";
+    let priceSource: "letsexchange" | "simpleswap" | "markets" | "internal_prices" = provider as "letsexchange" | "simpleswap";
 
-    const leQuote = await quoteFromLE(coinSymbol, netUsd);
-    if (leQuote && leQuote.coinAmount > 0 && leQuote.ratePerCoin > 0) {
-      price = leQuote.ratePerCoin;
-      cryptoAmount = leQuote.coinAmount;
+    const primaryQuote = provider === "simpleswap"
+      ? await quoteFromSS(coinSymbol, netUsd)
+      : await quoteFromLE(coinSymbol, netUsd);
+
+    if (primaryQuote && primaryQuote.coinAmount > 0 && primaryQuote.ratePerCoin > 0) {
+      price = primaryQuote.ratePerCoin;
+      cryptoAmount = primaryQuote.coinAmount;
     } else {
       /* FALLBACK 1: internal markets table (may be stale) */
       try {
@@ -199,13 +248,13 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       },
     });
 
-    /* Persist order record */
+    /* Persist order record (with provider so the webhook routes correctly) */
     const effectiveUserWallet = userWallet?.trim() || walletAddress.trim();
     await pool.query(
       `INSERT INTO crypto_orders
          (id, stripe_payment_intent_id, wallet_address, user_wallet, coin_symbol,
-          fiat_amount_cents, fiat_currency, crypto_amount, exchange_rate, fee_usd, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'usd', $7, $8, $9, 'pending')`,
+          fiat_amount_cents, fiat_currency, crypto_amount, exchange_rate, fee_usd, status, provider)
+       VALUES ($1, $2, $3, $4, $5, $6, 'usd', $7, $8, $9, 'pending', $10)`,
       [
         orderId,
         paymentIntent.id,
@@ -216,6 +265,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
         cryptoAmount.toFixed(8),
         price.toString(),
         fee.toFixed(2),
+        provider,
       ]
     );
 
@@ -248,8 +298,10 @@ router.get("/stripe/order/:id", async (req, res) => {
     const result = await pool.query(
       `SELECT id, coin_symbol, fiat_amount_cents, fiat_currency,
               crypto_amount, exchange_rate, fee_usd, status, payment_method,
-              error_message, le_transaction_id, le_deposit_address,
-              le_deposit_extra_id, le_status, fulfilled_at, created_at, updated_at
+              error_message, provider,
+              le_transaction_id, le_deposit_address, le_deposit_extra_id, le_status,
+              ss_transaction_id, ss_deposit_address, ss_deposit_extra_id, ss_status,
+              fulfilled_at, created_at, updated_at
        FROM crypto_orders WHERE id = $1`,
       [id]
     );

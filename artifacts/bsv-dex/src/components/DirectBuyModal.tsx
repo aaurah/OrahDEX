@@ -142,8 +142,9 @@ const DIRECT_BUY_COINS: CoinDef[] = [
 const QUICK_AMOUNTS = ["125", "250", "500", "1000", "2500"];
 // LetsExchange enforces a $120 USDT minimum on the *deposit* amount.
 // After our 1.5% fee, deposit = fiatUsd * 0.985, so the user-facing min must be
-// ceil(120 / 0.985) = $122 to guarantee the swap is accepted.
-const DIRECT_MIN_USD = 122;
+// Server now auto-routes: <$122 → SimpleSwap (≈$10 min), ≥$122 → LetsExchange.
+// Both are white-label backends; the user only ever sees OrahDEX branding.
+const DIRECT_MIN_USD = 10;
 const FEE_RATE = 0.015; // 1.5%
 
 type FiatPayMethod = "apple" | "google" | "card" | "bank";

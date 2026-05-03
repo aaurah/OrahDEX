@@ -40,7 +40,7 @@ The platform features specific coin color schemes, a WalletConnectModal for real
 - **Liquidity Balance Source**: `useBackendBalances` fetches balances from `/api/portfolio` for internal wallets; external EVM wallets use on-chain balances.
 - **Mobile Navigation**: Features main tabs (Markets, Trade, Futures, Mkt Hub, More) and a "More" drawer.
 - **Exchange Revenue & Fee System**: Centralized fee accumulation in `feeCollector.ts` records platform fees into the `keeper_earnings` table.
-- **Hybrid Buy-Crypto Flow**: Two-tier fiat onramp via Stripe → LetsExchange for amounts ≥ $122 USD, and partner provider deep-links for smaller amounts.
+- **White-label Buy-Crypto Flow**: Single Stripe checkout with server-side provider routing. Orders ≥ $122 USD fulfill via LetsExchange; orders $10–$121 fulfill via SimpleSwap (per-coin range checked at quote time before charging). Both backends are operator-funded — only OrahDEX branding shown to the user. Provider stored on `crypto_orders.provider`; webhook + status sync branch accordingly.
 - **Admin Panel**: Features an updated Dashboard with Quick Actions, dynamic system alerts, an "API Settings" page, and improved integrations management. Feature flags and API keys are database-persisted. API key hardening includes hash storage, one-time reveal, and rate limiting.
 
 ## Feature Specifications
