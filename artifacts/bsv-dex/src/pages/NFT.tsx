@@ -207,6 +207,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
+  const nativeSymbol = isEvm && !isOrahWallet ? (nativeEvmBalance?.symbol ?? "ETH") : "BSV";
   const availableLabel = isEvm && !isOrahWallet
     ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
@@ -296,7 +297,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {mode === "buy" ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs text-muted-foreground">BSV Amount</label>
+                  <label className="text-xs text-muted-foreground">{nativeSymbol} Amount</label>
                   {availableLabel && (
                     <span className="text-xs text-muted-foreground">
                       Available: <span className={`font-mono ${insufficientFunds ? "text-red-400" : "text-foreground"}`}>{availableLabel}</span>
