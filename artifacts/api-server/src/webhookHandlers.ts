@@ -215,10 +215,19 @@ function verifyStripeSignature(payload: Buffer, signature: string): Stripe.Event
     return stripe.webhooks.constructEvent(payload, signature, webhookSecret);
   }
 
-  // No webhook secret yet — parse without verification (log warning)
+  // In production we MUST refuse unsigned webhooks — anyone could POST a fake
+  // payment_intent.succeeded and trigger fulfillOrder.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "STRIPE_WEBHOOK_SECRET is required in production. Refusing to process " +
+      "unsigned webhook to prevent forged payment events."
+    );
+  }
+
+  // Dev/preview only: parse without verification (log warning)
   logger.warn(
     "STRIPE_WEBHOOK_SECRET not set — skipping signature verification. " +
-    "Configure it in Secrets for production security."
+    "This is only allowed outside production. Configure it in Secrets before deploying."
   );
   return JSON.parse(payload.toString()) as Stripe.Event;
 }
