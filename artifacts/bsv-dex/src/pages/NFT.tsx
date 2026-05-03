@@ -16,6 +16,7 @@ import { useLocation } from "wouter";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
 import { signTradeIfNeeded } from "@/lib/tradeSig";
+import { MediaCapture } from "@/components/MediaCapture";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -621,6 +622,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [maxSupply, setMaxSupply] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [captureOpen, setCaptureOpen] = useState(false);
 
   async function publish() {
     if (!address) { navigate("/settings"); return; }
@@ -672,9 +674,26 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary resize-none" />
         </div>
         <div className="space-y-2">
-          <label className="text-xs text-muted-foreground font-semibold">Image URL</label>
-          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…"
+          <label className="text-xs text-muted-foreground font-semibold">Image</label>
+          {imageUrl && (
+            <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "1/1", maxWidth: 280 }}>
+              <img src={imageUrl} alt="" className="w-full h-full object-cover"
+                   onError={() => setImageUrl("")} />
+            </div>
+          )}
+          <button type="button" onClick={() => setCaptureOpen(true)}
+            className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
+            style={{ background: "#00ff88", color: "#000" }}>
+            <Camera size={14} /> Camera
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Sparkles size={14} /> AI generate
+            <span style={{ opacity: 0.5 }}>•</span>
+            <ImageIcon size={14} /> Upload
+          </button>
+          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste image URL"
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
+          <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
+            onSelect={(dataUrl) => setImageUrl(dataUrl)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">

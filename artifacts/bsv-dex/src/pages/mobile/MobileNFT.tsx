@@ -17,6 +17,7 @@ import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
 import { signTradeIfNeeded } from "@/lib/tradeSig";
+import { MediaCapture } from "@/components/MediaCapture";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -2214,6 +2215,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -2332,6 +2334,23 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           )}
         </div>
       )}
+
+      {/* Camera + AI quick action */}
+      <button onClick={() => setCaptureOpen(true)}
+        className="w-full mb-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+        style={{ background: "var(--color-accent)", color: "#000" }}>
+        <Camera size={14} /> Camera
+        <span style={{ opacity: 0.6 }}>•</span>
+        <Sparkles size={14} /> AI generate
+      </button>
+
+      <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
+        onSelect={(dataUrl) => {
+          setFileData(dataUrl); setFilePreview(dataUrl);
+          setForm(f => ({ ...f, imageUrl: "" }));
+          setMediaMode("file");
+        }}
+        accept="image/*" initialTab="camera" />
 
       {/* Media mode toggle */}
       <div className="flex mb-4 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
