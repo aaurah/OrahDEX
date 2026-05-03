@@ -93,6 +93,9 @@ interface SettingsState {
   // Categories the user has muted (no FX, no desktop, still appear in feed).
   mutedCategories: string[];
   setMutedCategories: (v: string[]) => void;
+  // Slippage tolerance in basis points (50 = 0.5%). Capped at 5000 (50%).
+  slippageBps: number;
+  setSlippageBps: (v: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -110,6 +113,8 @@ export const useSettingsStore = create<SettingsState>()(
       setDndUntil: (v) => set({ dndUntil: v }),
       mutedCategories: [],
       setMutedCategories: (v) => set({ mutedCategories: v }),
+      slippageBps: 50,
+      setSlippageBps: (v) => set({ slippageBps: Math.max(0, Math.min(5000, Math.floor(v))) }),
     }),
     { name: "orahdex-settings-v1" }
   )

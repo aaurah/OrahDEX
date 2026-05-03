@@ -494,6 +494,120 @@ export function verifyExchangeSignature(
   exchangeNonces.delete(addr);
 }
 
+// ── Liquidity nonce store ────────────────────────────────────────────────────
+// Single-use nonces for POST /liquidity and DELETE /liquidity/:id.
+// Key: walletAddress.toLowerCase()
+
+interface LiquidityNonce {
+  nonce:     string;
+  message:   string;
+  /** Action the challenge was issued for ("add" | "remove"). Bound at verify. */
+  action:    "add" | "remove";
+  /** Pool the challenge was issued for. Bound at verify to prevent cross-pool replay. */
+  poolId:    string;
+  expiresAt: number;
+}
+
+const liquidityNonces = new Map<string, LiquidityNonce>();
+
+const LP_NONCE_TTL_MS = 5 * 60 * 1_000;
+const LP_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of liquidityNonces.entries()) {
+    if (v.expiresAt < now) liquidityNonces.delete(k);
+  }
+}, LP_NONCE_SWEEP).unref();
+
+/**
+ * Issue a single-use, 5-minute liquidity-action challenge for an EVM wallet.
+ * The client signs the returned `message` and sends signature + nonce with
+ * the next call to POST /liquidity or DELETE /liquidity/:positionId.
+ */
+export function issueLiquidityChallenge(params: {
+  walletAddress: string;
+  action:        "add" | "remove";
+  poolId:        string;
+}): { nonce: string; message: string } {
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const ts      = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX liquidity ${params.action}\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Pool: ${params.poolId}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  liquidityNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    action:    params.action,
+    poolId:    params.poolId,
+    expiresAt: Date.now() + LP_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a liquidity-action signature. Single-use nonce; consumed on success.
+ * The challenge is bound to (action, poolId) — verification fails if the
+ * incoming request targets a different action or pool, even if the signature
+ * itself is valid. This prevents a captured-but-unused challenge from being
+ * spent against a different intent within its TTL.
+ *
+ * Throws on any failure — wrap with try/catch and respond 401 to the client.
+ */
+export function verifyLiquiditySignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  action:        "add" | "remove";
+  poolId:        string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = liquidityNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Liquidity challenge expired or not found. " +
+      "Request a fresh challenge via POST /liquidity/challenge.",
+    );
+  }
+  if (stored.nonce !== params.nonce) {
+    throw new Error("Liquidity nonce mismatch.");
+  }
+  if (stored.action !== params.action) {
+    throw new Error(
+      `Liquidity challenge was issued for '${stored.action}', not '${params.action}'. ` +
+      `Request a fresh challenge for the correct action.`,
+    );
+  }
+  if (stored.poolId !== params.poolId) {
+    throw new Error(
+      `Liquidity challenge was issued for pool '${stored.poolId}', not '${params.poolId}'. ` +
+      `Request a fresh challenge for the correct pool.`,
+    );
+  }
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  liquidityNonces.delete(addr);
+}
+
+/**
+ * Look up the pool that a wallet's outstanding liquidity challenge was bound
+ * to. Used by DELETE /liquidity/:positionId so the route can verify the
+ * challenge against the position's resolved poolId without the client having
+ * to round-trip it.
+ */
+export function peekLiquidityChallengePoolId(walletAddress: string): string | null {
+  const stored = liquidityNonces.get(walletAddress.toLowerCase());
+  if (!stored || stored.expiresAt < Date.now()) return null;
+  return stored.poolId;
+}
+
 // ── Consumed order nonce store ────────────────────────────────────────────────
 // Tracks used (walletAddress, nonce) pairs for spot orders to prevent replay.
 // Entries are pruned lazily once their expiry has passed.
