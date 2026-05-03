@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { usePriceAlertsWatcher } from "@/hooks/usePriceAlertsWatcher";
+import { primeAudioContext } from "@/lib/notificationFx";
 
 /* ── Heavy modals — loaded only when first opened ── */
 const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
@@ -155,6 +156,23 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
 
 export function Layout({ children }: { children: ReactNode }) {
   usePriceAlertsWatcher();
+
+  // Most browsers suspend AudioContext until a user gesture. Prime it on the
+  // first interaction so notification sounds play immediately afterwards.
+  useEffect(() => {
+    const onGesture = () => {
+      primeAudioContext();
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+    window.addEventListener("pointerdown", onGesture, { once: true });
+    window.addEventListener("keydown", onGesture, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+  }, []);
+
   const [location, navigate] = useLocation();
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();

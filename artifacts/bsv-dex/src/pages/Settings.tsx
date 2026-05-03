@@ -5,7 +5,7 @@ import {
   CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
-  Settings as SettingsIcon, Key,
+  Settings as SettingsIcon, Key, Volume2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -98,13 +98,16 @@ export function WebSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
+  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
+  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const [, navigate] = useLocation();
   const alertsEnabled = usePriceAlertsStore((s) => s.enabled);
   const setAlertsEnabled = usePriceAlertsStore((s) => s.setEnabled);
   const alertsCount = usePriceAlertsStore((s) => s.alerts.length);
   const activeAlerts = usePriceAlertsStore((s) => s.alerts.filter((a) => a.triggeredAt === null).length);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [haptics, setHaptics] = useState(true);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
 
@@ -221,10 +224,16 @@ export function WebSettings() {
             }
           />
           <Row
+            icon={Volume2}
+            label="Notification Sound"
+            value="Play a chime when new alerts arrive"
+            rightEl={<Toggle value={soundEnabled} onChange={setSoundEnabled} />}
+          />
+          <Row
             icon={Activity}
             label="Haptic Feedback"
-            value="Vibration on interactions (mobile)"
-            rightEl={<Toggle value={haptics} onChange={setHaptics} />}
+            value="Vibrate on notifications (mobile, system permitting)"
+            rightEl={<Toggle value={hapticsEnabled} onChange={setHapticsEnabled} />}
           />
         </Section>
 

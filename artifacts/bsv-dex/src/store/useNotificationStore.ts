@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { playNotificationFx } from "@/lib/notificationFx";
+import { useSettingsStore } from "@/store/useSettingsStore";
 
 export type NotifType =
   | "order_placed"
@@ -63,6 +65,12 @@ export const useNotificationStore = create<NotificationState>()(
         set((s) => ({
           notifications: [entry, ...s.notifications].slice(0, 100),
         }));
+        // Fire sound + vibration based on user prefs (silently no-ops if disabled
+        // or if the browser/OS doesn't support the API).
+        try {
+          const { soundEnabled, hapticsEnabled } = useSettingsStore.getState();
+          playNotificationFx(entry.type, { sound: soundEnabled, haptics: hapticsEnabled });
+        } catch { /* never let FX break the store */ }
       },
 
       markRead: (id) => {
