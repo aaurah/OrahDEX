@@ -410,10 +410,11 @@ router.get("/admin/hot-wallet-status", requireAdminToken, async (req, res) => {
   }
 });
 
-// ── PATCH /withdrawals/:id ────────────────────────────────────────────────────
+// ── PATCH /withdrawals/:id  (alias: /admin/withdrawals/:id/status) ───────────
 // Admin action: update status to 'cancelled' (refunds balance), 'processing',
-// or 'completed' (with optional txid).
-router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
+// or 'completed' (with optional txid). The /admin/.../status alias is what the
+// admin LedgerManager UI calls — keep both in sync.
+router.patch(["/withdrawals/:id", "/admin/withdrawals/:id/status"], requireAdminToken, async (req, res) => {
   const { id } = req.params;
   const { status, txid, note } = req.body as { status: string; txid?: string; note?: string };
 
