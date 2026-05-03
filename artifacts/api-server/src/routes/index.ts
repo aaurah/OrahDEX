@@ -36,6 +36,7 @@ import feeRevenueRouter from "./feeRevenue.js";
 import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stripeCheckoutRouter from "./stripeCheckout.js";
+import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
@@ -114,6 +115,7 @@ router.use(creatorCoinsRouter);
 router.use(predictionRouter);
 router.use(letsexchangeRouter);
 router.use(stripeCheckoutRouter);
+router.use(coinbaseRouter);
 router.use(kycRouter);
 
 

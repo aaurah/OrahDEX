@@ -338,6 +338,17 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const [switchedChainId, setSwitchedChainId] = useState<number|null>(null);
   const [copied, setCopied]               = useState(false);
 
+  // Coinbase Onramp project ID (fetched from server, used as appId in pay.coinbase.com URL)
+  const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>("");
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/coinbase/onramp-config")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d?.projectId) setCoinbaseProjectId(d.projectId); })
+      .catch(() => { /* optional — falls back to generic Coinbase URL */ });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     if (open) {
       setStep(address ? "coin" : "connect");
@@ -516,7 +527,12 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   function getProviderUrl(pId: string) {
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
-    return `${p.baseUrl}?${new URLSearchParams(p.params(coin,fiat,amount,payMethod,effectiveAddr))}`;
+    const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
+    // Coinbase Onramp requires appId (CDP Project ID) — inject it when available
+    if (p.id === "coinbase" && coinbaseProjectId) {
+      baseParams.appId = coinbaseProjectId;
+    }
+    return `${p.baseUrl}?${new URLSearchParams(baseParams)}`;
   }
 
   function validateAndContinue() {
