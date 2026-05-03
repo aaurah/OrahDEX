@@ -14,7 +14,7 @@ const REF_AMOUNTS: Record<string, number> = {
   DEFAULT: 0.1,
 };
 
-const REFRESH_MS = 10_000;
+const REFRESH_MS = 45_000;
 
 export interface LERate {
   rate: string;           // how many quote units per 1 base
