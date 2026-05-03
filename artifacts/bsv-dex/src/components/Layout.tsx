@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
+import { usePriceAlertsWatcher } from "@/hooks/usePriceAlertsWatcher";
 
 /* ── Heavy modals — loaded only when first opened ── */
 const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
@@ -153,6 +154,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
 }
 
 export function Layout({ children }: { children: ReactNode }) {
+  usePriceAlertsWatcher();
   const [location, navigate] = useLocation();
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
