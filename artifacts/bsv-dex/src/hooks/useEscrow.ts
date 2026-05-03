@@ -18,6 +18,9 @@ import {
   lockEthViaInjected,
   lockErc20ViaInjected,
   cancelEscrowViaInjected,
+  lockEthViaOrah,
+  lockErc20ViaOrah,
+  cancelEscrowViaOrah,
   EscrowTxResult,
 } from "@/lib/escrow";
 
@@ -40,9 +43,12 @@ export interface LockOrderParams {
 
 export function useEscrow() {
   const { address, chainId: walletChainId, provider } = useWalletStore();
-  const isExternalEvm = provider !== "orah-wallet" && !!address?.startsWith("0x");
+  const isEvm        = !!address?.startsWith("0x");
+  const isOrahWallet = provider === "orah-wallet";
   const chainId = walletChainId ?? 0;
-  const escrowAvailable = isExternalEvm && hasEscrow(chainId);
+  // Escrow is available for any EVM wallet (Orah self-custody OR external) on a
+  // chain where the OrahDEX escrow contract is deployed.
+  const escrowAvailable = isEvm && hasEscrow(chainId);
 
   const [status,    setStatus]    = useState<EscrowStatus>("idle");
   const [txResult,  setTxResult]  = useState<EscrowTxResult | null>(null);
@@ -68,11 +74,15 @@ export function useEscrow() {
       if (asset.address === null) {
         // Native ETH
         setStatus("locking");
-        result = await lockEthViaInjected(params.orderId, asset.rawAmount, address, chainId);
+        result = isOrahWallet
+          ? await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId)
+          : await lockEthViaInjected(params.orderId, asset.rawAmount, address, chainId);
       } else {
         // ERC-20: approve then lock
         setStatus("approving");
-        result = await lockErc20ViaInjected(params.orderId, asset.address, asset.rawAmount, address, chainId);
+        result = isOrahWallet
+          ? await lockErc20ViaOrah(params.orderId, asset.address, asset.rawAmount, address, chainId)
+          : await lockErc20ViaInjected(params.orderId, asset.address, asset.rawAmount, address, chainId);
       }
 
       setStatus("success");
@@ -94,7 +104,9 @@ export function useEscrow() {
     try {
       setErrorMsg(null);
       setStatus("cancelling");
-      const result = await cancelEscrowViaInjected(orderId, address, chainId);
+      const result = isOrahWallet
+        ? await cancelEscrowViaOrah(orderId, address, chainId)
+        : await cancelEscrowViaInjected(orderId, address, chainId);
       setStatus("success");
       setTxResult(result);
       return result;
