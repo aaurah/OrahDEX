@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 // PORT is only needed for the dev/preview server, not the production build.
 const rawPort = process.env.PORT;
@@ -12,6 +13,10 @@ const basePath = process.env.BASE_PATH ?? "/";
 export default defineConfig({
   base: basePath,
   plugins: [
+    nodePolyfills({
+      globals: { Buffer: true, global: true, process: true },
+      protocolImports: true,
+    }),
     react(),
     tailwindcss(),
     ...(process.env.NODE_ENV !== "production" &&
