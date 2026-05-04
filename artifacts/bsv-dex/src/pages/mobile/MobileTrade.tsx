@@ -59,9 +59,12 @@ function formatDateTime(value: string | Date | number) {
 function getOrderExplorerUrl(order: any): string | null {
   if (order?.explorerUrl) return String(order.explorerUrl);
   if (!order?.txid) return null;
-  return String(order.txid).startsWith("0x")
-    ? `https://etherscan.io/tx/${order.txid}`
-    : `https://whatsonchain.com/tx/${order.txid}`;
+  const txid = String(order.txid);
+  // htlc-pending- is a placeholder — no on-chain txid yet
+  if (txid.startsWith("htlc-pending-")) return null;
+  return txid.startsWith("0x")
+    ? `https://etherscan.io/tx/${txid}`
+    : `https://whatsonchain.com/tx/${txid}`;
 }
 
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
@@ -1701,12 +1704,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                           <span className="w-16 text-right text-[11px] font-mono text-foreground">{o.price ? fmt(Number(o.price)) : "—"}</span>
                           <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
-                          <span className={cn(
-                            "w-16 text-right text-[10px] font-semibold",
-                            o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
-                          )}>
-                            {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                          </span>
+                          {String(o.txid ?? "").startsWith("htlc-pending-") ? (
+                            <span className="w-16 text-right text-[10px] font-semibold text-amber-400 flex items-center justify-end gap-0.5">
+                              <Clock size={9} className="shrink-0" />
+                              Settling
+                            </span>
+                          ) : (
+                            <span className={cn(
+                              "w-16 text-right text-[10px] font-semibold",
+                              o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                            )}>
+                              {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                            </span>
+                          )}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                           <span className="font-mono">#{String(o.id).slice(0, 10)}</span>
