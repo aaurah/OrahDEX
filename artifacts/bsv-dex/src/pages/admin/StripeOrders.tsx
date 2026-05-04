@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   RefreshCw, Search, CreditCard, CheckCircle2, XCircle, Clock,
   RotateCcw, Trash2, Ban, Copy, Check, Loader2, AlertTriangle, Send,
-  MoreHorizontal, DollarSign, PlayCircle, Flag,
+  MoreHorizontal, DollarSign, PlayCircle, Flag, ShieldCheck, ShieldOff,
+  User, X,
 } from "lucide-react";
 import { adminFetch } from "@/lib/adminFetch";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,15 @@ interface StripeOrder {
   le_status?: string | null;
   created_at: string;
   updated_at: string;
+  kyc_first_name?: string | null;
+  kyc_last_name?: string | null;
+  kyc_date_of_birth?: string | null;
+  kyc_nationality?: string | null;
+  kyc_country?: string | null;
+  kyc_id_type?: string | null;
+  kyc_id_number?: string | null;
+  kyc_status?: string | null;
+  kyc_submitted_at?: string | null;
 }
 
 interface StripeStats {
@@ -70,6 +80,7 @@ export function AdminStripeOrders() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deliveryModal, setDeliveryModal] = useState<StripeOrder | null>(null);
+  const [kycModal, setKycModal] = useState<StripeOrder | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -254,6 +265,7 @@ export function AdminStripeOrders() {
                 <th className="text-left px-3 py-2">Coin</th>
                 <th className="text-right px-3 py-2">Amount</th>
                 <th className="text-left px-3 py-2">Wallet</th>
+                <th className="text-left px-3 py-2">User / KYC</th>
                 <th className="text-left px-3 py-2">Status</th>
                 <th className="text-left px-3 py-2">Created</th>
                 <th className="text-right px-3 py-2">Actions</th>
@@ -261,12 +273,12 @@ export function AdminStripeOrders() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">
+                <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading orders…
                 </td></tr>
               )}
               {!isLoading && orders.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">
+                <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">
                   No Stripe orders match the current filter.
                 </td></tr>
               )}
@@ -298,6 +310,28 @@ export function AdminStripeOrders() {
                       <div className="font-mono text-xs">{shorten(o.wallet_address)}</div>
                       {o.user_wallet && o.user_wallet !== o.wallet_address && (
                         <div className="text-[10px] text-muted-foreground font-mono">user: {shorten(o.user_wallet)}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {o.kyc_first_name ? (
+                        <button
+                          onClick={() => setKycModal(o)}
+                          className="text-left group"
+                          title="View KYC details"
+                        >
+                          <div className="flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                            <span className="text-xs font-medium text-foreground group-hover:text-emerald-400 transition-colors">
+                              {o.kyc_first_name} {o.kyc_last_name}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-emerald-500/70 mt-0.5">KYC verified — view details</div>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <ShieldOff className="w-3 h-3 text-muted-foreground/50 shrink-0" />
+                          <span className="text-[11px] text-muted-foreground/60">No KYC</span>
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2 align-top">
@@ -430,6 +464,100 @@ export function AdminStripeOrders() {
           </table>
         </div>
       </div>
+
+      {/* KYC Detail Modal */}
+      {kycModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setKycModal(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                  <User className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold">{kycModal.kyc_first_name} {kycModal.kyc_last_name}</h2>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px]">
+                      <ShieldCheck className="w-3 h-3" /> KYC Verified
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Order {shorten(kycModal.id, 8, 4)} · {kycModal.coin_symbol} · {fmtMoney(kycModal.fiat_amount_cents, kycModal.fiat_currency)}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setKycModal(null)}
+                className="p-1 hover:bg-secondary rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "First Name",            value: kycModal.kyc_first_name },
+                { label: "Last Name",             value: kycModal.kyc_last_name },
+                { label: "Date of Birth",         value: kycModal.kyc_date_of_birth },
+                { label: "Nationality",           value: kycModal.kyc_nationality },
+                { label: "Country of Residence",  value: kycModal.kyc_country },
+                { label: "ID Type",               value: kycModal.kyc_id_type },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-lg bg-secondary/40 border border-border/50 p-3">
+                  <div className="text-[10px] uppercase text-muted-foreground font-medium">{label}</div>
+                  <div className="text-sm font-semibold mt-1 capitalize">{value ?? "—"}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-lg bg-amber-500/8 border border-amber-500/25 p-3 space-y-2">
+              <div className="text-[10px] uppercase text-amber-300 font-semibold">Government ID</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] text-muted-foreground">Type</div>
+                  <div className="text-sm font-semibold capitalize mt-0.5">{kycModal.kyc_id_type ?? "—"}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground">Number</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-sm font-mono font-semibold">{kycModal.kyc_id_number ?? "—"}</span>
+                    {kycModal.kyc_id_number && (
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(kycModal.kyc_id_number!); setCopiedId("kyc-id"); setTimeout(() => setCopiedId(null), 1200); }}
+                        className="text-muted-foreground hover:text-foreground"
+                        title="Copy ID number"
+                      >
+                        {copiedId === "kyc-id" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase text-muted-foreground font-medium">Destination Wallet</div>
+              <div className="rounded-lg bg-secondary/40 border border-border/50 px-3 py-2 font-mono text-xs break-all flex items-start gap-2">
+                <span className="flex-1">{kycModal.wallet_address}</span>
+                <button onClick={() => navigator.clipboard.writeText(kycModal.wallet_address)} className="text-muted-foreground hover:text-foreground shrink-0" title="Copy wallet">
+                  <Copy className="w-3 h-3" />
+                </button>
+              </div>
+              {kycModal.kyc_submitted_at && (
+                <div className="text-[11px] text-muted-foreground">
+                  KYC submitted: {fmtDate(kycModal.kyc_submitted_at)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {deliveryModal && (
         <div
