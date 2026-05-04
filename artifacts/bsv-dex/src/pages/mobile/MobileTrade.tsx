@@ -20,6 +20,7 @@ import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
+import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
@@ -1737,6 +1738,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </>
                 )}
               </>
+            )}
+
+            {/* Recover stuck on-chain HTLC funds — only for EVM wallets */}
+            {isSelfCustodyEvm && address && (
+              <div className="px-3 pb-3">
+                <HtlcLockRecovery chainId={walletChainId ?? 1} />
+              </div>
             )}
           </div>
         )}

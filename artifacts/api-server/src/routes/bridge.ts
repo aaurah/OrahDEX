@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { createPublicClient, http, parseAbi, encodeFunctionData, type Address, type Hex } from "viem";
 
 const router = Router();
 type CctpIntentStatus = "created" | "attested" | "completed";
@@ -392,6 +393,111 @@ router.get("/cctp/intent/:id", (req, res) => {
     sender: intent.sender,
     recipient: intent.recipient,
   });
+});
+
+// ── GET /api/bridge/evm-lock-info — decode a lockETH tx + return refund path ──
+// Called by the HtlcLockRecovery UI so a user can recover ETH whose HTLC
+// timelock expired without the counter-party locking.
+router.get("/evm-lock-info", async (req, res) => {
+  const { txHash, chainId: chainIdStr } = req.query as { txHash?: string; chainId?: string };
+
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    res.status(400).json({ error: "Provide a valid 0x transaction hash." });
+    return;
+  }
+
+  const chainId = parseInt(chainIdStr ?? "1");
+  const RPC_URLS: Record<number, string> = {
+    1:   process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",
+    137: process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+    56:  process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",
+  };
+  const CONTRACT_ADDRS: Record<number, string | null> = {
+    1:   process.env.EVM_HTLC_CONTRACT_ETH     ?? null,
+    137: process.env.EVM_HTLC_CONTRACT_POLYGON ?? null,
+    56:  process.env.EVM_HTLC_CONTRACT_BSC     ?? null,
+  };
+  const rpcUrl = RPC_URLS[chainId] ?? "https://eth.llamarpc.com";
+
+  const HTLC_ABI = parseAbi([
+    "function getLock(bytes32 id) view returns (address sender, address recipient, address token, uint256 amount, bytes32 secretHash, uint256 timelockUnix, bool revealed, bool refunded)",
+    "function refund(bytes32 id)",
+  ]);
+
+  try {
+    const client = createPublicClient({ transport: http(rpcUrl) });
+
+    // Fetch the transaction to extract calldata
+    const tx = await client.getTransaction({ hash: txHash as Hex });
+    if (!tx) {
+      res.status(404).json({ error: "Transaction not found on this chain." });
+      return;
+    }
+
+    const input = tx.input ?? "";
+    if (!input || input.length < 74) {
+      res.status(400).json({ error: "Transaction does not appear to be a lockETH/lockToken call." });
+      return;
+    }
+
+    // Skip 4-byte function selector; first 32-byte word (64 hex chars) = lockId
+    const lockId = ("0x" + input.slice(10, 74).padStart(64, "0")) as Hex;
+
+    // The contract is the tx recipient; fall back to env var if not 0x
+    const contractAddress = (
+      tx.to ?? CONTRACT_ADDRS[chainId]
+    ) as Address | null;
+
+    if (!contractAddress) {
+      res.status(400).json({ error: "Could not determine HTLC contract address." });
+      return;
+    }
+
+    // Read lock state on-chain
+    let lockData: readonly [Address, Address, Address, bigint, Hex, bigint, boolean, boolean];
+    try {
+      lockData = await client.readContract({
+        address:      contractAddress,
+        abi:          HTLC_ABI,
+        functionName: "getLock",
+        args:         [lockId],
+      }) as typeof lockData;
+    } catch {
+      res.status(404).json({
+        error: "Lock not found on the contract. It may have already been refunded, revealed, or the tx is for a different contract.",
+      });
+      return;
+    }
+
+    const [sender, , , amount, , timelockUnix, revealed, refunded] = lockData;
+    const timelockSecs = Number(timelockUnix);
+    const isExpired    = timelockSecs < Math.floor(Date.now() / 1000);
+    const canRefund    = isExpired && !revealed && !refunded;
+
+    const refundCalldata = encodeFunctionData({
+      abi:          HTLC_ABI,
+      functionName: "refund",
+      args:         [lockId],
+    });
+
+    res.json({
+      lockId,
+      contractAddress,
+      sender,
+      amount:       amount.toString(),
+      amountEth:    (Number(amount) / 1e18).toFixed(6),
+      timelockUnix: timelockSecs,
+      isExpired,
+      revealed,
+      refunded,
+      canRefund,
+      refundCalldata,
+      chainId,
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message, txHash }, "bridge: evm-lock-info failed");
+    res.status(500).json({ error: err?.message ?? "Failed to fetch lock info." });
+  }
 });
 
 export default router;
