@@ -26,7 +26,7 @@ type ChainRow = {
   name: string;
   symbol: string;
   color: string;
-  family: "evm" | "bsv" | "btc" | "bch" | "tron" | "solana";
+  family: "evm" | "bsv" | "btc" | "bch" | "tron" | "solana" | "xrp" | "ltc" | "doge";
   evmChainId?: number;
   live: boolean;
   badge?: string;
@@ -48,7 +48,10 @@ const CHAINS: ChainRow[] = [
   { id: "btc",    name: "Bitcoin",      symbol: "BTC", color: "#F7931A", family: "btc",    live: true },
   { id: "bch",    name: "Bitcoin Cash", symbol: "BCH", color: "#0AC18E", family: "bch",    live: true },
   { id: "sol",    name: "Solana",       symbol: "SOL", color: "#14F195", family: "solana", live: true },
-  { id: "tron",   name: "Tron",         symbol: "TRX", color: "#FF060A", family: "tron",   live: false, badge: "Phase 3" },
+  { id: "tron",   name: "Tron",         symbol: "TRX",  color: "#FF060A", family: "tron",   live: true },
+  { id: "xrp",   name: "XRP Ledger",   symbol: "XRP",  color: "#00AAE4", family: "xrp",    live: true },
+  { id: "ltc",   name: "Litecoin",     symbol: "LTC",  color: "#A6A9AA", family: "ltc",    live: true },
+  { id: "doge",  name: "Dogecoin",     symbol: "DOGE", color: "#C2A633", family: "doge",   live: true },
 ];
 
 function shortAddr(a: string | null) {
@@ -75,10 +78,13 @@ function addressForChain(
     if (connectedNetwork === "bsv" && evmAddress) return evmAddress;
     return null;
   }
-  if (chain.family === "btc") return derived?.btc ?? null;
-  if (chain.family === "bch") return derived?.bch ?? null;
-  if (chain.family === "solana") return derived?.sol ?? null;
-  if (chain.family === "tron") return derived?.tron ?? null;
+  if (chain.family === "btc")    return derived?.btc  ?? null;
+  if (chain.family === "bch")    return derived?.bch  ?? null;
+  if (chain.family === "solana") return derived?.sol  ?? null;
+  if (chain.family === "tron")   return derived?.tron ?? null;
+  if (chain.family === "xrp")    return derived?.xrp  ?? null;
+  if (chain.family === "ltc")    return derived?.ltc  ?? null;
+  if (chain.family === "doge")   return derived?.doge ?? null;
   return null;
 }
 

@@ -221,10 +221,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const connect = useWalletStore((s) => s.connect);
   const setBalance = useWalletStore((s) => s.setBalance);
   const setInternalEvmAddress = useWalletStore((s) => s.setInternalEvmAddress);
-  const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
-  const setInternalBchAddress = useWalletStore((s) => s.setInternalBchAddress);
-  const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
-  const setInternalSolAddress = useWalletStore((s) => s.setInternalSolAddress);
+  const setInternalBsvAddress  = useWalletStore((s) => s.setInternalBsvAddress);
+  const setInternalBchAddress  = useWalletStore((s) => s.setInternalBchAddress);
+  const setInternalBtcAddress  = useWalletStore((s) => s.setInternalBtcAddress);
+  const setInternalSolAddress  = useWalletStore((s) => s.setInternalSolAddress);
+  const setInternalXrpAddress  = useWalletStore((s) => s.setInternalXrpAddress);
+  const setInternalLtcAddress  = useWalletStore((s) => s.setInternalLtcAddress);
+  const setInternalDogeAddress = useWalletStore((s) => s.setInternalDogeAddress);
   const walletState = useWalletStore();
 
   useEffect(() => {
@@ -385,10 +388,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setPasskeyStep("done");
       connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
-      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
-      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
-      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
-      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
+      if (result.chains?.bsv)  setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
+      if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
+      if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
     } catch (e: any) {
       setPasskeyError(e?.message ?? "Passkey creation failed");
@@ -408,10 +414,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setPasskeyStep("done");
       connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
-      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
-      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
-      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
-      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
+      if (result.chains?.bsv)  setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
+      if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
+      if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), result.restoredFromBackup ? 2000 : 1200);
     } catch (e: any) {
       const msg: string = e?.message ?? "Passkey authentication failed";
@@ -1044,6 +1053,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setHdAddresses(addrs);
       saveDerivedAddresses(addrs.evm, {
         evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+        xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
       });
       connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(addrs.evm);
@@ -1051,6 +1061,9 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      setInternalXrpAddress(addrs.xrp);
+      setInternalLtcAddress(addrs.ltc);
+      setInternalDogeAddress(addrs.doge);
       setCreateStep("done");
       setTimeout(() => goToPrep(addrs.evm, "evm", "orah-wallet"), 2500);
     } finally {
@@ -1130,8 +1143,12 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      setInternalXrpAddress(addrs.xrp);
+      setInternalLtcAddress(addrs.ltc);
+      setInternalDogeAddress(addrs.doge);
       saveDerivedAddresses(address, {
         evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+        xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
       });
     }
     setImportStep("done");

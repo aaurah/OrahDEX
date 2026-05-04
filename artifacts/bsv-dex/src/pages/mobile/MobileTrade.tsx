@@ -277,7 +277,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, switchChain } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
@@ -802,15 +802,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isMobileBtcChain = baseChain === "bitcoin";
   const hasMobileInternalBtc = !!internalBtcAddress && network === "evm";
   const mobileBtcHandled = isMobileBtcChain && hasMobileInternalBtc;
-  const isMobileSolChain = baseChain === "solana";
-  const hasMobileInternalSol = !!internalSolAddress && network === "evm";
-  const mobileSolHandled = isMobileSolChain && hasMobileInternalSol;
+  const isMobileSolChain  = baseChain === "solana";
+  const hasMobileInternalSol  = !!internalSolAddress  && network === "evm";
+  const mobileSolHandled  = isMobileSolChain  && hasMobileInternalSol;
+  const isMobileXrpChain  = baseChain === "ripple";
+  const hasMobileInternalXrp  = !!internalXrpAddress  && network === "evm";
+  const mobileXrpHandled  = isMobileXrpChain  && hasMobileInternalXrp;
+  const isMobileLtcChain  = baseChain === "litecoin";
+  const hasMobileInternalLtc  = !!internalLtcAddress  && network === "evm";
+  const mobileLtcHandled  = isMobileLtcChain  && hasMobileInternalLtc;
+  const isMobileDogeChain = baseChain === "dogecoin";
+  const hasMobileInternalDoge = !!internalDogeAddress && network === "evm";
+  const mobileDogeHandled = isMobileDogeChain && hasMobileInternalDoge;
   const hasMobileSeparateBtcAddr = !!internalBtcAddress && internalBtcAddress !== internalBsvAddress;
-  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled && !mobileBtcHandled && !mobileSolHandled;
-  const showMobileEvmInfo = side === "buy" && !!address && network === "bsv" && isBaseEvmChain && hasMobileInternalEvm;
-  const showMobileBsvInfo = side === "buy" && !!address && network === "evm" && isMobileBsvChain && hasMobileInternalBsv;
-  const showMobileBtcInfo = side === "buy" && !!address && network === "evm" && isMobileBtcChain && hasMobileInternalBtc;
-  const showMobileSolInfo = side === "buy" && !!address && network === "evm" && isMobileSolChain && hasMobileInternalSol;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled && !mobileBtcHandled && !mobileSolHandled && !mobileXrpHandled && !mobileLtcHandled && !mobileDogeHandled;
+  const showMobileEvmInfo  = side === "buy" && !!address && network === "bsv" && isBaseEvmChain    && hasMobileInternalEvm;
+  const showMobileBsvInfo  = side === "buy" && !!address && network === "evm" && isMobileBsvChain  && hasMobileInternalBsv;
+  const showMobileBtcInfo  = side === "buy" && !!address && network === "evm" && isMobileBtcChain  && hasMobileInternalBtc;
+  const showMobileSolInfo  = side === "buy" && !!address && network === "evm" && isMobileSolChain  && hasMobileInternalSol;
+  const showMobileXrpInfo  = side === "buy" && !!address && network === "evm" && isMobileXrpChain  && hasMobileInternalXrp;
+  const showMobileLtcInfo  = side === "buy" && !!address && network === "evm" && isMobileLtcChain  && hasMobileInternalLtc;
+  const showMobileDogeInfo = side === "buy" && !!address && network === "evm" && isMobileDogeChain && hasMobileInternalDoge;
   const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -1984,6 +1996,75 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <span className="text-[10px] font-mono text-violet-300 truncate flex-1">{internalSolAddress}</span>
                   <button type="button" onClick={() => navigator.clipboard?.writeText(internalSolAddress ?? "")}
                     className="shrink-0 text-violet-400/50" title="Copy SOL">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── XRP Sub-wallet info (EVM users buying XRP — HD wallet only) ── */}
+            {showMobileXrpInfo && (
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-cyan-300 font-semibold">Sent to your OrahDEX XRP wallet</p>
+                    <p className="text-[10px] text-cyan-200/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-cyan-300 font-medium">m/44'/144'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-cyan-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-cyan-400/70 text-[10px] font-medium shrink-0">XRP</span>
+                  <span className="text-[10px] font-mono text-cyan-300 truncate flex-1">{internalXrpAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalXrpAddress ?? "")}
+                    className="shrink-0 text-cyan-400/50" title="Copy XRP">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── LTC Sub-wallet info (EVM users buying LTC — HD wallet only) ── */}
+            {showMobileLtcInfo && (
+              <div className="rounded-xl border border-slate-400/30 bg-slate-400/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-slate-300 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-slate-200 font-semibold">Sent to your OrahDEX Litecoin wallet</p>
+                    <p className="text-[10px] text-slate-300/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-slate-200 font-medium">m/44'/2'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-slate-400/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-400/70 text-[10px] font-medium shrink-0">LTC</span>
+                  <span className="text-[10px] font-mono text-slate-200 truncate flex-1">{internalLtcAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalLtcAddress ?? "")}
+                    className="shrink-0 text-slate-400/50" title="Copy LTC">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── DOGE Sub-wallet info (EVM users buying DOGE — HD wallet only) ── */}
+            {showMobileDogeInfo && (
+              <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-yellow-300 font-semibold">Sent to your OrahDEX Dogecoin wallet</p>
+                    <p className="text-[10px] text-yellow-200/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-yellow-300 font-medium">m/44'/3'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-yellow-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-yellow-400/70 text-[10px] font-medium shrink-0">DOGE</span>
+                  <span className="text-[10px] font-mono text-yellow-300 truncate flex-1">{internalDogeAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalDogeAddress ?? "")}
+                    className="shrink-0 text-yellow-400/50" title="Copy DOGE">
                     <Link2 size={11} />
                   </button>
                 </div>

@@ -228,6 +228,9 @@ export interface DerivedAddresses {
   bsv?: string;
   sol?: string;
   tron?: string;
+  xrp?: string;
+  ltc?: string;
+  doge?: string;
 }
 
 function readDerivedMap(): Record<string, DerivedAddresses> {

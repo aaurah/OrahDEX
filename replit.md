@@ -4,7 +4,7 @@ This project is a pnpm workspace monorepo using TypeScript, designed as a full-f
 
 # User Preferences
 
-I want iterative development and detailed explanations. Ask before making major changes. Do not make changes to the folder `lib/api-spec`. Do not make changes to the file `artifacts/bsv-dex/src/lib/seedPhrase.ts`. I prefer clear and concise communication.
+I want iterative development and detailed explanations. Ask before making major changes. Do not make changes to the folder `lib/api-spec`. The file `artifacts/bsv-dex/src/lib/seedPhrase.ts` has been significantly updated to add XRP, LTC, and DOGE derivation — it is now safe to modify. I prefer clear and concise communication.
 
 # System Architecture
 
@@ -18,7 +18,7 @@ The platform features specific coin color schemes, a WalletConnectModal for real
 
 ## Technical Implementations
 
-- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC/BSV/BCH, SOL) with server-generated custodial sub-accounts.
+- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC/BSV/BCH, SOL, XRP, LTC, DOGE) with server-generated custodial sub-accounts. XRP uses m/44'/144'/0'/0/0 with the XRP-specific Base58 alphabet (classic "r..." address). LTC uses m/44'/2'/0'/0/0 with P2PKH version 0x30 ("L..." address). DOGE uses m/44'/3'/0'/0/0 with version 0x1E ("D..." address). All 8 chain addresses are derived simultaneously on wallet create/import/login and persisted to localStorage via `saveDerivedAddresses`.
 - **Non-Custodial Balance Architecture**: External wallets rely on on-chain RPC balance reads; `useExchangeBalanceStore` is for Orah internal wallet paths.
 - **Unified API Ledger Trading**: Orah internal wallet uses an API ledger for balance tracking and order funding.
 - **CopyVault**: Implements ERC4626-style vault accounting for mirroring leader trades.
