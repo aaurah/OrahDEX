@@ -212,6 +212,9 @@ export interface PasskeyChainAddresses {
   btc?: string;
   bch?: string;
   bsv?: string;
+  xrp?: string;
+  ltc?: string;
+  doge?: string;
 }
 
 export interface RegisterResult {
@@ -280,6 +283,7 @@ export async function registerPasskeyWallet(
   saveWallet(wallet);
   saveDerivedAddresses(addrs.evm, {
     evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
   });
 
   // Silently back up to server (encrypted — safe to store remotely)
@@ -289,7 +293,10 @@ export async function registerPasskeyWallet(
     address: addrs.evm,
     credentialId,
     label,
-    chains: { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv },
+    chains: {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    },
   };
 }
 
@@ -370,9 +377,13 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     // New format: derive all 5 chain addresses from the BIP39 mnemonic
     const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
     address = addrs.evm;
-    chains  = { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv };
+    chains  = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
     saveDerivedAddresses(addrs.evm, {
       evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     });
   } else {
     // Legacy format: raw EVM private key (0x...)

@@ -1,15 +1,15 @@
 /**
  * OrahDEX HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
  *
- * One seed phrase → five chain addresses:
+ * One seed phrase → eight chain addresses:
  *   EVM (Ethereum, BSC, Polygon…)  : m/44'/60'/0'/0/0   secp256k1
  *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0    secp256k1 — shared key
- *     → All three produce the identical legacy P2PKH address (starts with "1")
+ *     → BTC & BSV share the same legacy P2PKH address (starts with "1")
+ *     → BCH uses CashAddr encoding (bitcoincash:q…)
  *   SOL (Solana)                   : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
- *
- * BTC, BCH, and BSV are all Bitcoin forks sharing the same secp256k1 curve.
- * Deriving from the same BIP44 path (coin type 0') ensures the same legacy
- * address across all three chains when switching networks.
+ *   XRP (Ripple XRP Ledger)        : m/44'/144'/0'/0/0  secp256k1, XRP Base58 alphabet (starts with "r")
+ *   LTC (Litecoin)                 : m/44'/2'/0'/0/0    secp256k1, P2PKH version 0x30 (starts with "L")
+ *   DOGE (Dogecoin)                : m/44'/3'/0'/0/0    secp256k1, P2PKH version 0x1E (starts with "D")
  *
  * All addresses are fully compatible with MetaMask, Trust Wallet, Phantom, Ledger, etc.
  */
@@ -43,6 +43,9 @@ export interface HdWalletAddresses {
   bch: string;
   bsv: string;
   sol: string;
+  xrp: string;
+  ltc: string;
+  doge: string;
 }
 
 export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAddresses> {
@@ -59,15 +62,98 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const bch = deriveCashAddr(bitcoinKey);
   const sol = deriveSolanaAddress(seed);
 
-  return { evm, btc, bch, bsv, sol };
+  const xrpKey  = root.derive("m/44'/144'/0'/0/0");
+  const xrp  = deriveXrpAddress(xrpKey);
+
+  const ltcKey  = root.derive("m/44'/2'/0'/0/0");
+  const ltc  = deriveLtcAddress(ltcKey);
+
+  const dogeKey = root.derive("m/44'/3'/0'/0/0");
+  const doge = deriveDogeAddress(dogeKey);
+
+  return { evm, btc, bch, bsv, sol, xrp, ltc, doge };
 }
 
-// ─── P2PKH Base58Check (BTC / BSV) ───────────────────────────────────────────
+// ─── Base58 with configurable alphabet ───────────────────────────────────────
+
+const BITCOIN_BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const XRP_BASE58     = "rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz";
+
+function base58EncodeWithAlphabet(bytes: Uint8Array, alphabet: string): string {
+  const digits: number[] = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let j = 0; j < digits.length; j++) {
+      carry += digits[j] << 8;
+      digits[j] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); }
+  }
+  let result = "";
+  for (const b of bytes) { if (b !== 0) break; result += alphabet[0]; }
+  return result + digits.reverse().map(d => alphabet[d]).join("");
+}
+
+function base58Encode(bytes: Uint8Array): string {
+  return base58EncodeWithAlphabet(bytes, BITCOIN_BASE58);
+}
+
+// ─── Base58Check (BTC / BSV / LTC / DOGE — Bitcoin alphabet) ─────────────────
+
+function encodeBase58Check(payload: Uint8Array, version: number): string {
+  const versioned = new Uint8Array(1 + payload.length);
+  versioned[0] = version;
+  versioned.set(payload, 1);
+  const checksum = sha256(sha256(versioned)).slice(0, 4);
+  const full = new Uint8Array(versioned.length + 4);
+  full.set(versioned);
+  full.set(checksum, versioned.length);
+  return base58Encode(full);
+}
+
+/** Base58Check with a custom alphabet — used for XRP (XRP Ledger alphabet). */
+function encodeBase58CheckWithAlphabet(payload: Uint8Array, version: number, alphabet: string): string {
+  const versioned = new Uint8Array(1 + payload.length);
+  versioned[0] = version;
+  versioned.set(payload, 1);
+  const checksum = sha256(sha256(versioned)).slice(0, 4);
+  const full = new Uint8Array(versioned.length + 4);
+  full.set(versioned);
+  full.set(checksum, versioned.length);
+  return base58EncodeWithAlphabet(full, alphabet);
+}
+
+// ─── P2PKH Base58Check (BTC / BSV — version 0x00 → starts with "1") ─────────
 
 function deriveP2PKH(key: HDKey): string {
   if (!key.publicKey) throw new Error("no public key");
   const pkh = hash160(key.publicKey);
   return encodeBase58Check(pkh, 0x00);
+}
+
+// ─── XRP (XRP Ledger — version 0x00 with XRP Base58 alphabet → starts with "r") ─
+
+function deriveXrpAddress(key: HDKey): string {
+  if (!key.publicKey) throw new Error("no public key");
+  const pkh = hash160(key.publicKey);
+  return encodeBase58CheckWithAlphabet(pkh, 0x00, XRP_BASE58);
+}
+
+// ─── LTC (Litecoin — P2PKH version 0x30 → starts with "L") ──────────────────
+
+function deriveLtcAddress(key: HDKey): string {
+  if (!key.publicKey) throw new Error("no public key");
+  const pkh = hash160(key.publicKey);
+  return encodeBase58Check(pkh, 0x30);
+}
+
+// ─── DOGE (Dogecoin — P2PKH version 0x1E → starts with "D") ─────────────────
+
+function deriveDogeAddress(key: HDKey): string {
+  if (!key.publicKey) throw new Error("no public key");
+  const pkh = hash160(key.publicKey);
+  return encodeBase58Check(pkh, 0x1E);
 }
 
 // ─── Solana (ed25519 / SLIP-0010) ────────────────────────────────────────────
@@ -171,39 +257,6 @@ function convertBits(data: Uint8Array, from: number, to: number, pad: boolean): 
   }
   if (pad && bits > 0) result.push((acc << (to - bits)) & maxv);
   return new Uint8Array(result);
-}
-
-// ─── Base58 (plain, no checksum) — used for Solana ───────────────────────────
-
-const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-function base58Encode(bytes: Uint8Array): string {
-  const digits: number[] = [0];
-  for (const byte of bytes) {
-    let carry = byte;
-    for (let j = 0; j < digits.length; j++) {
-      carry += digits[j] << 8;
-      digits[j] = carry % 58;
-      carry = Math.floor(carry / 58);
-    }
-    while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); }
-  }
-  let result = "";
-  for (const b of bytes) { if (b !== 0) break; result += "1"; }
-  return result + digits.reverse().map(d => BASE58[d]).join("");
-}
-
-// ─── Base58Check (BTC / BSV) ─────────────────────────────────────────────────
-
-function encodeBase58Check(payload: Uint8Array, version: number): string {
-  const versioned = new Uint8Array(1 + payload.length);
-  versioned[0] = version;
-  versioned.set(payload, 1);
-  const checksum = sha256(sha256(versioned)).slice(0, 4);
-  const full = new Uint8Array(versioned.length + 4);
-  full.set(versioned);
-  full.set(checksum, versioned.length);
-  return base58Encode(full);
 }
 
 // ─── HASH160 = SHA256 → RIPEMD160 ────────────────────────────────────────────
