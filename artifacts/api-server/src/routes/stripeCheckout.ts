@@ -426,12 +426,24 @@ router.get("/admin/stripe-orders", requireAdminToken, async (req, res) => {
     }
     params.push(limit);
     const sql = `
-      SELECT id, stripe_payment_intent_id, wallet_address, user_wallet, coin_symbol,
-             fiat_amount_cents, fiat_currency, crypto_amount, exchange_rate, fee_usd,
-             status, payment_method, error_message, created_at, updated_at
-        FROM crypto_orders
+      SELECT co.id, co.stripe_payment_intent_id, co.wallet_address, co.user_wallet,
+             co.coin_symbol, co.fiat_amount_cents, co.fiat_currency, co.crypto_amount,
+             co.exchange_rate, co.fee_usd, co.status, co.payment_method,
+             co.error_message, co.created_at, co.updated_at,
+             kv.first_name       AS kyc_first_name,
+             kv.last_name        AS kyc_last_name,
+             kv.date_of_birth    AS kyc_date_of_birth,
+             kv.nationality      AS kyc_nationality,
+             kv.country_of_residence AS kyc_country,
+             kv.id_type          AS kyc_id_type,
+             kv.id_number        AS kyc_id_number,
+             kv.status           AS kyc_status,
+             kv.submitted_at     AS kyc_submitted_at
+        FROM crypto_orders co
+        LEFT JOIN kyc_verifications kv
+          ON kv.wallet_address = LOWER(COALESCE(co.user_wallet, co.wallet_address))
         ${where.length ? "WHERE " + where.join(" AND ") : ""}
-        ORDER BY created_at DESC
+        ORDER BY co.created_at DESC
         LIMIT $${params.length}
     `;
     const result = await pool.query(sql, params);
