@@ -20,7 +20,7 @@ import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
-  XCircle, Info, Route, Timer, Smartphone, QrCode,
+  XCircle, Info, Route, Timer, Smartphone, QrCode, Sparkles,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
@@ -663,7 +663,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         toast({
           title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
           description: isInsufficient
-            ? "Insufficient balance. Deposit funds to your exchange balance to start trading."
+            ? (isEvm
+              ? "Not enough on-chain balance. Add funds to your wallet or use Bridge to swap."
+              : "Insufficient balance. Deposit funds to your exchange balance to start trading.")
             : `Could not place order${serverMsg ? `: ${serverMsg}` : ""}. Please try again.`,
           variant: "destructive",
         });
@@ -671,7 +673,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           type: "error",
           title: isInsufficient ? "Insufficient Balance" : "Order Failed",
           body:  isInsufficient
-            ? "Order rejected — insufficient balance. Reduce the order size or deposit funds."
+            ? (isEvm
+              ? "Order rejected — insufficient on-chain balance. Reduce the order size or add funds to your wallet."
+              : "Order rejected — insufficient balance. Reduce the order size or deposit funds.")
             : "Could not place order — please check your balance and try again.",
           pair: symbol,
         });
@@ -1053,6 +1057,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         </div>
 
+        {/* Non-custodial mode disclosure */}
+        {isEvm && !!address && (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-primary/8 border border-primary/20">
+            <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+          </div>
+        )}
+
         {/* Low balance hint */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
@@ -1061,7 +1073,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
                 Bridge
               </a>
-              {" "}or deposit on-chain.
+              {" "}or swap for more.
             </span>
           </div>
         )}
