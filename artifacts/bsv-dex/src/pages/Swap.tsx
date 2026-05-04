@@ -1223,7 +1223,7 @@ function ExchangeSwapPanel({
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
                   {fromAsset}
-                  {fromBal === 0 && wb > 0 && (
+                  {fromBal === 0 && wb > 0 && !isEvm && (
                     <span className="ml-1 text-amber-400 font-medium">(deposit to trade)</span>
                   )}
                 </span>
@@ -1935,8 +1935,9 @@ export function Swap() {
   const leTo   = searchParams.get("to")   ?? undefined;
   const isMobile = useIsMobile();
 
-  const { address, chainId: walletChainId, provider } = useWalletStore();
+  const { address, chainId: walletChainId, network: walletNetwork, provider } = useWalletStore();
   const isOrahWallet = provider === "orah-wallet";
+  const isEvm = walletNetwork === "evm" || (!walletNetwork && !!walletChainId);
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 

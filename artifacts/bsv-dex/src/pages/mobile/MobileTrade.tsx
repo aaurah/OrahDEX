@@ -699,12 +699,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+          description: isEvm
+            ? `+${receivedQty} ${receivedTok} settled on-chain to your wallet`
+            : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
+          body: isEvm
+            ? `+${receivedQty} ${receivedTok} settled on-chain to your wallet`
+            : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -2058,7 +2062,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       : available > 0
                         ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
                         : "0.0000"}&nbsp;{availableSym}
-                    {isExternalEvm && (
+                    {isEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         On-chain
                       </span>
@@ -2338,6 +2342,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         )}
 
       </div>
+
+      {/* ── NON-CUSTODIAL STRIP (EVM wallets only) ── */}
+      {isSelfCustodyEvm && (
+        <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
+          <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          Non-custodial — funds stay in your wallet until on-chain settlement
+        </div>
+      )}
 
       {/* ── STICKY BOTTOM BAR ── */}
       <div

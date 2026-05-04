@@ -1030,7 +1030,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         {/* Balance row */}
         <div className="flex items-center justify-between text-xs px-0.5">
           <div className="flex items-center gap-1.5 text-muted-foreground">
-            {isExternalEvm ? (
+            {isEvm ? (
               <>
                 <Wallet className="w-3 h-3 text-emerald-400/70" />
                 Wallet Balance
@@ -1590,7 +1590,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`
-            ) : isExternalEvm ? (
+            ) : isEvm ? (
               `Sign & ${side === "buy" ? "Buy" : "Sell"} ${base}`
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
