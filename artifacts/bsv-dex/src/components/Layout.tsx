@@ -685,7 +685,7 @@ export function Layout({ children }: { children: ReactNode }) {
                                   </div>
                                 </div>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
-                                {n.txid && (
+                                {n.txid && !n.txid.startsWith("htlc-pending-") && (
                                   (() => {
                                     const txExplorerUrl = n.href
                                       ?? (n.txid.startsWith("0x")

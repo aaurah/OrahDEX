@@ -99,9 +99,11 @@ function formatDateTime(value: string | Date) {
 function getOrderExplorerUrl(order: any): string | null {
   if (order?.explorerUrl) return String(order.explorerUrl);
   if (!order?.txid) return null;
-  return String(order.txid).startsWith("0x")
-    ? `https://etherscan.io/tx/${order.txid}`
-    : `https://whatsonchain.com/tx/${order.txid}`;
+  const txid = String(order.txid);
+  if (txid.startsWith("htlc-pending-")) return null;
+  return txid.startsWith("0x")
+    ? `https://etherscan.io/tx/${txid}`
+    : `https://whatsonchain.com/tx/${txid}`;
 }
 
 function normalise(m: any) {
@@ -756,7 +758,16 @@ export function SpotTrading() {
                             <td className="px-3 py-1.5 text-right">{formatPrice(o.price)}</td>
                             <td className="px-3 py-1.5 text-right">{qty.toFixed(4)}</td>
                             <td className="px-3 py-1.5 text-right text-muted-foreground">{formatPrice(total)}</td>
-                            <td className={cn("px-3 py-1.5 capitalize font-semibold text-[10px]", o.status === "filled" ? "text-buy" : "text-muted-foreground")}>{o.status}</td>
+                            <td className="px-3 py-1.5">
+                              {String(o.txid ?? "").startsWith("htlc-pending-") ? (
+                                <span className="capitalize font-semibold text-[10px] text-amber-400 flex items-center gap-0.5">
+                                  <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                  Settling
+                                </span>
+                              ) : (
+                                <span className={cn("capitalize font-semibold text-[10px]", o.status === "filled" ? "text-buy" : "text-muted-foreground")}>{o.status}</span>
+                              )}
+                            </td>
                             <td className="px-3 py-1.5">
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-[10px] font-mono text-muted-foreground">#{String(o.id).slice(0, 8)}</span>
