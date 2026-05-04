@@ -743,8 +743,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const code = err?.code;
       setOrderError({ message: msg, code });
       toast({
-        title:       "Order Failed",
-        description: code === "DEPOSIT_REQUIRED"
+        title:       code === "NO_LIQUIDITY" ? "No Liquidity" : "Order Failed",
+        description: code === "NO_LIQUIDITY"
+          ? "No matching sellers found. Place a limit order to set your price instead."
+          : code === "DEPOSIT_REQUIRED"
           ? (usesApiBalance
             ? "Deposit funds to your OrahDEX trading balance before trading."
             : isSelfCustodyEvm

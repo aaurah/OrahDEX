@@ -929,6 +929,20 @@ router.post("/orders", async (req, res) => {
       }
     }
 
+    // ── Market orders are Immediate-Or-Cancel: if nothing filled, delete and reject ──
+    // A market order that finds no eligible counter-party should never stay open.
+    // Leaving it open creates zombie orders that confuse the user (they have to
+    // manually cancel something that will never fill).
+    if ((isMarket || isStopTriggered) && totalFilled === 0) {
+      // Remove the order — it never matched; no funds were moved.
+      await db.delete(ordersTable).where(eq(ordersTable.id, id));
+      res.status(422).json({
+        error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
+        code:  "NO_LIQUIDITY",
+      });
+      return;
+    }
+
     // Return the created order (re-read for updated status if matched)
     const [created] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
 

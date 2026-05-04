@@ -659,10 +659,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         const code        = err?.data?.code ?? err?.code;
         const serverMsg   = err?.data?.error ?? err?.data?.message ?? err?.message;
         const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.includes("Insufficient");
+        const isNoLiquidity  = code === "NO_LIQUIDITY";
 
         toast({
-          title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
-          description: isInsufficient
+          title:       isNoLiquidity  ? "No Liquidity"
+                     : isInsufficient ? "Insufficient Balance"
+                     : "Order Failed",
+          description: isNoLiquidity
+            ? "No matching sellers found. Place a limit order to set your price instead."
+            : isInsufficient
             ? (isEvm
               ? "Not enough on-chain balance. Add funds to your wallet or use Bridge to swap."
               : "Insufficient balance. Deposit funds to your exchange balance to start trading.")
@@ -671,8 +676,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         });
         addNotification({
           type: "error",
-          title: isInsufficient ? "Insufficient Balance" : "Order Failed",
-          body:  isInsufficient
+          title: isNoLiquidity  ? "No Liquidity"
+               : isInsufficient ? "Insufficient Balance"
+               : "Order Failed",
+          body:  isNoLiquidity
+            ? "Market order rejected — no matching sellers. Use a limit order to join the book."
+            : isInsufficient
             ? (isEvm
               ? "Order rejected — insufficient on-chain balance. Reduce the order size or add funds to your wallet."
               : "Order rejected — insufficient balance. Reduce the order size or deposit funds.")
@@ -902,7 +911,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           setTimeout(() => onOrderPlaced?.(), 500);
         },
         onError: (err: any) => {
-          // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, bad signature)
+          // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, NO_LIQUIDITY, bad signature)
           const data = err?.response?.data ?? err?.data ?? {};
           const serverMsg: string =
             data?.message ??
@@ -914,9 +923,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             data?.error === "INSUFFICIENT_FUNDS" ||
             data?.code  === "INSUFFICIENT_FUNDS" ||
             serverMsg.toLowerCase().includes("insufficient");
+          const isNoLiquidity =
+            data?.code  === "NO_LIQUIDITY" ||
+            err?.code   === "NO_LIQUIDITY";
           toast({
-            title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
-            description: serverMsg,
+            title:       isNoLiquidity  ? "No Liquidity"
+                       : isInsufficient ? "Insufficient Balance"
+                       : "Order Failed",
+            description: isNoLiquidity
+              ? "No matching sellers found. Place a limit order to set your price instead."
+              : serverMsg,
             variant:     "destructive",
           });
         },
