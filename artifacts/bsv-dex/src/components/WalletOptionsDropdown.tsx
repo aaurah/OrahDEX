@@ -17,10 +17,12 @@ interface Props {
 }
 
 const NETWORK_LABELS: Record<WalletNetwork, string> = {
-  evm: 'EVM', bsv: 'BSV', 'bsv-test': 'BSV-Test', btc: 'BTC', sol: 'SOL', tron: 'TRON', bch: 'BCH',
+  evm: 'EVM', bsv: 'BSV', 'bsv-test': 'BSV-T', btc: 'BTC', sol: 'SOL', tron: 'TRX', bch: 'BCH',
+  xrp: 'XRP', ltc: 'LTC', doge: 'DOGE',
 };
 const NETWORK_ICONS: Record<WalletNetwork, string> = {
   evm: '⟠', bsv: '₿', 'bsv-test': '₿', btc: '₿', sol: '◎', tron: '⊕', bch: '฿',
+  xrp: '✕', ltc: 'Ł', doge: 'Ð',
 };
 
 export function WalletOptionsDropdown({ compact = false }: Props) {
@@ -28,6 +30,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     address, provider, network, balance,
     disconnect, switchNetworkType,
     internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress, internalBchAddress,
+    internalXrpAddress, internalLtcAddress, internalDogeAddress,
   } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen]           = useState(false);
@@ -47,7 +50,14 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
   const balanceLabel = balance
     ? `${parseFloat(balance).toFixed(4)} ${
-        network === 'evm' ? 'ETH' : network === 'bsv' ? 'BSV' : network === 'sol' ? 'SOL' : network === 'bch' ? 'BCH' : 'BTC'
+        network === 'evm'  ? 'ETH'  :
+        network === 'bsv' || network === 'bsv-test' ? 'BSV' :
+        network === 'sol'  ? 'SOL'  :
+        network === 'bch'  ? 'BCH'  :
+        network === 'tron' ? 'TRX'  :
+        network === 'xrp'  ? 'XRP'  :
+        network === 'ltc'  ? 'LTC'  :
+        network === 'doge' ? 'DOGE' : 'BTC'
       }`
     : null;
 
@@ -150,17 +160,23 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
           {/* Network type switcher */}
           {(() => {
-            const evmAddr = internalEvmAddress ?? (network === 'evm' ? address : null);
-            const bsvAddr = internalBsvAddress  ?? (network === 'bsv' || network === 'bsv-test' ? address : null);
-            const solAddr = internalSolAddress  ?? (network === 'sol' ? address : null);
-            const btcAddr = internalBtcAddress  ?? (network === 'btc' ? address : null);
-            const bchAddr = internalBchAddress  ?? (network === 'bch' ? address : null);
+            const evmAddr  = internalEvmAddress  ?? (network === 'evm' ? address : null);
+            const bsvAddr  = internalBsvAddress  ?? (network === 'bsv' || network === 'bsv-test' ? address : null);
+            const solAddr  = internalSolAddress  ?? (network === 'sol' ? address : null);
+            const btcAddr  = internalBtcAddress  ?? (network === 'btc' ? address : null);
+            const bchAddr  = internalBchAddress  ?? (network === 'bch' ? address : null);
+            const xrpAddr  = internalXrpAddress  ?? (network === 'xrp'  ? address : null);
+            const ltcAddr  = internalLtcAddress  ?? (network === 'ltc'  ? address : null);
+            const dogeAddr = internalDogeAddress ?? (network === 'doge' ? address : null);
             const available: WalletNetwork[] = [];
-            if (evmAddr) available.push('evm');
-            if (bsvAddr) available.push('bsv');
-            if (btcAddr) available.push('btc');
-            if (solAddr) available.push('sol');
-            if (bchAddr) available.push('bch');
+            if (evmAddr)  available.push('evm');
+            if (bsvAddr)  available.push('bsv');
+            if (btcAddr)  available.push('btc');
+            if (solAddr)  available.push('sol');
+            if (bchAddr)  available.push('bch');
+            if (xrpAddr)  available.push('xrp');
+            if (ltcAddr)  available.push('ltc');
+            if (dogeAddr) available.push('doge');
             if (available.length < 2)  return null;
             return (
               <div className="px-3 py-2.5 border-b border-border">

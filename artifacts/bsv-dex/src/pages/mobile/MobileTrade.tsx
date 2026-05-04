@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
-import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -747,7 +747,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         description: code === "DEPOSIT_REQUIRED"
           ? (usesApiBalance
             ? "Deposit funds to your OrahDEX trading balance before trading."
-            : "Deposit funds to your wallet before trading.")
+            : isSelfCustodyEvm
+              ? "Insufficient on-chain balance. Add funds to your wallet before trading."
+              : "Deposit funds to your wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
           ? (usesApiBalance
             ? "Insufficient balance. Check your trading balance."
@@ -1731,6 +1733,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {showOrderForm && (
           <div className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
 
+            {/* Non-custodial mode disclosure */}
+            {isSelfCustodyEvm && (
+              <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
+                <ShieldCheck size={12} className="text-primary shrink-0" />
+                <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+              </div>
+            )}
+
             {/* Order type dropdown row */}
             <div className="flex items-center gap-2">
               <button className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-muted-foreground shrink-0">
@@ -2360,7 +2370,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <AlertCircle size={16} className="shrink-0 mt-0.5" />
                   <span className="font-semibold leading-snug">
                     {orderError.code === "DEPOSIT_REQUIRED"
-                      ? "Deposit required to trade"
+                      ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Deposit required to trade")
                       : orderError.code === "INSUFFICIENT_FUNDS"
                       ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
                       : "Order failed"}
@@ -2370,7 +2380,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   {orderError.code === "DEPOSIT_REQUIRED"
                     ? (usesApiBalance
                       ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
-                      : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
+                      : isSelfCustodyEvm
+                        ? `Not enough ${side === "sell" ? base : quote} in your connected wallet. Use Bridge to swap for more.`
+                        : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
                     ? (usesApiBalance
                       ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
@@ -2382,9 +2394,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <a href="/swap" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
                       Open Bridge →
                     </a>
-                    <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
-                      Open Wallet →
-                    </a>
+                    {!isSelfCustodyEvm && (
+                      <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
+                        Open Wallet →
+                      </a>
+                    )}
                   </div>
                 )}
               </div>
