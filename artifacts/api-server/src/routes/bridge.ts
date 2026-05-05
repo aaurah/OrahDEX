@@ -407,17 +407,34 @@ router.get("/evm-lock-info", async (req, res) => {
   }
 
   const chainId = parseInt(chainIdStr ?? "1");
-  const RPC_URLS: Record<number, string> = {
-    1:   process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",
-    137: process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
-    56:  process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",
+
+  // Multiple fallback RPCs tried in order until one works
+  const RPC_FALLBACKS: Record<number, string[]> = {
+    1: [
+      process.env.ETH_RPC_URL ?? "",
+      "https://rpc.ankr.com/eth",
+      "https://cloudflare-eth.com",
+      "https://ethereum.publicnode.com",
+      "https://eth.llamarpc.com",
+      "https://1rpc.io/eth",
+    ].filter(Boolean),
+    137: [
+      process.env.POLYGON_RPC_URL ?? "",
+      "https://rpc.ankr.com/polygon",
+      "https://polygon-rpc.com",
+    ].filter(Boolean),
+    56: [
+      process.env.BSC_RPC_URL ?? "",
+      "https://rpc.ankr.com/bsc",
+      "https://bsc-dataseed.binance.org",
+    ].filter(Boolean),
   };
   const CONTRACT_ADDRS: Record<number, string | null> = {
     1:   process.env.EVM_HTLC_CONTRACT_ETH     ?? null,
     137: process.env.EVM_HTLC_CONTRACT_POLYGON ?? null,
     56:  process.env.EVM_HTLC_CONTRACT_BSC     ?? null,
   };
-  const rpcUrl = RPC_URLS[chainId] ?? "https://eth.llamarpc.com";
+  const rpcList = RPC_FALLBACKS[chainId] ?? RPC_FALLBACKS[1];
 
   const HTLC_ABI = parseAbi([
     "function getLock(bytes32 id) view returns (address sender, address recipient, address token, uint256 amount, bytes32 secretHash, uint256 timelockUnix, bool revealed, bool refunded)",
@@ -425,12 +442,23 @@ router.get("/evm-lock-info", async (req, res) => {
   ]);
 
   try {
-    const client = createPublicClient({ transport: http(rpcUrl) });
-
-    // Fetch the transaction to extract calldata
-    const tx = await client.getTransaction({ hash: txHash as Hex });
+    // Try each RPC in sequence until we get the transaction
+    let tx: Awaited<ReturnType<ReturnType<typeof createPublicClient>["getTransaction"]>> | null = null;
+    let lastRpcError = "";
+    for (const rpcUrl of rpcList) {
+      try {
+        const client = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
+        tx = await client.getTransaction({ hash: txHash as Hex });
+        if (tx) break;
+      } catch (e: any) {
+        lastRpcError = e?.message ?? String(e);
+        logger.warn({ rpcUrl, err: lastRpcError }, "bridge: evm-lock-info RPC miss, trying next");
+      }
+    }
     if (!tx) {
-      res.status(404).json({ error: "Transaction not found on this chain." });
+      res.status(404).json({
+        error: `Transaction not found on Ethereum mainnet. It may be very recent (wait 1–2 min) or the hash may be incorrect. (${lastRpcError.slice(0, 120)})`,
+      });
       return;
     }
 
