@@ -32,7 +32,13 @@ interface LockInfo {
 }
 
 function chainName(id: number) {
-  return id === 1 ? "Ethereum" : id === 137 ? "Polygon" : id === 56 ? "BNB Chain" : `Chain ${id}`;
+  const names: Record<number, string> = {
+    1: "Ethereum", 11155111: "Sepolia (testnet)",
+    137: "Polygon", 56: "BNB Chain",
+    8453: "Base", 42161: "Arbitrum One",
+    10: "Optimism",
+  };
+  return names[id] ?? `Chain ${id}`;
 }
 
 function formatExpiry(unix: number) {

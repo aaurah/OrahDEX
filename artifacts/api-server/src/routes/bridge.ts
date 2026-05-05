@@ -417,6 +417,13 @@ router.get("/evm-lock-info", async (req, res) => {
       "https://eth.llamarpc.com",
       "https://1rpc.io/eth",
     ].filter(Boolean),
+    11155111: [
+      process.env.SEPOLIA_RPC_URL ?? "",
+      "https://ethereum-sepolia.publicnode.com",
+      "https://sepolia.gateway.tenderly.co",
+      "https://rpc.sepolia.org",
+      "https://1rpc.io/sepolia",
+    ].filter(Boolean),
     137: [
       process.env.POLYGON_RPC_URL ?? "",
       "https://polygon-rpc.com",
@@ -427,11 +434,26 @@ router.get("/evm-lock-info", async (req, res) => {
       "https://bsc-dataseed.binance.org",
       "https://bsc.publicnode.com",
     ].filter(Boolean),
+    8453: [
+      process.env.BASE_RPC_URL ?? "",
+      "https://mainnet.base.org",
+      "https://base.publicnode.com",
+      "https://1rpc.io/base",
+    ].filter(Boolean),
+    42161: [
+      process.env.ARB_RPC_URL ?? "",
+      "https://arb1.arbitrum.io/rpc",
+      "https://arbitrum.publicnode.com",
+      "https://1rpc.io/arb",
+    ].filter(Boolean),
   };
   const CONTRACT_ADDRS: Record<number, string | null> = {
-    1:   process.env.EVM_HTLC_CONTRACT_ETH     ?? null,
-    137: process.env.EVM_HTLC_CONTRACT_POLYGON ?? null,
-    56:  process.env.EVM_HTLC_CONTRACT_BSC     ?? null,
+    1:        process.env.EVM_HTLC_CONTRACT_ETH      ?? null,
+    11155111: process.env.EVM_HTLC_CONTRACT_SEPOLIA  ?? null,
+    137:      process.env.EVM_HTLC_CONTRACT_POLYGON  ?? null,
+    56:       process.env.EVM_HTLC_CONTRACT_BSC      ?? null,
+    8453:     process.env.EVM_HTLC_CONTRACT_BASE     ?? null,
+    42161:    process.env.EVM_HTLC_CONTRACT_ARB      ?? null,
   };
   const rpcList = RPC_FALLBACKS[chainId] ?? RPC_FALLBACKS[1];
 
