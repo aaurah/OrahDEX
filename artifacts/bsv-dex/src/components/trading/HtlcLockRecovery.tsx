@@ -200,11 +200,17 @@ export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
               className="w-full py-2.5 rounded-xl bg-amber-500 text-black text-[12px] font-bold hover:bg-amber-400 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
             >
               {(sending || confirming) && <Loader2 size={13} className="animate-spin" />}
-              {confirming ? "Confirming…" : sending ? "Waiting for wallet…" : `Refund ${info.amountEth} ETH`}
+              {confirming ? "Confirming…" : sending ? "Waiting for wallet…" : `Cancel & Recover ${info.amountEth} ETH`}
             </button>
           )}
 
-          {!info.canRefund && !info.refunded && !info.revealed && (
+          {(info as any).note && (
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              {(info as any).note}
+            </p>
+          )}
+
+          {!info.canRefund && !info.refunded && !info.revealed && !(info as any).note && (
             <p className="text-[10px] text-amber-400/80">
               The timelock hasn't expired yet. Wait until it does, then come back and click "Look up" again.
             </p>
