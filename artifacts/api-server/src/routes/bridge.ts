@@ -412,21 +412,20 @@ router.get("/evm-lock-info", async (req, res) => {
   const RPC_FALLBACKS: Record<number, string[]> = {
     1: [
       process.env.ETH_RPC_URL ?? "",
-      "https://rpc.ankr.com/eth",
-      "https://cloudflare-eth.com",
       "https://ethereum.publicnode.com",
+      "https://cloudflare-eth.com",
       "https://eth.llamarpc.com",
       "https://1rpc.io/eth",
     ].filter(Boolean),
     137: [
       process.env.POLYGON_RPC_URL ?? "",
-      "https://rpc.ankr.com/polygon",
       "https://polygon-rpc.com",
+      "https://polygon.publicnode.com",
     ].filter(Boolean),
     56: [
       process.env.BSC_RPC_URL ?? "",
-      "https://rpc.ankr.com/bsc",
       "https://bsc-dataseed.binance.org",
+      "https://bsc.publicnode.com",
     ].filter(Boolean),
   };
   const CONTRACT_ADDRS: Record<number, string | null> = {
@@ -442,17 +441,18 @@ router.get("/evm-lock-info", async (req, res) => {
   ]);
 
   try {
-    // Try each RPC in sequence until we get the transaction
+    // Try each RPC in sequence until we get the transaction — track which one worked
     let tx: Awaited<ReturnType<ReturnType<typeof createPublicClient>["getTransaction"]>> | null = null;
+    let workingRpc = rpcList[0];
     let lastRpcError = "";
     for (const rpcUrl of rpcList) {
       try {
-        const client = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
-        tx = await client.getTransaction({ hash: txHash as Hex });
-        if (tx) break;
+        const c = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
+        tx = await c.getTransaction({ hash: txHash as Hex });
+        if (tx) { workingRpc = rpcUrl; break; }
       } catch (e: any) {
         lastRpcError = e?.message ?? String(e);
-        logger.warn({ rpcUrl, err: lastRpcError }, "bridge: evm-lock-info RPC miss, trying next");
+        logger.warn({ rpcUrl, err: lastRpcError.slice(0, 80) }, "bridge: evm-lock-info RPC miss, trying next");
       }
     }
     if (!tx) {
@@ -484,9 +484,8 @@ router.get("/evm-lock-info", async (req, res) => {
       return;
     }
 
-    // Use the last successful RPC client
-    const rpcUrl = rpcList.find(u => u) ?? rpcList[0];
-    const client = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
+    // Reuse the RPC that successfully returned the transaction
+    const client = createPublicClient({ transport: http(workingRpc, { timeout: 8_000 }) });
 
     // Amount locked = tx.value (for ETH locks)
     const lockedWei = tx.value ?? 0n;
