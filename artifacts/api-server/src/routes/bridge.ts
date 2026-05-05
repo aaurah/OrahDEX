@@ -463,63 +463,124 @@ router.get("/evm-lock-info", async (req, res) => {
     }
 
     const input = tx.input ?? "";
-    if (!input || input.length < 74) {
-      res.status(400).json({ error: "Transaction does not appear to be a lockETH/lockToken call." });
+    if (!input || input.length < 10) {
+      res.status(400).json({ error: "Transaction does not appear to be a contract call." });
       return;
     }
 
-    // Skip 4-byte function selector; first 32-byte word (64 hex chars) = lockId
-    const lockId = ("0x" + input.slice(10, 74).padStart(64, "0")) as Hex;
+    // lockId is the first 32-byte ABI parameter (bytes 4–35 of calldata)
+    // Works for both 1-param (lockETH(bytes32)) and 4-param (lockETH(bytes32,...)) variants
+    const lockIdHex = input.slice(10, 74);
+    if (lockIdHex.length < 64) {
+      res.status(400).json({ error: "Could not extract lockId from calldata." });
+      return;
+    }
+    const lockId = ("0x" + lockIdHex) as Hex;
 
-    // The contract is the tx recipient; fall back to env var if not 0x
-    const contractAddress = (
-      tx.to ?? CONTRACT_ADDRS[chainId]
-    ) as Address | null;
-
+    // The contract is always the tx recipient
+    const contractAddress = tx.to as Address | null;
     if (!contractAddress) {
       res.status(400).json({ error: "Could not determine HTLC contract address." });
       return;
     }
 
-    // Read lock state on-chain
-    let lockData: readonly [Address, Address, Address, bigint, Hex, bigint, boolean, boolean];
+    // Use the last successful RPC client
+    const rpcUrl = rpcList.find(u => u) ?? rpcList[0];
+    const client = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
+
+    // Amount locked = tx.value (for ETH locks)
+    const lockedWei = tx.value ?? 0n;
+    const amountEth = (Number(lockedWei) / 1e18).toFixed(6);
+
+    // Known cancel/refund selectors — try in order of likelihood
+    // cancel(bytes32) = 0xc4d252f5, refund(bytes32) = 0x7249fbb6
+    const CANCEL_SIGS = [
+      { name: "cancel", selector: "0xc4d252f5", abi: "function cancel(bytes32 id)" },
+      { name: "refund", selector: "0x7249fbb6", abi: "function refund(bytes32 id)" },
+    ] as const;
+
+    // Determine which cancel function the contract exposes by simulation
+    let cancelCalldata: Hex | null = null;
+    let cancelSimFailed = false;
+    let cancelRevertReason = "";
+
+    for (const sig of CANCEL_SIGS) {
+      const calldata = (sig.selector + lockId.slice(2).padStart(64, "0")) as Hex;
+      try {
+        const gasEst = await client.estimateGas({
+          to:   contractAddress,
+          data: calldata,
+          account: tx.from as Address,
+        });
+        if (gasEst > 0n) {
+          cancelCalldata  = calldata;
+          break;
+        }
+      } catch (e: any) {
+        cancelRevertReason = e?.message ?? String(e);
+        cancelSimFailed = true;
+      }
+    }
+
+    // Try getLock for richer state info (standard 4-param HTLC ABI)
+    let timelockUnixSecs: number | null = null;
+    let revealed  = false;
+    let refunded  = false;
     try {
-      lockData = await client.readContract({
+      const lockData = await client.readContract({
         address:      contractAddress,
         abi:          HTLC_ABI,
         functionName: "getLock",
         args:         [lockId],
-      }) as typeof lockData;
+      }) as readonly [Address, Address, Address, bigint, Hex, bigint, boolean, boolean];
+      timelockUnixSecs = Number(lockData[5]);
+      revealed         = lockData[6];
+      refunded         = lockData[7];
     } catch {
-      res.status(404).json({
-        error: "Lock not found on the contract. It may have already been refunded, revealed, or the tx is for a different contract.",
+      // Contract doesn't implement getLock — use simulation result
+    }
+
+    const now        = Math.floor(Date.now() / 1000);
+    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : true; // assume expired if unknown
+    const canRefund  = !!cancelCalldata && !revealed && !refunded;
+
+    if (!canRefund && cancelSimFailed) {
+      // Simulation failed — lock may be gone already (already cancelled/revealed)
+      // Check tx logs to confirm the lock was ever created
+      const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+      const hasLog  = (receipt?.logs ?? []).some(
+        l => l.address?.toLowerCase() === contractAddress.toLowerCase()
+      );
+      if (!hasLog) {
+        res.status(400).json({ error: "This transaction does not appear to interact with the HTLC contract." });
+        return;
+      }
+      // Log exists but cancel failed — likely already cancelled/revealed
+      res.json({
+        lockId, contractAddress, sender: tx.from,
+        amount: lockedWei.toString(), amountEth,
+        timelockUnix: timelockUnixSecs ?? 0,
+        isExpired: true, revealed: true, refunded: false,
+        canRefund: false,
+        refundCalldata: null,
+        chainId,
+        note: "Lock is no longer active on the contract (already cancelled or settled).",
       });
       return;
     }
 
-    const [sender, , , amount, , timelockUnix, revealed, refunded] = lockData;
-    const timelockSecs = Number(timelockUnix);
-    const isExpired    = timelockSecs < Math.floor(Date.now() / 1000);
-    const canRefund    = isExpired && !revealed && !refunded;
-
-    const refundCalldata = encodeFunctionData({
-      abi:          HTLC_ABI,
-      functionName: "refund",
-      args:         [lockId],
-    });
-
     res.json({
       lockId,
       contractAddress,
-      sender,
-      amount:       amount.toString(),
-      amountEth:    (Number(amount) / 1e18).toFixed(6),
-      timelockUnix: timelockSecs,
+      sender:       tx.from,
+      amount:       lockedWei.toString(),
+      amountEth,
+      timelockUnix: timelockUnixSecs ?? 0,
       isExpired,
       revealed,
       refunded,
       canRefund,
-      refundCalldata,
+      refundCalldata: cancelCalldata,
       chainId,
     });
   } catch (err: any) {
