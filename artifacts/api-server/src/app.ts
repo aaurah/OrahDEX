@@ -22,6 +22,7 @@ import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
 import quicknodeWebhookRouter from "./routes/quicknodeWebhook.js";
+import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
 
 const app: Express = express();
 
@@ -267,20 +268,44 @@ try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startE
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
+try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {
-  try {
-    const bsv = await getBsvChainStatus();
-    res.json({
-      status: "ok",
-      uptime: Math.floor(process.uptime()),
-      bsvChain: { online: bsv.online, blockHeight: bsv.blockHeight },
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    res.json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+  const services = getHealthReport();
+  const anyDead  = services.some(s => s.status === "dead");
+  const anyStuck = services.some(s => s.status === "stuck");
+
+  let bsvChain: { online: boolean; blockHeight: number } | undefined;
+  try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
+  catch { /* non-fatal */ }
+
+  const payload = {
+    status:    anyDead ? "degraded" : "ok",
+    uptime:    Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    bsvChain,
+    services:  services.map(s => ({
+      name:              s.name,
+      status:            s.status,
+      lastRunAt:         s.lastRunAt?.toISOString() ?? null,
+      lastSuccessAt:     s.lastSuccessAt?.toISOString() ?? null,
+      consecutiveFails:  s.consecutiveFails,
+      avgDurationMs:     Math.round(s.avgDurationMs),
+      staleSinceMs:      s.staleSinceMs,
+    })),
+    alerts: [
+      ...services.filter(s => s.status === "dead").map(s => `DEAD: ${s.name}`),
+      ...services.filter(s => s.status === "stuck").map(s => `STUCK: ${s.name}`),
+      ...services.filter(s => s.status === "degraded").map(s => `DEGRADED: ${s.name}`),
+    ],
+  };
+
+  if (anyDead || anyStuck) {
+    logger.warn({ alerts: payload.alerts }, "Health check: degraded services detected");
   }
+
+  res.status(anyDead ? 503 : 200).json(payload);
 }
 app.get("/api/health", healthHandler);
 app.get("/api/healthz", healthHandler);

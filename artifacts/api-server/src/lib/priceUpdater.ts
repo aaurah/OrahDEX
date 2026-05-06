@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
@@ -1337,8 +1338,7 @@ export async function updateMarketPrices() {
   }
 }
 
-let updateInterval: NodeJS.Timeout | null = null;
-let _priceUpdating = false;
+let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
   // Warm the LE price cache, then full-sync ALL LE pairs into the DB with live prices.
@@ -1352,19 +1352,13 @@ export function startPriceUpdater() {
     });
 
   seedMarketsIfNeeded().then(() => updateMarketPrices());
-  updateInterval = setInterval(async () => {
-    if (_priceUpdating) { logger.warn("Price updater: previous tick still running, skipping"); return; }
-    _priceUpdating = true;
-    try { await updateMarketPrices(); }
-    catch (err) { logger.warn({ err }, "Price updater tick error"); }
-    finally { _priceUpdating = false; }
-  }, 60_000);
-  logger.info("Live price updater started (interval: 60s)");
+  _stopPriceUpdater = guardedInterval("price-updater", updateMarketPrices, 60_000, { timeoutMs: 55_000 });
+  logger.info("Live price updater started (interval: 60s, self-healing)");
 }
 
 export function stopPriceUpdater() {
-  if (updateInterval) {
-    clearInterval(updateInterval);
-    updateInterval = null;
+  if (_stopPriceUpdater) {
+    _stopPriceUpdater();
+    _stopPriceUpdater = null;
   }
 }

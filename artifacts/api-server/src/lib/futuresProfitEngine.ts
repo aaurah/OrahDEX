@@ -16,6 +16,7 @@ import { pool, db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
@@ -220,26 +221,11 @@ const ONE_MINUTE  = 60 * 1000;
 export function startFuturesProfitEngine(): void {
   logger.info("Futures profit engine starting — funding rates & liquidations active");
 
-  let _fundingBusy = false;
-  let _liqBusy = false;
-
   /* funding: run immediately then every 8 h */
-  runFundingCycle();
-  setInterval(async () => {
-    if (_fundingBusy) { logger.warn("Futures: funding cycle still running, skipping"); return; }
-    _fundingBusy = true;
-    try { await runFundingCycle(); }
-    catch (err) { logger.warn({ err }, "Futures funding cycle error"); }
-    finally { _fundingBusy = false; }
-  }, EIGHT_HOURS);
+  runFundingCycle().catch(err => logger.warn({ err }, "Futures: initial funding cycle failed"));
+  guardedInterval("futures-funding", runFundingCycle, EIGHT_HOURS, { timeoutMs: EIGHT_HOURS - 60_000 });
 
   /* liquidations: run immediately then every 60 s */
-  runLiquidationCycle();
-  setInterval(async () => {
-    if (_liqBusy) { logger.warn("Futures: liquidation cycle still running, skipping"); return; }
-    _liqBusy = true;
-    try { await runLiquidationCycle(); }
-    catch (err) { logger.warn({ err }, "Futures liquidation cycle error"); }
-    finally { _liqBusy = false; }
-  }, ONE_MINUTE);
+  runLiquidationCycle().catch(err => logger.warn({ err }, "Futures: initial liquidation cycle failed"));
+  guardedInterval("futures-liquidation", runLiquidationCycle, ONE_MINUTE, { timeoutMs: 55_000 });
 }

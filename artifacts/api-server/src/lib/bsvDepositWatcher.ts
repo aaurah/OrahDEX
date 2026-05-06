@@ -26,6 +26,7 @@
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { guardedInterval } from "./selfHealing.js";
 
 const POLL_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -141,7 +142,7 @@ async function applyDeltaCredit(params: {
   }
 }
 
-let _busy = false;
+// _busy lock managed by guardedInterval (selfHealing.ts)
 let _cursor = 0;
 
 async function scanTick(): Promise<void> {
@@ -202,14 +203,8 @@ export function startBsvDepositWatcher(): void {
     { intervalMs: POLL_INTERVAL_MS, batch: MAX_ADDRESSES_PER_TICK },
     "BSV deposit watcher starting",
   );
-  const guardedTick = async () => {
-    if (_busy) { logger.warn("BSV deposit watcher: previous tick still running, skipping"); return; }
-    _busy = true;
-    try { await scanTick(); }
-    catch (err) { logger.warn({ err }, "BSV deposit watcher tick error"); }
-    finally { _busy = false; }
-  };
-  // First tick on a short delay so we don't pile onto startup
-  setTimeout(guardedTick, 5_000);
-  setInterval(guardedTick, POLL_INTERVAL_MS);
+  guardedInterval("bsv-deposit-watcher", scanTick, POLL_INTERVAL_MS, {
+    timeoutMs: POLL_INTERVAL_MS - 5_000,
+    initialDelayMs: 5_000,
+  });
 }
