@@ -1240,7 +1240,8 @@ export async function updateMarketPrices() {
       _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
-    const markets = await db.select().from(marketsTable);
+    const markets = await db.select().from(marketsTable)
+      .where(notInArray(marketsTable.type, ["letsexchange"]));
 
     for (const market of markets) {
       // Look up by base-asset symbol directly — no CoinGecko ID needed
