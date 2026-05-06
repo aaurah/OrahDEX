@@ -377,17 +377,20 @@ router.get("/letsexchange/pairs", async (req, res) => {
 // Response:  min_amount, max_amount, amount (output), rate, rate_id, rate_id_expired_at, withdrawal_fee
 router.post("/letsexchange/estimate", async (req, res) => {
   const body = req.body ?? {};
+  const normalizeUpper = (v: unknown): string =>
+    typeof v === "string" ? v.trim().toUpperCase() : "";
+
   const fromRaw = body.from ?? body.coin_from;
   const toRaw = body.to ?? body.coin_to;
-  const from = typeof fromRaw === "string" ? fromRaw.trim().toUpperCase() : "";
-  const to = typeof toRaw === "string" ? toRaw.trim().toUpperCase() : "";
-  const network_from = typeof body.network_from === "string" ? body.network_from.trim() : from;
-  const network_to = typeof body.network_to === "string" ? body.network_to.trim() : to;
+  const from = normalizeUpper(fromRaw);
+  const to = normalizeUpper(toRaw);
+  const network_from = normalizeUpper(body.network_from) || from;
+  const network_to = normalizeUpper(body.network_to) || to;
   const amount = body.amount ?? body.deposit_amount;
   const isFloat = body.float;
 
   const missingRequired =
-    !from || !to || !network_from || !network_to || amount == null;
+    !from || !to || !network_from || !network_to || amount === null || amount === undefined;
   if (missingRequired) {
     res.status(400).json({ error: "from, to, network_from, network_to, and amount are required" }); return;
   }
