@@ -883,17 +883,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </div>
             <span className="text-green-400 text-xs font-medium shrink-0">Buy →</span>
           </button>
-          <button onClick={() => setReceiveOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
-            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-              <ArrowDownToLine size={16} className="text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Receive via QR Code</p>
-              <p className="text-xs text-muted-foreground truncate">ETH · BNB · MATIC · ARB · BASE · AVAX · Linea · Scroll · Mantle · all EVM</p>
-            </div>
-            <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
-          </button>
-
 
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
