@@ -38,6 +38,7 @@ import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stakingRouter from "./staking.js";
 import stripeCheckoutRouter from "./stripeCheckout.js";
+import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import { db, pool } from "@workspace/db";
@@ -93,6 +94,7 @@ router.use("/admin", (req, res, next) => {
   return requireAdminToken(req, res, next);
 });
 router.use("/admin", adminRouter);
+router.use("/admin", adminDiagnosticsRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
 router.use("/global-markets", globalMarketsRouter);

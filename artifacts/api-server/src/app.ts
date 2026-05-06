@@ -23,6 +23,8 @@ import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.j
 import { WebhookHandlers } from "./webhookHandlers.js";
 import evmWebhookRouter from "./routes/evmWebhookRouter.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
+import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
+import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 
 const app: Express = express();
 
@@ -280,6 +282,8 @@ startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed 
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
 try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startAllReconcilers();      } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
+hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {
