@@ -379,10 +379,10 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const body = req.body ?? {};
   const fromRaw = body.from ?? body.coin_from;
   const toRaw = body.to ?? body.coin_to;
-  const from = fromRaw ? String(fromRaw).toUpperCase() : "";
-  const to = toRaw ? String(toRaw).toUpperCase() : "";
-  const network_from = body.network_from != null ? String(body.network_from) : from;
-  const network_to = body.network_to != null ? String(body.network_to) : to;
+  const from = typeof fromRaw === "string" ? fromRaw.trim().toUpperCase() : "";
+  const to = typeof toRaw === "string" ? toRaw.trim().toUpperCase() : "";
+  const network_from = typeof body.network_from === "string" ? body.network_from.trim() : from;
+  const network_to = typeof body.network_to === "string" ? body.network_to.trim() : to;
   const amount = body.amount ?? body.deposit_amount;
   const isFloat = body.float;
 
