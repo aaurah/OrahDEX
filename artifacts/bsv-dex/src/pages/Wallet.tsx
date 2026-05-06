@@ -325,15 +325,6 @@ export default function Wallet({ afterActions }: { afterActions?: React.ReactNod
         </div>
       </div>
 
-      {/* ── History link ── */}
-      <button
-        onClick={() => navigate("/portfolio")}
-        className="w-full mt-4 rounded-2xl border border-border bg-card p-4 flex items-center justify-between hover:bg-secondary/30"
-      >
-        <span className="text-sm font-medium text-foreground">Transaction history</span>
-        <ChevronRight size={16} className="text-muted-foreground" />
-      </button>
-
       {/* ── Modals ── */}
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <ChainReceiveSheet
