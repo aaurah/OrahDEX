@@ -255,15 +255,15 @@ export function getDerivedAddresses(address: string | null | undefined): Derived
 }
 
 /**
- * One-time migration: clears stale BSV/BCH addresses that were incorrectly
- * derived from the BTC key (old code set `bsv = btc` and `bch` shared the
- * BTC derivation path). After clearing, the wallet UI shows "Sign in to
- * derive your address" for those chains until the user next authenticates,
- * at which point the correct BIP44 addresses (coin type 236 / 145) are saved.
- *
- * A migration-version flag in localStorage prevents this from running twice.
+ * One-time migration (v3):
+ *  • Clears stale BSV addresses that matched BTC (old code set bsv = btc).
+ *  • Clears BCH that shared the BTC derivation key.
+ *  • Clears legacy P2PKH BTC addresses (starting with "1") — BTC now uses
+ *    BIP84 Native SegWit (m/84'/0'/0'/0/0) producing "bc1q…" addresses.
+ * After clearing, chains show "Sign in to derive your address" until the
+ * user next authenticates, at which point correct addresses are re-saved.
  */
-const DERIVED_MIGRATION_KEY = "orahdex_derived_migration_v2";
+const DERIVED_MIGRATION_KEY = "orahdex_derived_migration_v3";
 export function migrateStaleDerivedAddresses(): void {
   try {
     if (localStorage.getItem(DERIVED_MIGRATION_KEY)) return;
@@ -271,14 +271,19 @@ export function migrateStaleDerivedAddresses(): void {
     let changed = false;
     for (const k of Object.keys(map)) {
       const entry = map[k];
+      // BSV was wrongly set to the BTC P2PKH address
       if (entry.btc && entry.bsv && entry.btc === entry.bsv) {
-        // BSV was wrongly set to the BTC address — clear it
         delete entry.bsv;
         changed = true;
       }
-      // BCH was also derived from the BTC key; clear it so it re-derives correctly
-      if (entry.btc && entry.bch) {
+      // BCH shared the BTC key; must re-derive from m/44'/145'/0'/0/0
+      if (entry.bch && !entry.bch.startsWith("bitcoincash:q")) {
         delete entry.bch;
+        changed = true;
+      }
+      // BTC was legacy P2PKH ("1…"); now BIP84 Native SegWit ("bc1q…")
+      if (entry.btc && !entry.btc.startsWith("bc1")) {
+        delete entry.btc;
         changed = true;
       }
     }

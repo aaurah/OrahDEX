@@ -212,6 +212,7 @@ export interface PasskeyChainAddresses {
   btc?: string;
   bch?: string;
   bsv?: string;
+  tron?: string;
   xrp?: string;
   ltc?: string;
   doge?: string;
@@ -283,7 +284,7 @@ export async function registerPasskeyWallet(
   saveWallet(wallet);
   saveDerivedAddresses(addrs.evm, {
     evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
-    xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
   });
 
   // Silently back up to server (encrypted — safe to store remotely)
@@ -295,7 +296,7 @@ export async function registerPasskeyWallet(
     label,
     chains: {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
-      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     },
   };
 }
@@ -379,11 +380,11 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     address = addrs.evm;
     chains  = {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
-      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, {
       evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
-      xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     });
   } else {
     // Legacy format: raw EVM private key (0x...)
