@@ -78,6 +78,14 @@ lib/
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
 
+## Recent Critical Fixes (2026-05-06)
+
+- **Double mutation handlers** (`OrderForm.tsx`): `placeOrder.mutate(...)` was passing inline `onSuccess`/`onError` duplicating the `usePlaceOrder({mutation:{...}})` handlers — both fired on every trade causing duplicate toasts, double `setAmount("")`, double balance refreshes. Removed inline callbacks; consolidated `refreshBalances()` + `triggerBalanceRefresh()` into the single `usePlaceOrder` handler.
+- **Auth message symbol normalization** (`orders.ts` line 197): `buildOrderAuthMessage` was using raw `body.symbol` (may have dashes) instead of the normalized `symbol` variable (dashes→slashes). A mismatch would cause `SIGNATURE_MISMATCH` rejection for any caller using dash notation.
+- **Sepolia missing from SUPPORTED_CHAIN_IDS** (`orders.ts`): `11155111` added — enables on-chain RPC balance verification for Sepolia users (where the escrow is deployed for testing).
+- **Dead `chainId` field in `SettleEscrowMatchParams`** (`escrowRelayer.ts`): The interface field `chainId` was never used — `settleEscrowMatch` derives the release chain from `sellerChain` (scanned via `findEscrowChain`). Removed the field; removed the dead `chainId: releaseChainId` arg from the `settleEscrowMatch` call in `orders.ts`.
+- **Enhanced error parsing in `usePlaceOrder` onError**: Now checks `err?.response?.data` (axios-style) in addition to `err?.data` to surface server rejection messages (INSUFFICIENT_FUNDS, NO_LIQUIDITY, SIGNATURE_MISMATCH).
+
 ## Gotchas
 
 - **QuickNode Stream ID** (ETH mainnet, contract logs): `e9276e1b-f045-48be-a8dc-f8bc524d160d`

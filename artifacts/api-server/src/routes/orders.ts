@@ -194,7 +194,7 @@ router.post("/orders", async (req, res) => {
 
       const authMsg = buildOrderAuthMessage({
         walletAddress: body.walletAddress,
-        symbol:        body.symbol,
+        symbol:        symbol,
         side:          body.side,
         quantity:      quantity.toString(),
         nonce:         orderNonce,
@@ -214,7 +214,7 @@ router.post("/orders", async (req, res) => {
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
     // When provided, enables on-chain RPC balance verification in fundingVerifier.
     // Must be a numeric value in the supported set; unknown values are silently ignored.
-    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
     const chainId = body.chainId != null
       ? (() => {
           const n = parseInt(String(body.chainId), 10);
@@ -690,7 +690,6 @@ router.post("/orders", async (req, res) => {
                 sellerOrderId,
                 buyerAddress,
                 sellerAddress,
-                chainId: releaseChainId,
                 // Reuse precheck values to keep the per-request settlement
                 // decision deterministic and avoid contradictory re-scans.
                 prefetchedBuyerChain,
