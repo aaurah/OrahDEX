@@ -646,23 +646,17 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     finally { setLoading(false); }
   }
 
-  if (!address) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <Lock size={32} className="mx-auto mb-3 text-muted-foreground" />
-          <h3 className="text-lg font-bold text-foreground mb-2">Connect Wallet</h3>
-          <p className="text-sm text-muted-foreground mb-4">Connect your wallet to create posts on OrahNFT</p>
-          <button onClick={() => navigate("/settings")} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Connect</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
       <div className="max-w-2xl mx-auto space-y-4">
         <h2 className="text-lg font-bold text-foreground">Create Post</h2>
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
         <div className="space-y-2">
           <label className="text-xs text-muted-foreground font-semibold">Title *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Give your creation a title"
@@ -727,7 +721,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
         <button onClick={publish} disabled={loading}
           className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
           style={{ background: "#00ff88", color: "#000" }}>
-          {loading ? "Publishing…" : "Publish to BSV"}
+          {loading ? "Publishing…" : !address ? "Connect Wallet to Publish" : "Publish to BSV"}
         </button>
       </div>
     </div>
