@@ -527,10 +527,14 @@ export async function settleTrade(params: {
    *  standard locked-balance assertion and debit are skipped for its side.
    *  The buyer's locked quote is still strictly validated and debited. */
   isBotSeller?:  boolean;
+  /** True when the buyer is the synthetic liquidity bot (user places a sell that
+   *  matches the bot's buy order). Same reasoning as isBotSeller: the bot has
+   *  no pre-locked quote in user_balances, so skip the buyer assertion and debit. */
+  isBotBuyer?:   boolean;
 }): Promise<void> {
   const buyerAddress  = normAddr(params.buyerAddress);
   const sellerAddress = normAddr(params.sellerAddress);
-  const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false } = params;
+  const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false, isBotBuyer = false } = params;
   const cost    = (parseFloat(amount) * parseFloat(price)).toFixed(18);
   const buyFee  = (parseFloat(amount) * feePct).toFixed(18);
   const sellFee = (parseFloat(cost)   * feePct).toFixed(18);
@@ -570,12 +574,14 @@ export async function settleTrade(params: {
     // SETTLE_EPSILON tolerates accumulated floating-point rounding across
     // multiple partial fills on the same limit order.
 
-    const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
-    if (buyerLockedQuote < parseFloat(cost) - SETTLE_EPSILON) {
-      throw new Error(
-        `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
-        `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
-      );
+    if (!isBotBuyer) {
+      const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
+      if (buyerLockedQuote < parseFloat(cost) - SETTLE_EPSILON) {
+        throw new Error(
+          `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
+          `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
+        );
+      }
     }
 
     if (!isBotSeller) {
@@ -592,14 +598,18 @@ export async function settleTrade(params: {
     // Any over-locked amount (price improvement on a limit order) stays locked
     // until the order is fully filled or cancelled — the cancel handler returns
     // any remaining locked balance via unlockFunds().
-    // Separately credit the received base asset.
-    await client.query(
-      `UPDATE user_balances
-       SET locked     = locked - $1::numeric,
-           updated_at = now()
-       WHERE wallet_address = $2 AND asset_symbol = $3`,
-      [cost, buyerAddress, quoteAsset],
-    );
+    // For the bot as buyer (isBotBuyer), skip the locked debit — the bot has no
+    // pre-locked quote in user_balances (symmetric to isBotSeller handling).
+    if (!isBotBuyer) {
+      await client.query(
+        `UPDATE user_balances
+         SET locked     = locked - $1::numeric,
+             updated_at = now()
+         WHERE wallet_address = $2 AND asset_symbol = $3`,
+        [cost, buyerAddress, quoteAsset],
+      );
+    }
+    // Always credit the buyer with the received base asset.
     await client.query(
       `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
        VALUES ($1, $2, $3, '0', now())
