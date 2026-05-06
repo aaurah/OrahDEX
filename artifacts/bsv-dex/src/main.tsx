@@ -4,8 +4,10 @@ import { createElement, Component, type ReactNode } from "react";
 import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
+import { migrateStaleDerivedAddresses } from "./lib/walletPin";
 
 applyStoredTheme();
+migrateStaleDerivedAddresses();
 
 /* ── Root-level error boundary that keeps the app alive even if WagmiProvider crashes ── */
 class RootErrorBoundary extends Component<
