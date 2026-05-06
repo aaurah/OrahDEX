@@ -746,6 +746,85 @@ function buildViemChain(chain: ChainConfig) {
   };
 }
 
+// ── QuickNode Streams real-time lock detection ────────────────────────────────
+
+/**
+ * Called by the QuickNode Streams webhook handler when a Locked event is
+ * detected on-chain (replaces waiting for the 30 s poll cycle).
+ *
+ * Flow:
+ *  1. Find the active HTLC session whose sellerLockId or buyerLockId matches.
+ *  2. Record the lock via confirmLockTx() (same path as frontend callback).
+ *  3. If both parties are now locked, immediately call revealBothLocks() so
+ *     settlement fires within seconds of the second lock confirming.
+ *
+ * @param lockId  bytes32 hex from topics[1] of the Locked event.
+ * @param txHash  Transaction hash carrying the Locked event.
+ */
+export async function triggerEvmHtlcCheckByLockId(
+  lockId: string,
+  txHash: string,
+): Promise<void> {
+  // Fetch all non-terminal sessions — there are typically very few active at once.
+  const sessions = await db
+    .select()
+    .from(evmHtlcSessionsTable)
+    .where(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES));
+
+  const session = sessions.find(
+    s => s.sellerLockId === lockId || s.buyerLockId === lockId,
+  );
+
+  if (!session) {
+    logger.debug(
+      { lockId },
+      "evmHtlc: triggerEvmHtlcCheckByLockId — no active session found (may be a different dApp)",
+    );
+    return;
+  }
+
+  const side: "seller" | "buyer" =
+    session.sellerLockId === lockId ? "seller" : "buyer";
+
+  logger.info(
+    { sessionId: session.id, tradeId: session.tradeId, side, lockId, txHash },
+    "evmHtlc: Locked event from QN Streams — recording lock",
+  );
+
+  // Record the lock (idempotent — safe to call even if already recorded)
+  await confirmLockTx(session.id, side, txHash);
+
+  // Re-fetch after update to get accurate locked flags
+  const refreshed = await db
+    .select()
+    .from(evmHtlcSessionsTable)
+    .where(eq(evmHtlcSessionsTable.id, session.id));
+
+  const updated = refreshed[0];
+  if (!updated) return;
+
+  if (
+    updated.sellerLocked &&
+    updated.buyerLocked &&
+    updated.status !== "REVEALING" &&
+    updated.status !== "COMPLETED"
+  ) {
+    const chain = EVM_CHAINS[updated.chainId];
+    if (!chain || !chain.contractAddress) {
+      logger.warn(
+        { sessionId: updated.id, chainId: updated.chainId },
+        "evmHtlc: both locked but chain config missing — cannot auto-reveal",
+      );
+      return;
+    }
+    logger.info(
+      { sessionId: updated.id },
+      "evmHtlc: both locks confirmed via Streams — triggering immediate reveal",
+    );
+    await revealBothLocks(updated, chain);
+  }
+}
+
 // ── Manual lock confirmation (webhook / frontend callback) ────────────────────
 
 /**

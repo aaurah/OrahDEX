@@ -1,67 +1,93 @@
-# Overview
+# OrahDEX
 
-This project is a pnpm workspace monorepo using TypeScript, designed as a full-featured BSV (Bitcoin SV) DEX (Decentralized Exchange) platform. It aims to offer on-chain BSV settlement, advanced trading features, and multi-chain support. Key capabilities include a native HD Wallet, CopyVault for on-chain copy trading, a comprehensive AMM Liquidity System, a sophisticated Trade Engine, multi-chain support (TRON, EVM networks), and an Admin AI Intelligence panel. The platform targets robust and user-friendly spot and futures trading, liquidity provision, and innovative features.
+Unified sovereign multi-chain wallet + non-custodial exchange — users hold their own keys; trades settle on-chain via HTLC and Escrow contracts.
 
-# User Preferences
+## Run & Operate
 
-I want iterative development and detailed explanations. Ask before making major changes. Do not make changes to the folder `lib/api-spec`. The file `artifacts/bsv-dex/src/lib/seedPhrase.ts` has been significantly updated to add XRP, LTC, and DOGE derivation — it is now safe to modify. I prefer clear and concise communication.
+```bash
+pnpm --filter @workspace/api-server run dev   # API on $PORT (default 8080)
+pnpm --filter @workspace/bsv-dex run dev      # Frontend on $PORT (default 20180)
+pnpm --filter @workspace/db run push          # Apply DB schema changes
+pnpm --filter @workspace/db run migrate       # Run migrations
+```
 
-# System Architecture
+Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`.
 
-## Monorepo Structure
+## Stack
 
-The project is a pnpm monorepo using TypeScript, organized into `artifacts/` for applications, `lib/` for shared libraries, and `scripts/` for utilities.
+- **Runtime**: Node.js 20, esbuild bundler
+- **API**: Express 5, Drizzle ORM, PostgreSQL (Replit DB)
+- **Frontend**: React 18, Vite 8, TailwindCSS, Zustand, TanStack Query, Wouter
+- **Wallet**: wagmi v3 + Reown AppKit; @scure/bip32/bip39; @noble/hashes/curves
+- **EVM**: viem ^2.47.6 (public + wallet clients)
+- **Validation**: Zod + drizzle-zod
 
-## UI/UX Decisions
+## Where things live
 
-The platform features specific coin color schemes, a WalletConnectModal for real wallet connections, dedicated AMM simulators, a Zustand and localStorage-based LP Position Store, TradingView integration with `lightweight-charts v5`, a full-screen quote currency selector, and an Admin AI Intelligence Panel.
+```
+artifacts/
+  api-server/src/
+    app.ts                  — Express setup, middleware order, background service startup
+    routes/
+      index.ts              — Main router (all /api/* routes)
+      admin.ts              — Admin panel + QuickNode Streams management endpoints
+      evmSettlement.ts      — HTLC session routes
+      quicknodeWebhook.ts   — POST /api/webhooks/quicknode (QN Streams receiver)
+    lib/
+      evmHtlc.ts            — EVM HTLC sessions, polling watcher, triggerEvmHtlcCheckByLockId
+      escrowRelayer.ts      — OrahDEXEscrow contract relayer (release/cancel)
+      quicknodeStreams.ts   — HMAC verification, QN REST API client, event topic constants
+      evmDepositWatcher.ts  — Fallback 90 s polling for native-token deposits
+      htlcWatcher.ts        — BSV HTLC adaptive polling watcher
+  bsv-dex/src/
+    pages/mobile/MobileTrade.tsx  — Main trade UI (non-custodial banners, order flow)
+    components/trading/OrderForm.tsx
+lib/
+  db/schema.ts              — Drizzle schema (source of truth)
+```
 
-## Technical Implementations
+## Architecture decisions
 
-- **OrahDEX Native HD Wallet**: Supports BIP39 and BIP44/SLIP-0010 for multiple chains (EVM, BTC/BSV/BCH, SOL, XRP, LTC, DOGE) with server-generated custodial sub-accounts. XRP uses m/44'/144'/0'/0/0 with the XRP-specific Base58 alphabet (classic "r..." address). LTC uses m/44'/2'/0'/0/0 with P2PKH version 0x30 ("L..." address). DOGE uses m/44'/3'/0'/0/0 with version 0x1E ("D..." address). All 8 chain addresses are derived simultaneously on wallet create/import/login and persisted to localStorage via `saveDerivedAddresses`.
-- **Non-Custodial Balance Architecture**: External wallets rely on on-chain RPC balance reads; `useExchangeBalanceStore` is for Orah internal wallet paths.
-- **Unified API Ledger Trading**: Orah internal wallet uses an API ledger for balance tracking and order funding.
-- **CopyVault**: Implements ERC4626-style vault accounting for mirroring leader trades.
-- **TRON Chain Support**: Extends `WalletNetwork` and integrates with `WalletConnectModal`.
-- **AMM Liquidity System**: Uses a standard AMM formula with `LP_FEE_RATIO` and `PROTOCOL_FEE_RATIO`. LP positions are managed via `useLiquidityStore` (Zustand). OrahDEX native AMM contracts (`OrahPair.sol`, `OrahFactory.sol`, `OrahRouter02.sol`) are deployed on Sepolia testnet.
-- **On-Chain Escrow (OrahDEXEscrow)**: Solidity contract for locking ETH/ERC-20 in escrow when placing open orders, deployed on Sepolia.
-- **Trade Engine**: Features a 5-phase execution path (Precheck, Build, Sign, Broadcast, Confirm) with latency tracking, error handling, caching, and telemetry.
-- **Prediction Trading**: Pool-based binary options with 5-minute rounds and leverage across 5 pairs, including a full TradingView-style chart.
-- **OrderIntent Settlement Layer (BSV Core DEX v2)**: Introduces a canonical `OrderIntent` for shared contract between wallet and server, defining `fundingRef` semantics and enforcing balance isolation.
-- **EVM HTLC Atomic Settlement**: Utilizes the `OrahDEXHTLC.sol` Solidity contract for atomic swaps on Ethereum, Polygon, and BSC.
-- **BSV HTLC Atomic Settlement**: Leverages `htlc.ts` for P2SH HTLC script building and `htlcWatcher.ts` for adaptive polling.
-- **BSV Testnet Support**: BSV network parameters are centralized in `artifacts/api-server/src/lib/bsvNetworkConfig.ts`.
-- **P2P + Atomic Swap**: Dedicated features with HTLC forms and protocol visualizers.
-- **Price Engine**: Prioritizes Binance prices, falls back to `FALLBACK_PRICES`, and uses own-trade prices for unlisted coins, supporting user-selected quote currencies.
-- **Stable Markets List**: A `markets` table serves as the single source of truth for all pair listings. A hybrid swap router (`hybridRouter.ts`) handles internal, external, and split routing.
-- **Spot Trading**: Orders go through verification, locking, matching, and settlement. Uses `user_balances` table with row locks.
-- **Futures Trading**: Orders involve opening positions, locking margin, and managing liquidation prices.
-- **Liquidity Provider-Awareness**: `getLiquidityMode()` accounts for internal wallet providers, defaulting them to "simulated" mode for liquidity operations.
-- **Liquidity Balance Source**: `useBackendBalances` fetches balances from `/api/portfolio` for internal wallets; external EVM wallets use on-chain balances.
-- **Mobile Navigation**: Features main tabs (Markets, Trade, Futures, Mkt Hub, More) and a "More" drawer.
-- **Exchange Revenue & Fee System**: Centralized fee accumulation in `feeCollector.ts` records platform fees into the `keeper_earnings` table.
-- **White-label Buy-Crypto Flow**: Single Stripe checkout with server-side provider routing. Orders ≥ $122 USD fulfill via LetsExchange; orders $10–$121 fulfill via SimpleSwap (per-coin range checked at quote time before charging). Both backends are operator-funded — only OrahDEX branding shown to the user. Provider stored on `crypto_orders.provider`; webhook + status sync branch accordingly.
-- **Admin Panel**: Features an updated Dashboard with Quick Actions, dynamic system alerts, an "API Settings" page, and improved integrations management. Feature flags and API keys are database-persisted. API key hardening includes hash storage, one-time reveal, and rate limiting.
+- **Non-custodial first**: EVM self-custody wallets read on-chain balances via viem; internal Orah wallets use API ledger. `usesApiBalance = isOrahWallet && !isEvm`.
+- **QuickNode Streams replaces polling**: `POST /api/webhooks/quicknode` receives HTLC `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events in real time. Polling watchers remain as fallback (belt-and-suspenders).
+- **Webhook registered before express.json()**: Raw body buffer is required for HMAC-SHA256 signature verification (`x-qn-signature` header).
+- **HTLC + Escrow share one contract address** on ETH mainnet: `0xeE234cEb85697b64800E696699b7841e00413B4f`.
+- **Order funding refs**: `evm-sig:` or `evm-balance:` prefix → skip internal ledger settlement; `bothEvmExternal` path emits `settlement_pending` instead.
+- **Stripe webhook** also registered before express.json() (separate route at `/api/stripe/webhook`).
 
-## Feature Specifications
+## Product
 
-The platform supports 958 markets (spot + perpetuals across 10 EVM chains + BSV/BTC/SOL/TRON) with 210 live price symbols. Trading features include various order types, real-time order books, TradingView charts, and dynamic fee displays. Futures trading offers leverage, cross/isolated margin, live mark/index prices, and funding rates. Wallet Connect supports multiple BSV wallets and Reown AppKit for EVM. Balance guards prevent overdrafts, and a push notification system is implemented. The Admin AI Intelligence panel offers model selection, prompt preview, insights, trade signals, and a chat tester. The Ticker API provides comprehensive market data. OrahNFT is a social NFT marketplace on BSV inscriptions, with live social DB tables and a real-time Community Chat. Fiat on-ramp supports 6 providers.
+- Spot + perpetuals trading across 958 markets (10 EVM chains + BSV/BTC/SOL/TRON)
+- EVM HTLC atomic swaps (seller + buyer lock → relayer reveals both)
+- OrahDEXEscrow for open-order collateral locking
+- BSV HTLC cross-chain settlement
+- CopyVault ERC4626-style copy trading
+- AMM liquidity pools (OrahPair/Factory/Router on Sepolia)
+- Native HD wallet (BIP39/44: EVM, BTC, BSV, SOL, XRP, LTC, DOGE)
+- Fiat on-ramp via Stripe → LetsExchange / SimpleSwap
+- Social NFT marketplace (BSV inscriptions)
+- Admin panel with AI intelligence, routing profiles, fee management
 
-# External Dependencies
+## User preferences
 
-- **Monorepo Tool**: pnpm workspaces
-- **API Framework**: Express 5
-- **Database**: PostgreSQL
-- **ORM**: Drizzle ORM
-- **Validation**: Zod, drizzle-zod
-- **API Codegen**: Orval
-- **Build Tool**: esbuild
-- **Frontend Framework**: React + Vite
-- **Styling**: TailwindCSS
-- **State Management**: Zustand
-- **Data Fetching**: TanStack React Query
-- **Routing**: Wouter
-- **Charting**: lightweight-charts v5
-- **Wallet Connectivity**: `@scure/bip32`, `@scure/bip39`, `@noble/hashes`, `@noble/curves`, `@noble/secp256k1`, `@reown/appkit`, `@reown/appkit-adapter-wagmi`, Nodemailer.
-- **External APIs/Services**: TronGrid API, WhatsOnChain, Binance, Mailgun, SendGrid, Postmark, LetsExchange.
-- **LetsExchange Cross-Chain Integration**: Uses LetsExchange API with Partner ID `1692` for coin lists, live rates, transaction creation, and status tracking, offering fixed-rate flows, proxy routes, and a native 3-step UI for cross-chain swaps.
+- Iterative development; ask before sweeping refactors.
+- Do not modify `lib/api-spec` folder.
+- `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
+- Clear and concise communication.
+
+## Gotchas
+
+- **QuickNode Stream ID** (ETH mainnet, contract logs): `e9276e1b-f045-48be-a8dc-f8bc524d160d`
+- Set `QUICKNODE_WEBHOOK_SECRET` to the secret used when the stream was created so HMAC verification passes.
+- `triggerEvmHtlcCheckByLockId` is called from the webhook handler — it needs `notInArray` from drizzle-orm and `TERMINAL_STATUSES` const; both are in `evmHtlc.ts`.
+- Admin QN stream endpoints live under `/api/admin/quicknode/…` (protected by `requireAdminToken`).
+- esbuild bundles everything; TypeScript imports at the bottom of a file still work at runtime but tsc will reject them — keep all imports at file top.
+- LetsExchange Partner ID: `1692`.
+- EVM HTLC watcher polls every 30 s; QN Streams supplements it (not replaces).
+
+## Pointers
+
+- QuickNode Streams REST API: `https://api.quicknode.com/streams/rest/v1/streams` (auth: `x-api-key`)
+- OrahDEX HTLC/Escrow contract: `0xeE234cEb85697b64800E696699b7841e00413B4f` (ETH mainnet)
+- Sepolia Escrow: `0x4deb6023abD9E1C640aDa35201be8ff591d21cF2`
+- WhatsOnChain BSV API: `https://api.whatsonchain.com/v1/bsv/main`
