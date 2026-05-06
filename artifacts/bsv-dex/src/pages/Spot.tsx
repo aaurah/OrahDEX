@@ -251,7 +251,7 @@ export function SpotTrading() {
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1, DAI: 1,
     BTC:  crossRates.BTC?.usd  || 83000,
-    ETH:  crossRates.ETH?.usd  || 1800,
+    ETH:  crossRates.ETH?.usd  || 2400,
     BSV:  crossRates.BSV?.usd  || 14,
     BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
     AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51, CRO: 0.085, TRX: 0.24,

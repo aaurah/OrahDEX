@@ -334,7 +334,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
   const BSV_USD_RATE = crossPrices.BSV.usd || 16;
-  const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
+  const ETH_USD_RATE = crossPrices.ETH.usd || 2400;
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
