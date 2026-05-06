@@ -1346,6 +1346,16 @@ router.get("/settlements/htlc-status", async (req, res) => {
     return;
   }
 
+  // Strict allow-list validation for BSV P2SH addresses:
+  // - mainnet starts with "3", testnet starts with "2"
+  // - Base58 charset only (no 0, O, I, l)
+  // - Typical P2SH length range
+  const p2shAddressPattern = /^[23][1-9A-HJ-NP-Za-km-z]{24,50}$/;
+  if (!p2shAddressPattern.test(htlcAddress)) {
+    res.status(400).json({ error: "Invalid htlcAddress format" });
+    return;
+  }
+
   const locktime = parseInt(locktimeBlocks ?? "0") || 0;
   if (locktime < 1) {
     res.status(400).json({ error: "locktimeBlocks query param required (positive integer)" });
