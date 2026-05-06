@@ -44,8 +44,9 @@ const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ defau
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
-const MobilePortfolio  = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
-const MobileCoinWallet = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
+const MobilePortfolio      = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobileCoinWallet     = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
+const MobileWalletPortfolio = lazy(() => import("@/pages/mobile/MobileWalletPortfolio").then(m => ({ default: m.MobileWalletPortfolio })));
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
 const UserApiKeys     = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
 const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
@@ -429,8 +430,8 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
-                <Route path="/wallet"     component={WalletPage} />
-                <Route path="/portfolio"  component={MobilePortfolio} />
+                <Route path="/wallet"     component={MobileWalletPortfolio} />
+                <Route path="/portfolio"  component={MobileWalletPortfolio} />
                 <Route path="/portfolio/:coin">
                   {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
                 </Route>
