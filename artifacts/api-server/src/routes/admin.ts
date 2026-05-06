@@ -2,6 +2,9 @@ import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
 
+function isValidQuickNodeStreamId(value: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
@@ -20,6 +23,10 @@ import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { logger } from "../lib/logger.js";
 import {
+  createQuickNodeStream,
+  listQuickNodeStreams,
+  deleteQuickNodeStream,
+  setQuickNodeStreamStatus,
   buildFilterFunction,
   WATCHED_CONTRACTS,
   TOPIC_HTLC_LOCKED,
@@ -27,7 +34,7 @@ import {
   TOPIC_HTLC_REFUNDED,
   TOPIC_ESCROW_RELEASED,
   logTopics,
-} from "../lib/evmWebhook.js";
+} from "../lib/quicknodeStreams.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export const serviceState = {
@@ -3395,16 +3402,14 @@ router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
   }
 });
 
-// ── EVM webhook & RPC configuration info ──────────────────────────────────────
-// GET  /api/admin/evm/topics       — display computed event topic hashes
-// GET  /api/admin/evm/webhook-info — show webhook URL and env var status
-// GET  /api/admin/evm/rpc-config   — show which RPC endpoints are configured
-// GET  /api/admin/evm/filter-fn    — generate a filter function for a webhook provider
+// ── QuickNode Streams management ──────────────────────────────────────────────
+// GET  /api/admin/quicknode/streams          — list streams for this account
+// POST /api/admin/quicknode/streams/setup    — create contract-event stream
+// DELETE /api/admin/quicknode/streams/:id    — delete a stream
+// PATCH  /api/admin/quicknode/streams/:id    — activate or pause a stream
+// GET  /api/admin/quicknode/topics           — display computed event topic hashes
 
-// Also kept under /quicknode/ paths for backwards compatibility with any
-// existing admin tooling or bookmarks.
-
-router.get(["/evm/topics", "/quicknode/topics"], (_req, res) => {
+router.get("/quicknode/topics", (_req, res) => {
   logTopics();
   res.json({
     TOPIC_HTLC_LOCKED,
@@ -3412,106 +3417,121 @@ router.get(["/evm/topics", "/quicknode/topics"], (_req, res) => {
     TOPIC_HTLC_REFUNDED,
     TOPIC_ESCROW_RELEASED,
     watchedContracts: WATCHED_CONTRACTS,
-    note: "These are the keccak256(ABI event signature) values used to filter EVM log webhooks.",
+    note: "These are the keccak256(ABI event signature) values used to filter QuickNode Stream logs.",
   });
 });
 
-router.get(["/evm/webhook-info", "/quicknode/webhook-info"], (req, res) => {
-  const domain = process.env["REPLIT_DEV_DOMAIN"] ?? null;
-  const primaryUrl = domain
-    ? `https://${domain}/api/webhooks/evm`
-    : null;
-  const legacyUrl = domain
-    ? `https://${domain}/api/webhooks/quicknode`
-    : null;
-
-  res.json({
-    webhookUrls: {
-      primary: primaryUrl,
-      legacy:  legacyUrl,
-      note:    "Register the primary URL with your EVM log provider (Alchemy, Infura, Tenderly, etc.).",
-    },
-    hmacSecret: {
-      configured: !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]),
-      envVar:     "EVM_WEBHOOK_SECRET",
-      fallbackVar: "QUICKNODE_WEBHOOK_SECRET (accepted for backwards compat)",
-      note: "Set EVM_WEBHOOK_SECRET to the HMAC secret configured in your provider dashboard.",
-    },
-    extraContracts: {
-      envVar: "EVM_WATCHED_CONTRACTS",
-      current: (process.env["EVM_WATCHED_CONTRACTS"] ?? "").split(",").filter(Boolean),
-      note: "Comma-separated extra contract addresses to accept events from.",
-    },
-    filterFunction: buildFilterFunction(WATCHED_CONTRACTS),
-  });
+router.get("/quicknode/streams", async (_req, res) => {
+  try {
+    if (!process.env.QUICKNODE_API_KEY) {
+      res.status(503).json({ error: "QUICKNODE_API_KEY not set" });
+      return;
+    }
+    const streams = await listQuickNodeStreams();
+    res.json({ streams, count: streams.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to list streams" });
+  }
 });
 
-router.get(["/evm/rpc-config", "/quicknode/rpc-config"], (_req, res) => {
-  const chains: Record<string, { envVar: string; configured: boolean; url?: string }> = {
-    ethereum: {
-      envVar:     "ETH_RPC_URL",
-      configured: !!process.env["ETH_RPC_URL"],
-      url:        process.env["ETH_RPC_URL"] ? "(set)" : undefined,
-    },
-    "ethereum-ws": {
-      envVar:     "ETH_WS_URL",
-      configured: !!process.env["ETH_WS_URL"],
-      url:        process.env["ETH_WS_URL"] ? "(set)" : undefined,
-    },
-    sepolia: {
-      envVar:     "SEPOLIA_RPC_URL",
-      configured: !!process.env["SEPOLIA_RPC_URL"],
-    },
-    base: {
-      envVar:     "BASE_RPC_URL",
-      configured: !!process.env["BASE_RPC_URL"],
-    },
-    arbitrum: {
-      envVar:     "ARB_RPC_URL",
-      configured: !!process.env["ARB_RPC_URL"],
-    },
-    optimism: {
-      envVar:     "OP_RPC_URL",
-      configured: !!process.env["OP_RPC_URL"],
-    },
-    bnb: {
-      envVar:     "BSC_RPC_URL",
-      configured: !!process.env["BSC_RPC_URL"],
-    },
-    polygon: {
-      envVar:     "POLYGON_RPC_URL",
-      configured: !!process.env["POLYGON_RPC_URL"],
-    },
-    avalanche: {
-      envVar:     "AVAX_RPC_URL",
-      configured: !!process.env["AVAX_RPC_URL"],
-    },
-  };
+router.post("/quicknode/streams/setup", async (req, res) => {
+  try {
+    if (!process.env.QUICKNODE_API_KEY) {
+      res.status(503).json({ error: "QUICKNODE_API_KEY not set" });
+      return;
+    }
 
-  const totalChains    = Object.keys(chains).length;
-  const configuredCount = Object.values(chains).filter(c => c.configured).length;
+    // Resolve destination URL
+    const { webhookUrl, webhookSecret, network = "ethereum-mainnet", extraContracts } = req.body ?? {};
 
-  res.json({
-    summary: `${configuredCount}/${totalChains} chains have custom RPC URLs configured.`,
-    note: "Chains without a custom URL fall back to public nodes. Set env vars to use your own nodes.",
-    chains,
-  });
+    const autoUrl =
+      process.env.QUICKNODE_WEBHOOK_URL ??
+      (process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}/api/webhooks/quicknode`
+        : null);
+
+    const destination = webhookUrl ?? autoUrl;
+    if (!destination) {
+      res.status(400).json({
+        error: "Provide webhookUrl in the request body, or set REPLIT_DEV_DOMAIN / QUICKNODE_WEBHOOK_URL env var.",
+      });
+      return;
+    }
+
+    const secret = webhookSecret ?? process.env.QUICKNODE_WEBHOOK_SECRET;
+
+    // Merge any additional contract addresses the caller wants watched
+    const contracts = [
+      ...WATCHED_CONTRACTS,
+      ...(Array.isArray(extraContracts) ? extraContracts : []),
+    ];
+
+    const filterFn = buildFilterFunction(contracts);
+
+    const stream = await createQuickNodeStream({
+      name:           `OrahDEX Contract Events (${network})`,
+      network,
+      dataset:        "logs",
+      filterFn,
+      destinationUrl: destination,
+      webhookSecret:  secret,
+    });
+
+    logger.info({ streamId: stream.id, destination, network }, "admin: QuickNode Stream created");
+
+    res.json({
+      ok:          true,
+      stream,
+      webhookUrl:  destination,
+      note:        `Stream ${stream.id} is now active. Set QUICKNODE_WEBHOOK_SECRET to '${secret ?? "(not set)"}' so the webhook can verify HMAC signatures.`,
+    });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "admin: createQuickNodeStream failed");
+    res.status(500).json({ error: err?.message ?? "Stream creation failed" });
+  }
 });
 
-router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
-  const extra = ((req.query["contracts"] as string) ?? "")
-    .split(",")
-    .map(s => s.trim().toLowerCase())
-    .filter(s => /^0x[0-9a-f]{40}$/.test(s));
+router.delete("/quicknode/streams/:id", async (req, res) => {
+  try {
+    if (!process.env.QUICKNODE_API_KEY) {
+      res.status(503).json({ error: "QUICKNODE_API_KEY not set" });
+      return;
+    }
+    const { id } = req.params;
+    if (!isValidQuickNodeStreamId(id)) {
+      res.status(400).json({ error: "Invalid stream id" });
+      return;
+    }
+    await deleteQuickNodeStream(id);
+    logger.info({ streamId: id }, "admin: QuickNode Stream deleted");
+    res.json({ ok: true, deleted: id });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Stream deletion failed" });
+  }
+});
 
-  const contracts = [...WATCHED_CONTRACTS, ...extra];
-  const filterFn  = buildFilterFunction(contracts);
-
-  res.json({
-    contracts,
-    filterFunction: filterFn,
-    note: "Paste this filter function into your EVM log webhook provider's filter field. Add extra contract addresses via the ?contracts= query param.",
-  });
+router.patch("/quicknode/streams/:id", async (req, res) => {
+  try {
+    if (!process.env.QUICKNODE_API_KEY) {
+      res.status(503).json({ error: "QUICKNODE_API_KEY not set" });
+      return;
+    }
+    const { id } = req.params;
+    if (!isValidQuickNodeStreamId(id)) {
+      res.status(400).json({ error: "Invalid stream id" });
+      return;
+    }
+    const { status } = req.body ?? {};
+    if (status !== "active" && status !== "paused") {
+      res.status(400).json({ error: "status must be 'active' or 'paused'" });
+      return;
+    }
+    await setQuickNodeStreamStatus(id, status);
+    logger.info({ streamId: id, status }, "admin: QuickNode Stream status updated");
+    res.json({ ok: true, id, status });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Stream update failed" });
+  }
 });
 
 export default router;

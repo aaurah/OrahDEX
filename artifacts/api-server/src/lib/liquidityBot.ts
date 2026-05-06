@@ -12,7 +12,7 @@
 
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and, notInArray } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
@@ -218,8 +218,7 @@ async function refreshMarket(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select().from(marketsTable)
-      .where(notInArray(marketsTable.type, ["letsexchange"]));
+    const markets = await db.select().from(marketsTable);
     const active  = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──

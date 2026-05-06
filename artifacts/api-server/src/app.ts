@@ -21,10 +21,8 @@ import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
-import evmWebhookRouter from "./routes/evmWebhookRouter.js";
+import quicknodeWebhookRouter from "./routes/quicknodeWebhook.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
-import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
-import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 
 const app: Express = express();
 
@@ -72,18 +70,14 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
 }));
 
-/* ── EVM webhook — registered BEFORE express.json() ──────────────────────────
+/* ── QuickNode Streams webhook — registered BEFORE express.json() ─────────────
    HMAC-SHA256 signature verification requires the raw request body (Buffer).
    Any body-parsing middleware applied before this route would break verification.
-   Receives EVM log events from any compatible provider (Alchemy, Infura, etc.).
-   Env: EVM_WEBHOOK_SECRET — shared HMAC secret for payload verification.
-   Paths: POST /api/webhooks/evm  (primary)
-          POST /api/webhooks/quicknode  (legacy, for existing registrations)
 ── */
 app.use(
   "/api/webhooks",
   express.raw({ type: "*/*" }),
-  evmWebhookRouter,
+  quicknodeWebhookRouter,
 );
 
 /* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
@@ -282,8 +276,6 @@ startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed 
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
 try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
-try { startAllReconcilers();      } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
-hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {

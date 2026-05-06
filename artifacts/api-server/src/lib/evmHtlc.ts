@@ -746,12 +746,11 @@ function buildViemChain(chain: ChainConfig) {
   };
 }
 
-// ── Real-time lock detection via webhook ─────────────────────────────────────
+// ── QuickNode Streams real-time lock detection ────────────────────────────────
 
 /**
- * Called by the EVM webhook handler when a Locked event is detected on-chain
- * (replaces waiting for the 30 s poll cycle). Works with any webhook provider
- * that delivers EVM log events to /api/webhooks/evm.
+ * Called by the QuickNode Streams webhook handler when a Locked event is
+ * detected on-chain (replaces waiting for the 30 s poll cycle).
  *
  * Flow:
  *  1. Find the active HTLC session whose sellerLockId or buyerLockId matches.

@@ -104,7 +104,6 @@ const AdminMintBurn          = lazy(() => import("@/pages/admin/MintBurn").then(
 const AdminLedgerManager     = lazy(() => import("@/pages/admin/LedgerManager").then(m => ({ default: m.AdminLedgerManager })));
 const AdminDbSync            = lazy(() => import("@/pages/admin/DbSync").then(m => ({ default: m.AdminDbSync })));
 const AdminCexConnections    = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
-const AdminDiagnostics       = lazy(() => import("@/pages/admin/Diagnostics"));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -373,7 +372,6 @@ function Router() {
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
       <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>
       <Route path="/admin/cex-connections"><AdminRoute><AdminCexConnections /></AdminRoute></Route>
-      <Route path="/admin/diagnostics">   <AdminRoute><AdminDiagnostics /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">
