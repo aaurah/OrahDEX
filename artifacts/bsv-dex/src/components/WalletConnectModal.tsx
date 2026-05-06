@@ -2433,7 +2433,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           ) : prepEvmBalances.length === 0 ? (
                             <div className="text-center py-3 bg-white/3 rounded-xl border border-border/50">
                               <p className="text-[11px] text-muted-foreground">No tokens found on this network</p>
-                              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Deposit funds to start trading</p>
+                              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Your on-chain balance is your trading balance — no deposit required</p>
                             </div>
                           ) : (
                             <div className="space-y-1.5">
@@ -2471,14 +2471,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         Start Trading →
                       </button>
 
-                      {/* Deposit hint */}
-                      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-xs">
-                        Deposit{" "}
-                        <span className="text-foreground font-medium">
-                          {prepNetwork === "bsv" ? "BSV" : prepNetwork === "evm" ? "ETH / tokens" : prepNetwork === "sol" ? "SOL" : "BTC"}
-                        </span>{" "}
-                        to your address above to fund trades. All trades settle permanently on the BSV blockchain.
-                      </p>
+                      {/* Funding hint — EVM is non-custodial, other chains need on-chain deposit */}
+                      {prepNetwork === "evm" ? (
+                        <p className="text-[11px] text-blue-300/80 leading-relaxed max-w-xs">
+                          Non-custodial — your wallet balance is your trading balance. Funds never leave your wallet until on-chain settlement.
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed max-w-xs">
+                          Deposit{" "}
+                          <span className="text-foreground font-medium">
+                            {prepNetwork === "bsv" ? "BSV" : prepNetwork === "sol" ? "SOL" : "BTC"}
+                          </span>{" "}
+                          to your address above to fund trades. All trades settle permanently on the BSV blockchain.
+                        </p>
+                      )}
 
                     </motion.div>
                   )}
