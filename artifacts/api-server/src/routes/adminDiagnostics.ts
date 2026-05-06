@@ -22,6 +22,12 @@ import {
   getAlerts, getAlertSummary, resolveAlert, alertInfo,
 } from "../lib/alertBus.js";
 import { updateMarketPrices } from "../lib/priceUpdater.js";
+import {
+  getRepairEngineStatus,
+  getCircuitBreakerStates,
+  withCircuitBreaker,
+  recordRateLimit,
+} from "../lib/exchangeApiRepairEngine.js";
 
 const router = Router();
 
@@ -232,6 +238,58 @@ router.get("/diagnostics/services", async (_req, res) => {
     ],
     checkedAt: new Date().toISOString(),
   });
+});
+
+/* ── GET /admin/exchange-repair/status ───────────────────────────────────── */
+// Full repair engine snapshot: circuit breakers, rate limits, route probes,
+// price source failover chain, and recent repair history.
+
+router.get("/exchange-repair/status", (_req, res) => {
+  res.json(getRepairEngineStatus());
+});
+
+/* ── GET /admin/exchange-repair/circuits ─────────────────────────────────── */
+// Just the circuit breaker states — lighter payload for polling dashboards.
+
+router.get("/exchange-repair/circuits", (_req, res) => {
+  const states = getCircuitBreakerStates();
+  const open   = states.filter(s => s.state === "OPEN").length;
+  const half   = states.filter(s => s.state === "HALF_OPEN").length;
+  res.json({
+    overall:  open > 0 ? "degraded" : half > 0 ? "recovering" : "healthy",
+    open, halfOpen: half, closed: states.length - open - half,
+    circuits: states,
+    checkedAt: new Date().toISOString(),
+  });
+});
+
+/* ── POST /admin/exchange-repair/reset-circuit ───────────────────────────── */
+// Manually force-close a circuit breaker (use with caution).
+
+router.post("/exchange-repair/reset-circuit", async (req, res) => {
+  const { name } = req.body as { name?: string };
+  if (!name) { res.status(400).json({ error: "name is required" }); return; }
+  try {
+    // Force a successful probe to close the circuit
+    await withCircuitBreaker(name, async () => {
+      logger.info({ circuit: name }, "[AutoRepair] Admin force-reset circuit breaker");
+    });
+    alertInfo("admin", `Admin manually reset circuit breaker: ${name}`);
+    res.json({ ok: true, circuit: name, action: "force-reset" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── POST /admin/exchange-repair/simulate-rate-limit ─────────────────────── */
+// Simulate a rate limit for testing the throttle system.
+
+router.post("/exchange-repair/simulate-rate-limit", (req, res) => {
+  const { api, retryAfterMs } = req.body as { api?: string; retryAfterMs?: number };
+  if (!api) { res.status(400).json({ error: "api is required" }); return; }
+  recordRateLimit(api, retryAfterMs ?? 30_000);
+  alertInfo("admin", `Admin simulated rate limit for: ${api}`);
+  res.json({ ok: true, api, throttledForMs: retryAfterMs ?? 30_000 });
 });
 
 export default router;

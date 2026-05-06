@@ -28,6 +28,7 @@ import evmWebhookRouter from "./routes/evmWebhookRouter.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
 import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
+import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 
 const app: Express = express();
 
@@ -322,8 +323,9 @@ try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startE
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
-try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
-try { startAllReconcilers();      } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
+try { startOrderReconciler();              } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startAllReconcilers();               } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
+try { startExchangeApiRepairEngine();      } catch (e) { logger.error({ err: e }, "startExchangeApiRepairEngine failed to init"); }
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
