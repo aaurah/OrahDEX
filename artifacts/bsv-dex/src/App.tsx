@@ -56,6 +56,7 @@ const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({
 const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
 const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
 const MobileNFT        = lazy(() => import("@/pages/mobile/MobileNFT").then(m => ({ default: m.MobileNFT })));
+const MobileStaking    = lazy(() => import("@/pages/mobile/MobileStaking").then(m => ({ default: m.MobileStaking })));
 const NFTPage          = lazy(() => import("@/pages/NFT").then(m => ({ default: m.NFTPage })));
 const PredictionTrading = lazy(() => import("@/pages/Prediction").then(m => ({ default: m.PredictionTrading })));
 
@@ -436,6 +437,7 @@ function Router() {
                 <Route path="/settings"           component={MobileSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
+                <Route path="/staking"    component={MobileStaking} />
                 <Route path="/nft"        component={MobileNFT} />
                 <Route path="/prediction" component={PredictionTrading} />
                 <Route path="/sovereign"  component={SovereignOverviewPage} />
@@ -472,6 +474,7 @@ function Router() {
                   <Route path="/portfolio/:coin">
                     {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
                   </Route>
+                  <Route path="/staking"        component={MobileStaking} />
                   <Route path="/nft"            component={NFTPage} />
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
