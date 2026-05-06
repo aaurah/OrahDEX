@@ -1232,7 +1232,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
               {/* Sub-tab chips: On-Chain / Trades / Bridge / Coin Travel / Buys */}
               <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
                 {([
-                  { key: "onchain", label: "On-Chain"   },
+                  { key: "onchain", label: "Txn History" },
                   { key: "trades",  label: "Trades"      },
                   { key: "bridge",  label: "Bridge"      },
                   { key: "swaps",   label: "Coin Travel" },
