@@ -17,6 +17,24 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 
+/** Sums balances across all 8 live EVM chains for a given address.
+ *  Each chain is a static hook call — rules of hooks are satisfied. */
+function useAllEvmBalances(address: string | null) {
+  const c1    = useEvmBalances(address, 1);
+  const c56   = useEvmBalances(address, 56);
+  const c137  = useEvmBalances(address, 137);
+  const c42161= useEvmBalances(address, 42161);
+  const c10   = useEvmBalances(address, 10);
+  const c8453 = useEvmBalances(address, 8453);
+  const c43114= useEvmBalances(address, 43114);
+  const c59144= useEvmBalances(address, 59144);
+
+  const all = [c1, c56, c137, c42161, c10, c8453, c43114, c59144];
+  const totalUsd = all.reduce((sum, { balances }) =>
+    sum + balances.reduce((s, b) => s + (b.usdValue ?? 0), 0), 0);
+  return totalUsd;
+}
+
 /** Chain catalogue — what an imToken / Guarda style wallet exposes.
  *  `live: true` chains have working balance + send today.
  *  `live: false` are derived addresses we'll wire up in subsequent phases
@@ -158,7 +176,7 @@ function ChainBalanceRow({
 }
 
 export default function Wallet() {
-  const { address, network, chainId } = useWalletStore();
+  const { address, network } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
   const { toast }         = useToast();
@@ -174,9 +192,7 @@ export default function Wallet() {
   useEffect(() => { setDerived(getDerivedAddresses(address)); }, [address]);
 
   const { quoteCurrency } = useSettingsStore();
-  const isEvm = network === "evm";
-  const { balances: evmBalances } = useEvmBalances(isEvm && address ? address : null, isEvm ? (chainId ?? null) : null);
-  const totalUsd = evmBalances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
+  const totalUsd = useAllEvmBalances(address);
 
   const [receiveOpen, setReceiveOpen]       = useState(false);
   const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
