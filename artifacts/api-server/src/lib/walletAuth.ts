@@ -35,7 +35,7 @@ ed.etc.sha512Sync = (...msgs) => sha512(ed.etc.concatBytes(...msgs));
 // ── EVM personal_sign recovery ────────────────────────────────────────────────
 
 function hashPersonalMessage(message: string): Uint8Array {
-  const prefix = `\x19Ethereum Signed Message:\n${message.length}`;
+  const prefix = `\x19Ethereum Signed Message:\n${Buffer.byteLength(message, "utf8")}`;
   const buf = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
   return keccak_256(buf);
 }
