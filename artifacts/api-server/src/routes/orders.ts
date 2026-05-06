@@ -240,8 +240,13 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
+    // Market buy orders lock against the last market price, but the actual fill
+    // happens at the bot's ask (slightly higher). Add a 0.5% slippage buffer so
+    // the locked amount always covers the fill cost and settleTrade never throws
+    // SETTLEMENT_INSUFFICIENT_LOCK due to a small price discrepancy.
+    const lockSlippage = (side === "buy" && type === "market") ? 1.005 : 1;
     const lockAmount = side === "buy"
-      ? (lockPrice ? (lockPrice * quantity).toString() : "0")
+      ? (lockPrice ? (lockPrice * quantity * lockSlippage).toString() : "0")
       : quantity.toString();
 
     let fundingRef = "";
@@ -318,6 +323,9 @@ router.post("/orders", async (req, res) => {
     let lastHtlcLocktimeBlocks: number | undefined;
     let lastCrossChain = false;
     let lastOpReturnPayload: string | undefined;
+    // Hoisted so the IOC check after the match block can read them
+    let totalFilled    = 0;
+    let totalFillValue = 0;
     // EVM HTLC session — set when both parties are external EVM wallets
     let lastEvmHtlcSession: Awaited<ReturnType<typeof initiateEvmHtlcSession>> | null = null;
 
@@ -395,8 +403,7 @@ router.post("/orders", async (req, res) => {
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
       let remainingQty   = quantity;
-      let totalFilled    = 0;
-      let totalFillValue = 0;
+      // totalFilled / totalFillValue are hoisted to outer scope (see above)
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
@@ -888,6 +895,24 @@ router.post("/orders", async (req, res) => {
             // The trade is not yet settled — the fill loop will record the fill with
             // a deterministic txid and the UI will guide the user to complete locking.
             req.log.error({ err: evmErr?.message, tradeId }, "orders: EVM HTLC session creation failed");
+          }
+        }
+      }
+
+      // ── Release the slippage buffer after a fully-filled market buy ──────────
+      // settleTrade only debits the actual fill cost; the 0.5% over-lock stays
+      // in the locked column until we explicitly release it here.
+      if (
+        side === "buy" && type === "market" &&
+        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+      ) {
+        const actualCost = totalFillValue;
+        const excess = parseFloat(lockAmount) - actualCost;
+        if (excess > 1e-9 && lockAsset) {
+          try {
+            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+          } catch (excessErr: any) {
+            req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
