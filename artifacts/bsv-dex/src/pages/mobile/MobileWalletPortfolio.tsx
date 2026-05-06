@@ -28,13 +28,13 @@ export function MobileWalletPortfolio({ defaultTab = "portfolio" }: { defaultTab
           <SegBtn
             active={topTab === "portfolio"}
             icon={<Briefcase size={13} />}
-            label="Portfolio"
+            label="Chain Balance"
             onClick={() => setTopTab("portfolio")}
           />
           <SegBtn
             active={topTab === "wallet"}
             icon={<Wallet size={13} />}
-            label="Wallet"
+            label="Wallet & Portfolio"
             onClick={() => setTopTab("wallet")}
           />
         </div>
