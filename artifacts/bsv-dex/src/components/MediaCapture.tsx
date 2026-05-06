@@ -18,6 +18,27 @@ const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
 type Tab = "camera" | "ai" | "photos";
 
+/** Resize + re-encode image to ≤ maxDim px on longest side at given JPEG quality.
+ *  Keeps the original if it is already small enough. AI URLs (https://…) pass through. */
+async function compressImage(dataUrl: string, maxDim = 1200, quality = 0.82): Promise<string> {
+  if (!dataUrl.startsWith("data:")) return dataUrl; // already a URL — no-op
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxDim / Math.max(w, h, 1));
+      const cw = Math.round(w * scale);
+      const ch = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext("2d")?.drawImage(img, 0, 0, cw, ch);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 // iOS Safari ignores clicks on `<input type=file>` when display:none.
 // Use a visually-hidden style that still allows the native picker to open.
 const HIDDEN_INPUT: React.CSSProperties = {
@@ -194,8 +215,9 @@ function CameraPanel({ preview, setPreview }: { preview: string; setPreview: (s:
     if (!ctx) return;
     if (facing === "user") { ctx.translate(w, 0); ctx.scale(-1, 1); }   // un-mirror selfie
     ctx.drawImage(v, 0, 0, w, h);
-    setPreview(c.toDataURL("image/jpeg", 0.92));
+    const raw = c.toDataURL("image/jpeg", 0.92);
     stop();
+    compressImage(raw, 1200, 0.85).then(setPreview);
   }
 
   function retake() { setPreview(""); start(facing); }
@@ -203,7 +225,10 @@ function CameraPanel({ preview, setPreview }: { preview: string; setPreview: (s:
   function onNativeFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = ev => setPreview(String(ev.target?.result ?? ""));
+    r.onload = ev => {
+      const raw = String(ev.target?.result ?? "");
+      compressImage(raw, 1200, 0.85).then(setPreview);
+    };
     r.readAsDataURL(f);
   }
 
@@ -400,7 +425,10 @@ function UploadPanel({ preview, setPreview, accept }:
   function handle(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = ev => setPreview(String(ev.target?.result ?? ""));
+    r.onload = ev => {
+      const raw = String(ev.target?.result ?? "");
+      compressImage(raw, 1200, 0.85).then(setPreview);
+    };
     r.readAsDataURL(f);
   }
 

@@ -21,6 +21,26 @@ import { MediaCapture } from "@/components/MediaCapture";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
+/** Compress a base64 data-URL to ≤ 1200 px on the longest side at 85% JPEG quality.
+ *  Keeps the original unchanged if it's already a remote URL (https://…). */
+async function compressProfileImage(dataUrl: string, maxDim = 1200, quality = 0.85): Promise<string> {
+  if (!dataUrl.startsWith("data:")) return dataUrl;
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxDim / Math.max(w, h, 1));
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext("2d")?.drawImage(img, 0, 0, cw, ch);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 const MODAL_ROOT_STYLE: React.CSSProperties = {
   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
   pointerEvents: "auto", display: "flex", flexDirection: "column",
@@ -573,8 +593,8 @@ function CreatorProfileSheet({
       if (!file) return;
       const reader = new FileReader();
       reader.onload = ev => {
-        const dataUrl = ev.target?.result as string;
-        quickSavePhoto(field, dataUrl);
+        const raw = ev.target?.result as string;
+        compressProfileImage(raw).then(compressed => quickSavePhoto(field, compressed));
       };
       reader.readAsDataURL(file);
       e.target.value = "";
@@ -582,23 +602,33 @@ function CreatorProfileSheet({
   }
 
   const [quickCaptureField, setQuickCaptureField] = useState<null | "cover_url" | "avatar_url">(null);
+  const [photoSaveError, setPhotoSaveError] = useState("");
 
   async function quickSavePhoto(field: "cover_url" | "avatar_url", dataUrl: string) {
     setPhotoUploading(field === "cover_url" ? "cover" : "avatar");
+    setPhotoSaveError("");
     try {
-      await fetch(`${API}/social/creators/${creatorAddress}/update`, {
+      const compressed = await compressProfileImage(dataUrl);
+      const res = await fetch(`${API}/social/creators/${creatorAddress}/update`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: dataUrl }),
+        body: JSON.stringify({ [field]: compressed }),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error ?? `Save failed (${res.status})`);
+      }
       if (data) {
-        const updated = { ...data, profile: { ...data.profile, [field]: dataUrl } };
+        const updated = { ...data, profile: { ...data.profile, [field]: compressed } };
         _profileDataCache[creatorAddress] = updated;
         setData(updated);
       }
       if (field === "cover_url") setImgErr(false);
-    } catch {}
-    finally { setPhotoUploading(null); }
+    } catch (e: any) {
+      setPhotoSaveError(e?.message ?? "Failed to save image — please try again");
+    } finally {
+      setPhotoUploading(null);
+    }
   }
 
   async function openFollowList(type: "followers" | "following") {
@@ -757,6 +787,14 @@ function CreatorProfileSheet({
                 >
                   <Camera size={12} /> {profile.cover_url ? "Change cover" : "Add cover"}
                 </button>
+              )}
+              {photoSaveError && (
+                <div
+                  className="absolute bottom-2 left-2 right-2 text-center text-[11px] font-medium px-2 py-1 rounded-lg"
+                  style={{ background: "rgba(220,38,38,0.85)", color: "#fff", backdropFilter: "blur(4px)" }}
+                >
+                  {photoSaveError}
+                </div>
               )}
             </>
           )}
@@ -1047,7 +1085,12 @@ function CreatorProfileSheet({
           profile={profile}
           onClose={() => setShowEdit(false)}
           onSave={(updated) => {
-            setData(d => d ? { ...d, profile: { ...d.profile, ...updated } } : d);
+            setData(d => {
+              if (!d) return d;
+              const merged = { ...d, profile: { ...d.profile, ...updated } };
+              _profileDataCache[creatorAddress] = merged;
+              return merged;
+            });
             setShowEdit(false);
           }}
         />
@@ -1235,14 +1278,16 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = ev => {
-        const dataUrl = ev.target?.result as string;
-        if (field === "avatar") {
-          setAvatarPreview(dataUrl);
-          setForm(f => ({ ...f, avatar_url: dataUrl }));
-        } else {
-          setCoverPreview(dataUrl);
-          setForm(f => ({ ...f, cover_url: dataUrl }));
-        }
+        const raw = ev.target?.result as string;
+        compressProfileImage(raw).then(dataUrl => {
+          if (field === "avatar") {
+            setAvatarPreview(dataUrl);
+            setForm(f => ({ ...f, avatar_url: dataUrl }));
+          } else {
+            setCoverPreview(dataUrl);
+            setForm(f => ({ ...f, cover_url: dataUrl }));
+          }
+        });
       };
       reader.readAsDataURL(file);
     };
@@ -1256,7 +1301,10 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error("Failed to save profile");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any)?.error ?? `Failed to save profile (${res.status})`);
+      }
       onSave(form as any);
     } catch (err: any) {
       setError(err.message);
