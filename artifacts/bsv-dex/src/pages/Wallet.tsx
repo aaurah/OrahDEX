@@ -15,6 +15,7 @@ import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 
 /** Chain catalogue — what an imToken / Guarda style wallet exposes.
  *  `live: true` chains have working balance + send today.
@@ -157,7 +158,7 @@ function ChainBalanceRow({
 }
 
 export default function Wallet() {
-  const { address, network } = useWalletStore();
+  const { address, network, chainId } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
   const { toast }         = useToast();
@@ -171,6 +172,11 @@ export default function Wallet() {
   const canBackup = !!imported || passkeyOwned;
   const [derived, setDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(address));
   useEffect(() => { setDerived(getDerivedAddresses(address)); }, [address]);
+
+  const { quoteCurrency } = useSettingsStore();
+  const isEvm = network === "evm";
+  const { balances: evmBalances } = useEvmBalances(isEvm && address ? address : null, isEvm ? (chainId ?? null) : null);
+  const totalUsd = evmBalances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
 
   const [receiveOpen, setReceiveOpen]       = useState(false);
   const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -220,6 +226,14 @@ export default function Wallet() {
               <ShieldCheck size={10} /> {imported.protectedBy === "passkey" ? "Passkey" : "PIN"} secured
             </span>
           )}
+        </div>
+
+        {/* Total balance */}
+        <div className="mb-4">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Total balance</p>
+          <p className="text-3xl font-bold text-foreground tracking-tight">
+            {formatQuoteAmount(totalUsd, quoteCurrency)}
+          </p>
         </div>
 
         <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Your address</p>
