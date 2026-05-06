@@ -1,6 +1,10 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
+
+function isValidQuickNodeStreamId(value: string): boolean {
+  return /^[A-Za-z0-9_-]{1,128}$/.test(value);
+}
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
@@ -3494,6 +3498,10 @@ router.delete("/quicknode/streams/:id", async (req, res) => {
       return;
     }
     const { id } = req.params;
+    if (!isValidQuickNodeStreamId(id)) {
+      res.status(400).json({ error: "Invalid stream id" });
+      return;
+    }
     await deleteQuickNodeStream(id);
     logger.info({ streamId: id }, "admin: QuickNode Stream deleted");
     res.json({ ok: true, deleted: id });
@@ -3509,6 +3517,10 @@ router.patch("/quicknode/streams/:id", async (req, res) => {
       return;
     }
     const { id } = req.params;
+    if (!isValidQuickNodeStreamId(id)) {
+      res.status(400).json({ error: "Invalid stream id" });
+      return;
+    }
     const { status } = req.body ?? {};
     if (status !== "active" && status !== "paused") {
       res.status(400).json({ error: "status must be 'active' or 'paused'" });

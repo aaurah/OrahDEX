@@ -258,10 +258,11 @@ export async function listQuickNodeStreams(): Promise<QNStream[]> {
 
 /** Delete a QuickNode Stream by ID. */
 export async function deleteQuickNodeStream(streamId: string): Promise<void> {
+  const safeStreamId = encodeURIComponent(streamId);
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch(`${QN_STREAMS_API}/${streamId}`, {
+    const res = await fetch(`${QN_STREAMS_API}/${safeStreamId}`, {
       method:  "DELETE",
       headers: qnHeaders(),
       signal:  ctrl.signal,
@@ -280,10 +281,11 @@ export async function setQuickNodeStreamStatus(
   streamId: string,
   status:   "active" | "paused",
 ): Promise<void> {
+  const safeStreamId = encodeURIComponent(streamId);
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch(`${QN_STREAMS_API}/${streamId}`, {
+    const res = await fetch(`${QN_STREAMS_API}/${safeStreamId}`, {
       method:  "PATCH",
       headers: qnHeaders(),
       body:    JSON.stringify({ status }),
