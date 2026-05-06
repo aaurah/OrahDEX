@@ -176,7 +176,7 @@ function ChainBalanceRow({
   );
 }
 
-export default function Wallet() {
+export default function Wallet({ afterActions }: { afterActions?: React.ReactNode } = {}) {
   const { address, network } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
@@ -270,6 +270,8 @@ export default function Wallet() {
           <ActionButton icon={Sparkles}   label="Buy"     onClick={() => navigate("/swap")} />
         </div>
       </div>
+
+      {afterActions}
 
       {/* ── Backup CTA (any sovereign wallet — imported or native passkey) ── */}
       {canBackup && (
