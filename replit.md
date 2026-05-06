@@ -87,6 +87,11 @@ lib/
 - esbuild bundles everything; TypeScript imports at the bottom of a file still work at runtime but tsc will reject them — keep all imports at file top.
 - LetsExchange Partner ID: `1692`.
 - EVM HTLC watcher polls every 30 s; QN Streams supplements it (not replaces).
+- DB schema must be applied before first run: `pnpm --filter @workspace/db run push-force` (requires TTY) or run `node -e "..."` migration script — migration SQL is at `lib/db/drizzle/0000_noisy_wilson_fisk.sql`.
+- LE/SimpleSwap/Stripe routes return errors gracefully when API keys are missing; native AMM path still works without them.
+- Stripe apiVersion pinned to `"2025-03-31.basil"` in both `stripeClient.ts` and `webhookHandlers.ts` — keep in sync.
+- `LE_COIN_NETWORK` map lives in `src/lib/leCoinNetwork.ts` (single source-of-truth); both `stripeCheckout.ts` and `webhookHandlers.ts` import from there.
+- Fallback price self-call in `stripeCheckout.ts` uses `http://127.0.0.1:${PORT ?? 8080}` with a 5 s timeout — not `localhost`.
 
 ## Pointers
 

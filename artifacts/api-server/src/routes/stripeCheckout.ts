@@ -5,30 +5,12 @@ import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
 import { quoteFromSS, getSsRange, isSimpleSwapConfigured, SS_COIN_TICKER } from "../lib/simpleswap.js";
+import { LE_COIN_NETWORK } from "../lib/leCoinNetwork.js";
 
 /* Small-order threshold: orders with net USDT under this amount route to
    SimpleSwap (≈$10 min). At/above, they route to LetsExchange ($120 min after fee). */
 const LE_THRESHOLD_USD = 122;
 const SS_FLOOR_USD     = 10;
-
-/* Coin → LetsExchange network mapping (must mirror webhookHandlers.ts) */
-const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
-  BTC:   { coin: "BTC",   network: "BTC"   },
-  ETH:   { coin: "ETH",   network: "ETH"   },
-  BSV:   { coin: "BSV",   network: "BSV"   },
-  BNB:   { coin: "BNB",   network: "BEP20" },
-  SOL:   { coin: "SOL",   network: "SOL"   },
-  XRP:   { coin: "XRP",   network: "XRP"   },
-  ADA:   { coin: "ADA",   network: "ADA"   },
-  DOGE:  { coin: "DOGE",  network: "DOGE"  },
-  DOT:   { coin: "DOT",   network: "DOT"   },
-  AVAX:  { coin: "AVAX",  network: "AVAX"  },
-  MATIC: { coin: "MATIC", network: "POL"   },
-  USDT:  { coin: "USDT",  network: "ERC20" },
-  USDC:  { coin: "USDC",  network: "ERC20" },
-  LINK:  { coin: "LINK",  network: "ERC20" },
-  UNI:   { coin: "UNI",   network: "ERC20" },
-};
 
 /* Ask LE: "for `netUsdt` USDT (ERC-20), how much TARGET coin do we get?"
    Returns { coinAmount, ratePerCoin } where ratePerCoin = USD price the
@@ -209,10 +191,13 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
         }
       } catch { /* fallback below */ }
 
-      /* FALLBACK 2: internal /api/prices */
+      /* FALLBACK 2: internal /api/prices (self-call on loopback) */
       if (!price) {
         try {
-          const r = await fetch(`http://localhost:${process.env.PORT}/api/prices`);
+          const port = process.env.PORT ?? "8080";
+          const r = await fetch(`http://127.0.0.1:${port}/api/prices`, {
+            signal: AbortSignal.timeout(5_000),
+          });
           if (r.ok) {
             const prices = await r.json() as Record<string, number>;
             price = prices[coinSymbol] ?? 0;

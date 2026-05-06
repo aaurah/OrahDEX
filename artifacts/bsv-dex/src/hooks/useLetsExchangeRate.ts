@@ -42,7 +42,7 @@ export function useLetsExchangeRate(
     const refAmt = REF_AMOUNTS[fromCoin.symbol] ?? REF_AMOUNTS.DEFAULT;
     setLoading(true);
     try {
-      const r = await window.fetch(`${API_BASE}/letsexchange/estimate`, {
+      const r = await fetch(`${API_BASE}/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
