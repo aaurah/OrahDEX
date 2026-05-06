@@ -1,11 +1,11 @@
 /**
  * OrahDEX HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
  *
- * One seed phrase → eight chain addresses:
+ * One seed phrase → eight chain addresses (each using its own BIP44 coin type):
  *   EVM (Ethereum, BSC, Polygon…)  : m/44'/60'/0'/0/0   secp256k1
- *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0    secp256k1 — shared key
- *     → BTC & BSV share the same legacy P2PKH address (starts with "1")
- *     → BCH uses CashAddr encoding (bitcoincash:q…)
+ *   BTC (Bitcoin)                  : m/44'/0'/0'/0/0    secp256k1, P2PKH (starts with "1")
+ *   BSV (Bitcoin SV)               : m/44'/236'/0'/0/0  secp256k1, P2PKH (starts with "1")
+ *   BCH (Bitcoin Cash)             : m/44'/145'/0'/0/0  secp256k1, CashAddr (bitcoincash:q…)
  *   SOL (Solana)                   : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
  *   XRP (Ripple XRP Ledger)        : m/44'/144'/0'/0/0  secp256k1, XRP Base58 alphabet (starts with "r")
  *   LTC (Litecoin)                 : m/44'/2'/0'/0/0    secp256k1, P2PKH version 0x30 (starts with "L")
@@ -56,10 +56,15 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const seed = await mnemonicToSeed(phrase);
   const root = HDKey.fromMasterSeed(seed);
 
-  const bitcoinKey = root.derive("m/44'/0'/0'/0/0");
-  const btc = deriveP2PKH(bitcoinKey);
-  const bsv = btc;
-  const bch = deriveCashAddr(bitcoinKey);
+  const btcKey = root.derive("m/44'/0'/0'/0/0");
+  const btc = deriveP2PKH(btcKey);
+
+  const bsvKey = root.derive("m/44'/236'/0'/0/0");
+  const bsv = deriveP2PKH(bsvKey);
+
+  const bchKey = root.derive("m/44'/145'/0'/0/0");
+  const bch = deriveCashAddr(bchKey);
+
   const sol = deriveSolanaAddress(seed);
 
   const xrpKey  = root.derive("m/44'/144'/0'/0/0");

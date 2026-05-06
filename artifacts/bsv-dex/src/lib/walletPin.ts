@@ -254,6 +254,39 @@ export function getDerivedAddresses(address: string | null | undefined): Derived
   return map[address.toLowerCase()] ?? null;
 }
 
+/**
+ * One-time migration: clears stale BSV/BCH addresses that were incorrectly
+ * derived from the BTC key (old code set `bsv = btc` and `bch` shared the
+ * BTC derivation path). After clearing, the wallet UI shows "Sign in to
+ * derive your address" for those chains until the user next authenticates,
+ * at which point the correct BIP44 addresses (coin type 236 / 145) are saved.
+ *
+ * A migration-version flag in localStorage prevents this from running twice.
+ */
+const DERIVED_MIGRATION_KEY = "orahdex_derived_migration_v2";
+export function migrateStaleDerivedAddresses(): void {
+  try {
+    if (localStorage.getItem(DERIVED_MIGRATION_KEY)) return;
+    const map = readDerivedMap();
+    let changed = false;
+    for (const k of Object.keys(map)) {
+      const entry = map[k];
+      if (entry.btc && entry.bsv && entry.btc === entry.bsv) {
+        // BSV was wrongly set to the BTC address — clear it
+        delete entry.bsv;
+        changed = true;
+      }
+      // BCH was also derived from the BTC key; clear it so it re-derives correctly
+      if (entry.btc && entry.bch) {
+        delete entry.bch;
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem(DERIVED_KEY, JSON.stringify(map));
+    localStorage.setItem(DERIVED_MIGRATION_KEY, "1");
+  } catch { /* ignore */ }
+}
+
 // ─── Encrypt + store (PIN flow) ──────────────────────────────────────────────
 
 export async function storeWithPin(args: {

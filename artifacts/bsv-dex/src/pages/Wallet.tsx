@@ -79,21 +79,26 @@ function shortAddr(a: string | null) {
 
 /** Returns the on-chain address for the given chain.
  *
+ *  evmAddress   — always the EVM 0x address (never a BSV/BTC address)
+ *  bsvAddress   — the currently connected address when the network is BSV
+ *                 (used only as a fallback for BSV-only wallets that have no derived entry)
+ *
  *  Critical: never fall back to the EVM address for non-EVM chains — handing
  *  back a 0x… address as a BSV/BTC/BCH deposit address would route real funds
- *  to a wrong-format address and lose them. We only return the connected
- *  address when it actually belongs to the same chain family. */
+ *  to a wrong-format address and lose them. */
 function addressForChain(
   chain: ChainRow,
   evmAddress: string | null,
+  bsvAddress: string | null,
   connectedNetwork: string | null,
   derived: DerivedAddresses | null,
 ): string | null {
   if (chain.family === "evm") return evmAddress;
   if (chain.family === "bsv") {
     if (derived?.bsv) return derived.bsv;
-    // Only use the connected address when the wallet itself is a native BSV wallet
-    if (connectedNetwork === "bsv" && evmAddress) return evmAddress;
+    // Only use the connected address when the wallet itself is a native BSV-only wallet
+    if ((connectedNetwork === "bsv" || connectedNetwork === "bsv-test") && bsvAddress)
+      return bsvAddress;
     return null;
   }
   if (chain.family === "btc")    return derived?.btc  ?? null;
@@ -107,19 +112,20 @@ function addressForChain(
 }
 
 function ChainBalanceRow({
-  chain, address, network, derived, quoteCurrency, onReceive,
+  chain, address, evmAddress, network, derived, quoteCurrency, onReceive,
 }: {
   chain: ChainRow;
-  address: string | null;
+  address: string | null;     // active network address (may be BSV when BSV is selected)
+  evmAddress: string | null;  // always the EVM 0x address — used for all EVM balance queries
   network: string | null;
   derived: DerivedAddresses | null;
   quoteCurrency: string;
   onReceive: (chain: ChainRow) => void;
 }) {
-  // Live EVM balance fetch (only for live EVM chains, only when address present)
-  const useEvm = chain.family === "evm" && chain.live && !!address;
+  // Live EVM balance fetch — always uses the EVM 0x address regardless of active network
+  const useEvm = chain.family === "evm" && chain.live && !!evmAddress;
   const { balances } = useEvmBalances(
-    useEvm ? address : null,
+    useEvm ? evmAddress : null,
     useEvm ? (chain.evmChainId ?? null) : null,
   );
 
@@ -128,7 +134,7 @@ function ChainBalanceRow({
   const tokenCount = balances.filter(b => !b.isNative && b.amount > 0).length;
   const subtotalUsd = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
 
-  const chainAddr   = addressForChain(chain, address, network, derived);
+  const chainAddr   = addressForChain(chain, evmAddress, address, network, derived);
   const canReceive  = !!chainAddr && chain.live;
 
   return (
@@ -177,10 +183,15 @@ function ChainBalanceRow({
 }
 
 export default function Wallet({ afterActions }: { afterActions?: React.ReactNode } = {}) {
-  const { address, network } = useWalletStore();
+  const { address, network, internalEvmAddress } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
   const { toast }         = useToast();
+
+  // evmAddress is always the EVM 0x address regardless of which network is currently active.
+  // When BSV is active, `address` becomes the BSV address — so we must use `internalEvmAddress`
+  // for EVM balance queries and as the key for derived-address lookup (which is keyed by EVM addr).
+  const evmAddress = internalEvmAddress ?? (network === "evm" ? address : null);
 
   const imported = useMemo(() => (address ? getImportedWallet(address) : null), [address]);
   const passkeyOwned = useMemo(
@@ -189,11 +200,15 @@ export default function Wallet({ afterActions }: { afterActions?: React.ReactNod
   );
   // Backup is offered for any sovereign wallet — both PIN/passkey-imported AND native passkey-created.
   const canBackup = !!imported || passkeyOwned;
-  const [derived, setDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(address));
-  useEffect(() => { setDerived(getDerivedAddresses(address)); }, [address]);
+
+  // Derived addresses are keyed by the EVM address in localStorage — use evmAddress, not `address`
+  // (when BSV is the active network, `address` is the BSV address and the lookup would miss).
+  const derivedKey = evmAddress ?? address;
+  const [derived, setDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(derivedKey));
+  useEffect(() => { setDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
 
   const { quoteCurrency } = useSettingsStore();
-  const totalUsd = useAllEvmBalances(address);
+  const totalUsd = useAllEvmBalances(evmAddress);
 
   const [receiveOpen, setReceiveOpen]       = useState(false);
   const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -310,6 +325,7 @@ export default function Wallet({ afterActions }: { afterActions?: React.ReactNod
               key={c.id}
               chain={c}
               address={address}
+              evmAddress={evmAddress}
               network={network}
               derived={derived}
               quoteCurrency={quoteCurrency}
@@ -317,7 +333,7 @@ export default function Wallet({ afterActions }: { afterActions?: React.ReactNod
                 if (chain.family === "evm") {
                   setReceiveOpen(true);
                 } else {
-                  setChainReceive({ open: true, chain, address: addressForChain(chain, address, network, derived) });
+                  setChainReceive({ open: true, chain, address: addressForChain(chain, evmAddress, address, network, derived) });
                 }
               }}
             />
