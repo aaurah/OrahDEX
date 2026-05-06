@@ -22,6 +22,7 @@
  */
 
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { db } from "@workspace/db";
 import { keepersTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -48,6 +49,15 @@ import {
 } from "../lib/erc8004.js";
 
 const router = Router();
+
+/* Rate limiter for sensitive admin operations */
+const adminOpsLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             10,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler:         (_req, res) => res.status(429).json({ error: "Too many admin requests — please slow down." }),
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -459,7 +469,7 @@ router.post("/erc8004/admin/keepers/sync-all", requireAdminToken, async (req, re
  * Pre-authorises reviewerAddress to submit feedback for agentId.
  * Required before submitFeedback can be called by a non-owner.
  */
-router.post("/erc8004/admin/preauthorize", requireAdminToken, async (req, res) => {
+router.post("/erc8004/admin/preauthorize", adminOpsLimiter, requireAdminToken, async (req, res) => {
   const { agentId, reviewerAddress } = req.body ?? {};
   if (!agentId || !reviewerAddress) {
     res.status(400).json({ error: "agentId and reviewerAddress are required" });

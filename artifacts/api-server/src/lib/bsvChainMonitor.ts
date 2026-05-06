@@ -202,6 +202,11 @@ export async function queryHtlcStatus(
   const blockHeight  = parseInt((await getSetting("bsv_block_height")) ?? "0") || 0;
   const encodedAddress = encodeURIComponent(htlcAddress);
 
+  // Validate that htlcAddress is a legitimate BSV P2SH/P2PKH address to prevent SSRF
+  if (!/^[1-9A-HJ-NP-Za-km-z]{26,35}$/.test(htlcAddress)) {
+    return { status: "UNKNOWN", blockHeight, checkedAt };
+  }
+
   try {
     // Check unspent UTXOs at the P2SH address
     const utxoData = await safeFetch(`${WOC_BASE}/address/${encodedAddress}/unspent`);

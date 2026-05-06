@@ -118,7 +118,7 @@ function useFundingCountdown() {
 
 export function FuturesTrading() {
   const { symbol: rawSymbol = "BSV-USDT-PERP" } = useParams();
-  const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
+  const symbol = rawSymbol.replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
   const { address, network, balance, chainId: walletChainId, provider, internalBsvAddress, internalEvmAddress } = useWalletStore();

@@ -2242,11 +2242,11 @@ router.post("/tradingview/test", async (req, res) => {
   const { symbol = "BSV/USDT", resolution = "60" } = req.body ?? {};
   const t0 = Date.now();
   try {
-    const proto = req.protocol;
-    const host  = req.get("host") ?? "localhost:8080";
+    // Use the process PORT to build an internal URL instead of trusting the Host header
+    const internalPort = process.env["PORT"] ?? "8080";
     const from  = Math.floor(Date.now() / 1000) - 86400;
     const to    = Math.floor(Date.now() / 1000);
-    const url   = `${proto}://${host}/api/tv/history?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}`;
+    const url   = `http://127.0.0.1:${internalPort}/api/tv/history?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}`;
     const r     = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const data  = await r.json() as any;
     const latency = Date.now() - t0;

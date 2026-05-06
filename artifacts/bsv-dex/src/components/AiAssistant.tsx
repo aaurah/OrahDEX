@@ -9,8 +9,20 @@ interface Message {
   content: string;
 }
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 function parseMarkdown(text: string): string {
-  return text
+  // HTML-escape first so that any HTML in the AI response is rendered as text,
+  // then apply safe markdown-to-HTML transforms on the escaped content.
+  const escaped = escapeHtml(text);
+  return escaped
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
     .replace(/`(.*?)`/g, '<code class="bg-white/10 px-1 rounded text-xs font-mono">$1</code>')

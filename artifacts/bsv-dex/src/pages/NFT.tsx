@@ -20,6 +20,18 @@ import { MediaCapture } from "@/components/MediaCapture";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
+/** Only allow http/https URLs or raster-format data URIs for image src attributes.
+ *  SVG is excluded because it can contain embedded JavaScript. */
+function sanitizeImageUrl(url: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
+  } catch { /* invalid URL */ }
+  return "";
+}
+
 function Portal({ children }: { children: React.ReactNode }) {
   const target = typeof document !== "undefined"
     ? (document.getElementById("modal-root") ?? document.body)
@@ -618,6 +630,11 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [cat, setCat] = useState("art");
   const [chain, setChain] = useState("BSV");
   const [imageUrl, setImageUrl] = useState("");
+
+  /** Sanitize image URLs at state-set time: only allow http/https or raster data URIs */
+  function setValidatedImageUrl(url: string) {
+    setImageUrl(sanitizeImageUrl(url));
+  }
   const [mintPrice, setMintPrice] = useState("0.001");
   const [maxSupply, setMaxSupply] = useState("");
   const [loading, setLoading] = useState(false);
@@ -698,11 +715,11 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
               <ImageIcon size={13} /> Upload
             </button>
           </div>
-          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste image URL"
+          <input value={imageUrl} onChange={e => setValidatedImageUrl(e.target.value)} placeholder="…or paste image URL"
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
           <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
             initialTab={captureTab}
-            onSelect={(dataUrl) => setImageUrl(dataUrl)} />
+            onSelect={(dataUrl) => setValidatedImageUrl(dataUrl)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
