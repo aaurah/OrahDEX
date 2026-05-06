@@ -35,7 +35,7 @@ const INTERVALS = [
   { id: '12h', label: '12h' }, { id: '1d', label: '1D' }, { id: '3d', label: '3D' },
   { id: '1w', label: '1W' }, { id: '1M', label: '1M' },
   { id: '1Y', label: '1Y' }, { id: '2Y', label: '2Y' },
-  { id: '5Y', label: '5Y' }, { id: '10Y', label: '10Y' },
+  { id: '5Y', label: '5Y' }, { id: '10Y', label: '10Y' }, { id: 'All', label: 'All' },
 ];
 
 /* Map long-range presets → actual API interval + candle limit */
@@ -44,6 +44,7 @@ const RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> =
   '2Y':  { apiInterval: '1w', limit: 104 },
   '5Y':  { apiInterval: '1w', limit: 261 },
   '10Y': { apiInterval: '1M', limit: 120 },
+  'All': { apiInterval: '1M', limit: 1500 },
 };
 
 /* ── Chart type definitions ─────────────────────────────────────────────── */
