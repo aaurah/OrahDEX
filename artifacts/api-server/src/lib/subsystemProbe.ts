@@ -252,15 +252,16 @@ export async function probeWebhookReceiver(): Promise<ProbeResult> {
 export async function probeSwapRouter(): Promise<ProbeResult> {
   return probe(
     "swap-router",
-    "Swap Router (LE Pairs DB)",
+    "Swap Router (LE Pairs in DB)",
     async () => {
       const { pool } = await import("@workspace/db");
       const { rows } = await pool.query<{ cnt: string }>(
-        "SELECT COUNT(*) AS cnt FROM le_pairs WHERE is_active = true",
+        "SELECT COUNT(*) AS cnt FROM markets WHERE type = 'letsexchange' AND status = 'active'",
       );
       const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
-      if (cnt < 50) throw new Error(`Only ${cnt} active LE pairs seeded — may need sync`);
-      return `${cnt.toLocaleString()} active swap pairs seeded`;
+      if (cnt === 0) throw new Error("No LE pairs seeded — run POST /api/admin/le-sync");
+      if (cnt < 1000) return `${cnt.toLocaleString()} LE pairs seeded (partial — run le-sync for full catalog)`;
+      return `${cnt.toLocaleString()} active LE swap pairs`;
     },
   );
 }

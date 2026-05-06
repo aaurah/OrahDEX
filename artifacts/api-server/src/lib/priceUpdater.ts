@@ -1085,72 +1085,79 @@ export async function seedLEPairsIfNeeded() {
  *
  * Called by POST /api/admin/le-sync (admin panel) and at startup after warm-up.
  */
+/**
+ * syncAllLEPairs — Full all-to-all LetsExchange pair sync.
+ *
+ * Generates every coin×coin combination (excluding self-pairs) from the
+ * LetsExchange coin catalog — producing ~36,099+ pairs depending on the
+ * live LE coin list. Falls back to the built-in catalog when the API key
+ * is not configured.
+ *
+ * Strategy:
+ *   1. Try LE /v2/coins (needs API key). If 403/unavailable → use built-in list.
+ *   2. Fetch sovereign prices for cross-rate math.
+ *   3. For every (base, quote) pair where base ≠ quote, compute price = baseUSD / quoteUSD.
+ *   4. Upsert in 500-row DB chunks (no giant transactions).
+ */
 export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; quotes: number }> {
-  // 1. Fetch all LE coins
-  const res = await leRequest("/v2/coins");
-  if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) {
-    throw new Error("LE /v2/coins returned no data");
+  const { getBuiltInLeCoins } = await import("./leAllCoins.js");
+
+  // 1. Determine coin list — live API preferred, built-in fallback
+  let coinTickers: string[] = [];
+  let source = "api";
+
+  try {
+    const res = await leRequest("/v2/coins");
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const seen = new Set<string>();
+      for (const item of res.data as Record<string, unknown>[]) {
+        const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
+        if (code && !seen.has(code)) { seen.add(code); coinTickers.push(code); }
+      }
+    } else {
+      source = "builtin";
+      coinTickers = getBuiltInLeCoins();
+    }
+  } catch {
+    source = "builtin";
+    coinTickers = getBuiltInLeCoins();
   }
 
-  // Deduplicate by ticker (same coin, multiple networks)
-  const seen = new Set<string>();
-  const coins: Array<{ code: string; network: string | null; minAmount: string | null }> = [];
-  for (const item of res.data as Record<string, unknown>[]) {
-    const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
-    if (!code || seen.has(code)) continue;
-    seen.add(code);
-    const networks = Array.isArray(item.networks)
-      ? (item.networks as Record<string, unknown>[]).filter(n => n.is_active !== 0)
-      : [];
-    const network = networks[0] ? (networks[0].code as string | null) ?? null : null;
-    const minAmount = (item.min_amount ?? null) as string | null;
-    coins.push({ code, network, minAmount });
-  }
+  if (coinTickers.length === 0) throw new Error("LE sync: no coins available from API or built-in list");
 
-  // 2. Get prices from sovereign engine (Binance + CMC + LE cache + fallbacks)
+  logger.info({ coins: coinTickers.length, source }, "LE sync: coin list loaded");
+
+  // 2. Get sovereign prices for cross-rate computation
   const prices = await fetchSovereignPrices();
 
-  // Pull quote asset prices we'll need for cross-rate math
-  const getQ = (sym: string, def: number): number =>
-    prices[sym]?.usd || FALLBACK_PRICES[sym] || def;
+  // Build a USD price lookup (sovereign engine → FALLBACK_PRICES → 0)
+  const usdOf = (sym: string): number =>
+    prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
 
-  const bsvUSD  = getQ("BSV",  16);
-  const btcUSD  = getQ("BTC",  95000);
-  const ethUSD  = getQ("ETH",  3500);
-  const bnbUSD  = getQ("BNB",  600);
-  const solUSD  = getQ("SOL",  140);
-  const xrpUSD  = getQ("XRP",  0.6);
-  const trxUSD  = getQ("TRX",  0.12);
-  const dogeUSD = getQ("DOGE", 0.12);
-  const usdcUSD = getQ("USDC", 1);
-
-  const quoteBaseMap: Record<typeof LE_SEED_QUOTES[number], number> = {
-    USDT: 1, USDC: usdcUSD, BSV: bsvUSD, BTC: btcUSD,
-    ETH: ethUSD, BNB: bnbUSD, SOL: solUSD, XRP: xrpUSD,
-    TRX: trxUSD, DOGE: dogeUSD,
-  };
-
-  // 3. Build upsert batch
+  // 3. All-to-all: every base paired with every other coin as quote
   const CHUNK = 500;
   let inserted = 0;
   let updated  = 0;
+  let totalPairs = 0;
 
-  // Process in coin-batches so we don't build a 30k-row array all at once
-  for (let ci = 0; ci < coins.length; ci += 100) {
-    const batch = coins.slice(ci, ci + 100);
-    const rows: any[] = [];
+  // Process base coins in batches of 20 to keep memory bounded
+  // Each batch of 20 bases produces up to 20 × (N-1) rows
+  const BASE_BATCH = 20;
 
-    for (const coin of batch) {
-      const base    = coin.code;
-      const baseUSD = prices[base]?.usd || FALLBACK_PRICES[base] || 0;
+  for (let bi = 0; bi < coinTickers.length; bi += BASE_BATCH) {
+    const baseBatch = coinTickers.slice(bi, bi + BASE_BATCH);
+    const rows: Record<string, unknown>[] = [];
 
-      for (const quote of LE_SEED_QUOTES) {
-        if (base === quote) continue;
-        const qUSD = quoteBaseMap[quote];
+    for (const base of baseBatch) {
+      const baseUSD = usdOf(base);
+
+      for (const quote of coinTickers) {
+        if (base === quote) continue; // skip self-pair
+        const quoteUSD = usdOf(quote);
 
         let price = 0;
-        if (baseUSD > 0 && qUSD > 0) {
-          price = baseUSD / qUSD;
+        if (baseUSD > 0 && quoteUSD > 0) {
+          price = baseUSD / quoteUSD;
         }
 
         const p = fmtPrice(price);
@@ -1170,21 +1177,19 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
       }
     }
 
-    // Insert in DB chunks
+    totalPairs += rows.length;
+
+    // Upsert in DB chunks — only update price fields, never touch type/status
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
-      // Insert new rows; update lastPrice/high/low for existing zero-price rows
       const result = await db.insert(marketsTable)
-        .values(chunk)
+        .values(chunk as Parameters<typeof db.insert>[0]["values"])
         .onConflictDoUpdate({
           target: marketsTable.symbol,
           set: {
-            // Only update prices; NEVER change the type of an existing spot/futures pair.
-            // If the existing row is already 'spot' or 'futures', leave it alone.
-            lastPrice:  sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.last_price != '0' THEN excluded.last_price ELSE ${marketsTable.lastPrice} END`,
-            high24h:    sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.high_24h != '0' THEN excluded.high_24h ELSE ${marketsTable.high24h} END`,
-            low24h:     sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.low_24h != '0' THEN excluded.low_24h ELSE ${marketsTable.low24h} END`,
-            // Never touch type/status of existing rows
+            lastPrice: sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.last_price != '0' THEN excluded.last_price ELSE ${marketsTable.lastPrice} END`,
+            high24h:   sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.high_24h  != '0' THEN excluded.high_24h  ELSE ${marketsTable.high24h}  END`,
+            low24h:    sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.low_24h   != '0' THEN excluded.low_24h   ELSE ${marketsTable.low24h}   END`,
           },
         });
       const affected = (result as any).rowCount ?? (result as any).rowsAffected ?? 0;
@@ -1192,8 +1197,11 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
     }
   }
 
-  logger.info({ coins: coins.length, inserted, quotes: LE_SEED_QUOTES.length }, "LE pairs full sync complete");
-  return { coins: coins.length, inserted, updated, quotes: LE_SEED_QUOTES.length };
+  logger.info(
+    { coins: coinTickers.length, totalPairs, inserted, source },
+    "LE all-to-all pairs sync complete",
+  );
+  return { coins: coinTickers.length, inserted, updated, quotes: coinTickers.length - 1 };
 }
 
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
