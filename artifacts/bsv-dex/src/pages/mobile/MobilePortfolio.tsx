@@ -838,39 +838,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
           </div>
 
-          {/* Deposit / Withdraw */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => {
-                setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
-                setWithdrawInitialTab("deposit");
-                setWithdrawVisibleTabs(["deposit"]);
-                setWithdrawOpen(true);
-              }}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-green-600/25 active:opacity-90"
-            >
-              <ArrowDownToLine size={16} />
-              Deposit
-            </button>
-            <button
-              onClick={() => {
-                const firstAsset = nonZero[0];
-                if (firstAsset) {
-                  const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
-                  setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.amount, network: assetNet.network, networkLabel: assetNet.networkLabel, color: firstAsset.color });
-                } else {
-                  setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
-                }
-                setWithdrawInitialTab("withdraw");
-                setWithdrawVisibleTabs(["withdraw", "history"]);
-                setWithdrawOpen(true);
-              }}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-600/25 active:opacity-90"
-            >
-              <Upload size={16} />
-              Withdraw
-            </button>
-          </div>
 
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
