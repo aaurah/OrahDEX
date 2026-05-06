@@ -872,18 +872,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
           </div>
 
-          {/* Fund CTAs */}
-          <button onClick={() => setDirectBuyOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-green-500/5 border border-green-500/20 hover:border-green-500/40 transition-colors text-left">
-            <div className="w-9 h-9 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
-              <CreditCard size={16} className="text-green-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-foreground">Buy Crypto with Fiat</p>
-              <p className="text-xs text-muted-foreground truncate">Apple Pay · Google Pay · Card · Bank Transfer — instant</p>
-            </div>
-            <span className="text-green-400 text-xs font-medium shrink-0">Buy →</span>
-          </button>
-
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
           {lpTotalValue > 0 && (
             <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
