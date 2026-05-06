@@ -76,10 +76,11 @@ overrides:
   picomatch: '>=4.0.4'
   '@xmldom/xmldom': '>=0.9.10'
   lodash: 4.18.0
-  axios: 1.15.1
+  axios: 1.15.2
   cookie: 0.7.2
   follow-redirects: 1.16.0
   elliptic: 6.6.1
+  ip-address: '>=10.2.0'
   postcss: '>=8.5.10'
   uuid: '>=14.0.0'
   nodemailer: 8.0.5
@@ -4598,10 +4599,10 @@ packages:
   axios-retry@4.5.0:
     resolution: {integrity: sha512-aR99oXhpEDGo0UuAlYcn2iGRds30k366Zfa05XWScR9QaQD4JYiP3/1Qt1u7YlefUOK+cn0CcwoL1oefavQUlQ==}
     peerDependencies:
-      axios: 1.15.1
+      axios: 1.15.2
 
-  axios@1.15.1:
-    resolution: {integrity: sha512-WOG+Jj8ZOvR0a3rAn+Tuf1UQJRxw5venr6DgdbJzngJE3qG7X0kL83CZGpdHMxEm+ZK3seAbvFsw4FfOfP9vxg==}
+  axios@1.15.2:
+    resolution: {integrity: sha512-wLrXxPtcrPTsNlJmKjkPnNPK2Ihe0hn0wGSaTEiHRPxwjvJwT3hKmXF4dpqxmPO9SoNb2FsYXj/xEo0gHN+D5A==}
 
   babel-jest@29.7.0:
     resolution: {integrity: sha512-BrvGY3xZSwEcCzKvKsCi2GgHqDqsYkOP4/by5xCgIwGXQxIEh+8ew3gmrE1y7XRR6LHZIj6yLYnUi/mm2KXKBg==}
@@ -6225,8 +6226,8 @@ packages:
   io-ts@1.10.4:
     resolution: {integrity: sha512-b23PteSnYXSONJ6JQXRAlvJhuw8KOtkqa87W4wDtvMrud/DTJd5X+NpOOI+O/zZwVq6v0VLAaJ+1EDViKEuN9g==}
 
-  ip-address@10.1.0:
-    resolution: {integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==}
+  ip-address@10.2.0:
+    resolution: {integrity: sha512-/+S6j4E9AHvW9SWMSEY9Xfy66O5PWvVEJ08O0y5JGyEKQpojb0K0GKpz/v5HJ/G0vi3D2sjGK78119oXZeE0qA==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -9427,8 +9428,8 @@ snapshots:
       '@solana-program/token': 0.9.0(@solana/kit@5.5.1(typescript@5.9.3))
       '@solana/kit': 5.5.1(typescript@5.9.3)
       abitype: 1.0.6(typescript@5.9.3)(zod@3.25.76)
-      axios: 1.15.1
-      axios-retry: 4.5.0(axios@1.15.1)
+      axios: 1.15.2
+      axios-retry: 4.5.0(axios@1.15.2)
       jose: 6.2.2
       md5: 2.3.0
       uncrypto: 0.1.3
@@ -10407,7 +10408,7 @@ snapshots:
       '@ledgerhq/errors': 6.34.0
       '@ledgerhq/logs': 6.17.0
       '@ledgerhq/types-live': 6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)
-      axios: 1.15.1
+      axios: 1.15.2
       eip55: 2.1.1
       react: 19.0.0
       react-dom: 19.0.0(react@19.0.0)
@@ -10424,7 +10425,7 @@ snapshots:
       '@ethersproject/constants': 5.8.0
       '@ethersproject/hash': 5.8.0
       '@ledgerhq/live-env': 2.33.0
-      axios: 1.15.1
+      axios: 1.15.2
       crypto-js: 4.2.0
     transitivePeerDependencies:
       - debug
@@ -10441,7 +10442,7 @@ snapshots:
       '@ledgerhq/hw-transport-mocker': 6.34.1
       '@ledgerhq/logs': 6.17.0
       '@ledgerhq/types-live': 6.105.0(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
-      axios: 1.15.1
+      axios: 1.15.2
       bignumber.js: 9.3.1
       semver: 7.7.3
     transitivePeerDependencies:
@@ -13614,13 +13615,13 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
-  axios-retry@4.5.0(axios@1.15.1):
+  axios-retry@4.5.0(axios@1.15.2):
     dependencies:
-      axios: 1.15.1
+      axios: 1.15.2
       is-retry-allowed: 2.2.0
     optional: true
 
-  axios@1.15.1:
+  axios@1.15.2:
     dependencies:
       follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.5
@@ -14956,7 +14957,7 @@ snapshots:
   express-rate-limit@8.4.1(express@5.2.1):
     dependencies:
       express: 5.2.1
-      ip-address: 10.1.0
+      ip-address: 10.2.0
 
   express@5.2.1:
     dependencies:
@@ -15474,7 +15475,7 @@ snapshots:
     dependencies:
       fp-ts: 1.19.3
 
-  ip-address@10.1.0: {}
+  ip-address@10.2.0: {}
 
   ipaddr.js@1.9.1: {}
 
