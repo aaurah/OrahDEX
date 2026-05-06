@@ -280,8 +280,14 @@ function ChainBalanceRow({
   );
 }
 
-export default function Wallet({ afterActions }: { afterActions?: React.ReactNode } = {}) {
-  const { address, network, internalEvmAddress } = useWalletStore();
+export default function Wallet({ afterActions }: { afterActions?: ReactNode } = {}) {
+  const {
+    address, network,
+    internalEvmAddress,
+    internalBsvAddress, internalBtcAddress, internalBchAddress,
+    internalSolAddress, internalTronAddress, internalXrpAddress,
+    internalLtcAddress, internalDogeAddress,
+  } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
   const { toast }         = useToast();
@@ -302,8 +308,37 @@ export default function Wallet({ afterActions }: { afterActions?: React.ReactNod
   // Derived addresses are keyed by the EVM address in localStorage — use evmAddress, not `address`
   // (when BSV is the active network, `address` is the BSV address and the lookup would miss).
   const derivedKey = evmAddress ?? address;
-  const [derived, setDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(derivedKey));
-  useEffect(() => { setDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
+  const [storedDerived, setStoredDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(derivedKey));
+  useEffect(() => { setStoredDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
+
+  // Merge localStorage derived addresses with the zustand store's internal addresses.
+  // Store values fill gaps left by the migration that cleared stale localStorage entries.
+  // Apply the same format guards the migration uses so stale store values aren't promoted:
+  //   BTC must be native SegWit ("bc1…"), BCH must be CashAddr ("bitcoincash:q…").
+  const derived = useMemo<DerivedAddresses | null>(() => {
+    const btcStore  = internalBtcAddress?.startsWith("bc1")             ? internalBtcAddress : undefined;
+    const bchStore  = internalBchAddress?.startsWith("bitcoincash:q")   ? internalBchAddress : undefined;
+    const storeAddrs: DerivedAddresses = {
+      evm:  evmAddress          ?? undefined,
+      bsv:  internalBsvAddress  ?? undefined,   // BSV "1…" format is always valid
+      btc:  btcStore,
+      bch:  bchStore,
+      sol:  internalSolAddress  ?? undefined,
+      tron: internalTronAddress ?? undefined,
+      xrp:  internalXrpAddress  ?? undefined,
+      ltc:  internalLtcAddress  ?? undefined,
+      doge: internalDogeAddress ?? undefined,
+    };
+    const hasStore = Object.values(storeAddrs).some(Boolean);
+    if (!storedDerived && !hasStore) return null;
+    // localStorage wins over store (it's always newer — the store only fills gaps)
+    return { ...storeAddrs, ...storedDerived };
+  }, [
+    storedDerived, evmAddress,
+    internalBsvAddress, internalBtcAddress, internalBchAddress,
+    internalSolAddress, internalTronAddress, internalXrpAddress,
+    internalLtcAddress, internalDogeAddress,
+  ]);
 
   const { quoteCurrency } = useSettingsStore();
   const totalUsd = useAllEvmBalances(evmAddress);
