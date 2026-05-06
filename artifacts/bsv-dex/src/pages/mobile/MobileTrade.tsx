@@ -766,7 +766,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [interval, setInterval] = useState<string>("1h");
+  const [interval, setInterval] = useState<string>(() => {
+    const saved = localStorage.getItem('orahdex-mobile-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
@@ -941,6 +945,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
     return () => { document.title = "OrahDEX"; };
   }, [lastPrice, change, base, quote]);
+
+  // Persist interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-mobile-interval', interval); }, [interval]);
 
   // Quote-currency and cross-rate computations
   const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;

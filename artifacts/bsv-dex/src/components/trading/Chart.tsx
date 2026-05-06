@@ -268,10 +268,16 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const { theme } = useThemeStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [chartType, setChartType] = useState<ChartType>('line');
+  const [chartType, setChartType] = useState<ChartType>(() => {
+    const saved = localStorage.getItem('orahdex-chart-type') as ChartType | null;
+    return saved && ['candle','heikinashi','bar','line','area','baseline'].includes(saved) ? saved : 'line';
+  });
   const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'none');
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
+
+  /* Persist chart type across refreshes */
+  useEffect(() => { localStorage.setItem('orahdex-chart-type', chartType); }, [chartType]);
 
   // Sync external subIndicator prop → internal state (allows parent to control it)
   useEffect(() => {
