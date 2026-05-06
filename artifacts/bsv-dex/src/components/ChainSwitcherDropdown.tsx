@@ -351,12 +351,16 @@ const BADGE_COLORS: Record<string, string> = {
 
 interface Props {
   inline?: boolean;
+  /** When inline=true, start the accordion pre-expanded */
+  startOpen?: boolean;
+  /** When inline=true, called after a chain is successfully switched */
+  onChainSelected?: () => void;
 }
 
-export function ChainSwitcherDropdown({ inline = false }: Props) {
+export function ChainSwitcherDropdown({ inline = false, startOpen = false, onChainSelected }: Props) {
   const { chainId, network, address, connect, provider, switchNetworkType, switchChain } = useWalletStore();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [switching, setSwitching] = useState<number | null>(null);
 
   const currentEvmChain = EVM_CHAINS.find(c => c.id === chainId);
@@ -376,7 +380,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
         const bal = await fetchEvmBalance(address!, chain.id);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false);
+        setOpen(false); onChainSelected?.();
       } catch (err: any) {
         if (err?.code === 4001 || err?.message?.toLowerCase().includes("reject")) {
           toast({ title: "Cancelled", description: "You rejected the chain switch.", variant: "destructive" });
@@ -415,7 +419,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
         } catch { /* balance unavailable — non-fatal */ }
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false);
+        setOpen(false); onChainSelected?.();
       } catch (err: any) {
         toast({ title: "Switch failed", description: err?.message || "Could not switch chain.", variant: "destructive" });
       } finally {
@@ -444,7 +448,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
       const bal = await fetchEvmBalance(address!, chain.id);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
       toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-      setOpen(false);
+      setOpen(false); onChainSelected?.();
     } catch (err: any) {
       if (err?.code === 4902 || err?.code === -32603) {
         /* Chain not in wallet — add it first */
@@ -464,7 +468,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
           const bal = await fetchEvmBalance(address!, chain.id);
           if (bal !== null) useWalletStore.getState().setBalance(bal);
           toast({ title: `${chain.name} added & connected`, description: `${chain.badge} · ${chain.symbol} · Added to your wallet` });
-          setOpen(false);
+          setOpen(false); onChainSelected?.();
         } catch (addErr: any) {
           if (addErr?.code !== 4001) {
             toast({ title: `Failed to add ${chain.name}`, description: addErr?.message || "Could not add network.", variant: "destructive" });

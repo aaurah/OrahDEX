@@ -3,7 +3,7 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History, Upload,
+  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X,
 } from "lucide-react";
 
 import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
@@ -26,6 +26,7 @@ import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
+import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -245,6 +246,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [chainSheetOpen, setChainSheetOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<"onchain" | "trades" | "bridge" | "swaps" | "buys">(
     hidePreContent ? "onchain" : "trades"
@@ -672,9 +674,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           <div>
             <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
             {network && (
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
-              </p>
+              <button
+                onClick={() => setChainSheetOpen(true)}
+                className="flex items-center gap-1 mt-0.5 group active:opacity-60 transition-opacity"
+              >
+                <p className="text-[10px] text-muted-foreground">
+                  {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
+                </p>
+                <ChevronDown size={10} className="text-muted-foreground/60 group-hover:text-muted-foreground transition-colors" />
+              </button>
             )}
           </div>
           <div className="flex items-center gap-1.5">
@@ -697,6 +705,38 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
           </div>
         </div>
+        )}
+
+        {/* ── Chain picker bottom sheet ─────────────────────────────────── */}
+        {chainSheetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-end"
+            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+            onClick={() => setChainSheetOpen(false)}
+          >
+            <div
+              className="w-full rounded-t-3xl overflow-hidden"
+              style={{ background: "var(--color-bg, hsl(var(--card)))", maxHeight: "80vh", display: "flex", flexDirection: "column" }}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Handle + header */}
+              <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
+                <div className="w-10 h-1 rounded-full bg-border mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
+                <p className="font-bold text-sm text-foreground">Select Network</p>
+                <button onClick={() => setChainSheetOpen(false)} className="p-1 rounded-full hover:bg-white/10 transition-colors">
+                  <X size={16} className="text-muted-foreground" />
+                </button>
+              </div>
+              {/* Chain list via inline accordion — starts expanded, closes sheet on selection */}
+              <div className="overflow-y-auto flex-1 px-3 pb-6">
+                <ChainSwitcherDropdown
+                  inline
+                  startOpen
+                  onChainSelected={() => setChainSheetOpen(false)}
+                />
+              </div>
+            </div>
+          </div>
         )}
 
         <div className={`px-4 ${hidePreContent && tab === null ? "space-y-0" : "space-y-4"}`}>
