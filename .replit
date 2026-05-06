@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 modules = ["nodejs-24", "python-3.11", "postgresql-16"]
+=======
+modules = ["nodejs-20", "web"]
+>>>>>>> a6c32f5f41b861fddcee6f6adcc3d03cad5f1454
 
 [[artifacts]]
 id = "artifacts/api-server"
