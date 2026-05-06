@@ -22,10 +22,14 @@ export interface StoredApiKey {
 }
 
 export function sha256Hex(s: string): string {
-  // Use HMAC-SHA-256 with a server-side secret so that a leaked hash store
-  // alone cannot be used to reverse-lookup keys without knowledge of the secret.
-  const secret = process.env["API_KEY_HMAC_SECRET"] ?? "orahdex-default-hmac-secret";
-  return crypto.createHmac("sha256", secret).update(s).digest("hex");
+  // Use scrypt (a memory-hard KDF) so the key hash has meaningful computational cost.
+  // A server-side pepper (API_KEY_HMAC_SECRET) is used as the salt, which ensures
+  // that leaked hashes from the database cannot be attacked without the server secret.
+  const pepper = process.env["API_KEY_HMAC_SECRET"];
+  if (!pepper) {
+    throw new Error("API_KEY_HMAC_SECRET environment variable is required but not set");
+  }
+  return crypto.scryptSync(s, Buffer.from(pepper), 32).toString("hex");
 }
 
 export async function loadStoredApiKeys(): Promise<StoredApiKey[]> {

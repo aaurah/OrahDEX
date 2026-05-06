@@ -554,10 +554,11 @@ router.post("/webhook/email-inbound", async (req, res) => {
 
     // Strip basic HTML tags for storage if we only got HTML
     // Use a character-by-character approach to avoid ReDoS on untrusted input
+    const MAX_EMAIL_BODY_LENGTH = 50_000;
     const cleanBody = (() => {
       let out = "";
       let inTag = false;
-      for (const ch of body.slice(0, 50_000)) {
+      for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
         if (ch === "<") { inTag = true; continue; }
         if (ch === ">" && inTag) { inTag = false; out += " "; continue; }
         if (!inTag) out += ch;

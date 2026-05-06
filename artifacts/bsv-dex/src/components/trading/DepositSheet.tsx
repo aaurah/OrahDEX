@@ -135,9 +135,9 @@ export function DepositSheet({
   const ledgerBal      = info?.ledgerBalances?.[nativeSym] ?? "0";
   const explorerBase   = info?.blockExplorer ?? "https://etherscan.io";
 
-  /** Build a safe explorer TX URL — only when the hash is a well-formed hex string */
+  /** Build a safe explorer TX URL — only when the hash is a well-formed 0x-prefixed 64-hex-char string */
   function safeExplorerUrl(base: string, hash: string): string | undefined {
-    if (/^0x[0-9a-fA-F]{40,}$/.test(hash)) {
+    if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
       return `${base}/tx/${hash}`;
     }
     return undefined;

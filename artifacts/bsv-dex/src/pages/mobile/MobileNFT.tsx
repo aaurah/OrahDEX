@@ -63,10 +63,15 @@ function Portal({ children }: { children: React.ReactNode }) {
 
 /* ─── types ─────────────────────────────────────────────────────────────────── */
 
-/** Only allow safe image URL schemes to prevent DOM XSS via javascript: or data:text/ */
+/** Only allow http/https URLs or raster-format data URIs for image src attributes.
+ *  SVG is excluded because it can contain embedded JavaScript. */
 function sanitizeImageUrl(url: string): string {
   if (!url) return "";
-  if (/^https?:\/\//i.test(url) || /^data:image\//i.test(url)) return url;
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
+  } catch { /* invalid URL */ }
   return "";
 }
 
@@ -1259,17 +1264,18 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   });
   const [avatarMode, setAvatarMode] = useState<"url" | "file">("url");
   const [coverMode, setCoverMode] = useState<"url" | "file">("url");
-  const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url || "");
-  const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
+  const [avatarPreview, setAvatarPreview] = useState(sanitizeImageUrl(profile.avatar_url || ""));
+  const [coverPreview, setCoverPreview] = useState(sanitizeImageUrl(profile.cover_url || ""));
   const [captureField, setCaptureField] = useState<null | "avatar" | "cover">(null);
 
   function applyCapture(dataUrl: string) {
+    const safeUrl = sanitizeImageUrl(dataUrl);
     if (captureField === "avatar") {
-      setAvatarPreview(dataUrl);
-      setForm(f => ({ ...f, avatar_url: dataUrl }));
+      setAvatarPreview(safeUrl);
+      setForm(f => ({ ...f, avatar_url: safeUrl }));
     } else if (captureField === "cover") {
-      setCoverPreview(dataUrl);
-      setForm(f => ({ ...f, cover_url: dataUrl }));
+      setCoverPreview(safeUrl);
+      setForm(f => ({ ...f, cover_url: safeUrl }));
     }
   }
   const [loading, setLoading] = useState(false);
@@ -1290,12 +1296,13 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       reader.onload = ev => {
         const raw = ev.target?.result as string;
         compressProfileImage(raw).then(dataUrl => {
+          const safeDataUrl = sanitizeImageUrl(dataUrl);
           if (field === "avatar") {
-            setAvatarPreview(dataUrl);
-            setForm(f => ({ ...f, avatar_url: dataUrl }));
+            setAvatarPreview(safeDataUrl);
+            setForm(f => ({ ...f, avatar_url: safeDataUrl }));
           } else {
-            setCoverPreview(dataUrl);
-            setForm(f => ({ ...f, cover_url: dataUrl }));
+            setCoverPreview(safeDataUrl);
+            setForm(f => ({ ...f, cover_url: safeDataUrl }));
           }
         });
       };
@@ -1400,7 +1407,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
           {coverMode === "url" ? (
             <input style={inp} placeholder="https://… cover image URL" value={form.cover_url}
-              onChange={e => { set("cover_url")(e); setCoverPreview(e.target.value); }} />
+              onChange={e => { set("cover_url")(e); setCoverPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -1436,7 +1443,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
           {avatarMode === "url" ? (
             <input style={inp} placeholder="https://… avatar URL" value={form.avatar_url}
-              onChange={e => { set("avatar_url")(e); setAvatarPreview(e.target.value); }} />
+              onChange={e => { set("avatar_url")(e); setAvatarPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -2318,7 +2325,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     reader.readAsDataURL(file);
   }
 
-  const effectiveImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const effectiveImage = sanitizeImageUrl(mediaMode === "file" ? (filePreview || fileData) : form.imageUrl);
   const canSubmit = form.title && (mediaMode === "url" ? !!form.imageUrl : !!fileData);
 
   async function submit() {
