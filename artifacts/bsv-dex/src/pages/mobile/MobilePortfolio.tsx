@@ -6,6 +6,8 @@ import {
   ArrowDownLeft, ArrowUpRight, History, Upload,
 } from "lucide-react";
 
+import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
+import type { OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -244,7 +246,13 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
-  const [historySubTab, setHistorySubTab] = useState<"trades" | "bridge" | "swaps" | "buys">("trades");
+  const [historySubTab, setHistorySubTab] = useState<"onchain" | "trades" | "bridge" | "swaps" | "buys">(
+    hidePreContent ? "onchain" : "trades"
+  );
+  const [onchainChainFilter, setOnchainChainFilter] = useState<number | null>(null);
+  const { data: onchainTxs = [], isLoading: onchainLoading, refetch: refetchOnchain } = useOnChainTxHistory(
+    historySubTab === "onchain" ? (ledgerAddress ?? address) : null
+  );
   const [bridgeHistory, setBridgeHistory] = useState<any[]>(() => {
     try { return JSON.parse(localStorage.getItem("le_swap_history") ?? "[]"); } catch { return []; }
   });
@@ -1221,13 +1229,14 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           {/* History tab */}
           {tab === "history" && (
             <>
-              {/* Sub-tab chips: Trades / Bridge / Coin Travel / Buys */}
+              {/* Sub-tab chips: On-Chain / Trades / Bridge / Coin Travel / Buys */}
               <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
                 {([
-                  { key: "trades", label: "Trades"       },
-                  { key: "bridge", label: "Bridge"       },
-                  { key: "swaps",  label: "Coin Travel"  },
-                  { key: "buys",   label: "Buys"         },
+                  { key: "onchain", label: "On-Chain"   },
+                  { key: "trades",  label: "Trades"      },
+                  { key: "bridge",  label: "Bridge"      },
+                  { key: "swaps",   label: "Coin Travel" },
+                  { key: "buys",    label: "Buys"        },
                 ] as const).map(({ key, label }) => (
                   <button
                     key={key}
@@ -1243,6 +1252,148 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                   </button>
                 ))}
               </div>
+
+              {/* ── ON-CHAIN wallet transactions ────────────────────────── */}
+              {historySubTab === "onchain" && (() => {
+                const chains = Array.from(new Set(onchainTxs.map(t => t.chainId)));
+                const filtered = onchainChainFilter
+                  ? onchainTxs.filter(t => t.chainId === onchainChainFilter)
+                  : onchainTxs;
+
+                const timeAgo = (ts: number) => {
+                  const s = Math.floor(Date.now() / 1000) - ts;
+                  if (s < 60)   return `${s}s ago`;
+                  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+                  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+                  return `${Math.floor(s / 86400)}d ago`;
+                };
+
+                const fmt = (n: number, decimals = 4) =>
+                  n === 0 ? "0" : n < 0.0001 ? n.toExponential(2) : n.toLocaleString(undefined, { maximumFractionDigits: decimals });
+
+                return (
+                  <>
+                    {/* Chain filter pills */}
+                    {chains.length > 1 && (
+                      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mb-3">
+                        <button
+                          onClick={() => setOnchainChainFilter(null)}
+                          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                            !onchainChainFilter ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
+                          }`}
+                        >All</button>
+                        {chains.map(cid => {
+                          const sample = onchainTxs.find(t => t.chainId === cid)!;
+                          return (
+                            <button key={cid}
+                              onClick={() => setOnchainChainFilter(onchainChainFilter === cid ? null : cid)}
+                              className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                                onchainChainFilter === cid ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
+                              }`}
+                            >
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sample.chainColor }} />
+                              {sample.chainName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Refresh button */}
+                    <div className="flex justify-end mb-2">
+                      <button
+                        onClick={() => refetchOnchain()}
+                        disabled={onchainLoading}
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <RefreshCw size={11} className={onchainLoading ? "animate-spin" : ""} />
+                        {onchainLoading ? "Loading…" : "Refresh"}
+                      </button>
+                    </div>
+
+                    {onchainLoading && filtered.length === 0 ? (
+                      <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                        <RefreshCw size={20} className="animate-spin opacity-40" />
+                        <p className="text-xs">Fetching on-chain history…</p>
+                      </div>
+                    ) : !address ? (
+                      <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                        <History size={28} className="opacity-20 mb-1" />
+                        <p className="text-sm font-medium">Connect your wallet</p>
+                        <p className="text-xs opacity-60 text-center">Connect to view on-chain transaction history</p>
+                      </div>
+                    ) : filtered.length === 0 ? (
+                      <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                        <History size={28} className="opacity-20 mb-1" />
+                        <p className="text-sm font-medium">No transactions found</p>
+                        <p className="text-xs opacity-60 text-center">On-chain transactions will appear here</p>
+                      </div>
+                    ) : (
+                      <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4 divide-y divide-border">
+                        {filtered.map((tx: OnChainTx, i: number) => {
+                          const label = tx.isTokenTransfer
+                            ? (tx.isIncoming ? `Receive ${tx.tokenSymbol ?? "Token"}` : `Send ${tx.tokenSymbol ?? "Token"}`)
+                            : tx.functionName
+                              ? tx.functionName.split("(")[0].replace(/([A-Z])/g, " $1").trim()
+                              : (tx.isIncoming ? `Receive ${tx.nativeSymbol}` : `Send ${tx.nativeSymbol}`);
+
+                          const amount = tx.isTokenTransfer
+                            ? `${tx.isIncoming ? "+" : "-"}${fmt(tx.tokenValue ?? 0)} ${tx.tokenSymbol}`
+                            : tx.valueEth > 0
+                              ? `${tx.isIncoming ? "+" : "-"}${fmt(tx.valueEth, 6)} ${tx.nativeSymbol}`
+                              : "Contract call";
+
+                          return (
+                            <a
+                              key={`${tx.hash}-${i}`}
+                              href={tx.explorerUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors active:bg-muted/50"
+                            >
+                              {/* Direction icon */}
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                tx.isError
+                                  ? "bg-red-500/10 text-red-400"
+                                  : tx.isIncoming
+                                    ? "bg-green-500/10 text-green-400"
+                                    : "bg-muted text-muted-foreground"
+                              }`}>
+                                {tx.isError
+                                  ? <span className="text-xs font-bold">!</span>
+                                  : tx.isIncoming
+                                    ? <ArrowDownLeft size={15} />
+                                    : <ArrowUpRight size={15} />}
+                              </div>
+
+                              {/* Info */}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[13px] font-semibold text-foreground truncate capitalize">{label}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tx.chainColor }} />
+                                  <p className="text-[11px] text-muted-foreground">{tx.chainName} · {timeAgo(tx.timeStamp)}</p>
+                                  {tx.isError && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">FAILED</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Amount + link */}
+                              <div className="text-right shrink-0 flex items-center gap-2">
+                                <p className={`text-xs font-semibold font-mono ${
+                                  tx.isError ? "text-muted-foreground line-through" :
+                                  tx.isIncoming ? "text-green-400" : "text-foreground"
+                                }`}>{amount}</p>
+                                <ExternalLink size={11} className="text-muted-foreground/40 shrink-0" />
+                              </div>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
 
               {/* ── BUYS (fiat → crypto purchases) ─────────────────────── */}
               {historySubTab === "buys" && (
