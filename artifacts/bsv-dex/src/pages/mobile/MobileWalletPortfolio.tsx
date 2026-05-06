@@ -47,9 +47,9 @@ export function MobileWalletPortfolio({ defaultTab = "portfolio" }: { defaultTab
 
       {/* ── Wallet segment — sovereign chains + DeFi / Orders / History ──────── */}
       <div className={topTab === "wallet" ? "flex-1" : "hidden"}>
-        <WalletContent />
-        <div className="mx-4 my-3 border-t border-border/60" />
-        <MobilePortfolio visibleTabs={["defi", "orders", "history"]} hidePreContent={true} />
+        <WalletContent afterActions={
+          <MobilePortfolio visibleTabs={["defi", "orders", "history"]} hidePreContent={true} />
+        } />
       </div>
 
     </div>
