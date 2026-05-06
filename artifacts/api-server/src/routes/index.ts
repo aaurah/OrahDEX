@@ -553,15 +553,16 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
 
     // Strip basic HTML tags for storage if we only got HTML
-    // Use a character-by-character approach to avoid ReDoS on untrusted input
+    // Use a character-by-character approach to avoid ReDoS on untrusted input.
+    // Handles nested `<` by tracking the outermost opening tag only.
     const MAX_EMAIL_BODY_LENGTH = 50_000;
     const cleanBody = (() => {
       let out = "";
-      let inTag = false;
+      let tagDepth = 0;
       for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
-        if (ch === "<") { inTag = true; continue; }
-        if (ch === ">" && inTag) { inTag = false; out += " "; continue; }
-        if (!inTag) out += ch;
+        if (ch === "<") { tagDepth++; continue; }
+        if (ch === ">" && tagDepth > 0) { tagDepth--; if (tagDepth === 0) out += " "; continue; }
+        if (tagDepth === 0) out += ch;
       }
       return out.replace(/  +/g, " ").trim();
     })();

@@ -29,7 +29,7 @@ export function sha256Hex(s: string): string {
   if (!pepper) {
     throw new Error("API_KEY_HMAC_SECRET environment variable is required but not set");
   }
-  return crypto.scryptSync(s, Buffer.from(pepper), 32).toString("hex");
+  return crypto.scryptSync(s, Buffer.from(pepper), 32, { N: 32768, r: 8, p: 1 }).toString("hex");
 }
 
 export async function loadStoredApiKeys(): Promise<StoredApiKey[]> {
