@@ -25,7 +25,7 @@ router.post("/support/contact", async (req, res) => {
       res.status(400).json({ error: "name, email, subject and message are required" });
       return;
     }
-    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRx = /^[^\s@]+@[^\s@.]+\.[^\s@.]+$/;
     if (!emailRx.test(email)) {
       res.status(400).json({ error: "Invalid email address" });
       return;

@@ -152,7 +152,7 @@ export async function fulfillOrder(paymentIntentId: string, metadata: Record<str
     if (!ok) {
       const d   = data as Record<string, unknown> | null;
       const msg = (d?.error as string) ?? (d?.message as string) ?? `LE returned HTTP ${leHttpStatus}`;
-      logger.error({ orderId, msg, leBody }, "Fulfillment: LE exchange creation failed");
+      logger.error({ orderId, msg }, "Fulfillment: LE exchange creation failed");
       await pool.query(
         `UPDATE crypto_orders SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
         [msg, orderId]

@@ -135,6 +135,14 @@ export function DepositSheet({
   const ledgerBal      = info?.ledgerBalances?.[nativeSym] ?? "0";
   const explorerBase   = info?.blockExplorer ?? "https://etherscan.io";
 
+  /** Build a safe explorer TX URL — only when the hash is a well-formed hex string */
+  function safeExplorerUrl(base: string, hash: string): string | undefined {
+    if (/^0x[0-9a-fA-F]{40,}$/.test(hash)) {
+      return `${base}/tx/${hash}`;
+    }
+    return undefined;
+  }
+
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-md bg-card border-border text-foreground">
@@ -218,7 +226,7 @@ export function DepositSheet({
                 <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                 <p className="text-sm font-semibold text-emerald-400">{verified.message}</p>
                 <a
-                  href={`${explorerBase}/tx/${txHash}`}
+                  href={safeExplorerUrl(explorerBase, txHash)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"

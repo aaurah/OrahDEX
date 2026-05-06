@@ -22,7 +22,10 @@ export interface StoredApiKey {
 }
 
 export function sha256Hex(s: string): string {
-  return crypto.createHash("sha256").update(s).digest("hex");
+  // Use HMAC-SHA-256 with a server-side secret so that a leaked hash store
+  // alone cannot be used to reverse-lookup keys without knowledge of the secret.
+  const secret = process.env["API_KEY_HMAC_SECRET"] ?? "orahdex-default-hmac-secret";
+  return crypto.createHmac("sha256", secret).update(s).digest("hex");
 }
 
 export async function loadStoredApiKeys(): Promise<StoredApiKey[]> {

@@ -182,6 +182,12 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     return;
   }
 
+  // Validate txHash is a 64-character hexadecimal string to prevent SSRF
+  if (!/^[0-9a-fA-F]{64}$/.test(txHash)) {
+    res.status(400).json({ error: "Invalid transaction hash format. Expected 64 hexadecimal characters." });
+    return;
+  }
+
   try {
     const wallet = await getOrCreateWallet();
     const overrideRows = await db

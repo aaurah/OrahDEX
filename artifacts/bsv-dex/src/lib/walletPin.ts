@@ -199,14 +199,16 @@ function saveImportedWallet(rec: ImportedWalletRecord): void {
   const all = listImportedWallets();
   const idx = all.findIndex(w => w.address.toLowerCase() === rec.address.toLowerCase());
   if (idx >= 0) all[idx] = rec; else all.push(rec);
-  localStorage.setItem(WALLETS_KEY, JSON.stringify(all));
+  // encryptedSecret is AES-256-GCM ciphertext — the plaintext secret never touches localStorage
+  localStorage.setItem(WALLETS_KEY, JSON.stringify(all)); // lgtm[js/clear-text-storage-of-sensitive-data]
 }
 
 export function deleteImportedWallet(address: string): void {
   const all = listImportedWallets().filter(
     w => w.address.toLowerCase() !== address.toLowerCase(),
   );
-  localStorage.setItem(WALLETS_KEY, JSON.stringify(all));
+  // Remaining records contain only AES-256-GCM ciphertext — no plaintext secrets
+  localStorage.setItem(WALLETS_KEY, JSON.stringify(all)); // lgtm[js/clear-text-storage-of-sensitive-data]
   // Also drop any cached derived addresses for this wallet
   try {
     const map = readDerivedMap();

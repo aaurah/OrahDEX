@@ -234,6 +234,12 @@ router.get("/bsv/balance/:address", async (req, res) => {
     // Try paymail PKI resolution to get the P2PKH address
     const [alias, domain] = raw.split("@");
 
+    // Validate domain is a safe public hostname to prevent SSRF
+    if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(domain)) {
+      res.status(400).json({ error: "Invalid paymail domain." });
+      return;
+    }
+
     // Strategy 1: Try well-known bsvalias to find pki endpoint
     const paymailDomains = [domain, `bsvalias.${domain}`];
     for (const d of paymailDomains) {
@@ -246,9 +252,11 @@ router.get("/bsv/balance/:address", async (req, res) => {
           const caps = await wk.json() as any;
           const pkiTmpl: string | undefined = caps?.capabilities?.pki;
           if (pkiTmpl) {
+            // Only follow https:// PKI template URLs to prevent SSRF
             const pkiUrl = pkiTmpl
-              .replace("{alias}", alias)
-              .replace("{domain.tld}", domain);
+              .replace("{alias}", encodeURIComponent(alias))
+              .replace("{domain.tld}", encodeURIComponent(domain));
+            if (!pkiUrl.startsWith("https://")) { break; }
             const ctrl2 = new AbortController();
             const t2 = setTimeout(() => ctrl2.abort(), 3000);
             const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
@@ -270,10 +278,12 @@ router.get("/bsv/balance/:address", async (req, res) => {
 
     // Strategy 2: Try well-known direct PKI endpoint patterns
     if (!bsvAddress) {
+      const encodedAlias = encodeURIComponent(alias);
+      const encodedDomain = encodeURIComponent(domain);
       const pkiPatterns = [
-        `https://bsvalias.${domain}/${alias}@${domain}/id-key`,
-        `https://bsvalias.${domain}/${alias}@${domain}/public-key`,
-        `https://${domain}/${alias}@${domain}/id-key`,
+        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/id-key`,
+        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/public-key`,
+        `https://${domain}/${encodedAlias}@${encodedDomain}/id-key`,
       ];
       for (const url of pkiPatterns) {
         try {
@@ -352,6 +362,8 @@ router.get("/bsv/balance/:address", async (req, res) => {
 router.get("/bsv/utxos/:address", async (req, res) => {
   const address = req.params.address ?? "";
   if (!address) { res.status(400).json({ error: "address required" }); return; }
+  // Validate BSV address format to prevent SSRF
+  if (!isBsvAddress(address)) { res.status(400).json({ error: "invalid BSV address" }); return; }
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -541,7 +553,17 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
 
     // Strip basic HTML tags for storage if we only got HTML
-    const cleanBody = body.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+    // Use a character-by-character approach to avoid ReDoS on untrusted input
+    const cleanBody = (() => {
+      let out = "";
+      let inTag = false;
+      for (const ch of body.slice(0, 50_000)) {
+        if (ch === "<") { inTag = true; continue; }
+        if (ch === ">" && inTag) { inTag = false; out += " "; continue; }
+        if (!inTag) out += ch;
+      }
+      return out.replace(/  +/g, " ").trim();
+    })();
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });

@@ -53,6 +53,12 @@ export function mockupPreviewPlugin(): Plugin {
 
   function generateSource(components: Array<DiscoveredComponent>): string {
     const entries = components
+      .filter((c) => {
+        // Only include components with safe relative paths to prevent code injection
+        const safePath = /^[./a-zA-Z0-9_-]+$/.test(c.importPath) && c.importPath.startsWith("../");
+        const safeKey  = /^[./a-zA-Z0-9_-]+$/.test(c.globKey);
+        return safePath && safeKey;
+      })
       .map(
         (c) =>
           `  ${JSON.stringify(c.globKey)}: () => import(${JSON.stringify(c.importPath)})`,

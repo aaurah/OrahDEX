@@ -60,7 +60,13 @@ app.use(
   }),
 );
 app.use(cors({
-  origin: "*",
+  // Allow specific origins from an env variable, or default to known production domains.
+  // Set ALLOWED_ORIGINS to a comma-separated list of allowed origins for your deployment.
+  origin: process.env["ALLOWED_ORIGINS"]
+    ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
+    : (process.env["NODE_ENV"] === "production"
+        ? ["https://orahdex.org", "https://www.orahdex.org"]
+        : true),
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
 }));

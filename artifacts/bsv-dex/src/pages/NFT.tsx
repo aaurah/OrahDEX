@@ -618,6 +618,13 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [cat, setCat] = useState("art");
   const [chain, setChain] = useState("BSV");
   const [imageUrl, setImageUrl] = useState("");
+
+  /** Only allow safe image URL schemes to prevent DOM XSS via javascript: or data:text/ */
+  function sanitizeImageUrl(url: string): string {
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url) || /^data:image\//i.test(url)) return url;
+    return "";
+  }
   const [mintPrice, setMintPrice] = useState("0.001");
   const [maxSupply, setMaxSupply] = useState("");
   const [loading, setLoading] = useState(false);
@@ -677,7 +684,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <label className="text-xs text-muted-foreground font-semibold">Image</label>
           {imageUrl && (
             <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "1/1", maxWidth: 280 }}>
-              <img src={imageUrl} alt="" className="w-full h-full object-cover"
+              <img src={sanitizeImageUrl(imageUrl)} alt="" className="w-full h-full object-cover"
                    onError={() => setImageUrl("")} />
             </div>
           )}
