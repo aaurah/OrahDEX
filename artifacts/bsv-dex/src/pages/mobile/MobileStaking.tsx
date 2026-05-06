@@ -351,9 +351,17 @@ const LOCK_PERIODS = [
 ];
 
 function EarnTab() {
-  const { address, network } = useWalletStore();
+  const { address, network, internalEvmAddress } = useWalletStore();
   const { open: openWallet } = useWalletModalStore();
   const { toast } = useToast();
+
+  // External EVM wallets (non-Orah 0x addresses) must sign before staking
+  const isExternalEvm = !!(
+    address &&
+    network === "evm" &&
+    /^0x[0-9a-fA-F]{40}$/.test(address) &&
+    address.toLowerCase() !== (internalEvmAddress ?? "").toLowerCase()
+  );
 
   const [coins, setCoins] = useState<PosCoin[]>([]);
   const [positions, setPositions] = useState<StakingPosition[]>([]);
@@ -411,19 +419,68 @@ function EarnTab() {
     }
     setStaking(true);
     try {
+      // ── Step 1: For external EVM wallets, obtain a signing challenge ────────
+      let nonce: string | undefined;
+      let signature: string | undefined;
+
+      if (isExternalEvm) {
+        const challengeRes = await fetch(`${API_BASE}/api/staking/challenge`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            walletAddress: address,
+            coin:          selectedCoin.symbol,
+            amount:        String(parseFloat(amount)),
+            lockDays,
+          }),
+        });
+        if (!challengeRes.ok) {
+          const e = await challengeRes.json().catch(() => ({})) as any;
+          throw new Error(e.error ?? "Failed to obtain staking challenge");
+        }
+        const challenge = await challengeRes.json() as { nonce: string; message: string };
+
+        // ── Step 2: Sign the challenge message with the connected wallet ──────
+        toast({
+          title:       "Sign to confirm",
+          description: "Your wallet will ask you to sign a message to authorise the stake.",
+        });
+        try {
+          const { signMessage } = await import("@wagmi/core");
+          const { getWagmiConfig } = await import("@/lib/reown");
+          const cfg = getWagmiConfig();
+          if (!cfg) throw new Error("Wallet not initialised. Please refresh and reconnect.");
+          signature = await signMessage(cfg, {
+            account: address as `0x${string}`,
+            message: challenge.message,
+          });
+          nonce = challenge.nonce;
+        } catch (err: any) {
+          if (err?.code === 4001 || err?.code === "ACTION_REJECTED" || /rejected/i.test(err?.message)) {
+            throw new Error("Signature rejected — stake cancelled.");
+          }
+          throw new Error(err?.message ?? "Wallet signature failed");
+        }
+      }
+
+      // ── Step 3: Submit the stake (with signature for EVM, without for others) ─
       const res = await fetch(`${API_BASE}/api/staking/stake`, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           walletAddress: address,
-          coin: selectedCoin.symbol,
-          amount: parseFloat(amount),
+          coin:          selectedCoin.symbol,
+          amount:        parseFloat(amount),
           lockDays,
+          ...(nonce && signature ? { nonce, signature } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Stake failed");
-      toast({ title: `Staked ${amount} ${selectedCoin.symbol}`, description: `Earning ${effectiveApy.toFixed(2)}% APY for ${lockDays} days` });
+      toast({
+        title:       `Staked ${amount} ${selectedCoin.symbol}`,
+        description: `Earning ${effectiveApy.toFixed(2)}% APY for ${lockDays} days`,
+      });
       setAmount("");
       await fetchPositions();
     } catch (err: any) {

@@ -885,3 +885,104 @@ export function buildExchangeAuthMessage(params: {
     `Nonce: ${params.nonce}`,
   ].join("\n");
 }
+
+// ── Staking nonce store ──────────────────────────────────────────────────────
+// Single-use nonces for POST /staking/stake (EVM wallets only).
+// Key: walletAddress.toLowerCase()
+
+interface StakeNonce {
+  nonce:     string;
+  message:   string;
+  coin:      string;
+  amount:    string;
+  lockDays:  number;
+  expiresAt: number;
+}
+
+const stakeNonces = new Map<string, StakeNonce>();
+
+const STAKE_NONCE_TTL_MS = 5 * 60 * 1_000;
+const STAKE_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of stakeNonces.entries()) {
+    if (v.expiresAt < now) stakeNonces.delete(k);
+  }
+}, STAKE_NONCE_SWEEP).unref();
+
+/**
+ * Issue a single-use, 5-minute staking challenge for an EVM wallet.
+ * The client must sign the returned `message` with personal_sign and include
+ * `signature` + `nonce` in POST /staking/stake.
+ * The challenge is bound to (coin, amount, lockDays) to prevent tampering.
+ */
+export function issueStakeChallenge(params: {
+  walletAddress: string;
+  coin:          string;
+  amount:        string;
+  lockDays:      number;
+}): { nonce: string; message: string } {
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const ts      = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX staking\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Coin: ${params.coin}\n` +
+    `Amount: ${params.amount}\n` +
+    `Lock Period: ${params.lockDays} days\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.\n` +
+    `Your funds will be locked for the specified period.`;
+
+  stakeNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    coin:      params.coin,
+    amount:    params.amount,
+    lockDays:  params.lockDays,
+    expiresAt: Date.now() + STAKE_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a staking challenge signature.
+ * Bound to (coin, lockDays) — mismatch is rejected even with a valid signature.
+ * Consumes the nonce on success (single-use).
+ * Throws on any failure — wrap with try/catch and respond 401 to the client.
+ */
+export function verifyStakeSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  coin:          string;
+  lockDays:      number;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = stakeNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Staking challenge expired or not found. " +
+      "Request a fresh challenge via POST /staking/challenge.",
+    );
+  }
+  if (stored.nonce !== params.nonce) {
+    throw new Error("Staking nonce mismatch.");
+  }
+  if (stored.coin !== params.coin) {
+    throw new Error(
+      `Staking challenge was issued for '${stored.coin}', not '${params.coin}'. ` +
+      `Request a fresh challenge.`,
+    );
+  }
+  if (String(stored.lockDays) !== String(params.lockDays)) {
+    throw new Error("Staking lock period mismatch. Request a fresh challenge.");
+  }
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  stakeNonces.delete(addr);
+}
