@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Wallet as WalletIcon, Send, Download, ArrowDownUp, Copy, Check,
+  Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
 } from "lucide-react";
 import { useLocation } from "wouter";
@@ -10,7 +10,6 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getImportedWallet, getDerivedAddresses, type DerivedAddresses } from "@/lib/walletPin";
 import { listPasskeyWallets } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
-import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -89,13 +88,12 @@ function addressForChain(
 }
 
 function ChainBalanceRow({
-  chain, address, network, derived, onSend, onReceive,
+  chain, address, network, derived, onReceive,
 }: {
   chain: ChainRow;
   address: string | null;
   network: string | null;
   derived: DerivedAddresses | null;
-  onSend: (chain: ChainRow) => void;
   onReceive: (chain: ChainRow) => void;
 }) {
   // Live EVM balance fetch (only for live EVM chains, only when address present)
@@ -153,14 +151,6 @@ function ChainBalanceRow({
         >
           <Download size={14} />
         </button>
-        <button
-          onClick={() => onSend(chain)}
-          disabled={chain.family !== "evm" && chain.family !== "bsv"}
-          className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center"
-          title={chain.family === "evm" || chain.family === "bsv" ? "Send" : "Send — coming next phase"}
-        >
-          <Send size={14} />
-        </button>
       </div>
     </div>
   );
@@ -184,7 +174,6 @@ export default function Wallet() {
 
   const [receiveOpen, setReceiveOpen]       = useState(false);
   const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
-  const [withdrawCfg, setWithdrawCfg]       = useState<{ open: boolean; chain?: ChainRow }>({ open: false });
   const [revealOpen, setRevealOpen]         = useState(false);
   const [copied, setCopied]                 = useState(false);
 
@@ -244,8 +233,7 @@ export default function Wallet() {
             : <Copy size={14} className="text-muted-foreground group-hover:text-foreground" />}
         </button>
 
-        <div className="grid grid-cols-4 gap-2 mt-5">
-          <ActionButton icon={Send}       label="Send"    onClick={() => setWithdrawCfg({ open: true, chain: CHAINS[0] })} />
+        <div className="grid grid-cols-3 gap-2 mt-5">
           <ActionButton icon={Download}   label="Receive" onClick={() => setReceiveOpen(true)} />
           <ActionButton icon={ArrowDownUp} label="Swap"   onClick={() => navigate("/swap")} />
           <ActionButton icon={Sparkles}   label="Buy"     onClick={() => navigate("/swap")} />
@@ -291,7 +279,6 @@ export default function Wallet() {
               address={address}
               network={network}
               derived={derived}
-              onSend={(chain)   => setWithdrawCfg({ open: true, chain })}
               onReceive={(chain) => {
                 if (chain.family === "evm") {
                   setReceiveOpen(true);
@@ -324,19 +311,6 @@ export default function Wallet() {
         hint={canBackup ? undefined : "Connect a sovereign Orah wallet (passkey or seed phrase) to derive an on-chain address for this network."}
       />
       <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address} />
-      {withdrawCfg.open && withdrawCfg.chain && (
-        <WithdrawSheet
-          open={withdrawCfg.open}
-          onClose={() => setWithdrawCfg({ open: false })}
-          walletAddress={address}
-          asset={withdrawCfg.chain.symbol}
-          available={0}
-          network={withdrawCfg.chain.id}
-          networkLabel={withdrawCfg.chain.name}
-          isOrahWallet={!!imported}
-          initialTab="withdraw"
-        />
-      )}
     </div>
   );
 }
