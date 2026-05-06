@@ -37,7 +37,7 @@ router.post("/social/ai/image", aiImageLimiter, async (req, res) => {
     }
     const size: Size = VALID_SIZES.has(sizeRaw as Size) ? (sizeRaw as Size) : "1024x1024";
 
-    const buf = await generateImageBuffer(promptRaw, size as any);
+    const buf = await generateImageBuffer(promptRaw, size);
     const dataUrl = `data:image/png;base64,${buf.toString("base64")}`;
     res.json({ image: dataUrl, size });
   } catch (err: any) {
