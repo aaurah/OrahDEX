@@ -672,7 +672,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         {!hidePreContent && (
         <div className="px-4 pt-safe-top pb-3 pt-6 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
+            <h1 className="text-xl font-bold text-foreground">Chain Balance</h1>
             {network && (
               <button
                 onClick={() => setChainSheetOpen(true)}
