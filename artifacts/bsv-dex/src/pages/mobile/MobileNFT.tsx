@@ -2524,12 +2524,22 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
         {error && <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
 
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
+
         <button onClick={submit} disabled={loading || !canSubmit}
           className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
           {loading
             ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-            : <><Zap size={15} /> Inscribe on BSV</>
+            : !address
+              ? <><Lock size={15} /> Connect Wallet to Publish</>
+              : <><Zap size={15} /> Inscribe on BSV</>
           }
         </button>
       </div>
