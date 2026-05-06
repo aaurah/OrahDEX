@@ -15,6 +15,7 @@ import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/
 import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
@@ -327,11 +328,5 @@ export function startLiquidityBot(): void {
     .then(() => runCycle())
     .catch(err => logger.warn({ err }, "Liquidity bot: seed-then-first-cycle failed"));
 
-  setInterval(async () => {
-    if (_busy) { logger.warn("Liquidity bot: previous cycle still running, skipping"); return; }
-    _busy = true;
-    try { await runCycle(); }
-    catch (err) { logger.warn({ err }, "Liquidity bot cycle error"); }
-    finally { _busy = false; }
-  }, 120_000);
+  guardedInterval("liquidity-bot", runCycle, 120_000, { timeoutMs: 110_000 });
 }

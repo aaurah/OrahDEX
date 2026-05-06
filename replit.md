@@ -51,6 +51,7 @@ lib/
 
 - **Non-custodial first**: EVM self-custody wallets read on-chain balances via viem; internal Orah wallets use API ledger. `usesApiBalance = isOrahWallet && !isEvm`.
 - **QuickNode Streams replaces polling**: `POST /api/webhooks/quicknode` receives HTLC `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events in real time. Polling watchers remain as fallback (belt-and-suspenders).
+- **Self-healing worker engine** (`lib/selfHealing.ts`): all background services (price-updater, liquidity-bot, futures-funding/liquidation, bsv/evm-deposit-watchers) run via `guardedInterval()` — a drop-in replacement for `setInterval+_busy` that force-releases stuck locks after a per-service timeout, tracks consecutive failures with exponential skip-backoff, and reports per-service health to a central registry. `/api/health` returns structured status (healthy/degraded/stuck/dead) with 503 when any service is dead. An order reconciler auto-cancels orders stuck open >30 min every 5 min.
 - **Webhook registered before express.json()**: Raw body buffer is required for HMAC-SHA256 signature verification (`x-qn-signature` header).
 - **HTLC + Escrow share one contract address** on ETH mainnet: `0xeE234cEb85697b64800E696699b7841e00413B4f`.
 - **Order funding refs**: `evm-sig:` or `evm-balance:` prefix → skip internal ledger settlement; `bothEvmExternal` path emits `settlement_pending` instead.

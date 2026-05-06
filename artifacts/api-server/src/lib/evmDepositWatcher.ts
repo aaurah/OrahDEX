@@ -25,6 +25,7 @@
 import { createPublicClient, http, type Address } from "viem";
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 
 const POLL_INTERVAL_MS = 90_000;
 const MAX_ADDRESSES_PER_CHAIN_PER_TICK = 25;
@@ -135,7 +136,7 @@ function clientFor(chain: WatchChain) {
 }
 
 const _cursors = new Map<number, number>();
-let _busy = false;
+// _busy lock managed by guardedInterval (selfHealing.ts)
 
 async function tableExists(name: string): Promise<boolean> {
   const { rows } = await pool.query<{ exists: boolean }>(
@@ -250,13 +251,8 @@ export function startEvmDepositWatcher(): void {
     },
     "EVM deposit watcher starting",
   );
-  const guardedTick = async () => {
-    if (_busy) { logger.warn("EVM deposit watcher: previous tick still running, skipping"); return; }
-    _busy = true;
-    try { await scanTick(); }
-    catch (err) { logger.warn({ err }, "EVM deposit watcher tick error"); }
-    finally { _busy = false; }
-  };
-  setTimeout(guardedTick, 8_000);
-  setInterval(guardedTick, POLL_INTERVAL_MS);
+  guardedInterval("evm-deposit-watcher", scanTick, POLL_INTERVAL_MS, {
+    timeoutMs: POLL_INTERVAL_MS - 10_000,
+    initialDelayMs: 8_000,
+  });
 }
