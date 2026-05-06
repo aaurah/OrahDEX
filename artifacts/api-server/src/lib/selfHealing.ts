@@ -37,13 +37,13 @@ export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
   return Array.from(registry.values()).map(e => {
     const staleSinceMs = e.lastRunAt ? now - e.lastRunAt.getTime() : null;
-    const staleness    = staleSinceMs ?? Infinity;
+    const staleness    = staleSinceMs ?? 0;   // null = never run yet → not stale
 
     let status: ServiceHealth["status"] = "healthy";
-    if (e.consecutiveFails >= 10)          status = "dead";
-    else if (staleness > e.intervalMs * 5) status = "dead";
-    else if (e.consecutiveFails >= 3)      status = "degraded";
-    else if (staleness > e.intervalMs * 3) status = "stuck";
+    if (e.consecutiveFails >= 10)                                    status = "dead";
+    else if (e.lastRunAt && staleness > e.intervalMs * 5)            status = "dead";
+    else if (e.consecutiveFails >= 3)                                 status = "degraded";
+    else if (e.lastRunAt && staleness > e.intervalMs * 3)            status = "stuck";
 
     return { ...e, staleSinceMs, status };
   });
