@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
-  ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
+  ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles, RefreshCw,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
-import { getImportedWallet, getDerivedAddresses, type DerivedAddresses } from "@/lib/walletPin";
-import { listPasskeyWallets } from "@/lib/passkeyWallet";
+import { getImportedWallet, getDerivedAddresses, saveDerivedAddresses, type DerivedAddresses } from "@/lib/walletPin";
+import { listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
@@ -287,6 +287,9 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     internalBsvAddress, internalBtcAddress, internalBchAddress,
     internalSolAddress, internalTronAddress, internalXrpAddress,
     internalLtcAddress, internalDogeAddress,
+    setInternalBsvAddress, setInternalBtcAddress, setInternalBchAddress,
+    setInternalSolAddress, setInternalTronAddress, setInternalXrpAddress,
+    setInternalLtcAddress, setInternalDogeAddress,
   } = useWalletStore();
   const openWalletModal   = useWalletModalStore(s => s.open);
   const [, navigate]      = useLocation();
@@ -347,6 +350,38 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
   const [revealOpen, setRevealOpen]         = useState(false);
   const [copied, setCopied]                 = useState(false);
+  const [refreshing, setRefreshing]         = useState(false);
+
+  // True when a sovereign wallet has unresolved chain addresses (needs re-derive).
+  const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
+
+  const refreshAddresses = async () => {
+    setRefreshing(true);
+    try {
+      const result = await loginWithPasskey();
+      if (result.chains) {
+        const c = result.chains;
+        const key = c.evm;
+        if (c.bsv)  setInternalBsvAddress(c.bsv);
+        if (c.btc)  setInternalBtcAddress(c.btc);
+        if (c.bch)  setInternalBchAddress(c.bch);
+        if (c.sol)  setInternalSolAddress(c.sol);
+        if (c.tron) setInternalTronAddress(c.tron);
+        if (c.xrp)  setInternalXrpAddress(c.xrp);
+        if (c.ltc)  setInternalLtcAddress(c.ltc);
+        if (c.doge) setInternalDogeAddress(c.doge);
+        // Persist fresh addresses to localStorage so they survive future sessions.
+        saveDerivedAddresses(key, c);
+        setStoredDerived(getDerivedAddresses(key));
+        toast({ title: "All chain addresses refreshed" });
+      }
+    } catch {
+      // Passkey not available — fall back to wallet modal reconnect.
+      openWalletModal();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const copyAddress = async () => {
     if (!address) return;
@@ -449,9 +484,21 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       {/* ── All chains ── */}
       <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest px-1 mb-2">
-          Chains
-        </p>
+        <div className="flex items-center justify-between px-1 mb-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+            Chains
+          </p>
+          {hasMissingChains && (
+            <button
+              onClick={refreshAddresses}
+              disabled={refreshing}
+              className="flex items-center gap-1 text-[10px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "Updating…" : "Refresh addresses"}
+            </button>
+          )}
+        </div>
         <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
           {CHAINS.map(c => (
             <ChainBalanceRow
