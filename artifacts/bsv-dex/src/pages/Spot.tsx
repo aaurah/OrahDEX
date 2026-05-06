@@ -9,6 +9,7 @@ import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
+import type { ExternalFlash } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
@@ -141,6 +142,7 @@ export function SpotTrading() {
   const [candleInterval, setCandleInterval] = useState("1h");
   const [marketSearch, setMarketSearch] = useState("");
   const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
+  const [obFlash, setObFlash] = useState<ExternalFlash | null>(null);
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
   const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
@@ -176,6 +178,15 @@ export function SpotTrading() {
   const handleOrderBookFill = (fill: OrderBookFill) => {
     setOrderBookFill(fill as OrderFormFill);
   };
+
+  // Flash the OrderBook spread row when a trade is placed or LE swap confirmed
+  const handleTradeFlash = useCallback((fill: { price: number; side: "buy" | "sell"; source?: "order" | "letsexchange" }) => {
+    setObFlash({ price: fill.price, side: fill.side, ts: Date.now(), source: fill.source ?? "order" });
+  }, []);
+
+  const handleLeExchangeCreated = useCallback((fill: { price: number; side: "buy" | "sell" }) => {
+    handleTradeFlash({ ...fill, source: "letsexchange" });
+  }, [handleTradeFlash]);
 
   // Handle both dash-separated (/trade/BTC-USDT) and URL-encoded slash (/trade/BTC%2FUSDT)
   const decodedRaw = decodeURIComponent(rawSymbol);
@@ -981,6 +992,7 @@ export function SpotTrading() {
             } : null}
             hasInternalLiquidity={hasRealOB}
             onLeSwap={handleLeSwap}
+            externalFlash={obFlash}
           />
         </div>
 
@@ -1048,7 +1060,7 @@ export function SpotTrading() {
           <div className="flex-1 overflow-y-auto min-h-0">
             {tradeMode === "order" ? (
               <>
-                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
                 {/* Swap nudge when no internal OB liquidity */}
                 {!hasRealOB && leRateData && (
                   <button
@@ -1101,6 +1113,7 @@ export function SpotTrading() {
                   initialTo={quote}
                   walletAddress={address}
                   onConnectWallet={openWalletModal}
+                  onExchangeCreated={handleLeExchangeCreated}
                 />
               </div>
             )}
@@ -1151,7 +1164,7 @@ export function SpotTrading() {
           )}
 
           {tradeMode === "order" ? (
-            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
           ) : (
             <div className="p-3">
               <LetsExchangePanel
@@ -1160,6 +1173,7 @@ export function SpotTrading() {
                 initialTo={quote}
                 walletAddress={address}
                 onConnectWallet={openWalletModal}
+                onExchangeCreated={handleLeExchangeCreated}
               />
             </div>
           )}

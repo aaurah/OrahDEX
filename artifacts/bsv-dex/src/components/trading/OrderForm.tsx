@@ -327,11 +327,12 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced }: {
+export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash }: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
+  onTradeFlash?: (fill: { price: number; side: "buy" | "sell" }) => void;
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
@@ -655,6 +656,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         if (address) fetchApiBalances(base, quote, address);
         refreshBalances();
         useWalletStore.getState().triggerBalanceRefresh();
+        // Flash the order book at the fill price
+        onTradeFlash?.({ price: avgFillPrice, side: side as "buy" | "sell" });
         setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
