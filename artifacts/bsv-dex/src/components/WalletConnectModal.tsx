@@ -228,6 +228,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const setInternalXrpAddress  = useWalletStore((s) => s.setInternalXrpAddress);
   const setInternalLtcAddress  = useWalletStore((s) => s.setInternalLtcAddress);
   const setInternalDogeAddress = useWalletStore((s) => s.setInternalDogeAddress);
+  const setInternalTronAddress = useWalletStore((s) => s.setInternalTronAddress);
   const walletState = useWalletStore();
 
   useEffect(() => {
@@ -392,6 +393,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
       if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
       if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.tron) setInternalTronAddress(result.chains.tron);
       if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
       if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
       if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
@@ -418,6 +420,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
       if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
       if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.tron) setInternalTronAddress(result.chains.tron);
       if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
       if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
       if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
@@ -1061,6 +1064,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      setInternalTronAddress(addrs.tron);
       setInternalXrpAddress(addrs.xrp);
       setInternalLtcAddress(addrs.ltc);
       setInternalDogeAddress(addrs.doge);
@@ -1143,12 +1147,13 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      setInternalTronAddress(addrs.tron);
       setInternalXrpAddress(addrs.xrp);
       setInternalLtcAddress(addrs.ltc);
       setInternalDogeAddress(addrs.doge);
       saveDerivedAddresses(address, {
         evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
-        xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+        tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
       });
     }
     setImportStep("done");

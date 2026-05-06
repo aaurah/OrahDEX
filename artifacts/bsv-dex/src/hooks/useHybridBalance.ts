@@ -63,7 +63,7 @@ async function fetchEthMainnet(address: string): Promise<number> {
   return 0;
 }
 
-async function fetchBtcNative(address: string): Promise<number> {
+export async function fetchBtcNative(address: string): Promise<number> {
   try {
     const res = await fetch(`https://blockstream.info/api/address/${address}`);
     if (!res.ok) return 0;
@@ -74,7 +74,7 @@ async function fetchBtcNative(address: string): Promise<number> {
   } catch { return 0; }
 }
 
-async function fetchSolNative(address: string): Promise<number> {
+export async function fetchSolNative(address: string): Promise<number> {
   try {
     const res = await fetch("https://api.mainnet-beta.solana.com", {
       method: "POST",
@@ -86,7 +86,7 @@ async function fetchSolNative(address: string): Promise<number> {
   } catch { return 0; }
 }
 
-async function fetchBchNative(address: string): Promise<number> {
+export async function fetchBchNative(address: string): Promise<number> {
   try {
     const res = await fetch(`https://api.blockchair.com/bitcoin-cash/dashboards/address/${address}`);
     if (!res.ok) return 0;
@@ -94,6 +94,60 @@ async function fetchBchNative(address: string): Promise<number> {
     const key  = Object.keys(json?.data ?? {})[0];
     const bal  = json?.data?.[key]?.address?.balance ?? 0;
     return bal / 1e8;
+  } catch { return 0; }
+}
+
+export async function fetchXrpNative(address: string): Promise<number> {
+  try {
+    const res = await fetch("https://xrplcluster.com/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method: "account_info", params: [{ account: address, ledger_index: "validated" }] }),
+    });
+    const json = await res.json();
+    const drops = json?.result?.account_data?.Balance;
+    return drops ? Number(drops) / 1e6 : 0;
+  } catch { return 0; }
+}
+
+export async function fetchLtcNative(address: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.blockchair.com/litecoin/dashboards/address/${address}`);
+    if (!res.ok) return 0;
+    const json = await res.json();
+    const key  = Object.keys(json?.data ?? {})[0];
+    const bal  = json?.data?.[key]?.address?.balance ?? 0;
+    return bal / 1e8;
+  } catch { return 0; }
+}
+
+export async function fetchDogeNative(address: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.blockchair.com/dogecoin/dashboards/address/${address}`);
+    if (!res.ok) return 0;
+    const json = await res.json();
+    const key  = Object.keys(json?.data ?? {})[0];
+    const bal  = json?.data?.[key]?.address?.balance ?? 0;
+    return bal / 1e8;
+  } catch { return 0; }
+}
+
+export async function fetchTrxNative(address: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.trongrid.io/v1/accounts/${address}`);
+    if (!res.ok) return 0;
+    const json = await res.json();
+    const bal  = json?.data?.[0]?.balance ?? 0;
+    return bal / 1e6;
+  } catch { return 0; }
+}
+
+export async function fetchBsvNative(address: string): Promise<number> {
+  try {
+    const res = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${address}/balance`);
+    if (!res.ok) return 0;
+    const json = await res.json();
+    return ((json?.confirmed ?? 0) + (json?.unconfirmed ?? 0)) / 1e8;
   } catch { return 0; }
 }
 

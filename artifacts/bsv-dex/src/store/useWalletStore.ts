@@ -51,6 +51,8 @@ interface WalletState {
   internalLtcAddress: string | null;
   /** DOGE address for HD-wallet users (m/44'/3'/0'/0/0 — P2PKH version 0x1E, starts with "D"). */
   internalDogeAddress: string | null;
+  /** TRON address for HD-wallet users (same secp256k1 key as EVM, Tron Base58Check 0x41 prefix → "T…"). */
+  internalTronAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
@@ -64,6 +66,7 @@ interface WalletState {
   setInternalXrpAddress: (addr: string | null) => void;
   setInternalLtcAddress: (addr: string | null) => void;
   setInternalDogeAddress: (addr: string | null) => void;
+  setInternalTronAddress: (addr: string | null) => void;
   /** Switch the active network for multi-chain wallets (HD/passkey). */
   switchNetworkType: (network: WalletNetwork) => void;
   /**
@@ -124,6 +127,7 @@ export const useWalletStore = create<WalletState>()(
       internalXrpAddress: null,
       internalLtcAddress: null,
       internalDogeAddress: null,
+      internalTronAddress: null,
       balanceRefreshKey: 0,
 
       connect: (wallet) =>
@@ -151,6 +155,7 @@ export const useWalletStore = create<WalletState>()(
             internalXrpAddress:  sameProvider && sameAddress ? s.internalXrpAddress  : null,
             internalLtcAddress:  sameProvider && sameAddress ? s.internalLtcAddress  : null,
             internalDogeAddress: sameProvider && sameAddress ? s.internalDogeAddress : null,
+            internalTronAddress: sameProvider && sameAddress ? s.internalTronAddress : null,
           };
         }),
 
@@ -170,6 +175,7 @@ export const useWalletStore = create<WalletState>()(
           internalXrpAddress: null,
           internalLtcAddress: null,
           internalDogeAddress: null,
+          internalTronAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
@@ -182,6 +188,7 @@ export const useWalletStore = create<WalletState>()(
       setInternalXrpAddress:  (internalXrpAddress)  => set({ internalXrpAddress }),
       setInternalLtcAddress:  (internalLtcAddress)  => set({ internalLtcAddress }),
       setInternalDogeAddress: (internalDogeAddress) => set({ internalDogeAddress }),
+      setInternalTronAddress: (internalTronAddress) => set({ internalTronAddress }),
 
       /**
        * switchChain — update ONLY the EVM chainId.
@@ -204,6 +211,7 @@ export const useWalletStore = create<WalletState>()(
           const xrpAddr  = s.internalXrpAddress   ?? (s.network === 'xrp'                               ? s.address : null);
           const ltcAddr  = s.internalLtcAddress   ?? (s.network === 'ltc'                               ? s.address : null);
           const dogeAddr = s.internalDogeAddress  ?? (s.network === 'doge'                              ? s.address : null);
+          const tronAddr = s.internalTronAddress  ?? (s.network === 'tron'                              ? s.address : null);
 
           let newAddress: string | null = null;
           if (network === 'evm')       newAddress = evmAddr;
@@ -215,6 +223,7 @@ export const useWalletStore = create<WalletState>()(
           if (network === 'xrp')       newAddress = xrpAddr;
           if (network === 'ltc')       newAddress = ltcAddr;
           if (network === 'doge')      newAddress = dogeAddr;
+          if (network === 'tron')      newAddress = tronAddr;
           if (!newAddress) return {}; // no address available for this network — no-op
           return {
             network,
@@ -233,6 +242,7 @@ export const useWalletStore = create<WalletState>()(
             internalXrpAddress:  xrpAddr,
             internalLtcAddress:  ltcAddr,
             internalDogeAddress: dogeAddr,
+            internalTronAddress: tronAddr,
           };
         }),
 

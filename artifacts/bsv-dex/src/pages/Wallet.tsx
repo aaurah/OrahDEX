@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import { getImportedWallet, getDerivedAddresses, type DerivedAddresses } from "@/lib/walletPin";
 import { listPasskeyWallets } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
@@ -111,74 +112,171 @@ function addressForChain(
   return null;
 }
 
-function ChainBalanceRow({
-  chain, address, evmAddress, network, derived, quoteCurrency, onReceive,
+// ─── Shared row shell ────────────────────────────────────────────────────────
+
+function ChainRowShell({
+  chain, chainAddr, balanceSlot, onReceive,
 }: {
   chain: ChainRow;
-  address: string | null;     // active network address (may be BSV when BSV is selected)
-  evmAddress: string | null;  // always the EVM 0x address — used for all EVM balance queries
-  network: string | null;
-  derived: DerivedAddresses | null;
-  quoteCurrency: string;
-  onReceive: (chain: ChainRow) => void;
+  chainAddr: string | null;
+  balanceSlot: ReactNode;
+  onReceive: () => void;
 }) {
-  // Live EVM balance fetch — always uses the EVM 0x address regardless of active network
-  const useEvm = chain.family === "evm" && chain.live && !!evmAddress;
-  const { balances } = useEvmBalances(
-    useEvm ? evmAddress : null,
-    useEvm ? (chain.evmChainId ?? null) : null,
-  );
-
-  const native = balances.find(b => b.isNative);
-  const nativeAmt = native?.amount ?? 0;
-  const tokenCount = balances.filter(b => !b.isNative && b.amount > 0).length;
-  const subtotalUsd = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
-
-  const chainAddr   = addressForChain(chain, evmAddress, address, network, derived);
-  const canReceive  = !!chainAddr && chain.live;
+  const canReceive = !!chainAddr && chain.live;
+  const addrLabel = chainAddr
+    ? `${chainAddr.slice(0, 8)}…${chainAddr.slice(-5)}`
+    : chain.live
+      ? "Connect wallet to derive address"
+      : "Coming soon";
 
   return (
     <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors">
+      {/* Chain icon */}
       <div
         className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow"
         style={{ backgroundColor: chain.color }}
       >
         {chain.symbol.slice(0, 3)}
       </div>
+
+      {/* Name + address */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <p className="text-sm font-semibold text-foreground truncate">{chain.name}</p>
           {chain.badge && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider">
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider shrink-0">
               {chain.badge}
             </span>
           )}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">
-          {useEvm
-            ? `${nativeAmt.toFixed(4)} ${chain.symbol}${tokenCount ? ` · ${tokenCount} tokens` : ""}`
-            : chainAddr
-              ? `${chainAddr.slice(0, 12)}…${chainAddr.slice(-6)}`
-              : (chain.live ? "Sign in to derive your address" : "Coming in this release")}
-        </p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
       </div>
-      {chain.live && useEvm && (
-        <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-foreground">{formatQuoteAmount(subtotalUsd, quoteCurrency)}</p>
-          <p className="text-[10px] text-muted-foreground">{tokenCount + 1} assets</p>
-        </div>
-      )}
-      <div className="flex gap-1 shrink-0 ml-2">
-        <button
-          onClick={() => onReceive(chain)}
-          disabled={!canReceive}
-          className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center"
-          title="Receive"
-        >
-          <Download size={14} />
-        </button>
-      </div>
+
+      {/* Balance slot (right side) */}
+      {balanceSlot}
+
+      {/* Receive button */}
+      <button
+        onClick={onReceive}
+        disabled={!canReceive}
+        className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center shrink-0"
+        title="Receive"
+      >
+        <Download size={14} />
+      </button>
     </div>
+  );
+}
+
+// ─── EVM chain row (uses useEvmBalances) ─────────────────────────────────────
+
+function EvmChainRow({
+  chain, evmAddress, quoteCurrency, onReceive,
+}: {
+  chain: ChainRow;
+  evmAddress: string | null;
+  quoteCurrency: string;
+  onReceive: () => void;
+}) {
+  const { balances } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
+  const native      = balances.find(b => b.isNative);
+  const nativeAmt   = native?.amount ?? 0;
+  const tokenCount  = balances.filter(b => !b.isNative && b.amount > 0).length;
+  const totalUsd    = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
+
+  const balanceSlot = evmAddress ? (
+    <div className="text-right shrink-0 min-w-[70px]">
+      <p className="text-sm font-semibold text-foreground tabular-nums">
+        {nativeAmt > 0 ? `${nativeAmt.toFixed(4)} ${chain.symbol}` : `0 ${chain.symbol}`}
+      </p>
+      <p className="text-[10px] text-muted-foreground">
+        {totalUsd > 0 ? formatQuoteAmount(totalUsd, quoteCurrency) : tokenCount > 0 ? `${tokenCount} tokens` : "—"}
+      </p>
+    </div>
+  ) : null;
+
+  return (
+    <ChainRowShell
+      chain={chain}
+      chainAddr={evmAddress}
+      balanceSlot={balanceSlot}
+      onReceive={onReceive}
+    />
+  );
+}
+
+// ─── Native (non-EVM) chain row (uses useNativeChainBalance) ─────────────────
+
+function NativeChainRow({
+  chain, chainAddr, quoteCurrency, onReceive,
+}: {
+  chain: ChainRow;
+  chainAddr: string | null;
+  quoteCurrency: string;
+  onReceive: () => void;
+}) {
+  const family = chain.family as any;
+  const { native, usd, loading } = useNativeChainBalance(family, chainAddr);
+
+  const balanceSlot = chainAddr ? (
+    <div className="text-right shrink-0 min-w-[70px]">
+      <p className="text-sm font-semibold text-foreground tabular-nums">
+        {loading
+          ? <span className="inline-block w-16 h-3.5 bg-muted/40 rounded animate-pulse" />
+          : native > 0
+            ? `${native < 0.0001 ? native.toExponential(2) : native.toFixed(4)} ${chain.symbol}`
+            : `0 ${chain.symbol}`}
+      </p>
+      <p className="text-[10px] text-muted-foreground">
+        {loading ? "" : usd > 0 ? formatQuoteAmount(usd, quoteCurrency) : "—"}
+      </p>
+    </div>
+  ) : null;
+
+  return (
+    <ChainRowShell
+      chain={chain}
+      chainAddr={chainAddr}
+      balanceSlot={balanceSlot}
+      onReceive={onReceive}
+    />
+  );
+}
+
+// ─── Dispatcher — chooses EVM or Native row ───────────────────────────────────
+
+function ChainBalanceRow({
+  chain, address, evmAddress, network, derived, quoteCurrency, onReceive,
+}: {
+  chain: ChainRow;
+  address: string | null;
+  evmAddress: string | null;
+  network: string | null;
+  derived: DerivedAddresses | null;
+  quoteCurrency: string;
+  onReceive: (chain: ChainRow) => void;
+}) {
+  const chainAddr = addressForChain(chain, evmAddress, address, network, derived);
+  const handleReceive = () => onReceive(chain);
+
+  if (chain.family === "evm") {
+    return (
+      <EvmChainRow
+        chain={chain}
+        evmAddress={evmAddress}
+        quoteCurrency={quoteCurrency}
+        onReceive={handleReceive}
+      />
+    );
+  }
+
+  return (
+    <NativeChainRow
+      chain={chain}
+      chainAddr={chainAddr}
+      quoteCurrency={quoteCurrency}
+      onReceive={handleReceive}
+    />
   );
 }
 
