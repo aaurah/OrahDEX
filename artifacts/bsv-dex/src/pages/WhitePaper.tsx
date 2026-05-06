@@ -4,8 +4,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.6.0";
-const PUBLISH_DATE = "3 May 2026";
+const VERSION = "4.7.0";
+const PUBLISH_DATE = "6 May 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -213,7 +213,7 @@ export function WhitePaper() {
                 <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="950+" label="Trading Pairs" sub="Spot · Futures · VAMM" />
+                <Metric value="36,000+" label="Trading Pairs" sub="Spot · Futures · VAMM · Cross-Chain" />
                 <Metric value="200+" label="Networks" sub="EVM · TRON · BSV oracle" />
                 <Metric value="56+" label="VAMM Markets" sub="Genesis Liquidity Engine" />
                 <Metric value="$0 PII" label="Identity Model" sub="Cryptographic-only, no KYC" />
@@ -226,7 +226,7 @@ export function WhitePaper() {
                 OrahDEX is a <span className="text-foreground font-medium">sovereign, permissionless trading protocol</span> — not a company, not a product, not a financial intermediary. It is a set of cryptographic rules, smart contracts, and open-source mathematics that connect willing counterparties directly on-chain, with no intermediary, no custody, and no personally identifiable information collected at any layer of the system.
               </p>
               <p>
-                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 950+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
+                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 36,000+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
               </p>
               <p>
                 At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
@@ -364,7 +364,7 @@ export function WhitePaper() {
                     layer: "Layer 4 — Intelligence (Ora AI)",
                     color: "text-amber-400",
                     bg: "bg-amber-400/5 border-amber-400/15",
-                    desc: "OpenAI-compatible large language model with streaming Server-Sent Events. Context-aware of current pair, user position, order book state, and platform history. 682+ market insights cached. Persistent conversation history per-user. Max 8,192 output tokens per response. Zero trading decisions are made by Ora without explicit user confirmation.",
+                    desc: "OpenAI-compatible large language model with streaming Server-Sent Events. Context-aware of current pair, user position, order book state, and platform history. 800+ market insights cached. Persistent conversation history per-user. Max 8,192 output tokens per response. Zero trading decisions are made by Ora without explicit user confirmation.",
                   },
                   {
                     layer: "Layer 5 — Sovereign Interface (React + Vite)",
@@ -530,7 +530,7 @@ Properties:
               <Sub title="4.4 Live BSV Chain Statistics">
                 <div className="grid grid-cols-3 gap-3">
                   <Metric value="< $0.001" label="BSV Tx Fee" sub="Per settlement proof" />
-                  <Metric value="943,372" label="Current Block" sub="WhatsOnChain live data" />
+                  <Metric value="947,877" label="Current Block" sub="WhatsOnChain live data" />
                   <Metric value="260 PH/s" label="Network Hashrate" sub="SHA-256d Proof-of-Work" />
                 </div>
               </Sub>
@@ -785,7 +785,7 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
 
             {/* ── 7. TRADING ── */}
             <Section id="trading" title="7. Trading Engine">
-              <Sub title="7.1 Spot Trading — 950+ Pairs">
+              <Sub title="7.1 Spot Trading — 36,000+ Pairs">
                 <p>
                   Market orders are routed through OrahDEX's smart order router using strict priority routing: (1) on-chain order book — matched first if matching liquidity exists; (2) AMM pool — used if pool depth is sufficient for the order size; (3) VAMM (Genesis Engine) — sovereign fallback, always available. This priority is deterministic and ensures best execution. Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
                 </p>
@@ -1071,7 +1071,7 @@ Example:
               <Sub title="11.1 Capability Matrix">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    { title: "Live Market Analysis", desc: "Price action commentary, trend identification, support/resistance analysis, and volume anomaly detection — for any of 950+ pairs, updated in real time." },
+                    { title: "Live Market Analysis", desc: "Price action commentary, trend identification, support/resistance analysis, and volume anomaly detection — for any of 36,000+ pairs, updated in real time." },
                     { title: "Trade Structuring", desc: "Order sizing, leverage selection, stop-loss placement, take-profit levels, risk/reward computation, and position sizing relative to portfolio." },
                     { title: "CopyVault Intelligence", desc: "Leader performance decomposition, drawdown analysis, risk-adjusted return comparison (Sharpe, Sortino), and follower-profile matching across all active vaults." },
                     { title: "Portfolio Risk Management", desc: "Correlation analysis, concentration risk flags, Greeks estimation for futures positions, and rebalancing strategy generation." },
@@ -1090,7 +1090,7 @@ Example:
                   <p><strong>Model:</strong> OpenAI-compatible LLM · max_completion_tokens: 8,192 · Streaming: Server-Sent Events</p>
                   <p><strong>Context:</strong> Platform state + active pair + wallet + order book + recent conversation history</p>
                   <p><strong>Storage:</strong> Persistent per-user conversation history in PostgreSQL (conversations + messages tables)</p>
-                  <p><strong>Insights Cache:</strong> 682+ market insights pre-computed and served via <code className="text-amber-300">/api/ai/insights</code></p>
+                  <p><strong>Insights Cache:</strong> 800+ market insights pre-computed and served via <code className="text-amber-300">/api/ai/insights</code></p>
                   <p><strong>Sovereignty:</strong> Ora makes zero autonomous trades. All execution requires explicit user confirmation.</p>
                 </InfoBox>
               </Sub>
@@ -1299,6 +1299,9 @@ OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
 
                 <p className="font-semibold text-sm mt-4 mb-2">Denial-of-Service Resilience</p>
                 <p>OrahDEX application servers are stateless and horizontally scalable — no single server is a point of failure. The BSV settlement layer operates independently of the application layer; even total application-layer outage does not affect on-chain settlement, HTLC time-locks, or fund safety.</p>
+
+                <p className="font-semibold text-sm mt-4 mb-2">Self-Healing Worker Engine (v4.7)</p>
+                <p>All background workers — price updater (60 s), liquidity bot (120 s), BSV/EVM deposit watchers, futures funding (8 h) and liquidation engine (60 s) — run under <code className="text-green-400 text-[10px]">guardedInterval</code>, a timeout-aware replacement for the raw <code className="text-green-400 text-[10px]">setInterval + _busy</code> pattern. Key properties: (1) if a worker hangs beyond its configured timeout (typically 90–95% of interval), the lock is force-released and the next tick proceeds; (2) consecutive failures trigger exponential skip-backoff (up to 8 intervals skipped), preventing a persistently failing worker from hammering a degraded dependency; (3) each service is registered in a central health registry that feeds the <code className="text-green-400 text-[10px]">/api/health</code> endpoint with per-service <span className="text-foreground">healthy / degraded / stuck / dead</span> status — the endpoint returns HTTP 503 when any service is dead, enabling external monitors to auto-alert or auto-restart. An order reconciler runs every 5 minutes and auto-cancels any user order stuck <code className="text-green-400 text-[10px]">open</code> for more than 30 minutes, preventing indefinite capital lock-up. A withRetry utility wraps critical DB/network calls with exponential backoff and jitter. Together these mechanisms mean the exchange auto-recovers from worker hangs, transient DB outages, and network failures without manual restart.</p>
 
                 <InfoBox title="Regulatory Seizure Immunity" color="green">
                   <p>OrahDEX cannot be seized because it holds:</p>
@@ -1755,7 +1758,7 @@ CopyVault network effect (additional layer):
                   {[
                     { name: "Liquidity Flywheel", desc: "More LPs → deeper books → lower slippage → more traders → more fees → more LP incentive → more LPs. This flywheel accelerates once the platform crosses the liquidity threshold where slippage is competitive with CEX spread." },
                     { name: "CopyVault Flywheel", desc: "More followers → more leader capital → better execution → higher PnL → more followers. Every successful vault is a growth engine that recruits its own new users via performance." },
-                    { name: "Pair Coverage Flywheel", desc: "More trading pairs → more market opportunities → more traders → more fee revenue → ability to VAMM-seed more pairs → more pairs. OrahDEX already seeds 950+ pairs; each new pair is free marginal distribution." },
+                    { name: "Pair Coverage Flywheel", desc: "More trading pairs → more market opportunities → more traders → more fee revenue → ability to VAMM-seed more pairs → more pairs. OrahDEX already operates 36,000+ pairs; each new pair is free marginal distribution." },
                     { name: "Data Sovereignty Flywheel", desc: "More trades → richer Sovereign Price Engine data → better price discovery → more accurate mark prices → more fair futures settlement → more institutional traders → more trades." },
                   ].map(({ name, desc }) => (
                     <div key={name} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
@@ -1946,9 +1949,32 @@ If any authority requests user identity data:
             {/* ── 20. ROADMAP ── */}
             <Section id="roadmap" title="21. Roadmap">
 
-              {/* v4.5.0 Changelog */}
+              {/* v4.7.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.5.0 · 17 April 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.7.0 · 6 May 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "Self-Healing Worker Engine — all background services (price-updater, liquidity-bot, futures funding/liquidation, BSV/EVM deposit watchers) migrated from raw setInterval+_busy pattern to guardedInterval: force-releases locks stuck beyond per-service timeout, tracks consecutive failures with exponential skip-backoff, registers every service in a central health registry.",
+                    "Enhanced /api/health endpoint — now returns per-service status (healthy / degraded / stuck / dead), last-run and last-success timestamps, consecutive failure counts, average tick duration, stale-since ms, and a human-readable alerts list. Returns HTTP 503 (not just 200) when any service is dead — enables monitoring systems to trigger auto-restart.",
+                    "Order Reconciler — automatic background task (every 5 min) that detects and auto-cancels user orders stuck open for more than 30 minutes. Prevents indefinite capital lock-up without operator intervention.",
+                    "withRetry utility — exponential-backoff + jitter wrapper for DB/network calls. Protects price updates, deposit scans, and balance queries from transient failures.",
+                    "Trading pairs updated — live liquidity bot confirms 36,000+ active markets (native spot + 35,000+ LetsExchange cross-chain pairs). All whitepaper references updated from 950+ to 36,000+.",
+                    "Staking Hub documented in Phase 1 — 43 PoS coins, 10 external staking providers, OrahDEX-native fixed-APY staking with lock-period bonus rates (30/60/90/180 days) backed by on-chain DB records.",
+                    "Ora AI insights cache updated — 800+ pre-computed market insights (up from 682+).",
+                    "BSV block height updated to 947,877 (live as of publish date).",
+                    "WhitePaper v4.7.0 — version, date, trading pair counts, block height, and architecture documentation updated to reflect self-healing engine and current platform scale.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.5.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.5.0 · 17 April 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
                     "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orahdex.org.",
@@ -2060,12 +2086,12 @@ If any authority requests user identity data:
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
                     items: [
-                      "950+ spot trading pairs with Sovereign Price Engine pricing",
+                      "36,000+ trading pairs — native spot order book plus 35,000+ cross-chain pairs via LetsExchange integration",
                       "BSV OP_RETURN settlement proof on every matched trade",
                       "HTLC atomic swap bridge (BSV ↔ EVM + TRON)",
                       "Genesis Liquidity Engine (56 VAMM assets, linear bonding curve)",
                       "CopyVault on-chain copy trading (ERC4626, BSV proof chain)",
-                      "Ora AI integration (682+ market insights, streaming context)",
+                      "Ora AI integration (800+ market insights, streaming context)",
                       "Perpetual futures up to 100x leverage with 8h funding",
                       "P2P marketplace with BSV HTLC escrow",
                       "6 fiat on-ramp providers (MoonPay, Transak, Banxa, Simplex, Ramp, Mercuryo) — Apple Pay, Google Pay, Card, Bank Transfer",
@@ -2076,6 +2102,8 @@ If any authority requests user identity data:
                       "TRON native support (TRX + TRC-20 USDT, 6 TRON wallets)",
                       "Keeper tier system (Initiate → Sentinel → Archon → Sovereign)",
                       "10-chain EVM token registry: 43 ERC-20 tokens, live on-chain balanceOf() reads, no API key required",
+                      "Staking Hub — 43 PoS coins, 10 external providers (Lido, Everstake, Ankr, Chorus One, Rocket Pool, Marinade, Figment, Stakefish, Validatrium, P2P.org) plus OrahDEX-native fixed-APY staking with 30/60/90/180-day lock periods",
+                      "Self-Healing Worker Engine — guardedInterval timeout-aware recovery, per-service health registry, auto-recovery from stuck workers, stuck-order reconciler (auto-cancels orders stale >30 min), exponential backoff on failures",
                     ],
                   },
                   {
@@ -2180,7 +2208,7 @@ If any authority requests user identity data:
                 The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. OrahDEX makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
               </p>
               <p>
-                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
+                With <strong>36,000+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
               </p>
               <p>
                 The protocol is indestructible by design. Every adversarial scenario — regulatory, competitive, technical — resolves in the protocol's favour through the asymmetric resilience documented in Section 15. The game theory is unambiguous: for rational agents with access to transparent information, self-custody with DEX access is the dominant strategy. The network effects compound. The flywheels spin faster with every trade.
