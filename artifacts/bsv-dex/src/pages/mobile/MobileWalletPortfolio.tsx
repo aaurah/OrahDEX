@@ -40,14 +40,16 @@ export function MobileWalletPortfolio({ defaultTab = "portfolio" }: { defaultTab
         </div>
       </div>
 
-      {/* ── Portfolio segment ────────────────────────────────────────────────── */}
+      {/* ── Portfolio segment — assets view only ─────────────────────────────── */}
       <div className={topTab === "portfolio" ? "flex-1" : "hidden"}>
-        <MobilePortfolio />
+        <MobilePortfolio visibleTabs={["assets"]} />
       </div>
 
-      {/* ── Wallet segment ───────────────────────────────────────────────────── */}
+      {/* ── Wallet segment — sovereign chains + DeFi / Orders / History ──────── */}
       <div className={topTab === "wallet" ? "flex-1" : "hidden"}>
         <WalletContent />
+        <div className="mx-4 my-3 border-t border-border/60" />
+        <MobilePortfolio visibleTabs={["defi", "orders", "history"]} hidePreContent={true} />
       </div>
 
     </div>

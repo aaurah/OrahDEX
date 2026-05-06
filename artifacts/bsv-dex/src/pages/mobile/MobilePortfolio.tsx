@@ -225,7 +225,7 @@ const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e
 
 type Tab = "assets" | "defi" | "orders" | "history";
 
-export function MobilePortfolio() {
+export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?: Tab[]; hidePreContent?: boolean } = {}) {
   const { address, network, provider, chainId, balance, disconnect, internalEvmAddress } = useWalletStore();
   // For orah-wallet, always query the ledger using the EVM address (primary account key)
   // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
@@ -235,7 +235,7 @@ export function MobilePortfolio() {
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
-  const [tab, setTab] = useState<Tab>("assets");
+  const [tab, setTab] = useState<Tab>(() => visibleTabs?.[0] ?? "assets");
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [directBuyOpen, setDirectBuyOpen] = useState(false);
@@ -499,7 +499,7 @@ export function MobilePortfolio() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!address) {
+  if (!address && !hidePreContent) {
     return (
       <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
         <div className="px-4 pt-6 pb-4">
@@ -659,7 +659,7 @@ export function MobilePortfolio() {
       })()}
 
       <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
-        {/* Header */}
+        {!hidePreContent && (
         <div className="px-4 pt-safe-top pb-3 pt-6 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
@@ -689,8 +689,10 @@ export function MobilePortfolio() {
             </button>
           </div>
         </div>
+        )}
 
         <div className="px-4 space-y-4">
+          {!hidePreContent && <>
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
           {/* On-chain balance card */}
           <div className="bg-card border border-border rounded-2xl p-5">
@@ -909,10 +911,12 @@ export function MobilePortfolio() {
               </p>
             </div>
           )}
+          </>}
 
-          {/* Tabs */}
+          {/* Tabs — filtered by visibleTabs prop */}
+          {(!visibleTabs || visibleTabs.length > 1) && (
           <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-            {(["assets", "defi", "orders", "history"] as Tab[]).map(t => (
+            {(["assets", "defi", "orders", "history"] as Tab[]).filter(t => !visibleTabs || visibleTabs.includes(t)).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -934,6 +938,7 @@ export function MobilePortfolio() {
               </button>
             ))}
           </div>
+          )}
 
           {/* Assets tab */}
           {tab === "assets" && (
