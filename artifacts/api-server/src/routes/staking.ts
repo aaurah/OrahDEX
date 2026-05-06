@@ -21,6 +21,7 @@ import { db } from "@workspace/db";
 import { stakingPositionsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { issueStakeChallenge, verifyStakeSignature } from "../lib/walletAuth.js";
 import crypto from "node:crypto";
 
 const router: IRouter = Router();
@@ -238,9 +239,31 @@ router.get("/staking/positions", async (req, res) => {
   }
 });
 
+// ── POST /api/staking/challenge ───────────────────────────────────────────────
+// Issues a single-use, 5-minute signing challenge for EVM wallets.
+// The client signs the returned `message` and includes nonce+signature in /stake.
+router.post("/staking/challenge", (req, res) => {
+  const { walletAddress, coin, amount, lockDays } = req.body ?? {};
+  if (!walletAddress || !coin || !amount || !lockDays) {
+    res.status(400).json({ error: "walletAddress, coin, amount and lockDays are required" });
+    return;
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/i.test(String(walletAddress))) {
+    res.status(400).json({ error: "Signing challenge is only required for EVM wallets (0x…)" });
+    return;
+  }
+  const challenge = issueStakeChallenge({
+    walletAddress: String(walletAddress).toLowerCase(),
+    coin:          String(coin).toUpperCase(),
+    amount:        String(amount),
+    lockDays:      parseInt(String(lockDays), 10),
+  });
+  res.json(challenge);
+});
+
 // ── POST /api/staking/stake ───────────────────────────────────────────────────
 router.post("/staking/stake", async (req, res) => {
-  const { walletAddress, coin, amount, lockDays } = req.body ?? {};
+  const { walletAddress, coin, amount, lockDays, nonce, signature } = req.body ?? {};
   if (!walletAddress || !coin || !amount || !lockDays) {
     res.status(400).json({ error: "walletAddress, coin, amount and lockDays are required" });
     return;
@@ -263,6 +286,32 @@ router.post("/staking/stake", async (req, res) => {
   if (amt < coinMeta.minStake) {
     res.status(400).json({ error: `Minimum stake is ${coinMeta.minStake} ${coinMeta.symbol}` });
     return;
+  }
+
+  // ── Signature verification (required for external EVM wallets) ───────────
+  const addrStr = String(walletAddress);
+  const isEvmWallet = /^0x[0-9a-fA-F]{40}$/i.test(addrStr);
+  if (isEvmWallet) {
+    if (!nonce || !signature) {
+      res.status(401).json({
+        error: "EVM wallets must sign a staking challenge. " +
+               "Obtain a challenge via POST /staking/challenge and include nonce + signature.",
+      });
+      return;
+    }
+    try {
+      verifyStakeSignature({
+        walletAddress: addrStr,
+        nonce:         String(nonce),
+        signature:     String(signature),
+        coin:          coinMeta.symbol,
+        lockDays:      days,
+      });
+    } catch (err: any) {
+      logger.warn({ err: err?.message, walletAddress: addrStr }, "staking: signature verification failed");
+      res.status(401).json({ error: err?.message ?? "Invalid stake signature" });
+      return;
+    }
   }
 
   const apy       = coinMeta.nativeApy;
