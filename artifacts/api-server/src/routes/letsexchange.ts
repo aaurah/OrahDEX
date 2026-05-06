@@ -381,12 +381,14 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const toRaw = body.to ?? body.coin_to;
   const from = fromRaw ? String(fromRaw).toUpperCase() : "";
   const to = toRaw ? String(toRaw).toUpperCase() : "";
-  const network_from = body.network_from ? String(body.network_from) : from || null;
-  const network_to = body.network_to ? String(body.network_to) : to || null;
+  const network_from = body.network_from != null ? String(body.network_from) : from;
+  const network_to = body.network_to != null ? String(body.network_to) : to;
   const amount = body.amount ?? body.deposit_amount;
   const isFloat = body.float;
 
-  if (!from || !to || !network_from || !network_to || amount == null) {
+  const missingRequired =
+    !from || !to || !network_from || !network_to || amount == null;
+  if (missingRequired) {
     res.status(400).json({ error: "from, to, network_from, network_to, and amount are required" }); return;
   }
   const amt = parseFloat(String(amount));
