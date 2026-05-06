@@ -623,6 +623,12 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
+
+  function openCapture(tab: "camera" | "ai" | "photos") {
+    setCaptureTab(tab);
+    setCaptureOpen(true);
+  }
 
   async function publish() {
     if (!address) { navigate("/settings"); return; }
@@ -675,18 +681,27 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
                    onError={() => setImageUrl("")} />
             </div>
           )}
-          <button type="button" onClick={() => setCaptureOpen(true)}
-            className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-            style={{ background: "#00ff88", color: "#000" }}>
-            <Camera size={14} /> Camera
-            <span style={{ opacity: 0.5 }}>•</span>
-            <Sparkles size={14} /> AI generate
-            <span style={{ opacity: 0.5 }}>•</span>
-            <ImageIcon size={14} /> Upload
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => openCapture("camera")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <Camera size={13} /> Camera
+            </button>
+            <button type="button" onClick={() => openCapture("ai")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "#00ff88", color: "#000" }}>
+              <Sparkles size={13} /> AI Generate
+            </button>
+            <button type="button" onClick={() => openCapture("photos")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <ImageIcon size={13} /> Upload
+            </button>
+          </div>
           <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste image URL"
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
           <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
+            initialTab={captureTab}
             onSelect={(dataUrl) => setImageUrl(dataUrl)} />
         </div>
         <div className="grid grid-cols-2 gap-3">

@@ -638,14 +638,15 @@ router.post("/orders", async (req, res) => {
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
-          // If yes, escrow is the binding settlement venue: never fall back
-          // to HTLC because the locked funds can't be in two places at once.
-          const [incomingEscrowChain, matchEscrowChain] = await Promise.all([
-            findEscrowChain(id),
-            findEscrowChain(match.id),
-          ]).catch(() => [null, null] as [number | null, number | null]);
+          // Reuse the chain values already resolved by the fail-CLOSED precheck
+          // above (lines ~473-478). Those values are authoritative: if the precheck
+          // RPC failed it threw and we already `continue`d past this match. A
+          // second scan here with a swallowed catch would be fail-OPEN — an RPC
+          // blip would make `anyEscrowDeposit` look false and allow HTLC to run
+          // against locked funds. Reusing prefetchedBuyerChain/SellerChain keeps
+          // the settlement decision consistent with the precheck decision.
           const anyEscrowDeposit =
-            incomingEscrowChain !== null || matchEscrowChain !== null;
+            prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
 
           // ── Partial-fill safety: release(orderId) drains the WHOLE deposit. ─
           // We must only call it when this single fill consumes BOTH orders

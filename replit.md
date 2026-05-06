@@ -80,13 +80,15 @@ lib/
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
 
-## Recent Critical Fixes (2026-05-06)
+## Recent Fixes (2026-05-06 — Admin/Portfolio/Wallet Audit)
 
-- **Double mutation handlers** (`OrderForm.tsx`): `placeOrder.mutate(...)` was passing inline `onSuccess`/`onError` duplicating the `usePlaceOrder({mutation:{...}})` handlers — both fired on every trade causing duplicate toasts, double `setAmount("")`, double balance refreshes. Removed inline callbacks; consolidated `refreshBalances()` + `triggerBalanceRefresh()` into the single `usePlaceOrder` handler.
-- **Auth message symbol normalization** (`orders.ts` line 197): `buildOrderAuthMessage` was using raw `body.symbol` (may have dashes) instead of the normalized `symbol` variable (dashes→slashes). A mismatch would cause `SIGNATURE_MISMATCH` rejection for any caller using dash notation.
-- **Sepolia missing from SUPPORTED_CHAIN_IDS** (`orders.ts`): `11155111` added — enables on-chain RPC balance verification for Sepolia users (where the escrow is deployed for testing).
-- **Dead `chainId` field in `SettleEscrowMatchParams`** (`escrowRelayer.ts`): The interface field `chainId` was never used — `settleEscrowMatch` derives the release chain from `sellerChain` (scanned via `findEscrowChain`). Removed the field; removed the dead `chainId: releaseChainId` arg from the `settleEscrowMatch` call in `orders.ts`.
-- **Enhanced error parsing in `usePlaceOrder` onError**: Now checks `err?.response?.data` (axios-style) in addition to `err?.data` to surface server rejection messages (INSUFFICIENT_FUNDS, NO_LIQUIDITY, SIGNATURE_MISMATCH).
+- **Admin panel — orphaned `CexConnections` page** (`App.tsx`, `AdminLayout.tsx`): `pages/admin/CexConnections.tsx` (CEX API key management, 581 lines) exported `AdminCexConnections` but had no route and no nav item — completely unreachable. Added lazy import, `/admin/cex-connections` route, and "CEX Connections" nav entry in the AI Intelligence section. Also imported `Link2` icon into `AdminLayout.tsx`.
+- **Portfolio — multi-address balance gap** (`Portfolio.tsx`): Portfolio only showed balances for the currently active network. Added `useEvmBalances` hook call for `internalEvmAddress` (non-EVM users' provisioned EVM sub-account on ETH mainnet) and `fetchBsvBalance` for `internalBsvAddress` (non-BSV users' BSV sub-account). All internal rows are merged after primary balances, de-duplicated by symbol (primary wins). Also wired refresh button to trigger `intEvmRefresh()` and `refreshIntBsvBalance()`.
+- **Portfolio — WithdrawSheet wrong address**: `walletAddress` and `defaultRecipient` were always passed `address` (current active) regardless of asset chain. Added `addressForAssetNetwork(assetNetwork)` helper that resolves to `internalBsvAddress` for BSV assets, `internalEvmAddress` for EVM assets, `internalTronAddress` for TRON, falling back to connected address when internal is not yet provisioned.
+- **Portfolio — hardcoded zero stats**: "Open Spot Orders" showed static `0`. Replaced with a live `useQuery` fetching `/api/orders?walletAddress=…&status=open` for all known addresses (primary + internal), de-duplicating by order ID. "Futures Positions" (also static 0) replaced with "Tracked Assets" showing `nonZero.length` — a meaningful live count.
+- **Liquidity routing audit** (no change needed): Confirmed `hasRealOB` → order mode (internal DEX) / no OB → auto-switches to LE swap mode is correct. `hybridRouter.ts` properly simulates VWAP fills against real non-synthetic orders before routing to LE.
+- **Double mutation handlers** (`OrderForm.tsx`): previously fixed — `placeOrder.mutate(...)` inline callbacks removed; consolidated into single `usePlaceOrder` handler.
+- **Auth message symbol normalization** (`orders.ts`): previously fixed — `buildOrderAuthMessage` uses normalized `symbol` (slashes) not raw `body.symbol` (dashes).
 
 ## Gotchas
 
