@@ -43,7 +43,8 @@ artifacts/
     pages/mobile/MobileTrade.tsx  — Main trade UI (non-custodial banners, order flow)
     components/trading/OrderForm.tsx
 lib/
-  db/schema.ts              — Drizzle schema (source of truth)
+  db/src/schema/            — Drizzle schema files (source of truth); index.ts re-exports all
+  db/src/schema/staking.ts  — staking_positions table
 ```
 
 ## Architecture decisions
@@ -66,6 +67,7 @@ lib/
 - Native HD wallet (BIP39/44: EVM, BTC, BSV, SOL, XRP, LTC, DOGE)
 - Fiat on-ramp via Stripe → LetsExchange / SimpleSwap
 - Social NFT marketplace (BSV inscriptions)
+- **Staking Hub** (`/staking`): 43 PoS coins, 10 external providers (Lido, Everstake, Validatrium, Ankr, Chorus One, Rocket Pool, Marinade, Stakefish, Figment, P2P.org) with deep-link staking URLs; OrahDEX-native fixed-APY staking with lock periods (30/60/90/180d bonus rates) backed by `staking_positions` DB table
 - Admin panel with AI intelligence, routing profiles, fee management
 
 ## User preferences
