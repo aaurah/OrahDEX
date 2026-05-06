@@ -301,7 +301,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
     SUSD: 1, USDP: 1, EURC: 1.09, USDN: 1,
   };
   const FALLBACK_USD: Record<string, number> = {
-    BTC: 83000, ETH: 1800,  BNB: 580,   BSV: 16,    BCH: 320,  SOL: 130,
+    BTC: 95000, ETH: 2400,  BNB: 600,   BSV: 16,    BCH: 320,  SOL: 150,
     XRP: 0.52,  DOGE: 0.08, LTC: 65,    TRX: 0.24,  ADA: 0.35, DOT: 5.2,
     LINK: 11,   MATIC: 0.32, AVAX: 18,  UNI: 5.8,   AAVE: 95,  MKR: 1400,
     SNX: 1.8,   SUSHI: 0.7, COMP: 42,   YFI: 5800,  CRV: 0.35,
