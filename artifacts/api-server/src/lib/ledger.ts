@@ -509,7 +509,10 @@ async function _unlockFundsImpl(params: {
  * sufficient — this prevents spurious INSUFFICIENT_LOCK failures caused by
  * IEEE-754 rounding errors while still catching real balance deficits.
  */
-const SETTLE_EPSILON = 1e-9;
+// Absolute epsilon for floating-point rounding in toFixed(18) arithmetic.
+// Kept small — actual market-order price slippage is handled by the 0.5%
+// lock buffer added in orders.ts at order-placement time.
+const SETTLE_EPSILON = 1e-6;
 
 export async function settleTrade(params: {
   buyerAddress:  string;
@@ -519,10 +522,15 @@ export async function settleTrade(params: {
   amount:        string;   // base amount filled
   price:         string;   // fill price
   feePct?:       number;   // fraction e.g. 0.001 = 0.1%
+  /** True when the seller is the synthetic liquidity bot.
+   *  The bot inserts orders without pre-locking funds in user_balances, so the
+   *  standard locked-balance assertion and debit are skipped for its side.
+   *  The buyer's locked quote is still strictly validated and debited. */
+  isBotSeller?:  boolean;
 }): Promise<void> {
   const buyerAddress  = normAddr(params.buyerAddress);
   const sellerAddress = normAddr(params.sellerAddress);
-  const { baseAsset, quoteAsset, amount, price, feePct = 0.001 } = params;
+  const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false } = params;
   const cost    = (parseFloat(amount) * parseFloat(price)).toFixed(18);
   const buyFee  = (parseFloat(amount) * feePct).toFixed(18);
   const sellFee = (parseFloat(cost)   * feePct).toFixed(18);
@@ -570,12 +578,14 @@ export async function settleTrade(params: {
       );
     }
 
-    const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
-    if (sellerLockedBase < parseFloat(amount) - SETTLE_EPSILON) {
-      throw new Error(
-        `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
-        `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
-      );
+    if (!isBotSeller) {
+      const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
+      if (sellerLockedBase < parseFloat(amount) - SETTLE_EPSILON) {
+        throw new Error(
+          `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
+          `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
+        );
+      }
     }
 
     // Buyer: deduct only the fill cost from locked (not the entire locked balance).
@@ -599,13 +609,19 @@ export async function settleTrade(params: {
     );
 
     // Seller: locked_base -= amount, available_quote += netQuote
-    await client.query(
-      `UPDATE user_balances
-       SET locked     = locked - $1,
-           updated_at = now()
-       WHERE wallet_address = $2 AND asset_symbol = $3`,
-      [amount, sellerAddress, baseAsset],
-    );
+    // For the bot (isBotSeller), there is no pre-locked base — skip the locked
+    // debit.  We still credit the bot's quote balance so platform revenue is
+    // tracked, but the base asset is created synthetically (the bot is the
+    // platform's own liquidity provider and does not draw from user_balances).
+    if (!isBotSeller) {
+      await client.query(
+        `UPDATE user_balances
+         SET locked     = locked - $1,
+             updated_at = now()
+         WHERE wallet_address = $2 AND asset_symbol = $3`,
+        [amount, sellerAddress, baseAsset],
+      );
+    }
     await client.query(
       `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
        VALUES ($1, $2, $3, '0', now())

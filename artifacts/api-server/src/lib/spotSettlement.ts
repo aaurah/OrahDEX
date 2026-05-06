@@ -219,10 +219,11 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     await settleTrade({
       buyerAddress,
       sellerAddress,
-      baseAsset:  baseAsset!,
-      quoteAsset: quoteAsset!,
-      amount:     fillQty.toString(),
-      price:      fillPrice.toString(),
+      baseAsset:   baseAsset!,
+      quoteAsset:  quoteAsset!,
+      amount:      fillQty.toString(),
+      price:       fillPrice.toString(),
+      isBotSeller: isBot,
     });
   } catch (err) {
     // Ledger settlement is the source of truth for balances.
