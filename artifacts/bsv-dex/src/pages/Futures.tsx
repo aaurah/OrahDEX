@@ -165,7 +165,11 @@ export function FuturesTrading() {
   const [orderType, setOrderType] = useState<"limit" | "market" | "stop">("limit");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
-  const [chartInterval, setChartInterval] = useState("1h");
+  const [chartInterval, setChartInterval] = useState(() => {
+    const saved = localStorage.getItem('orahdex-futures-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "history">("positions");
 
@@ -184,6 +188,9 @@ export function FuturesTrading() {
     if (pairDropOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pairDropOpen]);
+
+  // Persist chart interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-futures-interval', chartInterval); }, [chartInterval]);
 
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || "" },
