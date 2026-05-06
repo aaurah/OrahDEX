@@ -141,7 +141,7 @@ export function SpotTrading() {
   const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
   const [candleInterval, setCandleInterval] = useState(() => {
     const saved = localStorage.getItem('orahdex-spot-interval');
-    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
     return saved && valid.includes(saved) ? saved : "1h";
   });
   const [marketSearch, setMarketSearch] = useState("");
