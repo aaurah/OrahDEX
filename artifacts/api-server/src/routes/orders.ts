@@ -1187,7 +1187,7 @@ router.post("/orders/precheck", async (req, res) => {
   try {
     const { side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
     // Normalize symbol format: accept both "BSV-USDT" (URL style) and "BSV/USDT" (DB style)
-    const symbol: string = (req.body.symbol ?? "").replace("-", "/");
+    const symbol: string = (req.body.symbol ?? "").replace(/-/g, "/");
 
     if (!symbol || !side || !amount) {
       res.status(400).json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Missing fields" }], warnings: [] });
