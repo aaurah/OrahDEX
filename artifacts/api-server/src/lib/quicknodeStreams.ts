@@ -256,13 +256,20 @@ export async function listQuickNodeStreams(): Promise<QNStream[]> {
   }
 }
 
+function isValidQuickNodeStreamId(streamId: string): boolean {
+  // Conservative allow-list for URL path-safe stream identifiers.
+  return /^[A-Za-z0-9_-]{1,128}$/.test(streamId);
+}
+
 /** Delete a QuickNode Stream by ID. */
 export async function deleteQuickNodeStream(streamId: string): Promise<void> {
-  const safeStreamId = encodeURIComponent(streamId);
+  if (!isValidQuickNodeStreamId(streamId)) {
+    throw new Error("Invalid QuickNode stream ID");
+  }
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch(`${QN_STREAMS_API}/${safeStreamId}`, {
+    const res = await fetch(`${QN_STREAMS_API}/${encodeURIComponent(streamId)}`, {
       method:  "DELETE",
       headers: qnHeaders(),
       signal:  ctrl.signal,
@@ -281,11 +288,13 @@ export async function setQuickNodeStreamStatus(
   streamId: string,
   status:   "active" | "paused",
 ): Promise<void> {
-  const safeStreamId = encodeURIComponent(streamId);
+  if (!isValidQuickNodeStreamId(streamId)) {
+    throw new Error("Invalid QuickNode stream ID");
+  }
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
-    const res = await fetch(`${QN_STREAMS_API}/${safeStreamId}`, {
+    const res = await fetch(`${QN_STREAMS_API}/${encodeURIComponent(streamId)}`, {
       method:  "PATCH",
       headers: qnHeaders(),
       body:    JSON.stringify({ status }),

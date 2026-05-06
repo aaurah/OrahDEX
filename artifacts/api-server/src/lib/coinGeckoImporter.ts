@@ -116,7 +116,7 @@ async function getCoinGeckoApiKey(): Promise<string | null> {
   return process.env.COINGECKO_API_KEY ?? null;
 }
 
-function buildHeaders(apiKey: string | null): HeadersInit {
+function buildHeaders(apiKey: string | null): Record<string, string> {
   const h: Record<string, string> = { Accept: "application/json" };
   if (apiKey) {
     if (apiKey.startsWith("CG-")) h["x-cg-demo-api-key"] = apiKey;

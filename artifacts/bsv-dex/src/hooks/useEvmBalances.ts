@@ -274,7 +274,7 @@ async function fetchMarketPrices(): Promise<Record<string, number>> {
   } catch { /* use hardcoded fallbacks only */ }
 
   // Hardcoded last-resort fallbacks for native gas tokens
-  if (!prices["ETH"])  prices["ETH"]  = 1800;
+  if (!prices["ETH"])  prices["ETH"]  = 2400;
   if (!prices["BNB"])  prices["BNB"]  = 580;
   if (!prices["AVAX"]) prices["AVAX"] = 18;
   if (!prices["FTM"])  prices["FTM"]  = 0.2;

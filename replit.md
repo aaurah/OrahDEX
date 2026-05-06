@@ -5,13 +5,15 @@ Unified sovereign multi-chain wallet + non-custodial exchange — users hold the
 ## Run & Operate
 
 ```bash
-pnpm --filter @workspace/api-server run dev   # API on $PORT (default 8080)
-pnpm --filter @workspace/bsv-dex run dev      # Frontend on $PORT (default 20180)
-pnpm --filter @workspace/db run push          # Apply DB schema changes
-pnpm --filter @workspace/db run migrate       # Run migrations
+PORT=8080 pnpm --filter @workspace/api-server run dev   # API on port 8080
+PORT=20180 pnpm --filter @workspace/bsv-dex run dev     # Frontend on port 20180
 ```
 
-Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`.
+Workflows are configured: **"API Server"** (port 8080, console) and **"OrahDEX Frontend"** (port 20180, webview).
+
+DB schema: Apply with `sed 's/--> statement-breakpoint/;/g' lib/db/drizzle/0000_noisy_wilson_fisk.sql | psql $DATABASE_URL` (drizzle-kit push requires TTY). Also create `internal_bsv_wallets` via raw SQL (see `lib/internalBsvWallet.ts`).
+
+Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`. AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
 
 ## Stack
 
@@ -78,6 +80,16 @@ lib/
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
 
+## Recent Fixes (2026-05-06 — Admin/Portfolio/Wallet Audit)
+
+- **Admin panel — orphaned `CexConnections` page** (`App.tsx`, `AdminLayout.tsx`): `pages/admin/CexConnections.tsx` (CEX API key management, 581 lines) exported `AdminCexConnections` but had no route and no nav item — completely unreachable. Added lazy import, `/admin/cex-connections` route, and "CEX Connections" nav entry in the AI Intelligence section. Also imported `Link2` icon into `AdminLayout.tsx`.
+- **Portfolio — multi-address balance gap** (`Portfolio.tsx`): Portfolio only showed balances for the currently active network. Added `useEvmBalances` hook call for `internalEvmAddress` (non-EVM users' provisioned EVM sub-account on ETH mainnet) and `fetchBsvBalance` for `internalBsvAddress` (non-BSV users' BSV sub-account). All internal rows are merged after primary balances, de-duplicated by symbol (primary wins). Also wired refresh button to trigger `intEvmRefresh()` and `refreshIntBsvBalance()`.
+- **Portfolio — WithdrawSheet wrong address**: `walletAddress` and `defaultRecipient` were always passed `address` (current active) regardless of asset chain. Added `addressForAssetNetwork(assetNetwork)` helper that resolves to `internalBsvAddress` for BSV assets, `internalEvmAddress` for EVM assets, `internalTronAddress` for TRON, falling back to connected address when internal is not yet provisioned.
+- **Portfolio — hardcoded zero stats**: "Open Spot Orders" showed static `0`. Replaced with a live `useQuery` fetching `/api/orders?walletAddress=…&status=open` for all known addresses (primary + internal), de-duplicating by order ID. "Futures Positions" (also static 0) replaced with "Tracked Assets" showing `nonZero.length` — a meaningful live count.
+- **Liquidity routing audit** (no change needed): Confirmed `hasRealOB` → order mode (internal DEX) / no OB → auto-switches to LE swap mode is correct. `hybridRouter.ts` properly simulates VWAP fills against real non-synthetic orders before routing to LE.
+- **Double mutation handlers** (`OrderForm.tsx`): previously fixed — `placeOrder.mutate(...)` inline callbacks removed; consolidated into single `usePlaceOrder` handler.
+- **Auth message symbol normalization** (`orders.ts`): previously fixed — `buildOrderAuthMessage` uses normalized `symbol` (slashes) not raw `body.symbol` (dashes).
+
 ## Gotchas
 
 - **QuickNode Stream ID** (ETH mainnet, contract logs): `e9276e1b-f045-48be-a8dc-f8bc524d160d`
@@ -87,6 +99,11 @@ lib/
 - esbuild bundles everything; TypeScript imports at the bottom of a file still work at runtime but tsc will reject them — keep all imports at file top.
 - LetsExchange Partner ID: `1692`.
 - EVM HTLC watcher polls every 30 s; QN Streams supplements it (not replaces).
+- DB schema must be applied before first run: `pnpm --filter @workspace/db run push-force` (requires TTY) or run `node -e "..."` migration script — migration SQL is at `lib/db/drizzle/0000_noisy_wilson_fisk.sql`.
+- LE/SimpleSwap/Stripe routes return errors gracefully when API keys are missing; native AMM path still works without them.
+- Stripe apiVersion pinned to `"2025-03-31.basil"` in both `stripeClient.ts` and `webhookHandlers.ts` — keep in sync.
+- `LE_COIN_NETWORK` map lives in `src/lib/leCoinNetwork.ts` (single source-of-truth); both `stripeCheckout.ts` and `webhookHandlers.ts` import from there.
+- Fallback price self-call in `stripeCheckout.ts` uses `http://127.0.0.1:${PORT ?? 8080}` with a 5 s timeout — not `localhost`.
 
 ## Pointers
 

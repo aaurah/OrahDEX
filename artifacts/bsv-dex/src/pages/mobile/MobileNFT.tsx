@@ -80,7 +80,8 @@ interface Creator {
   is_verified: boolean; follower_count: number; following_count: number;
   post_count: number; symbol: string; coin_name: string;
   price_usd: number; market_cap_usd: number; ath_usd: number;
-  volume_24h_usd: number; holder_count: number; circulating_supply: number;
+  volume_24h_usd: number; holder_count: number; holding_count?: number;
+  circulating_supply: number;
   total_supply: number; virtual_bsv: number; virtual_tokens: number;
   price_bsv: number; trade_count: number;
 }
@@ -495,6 +496,7 @@ function CreatorProfileSheet({
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
+  const [, navigate] = useLocation();
   const hybrid = useHybridBalance(60_000);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -2267,6 +2269,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -2387,13 +2390,18 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       )}
 
       {/* Camera + AI quick action */}
-      <button onClick={() => setCaptureOpen(true)}
-        className="w-full mb-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
-        style={{ background: "var(--color-accent)", color: "#000" }}>
-        <Camera size={14} /> Camera
-        <span style={{ opacity: 0.6 }}>•</span>
-        <Sparkles size={14} /> AI generate
-      </button>
+      <div className="flex gap-2 mb-3">
+        <button onClick={() => { setCaptureTab("camera"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+          <Camera size={14} /> Camera
+        </button>
+        <button onClick={() => { setCaptureTab("ai"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-accent)", color: "#000" }}>
+          <Sparkles size={14} /> AI Generate
+        </button>
+      </div>
 
       <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
         onSelect={(dataUrl) => {
@@ -2401,7 +2409,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           setForm(f => ({ ...f, imageUrl: "" }));
           setMediaMode("file");
         }}
-        accept="image/*" initialTab="camera" />
+        accept="image/*" initialTab={captureTab} />
 
       {/* Media mode toggle */}
       <div className="flex mb-4 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
@@ -2524,12 +2532,22 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
         {error && <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
 
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
+
         <button onClick={submit} disabled={loading || !canSubmit}
           className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
           {loading
             ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-            : <><Zap size={15} /> Inscribe on BSV</>
+            : !address
+              ? <><Lock size={15} /> Connect Wallet to Publish</>
+              : <><Zap size={15} /> Inscribe on BSV</>
           }
         </button>
       </div>

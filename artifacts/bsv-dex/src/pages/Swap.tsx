@@ -1186,6 +1186,9 @@ function ExchangeSwapPanel({
 
   const fromBal = balFor(fromAsset);
   const isNewUser = balances.length === 0;
+  // Non-EVM assets need an explicit OrahDEX deposit before they can be traded
+  const NON_EVM_ASSETS = new Set(["BTC","BSV","SOL","XRP","ADA","DOGE","DOT","LTC","TRX","BCH","ATOM","ALGO","XLM","NEAR"]);
+  const isEvm = !NON_EVM_ASSETS.has(fromAsset.toUpperCase());
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">

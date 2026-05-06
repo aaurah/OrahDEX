@@ -272,7 +272,7 @@ router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
           `SELECT * FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
         );
 
-    res.json(rows.map(r => ({
+    res.json(rows.map((r: any) => ({
       id:           r.id,
       walletAddress: r.wallet_address,
       asset:        r.asset,

@@ -205,11 +205,11 @@ router.get("/erc8004/keepers", async (req, res) => {
     const results = await Promise.all(
       keepers.map(async (k) => {
         const [reputation, agentId] = await Promise.all([
-          computeKeeperReputation(k.address).catch(() => null),
-          getKeeperAgentId(k.address),
+          computeKeeperReputation(k.walletAddress).catch(() => null),
+          getKeeperAgentId(k.walletAddress),
         ]);
         return {
-          address:     k.address,
+          address:     k.walletAddress,
           displayName: k.displayName,
           avatarUrl:   k.avatarUrl,
           roles:       k.roles,
@@ -286,7 +286,7 @@ router.post("/erc8004/admin/register", requireAdminToken, async (req, res) => {
 // ── Admin: register one Keeper ────────────────────────────────────────────────
 
 router.post("/erc8004/admin/keeper/:address/register", requireAdminToken, async (req, res) => {
-  const address = (req.params.address ?? "").toLowerCase();
+  const address = ((req.params.address as string) ?? "").toLowerCase();
   if (!address.startsWith("0x") || address.length !== 42) {
     res.status(400).json({ error: "Invalid keeper address" });
     return;
@@ -300,7 +300,7 @@ router.post("/erc8004/admin/keeper/:address/register", requireAdminToken, async 
     const [kRow] = await db
       .select()
       .from(keepersTable)
-      .where(and(eq(keepersTable.address, address), eq(keepersTable.active, true)));
+      .where(and(eq(keepersTable.walletAddress, address), eq(keepersTable.active, true)));
 
     if (!kRow) {
       res.status(404).json({ error: "Keeper not found or inactive" });
@@ -334,7 +334,7 @@ router.post("/erc8004/admin/keeper/:address/register", requireAdminToken, async 
 // ── Admin: sync one Keeper's reputation on-chain ─────────────────────────────
 
 router.post("/erc8004/admin/keeper/:address/sync", requireAdminToken, async (req, res) => {
-  const address = (req.params.address ?? "").toLowerCase();
+  const address = ((req.params.address as string) ?? "").toLowerCase();
   if (!address.startsWith("0x") || address.length !== 42) {
     res.status(400).json({ error: "Invalid keeper address" });
     return;
@@ -400,16 +400,16 @@ router.post("/erc8004/admin/keepers/sync-all", requireAdminToken, async (req, re
 
     for (const k of keepers) {
       try {
-        const reputation = await computeKeeperReputation(k.address);
+        const reputation = await computeKeeperReputation(k.walletAddress);
 
         // Register if not yet registered
-        let agentId = await getKeeperAgentId(k.address);
+        let agentId = await getKeeperAgentId(k.walletAddress);
         let registered = !!agentId;
 
         if (!agentId) {
           const reg = await ensureKeeperRegistered({
-            address:     k.address,
-            displayName: k.displayName ?? `Keeper ${k.address.slice(0, 8)}`,
+            address:     k.walletAddress,
+            displayName: k.displayName ?? `Keeper ${k.walletAddress.slice(0, 8)}`,
             avatarUrl:   k.avatarUrl,
             roles:       (k.roles as string[]) ?? [],
             tier:        reputation.tier,
@@ -421,17 +421,17 @@ router.post("/erc8004/admin/keepers/sync-all", requireAdminToken, async (req, re
 
         // Submit reputation score
         await submitKeeperReputationOnChain({
-          keeperAddress:   k.address,
+          keeperAddress:   k.walletAddress,
           agentId,
           internalScore:   reputation.score,
           feedbackBaseUrl: baseUrl(req),
         });
 
-        results.push({ address: k.address, agentId, registered, synced: true });
+        results.push({ address: k.walletAddress, agentId, registered, synced: true });
       } catch (err: any) {
         results.push({
-          address:    k.address,
-          agentId:    await getKeeperAgentId(k.address),
+          address:    k.walletAddress,
+          agentId:    await getKeeperAgentId(k.walletAddress),
           registered: false,
           synced:     false,
           error:      err?.message,

@@ -248,7 +248,7 @@ export function MobileMarkets() {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD = crossPrices.BTC.usd || 83000;
   const BSV_USD = crossPrices.BSV.usd || 14;
-  const ETH_USD = crossPrices.ETH.usd || 1800;
+  const ETH_USD = crossPrices.ETH.usd || 2400;
   const CROSS_QUOTE_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1,
     BTC: BTC_USD, ETH: ETH_USD, BSV: BSV_USD,

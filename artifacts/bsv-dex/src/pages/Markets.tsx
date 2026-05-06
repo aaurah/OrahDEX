@@ -198,7 +198,7 @@ export function Markets() {
   };
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
-  const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
@@ -426,7 +426,7 @@ export function Markets() {
   const { prices: liveCrossRates } = useWalletPrices();
   const BTC_USD = liveCrossRates.BTC.usd || 83000;
   const BSV_USD = liveCrossRates.BSV.usd || 14;
-  const ETH_USD = liveCrossRates.ETH.usd || 1800;
+  const ETH_USD = liveCrossRates.ETH.usd || 2400;
 
   const QUOTE_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,

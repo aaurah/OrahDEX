@@ -200,10 +200,11 @@ export async function queryHtlcStatus(
 ): Promise<HtlcStatusResult> {
   const checkedAt    = new Date().toISOString();
   const blockHeight  = parseInt((await getSetting("bsv_block_height")) ?? "0") || 0;
+  const encodedAddress = encodeURIComponent(htlcAddress);
 
   try {
     // Check unspent UTXOs at the P2SH address
-    const utxoData = await safeFetch(`${WOC_BASE}/address/${htlcAddress}/unspent`);
+    const utxoData = await safeFetch(`${WOC_BASE}/address/${encodedAddress}/unspent`);
     const hasUtxos = Array.isArray(utxoData) && utxoData.length > 0;
 
     if (hasUtxos) {
@@ -215,7 +216,7 @@ export async function queryHtlcStatus(
     }
 
     // No UTXOs — check transaction history to detect claim vs refund
-    const histData = await safeFetch(`${WOC_BASE}/address/${htlcAddress}/history`);
+    const histData = await safeFetch(`${WOC_BASE}/address/${encodedAddress}/history`);
     if (!Array.isArray(histData) || histData.length === 0) {
       return { status: "UNKNOWN", blockHeight, checkedAt };
     }

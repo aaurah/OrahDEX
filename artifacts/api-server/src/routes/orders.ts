@@ -194,7 +194,7 @@ router.post("/orders", async (req, res) => {
 
       const authMsg = buildOrderAuthMessage({
         walletAddress: body.walletAddress,
-        symbol:        body.symbol,
+        symbol:        symbol,
         side:          body.side,
         quantity:      quantity.toString(),
         nonce:         orderNonce,
@@ -214,7 +214,7 @@ router.post("/orders", async (req, res) => {
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
     // When provided, enables on-chain RPC balance verification in fundingVerifier.
     // Must be a numeric value in the supported set; unknown values are silently ignored.
-    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
     const chainId = body.chainId != null
       ? (() => {
           const n = parseInt(String(body.chainId), 10);
@@ -240,8 +240,13 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
+    // Market buy orders lock against the last market price, but the actual fill
+    // happens at the bot's ask (slightly higher). Add a 0.5% slippage buffer so
+    // the locked amount always covers the fill cost and settleTrade never throws
+    // SETTLEMENT_INSUFFICIENT_LOCK due to a small price discrepancy.
+    const lockSlippage = (side === "buy" && type === "market") ? 1.005 : 1;
     const lockAmount = side === "buy"
-      ? (lockPrice ? (lockPrice * quantity).toString() : "0")
+      ? (lockPrice ? (lockPrice * quantity * lockSlippage).toString() : "0")
       : quantity.toString();
 
     let fundingRef = "";
@@ -318,6 +323,9 @@ router.post("/orders", async (req, res) => {
     let lastHtlcLocktimeBlocks: number | undefined;
     let lastCrossChain = false;
     let lastOpReturnPayload: string | undefined;
+    // Hoisted so the IOC check after the match block can read them
+    let totalFilled    = 0;
+    let totalFillValue = 0;
     // EVM HTLC session — set when both parties are external EVM wallets
     let lastEvmHtlcSession: Awaited<ReturnType<typeof initiateEvmHtlcSession>> | null = null;
 
@@ -395,8 +403,7 @@ router.post("/orders", async (req, res) => {
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
       let remainingQty   = quantity;
-      let totalFilled    = 0;
-      let totalFillValue = 0;
+      // totalFilled / totalFillValue are hoisted to outer scope (see above)
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
@@ -631,14 +638,15 @@ router.post("/orders", async (req, res) => {
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
-          // If yes, escrow is the binding settlement venue: never fall back
-          // to HTLC because the locked funds can't be in two places at once.
-          const [incomingEscrowChain, matchEscrowChain] = await Promise.all([
-            findEscrowChain(id),
-            findEscrowChain(match.id),
-          ]).catch(() => [null, null] as [number | null, number | null]);
+          // Reuse the chain values already resolved by the fail-CLOSED precheck
+          // above (lines ~473-478). Those values are authoritative: if the precheck
+          // RPC failed it threw and we already `continue`d past this match. A
+          // second scan here with a swallowed catch would be fail-OPEN — an RPC
+          // blip would make `anyEscrowDeposit` look false and allow HTLC to run
+          // against locked funds. Reusing prefetchedBuyerChain/SellerChain keeps
+          // the settlement decision consistent with the precheck decision.
           const anyEscrowDeposit =
-            incomingEscrowChain !== null || matchEscrowChain !== null;
+            prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
 
           // ── Partial-fill safety: release(orderId) drains the WHOLE deposit. ─
           // We must only call it when this single fill consumes BOTH orders
@@ -683,7 +691,6 @@ router.post("/orders", async (req, res) => {
                 sellerOrderId,
                 buyerAddress,
                 sellerAddress,
-                chainId: releaseChainId,
                 // Reuse precheck values to keep the per-request settlement
                 // decision deterministic and avoid contradictory re-scans.
                 prefetchedBuyerChain,
@@ -888,6 +895,24 @@ router.post("/orders", async (req, res) => {
             // The trade is not yet settled — the fill loop will record the fill with
             // a deterministic txid and the UI will guide the user to complete locking.
             req.log.error({ err: evmErr?.message, tradeId }, "orders: EVM HTLC session creation failed");
+          }
+        }
+      }
+
+      // ── Release the slippage buffer after a fully-filled market buy ──────────
+      // settleTrade only debits the actual fill cost; the 0.5% over-lock stays
+      // in the locked column until we explicitly release it here.
+      if (
+        side === "buy" && type === "market" &&
+        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+      ) {
+        const actualCost = totalFillValue;
+        const excess = parseFloat(lockAmount) - actualCost;
+        if (excess > 1e-9 && lockAsset) {
+          try {
+            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+          } catch (excessErr: any) {
+            req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
@@ -1318,6 +1343,16 @@ router.get("/settlements/htlc-status", async (req, res) => {
 
   if (!htlcAddress || typeof htlcAddress !== "string") {
     res.status(400).json({ error: "htlcAddress query param required" });
+    return;
+  }
+
+  // Strict allow-list validation for BSV P2SH addresses:
+  // - mainnet starts with "3", testnet starts with "2"
+  // - Base58 charset only (no 0, O, I, l)
+  // - Typical P2SH length range
+  const p2shAddressPattern = /^[23][1-9A-HJ-NP-Za-km-z]{24,50}$/;
+  if (!p2shAddressPattern.test(htlcAddress)) {
+    res.status(400).json({ error: "Invalid htlcAddress format" });
     return;
   }
 

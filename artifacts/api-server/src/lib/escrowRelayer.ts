@@ -232,7 +232,6 @@ export interface SettleEscrowMatchParams {
   sellerOrderId:  string;
   buyerAddress:   string;
   sellerAddress:  string;
-  chainId:        number;
 }
 
 export interface SettleEscrowMatchResult {
