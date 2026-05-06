@@ -221,7 +221,9 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 
 /* ── Request timeout — prevents hung external calls blocking a slot ────────── */
 app.use((_req: Request, res: Response, next: NextFunction) => {
-  const ms = _req.method === "GET" ? 30_000 : 60_000;
+  // AI image generation (gpt-image-1) can take 90–120 s — give it extra headroom.
+  const isAiImage = _req.path === "/social/ai/image" && _req.method === "POST";
+  const ms = isAiImage ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
   const timer = setTimeout(() => {
     if (!res.headersSent) {
       res.status(503).json({ error: "Request timeout" });
