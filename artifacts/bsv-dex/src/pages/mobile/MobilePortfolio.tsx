@@ -658,7 +658,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         );
       })()}
 
-      <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
+      <div className={hidePreContent ? "flex flex-col" : "flex flex-col h-full overflow-y-auto pb-24 bg-background"}>
         {!hidePreContent && (
         <div className="px-4 pt-safe-top pb-3 pt-6 flex items-center justify-between">
           <div>
@@ -691,7 +691,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         </div>
         )}
 
-        <div className="px-4 space-y-4">
+        <div className={`px-4 ${hidePreContent && tab === null ? "space-y-0" : "space-y-4"}`}>
           {!hidePreContent && <>
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
           {/* On-chain balance card */}
