@@ -196,6 +196,95 @@ export async function fetchLECoinPriceUSD(
   return 0;
 }
 
+// ── Key-coin definitions for direct LE price fetch ───────────────────────────
+// Used when Binance is unavailable to get live prices for liquid coins.
+const LE_KEY_COINS: Array<{ symbol: string; network: string; minAmount: string }> = [
+  { symbol: "ETH",   network: "ETH",       minAmount: "0.01"   },
+  { symbol: "BTC",   network: "BTC",       minAmount: "0.0001" },
+  { symbol: "BNB",   network: "BEP20",     minAmount: "0.1"    },
+  { symbol: "SOL",   network: "SOL",       minAmount: "0.1"    },
+  { symbol: "XRP",   network: "XRP",       minAmount: "10"     },
+  { symbol: "ADA",   network: "ADA",       minAmount: "10"     },
+  { symbol: "DOGE",  network: "DOGE",      minAmount: "10"     },
+  { symbol: "AVAX",  network: "AVAX",      minAmount: "0.1"    },
+  { symbol: "MATIC", network: "POL",       minAmount: "10"     },
+  { symbol: "LINK",  network: "ERC20",     minAmount: "1"      },
+  { symbol: "DOT",   network: "DOT",       minAmount: "1"      },
+  { symbol: "UNI",   network: "ERC20",     minAmount: "1"      },
+  { symbol: "ATOM",  network: "COSMOS",    minAmount: "1"      },
+  { symbol: "LTC",   network: "LTC",       minAmount: "0.1"    },
+  { symbol: "BCH",   network: "BCH",       minAmount: "0.01"   },
+  { symbol: "TRX",   network: "TRC20",     minAmount: "10"     },
+  { symbol: "NEAR",  network: "NEAR",      minAmount: "1"      },
+  { symbol: "ARB",   network: "ARBITRUM",  minAmount: "1"      },
+  { symbol: "OP",    network: "OPTIMISM",  minAmount: "1"      },
+  { symbol: "SUI",   network: "SUI",       minAmount: "1"      },
+  { symbol: "INJ",   network: "INJ",       minAmount: "0.1"    },
+  { symbol: "APT",   network: "APTOS",     minAmount: "0.1"    },
+  { symbol: "MKR",   network: "ERC20",     minAmount: "0.01"   },
+  { symbol: "AAVE",  network: "ERC20",     minAmount: "0.1"    },
+];
+
+/**
+ * Fetches live USD prices from LetsExchange for the top liquid coins.
+ * Results are stored in the shared cache (TTL = 10 min).
+ * Called when Binance is unavailable so ETH/BTC/etc. get real market prices
+ * rather than falling back to stale hardcoded values.
+ *
+ * Coins already present in a fresh cache are skipped — no redundant API calls.
+ */
+export async function fetchLEKeyPricesIfNeeded(): Promise<Record<string, number>> {
+  // Return without fetching if the cache is still fresh
+  if (_cache && Date.now() - _cache.ts < LE_PRICES_TTL) return _cache.data;
+
+  // Coalesce concurrent callers
+  if (_pendingFetch) return _pendingFetch;
+
+  _pendingFetch = (async () => {
+    const map: Record<string, number> = { ...(_cache?.data ?? {}) };
+
+    await Promise.allSettled(LE_KEY_COINS.map(async coin => {
+      if (map[coin.symbol] && map[coin.symbol] > 0) return; // already cached
+
+      const usdtNet = pickUsdtNet(coin.network);
+      const mkBody = (amt: number) => ({
+        from:         coin.symbol,
+        to:           "USDT",
+        network_from: coin.network,
+        network_to:   usdtNet,
+        amount:       amt,
+        affiliate_id: AFFILIATE_ID,
+      });
+
+      try {
+        let amt = parseFloat(coin.minAmount) || 1;
+        let res = await leRequest("/v1/info", "POST", mkBody(amt));
+        if (res.ok && res.data) {
+          let rate = parseFloat((res.data as any).rate ?? "");
+          if (rate > 0) { map[coin.symbol] = rate; return; }
+
+          const depositMin = parseFloat((res.data as any).deposit_min_amount ?? "");
+          if (depositMin > 0 && depositMin !== amt) {
+            res = await leRequest("/v1/info", "POST", mkBody(depositMin));
+            if (res.ok && res.data) {
+              rate = parseFloat((res.data as any).rate ?? "");
+              if (rate > 0) map[coin.symbol] = rate;
+            }
+          }
+        }
+      } catch { /* skip on network error */ }
+    }));
+
+    if (Object.keys(map).length > 0) {
+      _cache = { data: map, ts: Date.now() };
+    }
+    _pendingFetch = null;
+    return map;
+  })();
+
+  return _pendingFetch;
+}
+
 // ── Startup warm-up ───────────────────────────────────────────────────────────
 // Fetches the full LE coin list and pre-populates the price cache.
 // Called once at server start — non-blocking (fire and forget).

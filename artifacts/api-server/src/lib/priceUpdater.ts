@@ -6,7 +6,7 @@ import { guardedInterval } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
-import { getCachedLEPrices, warmLEPriceCache, leRequest } from "./lePriceCache.js";
+import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -481,6 +481,31 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     logger.warn({ err }, "Binance 24h-ticker fetch failed");
   }
 
+  // ── 1b. LetsExchange live prices — direct fetch when Binance is unavailable ─
+  // Triggered when Binance didn't return ETH (blocked / down in this environment).
+  // Fetches the top liquid coins directly from LE /v1/info in parallel and
+  // populates the shared LE cache so subsequent cycles benefit from it too.
+  if (!out["ETH"]) {
+    try {
+      const lePrices = await fetchLEKeyPricesIfNeeded();
+      for (const [sym, usd] of Object.entries(lePrices)) {
+        if (!out[sym] && usd > 0) {
+          out[sym] = {
+            usd,
+            usd_24h_change: 0,
+            usd_24h_vol:    usd * 1_000_000,
+            usd_market_cap: 0,
+          };
+        }
+      }
+      if (out["ETH" as string]) {
+        logger.debug({ ethUsd: (out["ETH" as string] as CoinGeckoPrice).usd }, "ETH price from LetsExchange (Binance unavailable)");
+      }
+    } catch (err) {
+      logger.warn({ err }, "LetsExchange key-coin direct fetch failed");
+    }
+  }
+
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
   try {
     const bsvRes = await fetch(`${BSV_NET.wocBase}/exchangerate`, {
@@ -568,7 +593,34 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
-  // ── Merge any missing symbols from FALLBACK_PRICES ─────────────────────────
+  // ── LetsExchange live prices — fills all remaining gaps before static fallback
+  // Moved BEFORE FALLBACK_PRICES so live LE rates always take priority over
+  // stale hardcoded values (especially critical when Binance is blocked).
+  try {
+    const lePrices = getCachedLEPrices();
+    for (const [sym, usd] of Object.entries(lePrices)) {
+      if (!out[sym] && usd > 0) {
+        // Coin not yet priced — use LE live rate
+        out[sym] = {
+          usd,
+          usd_24h_change: simulateDailyChange(sym),
+          usd_24h_vol: usd * 100_000,
+          usd_market_cap: 0,
+        };
+      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
+        // Zero-price entry — replace with LE rate
+        out[sym].usd = usd;
+      }
+    }
+    if (Object.keys(lePrices).length > 0) {
+      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE price merge failed (non-fatal)");
+  }
+
+  // ── Merge any missing symbols from FALLBACK_PRICES (last resort) ────────────
+  // Only reached for coins that neither Binance nor LetsExchange could price.
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (!out[sym]) {
       out[sym] = {
@@ -578,32 +630,6 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
         usd_market_cap: 0,
       };
     }
-  }
-
-  // ── LetsExchange live prices — fills coins not on Binance/CoinGecko ──────────
-  // Uses the shared 10-minute cache populated by warmLEPriceCache() at startup
-  // and kept fresh by the pairs route.  Non-blocking: never delays the cycle.
-  try {
-    const lePrices = getCachedLEPrices();
-    for (const [sym, usd] of Object.entries(lePrices)) {
-      if (!out[sym] && usd > 0) {
-        // Coin not covered by Binance — use LE live rate
-        out[sym] = {
-          usd,
-          usd_24h_change: simulateDailyChange(sym),
-          usd_24h_vol: usd * 100_000,
-          usd_market_cap: 0,
-        };
-      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
-        // Binance returned a 0-price entry — replace with LE rate
-        out[sym].usd = usd;
-      }
-    }
-    if (Object.keys(lePrices).length > 0) {
-      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
-    }
-  } catch (err) {
-    logger.warn({ err }, "LE price merge failed (non-fatal)");
   }
 
   return out;
@@ -657,7 +683,7 @@ function simulateDailyChange(symbol: string): number {
 // Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:16,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  BSV:16,BTC:95000,ETH:2400,SOL:150,XRP:0.60,BNB:600,ADA:0.45,
   DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
   LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
   SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
@@ -709,7 +735,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:83000,CBETH:1800,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  CBBTC:95000,CBETH:2400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
   HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
   BALD:0.00284,NORMIE:0.00182,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
