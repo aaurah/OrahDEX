@@ -107,12 +107,13 @@ function addressForChain(
 }
 
 function ChainBalanceRow({
-  chain, address, network, derived, onReceive,
+  chain, address, network, derived, quoteCurrency, onReceive,
 }: {
   chain: ChainRow;
   address: string | null;
   network: string | null;
   derived: DerivedAddresses | null;
+  quoteCurrency: string;
   onReceive: (chain: ChainRow) => void;
 }) {
   // Live EVM balance fetch (only for live EVM chains, only when address present)
@@ -157,7 +158,7 @@ function ChainBalanceRow({
       </div>
       {chain.live && useEvm && (
         <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-foreground">${subtotalUsd.toFixed(2)}</p>
+          <p className="text-sm font-semibold text-foreground">{formatQuoteAmount(subtotalUsd, quoteCurrency)}</p>
           <p className="text-[10px] text-muted-foreground">{tokenCount + 1} assets</p>
         </div>
       )}
@@ -309,6 +310,7 @@ export default function Wallet() {
               address={address}
               network={network}
               derived={derived}
+              quoteCurrency={quoteCurrency}
               onReceive={(chain) => {
                 if (chain.family === "evm") {
                   setReceiveOpen(true);
