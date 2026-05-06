@@ -768,7 +768,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const [interval, setInterval] = useState<string>(() => {
     const saved = localStorage.getItem('orahdex-mobile-interval');
-    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
     return saved && valid.includes(saved) ? saved : "1h";
   });
   const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
@@ -851,6 +851,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     '2Y':  { apiInterval: '1w', limit: 104 },
     '5Y':  { apiInterval: '1w', limit: 261 },
     '10Y': { apiInterval: '1M', limit: 120 },
+    'All': { apiInterval: '1M', limit: 1500 },
   };
   const mobilePreset = MOBILE_RANGE_PRESET_MAP[interval];
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
@@ -1360,7 +1361,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── TIMEFRAME + INDICATOR ROW ── */}
         <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
           {/* Timeframe pills */}
-          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y"]).map(iv => (
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y","All"]).map(iv => (
             <button
               key={iv}
               onClick={() => handleIntervalChange(iv)}

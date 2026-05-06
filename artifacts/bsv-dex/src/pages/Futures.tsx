@@ -167,7 +167,7 @@ export function FuturesTrading() {
   const [price, setPrice] = useState("");
   const [chartInterval, setChartInterval] = useState(() => {
     const saved = localStorage.getItem('orahdex-futures-interval');
-    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
     return saved && valid.includes(saved) ? saved : "1h";
   });
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
@@ -485,6 +485,7 @@ export function FuturesTrading() {
               <Chart
                 symbol={symbol}
                 interval={chartInterval}
+                onIntervalChange={setChartInterval}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
