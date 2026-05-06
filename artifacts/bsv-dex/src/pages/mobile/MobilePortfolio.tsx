@@ -235,7 +235,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
-  const [tab, setTab] = useState<Tab>(() => visibleTabs?.[0] ?? "assets");
+  const [tab, setTab] = useState<Tab | null>(() => hidePreContent ? null : (visibleTabs?.[0] ?? "assets"));
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
   const [directBuyOpen, setDirectBuyOpen] = useState(false);
@@ -863,7 +863,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             {(["assets", "defi", "orders", "history"] as Tab[]).filter(t => !visibleTabs || visibleTabs.includes(t)).map(t => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => setTab(prev => prev === t ? null : t)}
                 className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
                   tab === t
                     ? "bg-primary/15 border-primary/40 text-primary"
