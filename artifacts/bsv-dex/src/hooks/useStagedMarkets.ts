@@ -51,6 +51,6 @@ export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
   }, []);
 
   // Prefer the full result once it's available; otherwise show the priority slice.
-  const data = (full.data && full.data.length > 0) ? full.data : (priority ?? undefined);
+  const data = (full.data && (full.data as any[]).length > 0) ? full.data : (priority ?? undefined);
   return { ...full, data } as typeof full;
 }

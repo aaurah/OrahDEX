@@ -37,7 +37,7 @@ export function useLetsExchangeRate(
   const [error, setError]     = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetch = useCallback(async () => {
+  const fetchRate = useCallback(async () => {
     if (!fromCoin || !toCoin) { setRate(null); return; }
     const refAmt = REF_AMOUNTS[fromCoin.symbol] ?? REF_AMOUNTS.DEFAULT;
     setLoading(true);
@@ -74,10 +74,10 @@ export function useLetsExchangeRate(
 
   useEffect(() => {
     setRate(null); setError(false);
-    fetch();
-    timerRef.current = setInterval(fetch, REFRESH_MS);
+    fetchRate();
+    timerRef.current = setInterval(fetchRate, REFRESH_MS);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [fetch]);
+  }, [fetchRate]);
 
   return { rate, loading, error };
 }

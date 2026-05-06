@@ -430,8 +430,8 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
-                <Route path="/wallet"     component={MobileWalletPortfolio} />
-                <Route path="/portfolio"  component={MobileWalletPortfolio} />
+                <Route path="/wallet">{() => <MobileWalletPortfolio />}</Route>
+                <Route path="/portfolio">{() => <MobileWalletPortfolio />}</Route>
                 <Route path="/portfolio/:coin">
                   {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
                 </Route>
@@ -470,7 +470,7 @@ function Router() {
                   <Route path="/copy"           component={CopyTrading} />
                   <Route path="/fees"           component={RevenuePage} />
                   <Route path="/keeper"         component={KeeperProfile} />
-                  <Route path="/wallet"         component={WalletPage} />
+                  <Route path="/wallet">{() => <WalletPage />}</Route>
                   <Route path="/portfolio"      component={Portfolio} />
                   <Route path="/portfolio/:coin">
                     {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}

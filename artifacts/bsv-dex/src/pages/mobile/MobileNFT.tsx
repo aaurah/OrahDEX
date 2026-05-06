@@ -80,7 +80,8 @@ interface Creator {
   is_verified: boolean; follower_count: number; following_count: number;
   post_count: number; symbol: string; coin_name: string;
   price_usd: number; market_cap_usd: number; ath_usd: number;
-  volume_24h_usd: number; holder_count: number; circulating_supply: number;
+  volume_24h_usd: number; holder_count: number; holding_count?: number;
+  circulating_supply: number;
   total_supply: number; virtual_bsv: number; virtual_tokens: number;
   price_bsv: number; trade_count: number;
 }
@@ -495,6 +496,7 @@ function CreatorProfileSheet({
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
+  const [, navigate] = useLocation();
   const hybrid = useHybridBalance(60_000);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);

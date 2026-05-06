@@ -198,7 +198,7 @@ export function Markets() {
   };
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
-  const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });

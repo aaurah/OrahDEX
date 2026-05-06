@@ -5,13 +5,15 @@ Unified sovereign multi-chain wallet + non-custodial exchange — users hold the
 ## Run & Operate
 
 ```bash
-pnpm --filter @workspace/api-server run dev   # API on $PORT (default 8080)
-pnpm --filter @workspace/bsv-dex run dev      # Frontend on $PORT (default 20180)
-pnpm --filter @workspace/db run push          # Apply DB schema changes
-pnpm --filter @workspace/db run migrate       # Run migrations
+PORT=8080 pnpm --filter @workspace/api-server run dev   # API on port 8080
+PORT=20180 pnpm --filter @workspace/bsv-dex run dev     # Frontend on port 20180
 ```
 
-Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`.
+Workflows are configured: **"API Server"** (port 8080, console) and **"OrahDEX Frontend"** (port 20180, webview).
+
+DB schema: Apply with `sed 's/--> statement-breakpoint/;/g' lib/db/drizzle/0000_noisy_wilson_fisk.sql | psql $DATABASE_URL` (drizzle-kit push requires TTY). Also create `internal_bsv_wallets` via raw SQL (see `lib/internalBsvWallet.ts`).
+
+Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`. AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
 
 ## Stack
 
