@@ -3,6 +3,9 @@ import cors from "cors";
 import compression from "compression";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
@@ -61,15 +64,27 @@ app.use(
     },
   }),
 );
+// Build the allowed-origin list:
+//   1. ALLOWED_ORIGINS env var (comma-separated, takes full precedence when set)
+//   2. Hard-coded custom domains
+//   3. All *.replit.app / *.replit.dev subdomains (covers all Replit deployments)
+//   4. localhost variants (dev convenience)
+const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
+  ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
+  : [
+      "https://orahdex.org",
+      "https://www.orahdex.org",
+      /^https?:\/\/[^.]+\.replit\.app$/,
+      /^https?:\/\/[^.]+\.replit\.dev$/,
+      /^https?:\/\/localhost(:\d+)?$/,
+      /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+    ];
+
 app.use(cors({
-  // Allow specific origins from an env variable.
-  // Set ALLOWED_ORIGINS to a comma-separated list of allowed origins for your deployment.
-  // Falls back to the known production domains when the variable is not set.
-  origin: process.env["ALLOWED_ORIGINS"]
-    ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(o => o && o !== "*")
-    : ["https://orahdex.org", "https://www.orahdex.org"],
+  origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
+  credentials: true,
 }));
 
 /* ── EVM webhook — registered BEFORE express.json() ──────────────────────────
@@ -256,6 +271,32 @@ app.use("/v1", apiKeyAuth);
 app.use("/api", router);
 app.use("/v1", v1Router);
 startApiKeyCounterFlusher();
+
+/* ── Static frontend — served in production (Replit deployment) ──────────────
+   The Vite build outputs to artifacts/bsv-dex/dist/public.
+   From the compiled server at artifacts/api-server/dist/, that is two levels up.
+   Serving from the same Express process eliminates the need for a separate
+   preview server and the /api proxy problem it creates.
+── */
+if (process.env.NODE_ENV === "production") {
+  const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDist = path.resolve(__serverDir, "../../bsv-dex/dist/public");
+  if (fs.existsSync(frontendDist)) {
+    logger.info({ frontendDist }, "Serving static frontend in production");
+    // Static assets — long-lived cache for hashed filenames
+    app.use(express.static(frontendDist, {
+      maxAge: "1y",
+      immutable: true,
+      index: false,
+    }));
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html
+    app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  } else {
+    logger.warn({ frontendDist }, "Frontend dist not found — skipping static serving");
+  }
+}
 
 /* ── Global Express error handler — catches any sync/async route throw ─────── */
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
