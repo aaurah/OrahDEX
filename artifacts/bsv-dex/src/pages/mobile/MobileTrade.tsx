@@ -2246,10 +2246,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
                           const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX balance`;
+                          return isEvm
+                            ? `+${creditedQty} ${orderResult.quoteSymbol} settled on-chain to your wallet`
+                            : `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX balance`;
                         } else {
                           const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          return `+${creditedQty} ${orderResult.base} credited to your OrahDEX balance`;
+                          return isEvm
+                            ? `+${creditedQty} ${orderResult.base} settled on-chain to your wallet`
+                            : `+${creditedQty} ${orderResult.base} credited to your OrahDEX balance`;
                         }
                       })()
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
