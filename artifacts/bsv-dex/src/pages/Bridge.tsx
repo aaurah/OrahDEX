@@ -88,7 +88,7 @@ const CHAINS: Chain[] = [
 ];
 
 const SPOT_PRICES: Record<string, number> = {
-  BSV: 16, BTC: 83000, ETH: 1800, SOL: 130, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
+  BSV: 16, BTC: 83000, ETH: 2400, SOL: 130, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
   ARB: 0.42, OP: 0.70, POL: 0.23, MATIC: 0.32, cbBTC: 83000, WBTC: 83000, BONK: 0.000017,
   BNB: 580, AVAX: 18, TRX: 0.07, DOT: 4.2,
   ZK: 0.065, MNT: 0.70, BLAST: 0.008, MODE: 0.022, BOBA: 0.14, METIS: 28, TAIKO: 1.1,
@@ -1144,7 +1144,7 @@ interface QuickCoin {
 
 const QUICK_COINS: QuickCoin[] = [
   { symbol:"BTC",   name:"Bitcoin",          chain:"Bitcoin",        chainLabel:"BTC",           icon:"₿", color:"#f7931a", usdPrice:83000,  minBsv:0.01,  maxBsv:50000 },
-  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:1800,   minBsv:0.05,  maxBsv:50000 },
+  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:2400,   minBsv:0.05,  maxBsv:50000 },
   { symbol:"SOL",   name:"Solana",           chain:"Solana",         chainLabel:"SOL",           icon:"◎", color:"#9945ff", usdPrice:130,    minBsv:0.1,   maxBsv:50000 },
   { symbol:"BNB",   name:"BNB",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:580,    minBsv:0.1,   maxBsv:50000 },
   { symbol:"XRP",   name:"XRP",              chain:"Ripple",         chainLabel:"XRP Ledger",    icon:"✕", color:"#00aae4", usdPrice:2.1,    minBsv:10,    maxBsv:50000 },

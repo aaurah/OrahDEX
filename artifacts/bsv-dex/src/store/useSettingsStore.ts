@@ -68,7 +68,7 @@ export const CRYPTO_QUOTE_CURRENCIES = [
   { code: "USDT", name: "Tether",       symbol: "₮", flag: "💵", rateToUsd: 1 },
   { code: "USDC", name: "USD Coin",     symbol: "$", flag: "💵", rateToUsd: 1 },
   { code: "BTC",  name: "Bitcoin",      symbol: "₿", flag: "🟠", rateToUsd: 1 / 83000 },
-  { code: "ETH",  name: "Ethereum",     symbol: "Ξ", flag: "🔷", rateToUsd: 1 / 1800 },
+  { code: "ETH",  name: "Ethereum",     symbol: "Ξ", flag: "🔷", rateToUsd: 1 / 2400 },
   { code: "BNB",  name: "BNB",          symbol: "B", flag: "🟡", rateToUsd: 1 / 580 },
   { code: "SOL",  name: "Solana",       symbol: "◎", flag: "🔵", rateToUsd: 1 / 130 },
   { code: "BSV",  name: "Bitcoin SV",   symbol: "Ƀ", flag: "🟡", rateToUsd: 1 / 55 },

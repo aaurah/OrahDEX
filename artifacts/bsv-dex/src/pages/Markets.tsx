@@ -426,7 +426,7 @@ export function Markets() {
   const { prices: liveCrossRates } = useWalletPrices();
   const BTC_USD = liveCrossRates.BTC.usd || 83000;
   const BSV_USD = liveCrossRates.BSV.usd || 14;
-  const ETH_USD = liveCrossRates.ETH.usd || 1800;
+  const ETH_USD = liveCrossRates.ETH.usd || 2400;
 
   const QUOTE_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
