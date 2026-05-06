@@ -37,6 +37,7 @@ import {
 } from "./htlc.js";
 import { getBsvChainStatus } from "./bsvChainMonitor.js";
 import { settleTrade } from "./ledger.js";
+import { BOT_ADDRESS } from "./liquidityBot.js";
 import { onTradeSettled as copyVaultOnTradeSettled } from "./copyOrchestrator.js";
 import { registerHtlc } from "./htlcWatcher.js";
 
@@ -223,7 +224,10 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       quoteAsset:  quoteAsset!,
       amount:      fillQty.toString(),
       price:       fillPrice.toString(),
-      isBotSeller: isBot,
+      // Derive per-side bot flags from address — isBot only tells us the bot is
+      // involved, not which side it's on (buyer vs seller).
+      isBotSeller: sellerAddress === BOT_ADDRESS,
+      isBotBuyer:  buyerAddress  === BOT_ADDRESS,
     });
   } catch (err) {
     // Ledger settlement is the source of truth for balances.
