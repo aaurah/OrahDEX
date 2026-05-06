@@ -401,8 +401,8 @@ router.post("/letsexchange/estimate", async (req, res) => {
     const body: Record<string,unknown> = {
       from,
       to,
-      network_from: String(network_from),
-      network_to:   String(network_to),
+      network_from,
+      network_to,
       amount:       amt,
       affiliate_id: AFFILIATE_ID,
       float:        isFloat ?? false,
