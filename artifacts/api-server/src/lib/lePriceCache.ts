@@ -258,16 +258,16 @@ export async function fetchLEKeyPricesIfNeeded(): Promise<Record<string, number>
 
       try {
         let amt = parseFloat(coin.minAmount) || 1;
-        let res = await leRequest("/v1/info", "POST", mkBody(amt));
-        if (res.ok && res.data) {
-          let rate = parseFloat((res.data as any).rate ?? "");
+        const initialRes = await leRequest("/v1/info", "POST", mkBody(amt));
+        if (initialRes.ok && initialRes.data) {
+          let rate = parseFloat((initialRes.data as any).rate ?? "");
           if (rate > 0) { map[coin.symbol] = rate; return; }
 
-          const depositMin = parseFloat((res.data as any).deposit_min_amount ?? "");
+          const depositMin = parseFloat((initialRes.data as any).deposit_min_amount ?? "");
           if (depositMin > 0 && depositMin !== amt) {
-            res = await leRequest("/v1/info", "POST", mkBody(depositMin));
-            if (res.ok && res.data) {
-              rate = parseFloat((res.data as any).rate ?? "");
+            const retryRes = await leRequest("/v1/info", "POST", mkBody(depositMin));
+            if (retryRes.ok && retryRes.data) {
+              rate = parseFloat((retryRes.data as any).rate ?? "");
               if (rate > 0) map[coin.symbol] = rate;
             }
           }

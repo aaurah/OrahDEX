@@ -499,7 +499,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
         }
       }
       if (out["ETH" as string]) {
-        logger.debug({ ethUsd: (out["ETH" as string] as CoinGeckoPrice).usd }, "ETH price from LetsExchange (Binance unavailable)");
+        logger.debug({ count: Object.keys(lePrices).length }, "Key coin prices from LetsExchange (Binance unavailable)");
       }
     } catch (err) {
       logger.warn({ err }, "LetsExchange key-coin direct fetch failed");
