@@ -700,9 +700,12 @@ export function Markets() {
                       </td>
                       <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2.5">
-                        <button
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedCoin(m)}
-                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                          onKeyDown={e => e.key === "Enter" && setSelectedCoin(m)}
+                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity cursor-pointer"
                         >
                           <CoinLogo symbol={base} size={32} />
                           <div className="flex flex-col gap-0.5">
@@ -736,7 +739,7 @@ export function Markets() {
                               );
                             })()}
                           </div>
-                        </button>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
                         {applyQConversion && <span className="text-muted-foreground/60 text-[10px] mr-0.5">{qSym}</span>}

@@ -1183,7 +1183,7 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
       const result = await db.insert(marketsTable)
-        .values(chunk as Parameters<typeof db.insert>[0]["values"])
+        .values(chunk as any[])
         .onConflictDoUpdate({
           target: marketsTable.symbol,
           set: {
