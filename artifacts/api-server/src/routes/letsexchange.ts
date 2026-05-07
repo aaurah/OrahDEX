@@ -136,6 +136,7 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "DOGE", "LTC"];
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
 const MIN_DB_SEEDED_PAIR_COUNT = 100;
+const COUNT_CACHE_MAX_AGE_SECONDS = 60;
 
 function buildPairs(coins: NormalisedCoin[]) {
   const changeMap = getCoinChangeMap();
@@ -435,7 +436,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
       filtered = allPairs.filter(p => p.quoteAsset === "BSV");
     }
 
-    res.set("Cache-Control", "public, max-age=60");
+    res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
     res.json({ count: filtered.length });
   } catch (err: any) {
     logger.warn({ err }, "letsexchange /pairs/count failed");

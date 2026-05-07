@@ -547,6 +547,7 @@ export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
   const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
+  const MARKETS_PREVIEW_LIMIT = 50;
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)
@@ -574,11 +575,11 @@ export function LandingPage() {
       const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
-        fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
       ]);
-      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed");
-      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed");
-      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed");
+      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
+      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);
+      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed", marketsRes.reason);
       const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
       const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
       const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
