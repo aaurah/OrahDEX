@@ -21,7 +21,6 @@ import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
-import quicknodeWebhookRouter from "./routes/quicknodeWebhook.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
 
 const app: Express = express();
@@ -69,16 +68,6 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
 }));
-
-/* ── QuickNode Streams webhook — registered BEFORE express.json() ─────────────
-   HMAC-SHA256 signature verification requires the raw request body (Buffer).
-   Any body-parsing middleware applied before this route would break verification.
-── */
-app.use(
-  "/api/webhooks",
-  express.raw({ type: "*/*" }),
-  quicknodeWebhookRouter,
-);
 
 /* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
    Stripe requires the raw request body (Buffer) to verify the signature.

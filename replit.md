@@ -13,7 +13,7 @@ Workflows are configured: **"API Server"** (port 8080, console) and **"OrahDEX F
 
 DB schema: Apply with `sed 's/--> statement-breakpoint/;/g' lib/db/drizzle/0000_noisy_wilson_fisk.sql | psql $DATABASE_URL` (drizzle-kit push requires TTY). Also create `internal_bsv_wallets` via raw SQL (see `lib/internalBsvWallet.ts`).
 
-Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `QUICKNODE_API_KEY`, `QUICKNODE_WEBHOOK_SECRET`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`. AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
+Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`. AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
 
 ## Stack
 
@@ -32,13 +32,11 @@ artifacts/
     app.ts                  — Express setup, middleware order, background service startup
     routes/
       index.ts              — Main router (all /api/* routes)
-      admin.ts              — Admin panel + QuickNode Streams management endpoints
+      admin.ts              — Admin panel endpoints
       evmSettlement.ts      — HTLC session routes
-      quicknodeWebhook.ts   — POST /api/webhooks/quicknode (QN Streams receiver)
     lib/
-      evmHtlc.ts            — EVM HTLC sessions, polling watcher, triggerEvmHtlcCheckByLockId
+      evmHtlc.ts            — EVM HTLC sessions, polling watcher
       escrowRelayer.ts      — OrahDEXEscrow contract relayer (release/cancel)
-      quicknodeStreams.ts   — HMAC verification, QN REST API client, event topic constants
       evmDepositWatcher.ts  — Fallback 90 s polling for native-token deposits
       htlcWatcher.ts        — BSV HTLC adaptive polling watcher
   bsv-dex/src/
@@ -52,9 +50,9 @@ lib/
 ## Architecture decisions
 
 - **Non-custodial first**: EVM self-custody wallets read on-chain balances via viem; internal Orah wallets use API ledger. `usesApiBalance = isOrahWallet && !isEvm`.
-- **QuickNode Streams replaces polling**: `POST /api/webhooks/quicknode` receives HTLC `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events in real time. Polling watchers remain as fallback (belt-and-suspenders).
+- **Polling-based event detection**: EVM HTLC polling watcher runs every 30 s to detect `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events on-chain.
 - **Self-healing worker engine** (`lib/selfHealing.ts`): all background services (price-updater, liquidity-bot, futures-funding/liquidation, bsv/evm-deposit-watchers) run via `guardedInterval()` — a drop-in replacement for `setInterval+_busy` that force-releases stuck locks after a per-service timeout, tracks consecutive failures with exponential skip-backoff, and reports per-service health to a central registry. `/api/health` returns structured status (healthy/degraded/stuck/dead) with 503 when any service is dead. An order reconciler auto-cancels orders stuck open >30 min every 5 min.
-- **Webhook registered before express.json()**: Raw body buffer is required for HMAC-SHA256 signature verification (`x-qn-signature` header).
+- **Webhook registered before express.json()**: Stripe webhook at `/api/stripe/webhook` requires raw body buffer for HMAC-SHA256 signature verification.
 - **HTLC + Escrow share one contract address** on ETH mainnet: `0xeE234cEb85697b64800E696699b7841e00413B4f`.
 - **Order funding refs**: `evm-sig:` or `evm-balance:` prefix → skip internal ledger settlement; `bothEvmExternal` path emits `settlement_pending` instead.
 - **Stripe webhook** also registered before express.json() (separate route at `/api/stripe/webhook`).
@@ -92,13 +90,9 @@ lib/
 
 ## Gotchas
 
-- **QuickNode Stream ID** (ETH mainnet, contract logs): `e9276e1b-f045-48be-a8dc-f8bc524d160d`
-- Set `QUICKNODE_WEBHOOK_SECRET` to the secret used when the stream was created so HMAC verification passes.
-- `triggerEvmHtlcCheckByLockId` is called from the webhook handler — it needs `notInArray` from drizzle-orm and `TERMINAL_STATUSES` const; both are in `evmHtlc.ts`.
-- Admin QN stream endpoints live under `/api/admin/quicknode/…` (protected by `requireAdminToken`).
 - esbuild bundles everything; TypeScript imports at the bottom of a file still work at runtime but tsc will reject them — keep all imports at file top.
 - LetsExchange Partner ID: `1692`.
-- EVM HTLC watcher polls every 30 s; QN Streams supplements it (not replaces).
+- EVM HTLC watcher polls every 30 s for on-chain events.
 - DB schema must be applied before first run: `pnpm --filter @workspace/db run push-force` (requires TTY) or run `node -e "..."` migration script — migration SQL is at `lib/db/drizzle/0000_noisy_wilson_fisk.sql`.
 - LE/SimpleSwap/Stripe routes return errors gracefully when API keys are missing; native AMM path still works without them.
 - Stripe apiVersion pinned to `"2025-03-31.basil"` in both `stripeClient.ts` and `webhookHandlers.ts` — keep in sync.
@@ -107,7 +101,6 @@ lib/
 
 ## Pointers
 
-- QuickNode Streams REST API: `https://api.quicknode.com/streams/rest/v1/streams` (auth: `x-api-key`)
 - OrahDEX HTLC/Escrow contract: `0xeE234cEb85697b64800E696699b7841e00413B4f` (ETH mainnet)
 - Sepolia Escrow: `0x4deb6023abD9E1C640aDa35201be8ff591d21cF2`
 - WhatsOnChain BSV API: `https://api.whatsonchain.com/v1/bsv/main`
