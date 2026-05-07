@@ -545,8 +545,6 @@ router.post("/letsexchange/exchange", async (req, res) => {
   try {
     const fromNetwork = String(network_from).trim().toUpperCase();
     const toNetwork = String(network_to).trim().toUpperCase();
-    const withdrawalClean = withdrawalStr;
-
     const body: Record<string,unknown> = {
       float:                isFloat ?? false,
       coin_from:            String(coin_from).toUpperCase(),
@@ -554,7 +552,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       network_from:         fromNetwork,
       network_to:           toNetwork,
       deposit_amount:       amt,
-      withdrawal:           withdrawalClean,
+      withdrawal:           withdrawalStr,
       withdrawal_extra_id:  withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
       affiliate_id:         AFFILIATE_ID,
     };
@@ -585,7 +583,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
         depositAmountUsd: depositUsd,
         status:           String(d.status ?? "waiting"),
-        withdrawal:       withdrawalClean,
+        withdrawal:       withdrawalStr,
       }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
     }
 
