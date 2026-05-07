@@ -850,7 +850,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { pairs: rawLePairs } = useLetsExchangePairs({ all: true });
   const lePair = useMemo(() => {
     if (!Array.isArray(rawLePairs)) return null;
-    const key = symbol.replace("-", "/").toUpperCase();
+    const key = symbol.toUpperCase();
     return rawLePairs.find((p) => String(p.symbol).toUpperCase() === key) ?? null;
   }, [rawLePairs, symbol]);
 

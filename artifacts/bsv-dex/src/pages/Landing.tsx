@@ -570,15 +570,19 @@ export function LandingPage() {
   const { data: marketsData } = useQuery({
     queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const [leCountRes, countRes, marketsRes] = await Promise.all([
+      const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
       ]);
-      const { count: leCount = 0 } = leCountRes.ok ? await leCountRes.json() : {};
-      const { count = 0 } = countRes.ok ? await countRes.json() : {};
-      const arr = marketsRes.ok ? await marketsRes.json() : [];
-      const totalCount = Math.max(Number(leCount) || 0, Number(count) || 0);
+      const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
+      const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
+      const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
+      const leCount = Number((leCountPayload as any)?.count ?? 0) || 0;
+      const marketCount = Number((countPayload as any)?.count ?? 0) || 0;
+      // /letsexchange/pairs/count already returns merged external+native symbol count.
+      // Fall back to /markets/count only when that endpoint is unavailable.
+      const totalCount = leCount > 0 ? leCount : marketCount;
       return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,

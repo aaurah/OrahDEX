@@ -388,7 +388,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
         const dbPairs = await fetchLEPairsFromDB();
         if (dbPairs.length >= 100) {
           lePairs = dbPairs;
-          cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+          cache.set(cacheKey, { data: lePairs, ts: Date.now() });
         }
       } catch {
         // fall through to live build
@@ -405,7 +405,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
         }
       }
       lePairs = buildPairs(coins);
-      cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+      cache.set(cacheKey, { data: lePairs, ts: Date.now() });
     }
 
     let nativePairs: Record<string, unknown>[] = [];
