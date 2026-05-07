@@ -13,7 +13,21 @@ Workflows are configured: **"API Server"** (port 8080, console) and **"OrahDEX F
 
 DB schema: Apply with `sed 's/--> statement-breakpoint/;/g' lib/db/drizzle/0000_noisy_wilson_fisk.sql | psql $DATABASE_URL` (drizzle-kit push requires TTY). Also create `internal_bsv_wallets` via raw SQL (see `lib/internalBsvWallet.ts`).
 
-Required env vars: `ETH_RPC_URL`, `ETH_WS_URL`, `EVM_WALLET_SECRET` (relayer key), `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`, `COINBASE_API_KEY/SECRET/PROJECT_ID`. AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
+Required env vars:
+- `EVM_WALLET_SECRET` — relayer private key
+- `STRIPE_SECRET_KEY`, `SIMPLESWAP_API_KEY`, `LETSEXCHANGE_API_KEY`
+- `COINBASE_API_KEY/SECRET/PROJECT_ID`
+
+Optional RPC env vars (all fall back to public nodes if unset):
+- `ETH_RPC_URL`, `ETH_WS_URL` — Ethereum mainnet
+- `SEPOLIA_RPC_URL`, `BASE_RPC_URL`, `ARB_RPC_URL`, `OP_RPC_URL`
+- `BSC_RPC_URL`, `POLYGON_RPC_URL`, `AVAX_RPC_URL`
+
+Optional webhook env vars:
+- `EVM_WEBHOOK_SECRET` — HMAC secret for `/api/webhooks/evm` payload verification
+- `EVM_WATCHED_CONTRACTS` — comma-separated extra contract addresses to watch
+
+AI image gen uses Replit AI Integration (auto-provisioned: `AI_INTEGRATIONS_OPENAI_BASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`).
 
 ## Stack
 
@@ -32,11 +46,13 @@ artifacts/
     app.ts                  — Express setup, middleware order, background service startup
     routes/
       index.ts              — Main router (all /api/* routes)
-      admin.ts              — Admin panel endpoints
+      admin.ts              — Admin panel + EVM webhook/RPC config info endpoints
       evmSettlement.ts      — HTLC session routes
+      evmWebhookRouter.ts   — POST /api/webhooks/evm (provider-agnostic EVM log receiver)
     lib/
-      evmHtlc.ts            — EVM HTLC sessions, polling watcher
+      evmHtlc.ts            — EVM HTLC sessions, polling watcher, triggerEvmHtlcCheckByLockId
       escrowRelayer.ts      — OrahDEXEscrow contract relayer (release/cancel)
+      evmWebhook.ts         — HMAC verification, event topic constants, log extraction
       evmDepositWatcher.ts  — Fallback 90 s polling for native-token deposits
       htlcWatcher.ts        — BSV HTLC adaptive polling watcher
   bsv-dex/src/
@@ -50,9 +66,12 @@ lib/
 ## Architecture decisions
 
 - **Non-custodial first**: EVM self-custody wallets read on-chain balances via viem; internal Orah wallets use API ledger. `usesApiBalance = isOrahWallet && !isEvm`.
-- **Polling-based event detection**: EVM HTLC polling watcher runs every 30 s to detect `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events on-chain.
-- **Self-healing worker engine** (`lib/selfHealing.ts`): all background services (price-updater, liquidity-bot, futures-funding/liquidation, bsv/evm-deposit-watchers) run via `guardedInterval()` — a drop-in replacement for `setInterval+_busy` that force-releases stuck locks after a per-service timeout, tracks consecutive failures with exponential skip-backoff, and reports per-service health to a central registry. `/api/health` returns structured status (healthy/degraded/stuck/dead) with 503 when any service is dead. An order reconciler auto-cancels orders stuck open >30 min every 5 min.
-- **Webhook registered before express.json()**: Stripe webhook at `/api/stripe/webhook` requires raw body buffer for HMAC-SHA256 signature verification.
+- **Provider-agnostic EVM webhook**: `POST /api/webhooks/evm` receives HTLC `Locked`/`Revealed`/`Refunded` and Escrow `OrderReleased` events in real time. Compatible with Alchemy Notify, Infura, Tenderly, self-hosted relays, or any provider posting the standard EVM log format. The legacy `/api/webhooks/quicknode` path is kept as an alias. Polling watchers remain as fallback (belt-and-suspenders). No QuickNode SDK or API key required.
+- **Self-healing worker engine** (`lib/selfHealing.ts`): all background services run via `guardedInterval()` — force-releases stuck locks, tracks consecutive failures with exponential skip-backoff, reports per-service health to a central registry. `/api/health` returns structured status (healthy/degraded/stuck/dead) with 503 when dead. An order reconciler auto-cancels orders stuck open >30 min every 5 min. Services that have never run yet correctly show "healthy" (pending first run) rather than "dead".
+- **Data-integrity reconcilers** (`lib/selfHealingReconcilers.ts`): five additional guardedInterval services — `le-status-sync` (re-checks non-terminal LE swaps every 10min), `ghost-order-detector` (flags processing/settlement_pending orders >2h), `stripe-le-reconciler` (flags LE swaps stuck in 'waiting' >30min), `db-watchdog` (pings DB every 2min, alerts on slow queries), `price-watchdog` (fires alerts if price engine is dead/stuck).
+- **Alert bus** (`lib/alertBus.ts`): in-memory ring buffer (500 events) + DB persistence for critical/high alerts. `emit(severity, category, message)` with 5-min dedup. Categories: rpc/le/stripe/db/webhook/reconciler/admin/order/price/system. Hydrated from DB on startup. Exposed via `/api/admin/alerts` and `/api/admin/alerts/summary`.
+- **Subsystem probe** (`lib/subsystemProbe.ts`): active external health probes — 8 EVM RPC chains, LetsExchange API, Stripe API, BSV/WoC, DB latency, price engine freshness, webhook HMAC config, LE pairs count. Used by `/api/admin/diagnostics` and `/api/admin/diagnostics/rpc`.
+- **Webhook registered before express.json()**: Raw body buffer is required for HMAC-SHA256 signature verification (`x-webhook-signature` or `x-qn-signature` headers both accepted).
 - **HTLC + Escrow share one contract address** on ETH mainnet: `0xeE234cEb85697b64800E696699b7841e00413B4f`.
 - **Order funding refs**: `evm-sig:` or `evm-balance:` prefix → skip internal ledger settlement; `bothEvmExternal` path emits `settlement_pending` instead.
 - **Stripe webhook** also registered before express.json() (separate route at `/api/stripe/webhook`).
@@ -78,29 +97,23 @@ lib/
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
 
-## Recent Fixes (2026-05-06 — Admin/Portfolio/Wallet Audit)
-
-- **Admin panel — orphaned `CexConnections` page** (`App.tsx`, `AdminLayout.tsx`): `pages/admin/CexConnections.tsx` (CEX API key management, 581 lines) exported `AdminCexConnections` but had no route and no nav item — completely unreachable. Added lazy import, `/admin/cex-connections` route, and "CEX Connections" nav entry in the AI Intelligence section. Also imported `Link2` icon into `AdminLayout.tsx`.
-- **Portfolio — multi-address balance gap** (`Portfolio.tsx`): Portfolio only showed balances for the currently active network. Added `useEvmBalances` hook call for `internalEvmAddress` (non-EVM users' provisioned EVM sub-account on ETH mainnet) and `fetchBsvBalance` for `internalBsvAddress` (non-BSV users' BSV sub-account). All internal rows are merged after primary balances, de-duplicated by symbol (primary wins). Also wired refresh button to trigger `intEvmRefresh()` and `refreshIntBsvBalance()`.
-- **Portfolio — WithdrawSheet wrong address**: `walletAddress` and `defaultRecipient` were always passed `address` (current active) regardless of asset chain. Added `addressForAssetNetwork(assetNetwork)` helper that resolves to `internalBsvAddress` for BSV assets, `internalEvmAddress` for EVM assets, `internalTronAddress` for TRON, falling back to connected address when internal is not yet provisioned.
-- **Portfolio — hardcoded zero stats**: "Open Spot Orders" showed static `0`. Replaced with a live `useQuery` fetching `/api/orders?walletAddress=…&status=open` for all known addresses (primary + internal), de-duplicating by order ID. "Futures Positions" (also static 0) replaced with "Tracked Assets" showing `nonZero.length` — a meaningful live count.
-- **Liquidity routing audit** (no change needed): Confirmed `hasRealOB` → order mode (internal DEX) / no OB → auto-switches to LE swap mode is correct. `hybridRouter.ts` properly simulates VWAP fills against real non-synthetic orders before routing to LE.
-- **Double mutation handlers** (`OrderForm.tsx`): previously fixed — `placeOrder.mutate(...)` inline callbacks removed; consolidated into single `usePlaceOrder` handler.
-- **Auth message symbol normalization** (`orders.ts`): previously fixed — `buildOrderAuthMessage` uses normalized `symbol` (slashes) not raw `body.symbol` (dashes).
-
 ## Gotchas
 
+- `triggerEvmHtlcCheckByLockId` is called from the webhook handler — it needs `notInArray` from drizzle-orm and `TERMINAL_STATUSES` const; both are in `evmHtlc.ts`.
+- Admin EVM endpoints: `/api/admin/evm/topics`, `/api/admin/evm/rpc-config`, `/api/admin/evm/webhook-info`, `/api/admin/evm/filter-fn` (all protected by `requireAdminToken`). Legacy `/api/admin/quicknode/…` paths also work.
 - esbuild bundles everything; TypeScript imports at the bottom of a file still work at runtime but tsc will reject them — keep all imports at file top.
 - LetsExchange Partner ID: `1692`.
-- EVM HTLC watcher polls every 30 s for on-chain events.
+- EVM HTLC watcher polls every 30 s; webhook supplements it (not replaces).
 - DB schema must be applied before first run: `pnpm --filter @workspace/db run push-force` (requires TTY) or run `node -e "..."` migration script — migration SQL is at `lib/db/drizzle/0000_noisy_wilson_fisk.sql`.
 - LE/SimpleSwap/Stripe routes return errors gracefully when API keys are missing; native AMM path still works without them.
 - Stripe apiVersion pinned to `"2025-03-31.basil"` in both `stripeClient.ts` and `webhookHandlers.ts` — keep in sync.
 - `LE_COIN_NETWORK` map lives in `src/lib/leCoinNetwork.ts` (single source-of-truth); both `stripeCheckout.ts` and `webhookHandlers.ts` import from there.
 - Fallback price self-call in `stripeCheckout.ts` uses `http://127.0.0.1:${PORT ?? 8080}` with a 5 s timeout — not `localhost`.
+- `EVM_WEBHOOK_SECRET` is the new canonical env var; `QUICKNODE_WEBHOOK_SECRET` is still accepted as a fallback so existing deployments don't break.
 
 ## Pointers
 
 - OrahDEX HTLC/Escrow contract: `0xeE234cEb85697b64800E696699b7841e00413B4f` (ETH mainnet)
 - Sepolia Escrow: `0x4deb6023abD9E1C640aDa35201be8ff591d21cF2`
 - WhatsOnChain BSV API: `https://api.whatsonchain.com/v1/bsv/main`
+- EVM webhook docs: register `POST /api/webhooks/evm` with your provider; set `EVM_WEBHOOK_SECRET` to the shared HMAC secret

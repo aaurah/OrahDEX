@@ -19,6 +19,16 @@ import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from 
 import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { logger } from "../lib/logger.js";
+import {
+  buildFilterFunction,
+  WATCHED_CONTRACTS,
+  TOPIC_HTLC_LOCKED,
+  TOPIC_HTLC_REVEALED,
+  TOPIC_HTLC_REFUNDED,
+  TOPIC_ESCROW_RELEASED,
+  logTopics,
+} from "../lib/evmWebhook.js";
+
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export const serviceState = {
   priceEngineLastRunAt:  Date.now(),
@@ -3383,6 +3393,125 @@ router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
   }
+});
+
+// ── EVM webhook & RPC configuration info ──────────────────────────────────────
+// GET  /api/admin/evm/topics       — display computed event topic hashes
+// GET  /api/admin/evm/webhook-info — show webhook URL and env var status
+// GET  /api/admin/evm/rpc-config   — show which RPC endpoints are configured
+// GET  /api/admin/evm/filter-fn    — generate a filter function for a webhook provider
+
+// Also kept under /quicknode/ paths for backwards compatibility with any
+// existing admin tooling or bookmarks.
+
+router.get(["/evm/topics", "/quicknode/topics"], (_req, res) => {
+  logTopics();
+  res.json({
+    TOPIC_HTLC_LOCKED,
+    TOPIC_HTLC_REVEALED,
+    TOPIC_HTLC_REFUNDED,
+    TOPIC_ESCROW_RELEASED,
+    watchedContracts: WATCHED_CONTRACTS,
+    note: "These are the keccak256(ABI event signature) values used to filter EVM log webhooks.",
+  });
+});
+
+router.get(["/evm/webhook-info", "/quicknode/webhook-info"], (req, res) => {
+  const domain = process.env["REPLIT_DEV_DOMAIN"] ?? null;
+  const primaryUrl = domain
+    ? `https://${domain}/api/webhooks/evm`
+    : null;
+  const legacyUrl = domain
+    ? `https://${domain}/api/webhooks/quicknode`
+    : null;
+
+  res.json({
+    webhookUrls: {
+      primary: primaryUrl,
+      legacy:  legacyUrl,
+      note:    "Register the primary URL with your EVM log provider (Alchemy, Infura, Tenderly, etc.).",
+    },
+    hmacSecret: {
+      configured: !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]),
+      envVar:     "EVM_WEBHOOK_SECRET",
+      fallbackVar: "QUICKNODE_WEBHOOK_SECRET (accepted for backwards compat)",
+      note: "Set EVM_WEBHOOK_SECRET to the HMAC secret configured in your provider dashboard.",
+    },
+    extraContracts: {
+      envVar: "EVM_WATCHED_CONTRACTS",
+      current: (process.env["EVM_WATCHED_CONTRACTS"] ?? "").split(",").filter(Boolean),
+      note: "Comma-separated extra contract addresses to accept events from.",
+    },
+    filterFunction: buildFilterFunction(WATCHED_CONTRACTS),
+  });
+});
+
+router.get(["/evm/rpc-config", "/quicknode/rpc-config"], (_req, res) => {
+  const chains: Record<string, { envVar: string; configured: boolean; url?: string }> = {
+    ethereum: {
+      envVar:     "ETH_RPC_URL",
+      configured: !!process.env["ETH_RPC_URL"],
+      url:        process.env["ETH_RPC_URL"] ? "(set)" : undefined,
+    },
+    "ethereum-ws": {
+      envVar:     "ETH_WS_URL",
+      configured: !!process.env["ETH_WS_URL"],
+      url:        process.env["ETH_WS_URL"] ? "(set)" : undefined,
+    },
+    sepolia: {
+      envVar:     "SEPOLIA_RPC_URL",
+      configured: !!process.env["SEPOLIA_RPC_URL"],
+    },
+    base: {
+      envVar:     "BASE_RPC_URL",
+      configured: !!process.env["BASE_RPC_URL"],
+    },
+    arbitrum: {
+      envVar:     "ARB_RPC_URL",
+      configured: !!process.env["ARB_RPC_URL"],
+    },
+    optimism: {
+      envVar:     "OP_RPC_URL",
+      configured: !!process.env["OP_RPC_URL"],
+    },
+    bnb: {
+      envVar:     "BSC_RPC_URL",
+      configured: !!process.env["BSC_RPC_URL"],
+    },
+    polygon: {
+      envVar:     "POLYGON_RPC_URL",
+      configured: !!process.env["POLYGON_RPC_URL"],
+    },
+    avalanche: {
+      envVar:     "AVAX_RPC_URL",
+      configured: !!process.env["AVAX_RPC_URL"],
+    },
+  };
+
+  const totalChains    = Object.keys(chains).length;
+  const configuredCount = Object.values(chains).filter(c => c.configured).length;
+
+  res.json({
+    summary: `${configuredCount}/${totalChains} chains have custom RPC URLs configured.`,
+    note: "Chains without a custom URL fall back to public nodes. Set env vars to use your own nodes.",
+    chains,
+  });
+});
+
+router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
+  const extra = ((req.query["contracts"] as string) ?? "")
+    .split(",")
+    .map(s => s.trim().toLowerCase())
+    .filter(s => /^0x[0-9a-f]{40}$/.test(s));
+
+  const contracts = [...WATCHED_CONTRACTS, ...extra];
+  const filterFn  = buildFilterFunction(contracts);
+
+  res.json({
+    contracts,
+    filterFunction: filterFn,
+    note: "Paste this filter function into your EVM log webhook provider's filter field. Add extra contract addresses via the ?contracts= query param.",
+  });
 });
 
 export default router;

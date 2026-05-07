@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-3.11", "postgresql-16"]
+modules = ["nodejs-20", "web"]
 
 [[artifacts]]
 id = "artifacts/api-server"
@@ -9,6 +9,8 @@ id = "artifacts/bsv-dex"
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+run = ["bash", "-c", "pnpm --filter @workspace/api-server run start & PORT=5000 pnpm --filter @workspace/bsv-dex run serve"]
+build = ["bash", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -24,38 +26,22 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "API Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "OrahDEX Frontend"
-
-[[workflows.workflow]]
-name = "API Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
-waitForPort = 8080
 
 [[workflows.workflow]]
 name = "OrahDEX Frontend"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
-waitForPort = 20180
-
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5000 pnpm --filter @workspace/bsv-dex run dev"
+waitForPort = 5000
+
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 integrations = ["stripe:1.0.0"]
 
