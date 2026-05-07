@@ -332,7 +332,6 @@ export async function customFetch<T = unknown>(
 ): Promise<T> {
   input = applyBaseUrl(input);
   const { responseType = "auto", headers: headersInit, ...init } = options;
-  const requestCache = init.cache ?? "no-store";
 
   const method = resolveMethod(input, init.method);
 
@@ -365,7 +364,7 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, cache: requestCache, method, headers });
+  const response = await fetch(input, { ...init, method, headers });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

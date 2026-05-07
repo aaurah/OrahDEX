@@ -41,7 +41,10 @@ async function fetchPriority(): Promise<any[]> {
  * batch is exactly the set the UI needs to be useful on first paint.
  */
 export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
-  const full = useGetMarkets(opts);
+  const full = useGetMarkets({
+    ...opts,
+    request: { ...(opts?.request ?? {}), cache: "no-store" },
+  });
   const [priority, setPriority] = useState<any[] | null>(priorityCache);
 
   useEffect(() => {
