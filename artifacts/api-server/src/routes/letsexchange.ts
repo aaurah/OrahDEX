@@ -371,6 +371,74 @@ router.get("/letsexchange/pairs", async (req, res) => {
   res.json(result);
 });
 
+// ── GET /api/letsexchange/pairs/count ─────────────────────────────────────────
+// Lightweight count endpoint so clients can show total pair counts without
+// transferring the full pairs payload.
+router.get("/letsexchange/pairs/count", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  try {
+    const cacheKey = "le_pairs_all";
+    let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
+    let coins: NormalisedCoin[] | null | undefined;
+
+    if (!lePairs) {
+      try {
+        const dbPairs = await fetchLEPairsFromDB();
+        if (dbPairs.length >= 100) {
+          lePairs = dbPairs;
+          cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+        }
+      } catch {
+        // fall through to live build
+      }
+    }
+
+    if (!lePairs) {
+      coins = cached("currencies") as NormalisedCoin[] | null;
+      if (!coins) {
+        try {
+          coins = await fetchAndCacheCurrencies();
+        } catch {
+          coins = [];
+        }
+      }
+      lePairs = buildPairs(coins);
+      cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+    }
+
+    let nativePairs: Record<string, unknown>[] = [];
+    try {
+      const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
+      if (cacheHit) nativePairs = cacheHit;
+      else {
+        nativePairs = await fetchNativeMarkets();
+        setCache("native_markets", nativePairs);
+      }
+    } catch {
+      nativePairs = [];
+    }
+
+    const bySymbol = new Map<string, Record<string, unknown>>();
+    nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+    lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+
+    const allPairs = Array.from(bySymbol.values());
+    const filtered = !returnAll && filterQuote
+      ? allPairs.filter(p => p.quoteAsset === filterQuote)
+      : !returnAll
+        ? allPairs.filter(p => p.quoteAsset === "BSV")
+        : allPairs;
+
+    res.set("Cache-Control", "public, max-age=60");
+    res.json({ count: filtered.length });
+  } catch (err: any) {
+    logger.warn({ err }, "letsexchange /pairs/count failed");
+    res.json({ count: 0 });
+  }
+});
+
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
 // Real endpoint: POST /api/v1/info
 // Required: from, to, network_from, network_to, amount, affiliate_id

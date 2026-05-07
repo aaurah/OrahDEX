@@ -177,7 +177,7 @@ function OraAiSection() {
   const FALLBACK_INSIGHTS = [
     { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
     { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
   ];
 
   useEffect(() => {
@@ -243,7 +243,7 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors 950+ markets in real-time,
+            Your AI co-pilot for every trade. Ora monitors markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
           </p>
@@ -570,19 +570,22 @@ export function LandingPage() {
   const { data: marketsData } = useQuery({
     queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const [countRes, marketsRes] = await Promise.all([
+      const [leCountRes, countRes, marketsRes] = await Promise.all([
+        fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
       ]);
-      const { count = 950 } = countRes.ok ? await countRes.json() : {};
+      const { count: leCount = 0 } = leCountRes.ok ? await leCountRes.json() : {};
+      const { count = 0 } = countRes.ok ? await countRes.json() : {};
       const arr = marketsRes.ok ? await marketsRes.json() : [];
-      return { count: count || 950, markets: Array.isArray(arr) ? arr : [] };
+      const totalCount = Math.max(Number(leCount) || 0, Number(count) || 0);
+      return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
-    placeholderData: { count: 950, markets: [] as any[] },
+    placeholderData: { count: 0, markets: [] as any[] },
   });
 
-  const marketCount = marketsData?.count ?? 950;
+  const marketCount = marketsData?.count ?? 0;
   const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
