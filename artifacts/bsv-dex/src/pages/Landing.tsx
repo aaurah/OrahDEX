@@ -189,7 +189,7 @@ function OraAiSection() {
     }, 8000);
 
     const controller = new AbortController();
-    fetch(`${BASE}/api/ai/insights`, { signal: controller.signal })
+    fetch(`${API_BASE}/ai/insights`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;
