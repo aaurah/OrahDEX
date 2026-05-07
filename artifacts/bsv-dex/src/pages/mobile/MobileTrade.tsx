@@ -19,6 +19,7 @@ import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanRece
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
@@ -846,6 +847,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  const { pairs: rawLePairs } = useLetsExchangePairs({ all: true });
+  const lePair = useMemo(() => {
+    if (!Array.isArray(rawLePairs)) return null;
+    const key = symbol.toUpperCase();
+    return rawLePairs.find((p) => String(p.symbol).toUpperCase() === key) ?? null;
+  }, [rawLePairs, symbol]);
+
+  const lePairPrice = Number(lePair?.lastPrice ?? 0) || 0;
+  const lePairChange = Number(lePair?.priceChangePercent24h ?? 0) || 0;
+
   const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
     '1Y':  { apiInterval: '1d', limit: 365 },
     '2Y':  { apiInterval: '1w', limit: 104 },
@@ -904,7 +915,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     retry: false,
   });
 
-  const lastPrice = parseFloat(ticker?.lastPrice) || 0;
+  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
 
   // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
   // Market orders have price: null in the DB, so we fall back to lastPrice to
@@ -923,7 +934,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return sum + qty * px;
     }, 0);
 
-  const change = parseFloat(ticker?.priceChangePercent) || 0;
+  const change = parseFloat(ticker?.priceChangePercent) || lePairChange || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
   const vol24  = parseFloat(ticker?.volume)    || 0;

@@ -177,7 +177,7 @@ function OraAiSection() {
   const FALLBACK_INSIGHTS = [
     { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
     { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
   ];
 
   useEffect(() => {
@@ -243,7 +243,7 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors 950+ markets in real-time,
+            Your AI co-pilot for every trade. Ora monitors markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
           </p>
@@ -546,6 +546,8 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
+  const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
+  const MARKETS_PREVIEW_LIMIT = 50;
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)
@@ -570,19 +572,29 @@ export function LandingPage() {
   const { data: marketsData } = useQuery({
     queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const [countRes, marketsRes] = await Promise.all([
+      const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
-        fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
       ]);
-      const { count = 950 } = countRes.ok ? await countRes.json() : {};
-      const arr = marketsRes.ok ? await marketsRes.json() : [];
-      return { count: count || 950, markets: Array.isArray(arr) ? arr : [] };
+      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
+      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);
+      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed", marketsRes.reason);
+      const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
+      const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
+      const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
+      const leCount = Number((leCountPayload as any)?.count ?? 0);
+      const marketCount = Number((countPayload as any)?.count ?? 0);
+      // /letsexchange/pairs/count already returns merged external+native symbol count.
+      // Fall back to /markets/count only when that endpoint is unavailable.
+      const totalCount = leCount > 0 ? leCount : marketCount;
+      return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
-    placeholderData: { count: 950, markets: [] as any[] },
+    placeholderData: { count: MARKET_COUNT_PLACEHOLDER, markets: [] as any[] },
   });
 
-  const marketCount = marketsData?.count ?? 950;
+  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : MARKET_COUNT_PLACEHOLDER;
   const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;

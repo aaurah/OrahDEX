@@ -135,6 +135,8 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 
 const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "DOGE", "LTC"];
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const MIN_DB_SEEDED_PAIR_COUNT = 100;
+const COUNT_CACHE_MAX_AGE_SECONDS = 60;
 
 function buildPairs(coins: NormalisedCoin[]) {
   const changeMap = getCoinChangeMap();
@@ -243,7 +245,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
     // This eliminates the "breathing" list problem caused by live LE API responses.
     try {
       const dbPairs = await fetchLEPairsFromDB();
-      if (dbPairs.length >= 100) {
+      if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
         // DB is seeded — use stable list
         lePairs = dbPairs;
         cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
@@ -369,6 +371,77 @@ router.get("/letsexchange/pairs", async (req, res) => {
 
   res.set("Cache-Control", "public, max-age=60");
   res.json(result);
+});
+
+// ── GET /api/letsexchange/pairs/count ─────────────────────────────────────────
+// Lightweight count endpoint so clients can show total pair counts without
+// transferring the full pairs payload.
+router.get("/letsexchange/pairs/count", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  try {
+    const cacheKey = "le_pairs_all";
+    let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
+    let coins: NormalisedCoin[] | null | undefined;
+
+    if (!lePairs) {
+      try {
+        const dbPairs = await fetchLEPairsFromDB();
+        if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
+          lePairs = dbPairs;
+          cache.set(cacheKey, { data: lePairs, ts: Date.now() });
+        }
+      } catch {
+        // fall through to live build
+      }
+    }
+
+    if (!lePairs) {
+      coins = cached("currencies") as NormalisedCoin[] | null;
+      if (!coins) {
+        try {
+          coins = await fetchAndCacheCurrencies();
+        } catch {
+          coins = [];
+        }
+      }
+      lePairs = buildPairs(coins);
+      cache.set(cacheKey, { data: lePairs, ts: Date.now() });
+    }
+
+    let nativePairs: Record<string, unknown>[] = [];
+    try {
+      const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
+      if (cacheHit) nativePairs = cacheHit;
+      else {
+        nativePairs = await fetchNativeMarkets();
+        setCache("native_markets", nativePairs);
+      }
+    } catch {
+      nativePairs = [];
+    }
+
+    const bySymbol = new Map<string, Record<string, unknown>>();
+    nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+    // Keep behavior aligned with /letsexchange/pairs: LetsExchange rows override
+    // native rows on symbol collisions so both endpoints report consistent totals.
+    lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+
+    const allPairs = Array.from(bySymbol.values());
+    let filtered = allPairs;
+    if (!returnAll && filterQuote) {
+      filtered = allPairs.filter(p => p.quoteAsset === filterQuote);
+    } else if (!returnAll) {
+      filtered = allPairs.filter(p => p.quoteAsset === "BSV");
+    }
+
+    res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
+    res.json({ count: filtered.length });
+  } catch (err: any) {
+    logger.warn({ err }, "letsexchange /pairs/count failed");
+    res.json({ count: 0 });
+  }
 });
 
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
