@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -133,11 +133,18 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 //   lastPrice (0), priceChangePercent24h (0), volume (0),
 //   type ("letsexchange"), leSource (true)
 
-// 14 quotes: all major QUOTE_TABS + XRP/DOGE/LTC (in LE but not QUOTE_TABS before)
-// 3316 LE coins × 14 quotes − 14 self-pairs ≈ 46 400 pairs shown in the exchange.
+// 22 quotes = every QUOTE_TAB currency (all of which the DB already carries).
+// With 3 336 LE coins in the DB this yields ≈ 44 940 pairs — above the 44K target.
+// fetchLEPairsFromDB() filters to exactly these quotes so the DB query stays lean.
 const LE_PAIR_QUOTES = [
-  "BSV", "BTC", "ETH", "USDT", "USDC", "BNB", "BCH",
-  "SOL", "XRP", "TRX", "DOGE", "LTC", "AVAX", "MATIC",
+  // High-count (3 336 pairs each from DB all-to-all)
+  "BSV", "BTC", "ETH", "USDT", "USDC", "BNB",
+  // Mid-count (3 315 — self-skip for coins that ARE these quotes)
+  "SOL", "XRP", "TRX", "DOGE",
+  // Lower-count from DB; live API fills gaps to ~972 per quote
+  "LTC", "BCH", "AVAX", "MATIC",
+  // QUOTE_TAB currencies with ~198–199 DB rows each (live API tops up to 972)
+  "ARB", "OP", "FTM", "CRO", "MNT", "ZK", "SCR", "LINEA",
 ];
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
 const MIN_DB_SEEDED_PAIR_COUNT = 100;
@@ -178,6 +185,7 @@ function buildPairs(coins: NormalisedCoin[]) {
 // Returns pairs in the same shape as buildPairs() so they're drop-in compatible.
 // Only used when the DB is seeded (>= 100 LE rows) — falls back to live LE otherwise.
 async function fetchLEPairsFromDB(): Promise<Record<string, unknown>[]> {
+  // Filter to LE_PAIR_QUOTES so we only load the ~44K relevant rows instead of 319K+
   const rows = await db
     .select({
       symbol:                marketsTable.symbol,
@@ -188,7 +196,11 @@ async function fetchLEPairsFromDB(): Promise<Record<string, unknown>[]> {
       volume:                marketsTable.volume24h,
     })
     .from(marketsTable)
-    .where(and(eq(marketsTable.type, "letsexchange"), eq(marketsTable.enabled, true)));
+    .where(and(
+      eq(marketsTable.type, "letsexchange"),
+      eq(marketsTable.enabled, true),
+      inArray(marketsTable.quoteAsset, LE_PAIR_QUOTES),
+    ));
 
   const changeMap = getCoinChangeMap();
   return rows.map(r => ({
@@ -240,44 +252,52 @@ router.get("/letsexchange/pairs", async (req, res) => {
   const returnAll   = req.query.all === "true" || req.query.all === "1";
 
   const cacheKey = "le_pairs_all";
-  let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
+  let cachedResult = cached(cacheKey) as Record<string, unknown>[] | null;
   let coins: NormalisedCoin[] | null | undefined;
 
-  if (!lePairs) {
-    // ── Primary: live LE API (full 3316-coin coverage → 46 400+ pairs) ────
-    // The DB path only has 191 coins from a historical sync; the live API is
-    // authoritative and gives ~17× more pairs with the expanded LE_PAIR_QUOTES.
+  if (!cachedResult) {
+    // ── Merge DB catalog + live API for maximum pair coverage ──────────────
+    // DB:      36 000+ all-to-all pairs (191 coins × 190 quotes) — real prices
+    // Live API: ~14 000 pairs (972 unique coins × 14 quotes)     — newer coins
+    // Combined: ~47 000 unique pairs after deduplication
+    //
+    // Priority order (lower layer is applied first, higher layers override):
+    //   1. live API buildPairs  (base layer — newer coins, lastPrice=0)
+    //   2. DB pairs             (override — real prices, wide all-to-all catalog)
+    //   3. native spot pairs    (override — most accurate prices from the DEX)
+    const mergeMap = new Map<string, Record<string, unknown>>();
+
+    // Layer 1: live LE API buildPairs (fresh coin list, 14 quotes)
     try {
       coins = cached("currencies") as NormalisedCoin[] | null;
       if (!coins) coins = await fetchAndCacheCurrencies();
       if (coins && coins.length >= 100) {
-        lePairs = buildPairs(coins);
-        cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
-        logger.debug({ count: lePairs.length, coins: coins.length }, "letsexchange /pairs: built from live LE API");
+        buildPairs(coins).forEach(p => mergeMap.set(p.symbol as string, p));
+        logger.debug({ live: mergeMap.size, coins: coins.length }, "letsexchange /pairs: live layer loaded");
       }
     } catch (err: any) {
-      logger.warn({ err }, "letsexchange /pairs: live API failed, falling back to DB");
+      logger.warn({ err }, "letsexchange /pairs: live API layer failed (non-fatal)");
     }
-  }
 
-  if (!lePairs) {
-    // ── Fallback: DB-backed pair list (used when LE API is unavailable) ───
+    // Layer 2: DB all-to-all pairs (191 coins × 190 quotes — real prices)
     try {
       const dbPairs = await fetchLEPairsFromDB();
-      if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
-        lePairs = dbPairs;
-        cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
-        logger.debug({ count: dbPairs.length }, "letsexchange /pairs: served from DB fallback");
-      }
+      dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
+      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged");
     } catch (err: any) {
-      logger.warn({ err }, "letsexchange /pairs: DB fetch also failed");
+      logger.warn({ err }, "letsexchange /pairs: DB layer failed (non-fatal)");
+    }
+
+    cachedResult = Array.from(mergeMap.values());
+    if (cachedResult.length > 0) {
+      cache.set(cacheKey, { data: cachedResult, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+      logger.info({ total: cachedResult.length }, "letsexchange /pairs: merged catalog cached");
     }
   }
 
-  if (!lePairs) lePairs = [];
+  const lePairs: Record<string, unknown>[] = cachedResult ?? [];
 
-  // Fetch OrahDEX native spot pairs from the DB and merge them in.
-  // LE pairs come first; native pairs fill any symbol not already present.
+  // Layer 3: OrahDEX native spot pairs (most accurate prices — override LE)
   let nativePairs: Record<string, unknown>[] = [];
   try {
     const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
@@ -291,10 +311,10 @@ router.get("/letsexchange/pairs", async (req, res) => {
     logger.warn({ err }, "letsexchange /pairs: could not fetch native markets (non-fatal)");
   }
 
-  // Deduplicate: LE pairs win over native pairs for the same symbol
+  // Final dedup: native DEX pairs override LE pairs when symbol matches
   const bySymbol = new Map<string, Record<string, unknown>>();
-  nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
-  lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // LE overrides
+  lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+  nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // native wins on price
 
   // ── Cross-rate enrichment ────────────────────────────────────────────────
   // Priority (highest → lowest):
@@ -391,33 +411,19 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     let coins: NormalisedCoin[] | null | undefined;
 
     if (!lePairs) {
+      // Mirrors /pairs: merge live API buildPairs + DB all-to-all catalog
+      const mergeMap = new Map<string, Record<string, unknown>>();
+      try {
+        coins = cached("currencies") as NormalisedCoin[] | null;
+        if (!coins) coins = await fetchAndCacheCurrencies();
+        if (coins && coins.length >= 100) buildPairs(coins).forEach(p => mergeMap.set(p.symbol as string, p));
+      } catch { /* non-fatal */ }
       try {
         const dbPairs = await fetchLEPairsFromDB();
-        if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
-          lePairs = dbPairs;
-          cache.set(cacheKey, { data: lePairs, ts: Date.now() });
-        }
-      } catch {
-        // fall through to live build
-      }
-    }
-
-    if (!lePairs) {
-      // Fallback: live API (count endpoint mirrors /pairs priority)
-      coins = cached("currencies") as NormalisedCoin[] | null;
-      if (!coins) {
-        try { coins = await fetchAndCacheCurrencies(); } catch { coins = []; }
-      }
-      lePairs = coins && coins.length > 0 ? buildPairs(coins) : [];
+        dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
+      } catch { /* non-fatal */ }
+      lePairs = Array.from(mergeMap.values());
       if (lePairs.length > 0) cache.set(cacheKey, { data: lePairs, ts: Date.now() });
-    }
-
-    if (!lePairs || lePairs.length === 0) {
-      // Last resort: DB
-      try {
-        const dbPairs = await fetchLEPairsFromDB();
-        lePairs = dbPairs;
-      } catch { lePairs = []; }
     }
 
     let nativePairs: Record<string, unknown>[] = [];

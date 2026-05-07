@@ -530,12 +530,12 @@ export function SpotTrading() {
                 <span className="w-20 text-right">Price</span>
                 <span className="w-14 text-right">24h %</span>
               </div>
-              {/* Pair list */}
+              {/* Pair list — cap at 200 rows per tab to keep the DOM fast */}
               <div className="overflow-y-auto max-h-64 min-h-0">
                 {dropFiltered.length === 0 ? (
                   <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">No pairs found</div>
                 ) : (
-                  dropFiltered.map(m => {
+                  dropFiltered.slice(0, 200).map(m => {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
@@ -572,6 +572,14 @@ export function SpotTrading() {
                       </Link>
                     );
                   })
+                )}
+                {dropFiltered.length > 200 && (
+                  <div className="flex items-center justify-center gap-1.5 py-2 border-t border-border/50 bg-secondary/20">
+                    <Search className="w-3 h-3 text-muted-foreground/60" />
+                    <span className="text-[10px] text-muted-foreground">
+                      Showing 200 of {dropFiltered.length.toLocaleString()} — search to find more
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
