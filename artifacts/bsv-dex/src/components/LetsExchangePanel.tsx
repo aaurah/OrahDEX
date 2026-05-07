@@ -1167,11 +1167,13 @@ export function LetsExchangePanel({
   initialTo,
   walletAddress,
   onConnectWallet,
+  onExchangeCreated,
 }: {
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   onConnectWallet?: () => void;
+  onExchangeCreated?: (fill: { price: number; side: "buy" | "sell" }) => void;
 } = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
@@ -1235,6 +1237,11 @@ export function LetsExchangePanel({
       addHistoryEntry(newOrder);
       setOrder(newOrder);
       setStep(3);
+      // Notify parent so the OrderBook can flash on swap confirmation
+      if (estimate && fromCoin && toCoin) {
+        const rateNum = parseFloat(estimate.amount) / parseFloat(sendAmount || "1");
+        onExchangeCreated?.({ price: isFinite(rateNum) ? rateNum : 0, side: "buy" });
+      }
     } catch { setCreateError("Network error — please try again"); }
     setCreating(false);
   };
@@ -1252,10 +1259,10 @@ export function LetsExchangePanel({
       </div>
     );
   }
-  if (coinsErr) {
+  if (coinsErr || (!loading && coins.length === 0)) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-red-400 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 shrink-0" /> Failed to load coin list.
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
       </div>
     );
   }

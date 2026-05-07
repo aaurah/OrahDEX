@@ -4,14 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
+import { API_BASE } from "@/lib/api";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Animated OrahO sigil — large sovereign version ───────────────────── */
 function SovereignSigil({ size = 160 }: { size?: number }) {
@@ -190,7 +189,7 @@ function OraAiSection() {
     }, 8000);
 
     const controller = new AbortController();
-    fetch(`${BASE}/api/ai/insights`, { signal: controller.signal })
+    fetch(`${API_BASE}/ai/insights`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;
@@ -562,23 +561,29 @@ export function LandingPage() {
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`);
+      const r = await fetch(`${API_BASE}/bsv-status`, { cache: "no-store" });
       return r.ok ? r.json() : { online: false, blockHeight: 0 };
     },
     refetchInterval: 30_000,
   });
 
-  const { data: markets } = useQuery({
-    queryKey: ["market-count"],
+  const { data: marketsData } = useQuery({
+    queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
-      if (!r.ok) return [];
-      return r.json();
+      const [countRes, marketsRes] = await Promise.all([
+        fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
+      ]);
+      const { count = 950 } = countRes.ok ? await countRes.json() : {};
+      const arr = marketsRes.ok ? await marketsRes.json() : [];
+      return { count: count || 950, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
+    placeholderData: { count: 950, markets: [] as any[] },
   });
 
-  const marketCount = markets?.length ?? 950;
+  const marketCount = marketsData?.count ?? 950;
+  const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 
@@ -1066,4 +1071,3 @@ export function LandingPage() {
     </div>
   );
 }
-

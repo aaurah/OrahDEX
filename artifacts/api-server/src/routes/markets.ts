@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
@@ -223,6 +223,24 @@ router.get("/markets", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /markets/count — returns { count: N } quickly from the cache or DB */
+router.get("/markets/count", async (_req, res) => {
+  const cached = marketsCache.get("all");
+  if (cached) {
+    res.json({ count: cached.length });
+    return;
+  }
+  try {
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(marketsTable)
+      .where(eq(marketsTable.enabled, true));
+    res.json({ count: Number(rows[0]?.count ?? 0) });
+  } catch {
+    res.json({ count: 0 });
   }
 });
 

@@ -198,7 +198,7 @@ export function Markets() {
   };
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
-  const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
@@ -426,7 +426,7 @@ export function Markets() {
   const { prices: liveCrossRates } = useWalletPrices();
   const BTC_USD = liveCrossRates.BTC.usd || 83000;
   const BSV_USD = liveCrossRates.BSV.usd || 14;
-  const ETH_USD = liveCrossRates.ETH.usd || 1800;
+  const ETH_USD = liveCrossRates.ETH.usd || 2400;
 
   const QUOTE_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
@@ -700,9 +700,12 @@ export function Markets() {
                       </td>
                       <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2.5">
-                        <button
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setSelectedCoin(m)}
-                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                          onKeyDown={e => e.key === "Enter" && setSelectedCoin(m)}
+                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity cursor-pointer"
                         >
                           <CoinLogo symbol={base} size={32} />
                           <div className="flex flex-col gap-0.5">
@@ -736,7 +739,7 @@ export function Markets() {
                               );
                             })()}
                           </div>
-                        </button>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
                         {applyQConversion && <span className="text-muted-foreground/60 text-[10px] mr-0.5">{qSym}</span>}

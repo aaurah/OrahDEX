@@ -293,7 +293,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   /* secure-import (PIN/passkey) state */
   const [pendingImport, setPendingImport] = useState<{
     secret:     string;
-    secretType: "mnemonic" | "privatekey";
+    keyKind: "mnemonic" | "privatekey";
     address:    string;
     addrs:      HdWalletAddresses | null;
   } | null>(null);
@@ -1077,7 +1077,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
   /* ── Begin secure-import flow (PIN/passkey gate) ─────────────────────────── */
   const beginSecureImport = (args: {
-    secret: string; secretType: "mnemonic"|"privatekey";
+    secret: string; keyKind: "mnemonic"|"privatekey";
     address: string; addrs: HdWalletAddresses | null;
   }) => {
     setPendingImport(args);
@@ -1101,7 +1101,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setImportAddress(addrs.evm);
       beginSecureImport({
         secret: result.words.join(" "),
-        secretType: "mnemonic",
+        keyKind: "mnemonic",
         address: addrs.evm,
         addrs,
       });
@@ -1130,7 +1130,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setImportAddress(addr);
     beginSecureImport({
       secret: pk,
-      secretType: "privatekey",
+      keyKind: "privatekey",
       address: addr,
       addrs: null,
     });
@@ -1139,7 +1139,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   /* ── Finalize import after PIN/passkey is set ────────────────────────────── */
   const finalizeImport = () => {
     if (!pendingImport) return;
-    const { address, addrs, secretType } = pendingImport;
+    const { address, addrs, keyKind } = pendingImport;
     connect({ address, provider: "orah-wallet", network: "evm", chainId: 1 });
     setInternalEvmAddress(address);
     if (addrs) {
@@ -1157,7 +1157,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       });
     }
     setImportStep("done");
-    const delay = secretType === "mnemonic" ? 2500 : 1500;
+    const delay = keyKind === "mnemonic" ? 2500 : 1500;
     setTimeout(() => goToPrep(address, "evm", "orah-wallet"), delay);
   };
 
@@ -1180,7 +1180,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       await storeWithPin({
         address:    pendingImport.address,
         secret:     pendingImport.secret,
-        secretType: pendingImport.secretType,
+        keyKind: pendingImport.keyKind,
         pin:        pinValue,
         label:      "Imported Orah Wallet",
       });
@@ -1201,7 +1201,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       await storeWithPasskey({
         address:    pendingImport.address,
         secret:     pendingImport.secret,
-        secretType: pendingImport.secretType,
+        keyKind: pendingImport.keyKind,
         prfSecret,
         passkeyId:  credentialId,
         label:      "Imported Orah Wallet",

@@ -13,6 +13,7 @@ async function fetchPriority(): Promise<any[]> {
   priorityPromise = (async () => {
     try {
       const r = await fetch(`${API_BASE}/markets?limit=${PRIORITY_LIMIT}`, {
+        cache: "no-store",
         headers: { Accept: "application/json" },
       });
       if (!r.ok) throw new Error(`priority markets ${r.status}`);
@@ -40,7 +41,10 @@ async function fetchPriority(): Promise<any[]> {
  * batch is exactly the set the UI needs to be useful on first paint.
  */
 export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
-  const full = useGetMarkets(opts);
+  const full = useGetMarkets({
+    ...opts,
+    request: { ...(opts?.request ?? {}), cache: opts?.request?.cache ?? "no-store" },
+  });
   const [priority, setPriority] = useState<any[] | null>(priorityCache);
 
   useEffect(() => {
@@ -51,6 +55,6 @@ export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
   }, []);
 
   // Prefer the full result once it's available; otherwise show the priority slice.
-  const data = (full.data && full.data.length > 0) ? full.data : (priority ?? undefined);
+  const data = (full.data && (full.data as any[]).length > 0) ? full.data : (priority ?? undefined);
   return { ...full, data } as typeof full;
 }

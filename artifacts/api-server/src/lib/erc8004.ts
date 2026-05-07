@@ -51,7 +51,7 @@ export const REPUTATION_REGISTRY: Address = USE_MAINNET
   ? "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
   : "0x8004B663056A597Dffe9eCcC1965A193B7388713";
 
-const VIEM_CHAIN   = USE_MAINNET ? mainnet : sepolia;
+export const VIEM_CHAIN   = USE_MAINNET ? mainnet : sepolia;
 const ETH_RPC_URL  = process.env.ETH_RPC_URL ?? "https://ethereum.publicnode.com";
 
 // ── ABIs ──────────────────────────────────────────────────────────────────────

@@ -173,9 +173,9 @@ router.get("/history", async (req, res) => {
     const encodedSymbol = encodeURIComponent(symbol);
     const limit = Math.min(Math.ceil((to - from) / intervalToSeconds(interval)) + 10, 1000);
 
-    const proto = req.protocol;
-    const host  = req.get("host") ?? "localhost:8080";
-    const candleUrl = `${proto}://${host}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=${limit}&from=${from}&to=${to}`;
+    // Use the process PORT to build an internal URL instead of trusting the Host header
+    const internalPort = process.env["PORT"] ?? "8080";
+    const candleUrl = `http://127.0.0.1:${internalPort}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=${limit}&from=${from}&to=${to}`;
 
     const resp = await fetch(candleUrl, { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) {

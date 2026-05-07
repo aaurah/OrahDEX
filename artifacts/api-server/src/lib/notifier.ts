@@ -9,7 +9,11 @@ async function getSetting(key: string): Promise<string> {
 
 /* ── Telegram Bot ─────────────────────────────────────────────────────────── */
 async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  // Validate token format to prevent SSRF via malformed tokens
+  if (!/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(token)) {
+    throw new Error("Invalid Telegram bot token format");
+  }
+  const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -23,6 +27,10 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 
 /* ── ntfy.sh Push Notification ────────────────────────────────────────────── */
 async function sendNtfy(topic: string, title: string, message: string, priority: string): Promise<void> {
+  // Validate topic is a simple alphanumeric identifier to prevent SSRF
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+    throw new Error("ntfy topic must contain only alphanumeric characters, hyphens, or underscores");
+  }
   const ntfyPriority: Record<string, string> = {
     urgent: "5", high: "4", normal: "3", low: "2",
   };
@@ -44,6 +52,13 @@ async function sendNtfy(topic: string, title: string, message: string, priority:
 
 /* ── Discord Webhook ──────────────────────────────────────────────────────── */
 async function sendDiscord(webhookUrl: string, title: string, message: string, priority: string): Promise<void> {
+  // Validate URL only targets Discord's webhook domain to prevent SSRF
+  if (
+    !webhookUrl.startsWith("https://discord.com/api/webhooks/") &&
+    !webhookUrl.startsWith("https://discordapp.com/api/webhooks/")
+  ) {
+    throw new Error("Discord webhook URL must target discord.com or discordapp.com");
+  }
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };

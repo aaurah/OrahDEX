@@ -6,7 +6,7 @@ import { guardedInterval } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
-import { getCachedLEPrices, warmLEPriceCache, leRequest } from "./lePriceCache.js";
+import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -481,6 +481,31 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     logger.warn({ err }, "Binance 24h-ticker fetch failed");
   }
 
+  // ── 1b. LetsExchange live prices — direct fetch when Binance is unavailable ─
+  // Triggered when Binance didn't return ETH (blocked / down in this environment).
+  // Fetches the top liquid coins directly from LE /v1/info in parallel and
+  // populates the shared LE cache so subsequent cycles benefit from it too.
+  if (!out["ETH"]) {
+    try {
+      const lePrices = await fetchLEKeyPricesIfNeeded();
+      for (const [sym, usd] of Object.entries(lePrices)) {
+        if (!out[sym] && usd > 0) {
+          out[sym] = {
+            usd,
+            usd_24h_change: 0,
+            usd_24h_vol:    usd * 1_000_000,
+            usd_market_cap: 0,
+          };
+        }
+      }
+      if (out["ETH" as string]) {
+        logger.debug({ count: Object.keys(lePrices).length }, "Key coin prices from LetsExchange (Binance unavailable)");
+      }
+    } catch (err) {
+      logger.warn({ err }, "LetsExchange key-coin direct fetch failed");
+    }
+  }
+
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
   try {
     const bsvRes = await fetch(`${BSV_NET.wocBase}/exchangerate`, {
@@ -568,7 +593,34 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
-  // ── Merge any missing symbols from FALLBACK_PRICES ─────────────────────────
+  // ── LetsExchange live prices — fills all remaining gaps before static fallback
+  // Moved BEFORE FALLBACK_PRICES so live LE rates always take priority over
+  // stale hardcoded values (especially critical when Binance is blocked).
+  try {
+    const lePrices = getCachedLEPrices();
+    for (const [sym, usd] of Object.entries(lePrices)) {
+      if (!out[sym] && usd > 0) {
+        // Coin not yet priced — use LE live rate
+        out[sym] = {
+          usd,
+          usd_24h_change: simulateDailyChange(sym),
+          usd_24h_vol: usd * 100_000,
+          usd_market_cap: 0,
+        };
+      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
+        // Zero-price entry — replace with LE rate
+        out[sym].usd = usd;
+      }
+    }
+    if (Object.keys(lePrices).length > 0) {
+      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE price merge failed (non-fatal)");
+  }
+
+  // ── Merge any missing symbols from FALLBACK_PRICES (last resort) ────────────
+  // Only reached for coins that neither Binance nor LetsExchange could price.
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (!out[sym]) {
       out[sym] = {
@@ -578,32 +630,6 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
         usd_market_cap: 0,
       };
     }
-  }
-
-  // ── LetsExchange live prices — fills coins not on Binance/CoinGecko ──────────
-  // Uses the shared 10-minute cache populated by warmLEPriceCache() at startup
-  // and kept fresh by the pairs route.  Non-blocking: never delays the cycle.
-  try {
-    const lePrices = getCachedLEPrices();
-    for (const [sym, usd] of Object.entries(lePrices)) {
-      if (!out[sym] && usd > 0) {
-        // Coin not covered by Binance — use LE live rate
-        out[sym] = {
-          usd,
-          usd_24h_change: simulateDailyChange(sym),
-          usd_24h_vol: usd * 100_000,
-          usd_market_cap: 0,
-        };
-      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
-        // Binance returned a 0-price entry — replace with LE rate
-        out[sym].usd = usd;
-      }
-    }
-    if (Object.keys(lePrices).length > 0) {
-      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
-    }
-  } catch (err) {
-    logger.warn({ err }, "LE price merge failed (non-fatal)");
   }
 
   return out;
@@ -657,7 +683,7 @@ function simulateDailyChange(symbol: string): number {
 // Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:16,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  BSV:16,BTC:95000,ETH:2400,SOL:150,XRP:0.60,BNB:600,ADA:0.45,
   DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
   LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
   SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
@@ -709,7 +735,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:83000,CBETH:1800,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  CBBTC:95000,CBETH:2400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
   HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
   BALD:0.00284,NORMIE:0.00182,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
@@ -1059,72 +1085,79 @@ export async function seedLEPairsIfNeeded() {
  *
  * Called by POST /api/admin/le-sync (admin panel) and at startup after warm-up.
  */
+/**
+ * syncAllLEPairs — Full all-to-all LetsExchange pair sync.
+ *
+ * Generates every coin×coin combination (excluding self-pairs) from the
+ * LetsExchange coin catalog — producing ~36,099+ pairs depending on the
+ * live LE coin list. Falls back to the built-in catalog when the API key
+ * is not configured.
+ *
+ * Strategy:
+ *   1. Try LE /v2/coins (needs API key). If 403/unavailable → use built-in list.
+ *   2. Fetch sovereign prices for cross-rate math.
+ *   3. For every (base, quote) pair where base ≠ quote, compute price = baseUSD / quoteUSD.
+ *   4. Upsert in 500-row DB chunks (no giant transactions).
+ */
 export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; quotes: number }> {
-  // 1. Fetch all LE coins
-  const res = await leRequest("/v2/coins");
-  if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) {
-    throw new Error("LE /v2/coins returned no data");
+  const { getBuiltInLeCoins } = await import("./leAllCoins.js");
+
+  // 1. Determine coin list — live API preferred, built-in fallback
+  let coinTickers: string[] = [];
+  let source = "api";
+
+  try {
+    const res = await leRequest("/v2/coins");
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const seen = new Set<string>();
+      for (const item of res.data as Record<string, unknown>[]) {
+        const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
+        if (code && !seen.has(code)) { seen.add(code); coinTickers.push(code); }
+      }
+    } else {
+      source = "builtin";
+      coinTickers = getBuiltInLeCoins();
+    }
+  } catch {
+    source = "builtin";
+    coinTickers = getBuiltInLeCoins();
   }
 
-  // Deduplicate by ticker (same coin, multiple networks)
-  const seen = new Set<string>();
-  const coins: Array<{ code: string; network: string | null; minAmount: string | null }> = [];
-  for (const item of res.data as Record<string, unknown>[]) {
-    const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
-    if (!code || seen.has(code)) continue;
-    seen.add(code);
-    const networks = Array.isArray(item.networks)
-      ? (item.networks as Record<string, unknown>[]).filter(n => n.is_active !== 0)
-      : [];
-    const network = networks[0] ? (networks[0].code as string | null) ?? null : null;
-    const minAmount = (item.min_amount ?? null) as string | null;
-    coins.push({ code, network, minAmount });
-  }
+  if (coinTickers.length === 0) throw new Error("LE sync: no coins available from API or built-in list");
 
-  // 2. Get prices from sovereign engine (Binance + CMC + LE cache + fallbacks)
+  logger.info({ coins: coinTickers.length, source }, "LE sync: coin list loaded");
+
+  // 2. Get sovereign prices for cross-rate computation
   const prices = await fetchSovereignPrices();
 
-  // Pull quote asset prices we'll need for cross-rate math
-  const getQ = (sym: string, def: number): number =>
-    prices[sym]?.usd || FALLBACK_PRICES[sym] || def;
+  // Build a USD price lookup (sovereign engine → FALLBACK_PRICES → 0)
+  const usdOf = (sym: string): number =>
+    prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
 
-  const bsvUSD  = getQ("BSV",  16);
-  const btcUSD  = getQ("BTC",  95000);
-  const ethUSD  = getQ("ETH",  3500);
-  const bnbUSD  = getQ("BNB",  600);
-  const solUSD  = getQ("SOL",  140);
-  const xrpUSD  = getQ("XRP",  0.6);
-  const trxUSD  = getQ("TRX",  0.12);
-  const dogeUSD = getQ("DOGE", 0.12);
-  const usdcUSD = getQ("USDC", 1);
-
-  const quoteBaseMap: Record<typeof LE_SEED_QUOTES[number], number> = {
-    USDT: 1, USDC: usdcUSD, BSV: bsvUSD, BTC: btcUSD,
-    ETH: ethUSD, BNB: bnbUSD, SOL: solUSD, XRP: xrpUSD,
-    TRX: trxUSD, DOGE: dogeUSD,
-  };
-
-  // 3. Build upsert batch
+  // 3. All-to-all: every base paired with every other coin as quote
   const CHUNK = 500;
   let inserted = 0;
   let updated  = 0;
+  let totalPairs = 0;
 
-  // Process in coin-batches so we don't build a 30k-row array all at once
-  for (let ci = 0; ci < coins.length; ci += 100) {
-    const batch = coins.slice(ci, ci + 100);
-    const rows: any[] = [];
+  // Process base coins in batches of 20 to keep memory bounded
+  // Each batch of 20 bases produces up to 20 × (N-1) rows
+  const BASE_BATCH = 20;
 
-    for (const coin of batch) {
-      const base    = coin.code;
-      const baseUSD = prices[base]?.usd || FALLBACK_PRICES[base] || 0;
+  for (let bi = 0; bi < coinTickers.length; bi += BASE_BATCH) {
+    const baseBatch = coinTickers.slice(bi, bi + BASE_BATCH);
+    const rows: Record<string, unknown>[] = [];
 
-      for (const quote of LE_SEED_QUOTES) {
-        if (base === quote) continue;
-        const qUSD = quoteBaseMap[quote];
+    for (const base of baseBatch) {
+      const baseUSD = usdOf(base);
+
+      for (const quote of coinTickers) {
+        if (base === quote) continue; // skip self-pair
+        const quoteUSD = usdOf(quote);
 
         let price = 0;
-        if (baseUSD > 0 && qUSD > 0) {
-          price = baseUSD / qUSD;
+        if (baseUSD > 0 && quoteUSD > 0) {
+          price = baseUSD / quoteUSD;
         }
 
         const p = fmtPrice(price);
@@ -1144,21 +1177,19 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
       }
     }
 
-    // Insert in DB chunks
+    totalPairs += rows.length;
+
+    // Upsert in DB chunks — only update price fields, never touch type/status
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
-      // Insert new rows; update lastPrice/high/low for existing zero-price rows
       const result = await db.insert(marketsTable)
-        .values(chunk)
+        .values(chunk as any[])
         .onConflictDoUpdate({
           target: marketsTable.symbol,
           set: {
-            // Only update prices; NEVER change the type of an existing spot/futures pair.
-            // If the existing row is already 'spot' or 'futures', leave it alone.
-            lastPrice:  sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.last_price != '0' THEN excluded.last_price ELSE ${marketsTable.lastPrice} END`,
-            high24h:    sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.high_24h != '0' THEN excluded.high_24h ELSE ${marketsTable.high24h} END`,
-            low24h:     sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.low_24h != '0' THEN excluded.low_24h ELSE ${marketsTable.low24h} END`,
-            // Never touch type/status of existing rows
+            lastPrice: sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.last_price != '0' THEN excluded.last_price ELSE ${marketsTable.lastPrice} END`,
+            high24h:   sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.high_24h  != '0' THEN excluded.high_24h  ELSE ${marketsTable.high24h}  END`,
+            low24h:    sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.low_24h   != '0' THEN excluded.low_24h   ELSE ${marketsTable.low24h}   END`,
           },
         });
       const affected = (result as any).rowCount ?? (result as any).rowsAffected ?? 0;
@@ -1166,8 +1197,11 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
     }
   }
 
-  logger.info({ coins: coins.length, inserted, quotes: LE_SEED_QUOTES.length }, "LE pairs full sync complete");
-  return { coins: coins.length, inserted, updated, quotes: LE_SEED_QUOTES.length };
+  logger.info(
+    { coins: coinTickers.length, totalPairs, inserted, source },
+    "LE all-to-all pairs sync complete",
+  );
+  return { coins: coinTickers.length, inserted, updated, quotes: coinTickers.length - 1 };
 }
 
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
@@ -1206,7 +1240,8 @@ export async function updateMarketPrices() {
       _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
-    const markets = await db.select().from(marketsTable);
+    const markets = await db.select().from(marketsTable)
+      .where(notInArray(marketsTable.type, ["letsexchange"]));
 
     for (const market of markets) {
       // Look up by base-asset symbol directly — no CoinGecko ID needed

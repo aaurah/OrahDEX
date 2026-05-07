@@ -53,11 +53,6 @@ function normAddr(addr: string): string {
     : addr;
 }
 
-function big(n: string | number): bigint {
-  // We keep amounts as strings in the DB.  Use comparison helpers below.
-  return 0n; // placeholder; we rely on DB for arithmetic
-}
-
 // Compare two decimal strings
 export function gte(a: string, b: string): boolean {
   return parseFloat(a) >= parseFloat(b);

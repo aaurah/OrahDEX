@@ -1,15 +1,22 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { OrderBook as OrderBookType } from '@workspace/api-client-react';
 import { formatPrice, formatVolume } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Trade } from '@workspace/api-client-react';
-import { Zap, ArrowRight } from "lucide-react";
+import { Zap, ArrowRight, CheckCircle2 } from "lucide-react";
 
 export interface OrderBookFill {
   price: string;
   amount: string;
   side: "buy" | "sell";
   ts: number;
+}
+
+export interface ExternalFlash {
+  price: number;
+  side: "buy" | "sell";
+  ts: number;
+  source?: "order" | "letsexchange";
 }
 
 type BookMode = "full" | "asks" | "bids";
@@ -33,6 +40,8 @@ interface OrderBookProps {
   hasInternalLiquidity?: boolean;
   /** Called when user clicks the LE swap row — opens LetsExchange panel */
   onLeSwap?: () => void;
+  /** External flash trigger — fired when a buy/sell order is placed or LE swap confirmed */
+  externalFlash?: ExternalFlash | null;
 }
 
 export function OrderBook({
@@ -44,12 +53,55 @@ export function OrderBook({
   leRate,
   hasInternalLiquidity = true,
   onLeSwap,
+  externalFlash,
 }: OrderBookProps) {
   const trades = Array.isArray(tradesProp) ? tradesProp : [];
   const [mode, setMode] = useState<BookMode>("full");
   const [panel, setPanel] = useState<Panel>("book");
   const [flashKey, setFlashKey] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Spread-row flash state (triggered externally)
+  const [spreadFlash, setSpreadFlash] = useState<"buy" | "sell" | null>(null);
+  const [spreadLabel, setSpreadLabel] = useState<string>("");
+  const spreadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Newest trade animation
+  const prevTradeCountRef = useRef(trades.length);
+  const [newTradeIdx, setNewTradeIdx] = useState<number | null>(null);
+  const newTradeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (trades.length > prevTradeCountRef.current) {
+      setNewTradeIdx(0);
+      if (newTradeTimer.current) clearTimeout(newTradeTimer.current);
+      newTradeTimer.current = setTimeout(() => setNewTradeIdx(null), 900);
+    }
+    prevTradeCountRef.current = trades.length;
+  }, [trades.length]);
+
+  // React to external flash (order placed / LE exchange created)
+  useEffect(() => {
+    if (!externalFlash) return;
+    const { side, source } = externalFlash;
+
+    // Flash the spread row with a buy (green) or sell (red) glow
+    setSpreadFlash(side);
+    setSpreadLabel(source === "letsexchange" ? "⚡ Swap confirmed" : side === "buy" ? "✓ Buy filled" : "✓ Sell filled");
+    if (spreadTimer.current) clearTimeout(spreadTimer.current);
+    spreadTimer.current = setTimeout(() => { setSpreadFlash(null); setSpreadLabel(""); }, 1200);
+
+    // Flash the nearest price row
+    if (side === "buy" && data.asks.length > 0) {
+      const key = `ask-${data.asks.length - 1}`; // lowest ask
+      setFlashKey(key);
+    } else if (side === "sell" && data.bids.length > 0) {
+      setFlashKey("bid-0"); // highest bid
+    }
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlashKey(null), 900);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalFlash?.ts]);
 
   function handleFill(fill: OrderBookFill, key: string) {
     onFill?.(fill);
@@ -144,8 +196,16 @@ export function OrderBook({
               <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">No trades yet</div>
             ) : (
               trades.slice(0, 50).map((t: Trade, i) => (
-                <div key={t.id ?? i} className="flex justify-between px-2 py-px hover:bg-white/5 transition-colors">
-                  <span className={cn("text-[10px]", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</span>
+                <div
+                  key={t.id ?? i}
+                  className={cn(
+                    "flex justify-between px-2 py-px transition-all duration-300",
+                    i === newTradeIdx
+                      ? (t.side === "buy" ? "bg-buy/25 animate-in fade-in slide-in-from-top-1 duration-200" : "bg-sell/25 animate-in fade-in slide-in-from-top-1 duration-200")
+                      : "hover:bg-white/5"
+                  )}
+                >
+                  <span className={cn("text-[10px] font-medium", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</span>
                   <span className="text-[10px] text-foreground">{t.quantity.toFixed(3)}</span>
                   <span className="text-[10px] text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                 </div>
@@ -194,11 +254,31 @@ export function OrderBook({
             {/* Spread / current price + LE rate card */}
             {showAsks && showBids && (
               <div className="shrink-0">
-                <div className="py-1.5 px-2 border-y border-border flex items-center justify-between bg-white/[0.02]">
-                  <span className={cn("text-sm font-bold leading-none", isPositive ? "text-buy" : "text-sell")}>
+                <div className={cn(
+                  "py-1.5 px-2 border-y border-border flex items-center justify-between transition-all duration-300",
+                  spreadFlash === "buy"  && "bg-buy/20 border-buy/40 ring-1 ring-buy/30",
+                  spreadFlash === "sell" && "bg-sell/20 border-sell/40 ring-1 ring-sell/30",
+                  !spreadFlash && "bg-white/[0.02]"
+                )}>
+                  <span className={cn(
+                    "text-sm font-bold leading-none transition-colors duration-200",
+                    spreadFlash === "buy"  ? "text-buy" :
+                    spreadFlash === "sell" ? "text-sell" :
+                    isPositive ? "text-buy" : "text-sell"
+                  )}>
                     {lastPrice ? formatPrice(lastPrice) : '—'}
                   </span>
-                  <span className="text-[9px] text-muted-foreground/50 italic">Mark Price</span>
+                  {spreadFlash ? (
+                    <span className={cn(
+                      "text-[9px] font-bold animate-in fade-in duration-150 flex items-center gap-1",
+                      spreadFlash === "buy" ? "text-buy" : "text-sell"
+                    )}>
+                      <CheckCircle2 className="w-3 h-3 shrink-0" />
+                      {spreadLabel}
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-muted-foreground/50 italic">Mark Price</span>
+                  )}
                 </div>
                 {/* LE rate card — always shown when rate is available */}
                 {showLEOrders && leAskPrice && (

@@ -334,7 +334,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
   const BSV_USD_RATE = crossPrices.BSV.usd || 16;
-  const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
+  const ETH_USD_RATE = crossPrices.ETH.usd || 2400;
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
@@ -766,7 +766,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [interval, setInterval] = useState<string>("1h");
+  const [interval, setInterval] = useState<string>(() => {
+    const saved = localStorage.getItem('orahdex-mobile-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
@@ -847,6 +851,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     '2Y':  { apiInterval: '1w', limit: 104 },
     '5Y':  { apiInterval: '1w', limit: 261 },
     '10Y': { apiInterval: '1M', limit: 120 },
+    'All': { apiInterval: '1M', limit: 1500 },
   };
   const mobilePreset = MOBILE_RANGE_PRESET_MAP[interval];
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
@@ -884,7 +889,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
+        body: JSON.stringify({
+          from:         coin_from,
+          to:           coin_to,
+          network_from: coin_from,
+          network_to:   coin_to,
+          amount:       1,
+        }),
       });
       if (!r.ok) return null;
       return r.json();
@@ -941,6 +952,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
     return () => { document.title = "OrahDEX"; };
   }, [lastPrice, change, base, quote]);
+
+  // Persist interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-mobile-interval', interval); }, [interval]);
 
   // Quote-currency and cross-rate computations
   const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;
@@ -1353,7 +1367,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── TIMEFRAME + INDICATOR ROW ── */}
         <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
           {/* Timeframe pills */}
-          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y"]).map(iv => (
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y","All"]).map(iv => (
             <button
               key={iv}
               onClick={() => handleIntervalChange(iv)}

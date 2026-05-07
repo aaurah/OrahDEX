@@ -194,7 +194,7 @@ router.post("/orders", async (req, res) => {
 
       const authMsg = buildOrderAuthMessage({
         walletAddress: body.walletAddress,
-        symbol:        body.symbol,
+        symbol:        symbol,
         side:          body.side,
         quantity:      quantity.toString(),
         nonce:         orderNonce,
@@ -214,7 +214,7 @@ router.post("/orders", async (req, res) => {
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
     // When provided, enables on-chain RPC balance verification in fundingVerifier.
     // Must be a numeric value in the supported set; unknown values are silently ignored.
-    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
     const chainId = body.chainId != null
       ? (() => {
           const n = parseInt(String(body.chainId), 10);
@@ -638,14 +638,15 @@ router.post("/orders", async (req, res) => {
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
-          // If yes, escrow is the binding settlement venue: never fall back
-          // to HTLC because the locked funds can't be in two places at once.
-          const [incomingEscrowChain, matchEscrowChain] = await Promise.all([
-            findEscrowChain(id),
-            findEscrowChain(match.id),
-          ]).catch(() => [null, null] as [number | null, number | null]);
+          // Reuse the chain values already resolved by the fail-CLOSED precheck
+          // above (lines ~473-478). Those values are authoritative: if the precheck
+          // RPC failed it threw and we already `continue`d past this match. A
+          // second scan here with a swallowed catch would be fail-OPEN — an RPC
+          // blip would make `anyEscrowDeposit` look false and allow HTLC to run
+          // against locked funds. Reusing prefetchedBuyerChain/SellerChain keeps
+          // the settlement decision consistent with the precheck decision.
           const anyEscrowDeposit =
-            incomingEscrowChain !== null || matchEscrowChain !== null;
+            prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
 
           // ── Partial-fill safety: release(orderId) drains the WHOLE deposit. ─
           // We must only call it when this single fill consumes BOTH orders
@@ -690,7 +691,6 @@ router.post("/orders", async (req, res) => {
                 sellerOrderId,
                 buyerAddress,
                 sellerAddress,
-                chainId: releaseChainId,
                 // Reuse precheck values to keep the per-request settlement
                 // decision deterministic and avoid contradictory re-scans.
                 prefetchedBuyerChain,
@@ -1187,7 +1187,7 @@ router.post("/orders/precheck", async (req, res) => {
   try {
     const { side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
     // Normalize symbol format: accept both "BSV-USDT" (URL style) and "BSV/USDT" (DB style)
-    const symbol: string = (req.body.symbol ?? "").replace("-", "/");
+    const symbol: string = (req.body.symbol ?? "").replace(/-/g, "/");
 
     if (!symbol || !side || !amount) {
       res.status(400).json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Missing fields" }], warnings: [] });
@@ -1343,6 +1343,16 @@ router.get("/settlements/htlc-status", async (req, res) => {
 
   if (!htlcAddress || typeof htlcAddress !== "string") {
     res.status(400).json({ error: "htlcAddress query param required" });
+    return;
+  }
+
+  // Strict allow-list validation for BSV P2SH addresses:
+  // - mainnet starts with "3", testnet starts with "2"
+  // - Base58 charset only (no 0, O, I, l)
+  // - Typical P2SH length range
+  const p2shAddressPattern = /^[23][1-9A-HJ-NP-Za-km-z]{24,50}$/;
+  if (!p2shAddressPattern.test(htlcAddress)) {
+    res.status(400).json({ error: "Invalid htlcAddress format" });
     return;
   }
 

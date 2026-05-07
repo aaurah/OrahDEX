@@ -382,7 +382,7 @@ router.post("/nft/bids", async (req, res) => {
       res.status(400).json({ error: "nftId, bidder, price are required" }); return;
     }
 
-    const ethUsd = FALLBACK_PRICES["ETH"] ?? 1800;
+    const ethUsd = FALLBACK_PRICES["ETH"] ?? 2400;
     const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
 
     const [bid] = await db.insert(nftBidsTable).values({

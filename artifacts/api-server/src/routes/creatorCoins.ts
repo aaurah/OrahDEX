@@ -215,7 +215,7 @@ router.get("/social/creators/:address", async (req, res) => {
 router.post("/social/creators/:address/update", async (req, res) => {
   try {
     const addr = (req.params.address ?? "").toLowerCase();
-    if (!addr) return res.status(400).json({ error: "address required" });
+    if (!addr) { res.status(400).json({ error: "address required" }); return; }
     const body = req.body as Record<string, string | null | undefined>;
     // Treat undefined as "leave alone"; treat empty string / null as "explicit clear".
     const norm = (v: string | null | undefined) =>
@@ -236,7 +236,7 @@ router.post("/social/creators/:address/update", async (req, res) => {
       sets.push(`${k} = $${i++}`);
       vals.push(v);
     }
-    if (sets.length === 0) return res.json({ success: true });
+    if (sets.length === 0) { res.json({ success: true }); return; }
     sets.push("updated_at = NOW()");
 
     const { rowCount } = await pool.query(

@@ -18,6 +18,7 @@ import { pool } from "@workspace/db";
 import { leRequest, AFFILIATE_ID } from "./lib/lePriceCache.js";
 import { createSsExchange, getSsExchange, isSimpleSwapConfigured } from "./lib/simpleswap.js";
 import { logger } from "./lib/logger.js";
+import { LE_COIN_NETWORK } from "./lib/leCoinNetwork.js";
 
 // ── Column migration — runs once at startup ────────────────────────────────────
 async function ensureFulfillmentColumns(): Promise<void> {
@@ -40,24 +41,7 @@ async function ensureFulfillmentColumns(): Promise<void> {
 }
 ensureFulfillmentColumns();
 
-// ── Coin → LetsExchange network mapping ───────────────────────────────────────
-const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
-  BTC:   { coin: "BTC",   network: "BTC"   },
-  ETH:   { coin: "ETH",   network: "ETH"   },
-  BSV:   { coin: "BSV",   network: "BSV"   },
-  BNB:   { coin: "BNB",   network: "BEP20" },
-  SOL:   { coin: "SOL",   network: "SOL"   },
-  XRP:   { coin: "XRP",   network: "XRP"   },
-  ADA:   { coin: "ADA",   network: "ADA"   },
-  DOGE:  { coin: "DOGE",  network: "DOGE"  },
-  DOT:   { coin: "DOT",   network: "DOT"   },
-  AVAX:  { coin: "AVAX",  network: "AVAX"  },
-  MATIC: { coin: "MATIC", network: "POL"   },
-  USDT:  { coin: "USDT",  network: "ERC20" },
-  USDC:  { coin: "USDC",  network: "ERC20" },
-  LINK:  { coin: "LINK",  network: "ERC20" },
-  UNI:   { coin: "UNI",   network: "ERC20" },
-};
+// LE_COIN_NETWORK is imported from lib/leCoinNetwork.ts (single source-of-truth)
 
 // ── Core fulfillment logic ─────────────────────────────────────────────────────
 export async function fulfillOrder(paymentIntentId: string, metadata: Record<string, string>): Promise<void> {
@@ -168,7 +152,7 @@ export async function fulfillOrder(paymentIntentId: string, metadata: Record<str
     if (!ok) {
       const d   = data as Record<string, unknown> | null;
       const msg = (d?.error as string) ?? (d?.message as string) ?? `LE returned HTTP ${leHttpStatus}`;
-      logger.error({ orderId, msg, leBody }, "Fulfillment: LE exchange creation failed");
+      logger.error({ orderId, msg }, "Fulfillment: LE exchange creation failed");
       await pool.query(
         `UPDATE crypto_orders SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
         [msg, orderId]
@@ -302,7 +286,7 @@ function verifyStripeSignature(payload: Buffer, signature: string): Stripe.Event
 
   if (!secretKey) throw new Error("STRIPE_SECRET_KEY not set");
 
-  const stripe = new Stripe(secretKey, { apiVersion: "2025-08-27.basil" as any });
+  const stripe = new Stripe(secretKey, { apiVersion: "2025-03-31.basil" as any });
 
   if (webhookSecret) {
     // Full signature verification when secret is available

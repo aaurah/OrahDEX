@@ -3,6 +3,9 @@ import cors from "cors";
 import compression from "compression";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
@@ -21,8 +24,11 @@ import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
-import quicknodeWebhookRouter from "./routes/quicknodeWebhook.js";
+import evmWebhookRouter from "./routes/evmWebhookRouter.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
+import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
+import { hydrateAlertsFromDB } from "./lib/alertBus.js";
+import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 
 const app: Express = express();
 
@@ -59,20 +65,41 @@ app.use(
     },
   }),
 );
+// Build the allowed-origin list:
+//   1. ALLOWED_ORIGINS env var (comma-separated, takes full precedence when set)
+//   2. Hard-coded custom domains
+//   3. All *.replit.app / *.replit.dev subdomains (covers all Replit deployments)
+//   4. localhost variants (dev convenience)
+const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
+  ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
+  : [
+      "https://orahdex.org",
+      "https://www.orahdex.org",
+      /^https?:\/\/[^.]+\.replit\.app$/,
+      /^https?:\/\/[^.]+\.replit\.dev$/,
+      /^https?:\/\/localhost(:\d+)?$/,
+      /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+    ];
+
 app.use(cors({
-  origin: "*",
+  origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
+  credentials: true,
 }));
 
-/* ── QuickNode Streams webhook — registered BEFORE express.json() ─────────────
+/* ── EVM webhook — registered BEFORE express.json() ──────────────────────────
    HMAC-SHA256 signature verification requires the raw request body (Buffer).
    Any body-parsing middleware applied before this route would break verification.
+   Receives EVM log events from any compatible provider (Alchemy, Infura, etc.).
+   Env: EVM_WEBHOOK_SECRET — shared HMAC secret for payload verification.
+   Paths: POST /api/webhooks/evm  (primary)
+          POST /api/webhooks/quicknode  (legacy, for existing registrations)
 ── */
 app.use(
   "/api/webhooks",
   express.raw({ type: "*/*" }),
-  quicknodeWebhookRouter,
+  evmWebhookRouter,
 );
 
 /* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
@@ -246,6 +273,32 @@ app.use("/api", router);
 app.use("/v1", v1Router);
 startApiKeyCounterFlusher();
 
+/* ── Static frontend — served in production (Replit deployment) ──────────────
+   The Vite build outputs to artifacts/bsv-dex/dist/public.
+   From the compiled server at artifacts/api-server/dist/, that is two levels up.
+   Serving from the same Express process eliminates the need for a separate
+   preview server and the /api proxy problem it creates.
+── */
+if (process.env.NODE_ENV === "production") {
+  const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDist = path.resolve(__serverDir, "../../bsv-dex/dist/public");
+  if (fs.existsSync(frontendDist)) {
+    logger.info({ frontendDist }, "Serving static frontend in production");
+    // Static assets — long-lived cache for hashed filenames
+    app.use(express.static(frontendDist, {
+      maxAge: "1y",
+      immutable: true,
+      index: false,
+    }));
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html
+    app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  } else {
+    logger.warn({ frontendDist }, "Frontend dist not found — skipping static serving");
+  }
+}
+
 /* ── Global Express error handler — catches any sync/async route throw ─────── */
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const msg  = err instanceof Error ? err.message : String(err);
@@ -270,7 +323,10 @@ try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startE
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
-try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startOrderReconciler();              } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startAllReconcilers();               } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
+try { startExchangeApiRepairEngine();      } catch (e) { logger.error({ err: e }, "startExchangeApiRepairEngine failed to init"); }
+hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {

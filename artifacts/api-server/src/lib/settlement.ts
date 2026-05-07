@@ -155,35 +155,4 @@ function pushVarint(n: number): Buffer {
   return b;
 }
 
-/**
- * Verify an Ethereum personal_sign signature.
- * Returns the recovered address (lower-case) or null if invalid.
- *
- * We use a pure Node.js approach: keccak256 of the Ethereum prefix + message,
- * then secp256k1 public-key recovery.
- */
-export function recoverEvmSigner(message: string, signature: string): string | null {
-  try {
-    const prefix  = `\x19Ethereum Signed Message:\n${Buffer.byteLength(message, "utf8")}`;
-    const payload = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
 
-    let msgHash: Buffer;
-    try {
-      msgHash = crypto.createHash("sha3-256").update(payload).digest();
-    } catch {
-      msgHash = crypto.createHash("sha256").update(payload).digest();
-    }
-
-    const sig      = signature.startsWith("0x") ? signature.slice(2) : signature;
-    if (sig.length !== 130) return null;
-    const r        = BigInt("0x" + sig.slice(0, 64));
-    const s        = BigInt("0x" + sig.slice(64, 128));
-    const v        = parseInt(sig.slice(128, 130), 16);
-    const recovery = v >= 27 ? v - 27 : v;
-
-    void r; void s; void recovery;
-    return "deferred";
-  } catch {
-    return null;
-  }
-}
