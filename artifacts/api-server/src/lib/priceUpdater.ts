@@ -745,9 +745,12 @@ export const FALLBACK_PRICES: Record<string, number> = {
 export async function seedMarketsIfNeeded() {
   try {
     // ── Cleanup: remove legacy dash-separator symbols (e.g. "AAVE-USDT") ───
-    // These were created by an old seeder; only slash-format is canonical now.
-    const allMarkets = await db.select().from(marketsTable);
-    const dashFormat = allMarkets.filter(m => m.symbol.includes("-") && !m.symbol.endsWith("-PERP"));
+    // Fetch only the symbol column (not all columns) to keep memory usage low
+    // even when the table has 36K+ rows from a previous LE sync.
+    const dashFormat = await db
+      .select({ symbol: marketsTable.symbol })
+      .from(marketsTable)
+      .where(sql`symbol LIKE '%-%' AND symbol NOT LIKE '%-PERP'`);
     if (dashFormat.length > 0) {
       logger.info({ count: dashFormat.length }, "Removing legacy dash-format market symbols");
       for (const m of dashFormat) {
@@ -755,8 +758,9 @@ export async function seedMarketsIfNeeded() {
       }
     }
 
-    const existing = await db.select().from(marketsTable);
-    const existingSymbols = new Set(existing.map(m => m.symbol));
+    // Fetch only the symbol column so we don't load full rows for 36K+ LE pairs
+    const existingRows = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existingRows.map(m => m.symbol));
 
     const toInsert: any[] = [];
 
