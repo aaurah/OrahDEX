@@ -546,6 +546,7 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
+  const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)
@@ -586,10 +587,10 @@ export function LandingPage() {
       return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
-    placeholderData: { count: 1000, markets: [] as any[] },
+    placeholderData: { count: MARKET_COUNT_PLACEHOLDER, markets: [] as any[] },
   });
 
-  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : 1000;
+  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : MARKET_COUNT_PLACEHOLDER;
   const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
