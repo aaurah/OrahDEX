@@ -135,6 +135,7 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 
 const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "DOGE", "LTC"];
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const MIN_DB_SEEDED_PAIR_COUNT = 100;
 
 function buildPairs(coins: NormalisedCoin[]) {
   const changeMap = getCoinChangeMap();
@@ -243,7 +244,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
     // This eliminates the "breathing" list problem caused by live LE API responses.
     try {
       const dbPairs = await fetchLEPairsFromDB();
-      if (dbPairs.length >= 100) {
+      if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
         // DB is seeded — use stable list
         lePairs = dbPairs;
         cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
@@ -386,7 +387,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     if (!lePairs) {
       try {
         const dbPairs = await fetchLEPairsFromDB();
-        if (dbPairs.length >= 100) {
+        if (dbPairs.length >= MIN_DB_SEEDED_PAIR_COUNT) {
           lePairs = dbPairs;
           cache.set(cacheKey, { data: lePairs, ts: Date.now() });
         }
@@ -422,6 +423,8 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
 
     const bySymbol = new Map<string, Record<string, unknown>>();
     nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+    // Keep behavior aligned with /letsexchange/pairs: LetsExchange rows override
+    // native rows on symbol collisions so both endpoints report consistent totals.
     lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
 
     const allPairs = Array.from(bySymbol.values());

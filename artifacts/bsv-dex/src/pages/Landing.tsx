@@ -576,14 +576,14 @@ export function LandingPage() {
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
       ]);
-      if (leCountRes.status !== "fulfilled" || countRes.status !== "fulfilled" || marketsRes.status !== "fulfilled") {
-        console.warn("Landing market count fetch: one or more requests failed");
-      }
+      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed");
+      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed");
+      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed");
       const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
       const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
       const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
-      const leCount = Number((leCountPayload as any)?.count ?? 0) || 0;
-      const marketCount = Number((countPayload as any)?.count ?? 0) || 0;
+      const leCount = Number((leCountPayload as any)?.count ?? 0);
+      const marketCount = Number((countPayload as any)?.count ?? 0);
       // /letsexchange/pairs/count already returns merged external+native symbol count.
       // Fall back to /markets/count only when that endpoint is unavailable.
       const totalCount = leCount > 0 ? leCount : marketCount;
