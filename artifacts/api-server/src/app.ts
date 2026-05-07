@@ -312,7 +312,11 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 /* ── Background services — each wrapped so one failure can't crash others ──── */
 hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
 startCopyOrchestrator();
-warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
+// Delay the LE currencies warm-up by 60 s so it doesn't add to the boot-time
+// memory spike caused by other concurrent startup tasks.
+setTimeout(() => {
+  warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
+}, 60_000);
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }

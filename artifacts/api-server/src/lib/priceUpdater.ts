@@ -1376,18 +1376,31 @@ export async function updateMarketPrices() {
 let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
-  // Warm the LE price cache, then full-sync ALL LE pairs into the DB with live prices.
-  // syncAllLEPairs upserts (not just inserts) so zero-price rows get real prices.
-  warmLEPriceCache()
-    .then(() => syncAllLEPairs())
-    .then(r => logger.info(r, "Startup: LE pairs synced"))
-    .catch(err => {
-      logger.warn({ err }, "Startup: LE full sync failed, falling back to seed");
-      return seedLEPairsIfNeeded();
-    });
+  // Delay the LE warm-up + full sync by 90 s so the server finishes booting
+  // before firing ~190 concurrent LE API requests that spike heap usage.
+  setTimeout(() => {
+    warmLEPriceCache()
+      .then(() => syncAllLEPairs())
+      .then(r => logger.info(r, "Startup: LE pairs synced"))
+      .catch(err => {
+        logger.warn({ err }, "Startup: LE full sync failed, falling back to seed");
+        return seedLEPairsIfNeeded();
+      });
+  }, 90_000);
 
-  seedMarketsIfNeeded().then(() => updateMarketPrices());
-  _stopPriceUpdater = guardedInterval("price-updater", updateMarketPrices, 60_000, { timeoutMs: 55_000 });
+  // Seed any missing market rows at 15 s (lightweight DB write, no network).
+  // Do NOT call updateMarketPrices() here — the guarded interval below owns that.
+  setTimeout(() => {
+    seedMarketsIfNeeded().catch(err => logger.warn({ err }, "seedMarketsIfNeeded failed"));
+  }, 15_000);
+
+  // First Binance price fetch deferred to 35 s so the server is fully settled
+  // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
+  // After the first run, the guarded interval takes over every 60 s.
+  _stopPriceUpdater = guardedInterval(
+    "price-updater", updateMarketPrices, 60_000,
+    { timeoutMs: 55_000, initialDelayMs: 35_000 },
+  );
   logger.info("Live price updater started (interval: 60s, self-healing)");
 }
 
