@@ -745,9 +745,12 @@ export const FALLBACK_PRICES: Record<string, number> = {
 export async function seedMarketsIfNeeded() {
   try {
     // ── Cleanup: remove legacy dash-separator symbols (e.g. "AAVE-USDT") ───
-    // These were created by an old seeder; only slash-format is canonical now.
-    const allMarkets = await db.select().from(marketsTable);
-    const dashFormat = allMarkets.filter(m => m.symbol.includes("-") && !m.symbol.endsWith("-PERP"));
+    // Fetch only the symbol column (not all columns) to keep memory usage low
+    // even when the table has 36K+ rows from a previous LE sync.
+    const dashFormat = await db
+      .select({ symbol: marketsTable.symbol })
+      .from(marketsTable)
+      .where(sql`symbol LIKE '%-%' AND symbol NOT LIKE '%-PERP'`);
     if (dashFormat.length > 0) {
       logger.info({ count: dashFormat.length }, "Removing legacy dash-format market symbols");
       for (const m of dashFormat) {
@@ -755,8 +758,9 @@ export async function seedMarketsIfNeeded() {
       }
     }
 
-    const existing = await db.select().from(marketsTable);
-    const existingSymbols = new Set(existing.map(m => m.symbol));
+    // Fetch only the symbol column so we don't load full rows for 36K+ LE pairs
+    const existingRows = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existingRows.map(m => m.symbol));
 
     const toInsert: any[] = [];
 
@@ -1376,18 +1380,29 @@ export async function updateMarketPrices() {
 let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
-  // Warm the LE price cache, then full-sync ALL LE pairs into the DB with live prices.
-  // syncAllLEPairs upserts (not just inserts) so zero-price rows get real prices.
-  warmLEPriceCache()
-    .then(() => syncAllLEPairs())
-    .then(r => logger.info(r, "Startup: LE pairs synced"))
-    .catch(err => {
-      logger.warn({ err }, "Startup: LE full sync failed, falling back to seed");
-      return seedLEPairsIfNeeded();
-    });
+  // Warm the LE price cache at 90 s (price lookups only — no pair sync).
+  // syncAllLEPairs() is intentionally NOT called at startup: the DB already
+  // holds 36K+ LE pairs from a previous run, and inserting them again while
+  // the markets endpoint is live causes JSON.stringify OOM on the full table.
+  // The /api/letsexchange/pairs route serves from the DB when ≥100 rows exist.
+  setTimeout(() => {
+    warmLEPriceCache()
+      .catch(err => logger.warn({ err }, "Startup: LE price cache warm failed"));
+  }, 90_000);
 
-  seedMarketsIfNeeded().then(() => updateMarketPrices());
-  _stopPriceUpdater = guardedInterval("price-updater", updateMarketPrices, 60_000, { timeoutMs: 55_000 });
+  // Seed any missing market rows at 15 s (lightweight DB write, no network).
+  // Do NOT call updateMarketPrices() here — the guarded interval below owns that.
+  setTimeout(() => {
+    seedMarketsIfNeeded().catch(err => logger.warn({ err }, "seedMarketsIfNeeded failed"));
+  }, 15_000);
+
+  // First Binance price fetch deferred to 35 s so the server is fully settled
+  // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
+  // After the first run, the guarded interval takes over every 60 s.
+  _stopPriceUpdater = guardedInterval(
+    "price-updater", updateMarketPrices, 60_000,
+    { timeoutMs: 55_000, initialDelayMs: 35_000 },
+  );
   logger.info("Live price updater started (interval: 60s, self-healing)");
 }
 

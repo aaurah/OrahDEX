@@ -28,6 +28,7 @@ type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
   | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
   | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
+  | "XRP"  | "DOGE" | "LTC"
   | "FTM"  | "CRO"  | "MNT"  | "ZK"  | "SCR" | "LINEA";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
@@ -38,12 +39,15 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "BSV",   label: "BSV",   color: "text-yellow-400" },
   { id: "BCH",   label: "BCH",   color: "text-emerald-400"},
   { id: "BNB",   label: "BNB",   color: "text-yellow-500" },
+  { id: "XRP",   label: "XRP",   color: "text-sky-400"    },
+  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
+  { id: "DOGE",  label: "DOGE",  color: "text-yellow-300" },
+  { id: "LTC",   label: "LTC",   color: "text-slate-300"  },
+  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
+  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
+  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
   { id: "ARB",   label: "ARB",   color: "text-blue-400"   },
   { id: "OP",    label: "OP",    color: "text-red-400"    },
-  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
-  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
-  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
-  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
   { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
   { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
   { id: "MNT",   label: "MNT",   color: "text-teal-400"   },
@@ -526,12 +530,12 @@ export function SpotTrading() {
                 <span className="w-20 text-right">Price</span>
                 <span className="w-14 text-right">24h %</span>
               </div>
-              {/* Pair list */}
+              {/* Pair list — cap at 200 rows per tab to keep the DOM fast */}
               <div className="overflow-y-auto max-h-64 min-h-0">
                 {dropFiltered.length === 0 ? (
                   <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">No pairs found</div>
                 ) : (
-                  dropFiltered.map(m => {
+                  dropFiltered.slice(0, 200).map(m => {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
@@ -568,6 +572,14 @@ export function SpotTrading() {
                       </Link>
                     );
                   })
+                )}
+                {dropFiltered.length > 200 && (
+                  <div className="flex items-center justify-center gap-1.5 py-2 border-t border-border/50 bg-secondary/20">
+                    <Search className="w-3 h-3 text-muted-foreground/60" />
+                    <span className="text-[10px] text-muted-foreground">
+                      Showing 200 of {dropFiltered.length.toLocaleString()} — search to find more
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

@@ -200,6 +200,21 @@ export function Markets() {
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
+  // LetsExchange all quoted pairs — complete external pair universe
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  const leAllPairs = useMemo(
+    () => (rawLeAllPairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLeAllPairs],
+  );
+
   // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
   const leBsvPairs = useMemo(
@@ -408,7 +423,7 @@ export function Markets() {
 
   const markets  = getMarkets();
   const searchPool = search
-    ? [...tradeable(raw), ...leBsvPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
+    ? [...tradeable(raw), ...leAllPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
     : markets;
   const filtered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||

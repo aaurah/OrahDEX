@@ -4,14 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
+import { API_BASE } from "@/lib/api";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Animated OrahO sigil — large sovereign version ───────────────────── */
 function SovereignSigil({ size = 160 }: { size?: number }) {
@@ -178,7 +177,7 @@ function OraAiSection() {
   const FALLBACK_INSIGHTS = [
     { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
     { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
   ];
 
   useEffect(() => {
@@ -190,7 +189,7 @@ function OraAiSection() {
     }, 8000);
 
     const controller = new AbortController();
-    fetch(`${BASE}/api/ai/insights`, { signal: controller.signal })
+    fetch(`${API_BASE}/ai/insights`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;
@@ -244,7 +243,7 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors 950+ markets in real-time,
+            Your AI co-pilot for every trade. Ora monitors markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
           </p>
@@ -547,6 +546,8 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
+  const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
+  const MARKETS_PREVIEW_LIMIT = 50;
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)
@@ -562,23 +563,39 @@ export function LandingPage() {
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`, { cache: "no-store" });
+      const r = await fetch(`${API_BASE}/bsv-status`, { cache: "no-store" });
       return r.ok ? r.json() : { online: false, blockHeight: 0 };
     },
     refetchInterval: 30_000,
   });
 
-  const { data: markets } = useQuery({
-    queryKey: ["market-count"],
+  const { data: marketsData } = useQuery({
+    queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
-      if (!r.ok) return [];
-      return r.json();
+      const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
+      ]);
+      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
+      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);
+      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed", marketsRes.reason);
+      const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
+      const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
+      const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
+      const leCount = Number((leCountPayload as any)?.count ?? 0);
+      const marketCount = Number((countPayload as any)?.count ?? 0);
+      // /letsexchange/pairs/count already returns merged external+native symbol count.
+      // Fall back to /markets/count only when that endpoint is unavailable.
+      const totalCount = leCount > 0 ? leCount : marketCount;
+      return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
+    placeholderData: { count: MARKET_COUNT_PLACEHOLDER, markets: [] as any[] },
   });
 
-  const marketCount = markets?.length ?? 950;
+  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : MARKET_COUNT_PLACEHOLDER;
+  const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 

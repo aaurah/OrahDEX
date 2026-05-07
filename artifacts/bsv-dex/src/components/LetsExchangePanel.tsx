@@ -109,13 +109,16 @@ let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 
 async function fetchCoins(): Promise<LeCoin[]> {
-  if (_coinsCache && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  // Only use cache when it has real data — never cache an empty list
+  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: LeCoin[]) => {
-      _coinsCache = d;
-      _coinsCacheTs = Date.now();
+      if (d.length > 0) {         // only cache a real non-empty response
+        _coinsCache = d;
+        _coinsCacheTs = Date.now();
+      }
       _coinsInflight = null;
       return d;
     })
@@ -1259,10 +1262,10 @@ export function LetsExchangePanel({
       </div>
     );
   }
-  if (coinsErr) {
+  if (coinsErr || (!loading && coins.length === 0)) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-red-400 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 shrink-0" /> Failed to load coin list.
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
       </div>
     );
   }

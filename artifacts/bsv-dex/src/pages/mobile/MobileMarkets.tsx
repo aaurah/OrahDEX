@@ -142,6 +142,7 @@ function getCatRows(
   usdSub: UsdSub,
   livePrice: Map<string, MktRow>,
   favorites: Set<string>,
+  leAllPairs: MktRow[],
   lePairs: MktRow[],      // LetsExchange BSV-quoted pairs
   leBtcPairs: MktRow[],   // LetsExchange BTC-quoted pairs
   apiRows: MktRow[],      // All live DB pairs (normalised)
@@ -162,11 +163,11 @@ function getCatRows(
   switch (cat) {
     case "all":       return [
       ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0),
-      ...lePairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol) && p.price > 0),
+      ...leAllPairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol) && p.price > 0),
     ];
     case "favorites": return [
       ...enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol)),
-      ...lePairs.filter(p => favorites.has(p.symbol)),
+      ...leAllPairs.filter(p => favorites.has(p.symbol)),
     ];
     case "new":       return NEW_MARKETS.map(normalise);
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
@@ -296,6 +297,21 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
+  // LetsExchange all quoted pairs — complete exchange pair universe
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  const leAllPairs = useMemo<MktRow[]>(() =>
+    (rawLeAllPairs ?? []).map(p => ({
+      symbol: p.symbol,
+      base:   p.baseAsset,
+      quote:  p.quoteAsset,
+      price:  p.lastPrice ?? 0,
+      chg:    p.priceChangePercent24h ?? 0,
+      vol:    p.volume ?? 0,
+      cap:    0,
+      type:   "spot",
+    })),
+  [rawLeAllPairs]);
+
   // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
   const lePairs = useMemo<MktRow[]>(() =>
@@ -338,11 +354,11 @@ export function MobileMarkets() {
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...apiRows,
-      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, lePairs, leBtcPairs, apiRows)),
+      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows)),
     ].map((m: MktRow) => [m.symbol, m])
-  ).values()), [apiRows, usdSub, livePrice, favorites, lePairs, leBtcPairs]);
+  ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites, lePairs, leBtcPairs, apiRows);
+  let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
 
   if (search) {
     const q = search.toUpperCase();
