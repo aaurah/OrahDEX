@@ -589,7 +589,7 @@ export function LandingPage() {
     placeholderData: { count: 1000, markets: [] as any[] },
   });
 
-  const marketCount = marketsData?.count ?? 0;
+  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : 1000;
   const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
