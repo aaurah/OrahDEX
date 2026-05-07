@@ -13,6 +13,7 @@ async function fetchPriority(): Promise<any[]> {
   priorityPromise = (async () => {
     try {
       const r = await fetch(`${API_BASE}/markets?limit=${PRIORITY_LIMIT}`, {
+        cache: "no-store",
         headers: { Accept: "application/json" },
       });
       if (!r.ok) throw new Error(`priority markets ${r.status}`);
