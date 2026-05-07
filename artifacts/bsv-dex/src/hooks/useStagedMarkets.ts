@@ -43,7 +43,7 @@ async function fetchPriority(): Promise<any[]> {
 export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
   const full = useGetMarkets({
     ...opts,
-    request: { ...(opts?.request ?? {}), cache: "no-store" },
+    request: { cache: opts?.request?.cache ?? "no-store", ...(opts?.request ?? {}) },
   });
   const [priority, setPriority] = useState<any[] | null>(priorityCache);
 
