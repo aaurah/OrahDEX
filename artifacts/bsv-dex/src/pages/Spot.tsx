@@ -200,12 +200,14 @@ export function SpotTrading() {
   const symbol = decodedRaw.includes('/') ? decodedRaw : decodedRaw.replace(/-/g, '/');
   const [base = '', quote = ''] = symbol.split('/');
 
-  const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 });
+  const noStoreRequest = { cache: "no-store" as const };
+  const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
+  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 }, { request: noStoreRequest });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
+    request: noStoreRequest,
     query: { refetchInterval: 4000, staleTime: 2000 },
   });
-  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
+  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 }, { request: noStoreRequest });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || '' },
     { query: { enabled: !!address, refetchInterval: 5000 } }

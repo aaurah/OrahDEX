@@ -889,7 +889,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
+        body: JSON.stringify({
+          from:         coin_from,
+          to:           coin_to,
+          network_from: coin_from,
+          network_to:   coin_to,
+          amount:       1,
+        }),
       });
       if (!r.ok) return null;
       return r.json();

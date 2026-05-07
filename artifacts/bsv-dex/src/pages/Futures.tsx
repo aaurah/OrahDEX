@@ -148,9 +148,10 @@ export function FuturesTrading() {
     }
   });
 
-  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 });
-  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
+  const noStoreRequest = { cache: "no-store" as const };
+  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
+  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 }, { request: noStoreRequest });
+  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, { request: noStoreRequest });
 
   const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
   const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);

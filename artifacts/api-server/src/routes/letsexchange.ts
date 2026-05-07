@@ -376,8 +376,22 @@ router.get("/letsexchange/pairs", async (req, res) => {
 // Required: from, to, network_from, network_to, amount, affiliate_id
 // Response:  min_amount, max_amount, amount (output), rate, rate_id, rate_id_expired_at, withdrawal_fee
 router.post("/letsexchange/estimate", async (req, res) => {
-  const { from, to, network_from, network_to, amount, float: isFloat } = req.body ?? {};
-  if (!from || !to || !network_from || !network_to || !amount) {
+  const body = req.body ?? {};
+  const normalizeUpper = (v: unknown): string =>
+    typeof v === "string" ? v.trim().toUpperCase() : "";
+
+  const fromRaw = body.from ?? body.coin_from;
+  const toRaw = body.to ?? body.coin_to;
+  const from = normalizeUpper(fromRaw);
+  const to = normalizeUpper(toRaw);
+  const network_from = normalizeUpper(body.network_from) || from;
+  const network_to = normalizeUpper(body.network_to) || to;
+  const amount = body.amount ?? body.deposit_amount;
+  const isFloat = body.float;
+
+  const missingRequired =
+    !from || !to || !network_from || !network_to || amount === null || amount === undefined;
+  if (missingRequired) {
     res.status(400).json({ error: "from, to, network_from, network_to, and amount are required" }); return;
   }
   const amt = parseFloat(String(amount));
@@ -385,10 +399,10 @@ router.post("/letsexchange/estimate", async (req, res) => {
 
   try {
     const body: Record<string,unknown> = {
-      from:         String(from).toUpperCase(),
-      to:           String(to).toUpperCase(),
-      network_from: String(network_from),
-      network_to:   String(network_to),
+      from,
+      to,
+      network_from,
+      network_to,
       amount:       amt,
       affiliate_id: AFFILIATE_ID,
       float:        isFloat ?? false,

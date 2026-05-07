@@ -38,7 +38,7 @@ export function useBsvChain() {
   return useQuery<BsvChainStatus>({
     queryKey: ["bsv-chain-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`);
+      const r = await fetch(`${BASE}/api/bsv-status`, { cache: "no-store" });
       if (!r.ok) return FALLBACK;
       return r.json();
     },

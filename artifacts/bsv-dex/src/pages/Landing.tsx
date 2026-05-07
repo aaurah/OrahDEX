@@ -562,7 +562,7 @@ export function LandingPage() {
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`);
+      const r = await fetch(`${BASE}/api/bsv-status`, { cache: "no-store" });
       return r.ok ? r.json() : { online: false, blockHeight: 0 };
     },
     refetchInterval: 30_000,
@@ -571,7 +571,7 @@ export function LandingPage() {
   const { data: markets } = useQuery({
     queryKey: ["market-count"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
       if (!r.ok) return [];
       return r.json();
     },
@@ -1066,4 +1066,3 @@ export function LandingPage() {
     </div>
   );
 }
-
