@@ -647,7 +647,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
 function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, walletAddress }: {
   fromCoin: LeCoin; toCoin: LeCoin; amount: string; estimate: Estimate|null;
   onBack: () => void;
-  onContinue: (address: string, extraId: string) => void;
+  onContinue: (address: string, extraId: string, refund?: string) => void;
   walletAddress?: string | null;
 }) {
   const [address,    setAddress]    = useState("");
@@ -767,7 +767,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
       )}
 
       <button type="button" disabled={!addrOk || !extraOk}
-        onClick={() => addrOk && extraOk && onContinue(address.trim(), extraId.trim())}
+        onClick={() => addrOk && extraOk && onContinue(address.trim(), extraId.trim(), refund.trim() || undefined)}
         className={cn("w-full py-4 rounded-xl font-bold text-base transition-all",
           addrOk && extraOk
             ? "bg-emerald-500 hover:bg-emerald-400 text-black active:scale-[0.98]"
@@ -1205,10 +1205,11 @@ export function LetsExchangePanel({
     setStep(2);
   };
 
-  const handleAddressContinue = async (address: string, extraId: string) => {
+  const handleAddressContinue = async (address: string, extraId: string, refund?: string) => {
     if (!fromCoin || !toCoin) return;
     setCreating(true); setCreateError(null);
     try {
+      const fixedRateId = estimate?.rate_id ?? null;
       const body: Record<string,unknown> = {
         coin_from:           fromCoin.symbol,
         coin_to:             toCoin.symbol,
@@ -1217,8 +1218,10 @@ export function LetsExchangePanel({
         deposit_amount:      parseFloat(sendAmount),
         withdrawal:          address,
         withdrawal_extra_id: extraId,   // always sent, even if ""
-        float:               true,
+        float:               !fixedRateId,
       };
+      if (fixedRateId) body.rate_id = fixedRateId;
+      if (refund) body.return = refund;
 
       const r = await fetch(`${API}/letsexchange/exchange`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

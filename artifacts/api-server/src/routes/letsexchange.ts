@@ -439,8 +439,8 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     }
 
     const bySymbol = new Map<string, Record<string, unknown>>();
-    nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
     lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+    nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // native wins on price
 
     const allPairs = Array.from(bySymbol.values());
     let filtered = allPairs;
@@ -543,14 +543,18 @@ router.post("/letsexchange/exchange", async (req, res) => {
   }
 
   try {
+    const fromNetwork = String(network_from).trim().toUpperCase();
+    const toNetwork = String(network_to).trim().toUpperCase();
+    const withdrawalClean = withdrawalStr;
+
     const body: Record<string,unknown> = {
       float:                isFloat ?? false,
       coin_from:            String(coin_from).toUpperCase(),
       coin_to:              String(coin_to).toUpperCase(),
-      network_from:         String(network_from),
-      network_to:           String(network_to),
+      network_from:         fromNetwork,
+      network_to:           toNetwork,
       deposit_amount:       amt,
-      withdrawal:           String(withdrawal),
+      withdrawal:           withdrawalClean,
       withdrawal_extra_id:  withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
       affiliate_id:         AFFILIATE_ID,
     };
@@ -575,13 +579,13 @@ router.post("/letsexchange/exchange", async (req, res) => {
         id:               String(d.transaction_id),
         coinFrom:         String(coin_from).toUpperCase(),
         coinTo:           String(coin_to).toUpperCase(),
-        networkFrom:      String(network_from),
-        networkTo:        String(network_to),
+        networkFrom:      fromNetwork,
+        networkTo:        toNetwork,
         depositAmount:    String(amt),
         withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
         depositAmountUsd: depositUsd,
         status:           String(d.status ?? "waiting"),
-        withdrawal:       withdrawalStr,
+        withdrawal:       withdrawalClean,
       }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
     }
 
