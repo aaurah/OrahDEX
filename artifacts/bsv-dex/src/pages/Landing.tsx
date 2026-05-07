@@ -576,6 +576,9 @@ export function LandingPage() {
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
       ]);
+      if (leCountRes.status !== "fulfilled" || countRes.status !== "fulfilled" || marketsRes.status !== "fulfilled") {
+        console.warn("Landing market count fetch: one or more requests failed");
+      }
       const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
       const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
       const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];

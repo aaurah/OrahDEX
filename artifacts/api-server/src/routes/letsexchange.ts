@@ -425,11 +425,12 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
 
     const allPairs = Array.from(bySymbol.values());
-    const filtered = !returnAll && filterQuote
-      ? allPairs.filter(p => p.quoteAsset === filterQuote)
-      : !returnAll
-        ? allPairs.filter(p => p.quoteAsset === "BSV")
-        : allPairs;
+    let filtered = allPairs;
+    if (!returnAll && filterQuote) {
+      filtered = allPairs.filter(p => p.quoteAsset === filterQuote);
+    } else if (!returnAll) {
+      filtered = allPairs.filter(p => p.quoteAsset === "BSV");
+    }
 
     res.set("Cache-Control", "public, max-age=60");
     res.json({ count: filtered.length });
