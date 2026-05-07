@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-
-const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
+import { API_BASE } from '@/lib/api';
 
 /* ── Module-level singleton — one timer no matter how many components subscribe ── */
 let _online   = navigator.onLine;
@@ -18,7 +17,7 @@ async function ping() {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5_000);
-    const res = await fetch(`${BASE_URL}/api/ping`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+    const res = await fetch(`${API_BASE}/ping`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
     clearTimeout(t);
     notifyAll(res.ok || res.status === 204);
   } catch {
