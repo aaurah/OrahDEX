@@ -1259,10 +1259,10 @@ export function LetsExchangePanel({
       </div>
     );
   }
-  if (coinsErr) {
+  if (coinsErr || (!loading && coins.length === 0)) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-red-400 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 shrink-0" /> Failed to load coin list.
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
       </div>
     );
   }

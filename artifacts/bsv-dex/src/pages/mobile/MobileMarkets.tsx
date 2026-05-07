@@ -289,7 +289,7 @@ export function MobileMarkets() {
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets?limit=1000`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },

@@ -567,17 +567,23 @@ export function LandingPage() {
     refetchInterval: 30_000,
   });
 
-  const { data: markets } = useQuery({
-    queryKey: ["market-count"],
+  const { data: marketsData } = useQuery({
+    queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/markets`, { cache: "no-store" });
-      if (!r.ok) return [];
-      return r.json();
+      const [countRes, marketsRes] = await Promise.all([
+        fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=50`, { cache: "no-store" }),
+      ]);
+      const { count = 950 } = countRes.ok ? await countRes.json() : {};
+      const arr = marketsRes.ok ? await marketsRes.json() : [];
+      return { count: count || 950, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
+    placeholderData: { count: 950, markets: [] as any[] },
   });
 
-  const marketCount = markets?.length ?? 950;
+  const marketCount = marketsData?.count ?? 950;
+  const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 
