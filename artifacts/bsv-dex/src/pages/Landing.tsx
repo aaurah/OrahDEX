@@ -4,14 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
+import { API_BASE } from "@/lib/api";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 /* ── Animated OrahO sigil — large sovereign version ───────────────────── */
 function SovereignSigil({ size = 160 }: { size?: number }) {
@@ -562,7 +561,7 @@ export function LandingPage() {
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`, { cache: "no-store" });
+      const r = await fetch(`${API_BASE}/bsv-status`, { cache: "no-store" });
       return r.ok ? r.json() : { online: false, blockHeight: 0 };
     },
     refetchInterval: 30_000,
@@ -571,7 +570,7 @@ export function LandingPage() {
   const { data: markets } = useQuery({
     queryKey: ["market-count"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
+      const r = await fetch(`${API_BASE}/markets`, { cache: "no-store" });
       if (!r.ok) return [];
       return r.json();
     },
