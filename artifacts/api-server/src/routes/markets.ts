@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
@@ -170,9 +170,12 @@ router.get("/markets", async (req, res) => {
 
   try {
     // Always filter by enabled=true — this is the stability guarantee.
+    // Always exclude type='letsexchange': those 36K+ rows are served via
+    // /api/letsexchange/pairs and must never be JSON-serialized here (OOM risk).
+    const leExclude = ne(marketsTable.type, "letsexchange");
     const conditions = types.length
-      ? and(eq(marketsTable.enabled, true), inArray(marketsTable.type, types))
-      : eq(marketsTable.enabled, true);
+      ? and(eq(marketsTable.enabled, true), leExclude, inArray(marketsTable.type, types))
+      : and(eq(marketsTable.enabled, true), leExclude);
 
     const markets = await db.select().from(marketsTable).where(conditions);
 

@@ -1380,16 +1380,14 @@ export async function updateMarketPrices() {
 let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
-  // Delay the LE warm-up + full sync by 90 s so the server finishes booting
-  // before firing ~190 concurrent LE API requests that spike heap usage.
+  // Warm the LE price cache at 90 s (price lookups only — no pair sync).
+  // syncAllLEPairs() is intentionally NOT called at startup: the DB already
+  // holds 36K+ LE pairs from a previous run, and inserting them again while
+  // the markets endpoint is live causes JSON.stringify OOM on the full table.
+  // The /api/letsexchange/pairs route serves from the DB when ≥100 rows exist.
   setTimeout(() => {
     warmLEPriceCache()
-      .then(() => syncAllLEPairs())
-      .then(r => logger.info(r, "Startup: LE pairs synced"))
-      .catch(err => {
-        logger.warn({ err }, "Startup: LE full sync failed, falling back to seed");
-        return seedLEPairsIfNeeded();
-      });
+      .catch(err => logger.warn({ err }, "Startup: LE price cache warm failed"));
   }, 90_000);
 
   // Seed any missing market rows at 15 s (lightweight DB write, no network).
