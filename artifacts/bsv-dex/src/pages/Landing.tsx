@@ -586,7 +586,7 @@ export function LandingPage() {
       return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
-    placeholderData: { count: 0, markets: [] as any[] },
+    placeholderData: { count: 1000, markets: [] as any[] },
   });
 
   const marketCount = marketsData?.count ?? 0;
