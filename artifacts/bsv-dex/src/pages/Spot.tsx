@@ -28,6 +28,7 @@ type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
   | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
   | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
+  | "XRP"  | "DOGE" | "LTC"
   | "FTM"  | "CRO"  | "MNT"  | "ZK"  | "SCR" | "LINEA";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
@@ -38,12 +39,15 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "BSV",   label: "BSV",   color: "text-yellow-400" },
   { id: "BCH",   label: "BCH",   color: "text-emerald-400"},
   { id: "BNB",   label: "BNB",   color: "text-yellow-500" },
+  { id: "XRP",   label: "XRP",   color: "text-sky-400"    },
+  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
+  { id: "DOGE",  label: "DOGE",  color: "text-yellow-300" },
+  { id: "LTC",   label: "LTC",   color: "text-slate-300"  },
+  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
+  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
+  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
   { id: "ARB",   label: "ARB",   color: "text-blue-400"   },
   { id: "OP",    label: "OP",    color: "text-red-400"    },
-  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
-  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
-  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
-  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
   { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
   { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
   { id: "MNT",   label: "MNT",   color: "text-teal-400"   },

@@ -48,6 +48,13 @@ async function fetchPairs(query: string): Promise<LEPair[]> {
   return Array.isArray(d) ? (d as LEPair[]) : [];
 }
 
+// Only treat the cache as valid when it has real data
+function getValidCached(key: string): LEPair[] | null {
+  const e = cache.get(key);
+  if (!e || Date.now() - e.ts >= CACHE_TTL) return null;
+  return e.data.length > 0 ? e.data : null; // never return empty cached list
+}
+
 export function useLetsExchangePairs(opts: { quote?: string; all?: boolean } = {}) {
   const query = opts.all
     ? "?all=true"
@@ -55,22 +62,23 @@ export function useLetsExchangePairs(opts: { quote?: string; all?: boolean } = {
       ? `?quote=${encodeURIComponent(opts.quote)}`
       : "";                                    // defaults to BSV on the server
 
-  const hit = getCached(query);
+  const hit = getValidCached(query);
   const [pairs, setPairs]     = useState<LEPair[]>(hit ?? []);
   const [loading, setLoading] = useState(!hit);
 
   useEffect(() => {
-    const cached = getCached(query);
+    const cached = getValidCached(query);
     if (cached) { setPairs(cached); setLoading(false); return; }
 
     let cancelled = false;
 
     if (!pendingFetch.has(query)) {
       const p = fetchPairs(query).then(data => {
-        cache.set(query, { data, ts: Date.now() });
+        // Only cache non-empty results so empty server responses don't block retries
+        if (data.length > 0) cache.set(query, { data, ts: Date.now() });
         pendingFetch.delete(query);
         return data;
-      });
+      }).catch(() => { pendingFetch.delete(query); return [] as LEPair[]; });
       pendingFetch.set(query, p);
     }
 
