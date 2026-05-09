@@ -215,24 +215,47 @@ export function Markets() {
   const tradeable = (arr: any[]) =>
     arr.filter(m => parseFloat(m.lastPrice || "0") > 0);
 
-  /** Get all live pairs for a quote asset — DB-only, no mock fallback */
-  const dbByQuote = (quote: string) =>
-    tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
+  /** Get all live pairs for a quote asset, falling back to enriched mock data */
+  const dbByQuote = (quote: string) => {
+    const live = tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
+    if (live.length > 0) return live;
+    // Fallback: show enriched mock pairs for this quote so the page is never blank
+    const mockMap: Record<string, any[]> = {
+      USDT: STABLE_MOCK[usdSub === "USDT" ? "USDT" : usdSub],
+      USDC: STABLE_MOCK.USDC, TUSD: STABLE_MOCK.TUSD, USDD: STABLE_MOCK.USDD,
+      BSV: BSV_MARKETS, BTC: BTC_MARKETS, ETH: ETH_MARKETS, BCH: BCH_MARKETS,
+      BNB: BNB_MARKETS, MATIC: MATIC_MARKETS, AVAX: AVAX_MARKETS,
+      ARB: ARB_MARKETS, OP: OP_MARKETS, FTM: FTM_MARKETS, CRO: CRO_MARKETS,
+      BASE: BASE_MARKETS, LINEA: LINEA_MARKETS, ZK: ZK_MARKETS,
+      SCR: SCR_MARKETS, MNT: MNT_MARKETS,
+    };
+    const fallback = mockMap[quote];
+    return fallback ? tradeable(enrich(fallback.map(normalise))) : [];
+  };
 
-  /** For protocol tabs: cross-reference mock list with DB pairs so only real DB pairs show */
+  /** For protocol tabs: cross-reference mock list with DB pairs; fall back to enriched mock */
   const dbBySymbols = (mockList: any[]) => {
     const symbols = new Set(mockList.map((m: any) => m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`));
-    return tradeable(raw.filter(m => symbols.has(m.symbol)));
+    const live = tradeable(raw.filter(m => symbols.has(m.symbol)));
+    if (live.length > 0) return live;
+    return tradeable(enrich(mockList));
   };
 
   /**
    * For themed category tabs: use the live category map so every DB pair
    * whose base asset belongs to `tag` is shown automatically.
    * Prefer USDT pairs; if a base asset only has other quotes those show too.
+   * Falls back to enriched mock data when the API is down.
    */
-  const dbByCategory = (tag: string) => {
+  const dbByCategory = (tag: string, fallbackMock?: any[]) => {
     const inCategory = raw.filter(m => m.type !== "futures" && hasCategory(m.baseAsset, tag));
-    if (inCategory.length === 0) return [];
+    if (inCategory.length === 0) {
+      // API is down or no live data — show enriched mock data for this category
+      if (fallbackMock && fallbackMock.length > 0) {
+        return tradeable(enrich(fallbackMock.map(normalise)));
+      }
+      return [];
+    }
     // Group by base asset and pick the best quote in priority order
     const priority = ["USDT","USDC","TUSD","USDD","BTC","ETH","BSV","BNB"];
     const byBase = new Map<string, any>();
@@ -253,7 +276,7 @@ export function Markets() {
       case "favorites":
         return tradeable(raw.filter(m => stars.has(m.symbol)));
       case "new":
-        // NEW_MARKETS defines symbols; cross-reference with live DB data
+        // NEW_MARKETS defines symbols; cross-reference with live DB data, fall back to enriched mock
         return dbBySymbols(NEW_MARKETS.map(normalise));
       case "usd":
         return dbByQuote(usdSub);
@@ -274,27 +297,30 @@ export function Markets() {
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
       case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
-      case "sol":     return dbByCategory("sol_eco");
-      case "ai":      return dbByCategory("ai");
-      case "depin":   return dbByCategory("depin");
-      case "meme":    return dbByCategory("meme");
-      case "defi":    return dbByCategory("defi");
+      case "sol":     return dbByCategory("sol_eco", SOL_MARKETS);
+      case "ai":      return dbByCategory("ai", AI_MARKETS);
+      case "depin":   return dbByCategory("depin", DEPIN_MARKETS);
+      case "meme":    return dbByCategory("meme", MEME_MARKETS);
+      case "defi":    return dbByCategory("defi", DEFI_MARKETS);
       case "uniswap": return dbBySymbols(UNISWAP_MARKETS.map(normalise));
       case "pancake": return dbBySymbols(PANCAKE_MARKETS.map(normalise));
-      case "gaming":  return dbByCategory("gaming");
-      case "cosmos":  return dbByCategory("cosmos");
-      case "l1":      return dbByCategory("l1");
-      case "l2":      return dbByCategory("l2");
-      case "rwa":     return dbByCategory("rwa");
-      case "exchange":return dbByCategory("exchange");
-      case "brc20":   return dbByCategory("brc20");
-      case "futures": return tradeable(raw.filter(m => m.type === "futures"));
+      case "gaming":  return dbByCategory("gaming", GAMING_MARKETS);
+      case "cosmos":  return dbByCategory("cosmos", COSMOS_MARKETS);
+      case "l1":      return dbByCategory("l1", L1_MARKETS);
+      case "l2":      return dbByCategory("l2", L2_MARKETS);
+      case "rwa":     return dbByCategory("rwa", RWA_MARKETS);
+      case "exchange":return dbByCategory("exchange", EXCHANGE_MARKETS);
+      case "brc20":   return dbByCategory("brc20", BRC20_MARKETS);
+      case "futures": {
+        const live = tradeable(raw.filter(m => m.type === "futures"));
+        return live.length > 0 ? live : tradeable(enrich(FUTURES_MARKETS.map(normalise)));
+      }
       default:        return [];
     }
   }
 
   function tabCount(t: Tab): number {
-    const dbQ  = (q: string) => tradeable(raw.filter(m => m.quoteAsset === q && m.type !== "futures")).length;
+    const dbQ  = (q: string) => dbByQuote(q).length;
     const dbS  = (list: any[]) => dbBySymbols(list.map(normalise)).length;
     switch (t) {
       case "favorites": return tradeable(raw.filter(m => stars.has(m.symbol))).length;
@@ -317,21 +343,21 @@ export function Markets() {
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
       case "zora":      return dbS(ZORA_MARKETS);
-      case "sol":       return dbByCategory("sol_eco").length;
-      case "ai":        return dbByCategory("ai").length;
-      case "depin":     return dbByCategory("depin").length;
-      case "meme":      return dbByCategory("meme").length;
-      case "defi":      return dbByCategory("defi").length;
+      case "sol":       return dbByCategory("sol_eco", SOL_MARKETS).length;
+      case "ai":        return dbByCategory("ai", AI_MARKETS).length;
+      case "depin":     return dbByCategory("depin", DEPIN_MARKETS).length;
+      case "meme":      return dbByCategory("meme", MEME_MARKETS).length;
+      case "defi":      return dbByCategory("defi", DEFI_MARKETS).length;
       case "uniswap":   return dbS(UNISWAP_MARKETS);
       case "pancake":   return dbS(PANCAKE_MARKETS);
-      case "gaming":    return dbByCategory("gaming").length;
-      case "cosmos":    return dbByCategory("cosmos").length;
-      case "l1":        return dbByCategory("l1").length;
-      case "l2":        return dbByCategory("l2").length;
-      case "rwa":       return dbByCategory("rwa").length;
-      case "exchange":  return dbByCategory("exchange").length;
-      case "brc20":     return dbByCategory("brc20").length;
-      case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length;
+      case "gaming":    return dbByCategory("gaming", GAMING_MARKETS).length;
+      case "cosmos":    return dbByCategory("cosmos", COSMOS_MARKETS).length;
+      case "l1":        return dbByCategory("l1", L1_MARKETS).length;
+      case "l2":        return dbByCategory("l2", L2_MARKETS).length;
+      case "rwa":       return dbByCategory("rwa", RWA_MARKETS).length;
+      case "exchange":  return dbByCategory("exchange", EXCHANGE_MARKETS).length;
+      case "brc20":     return dbByCategory("brc20", BRC20_MARKETS).length;
+      case "futures":   return getMarkets().length;
       default:          return 0;
     }
   }
