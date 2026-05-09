@@ -6,12 +6,13 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
+import { disconnectReown } from "@/lib/reown";
 
 const API = "/api";
 
@@ -82,6 +83,21 @@ function fmtUsd(raw: unknown) {
 function safePrice(v: unknown, decimals = 4) {
   const n = Number(v);
   return isFinite(n) ? n.toFixed(decimals) : "0.0000";
+}
+function getNftProfileAddress({
+  address,
+  provider,
+  network,
+  internalEvmAddress,
+}: {
+  address: string | null;
+  provider: string | null;
+  network: string | null;
+  internalEvmAddress: string | null;
+}) {
+  if (!address) return null;
+  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
+  return address;
 }
 
 function timeAgo(iso: string) {
@@ -772,6 +788,8 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   onClose: () => void;
   onSave: (updated: Partial<Creator>) => void;
 }) {
+  const { provider, disconnect } = useWalletStore();
+  const [, navigate] = useLocation();
   const [form, setForm] = useState({
     username: profile.username || "",
     bio: profile.bio || "",
@@ -787,6 +805,10 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -824,6 +846,29 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteProfile() {
+    if (!address || deleteConfirmText !== "DELETE") return;
+    setDeleteLoading(true); setDeleteError("");
+    try {
+      const res = await fetch(`${API}/social/creators/${address}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Failed to delete profile");
+      setShowDeleteConfirm(false);
+      if (provider === "reown") await disconnectReown();
+      disconnect();
+      onClose();
+      navigate("/");
+    } catch (err: any) {
+      setDeleteError(err.message);
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -944,12 +989,79 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
         </div>
 
+        <div className="rounded-2xl p-3.5 border" style={{ background: "rgba(255,68,68,0.08)", borderColor: "rgba(255,68,68,0.25)" }}>
+          <p className="text-[10px] font-bold mb-1 tracking-widest" style={{ color: "#ff6b6b" }}>DANGER ZONE</p>
+          <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>
+            Delete Profile — Permanently remove your profile and posts.
+          </p>
+          <button
+            onClick={() => { setShowDeleteConfirm(true); setDeleteConfirmText(""); setDeleteError(""); }}
+            className="w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+            style={{ background: "rgba(255,68,68,0.18)", color: "#ff6b6b" }}
+          >
+            <Trash2 size={13} />
+            Delete Profile
+          </button>
+        </div>
+
         {error && (
           <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>
         )}
 
         <div className="h-8" />
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl p-5 flex flex-col gap-4" style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)" }}>
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: "rgba(255,68,68,0.2)" }}>
+                <Trash2 size={18} style={{ color: "#ff6b6b" }} />
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: "var(--color-surface)" }}
+              >
+                <X size={16} style={{ color: "var(--color-text)" }} />
+              </button>
+            </div>
+            <div>
+              <h3 className="text-base font-bold" style={{ color: "var(--color-text)" }}>Delete Profile</h3>
+              <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                This will permanently delete your profile, all posts, mints, follows, and coin data. This action cannot be undone.
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold mb-2 uppercase tracking-widest" style={{ color: "var(--color-text-secondary)" }}>
+                Type DELETE to confirm
+              </p>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value.toUpperCase())}
+                placeholder="DELETE"
+                className="w-full rounded-xl px-3 py-2.5 text-sm font-mono outline-none"
+                style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
+                autoFocus
+              />
+            </div>
+            {deleteError && (
+              <p className="text-xs flex items-center gap-1.5" style={{ color: "#ff6b6b" }}>
+                <AlertCircle size={13} /> {deleteError}
+              </p>
+            )}
+            <button
+              onClick={handleDeleteProfile}
+              disabled={deleteConfirmText !== "DELETE" || deleteLoading}
+              className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-60"
+              style={{ background: "#ff4444", color: "#fff" }}
+            >
+              {deleteLoading ? "Deleting..." : "Delete Profile Permanently"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
     </Portal>
   );
@@ -1728,9 +1840,10 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── MY PROFILE TAB ─────────────────────────────────────────────────────────── */
 function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
-  if (!address) return (
+  if (!profileAddress) return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
       <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}><User size={28} style={{ color: "var(--color-text-secondary)" }} /></div>
       <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Connect your wallet to see your profile and creator coin</p>
@@ -1738,7 +1851,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
     </div>
   );
   // Redirect to full creator profile view
-  useEffect(() => { if (address) onOpenCreator(address); }, [address]);
+  useEffect(() => { if (profileAddress) onOpenCreator(profileAddress); }, [profileAddress, onOpenCreator]);
   return <div className="flex items-center justify-center h-full"><div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>;
 }
 
@@ -1809,15 +1922,16 @@ export function MobileNFT() {
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
     if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
   }
 
-  function openCreator(addr: string) { setCreatorAddress(addr); }
-  function openPost(p: Post) { setDetailPost(p); }
+  const openCreator = useCallback((addr: string) => setCreatorAddress(addr), []);
+  const openPost = useCallback((p: Post) => setDetailPost(p), []);
 
   const INNER_TABS = [
     { key: "feed"    as const, label: "Feed",    Icon: Layers },
@@ -1836,7 +1950,7 @@ export function MobileNFT() {
         </div>
         <div className="flex items-center gap-2">
           {address && (
-            <button onClick={() => openCreator(address)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
+            <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
               <Avatar src={undefined} name={address} size={18} />
               <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(address)}</span>
             </button>
@@ -1868,7 +1982,7 @@ export function MobileNFT() {
       {creatorAddress && (
         <CreatorProfileSheet
           creatorAddress={creatorAddress}
-          currentUserAddress={address ?? undefined}
+          currentUserAddress={profileAddress ?? undefined}
           onClose={() => {
             setCreatorAddress(null);
             // If the profile tab triggered this sheet, return to feed

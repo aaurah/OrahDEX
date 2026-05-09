@@ -82,7 +82,7 @@ router.get("/", (_req, res) => {
 router.get("/:symbol", (req, res) => {
   const symbol = decodeURIComponent(req.params.symbol);
   const market = markets.find(m => m.symbol === symbol);
-  if (!market) return res.status(404).json({ error: "Market not found" });
+  if (!market) { res.status(404).json({ error: "Market not found" }); return; }
   res.json(market);
 });
 

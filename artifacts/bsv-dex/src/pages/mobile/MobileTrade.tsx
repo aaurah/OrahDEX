@@ -1,6 +1,8 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSignMessage } from "wagmi";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -14,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
+import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -37,13 +40,45 @@ function relTime(ts: number) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
+  if (n.href) return n.href;
+  const { type, pair } = n;
+  if (pair) {
+    const urlPair = pair.replace("/", "-");
+    const isFutures = urlPair.includes("PERP");
+    if (["order_placed", "order_filled", "order_cancelled", "order_partial", "trade", "price_alert", "error"].includes(type)) {
+      return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
+    }
+  }
+  if (type === "bridge") return "/bridge";
+  if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
+  if (type === "withdrawal" || type === "deposit") return "/portfolio";
+  if (type === "liquidity") return "/liquidity";
+  if (type === "support") return "/admin/support/inbox";
+  if (type === "order_placed" || type === "order_cancelled" || type === "order_filled" || type === "order_partial") return "/portfolio";
+  return null;
+}
+
 function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { notifications, markAllRead, clearAll, markRead } = useNotificationStore();
+  const [, navigate] = useLocation();
   const unread = notifications.filter(n => !n.read).length;
 
   const handleMarkAll = () => markAllRead();
   const dismiss = (id: string) => {
     markRead(id);
+  };
+
+  const handleNotifClick = (n: { id: string; type: string; pair?: string; href?: string }) => {
+    markRead(n.id);
+    const dest = getNotifPath(n);
+    if (!dest) return;
+    onClose();
+    if (dest.startsWith("http")) {
+      window.open(dest, "_blank", "noopener,noreferrer");
+      return;
+    }
+    navigate(dest);
   };
 
   return (
@@ -84,8 +119,18 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
               <p className="text-sm">No notifications yet</p>
               <p className="text-xs text-center px-6 opacity-70">Place an order to see trade updates here</p>
             </div>
-          ) : notifications.map(n => (
-            <div key={n.id} className={cn("flex gap-3 px-4 py-3.5 relative", !n.read && "bg-primary/4")}>
+          ) : notifications.map(n => {
+            const dest = getNotifPath(n);
+            return (
+            <div
+              key={n.id}
+              onClick={() => handleNotifClick(n)}
+              className={cn(
+                "flex gap-3 px-4 py-3.5 relative transition-colors",
+                !n.read && "bg-primary/4",
+                dest ? "cursor-pointer hover:bg-secondary/50 active:bg-secondary/70" : "cursor-default",
+              )}
+            >
               {!n.read && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full" />}
               <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-0.5">
                 {TYPE_ICON[n.type] ?? <Info size={15} className="text-blue-400" />}
@@ -93,18 +138,26 @@ function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => 
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-1">
                   <p className={cn("text-[13px] font-semibold leading-snug", !n.read ? "text-foreground" : "text-muted-foreground")}>{n.title}</p>
-                  <button onClick={() => dismiss(n.id)} className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground">
+                  <button onClick={(e) => { e.stopPropagation(); dismiss(n.id); }} className="shrink-0 p-0.5 text-muted-foreground/50 hover:text-muted-foreground">
                     <X size={11} />
                   </button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
                 {n.txid && (
-                  <p className="text-[10px] text-primary font-mono mt-0.5">{n.txid.slice(0, 10)}…</p>
+                  <a
+                    href={n.href ?? (n.txid.startsWith("0x") ? `https://etherscan.io/tx/${n.txid}` : `https://whatsonchain.com/tx/${n.txid}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-primary font-mono mt-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {n.txid.slice(0, 10)}… <Link2 size={10} />
+                  </a>
                 )}
                 <p className="text-[10px] text-muted-foreground/50 mt-1">{relTime(n.timestamp)}</p>
               </div>
             </div>
-          ))}
+          )})}
         </div>
 
         {/* Footer */}
@@ -199,8 +252,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
+  const isExternalEvm = isEvm && !isOrahWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
@@ -231,13 +286,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // All EVM wallets (Orah or external) use the internal exchange ledger as source of truth
-  // for the "Available" balance shown in the Trade screen. The backend fundingVerifier
-  // already tries the internal ledger first for external wallets, so the UI should match.
-  // Non-EVM wallets (BSV/BTC/SOL) are truly on-chain and use wallet balance as primary.
-  const usesApiBalance = isEvm;
-  // True while we're still waiting for the ledger fetch to complete.
-  const balancesPending = isEvm && apiBalancesLoading;
+  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
+  // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
+  // internal exchange balances for assets accumulated via exchange trades.
+  const usesApiBalance = isOrahWallet;
+  // Show pending state only when the current mode depends on ledger balances.
+  const balancesPending = usesApiBalance && apiBalancesLoading;
 
   const { quoteCurrency } = useSettingsStore();
   const { prices: crossPrices } = useWalletPrices();
@@ -265,7 +319,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 2000,
   });
 
-  const myOrders: any[] = Array.isArray(myOrdersData) ? myOrdersData : [];
+  // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
+  const altAddress = (internalEvmAddress && internalEvmAddress !== address)
+    ? internalEvmAddress
+    : (internalBsvAddress && internalBsvAddress !== address)
+      ? internalBsvAddress
+      : null;
+
+  const { data: altOrdersData } = useQuery({
+    queryKey: ["orders", altAddress],
+    queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
+    enabled: !!altAddress,
+    refetchInterval: 2000,
+  });
+
+  const myOrders: any[] = useMemo(() => {
+    const primary = Array.isArray(myOrdersData) ? myOrdersData : [];
+    const alt     = Array.isArray(altOrdersData) ? altOrdersData : [];
+    const seen    = new Set<string>();
+    return [...primary, ...alt].filter(o => {
+      const key = String(o.id);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [myOrdersData, altOrdersData]);
   const openOrders = myOrders.filter(o => o.status === "open");
   const historyOrders = myOrders.filter(o => o.status !== "open");
 
@@ -283,16 +361,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const cancelMutation = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
-    onMutate: async (orderId) => {
+    onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["orders", address] });
       const prev = queryClient.getQueryData(["orders", address]);
@@ -303,7 +381,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       );
       return { prev };
     },
-    onError: (_err, _id, context: any) => {
+    onError: (_err, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
       }
@@ -311,6 +389,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
+      if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
       if (usesApiBalance && address) {
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
@@ -333,6 +412,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     tradeId: string | null;
     matched: boolean;
     txid?: string;
+    explorerUrl?: string | null;
     side: string;
     base: string;
     quoteSymbol: string;
@@ -368,6 +448,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setOrderError(null);
       const matched  = data?.matched ?? false;
       const txid     = data?.settlementTxid ?? data?.txid;
+      const explorerUrl = data?.explorerUrl ?? null;
       const tradeId  = data?.id ?? null;
       const ordSide  = variables?.side ?? side;
       const ordBase  = data?.symbol?.split("/")[0] ?? base;
@@ -394,7 +475,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
 
-      setOrderResult({ tradeId, matched, txid, side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee });
+      setOrderResult({
+        tradeId, matched, txid, explorerUrl,
+        side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee,
+      });
       setAmount("");
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
@@ -429,6 +513,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
+          href: explorerUrl ?? undefined,
         });
       } else {
         // Unmatched: use quantity and price from the API-confirmed order record
@@ -461,9 +546,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       toast({
         title:       "Order Failed",
         description: code === "DEPOSIT_REQUIRED"
-          ? "Deposit funds to your OrahDEX trading balance before trading."
+          ? (usesApiBalance
+            ? "Deposit funds to your OrahDEX trading balance before trading."
+            : "Deposit funds to your wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
-          ? "Insufficient balance. Check your trading balance."
+          ? (usesApiBalance
+            ? "Insufficient balance. Check your trading balance."
+            : "Insufficient wallet balance. Check your on-chain funds.")
           : msg,
         variant: "destructive",
       });
@@ -641,23 +730,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const walletQuoteBalance = evmTokenBalances.length > 0 ? erc20QuoteBalance : (isNativeQuote ? walletBal  : 0);
 
   // Orah Wallet users use the API ledger balance.
-  // External wallets use on-chain balance minus open order locks.
-  // For external wallets: merge on-chain and internal exchange balance.
-  // This allows selling assets received via internal exchange trades
-  // (e.g. BSV bought on BSV/USDT pair stays in internal ledger).
+  // External wallets are on-chain-first: availability comes from wallet balances,
+  // then open-order locks are subtracted client-side for accurate remaining size.
   const internalBaseBalance  = apiBalances[base]  ?? 0;
   const internalQuoteBalance = apiBalances[quote] ?? 0;
-  const grossSellBalance = usesApiBalance
-    ? internalBaseBalance
-    : Math.max(walletBaseBalance, internalBaseBalance);
-  const grossBuyBalance  = usesApiBalance
-    ? internalQuoteBalance
-    : Math.max(walletQuoteBalance, internalQuoteBalance);
+  const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
+  const grossBuyBalance  = usesApiBalance ? internalQuoteBalance : walletQuoteBalance;
   const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
   const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
+  const fundingAsset = (side === "sell" ? base : quote).toUpperCase();
+  const coinWalletHref = `/portfolio/${encodeURIComponent(fundingAsset)}`;
 
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
   const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
@@ -671,6 +756,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       setAmount((buyBalance / effectivePrice).toFixed(6));
     } else {
       setAmount(sellBalance.toFixed(6));
+    }
+  };
+  const handleFillMin = () => {
+    if (!address || available <= 0) return;
+    if (side === "buy") {
+      if (effectivePrice <= 0) return;
+      const maxQty = buyBalance / effectivePrice;
+      const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
+      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+    } else {
+      const minQty = Math.min(sellBalance, MIN_QUICK_FILL_QTY);
+      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
     }
   };
 
@@ -690,7 +787,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setAmount(Math.max(0, cur + delta * step).toFixed(3));
   }
 
-  function handlePlaceOrder() {
+  async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
 
     // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
@@ -747,6 +844,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
 
+    let evmSignature: string | undefined;
+    if (isExternalEvm) {
+      const nonceBytes = new Uint8Array(16);
+      crypto.getRandomValues(nonceBytes);
+      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      try {
+        evmSignature = await signMessageAsync({ message: orderMsg });
+      } catch (signErr: any) {
+        const msg: string = signErr?.message ?? "";
+        toast({
+          title: "Signature required",
+          description: msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")
+            ? "You must sign the order in your wallet for on-chain settlement."
+            : (msg || "Could not sign order in wallet."),
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        lastOrderFingerprintRef.current = null;
+        return;
+      }
+    }
+
     orderMutation.mutate({
       symbol,
       walletAddress: address,
@@ -759,6 +880,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       walletSource:   isOrahWallet ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
+      evmSignature,
     } as any);
   }
 
@@ -1146,7 +1268,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(o => cancelMutation.mutate(String(o.id)))}
+                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") }))}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1169,7 +1291,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </div>
                         </div>
                         <button
-                          onClick={() => cancelMutation.mutate(String(o.id))}
+                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") })}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
@@ -1507,14 +1629,28 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={handleFillMin}
+                    disabled={!address || available <= 0 || balancesPending}
+                    className="text-[10px] font-bold px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50"
+                  >
+                    MIN
+                  </button>
+                  <button
                     onClick={handleFillMax}
                     disabled={!address || available <= 0 || balancesPending}
-                    className="text-xs font-semibold tabular-nums disabled:text-foreground text-primary active:opacity-70 transition-opacity flex items-center gap-1"
+                    className="text-[10px] font-bold px-2 py-1 rounded border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-50"
                   >
-                    {balancesPending ? "—" : available > 0 ? available.toFixed(4) : "0.00"}&nbsp;{availableSym}
-                    {isEvm && (
+                    MAX
+                  </button>
+                  <span className="text-xs font-semibold tabular-nums text-primary flex items-center gap-1">
+                    {balancesPending
+                      ? "—"
+                      : available > 0
+                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
+                        : "0.0000"}&nbsp;{availableSym}
+                    {isExternalEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                        Exchange
+                        On-chain
                       </span>
                     )}
                     {!isEvm && side === "sell" && isNativeBase && chainInfo?.l2Label && (
@@ -1522,7 +1658,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         {chainInfo.l2Label}
                       </span>
                     )}
-                  </button>
+                  </span>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
                     className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors"
@@ -1536,8 +1672,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {address && available === 0 && !apiBalancesLoading && (
                 <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
                   {side === "buy"
-                    ? `No ${quote} available. Deposit or swap ${quote} to fund your trading balance.`
-                    : `No ${base} available. Buy ${base} first or deposit to your exchange balance.`
+                    ? `No ${quote} available in wallet. Deposit or swap ${quote} on-chain.`
+                    : `No ${base} available in wallet. Buy ${base} first or deposit on-chain.`
                   }
                 </div>
               )}
@@ -1587,6 +1723,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
                   }
                 </p>
+                {orderResult.matched && orderResult.txid && orderResult.explorerUrl && (
+                  <a
+                    href={orderResult.explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 font-medium"
+                  >
+                    View on chain <Link2 size={12} />
+                  </a>
+                )}
               </div>
             )}
 
@@ -1599,23 +1745,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     {orderError.code === "DEPOSIT_REQUIRED"
                       ? "Deposit required to trade"
                       : orderError.code === "INSUFFICIENT_FUNDS"
-                      ? "Insufficient trading balance"
+                      ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
                       : "Order failed"}
                   </span>
                 </div>
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
-                    ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                    ? (usesApiBalance
+                      ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                      : `Deposit ${side === "sell" ? base : quote} to your wallet first. On-chain funds are required before placing orders.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
-                    ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
+                    ? (usesApiBalance
+                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
+                      : `Not enough ${side === "sell" ? base : quote} in your wallet. Check your on-chain balance.`)
                     : orderError.message}
                 </p>
                 {orderError.code === "DEPOSIT_REQUIRED" && (
                   <a
-                    href="/bridge"
+                    href={coinWalletHref}
                     className="ml-6 mt-0.5 text-xs font-bold text-primary underline underline-offset-2"
                   >
-                    Go to Deposit →
+                    Open Wallet →
                   </a>
                 )}
               </div>
@@ -1769,14 +1919,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {
                 icon: <ArrowLeftRight size={20} />,
                 label: "Transfer",
-                desc: "Move funds between your OrahDEX accounts",
-                href: "/portfolio",
+                desc: "Wallet-to-wallet transfer using your coin wallet",
+                href: coinWalletHref,
               },
               {
                 icon: <Download size={20} />,
                 label: "Deposit",
-                desc: "Transfer in crypto from your on-chain wallet or exchange",
-                href: "/portfolio",
+                desc: "Receive funds directly to your wallet address",
+                href: coinWalletHref,
+              },
+              {
+                icon: <CreditCard size={20} />,
+                label: "Withdraw",
+                desc: "Send funds directly from your wallet to another wallet",
+                href: coinWalletHref,
               },
               {
                 icon: <Users2 size={20} />,

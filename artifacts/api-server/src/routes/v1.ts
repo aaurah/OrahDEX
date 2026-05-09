@@ -168,7 +168,7 @@ router.get("/tokens", async (req, res) => {
     const rows = await db.select({
       symbol: marketsTable.symbol,
       lastPrice: marketsTable.lastPrice,
-      priceChangePercent: marketsTable.priceChangePercent,
+      priceChangePercent: marketsTable.priceChangePercent24h,
       volume24h: marketsTable.volume24h,
     }).from(marketsTable).limit(2000);
 
@@ -199,7 +199,6 @@ router.get("/tokens", async (req, res) => {
         });
       }
     }
-
     let tokens = Array.from(symbolMap.values());
 
     // Filter by search
@@ -292,7 +291,7 @@ router.get("/token/:address", async (req, res) => {
     symbol: base,
     address,
     priceUsd: parseFloat(row.lastPrice ?? "0"),
-    change24h: parseFloat(row.priceChangePercent ?? "0"),
+    change24h: parseFloat(row.priceChangePercent24h ?? "0"),
     volume24h: parseFloat(row.volume24h ?? "0"),
     chains: Object.keys(CHAIN_ROUTERS).map(Number),
   });

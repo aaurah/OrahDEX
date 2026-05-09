@@ -1,12 +1,10 @@
-import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
+import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { Layout } from "@/components/Layout";
-import { BiometricLockScreen } from "@/components/BiometricLockScreen";
-import { useBiometricStore } from "@/store/useBiometricStore";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -32,6 +30,7 @@ const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default
 const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
+const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
@@ -425,6 +424,7 @@ function Router() {
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
                 <Route path="/nft"        component={MobileNFT} />
                 <Route path="/prediction" component={PredictionTrading} />
+                <Route path="/sovereign"  component={SovereignOverviewPage} />
                 <Route path="/qr-scan"    component={MobileQRScanner} />
                 <Route component={MobileMarkets} />
               </Switch>
@@ -440,7 +440,6 @@ function Router() {
           <Layout>
             <Suspense fallback={<PageSkeleton />}>
               <Switch>
-                <Route path="/"               component={Markets} />
                 <Route path="/markets"        component={Markets} />
                 <Route path="/trade/:symbol"  component={SpotTrading} />
                 <Route path="/futures/:symbol" component={FuturesTrading} />
@@ -454,8 +453,12 @@ function Router() {
                 <Route path="/fees"           component={RevenuePage} />
                 <Route path="/keeper"         component={KeeperProfile} />
                 <Route path="/portfolio"      component={Portfolio} />
+                <Route path="/portfolio/:coin">
+                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
+                </Route>
                 <Route path="/nft"            component={NFTPage} />
                 <Route path="/prediction"     component={PredictionTrading} />
+                <Route path="/sovereign"      component={SovereignOverviewPage} />
                 <Route path="/settings"           component={WebSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route component={NotFound} />
@@ -468,31 +471,9 @@ function Router() {
   );
 }
 
-const AUTO_LOCK_MS = 30_000;
-
 function AppContent() {
-  const { isEnabled, isLocked, lock } = useBiometricStore();
   useInternalEvmWallet();
   useInternalBsvWallet();
-  const hiddenAt = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!isEnabled) return;
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt.current = Date.now();
-      } else if (document.visibilityState === "visible") {
-        if (hiddenAt.current !== null && Date.now() - hiddenAt.current >= AUTO_LOCK_MS) {
-          lock();
-        }
-        hiddenAt.current = null;
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [isEnabled, lock]);
 
   return (
     <>
@@ -500,7 +481,6 @@ function AppContent() {
         <Router />
       </WouterRouter>
       <Toaster />
-      {isEnabled && isLocked && <BiometricLockScreen />}
     </>
   );
 }

@@ -16,7 +16,6 @@ import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useFuturesMargin } from "@/hooks/useFuturesMargin";
 
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -254,10 +253,7 @@ export function Portfolio() {
     }
   });
 
-  const { address, network, provider, chainId, balance, setBalance, internalEvmAddress } = useWalletStore();
-  // For orah-wallet, always query the ledger using the EVM address (primary account key)
-  // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
-  const ledgerAddress = (provider === "orah-wallet" && internalEvmAddress) ? internalEvmAddress : address;
+  const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
   const openWallet = useWalletModalStore((s) => s.open);
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions } = useLiquidityStore();
@@ -270,32 +266,6 @@ export function Portfolio() {
   const { balances: tronBalances, loading: tronLoading, refresh: tronRefresh } = useTronBalances(
     network === "tron" ? address : null,
   );
-
-  // ── OrahDEX Exchange Balances (from API — reflects post-trade state) ───────
-  const { data: exchangeApiBalances, refetch: refetchExchangeBalances } = useQuery<
-    { asset: string; available: string; locked: string }[]
-  >({
-    queryKey: ["portfolio-exchange-balances", ledgerAddress],
-    queryFn: async () => {
-      if (!ledgerAddress) return [];
-      const r = await fetch(`${BASE}/api/balances?walletAddress=${encodeURIComponent(ledgerAddress)}`);
-      if (!r.ok) return [];
-      const data = await r.json();
-      return Array.isArray(data) ? data : data.balances ?? [];
-    },
-    enabled: !!ledgerAddress,
-    refetchInterval: 15_000,
-    staleTime: 8_000,
-  });
-
-  // ── Futures margin bucket (separate from spot user_balances) ────────────────
-  // Shows the three-number breakdown: free spot / locked spot / futures margin
-  const { margin: futuresMargin } = useFuturesMargin(address);
-
-  // USDT spot breakdown for the 3-number display
-  const usdtSpot = exchangeApiBalances?.find(b => b.asset === "USDT");
-  const usdtFreeSpot   = parseFloat(usdtSpot?.available ?? "0");
-  const usdtLockedSpot = parseFloat(usdtSpot?.locked    ?? "0");
 
   const [hideBalances, setHideBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -464,40 +434,10 @@ export function Portfolio() {
   const nativeAsset = getNativeAsset(network, chainId);
   const nativeBalance = balance ? parseFloat(balance) : 0;
 
-  // OrahDEX exchange balances from API (reflects actual post-trade state)
-  const hasExchangeBalances = (exchangeApiBalances?.length ?? 0) > 0 &&
-    exchangeApiBalances!.some(b => parseFloat(b.available) > 0 || parseFloat(b.locked) > 0);
-
   const stableSet = new Set(["USDT","USDC","DAI","BUSD","TUSD"]);
 
-  // Build balance rows.
-  // Priority order:
-  //  1. OrahDEX exchange balances (from API) — always reflects post-trade state
-  //  2. EVM on-chain balances (MetaMask / EVM wallet)
-  //  3. TRON on-chain balances
-  //  4. Native-only fallback (BSV/BTC/SOL)
+  // Build balance rows from on-chain data.
   const balances = (() => {
-    if (hasExchangeBalances) {
-      // Use API exchange balances — these update after every trade
-      return exchangeApiBalances!
-        .map(b => {
-          const isStable = stableSet.has(b.asset);
-          const mkt      = prices?.[b.asset];
-          const price    = isStable ? 1 : (mkt?.lastPrice ?? 0);
-          const change   = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
-          const avail    = parseFloat(b.available);
-          const locked   = parseFloat(b.locked);
-          const total    = avail + locked;
-          const valueUSD = total * price;
-          const pnl24h   = valueUSD * change / 100;
-          const color    = ASSET_COLORS[b.asset] ?? "#6B7280";
-          return { asset: b.asset, color, marketKey: b.asset,
-                   total, free: avail, locked, price,
-                   change24hPercent: change, valueUSD, pnl24h, isNative: false };
-        })
-        .filter(b => b.total > 0)
-        .sort((a, b) => b.valueUSD - a.valueUSD);
-    }
     if (network === "evm" && evmBalances.length > 0) {
       return evmBalances.map(b => {
         const isStable = stableSet.has(b.symbol);
@@ -609,7 +549,7 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => { refetch(); refetchExchangeBalances(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
+              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               title="Refresh prices & balance"
             >
@@ -798,69 +738,14 @@ export function Portfolio() {
           </div>
         </div>
 
-        {/* ── Three-number balance breakdown (spot free / spot locked / futures margin) */}
-        <div className="bg-card border border-border rounded-2xl shadow-xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-foreground">USDT Balance Breakdown</h3>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Spot and futures buckets are fully isolated</p>
-            </div>
-            <span className="text-[10px] font-bold px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20">LIVE</span>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {/* Free spot */}
-            <div className="bg-secondary/40 rounded-xl p-3 border border-border/60">
-              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1">Free Spot</div>
-              <div className="text-lg font-mono font-bold text-green-400">
-                {hideBalances ? "•••" : usdtFreeSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">Available to trade</div>
-            </div>
-            {/* Locked spot */}
-            <div className="bg-secondary/40 rounded-xl p-3 border border-border/60">
-              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-widest mb-1">Locked Spot</div>
-              <div className="text-lg font-mono font-bold text-amber-400">
-                {hideBalances ? "•••" : usdtLockedSpot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">Reserved in open orders</div>
-            </div>
-            {/* Futures margin */}
-            <div className="bg-secondary/40 rounded-xl p-3 border border-blue-500/20">
-              <div className="text-[10px] text-blue-400 font-semibold uppercase tracking-widest mb-1">Futures Margin</div>
-              <div className="text-lg font-mono font-bold text-blue-300">
-                {hideBalances ? "•••" : futuresMargin.total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5">
-                {futuresMargin.available.toFixed(2)} free · {futuresMargin.locked.toFixed(2)} in positions
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Asset balances table */}
         <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
           <div className="p-6 border-b border-border bg-secondary/20 flex items-center justify-between">
             <div>
-              {hasExchangeBalances ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold">OrahDEX Exchange Balance</h3>
-                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-primary/15 text-primary border border-primary/25">
-                      INTERNAL
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Post-trade balances credited to your OrahDEX account · withdraw to <span className="font-semibold">{networkLabel}</span> anytime
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-bold">Asset Balances</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets live in separate wallets"}
-                  </p>
-                </>
-              )}
+              <h3 className="text-lg font-bold">Asset Balances</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {network === "evm" ? "On-chain balances" : `${nativeAsset} balance`} from <span className="font-semibold">{networkLabel}</span>{network === "evm" ? " · switch chains to see other networks" : " · other assets live in separate wallets"}
+              </p>
             </div>
             <span className="text-xs text-muted-foreground">Live prices · 30s refresh</span>
           </div>
@@ -955,7 +840,7 @@ export function Portfolio() {
                             >
                               Receive
                             </button>
-                            {hasExchangeBalances && bal.free > 0 && (
+                            {bal.free > 0 && (
                               <button
                                 onClick={() => {
                                   setWithdrawAsset({ asset: bal.asset, available: bal.free, color: bal.color });

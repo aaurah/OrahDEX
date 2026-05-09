@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
@@ -10,6 +10,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getNativeSymbol } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
+import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
 
@@ -269,6 +270,11 @@ function SettlementBanner({
 }) {
   if (!matched) return null;
   const isHtlc = settlementType === "utxo_htlc" || crossChain;
+  const txLabel = txid?.startsWith("0x")
+    ? "EVM tx"
+    : txid?.startsWith("htlc-pending-")
+      ? "HTLC session"
+      : "Settlement tx";
   return (
     <div className={`mx-4 mb-3 p-3 rounded-xl flex flex-col gap-1.5 ${
       isHtlc
@@ -284,7 +290,7 @@ function SettlementBanner({
       {txid && (
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] text-muted-foreground font-mono break-all leading-relaxed">
-            BSV txid: {txid.slice(0, 16)}…{txid.slice(-8)}
+            {txLabel}: {txid.slice(0, 16)}…{txid.slice(-8)}
           </span>
           {explorerUrl && (
             <a
@@ -330,6 +336,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
+
+  // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
+  const { signMessageAsync } = useSignMessage();
+  const [signingOrder, setSigningOrder] = useState(false);
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
@@ -595,6 +605,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
+            href: url ?? undefined,
           });
         } else {
           toast({
@@ -719,19 +730,45 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
     // Limit and stop orders don't execute on-chain immediately — they sit in the
-    // order book. Wallet signing is unreliable on mobile (especially Reown /
-    // WalletConnect) and unnecessary since balance is enforced server-side.
-    // Instead we show a clear confirmation modal that tells the user exactly what
-    // they're placing, then submit directly to the API.
+    // order book. Limit and stop orders show a confirmation modal first.
     if (type !== "market" && !confirmRef.current) {
       setShowConfirm(true);
       return; // Wait for user to confirm in the modal
     }
     confirmRef.current = false; // Reset for next submission
 
-    // ── Place the order — no wallet signing required ───────────────────────
-    // OrahDEX is an order-book DEX: orders are matched server-side and settled
-    // on BSV chain. No ERC-20 approval or wallet transaction is ever needed.
+    // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
+    // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
+    // must sign the order intent with personal_sign to prove authorization.
+    // The signature is stored on the order row (fundingRef: "evm-sig:…") and is
+    // required by the server before the order enters the matching engine.
+    // Orah internal wallets use the API ledger and do not need a separate sign step.
+    let evmSignature: string | undefined;
+    if (isExternalEvm) {
+      // Build a random nonce using crypto.getRandomValues to prevent signature replay.
+      const nonceBytes = new Uint8Array(16);
+      crypto.getRandomValues(nonceBytes);
+      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      try {
+        setSigningOrder(true);
+        evmSignature = await signMessageAsync({ message: orderMsg });
+      } catch (signErr: any) {
+        setSigningOrder(false);
+        const msg: string = signErr?.message ?? "";
+        // User rejected the signature prompt
+        if (msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")) {
+          toast({ title: "Signature rejected", description: "You must sign the order to proceed.", variant: "destructive" });
+        } else {
+          toast({ title: "Signing failed", description: msg || "Could not sign the order.", variant: "destructive" });
+        }
+        return;
+      } finally {
+        setSigningOrder(false);
+      }
+    }
+
+    // ── Place the order ────────────────────────────────────────────────────────
     placeOrder.mutate(
       {
         data: {
@@ -747,6 +784,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
+          // EVM signature — authorises the order for on-chain settlement via HTLC
+          evmSignature,
+          chainId: isEvm ? chainId : undefined,
         } as any,
       },
       {
@@ -755,16 +795,19 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           const txid    = data?.settlementTxid ?? data?.txid ?? null;
           const url     = data?.explorerUrl ?? null;
 
-          if (matched && txid) {
+          if (matched && txid && !txid.startsWith("htlc-pending-")) {
+            const fallbackExplorer = txid.startsWith("0x")
+              ? `https://etherscan.io/tx/${txid}`
+              : `https://whatsonchain.com/tx/${txid}`;
             addTx({
               hash:                 txid,
               chainId:              0,
-              label:                `BSV Settlement · ${side.toUpperCase()} ${amount} ${base}`,
+              label:                `Settlement · ${side.toUpperCase()} ${amount} ${base}`,
               status:               "confirmed",
               confirmations:        1,
               requiredConfirmations: 1,
               timestamp:            Date.now(),
-              explorerUrl:          url ?? `https://whatsonchain.com/tx/${txid}`,
+              explorerUrl:          url ?? fallbackExplorer,
             });
           }
 
@@ -821,7 +864,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
 
-  const isPending = placeOrder.isPending;
+  const isPending = placeOrder.isPending || signingOrder;
   const priceValid = type === "market" || (!!price && parseFloat(price) > 0);
   const stopValid  = type !== "stop" || (!!stopPrice && parseFloat(stopPrice) > 0);
   const canSubmit  = !isPending && !!amount && parseFloat(amount) > 0 && priceValid && stopValid;
@@ -1107,18 +1150,32 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
           {/* % shortcuts */}
           <div className="flex justify-between gap-1">
-            {[25, 50, 75, 100].map((pct) => (
+            {(["MIN", 25, 50, 75, "MAX"] as const).map((opt) => (
               <button
-                key={pct}
+                key={String(opt)}
                 type="button"
                 className={cn(
                   "flex-1 py-1.5 text-xs font-semibold border rounded-md transition-all",
-                  pct === 100
+                  opt === "MAX"
                     ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
                     : "bg-secondary hover:bg-secondary/80 border-border text-muted-foreground hover:text-foreground"
                 )}
                 onClick={() => {
-                  const portion = availableAmt * (pct / 100);
+                  if (opt === "MIN") {
+                    if (side === "buy") {
+                      const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+                      if (px > 0) {
+                        const maxQty = availableAmt / px;
+                        const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
+                        setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+                      }
+                    } else {
+                      const minQty = Math.min(availableAmt, MIN_QUICK_FILL_QTY);
+                      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+                    }
+                    return;
+                  }
+                  const portion = opt === "MAX" ? availableAmt : availableAmt * (opt / 100);
                   if (side === "buy") {
                     // available is in quote (USDT) — divide by price to get base token qty
                     const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
@@ -1129,7 +1186,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   }
                 }}
               >
-                {pct === 100 ? "MAX" : `${pct}%`}
+                {typeof opt === "number" ? `${opt}%` : opt}
               </button>
             ))}
           </div>
@@ -1466,9 +1523,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             )}
           >
             {isPending ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
+              signingOrder
+                ? <><PenLine className="w-4 h-4 animate-pulse" /> Sign in wallet…</>
+                : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`
+            ) : isExternalEvm ? (
+              `Sign & ${side === "buy" ? "Buy" : "Sell"} ${base}`
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}

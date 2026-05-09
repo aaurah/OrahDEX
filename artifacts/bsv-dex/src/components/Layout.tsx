@@ -35,11 +35,12 @@ const NAV_LINKS = [
 ];
 
 const NAV_MORE = [
-  { href: "/p2p",     label: "P2P",       icon: Users },
-  { href: "/bridge",  label: "Bridge",    icon: Link2 },
-  { href: "/copy",    label: "CopyVault", icon: Copy },
-  { href: "/keeper",  label: "Keepers",   icon: Shield },
-  { href: "/fees",    label: "Revenue",   icon: TrendingUp },
+  { href: "/p2p",       label: "P2P",       icon: Users },
+  { href: "/bridge",    label: "Bridge",    icon: Link2 },
+  { href: "/copy",      label: "CopyVault", icon: Copy },
+  { href: "/keeper",    label: "Keepers",   icon: Shield },
+  { href: "/fees",      label: "Revenue",   icon: TrendingUp },
+  { href: "/sovereign", label: "Sovereign", icon: Zap },
 ];
 
 const CHAIN_LABELS: Record<number, { short: string; color: string }> = {
@@ -495,8 +496,14 @@ export function Layout({ children }: { children: ReactNode }) {
                                 </div>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
                                 {n.txid && (
+                                  (() => {
+                                    const txExplorerUrl = n.href
+                                      ?? (n.txid.startsWith("0x")
+                                        ? `https://etherscan.io/tx/${n.txid}`
+                                        : `https://whatsonchain.com/tx/${n.txid}`);
+                                    return (
                                   <a
-                                    href={`https://whatsonchain.com/tx/${n.txid}`}
+                                    href={txExplorerUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline font-mono mt-0.5"
@@ -504,6 +511,8 @@ export function Layout({ children }: { children: ReactNode }) {
                                   >
                                     {n.txid.slice(0, 12)}… <ExternalLink className="w-2.5 h-2.5" />
                                   </a>
+                                    );
+                                  })()
                                 )}
                                 <p className="text-[10px] text-muted-foreground/40 mt-0.5">{relTime}</p>
                               </div>

@@ -4,7 +4,7 @@
  * Three-tab dialog: Deposit · Withdraw · History
  *
  * Deposit tab  — unique per-user deposit address + QR, network selector,
- *                TX-hash verifier, and gas top-up card.
+ *                and TX-hash verifier.
  * Withdraw tab — amount + recipient form, instant on-chain settlement.
  * History tab  — past withdrawals with status badges, gas-shortage banner.
  */
@@ -31,8 +31,6 @@ import {
   ExternalLink,
   Download,
   RefreshCw,
-  Fuel,
-  ChevronDown,
   Wallet,
   ArrowRight,
   Clock,
@@ -47,8 +45,6 @@ import { useNotificationStore } from "@/store/useNotificationStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
-const GAS_HOT_WALLET = "0x7Dc8d1A90A058f697c5A163e7e933cb8325E7e4b";
-
 const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: string }[] = [
   { id: 1,    label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
   { id: 8453, label: "Base",             short: "Base",     color: "#0052FF" },
@@ -178,7 +174,7 @@ interface AltChainDepositResponse {
 function summariseNote(raw: string): string {
   if (!raw) return raw;
   if (raw.includes("total cost") && raw.includes("gas fee"))
-    return "Insufficient gas — the exchange hot wallet needs ETH to cover the network fee. Your request is queued and will auto-process once funded.";
+    return "Your withdrawal is queued and will be processed automatically.";
   if (/insufficient funds/i.test(raw)) return "Insufficient funds to complete the transaction.";
   if (/nonce/i.test(raw)) return "Transaction nonce conflict — please retry.";
   if (/execution reverted/i.test(raw)) return "Transaction reverted by the contract.";
@@ -253,7 +249,6 @@ export function WithdrawSheet({
   const [depositMode,  setDepositMode]  = useState<"exchange" | "wallet">("exchange");
   const [txHash,       setTxHash]       = useState("");
   const [verifying,    setVerifying]    = useState(false);
-  const [showGasCard,  setShowGasCard]  = useState(false);
   const [bsvTxHash,    setBsvTxHash]    = useState("");
   const [bsvVerifying, setBsvVerifying] = useState(false);
   const [solTxHash,    setSolTxHash]    = useState("");
@@ -509,7 +504,7 @@ export function WithdrawSheet({
       const hash = await walletClient.sendTransaction({
         to:    depositAddress as `0x${string}`,
         value: parseEther(depFromWalletAmount),
-      });
+      } as any);
       setDepFromWalletTxHash(hash);
       // Auto-fill the TX verify field so user can verify in one tap
       setTxHash(hash);
@@ -1046,255 +1041,10 @@ export function WithdrawSheet({
               </div>
             )}
 
-            {/* ── EVM MODE TOGGLE (non-Bitcoin, non-Solana, non-AltChain assets) ── */}
+            {/* ── EVM WALLET ADDRESS (non-Bitcoin, non-Solana, non-AltChain assets) ── */}
             {!isNonEvm && (<>
-
-            {/* Mode toggle: Exchange Address vs Wallet Address */}
-            <div className="flex gap-1 p-1 rounded-xl bg-secondary/30">
-              <button
-                onClick={() => setDepositMode("exchange")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-bold transition-all",
-                  depositMode === "exchange"
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Exchange Address
-              </button>
-              <button
-                onClick={() => setDepositMode("wallet")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-bold transition-all",
-                  depositMode === "wallet"
-                    ? "bg-primary text-primary-foreground shadow"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                Wallet Address
-              </button>
-            </div>
-
-            {/* ── EXCHANGE ADDRESS MODE ── */}
-            {depositMode === "exchange" && (
-              <>
-                {/* Chain selector */}
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-medium">Select network</label>
-                  <div className="flex gap-2">
-                    {SUPPORTED_CHAINS.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => setDepositChain(c)}
-                        className={cn(
-                          "flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
-                          depositChain.id === c.id
-                            ? "border-primary/60 bg-primary/10 text-primary"
-                            : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
-                        )}
-                      >
-                        {c.short}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Exchange deposit address + QR */}
-                {depositLoading ? (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : depositData ? (
-                  <>
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-primary" />
-                        <p className="text-xs font-bold text-primary uppercase tracking-wide">OrahDEX Exchange Address</p>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground -mt-2">
-                        Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong> — use this to deposit and trade.
-                      </p>
-
-                      {/* QR code */}
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="p-3 bg-white rounded-xl shadow-sm">
-                          <QRCodeCanvas
-                            value={depositData.depositAddress}
-                            size={148}
-                            level="M"
-                            includeMargin={false}
-                          />
-                        </div>
-                        <p className="text-[11px] text-muted-foreground">{depositChain.label}</p>
-                      </div>
-
-                      {/* Address row */}
-                      <div className="flex items-center gap-2 bg-background/60 rounded-lg px-3 py-2 border border-border/40">
-                        <span className="font-mono text-xs text-foreground/80 flex-1 break-all select-all leading-relaxed">
-                          {depositData.depositAddress}
-                        </span>
-                        <button
-                          onClick={() => copy(depositData.depositAddress, "dep-addr")}
-                          className="shrink-0 p-1 rounded-lg hover:bg-muted transition-colors"
-                        >
-                          {copiedId === "dep-addr"
-                            ? <Check className="w-4 h-4 text-green-400" />
-                            : <Copy className="w-4 h-4 text-muted-foreground" />}
-                        </button>
-                      </div>
-
-                      {/* Info pills */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                          <p className="text-muted-foreground">Accepted asset</p>
-                          <p className="font-bold text-foreground">{depositData.nativeSymbol} (native)</p>
-                        </div>
-                        <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                          <p className="text-muted-foreground">Min deposit</p>
-                          <p className="font-bold text-foreground">0.001 {depositData.nativeSymbol}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Verify TX */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-semibold">I've sent funds — verify deposit</label>
-                      <div className="flex gap-2">
-                        <Input
-                          value={txHash}
-                          onChange={e => setTxHash(e.target.value.trim())}
-                          placeholder="0x… transaction hash"
-                          className="font-mono text-xs flex-1"
-                        />
-                        <Button
-                          onClick={handleVerify}
-                          disabled={!txHash.trim() || verifying}
-                          size="sm"
-                          className="shrink-0 gap-1.5"
-                        >
-                          {verifying
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <CheckCircle2 className="w-3.5 h-3.5" />}
-                          Verify
-                        </Button>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Paste the transaction hash from your wallet after sending to the exchange address above.
-                      </p>
-                    </div>
-
-                    {/* ── DEPOSIT FROM PASSKEY WALLET ── */}
-                    {isOrahWallet && (
-                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <Wallet className="w-4 h-4 text-primary shrink-0" />
-                          <p className="text-xs font-bold text-primary uppercase tracking-wide">Pay from My Passkey Wallet</p>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground -mt-1">
-                          Send {depositData.nativeSymbol} from your passkey wallet directly to the exchange — biometric authentication required.
-                        </p>
-
-                        {/* Wallet balance */}
-                        <div className="flex items-center justify-between bg-background/50 rounded-lg px-3 py-2 border border-primary/15">
-                          <div>
-                            <p className="text-[10px] text-muted-foreground">My Wallet Balance ({depositChain.short})</p>
-                            <p className="text-sm font-bold font-mono">
-                              {depFromWalletBalFetch
-                                ? "Loading…"
-                                : depFromWalletBalance !== null
-                                  ? `${depFromWalletBalance.toLocaleString(undefined, { maximumFractionDigits: depFromWalletBalance < 0.001 ? 8 : 6 })} ${depositData.nativeSymbol}`
-                                  : "—"}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => fetchDepFromWalletBalance(depositChain.id)}
-                            disabled={depFromWalletBalFetch}
-                            className="p-1.5 rounded-lg hover:bg-muted transition-colors disabled:opacity-40"
-                          >
-                            <RefreshCw className={cn("w-3.5 h-3.5 text-muted-foreground", depFromWalletBalFetch && "animate-spin")} />
-                          </button>
-                        </div>
-
-                        {/* Amount input */}
-                        <div className="relative">
-                          <Input
-                            value={depFromWalletAmount}
-                            onChange={e => setDepFromWalletAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                            placeholder={`Amount in ${depositData.nativeSymbol}`}
-                            className={cn(
-                              "pr-16 font-mono text-sm",
-                              depFromWalletBalance !== null && parseFloat(depFromWalletAmount) > depFromWalletBalance
-                                ? "border-red-500/60" : ""
-                            )}
-                          />
-                          {depFromWalletBalance !== null && depFromWalletBalance > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const max = Math.max(0, depFromWalletBalance - 0.0005);
-                                setDepFromWalletAmount(max.toFixed(max < 0.001 ? 8 : 6));
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
-                            >
-                              MAX
-                            </button>
-                          )}
-                        </div>
-                        {depFromWalletBalance !== null && parseFloat(depFromWalletAmount) > depFromWalletBalance && (
-                          <p className="text-xs text-red-400 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3" /> Exceeds wallet balance
-                          </p>
-                        )}
-
-                        {/* Error */}
-                        {depFromWalletError && (
-                          <div className="flex gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                            <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-red-300">{depFromWalletError}</p>
-                          </div>
-                        )}
-
-                        {/* Success */}
-                        {depFromWalletTxHash && (
-                          <div className="flex gap-2 p-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
-                            <div className="flex-1 min-w-0 space-y-0.5">
-                              <p className="text-[11px] font-semibold text-green-400">Sent! TX hash auto-filled above — tap Verify.</p>
-                              <p className="font-mono text-[10px] text-green-300 truncate">{depFromWalletTxHash}</p>
-                            </div>
-                          </div>
-                        )}
-
-                        <Button
-                          onClick={() => handleDepositFromWallet(depositData.depositAddress, depositData.nativeSymbol)}
-                          disabled={
-                            !depFromWalletAmount || depFromWalletSending ||
-                            (depFromWalletBalance !== null && parseFloat(depFromWalletAmount) > depFromWalletBalance)
-                          }
-                          className="w-full gap-2 h-10"
-                          size="sm"
-                        >
-                          {depFromWalletSending
-                            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Authenticating…</>
-                            : <><ArrowRight className="w-3.5 h-3.5" /> Pay {depFromWalletAmount ? `${depFromWalletAmount} ${depositData.nativeSymbol}` : `${depositData.nativeSymbol}`} from Wallet</>}
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
-                    <AlertCircle className="w-8 h-8 opacity-40" />
-                    <p className="text-sm">Could not load deposit address</p>
-                    <Button variant="outline" size="sm" onClick={() => refetchDeposit()} className="gap-1.5">
-                      <RefreshCw className="w-3.5 h-3.5" /> Retry
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ── WALLET ADDRESS MODE ── */}
-            {depositMode === "wallet" && walletAddress && (
+            {/* ── WALLET ADDRESS ── */}
+            {walletAddress && (
               <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <div className="w-2 h-2 rounded-full bg-green-400" />
@@ -1335,7 +1085,7 @@ export function WithdrawSheet({
                 <div className="flex gap-2.5 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
                   <Zap className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    This is your OrahDEX passkey wallet address. Anyone can send EVM tokens here. To use received funds for trading, go to <strong className="text-foreground">Exchange Address</strong> tab and deposit from your wallet.
+                    This is your OrahDEX passkey wallet address. Anyone can send EVM tokens here directly.
                   </p>
                 </div>
               </div>
@@ -1343,48 +1093,6 @@ export function WithdrawSheet({
 
             </>)}
 
-            {/* Gas top-up card — collapsible (EVM only) */}
-            {!isNonEvm && (<div className="rounded-xl border border-amber-500/30 bg-amber-500/8 overflow-hidden">
-              <button
-                onClick={() => setShowGasCard(v => !v)}
-                className="w-full flex items-center gap-2.5 px-3.5 py-3 text-sm font-semibold text-amber-400 hover:bg-amber-500/5 transition-colors"
-              >
-                <Fuel className="w-4 h-4 shrink-0" />
-                <span className="flex-1 text-left">Fund gas for withdrawals</span>
-                <ChevronDown className={cn("w-4 h-4 transition-transform", showGasCard && "rotate-180")} />
-              </button>
-
-              {showGasCard && (
-                <div className="px-3.5 pb-3.5 space-y-2.5">
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    The OrahDEX hot wallet on <strong className="text-foreground">Base</strong> needs ETH to pay gas when sending your withdrawals. Send ≥ 0.002 ETH to this address — pending withdrawals process automatically once funded.
-                  </p>
-                  <div className="flex items-center gap-2 bg-background/60 rounded-lg px-2.5 py-2 border border-amber-500/20">
-                    <span className="font-mono text-xs text-amber-300 flex-1 break-all select-all">
-                      {GAS_HOT_WALLET}
-                    </span>
-                    <button
-                      onClick={() => copy(GAS_HOT_WALLET, "gas-wallet")}
-                      className="shrink-0 p-0.5 hover:text-white transition-colors"
-                    >
-                      {copiedId === "gas-wallet"
-                        ? <Check className="w-3.5 h-3.5 text-green-400" />
-                        : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Network</p>
-                      <p className="font-bold text-foreground">Base</p>
-                    </div>
-                    <div className="rounded-lg bg-background/50 px-2.5 py-2 space-y-0.5">
-                      <p className="text-muted-foreground">Min amount</p>
-                      <p className="font-bold text-foreground">0.002 ETH</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>)}
           </div>
         )}
 
@@ -1425,18 +1133,15 @@ export function WithdrawSheet({
             {/* ── EXCHANGE SOURCE ── */}
             {withdrawSource === "exchange" && (
               <>
-                {/* Gas warning banner */}
+                {/* Queued withdrawal notice */}
                 {hasGasError && (
-                  <button
-                    onClick={() => { setTab("deposit"); setShowGasCard(true); }}
-                    className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
-                  >
-                    <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-secondary/40 border border-border text-left">
+                    <Clock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-amber-400">Withdrawal pending — gas needed</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Tap to see how to fund the exchange gas wallet →</p>
+                      <p className="text-xs font-semibold text-foreground">Withdrawal queued</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Your withdrawal is queued and will be processed automatically.</p>
                     </div>
-                  </button>
+                  </div>
                 )}
 
                 {/* Balance summary */}
@@ -1748,35 +1453,17 @@ export function WithdrawSheet({
         {tab === "history" && (
           <div className="space-y-3 max-h-[420px] overflow-y-auto pr-0.5">
 
-            {/* Gas banner */}
+            {/* Queued withdrawal notice */}
             {hasGasError && (
-              <button
-                onClick={() => { setTab("deposit"); setShowGasCard(true); }}
-                className="w-full flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left hover:bg-amber-500/15 transition-colors"
-              >
-                <Fuel className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="w-full flex items-start gap-2.5 p-3.5 rounded-xl bg-secondary/40 border border-border text-left">
+                <Clock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-amber-400">Exchange wallet needs gas</p>
+                  <p className="text-sm font-semibold text-foreground">Withdrawal queued</p>
                   <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
-                    Your withdrawal is queued — send ≥ 0.002 ETH to the exchange hot wallet on Base and it will auto-process.
+                    Your withdrawal is queued and will be processed automatically.
                   </p>
-                  <div className="flex items-center gap-1.5 mt-2 bg-background/60 rounded-lg px-2.5 py-1.5 border border-amber-500/20">
-                    <span className="font-mono text-xs text-amber-300 flex-1 truncate">{shortAddr(GAS_HOT_WALLET)}</span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={e => { e.stopPropagation(); copy(GAS_HOT_WALLET, "gas-hist"); }}
-                      onKeyDown={e => e.key === "Enter" && copy(GAS_HOT_WALLET, "gas-hist")}
-                      className="shrink-0 p-0.5 hover:text-white transition-colors"
-                    >
-                      {copiedId === "gas-hist"
-                        ? <Check className="w-3 h-3 text-green-400" />
-                        : <Copy className="w-3 h-3 text-amber-400" />}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-primary mt-1.5 font-semibold">Tap for full gas funding guide →</p>
                 </div>
-              </button>
+              </div>
             )}
 
             {history.length === 0 ? (

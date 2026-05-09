@@ -126,14 +126,20 @@ async function verifySpotFunding(
       // Not enough internal balance — fall through to on-chain check
     }
 
-    // 2. Accept on-chain balance as proof of funding
-    // reportedBalance is sent by the client from useEvmBalances / on-chain polling.
-    // We trust it as a good-faith representation (non-custodial model).
+    // 2. Require wallet signature + accept on-chain balance as proof of funding.
+    // External EVM wallets must sign the order intent (personal_sign) to authorise
+    // on-chain settlement via the OrahDEX HTLC contract.
     const onChain = reportedBalance ?? 0;
     if (onChain >= needed) {
-      const sigHash = signature
-        ? crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16)
-        : crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+      if (!signature) {
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      "Wallet signature required for on-chain order placement. Please sign the order in your wallet.",
+          code:       "SIGNATURE_REQUIRED",
+        };
+      }
+      const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
       return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
     }
 
@@ -171,28 +177,47 @@ async function verifySpotFunding(
 async function verifyFuturesFunding(
   params: VerifyFundingParams,
 ): Promise<FundingVerificationResult> {
-  const { walletAddress, asset = "USDT", amount, walletSource } = params;
+  const { walletAddress, asset = "USDT", amount } = params;
   const needed = parseFloat(amount);
 
-  // Check balance (without locking — the actual lock happens in futuresSettlement.openFuturesPosition)
-  const { rows } = await pool.query<{ available: string }>(
-    `SELECT available FROM futures_margin_accounts WHERE wallet_address = $1 AND asset = $2`,
-    [walletAddress, asset],
-  );
-  const avail = parseFloat(rows[0]?.available ?? "0");
-  if (avail < needed) {
-    return {
-      valid:      false,
-      fundingRef: "",
-      error:      `Insufficient futures margin: need ${needed} ${asset}, have ${avail.toFixed(2)}. Deposit margin to your futures account first.`,
-      code:       "INSUFFICIENT_FUTURES_MARGIN",
-    };
-  }
+  // Use FOR UPDATE so a concurrent open-position request cannot read the same
+  // available balance and both conclude they have sufficient margin.
+  // The actual margin lock happens in futuresSettlement.openFuturesPosition()
+  // which runs in its own transaction immediately after this check returns.
+  // We hold no lock across the gap (unavoidable without collapsing verify+open
+  // into one atomic operation), but the FOR UPDATE here prevents two concurrent
+  // verify calls from both seeing the same available balance simultaneously.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const avail = parseFloat(rows[0]?.available ?? "0");
+    await client.query("COMMIT");
 
-  return {
-    valid:      true,
-    fundingRef: marginFundingRef(walletAddress, asset, amount),
-  };
+    if (avail < needed) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `Insufficient futures margin: need ${needed} ${asset}, have ${avail.toFixed(2)}. Deposit margin to your futures account first.`,
+        code:       "INSUFFICIENT_FUTURES_MARGIN",
+      };
+    }
+
+    return {
+      valid:      true,
+      fundingRef: marginFundingRef(walletAddress, asset, amount),
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────

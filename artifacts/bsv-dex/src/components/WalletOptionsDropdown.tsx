@@ -17,10 +17,10 @@ interface Props {
 }
 
 const NETWORK_LABELS: Record<WalletNetwork, string> = {
-  evm: 'EVM', bsv: 'BSV', btc: 'BTC', sol: 'SOL', tron: 'TRON', bch: 'BCH',
+  evm: 'EVM', bsv: 'BSV', 'bsv-test': 'BSV-Test', btc: 'BTC', sol: 'SOL', tron: 'TRON', bch: 'BCH',
 };
 const NETWORK_ICONS: Record<WalletNetwork, string> = {
-  evm: '⟠', bsv: '₿', btc: '₿', sol: '◎', tron: '⊕', bch: '฿',
+  evm: '⟠', bsv: '₿', 'bsv-test': '₿', btc: '₿', sol: '◎', tron: '⊕', bch: '฿',
 };
 
 export function WalletOptionsDropdown({ compact = false }: Props) {

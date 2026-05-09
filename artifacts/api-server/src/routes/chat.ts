@@ -142,7 +142,7 @@ seedSystemChannel();
 
 /* GET /api/chat/channels/:channel/messages — last N messages */
 router.get("/channels/:channel/messages", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(req.params["channel"]!);
+  const channel = decodeURIComponent(String(req.params["channel"]));
   const limit = Math.min(Number(req.query["limit"] ?? 50), 100);
   const msgs = getChannel(channel).slice(-limit);
   res.json({ channel, messages: msgs });
@@ -150,7 +150,7 @@ router.get("/channels/:channel/messages", (req: Request, res: Response) => {
 
 /* GET /api/chat/channels/:channel/stream — SSE real-time feed */
 router.get("/channels/:channel/stream", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(req.params["channel"]!);
+  const channel = decodeURIComponent(String(req.params["channel"]));
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -178,7 +178,7 @@ router.get("/channels/:channel/stream", (req: Request, res: Response) => {
 
 /* POST /api/chat/channels/:channel/messages — send a message */
 router.post("/channels/:channel/messages", (req: Request, res: Response) => {
-  const channel = decodeURIComponent(req.params["channel"]!);
+  const channel = decodeURIComponent(String(req.params["channel"]));
 
   /* System channel is read-only */
   if (channel === "system") {

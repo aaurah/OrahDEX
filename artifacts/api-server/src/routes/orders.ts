@@ -18,6 +18,27 @@ import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
 
+function settlementExplorerUrl(txid: string | null | undefined, chainId?: number | null): string | null {
+  if (!txid) return null;
+
+  // Pending EVM HTLC sessions do not have a final settlement tx yet.
+  if (txid.startsWith("htlc-pending-")) {
+    const cfg = chainId ? EVM_CHAINS[chainId] : null;
+    if (!cfg) return null;
+    return cfg.contractAddress
+      ? `${cfg.blockExplorer}/address/${cfg.contractAddress}`
+      : cfg.blockExplorer;
+  }
+
+  if (txid.startsWith("0x")) {
+    const cfg = chainId ? EVM_CHAINS[chainId] : null;
+    const explorerBase = cfg?.blockExplorer ?? "https://etherscan.io";
+    return `${explorerBase}/tx/${txid}`;
+  }
+
+  return `${BSV_NET.explorer}/tx/${txid}`;
+}
+
 // ── Helper: serialize an order row for API response ──────────────────────────
 function serializeOrder(o: typeof ordersTable.$inferSelect) {
   return {
@@ -259,43 +280,70 @@ router.post("/orders", async (req, res) => {
         const fillQty   = Math.min(remainingQty, matchAvail);
         const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
         const fillValue = fillQty * fillPrice;
-        const fillTotal = fillValue.toFixed(8);
         const isBot     = match.walletAddress === BOT_ADDRESS;
-
-        // ── BSV On-Chain Settlement ────────────────────────────────────────
-        // Architecture (per BSV Core DEX spec):
-        //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
-        //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN
-        //      for audit, and the P2SH output locks the trade commitment on-chain.
-        //   2. OP_RETURN audit record (v2): immutable on-chain record with full
-        //      trade data + HTLC commitment hash.
-        //   3. Real broadcast via settlement wallet UTXO (when funded).
 
         const tradeId      = crypto.randomUUID();
         const buyerNetwork  = body.side === "buy" ? networkType : (match.networkType ?? "evm");
         const sellerNetwork = body.side === "sell" ? networkType : (match.networkType ?? "evm");
-
-        // ── Settle this fill (HTLC + BSV broadcast + ledger) ──────────────
-        // spotSettlement handles the full pipeline:
-        //   cross-chain detection → HTLC generation → OP_RETURN build →
-        //   BSV broadcast (best-effort) → ledger balance update → HTLC watcher
         const buyerAddress  = body.side === "buy" ? body.walletAddress : match.walletAddress;
         const sellerAddress = body.side === "sell" ? body.walletAddress : match.walletAddress;
 
-        const fillResult = await settleSpotFill({
-          tradeId,
-          newOrderId:    id,
-          matchOrder:    match,
-          pair:          body.symbol,
-          fillQty,
-          fillPrice,
-          buyerAddress,
-          sellerAddress,
-          buyerNetwork,
-          sellerNetwork,
-          isBot,
-          log:           req.log,
-        });
+        // ── Detect EVM/EVM wallet-to-wallet fill ─────────────────────────
+        // A fill is "EVM external" when:
+        //   • walletSource === "external" AND networkType === "evm"  (incoming order)
+        //   • match.fundingRef starts with "evm-sig:" or "evm-balance:"  (counter-order)
+        //     OR the counter-order's address is 0x-prefixed with no internal fundingRef
+        // Bot orders always use the internal ledger and are never EVM-HTLC candidates.
+        const incomingIsEvmExternal = walletSource === "external" && networkType === "evm";
+        const matchFundingRef0 = match.fundingRef ?? "";
+        const matchIsEvmExternal = !isBot && (
+          matchFundingRef0.startsWith("evm-sig:") ||
+          matchFundingRef0.startsWith("evm-balance:") ||
+          (match.walletAddress.startsWith("0x") &&
+           (match.networkType ?? "evm") === "evm" &&
+           !matchFundingRef0.startsWith("ledger:") &&
+           !matchFundingRef0.startsWith("margin:"))
+        );
+        const bothEvmExternal = incomingIsEvmExternal && matchIsEvmExternal;
+
+        let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
+
+        if (bothEvmExternal) {
+          // ── On-chain EVM path: HTLC atomic settlement ──────────────────
+          // Both parties hold funds in their own wallets. Skip internal ledger
+          // settlement — funds are transferred directly on-chain via the HTLC
+          // contract (lockETH / lockToken → reveal). The HTLC watcher calls
+          // reveal() once both parties have locked, completing the trade.
+          fillResult = {
+            // Placeholder txid until the HTLC reveal transaction settles on-chain.
+            // Prefixed so auditing tools can distinguish it from real broadcast txids.
+            txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
+            wasRealBroadcast: false,
+            settlementType:   "evm_htlc",
+            isCrossChain:     false,
+          };
+        } else {
+          // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
+          // Architecture (per BSV Core DEX spec):
+          //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
+          //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN.
+          //   2. OP_RETURN audit record (v2): immutable on-chain record.
+          //   3. Real broadcast via settlement wallet UTXO (best-effort).
+          fillResult = await settleSpotFill({
+            tradeId,
+            newOrderId:    id,
+            matchOrder:    match,
+            pair:          body.symbol,
+            fillQty,
+            fillPrice,
+            buyerAddress,
+            sellerAddress,
+            buyerNetwork,
+            sellerNetwork,
+            isBot,
+            log:           req.log,
+          });
+        }
 
         const broadcastTxid = fillResult.txid;
 
@@ -343,39 +391,27 @@ router.post("/orders", async (req, res) => {
         // Note: HTLC registration with watcher is handled inside settleSpotFill()
 
         // ── EVM HTLC atomic settlement (non-custodial wallet-to-wallet) ───────
-        // When both parties are external EVM wallets, create an EVM HTLC session
-        // so they can lock funds on-chain and settle atomically without OrahDEX
-        // ever holding their assets.
-        // A wallet is "truly external EVM" if:
-        //   - fundingRef starts with "evm-sig:" or "evm-balance:" (set by fundingVerifier for external wallets)
-        //   - OR walletAddress is 0x-prefixed AND networkType is evm (heuristic for legacy orders)
-        // Bot fills always use the internal ledger — never create HTLC sessions for bots.
-        const incomingIsEvmExternal = walletSource === "external" && networkType === "evm";
-        const matchFundingRef = match.fundingRef ?? "";
-        const matchIsEvmExternal = !isBot && (
-          matchFundingRef.startsWith("evm-sig:") ||
-          matchFundingRef.startsWith("evm-balance:") ||
-          (match.walletAddress.startsWith("0x") && (match.networkType ?? "evm") === "evm" && !matchFundingRef.startsWith("ledger:") && !matchFundingRef.startsWith("margin:"))
-        );
-        const bothEvm = incomingIsEvmExternal && matchIsEvmExternal;
+        // Required for all EVM/EVM external fills.  Both parties lock their funds
+        // into the OrahDEXHTLC contract on-chain; the OrahDEX relayer calls
+        // reveal() once both locks are confirmed, completing the atomic swap.
+        // Internal ledger settlement is skipped for this path (funds stay on-chain).
+        if (bothEvmExternal && !lastEvmHtlcSession) {
+          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum)
+          const chainId = body.chainId ? Number(body.chainId) : 1;
+          const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
-        if (bothEvm && !lastEvmHtlcSession) {
+          // Resolve token addresses from pair
+          const [base, quot] = body.symbol.split("/");
+          const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
+          const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
+
+          // Amounts in smallest on-chain units
+          const ETH_DECIMALS  = 18;
+          const USDT_DECIMALS = 6;
+          const fillWei       = BigInt(Math.round(fillQty   * 10 ** ETH_DECIMALS));
+          const fillUsdt      = BigInt(Math.round(fillValue * 10 ** USDT_DECIMALS));
+
           try {
-            // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum)
-            const chainId = body.chainId ? Number(body.chainId) : 1;
-            const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
-
-            // Resolve token addresses from pair
-            const [base, quot] = body.symbol.split("/");
-            const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
-            const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
-
-            // Amounts in smallest on-chain units
-            const ETH_DECIMALS  = 18;
-            const USDT_DECIMALS = 6;
-            const fillWei       = BigInt(Math.round(fillQty   * 10 ** ETH_DECIMALS));
-            const fillUsdt      = BigInt(Math.round(fillValue * 10 ** USDT_DECIMALS));
-
             lastEvmHtlcSession = await initiateEvmHtlcSession({
               tradeId:       tradeId,
               pair:          body.symbol,
@@ -392,10 +428,13 @@ router.post("/orders", async (req, res) => {
 
             req.log.info(
               { sessionId: lastEvmHtlcSession.id, tradeId, sellerAddress, buyerAddress, chainId },
-              "orders: EVM HTLC session created for non-custodial settlement"
+              "orders: EVM HTLC session created — awaiting on-chain locks from both parties"
             );
-          } catch (evmErr) {
-            req.log.warn({ err: evmErr, tradeId }, "orders: EVM HTLC session creation failed — trade still recorded");
+          } catch (evmErr: any) {
+            // HTLC session creation failure is a hard error for EVM/EVM external fills.
+            // The trade is not yet settled — the fill loop will record the fill with
+            // a deterministic txid and the UI will guide the user to complete locking.
+            req.log.error({ err: evmErr?.message, tradeId }, "orders: EVM HTLC session creation failed");
           }
         }
       }
@@ -450,7 +489,7 @@ router.post("/orders", async (req, res) => {
       matched:        !!settlementTxid,
       settlementTxid,
       quoteSymbol,
-      explorerUrl:    settlementTxid ? `${BSV_NET.explorer}/tx/${settlementTxid}` : null,
+      explorerUrl:    settlementExplorerUrl(settlementTxid, lastEvmHtlcSession?.chainId ?? null),
       // BSV Core DEX v2 settlement metadata
       settlement: settlementTxid ? {
         type:              lastSettlementType,
@@ -508,7 +547,7 @@ router.get("/orders/:orderId", async (req, res) => {
     }
     res.json({
       ...serializeOrder(order),
-      explorerUrl: order.txid ? `${BSV_NET.explorer}/tx/${order.txid}` : null,
+      explorerUrl: settlementExplorerUrl(order.txid, null),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get order");
@@ -564,6 +603,87 @@ router.delete("/orders/:orderId", async (req, res) => {
     res.json(serializeOrder(order));
   } catch (err) {
     req.log.error({ err }, "Failed to cancel order");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /orders/recover-locked ───────────────────────────────────────────────
+// Scans the ledger for locked balances that exceed what open orders actually
+// require, and moves the excess back to available.
+// This recovers funds that were orphaned when a cancel request previously
+// failed silently (e.g. wallet-address mismatch across BSV/EVM networks).
+// Accepts optional `altAddress` for cross-network Orah wallet users.
+router.post("/orders/recover-locked", async (req, res) => {
+  try {
+    const { walletAddress, altAddress } = req.body ?? {};
+    if (!walletAddress) {
+      res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    const addresses: string[] = [walletAddress];
+    if (altAddress && altAddress !== walletAddress) addresses.push(altAddress);
+
+    // 1. Gather all open orders across all wallet addresses
+    const openOrders = await db
+      .select()
+      .from(ordersTable)
+      .where(and(
+        eq(ordersTable.status, "open"),
+        // drizzle `inArray` for two values
+        ...(addresses.length === 1
+          ? [eq(ordersTable.walletAddress, addresses[0]!)]
+          : [eq(ordersTable.walletAddress, addresses[0]!)] // handled below via merge
+        ),
+      ));
+
+    // If there's a second address, fetch its open orders too and merge
+    let openOrdersAll = [...openOrders];
+    if (addresses.length > 1) {
+      const alt = await db
+        .select()
+        .from(ordersTable)
+        .where(and(eq(ordersTable.status, "open"), eq(ordersTable.walletAddress, addresses[1]!)));
+      openOrdersAll = [...openOrders, ...alt];
+    }
+
+    // 2. Calculate expected locked amount per (walletAddress, asset) from open orders
+    const expectedLocked: Record<string, Record<string, number>> = {};
+    for (const o of openOrdersAll) {
+      const [baseAsset, quoteAsset = "USDT"] = o.symbol.split("/");
+      const lockAsset = o.side === "buy" ? quoteAsset : baseAsset;
+      const remaining = parseFloat(o.remainingQuantity ?? o.quantity);
+      const lockPrice = parseFloat(o.price ?? "0");
+      const lockAmount = o.side === "buy"
+        ? lockPrice * remaining
+        : remaining;
+
+      if (!lockAsset || lockAmount <= 0) continue;
+      if (!expectedLocked[o.walletAddress]) expectedLocked[o.walletAddress] = {};
+      expectedLocked[o.walletAddress][lockAsset] = (expectedLocked[o.walletAddress][lockAsset] ?? 0) + lockAmount;
+    }
+
+    // 3. For each address, get actual locked balances and unlock any orphaned amount
+    const recovered: { walletAddress: string; asset: string; amount: string }[] = [];
+
+    for (const addr of addresses) {
+      const balances = await getBalances(addr);
+      for (const bal of balances) {
+        const actualLocked = parseFloat(bal.locked);
+        if (actualLocked <= 0) continue;
+        const expectedForAsset = expectedLocked[addr]?.[bal.asset] ?? 0;
+        const orphaned = actualLocked - expectedForAsset;
+        if (orphaned > 0.000001) {
+          await unlockFunds({ walletAddress: addr, asset: bal.asset, amount: orphaned.toFixed(8) });
+          recovered.push({ walletAddress: addr, asset: bal.asset, amount: orphaned.toFixed(8) });
+          req.log.info({ addr, asset: bal.asset, orphaned }, "recover-locked: unlocked orphaned funds");
+        }
+      }
+    }
+
+    res.json({ recovered, count: recovered.length });
+  } catch (err) {
+    req.log.error({ err }, "Failed to recover locked funds");
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -698,7 +818,7 @@ router.get("/settlements", async (req, res) => {
       .map(o => ({
         id:          o.id,
         txid:        o.txid!,
-        explorerUrl: `${BSV_NET.explorer}/tx/${o.txid}`,
+        explorerUrl: settlementExplorerUrl(o.txid, null),
         symbol:      o.symbol,
         side:        o.side,
         price:       parseFloat(o.price ?? "0"),
