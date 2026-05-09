@@ -577,7 +577,7 @@ export function DexHub() {
       );
     }
     return [...rows].sort(sortFn);
-  }, [allExchanges, exType, search, sortBy]);
+  }, [allExchanges, exType, search, sortBy, exSortDir]);
 
   const btcPrice: number = data?.btcPrice ?? 0;
 
