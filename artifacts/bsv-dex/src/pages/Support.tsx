@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import {
   MessageCircle, Mail, Send, ChevronDown, ChevronUp,
@@ -65,6 +65,13 @@ const DEFAULT_FAQS = [
   },
 ];
 
+type PublicFaq = {
+  id: number;
+  question: string;
+  answer: string;
+  category: string;
+};
+
 function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
   return (
@@ -99,13 +106,44 @@ export function SupportPage() {
   const [sent, setSent] = useState(false);
   const [faqSearch, setFaqSearch] = useState("");
   const [faqCategory, setFaqCategory] = useState("all");
-  const [faqs] = useState(DEFAULT_FAQS);
+  const [faqs, setFaqs] = useState<PublicFaq[]>(DEFAULT_FAQS);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "support"; text: string; ts: number }[]>([
     { role: "support", text: "Hi! Welcome to OrahDEX Support. How can I help you today?", ts: Date.now() },
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const loadPublishedFaqs = async () => {
+      try {
+        const r = await fetch(`${BASE}/api/support/faqs`);
+        if (!r.ok) throw new Error("Failed to fetch FAQs");
+        const data = await r.json();
+        if (!alive || !Array.isArray(data)) return;
+        const normalized = data
+          .filter((row): row is PublicFaq => (
+            typeof row?.id === "number"
+            && typeof row?.question === "string"
+            && typeof row?.answer === "string"
+            && typeof row?.category === "string"
+          ))
+          .map(row => ({
+            id: row.id,
+            question: row.question,
+            answer: row.answer,
+            category: row.category,
+          }));
+        setFaqs(normalized);
+      } catch {
+        if (!alive) return;
+        setFaqs(DEFAULT_FAQS);
+      }
+    };
+    loadPublishedFaqs();
+    return () => { alive = false; };
+  }, []);
 
   const filteredFaqs = faqs.filter(f => {
     const matchCat = faqCategory === "all" || f.category === faqCategory;
