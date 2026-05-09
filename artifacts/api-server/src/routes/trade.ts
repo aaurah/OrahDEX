@@ -17,7 +17,7 @@ import { or, eq, desc } from "drizzle-orm";
 import { settleSwap, getBalances, creditAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
+import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahdexVault.js";
 import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
@@ -135,7 +135,7 @@ router.get("/trade/modes", (_req, res) => {
       {
         id: "wallet",
         name: "Wallet Mode (On-chain Swap)",
-        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch OrahDEX — ETH leaves the wallet, USDC returns directly.",
+        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch Orah — ETH leaves the wallet, USDC returns directly.",
         settlementLayer: "on-chain",
         gasRequired: true,
         custodial: false,
@@ -147,7 +147,7 @@ router.get("/trade/modes", (_req, res) => {
       {
         id: "exchange",
         name: "Exchange Mode (Internal Ledger)",
-        description: "Trades execute against the internal OrahDEX ledger. No gas, instant settlement. Withdraw via /withdraw which calls the Vault contract or hot-wallet broadcast.",
+        description: "Trades execute against the internal Orah ledger. No gas, instant settlement. Withdraw via /withdraw which calls the Vault contract or hot-wallet broadcast.",
         settlementLayer: "internal-ledger",
         gasRequired: false,
         custodial: true,
@@ -206,7 +206,7 @@ router.post("/trade/wallet/quote", async (req, res) => {
       rate:      rate.toFixed(8),
       chainId:   chainId ?? null,
       router:    chainId ? (ROUTERS[Number(chainId)] ?? null) : null,
-      note: "Transaction must be signed and submitted by the user's wallet. OrahDEX never holds funds in wallet mode.",
+      note: "Transaction must be signed and submitted by the user's wallet. Orah never holds funds in wallet mode.",
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/wallet/quote failed");
@@ -596,8 +596,8 @@ router.post("/trade/exchange", async (req, res) => {
         vaultChainId:    vaultChain   ?? null,
         withdrawEnabled: vaultActive,
         note:            vaultActive
-          ? `Withdrawals settled via OrahVault on chain ${vaultChain}`
-          : "Internal ledger settlement — deploy OrahVault to enable on-chain withdrawals",
+          ? `Withdrawals settled via OrahDEXVault on chain ${vaultChain}`
+          : "Internal ledger settlement — deploy OrahDEXVault to enable on-chain withdrawals",
       },
       balances,
       settledAt:  new Date().toISOString(),
@@ -709,7 +709,7 @@ router.post("/withdraw", async (req, res) => {
       vaultAddress:     vaultAddr,
       vaultChainId:     useVault ? vaultChain : null,
       note: useVault
-        ? `vault.withdraw() called on OrahVault at ${vaultAddr} (chainId ${vaultChain}).`
+        ? `vault.withdraw() called on OrahDEXVault at ${vaultAddr} (chainId ${vaultChain}).`
         : "Hot-wallet broadcast initiated. Fund the hot wallet to enable instant auto-withdrawals.",
       createdAt: new Date().toISOString(),
     });

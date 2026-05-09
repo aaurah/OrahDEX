@@ -28,7 +28,7 @@ function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () =
   const [previewCode, setPreviewCode] = useState("");
   const [totpQrUrl, setTotpQrUrl] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
-  const [totpIssuer, setTotpIssuer] = useState("OrahDEX");
+  const [totpIssuer, setTotpIssuer] = useState("Orah");
 
   // Load TOTP setup data from server (secret never hardcoded in source)
   useEffect(() => {
@@ -658,7 +658,7 @@ export function AdminAdmins() {
                 <label className="text-xs text-muted-foreground font-medium block mb-1">Email</label>
                 <input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                   className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
-                  placeholder="jane@orahdex.io" />
+                  placeholder="jane@orah.io" />
               </div>
               <div>
                 <label className="text-xs text-muted-foreground font-medium block mb-1">Role</label>

@@ -1,5 +1,5 @@
 /**
- * Liquidity Bot — OrahDEX
+ * Liquidity Bot — Orah
  *
  * Runs every 30 s. For every active market it:
  *  1. Wipes its own stale open orders

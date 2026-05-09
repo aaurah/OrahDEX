@@ -3,7 +3,7 @@ import {
   ArrowRight, Shield, Key, Globe, Zap, Lock, Layers,
   ArrowRightLeft, Cpu, Wallet, TrendingUp, Users, ExternalLink,
 } from "lucide-react";
-import { OrahInline } from "@/components/BrandLogo";
+import { OrahDEXInline } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
 /* ── Animated sovereign sigil (reused from Landing) ────────────────────── */
@@ -158,7 +158,7 @@ export function SovereignOverviewPage() {
           </h1>
 
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed mb-10">
-            <OrahInline /> is built on one principle: no intermediary should stand between you
+            <OrahDEXInline /> is built on one principle: no intermediary should stand between you
             and your money. Self-custody wallets, non-custodial settlement, and open-protocol
             liquidity — all on the world's most scalable blockchain.
           </p>
@@ -216,13 +216,13 @@ export function SovereignOverviewPage() {
               icon={Globe}
               color="#F5A623"
               title="Open Protocol"
-              body="Every settlement on the BSV layer is a verifiable on-chain transaction. OrahDEX uses HTLC atomic swaps across chains — no wrapped tokens, no bridges that can be paused, no single point of failure."
+              body="Every settlement on the BSV layer is a verifiable on-chain transaction. Orah uses HTLC atomic swaps across chains — no wrapped tokens, no bridges that can be paused, no single point of failure."
             />
             <PillarCard
               icon={Shield}
               color="#60a5fa"
               title="Non-Custodial"
-              body="External wallets (MetaMask, BSV, Phantom, TRON) trade directly to on-chain addresses. OrahDEX's internal ledger is only used when you choose the Orah wallet — and you can withdraw to self-custody at any time."
+              body="External wallets (MetaMask, BSV, Phantom, TRON) trade directly to on-chain addresses. Orah's internal ledger is only used when you choose the OrahDEX wallet — and you can withdraw to self-custody at any time."
             />
           </div>
         </div>
@@ -296,7 +296,7 @@ export function SovereignOverviewPage() {
                 Sovereignty is not a feature — it's the foundation
               </h2>
               <p className="text-muted-foreground leading-relaxed text-sm mb-6">
-                Every architectural decision in <OrahInline /> prioritises your autonomy.
+                Every architectural decision in <OrahDEXInline /> prioritises your autonomy.
                 We don't hold your funds. We don't gate your withdrawals. We don't wrap your assets
                 in proprietary custody layers. The protocol is open, the settlement is on-chain,
                 and your keys are yours — always.

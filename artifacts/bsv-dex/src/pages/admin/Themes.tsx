@@ -99,7 +99,7 @@ export function AdminThemes() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold">Theme Settings</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Choose your preferred visual theme for Orah DEX</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Choose your preferred visual theme for OrahDEX DEX</p>
       </div>
 
       {/* Theme Cards */}

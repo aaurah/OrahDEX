@@ -367,8 +367,8 @@ export function AdminApiSettings() {
             <Section icon={Shield} title="CORS & Security" color="green" badge="Active">
               <div className="space-y-5">
                 <Grid cols={1}>
-                  <TextField label="Allowed Origins" hint='Use * for all origins, or comma-separate specific ones. Example: https://app.orahdex.io, https://orahdex.com'
-                    value={cfg.corsOrigins ?? "*"} placeholder="*, https://app.orahdex.io"
+                  <TextField label="Allowed Origins" hint='Use * for all origins, or comma-separate specific ones. Example: https://app.orah.io, https://orah.com'
+                    value={cfg.corsOrigins ?? "*"} placeholder="*, https://app.orah.io"
                     onChange={v => set("corsOrigins", v)} />
                   <TextField label="Allowed Methods"
                     value={cfg.corsMethods ?? "GET,POST,PUT,DELETE,OPTIONS"} placeholder="GET,POST,PUT,DELETE,OPTIONS"
@@ -537,7 +537,7 @@ export function AdminApiSettings() {
             <Section icon={Webhook} title="Webhooks" color="green">
               <div className="space-y-5">
                 <TextField label="Webhook URL" hint="POST requests will be sent here for each event"
-                  value={cfg.webhookUrl ?? ""} placeholder="https://your-server.com/api/orahdex-events"
+                  value={cfg.webhookUrl ?? ""} placeholder="https://your-server.com/api/orah-events"
                   onChange={v => set("webhookUrl", v)} />
 
                 <div className="space-y-1.5">
@@ -564,7 +564,7 @@ export function AdminApiSettings() {
                       {copiedWebhook ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-[10px] text-muted-foreground/70">Sent as <code>X-OrahDEX-Signature: sha256=…</code> header on every webhook call</p>
+                  <p className="text-[10px] text-muted-foreground/70">Sent as <code>X-Orah-Signature: sha256=…</code> header on every webhook call</p>
                 </div>
 
                 <Grid>

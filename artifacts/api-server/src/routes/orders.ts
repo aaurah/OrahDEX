@@ -104,11 +104,11 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * 0.001;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
-    const walletSource: "external" | "orah" =
+    const walletSource: "external" | "orahdex" =
       body.walletSource === "external" ? "external"
-      : body.walletSource === "orah"   ? "orah"
+      : body.walletSource === "orahdex"   ? "orahdex"
       : (body.evmSignature || body.signedTx) ? "external"
-      : "orah";
+      : "orahdex";
 
     const isExternalWallet = walletSource === "external";
 
@@ -392,7 +392,7 @@ router.post("/orders", async (req, res) => {
 
         // ── EVM HTLC atomic settlement (non-custodial wallet-to-wallet) ───────
         // Required for all EVM/EVM external fills.  Both parties lock their funds
-        // into the OrahDEXHTLC contract on-chain; the OrahDEX relayer calls
+        // into the OrahHTLC contract on-chain; the Orah relayer calls
         // reveal() once both locks are confirmed, completing the atomic swap.
         // Internal ledger settlement is skipped for this path (funds stay on-chain).
         if (bothEvmExternal && !lastEvmHtlcSession) {
@@ -612,7 +612,7 @@ router.delete("/orders/:orderId", async (req, res) => {
 // require, and moves the excess back to available.
 // This recovers funds that were orphaned when a cancel request previously
 // failed silently (e.g. wallet-address mismatch across BSV/EVM networks).
-// Accepts optional `altAddress` for cross-network Orah wallet users.
+// Accepts optional `altAddress` for cross-network OrahDEX wallet users.
 router.post("/orders/recover-locked", async (req, res) => {
   try {
     const { walletAddress, altAddress } = req.body ?? {};

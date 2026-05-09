@@ -104,7 +104,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
           <div className="flex flex-col items-start">
             {provider && (
               <span className="text-[10px] text-muted-foreground leading-none">
-                {provider === 'orah-wallet' ? 'Orah Wallet' : provider}
+                {provider === 'orahdex-wallet' ? 'OrahDEX Wallet' : provider}
               </span>
             )}
             <span className="text-sm font-mono text-foreground leading-tight">
@@ -131,7 +131,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground font-medium">
-                  {provider === 'orah-wallet' ? 'Orah Wallet' : provider} · {network?.toUpperCase()}
+                  {provider === 'orahdex-wallet' ? 'OrahDEX Wallet' : provider} · {network?.toUpperCase()}
                 </span>
               </div>
               <button
@@ -220,7 +220,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-destructive">Disconnect</p>
-                    <p className="text-[11px] text-muted-foreground">Remove wallet from OrahDEX</p>
+                    <p className="text-[11px] text-muted-foreground">Remove wallet from Orah</p>
                   </div>
                 </button>
           </div>

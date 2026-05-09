@@ -45,7 +45,7 @@ async function getCurrentBlockHeight(): Promise<number> {
     const timer = setTimeout(() => ctrl.abort(), 4000);
     const res = await fetch(`${BSV_NET.wocBase}/chain/info`, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "OrahDEX/1.0" },
+      headers: { "User-Agent": "Orah/1.0" },
     });
     clearTimeout(timer);
     if (res.ok) {
@@ -69,7 +69,7 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const res = await fetch(
       `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
     );
     clearTimeout(timer);
 

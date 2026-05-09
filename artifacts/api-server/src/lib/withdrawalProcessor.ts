@@ -1,5 +1,5 @@
 /**
- * withdrawalProcessor.ts — OrahDEX
+ * withdrawalProcessor.ts — Orah
  *
  * Automatically broadcasts on-chain withdrawals the moment a user requests one.
  *
@@ -25,7 +25,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from "./bsvWallet.js";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
-import { isVaultConfigured, vaultWithdraw } from "./orahVault.js";
+import { isVaultConfigured, vaultWithdraw } from "./orahdexVault.js";
 import { logger } from "./logger.js";
 
 // ── EVM chain registry ─────────────────────────────────────────────────────────

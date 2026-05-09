@@ -4,7 +4,7 @@
  * Shown after an EVM/EVM trade fills, guiding both parties through the
  * lock-and-reveal flow that atomically settles the trade on-chain.
  *
- * Non-custodial: no funds flow through OrahDEX servers.
+ * Non-custodial: no funds flow through Orah servers.
  * The user signs transactions directly in MetaMask/WalletConnect.
  */
 
@@ -446,7 +446,7 @@ export function HTLCSettlementCard({
       {!isTerminal && (
         <div className="border-t border-zinc-800 px-5 py-3 flex items-center justify-between">
           <p className="text-xs text-zinc-600">
-            Non-custodial · OrahDEX never holds your funds
+            Non-custodial · Orah never holds your funds
           </p>
           <button
             onClick={refresh}

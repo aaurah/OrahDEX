@@ -21,7 +21,7 @@ const router = Router();
 // Key derived from DATABASE_URL so it's stable across restarts without needing
 // an extra env var. For production, set CEX_ENCRYPT_KEY in environment instead.
 const ENCRYPT_KEY = (() => {
-  const raw = process.env.CEX_ENCRYPT_KEY ?? process.env.DATABASE_URL ?? "orahdex-fallback-key";
+  const raw = process.env.CEX_ENCRYPT_KEY ?? process.env.DATABASE_URL ?? "orah-fallback-key";
   return crypto.createHash("sha256").update(raw).digest();
 })();
 
@@ -257,7 +257,7 @@ router.post("/cex-accounts/:id/test", async (req, res) => {
       const timer = setTimeout(() => ctrl.abort(), 8000);
       const r = await fetch(meta.testUrl, {
         signal: ctrl.signal,
-        headers: { "User-Agent": "OrahDEX-HybridRouter/1.0" },
+        headers: { "User-Agent": "Orah-HybridRouter/1.0" },
       });
       clearTimeout(timer);
 

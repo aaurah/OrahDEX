@@ -113,13 +113,13 @@ export function AdminContractBuilder() {
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Token Name *</label>
                       <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
                         className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
-                        placeholder="Orah Token" />
+                        placeholder="OrahDEX Token" />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Symbol *</label>
                       <input value={form.symbol} onChange={e => setForm(f => ({...f, symbol: e.target.value.toUpperCase()}))}
                         className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary font-mono"
-                        placeholder="ORAH" maxLength={10} />
+                        placeholder="ORAHDEX" maxLength={10} />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Total Supply</label>

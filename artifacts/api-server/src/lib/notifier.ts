@@ -55,7 +55,7 @@ async function sendDiscord(webhookUrl: string, title: string, message: string, p
         title,
         description: message,
         color: colorMap[priority] ?? colorMap.normal,
-        footer: { text: "OrahDEX Support" },
+        footer: { text: "Orah Support" },
         timestamp: new Date().toISOString(),
       }],
     }),
@@ -174,8 +174,8 @@ export async function notifyNewTicket(ticket: NotifyTicketOptions): Promise<void
 
 /* ── Test notification ───────────────────────────────────────────────────── */
 export async function sendTestNotification(channel: string, settings: Record<string, string>): Promise<{ success: boolean; error?: string }> {
-  const title = "OrahDEX Support — Test Notification";
-  const body = "This is a test notification from OrahDEX Admin Panel. Your alerts are working correctly!";
+  const title = "Orah Support — Test Notification";
+  const body = "This is a test notification from Orah Admin Panel. Your alerts are working correctly!";
 
   try {
     if (channel === "telegram") {

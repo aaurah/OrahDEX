@@ -1,5 +1,5 @@
 /**
- * BSV Chain Monitor — OrahDEX
+ * BSV Chain Monitor — Orah
  *
  * Polls the WhatsOnChain public API every 60 s to retrieve the live
  * BSV block height, hash, difficulty, mempool stats and fee rates.
@@ -61,7 +61,7 @@ async function safeFetch(url: string): Promise<Record<string, unknown> | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    const res = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "OrahDEX/1.0" } });
+    const res = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Orah/1.0" } });
     clearTimeout(timeout);
     if (!res.ok) return null;
     return await res.json() as Record<string, unknown>;

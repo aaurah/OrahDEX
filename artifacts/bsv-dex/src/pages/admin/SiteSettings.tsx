@@ -22,12 +22,12 @@ const TAB_LIST: { id: Tab; label: string; icon: any }[] = [
 
 const DEFAULT_SETTINGS = {
   // Branding
-  exchangeName: "OrahDEX",
+  exchangeName: "Orah",
   slogan: "Trade means DEX",
   logoUrl: "",
   logoBase64: "",
   faviconUrl: "",
-  footerText: "© 2026 OrahDEX. All rights reserved.",
+  footerText: "© 2026 Orah. All rights reserved.",
   metaTagline: "The world's fastest BSV-settled exchange.",
   defaultTheme: "dark",
   defaultFont: "Inter",
@@ -50,24 +50,24 @@ const DEFAULT_SETTINGS = {
   mediumUrl: "",
   redditUrl: "",
   // SEO
-  seoTitle: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
-  seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
+  seoTitle: "Orah — Trade means DEX | BSV Settlement Exchange",
+  seoDescription: "Orah is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
   seoKeywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures, cross-chain bridge, copy trading, paper trading, mobile DEX",
   ogImageUrl: "",
-  canonicalUrl: "https://orahdex.replit.app",
+  canonicalUrl: "https://orah.replit.app",
   twitterCard: "summary_large_image",
-  twitterSite: "@orahdex",
+  twitterSite: "@orah",
   // Legal
   termsUrl: "/terms",
   privacyUrl: "/privacy",
   whitepaperUrl: "/whitepaper",
   cookiesUrl: "/legal/cookies",
   amlUrl: "/legal/aml",
-  contactEmail: "support@orahdex.org",
-  legalEmail: "legal@orahdex.org",
-  privacyEmail: "privacy@orahdex.org",
-  supportUrl: "https://support.orahdex.org",
-  companyName: "OrahDEX Ltd.",
+  contactEmail: "support@orah.org",
+  legalEmail: "legal@orah.org",
+  privacyEmail: "privacy@orah.org",
+  supportUrl: "https://support.orah.org",
+  companyName: "Orah Ltd.",
   companyAddress: "",
   registrationNumber: "",
   // Tracking
@@ -138,7 +138,7 @@ export function AdminSiteSettings() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("branding");
   const [settings, setSettings] = useState<Settings>(() => {
-    try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("orahdex_site_settings") ?? "{}") }; }
+    try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("orah_site_settings") ?? "{}") }; }
     catch { return DEFAULT_SETTINGS; }
   });
   const [saving, setSaving] = useState(false);
@@ -150,7 +150,7 @@ export function AdminSiteSettings() {
   const handleSave = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 500));
-    localStorage.setItem("orahdex_site_settings", JSON.stringify(settings));
+    localStorage.setItem("orah_site_settings", JSON.stringify(settings));
     setSaving(false);
     toast({ title: "Settings saved", description: "Site settings have been updated successfully." });
   };
@@ -168,7 +168,7 @@ export function AdminSiteSettings() {
 
   const reset = () => {
     setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem("orahdex_site_settings");
+    localStorage.removeItem("orah_site_settings");
     toast({ title: "Reset to defaults", description: "All site settings have been reset." });
   };
 
@@ -220,7 +220,7 @@ export function AdminSiteSettings() {
         {activeTab === "branding" && (
           <div className="space-y-0">
             <Field label="Exchange Name" description="Primary name displayed across the platform">
-              <Input value={settings.exchangeName} onChange={set("exchangeName")} placeholder="OrahDEX" />
+              <Input value={settings.exchangeName} onChange={set("exchangeName")} placeholder="Orah" />
             </Field>
             <Field label="Slogan / Tagline" description="Short tagline shown in the hero and metadata">
               <Input value={settings.slogan} onChange={set("slogan")} placeholder="Trade means DEX" />
@@ -278,10 +278,10 @@ export function AdminSiteSettings() {
               </select>
             </Field>
             <Field label="Footer Copyright Text">
-              <Input value={settings.footerText} onChange={set("footerText")} placeholder="© 2026 OrahDEX. All rights reserved." />
+              <Input value={settings.footerText} onChange={set("footerText")} placeholder="© 2026 Orah. All rights reserved." />
             </Field>
             <Field label="Company Name" description="Legal company name for invoices and legal pages">
-              <Input value={settings.companyName} onChange={set("companyName")} placeholder="OrahDEX Ltd." />
+              <Input value={settings.companyName} onChange={set("companyName")} placeholder="Orah Ltd." />
             </Field>
             <Field label="Company Address">
               <Input value={settings.companyAddress} onChange={set("companyAddress")} placeholder="123 Main St, City, Country" />
@@ -335,16 +335,16 @@ export function AdminSiteSettings() {
         {activeTab === "social" && (
           <div className="space-y-0">
             {[
-              { key: "twitterUrl",   label: "Twitter / X",  icon: X,              placeholder: "https://x.com/orahdex" },
-              { key: "telegramUrl",  label: "Telegram",     icon: Send,           placeholder: "https://t.me/orahdex" },
-              { key: "discordUrl",   label: "Discord",      icon: MessageCircle,  placeholder: "https://discord.gg/orahdex" },
-              { key: "githubUrl",    label: "GitHub",       icon: GitBranch,      placeholder: "https://github.com/orahdex" },
-              { key: "linkedinUrl",  label: "LinkedIn",     icon: Users,          placeholder: "https://linkedin.com/company/orahdex" },
-              { key: "facebookUrl",  label: "Facebook",     icon: Share2,         placeholder: "https://facebook.com/orahdex" },
-              { key: "instagramUrl", label: "Instagram",    icon: Camera,         placeholder: "https://instagram.com/orahdex" },
-              { key: "youtubeUrl",   label: "YouTube",      icon: Play,           placeholder: "https://youtube.com/@orahdex" },
-              { key: "mediumUrl",    label: "Medium / Blog",icon: FileText,       placeholder: "https://medium.com/@orahdex" },
-              { key: "redditUrl",    label: "Reddit",       icon: Globe,          placeholder: "https://reddit.com/r/orahdex" },
+              { key: "twitterUrl",   label: "Twitter / X",  icon: X,              placeholder: "https://x.com/orah" },
+              { key: "telegramUrl",  label: "Telegram",     icon: Send,           placeholder: "https://t.me/orah" },
+              { key: "discordUrl",   label: "Discord",      icon: MessageCircle,  placeholder: "https://discord.gg/orah" },
+              { key: "githubUrl",    label: "GitHub",       icon: GitBranch,      placeholder: "https://github.com/orah" },
+              { key: "linkedinUrl",  label: "LinkedIn",     icon: Users,          placeholder: "https://linkedin.com/company/orah" },
+              { key: "facebookUrl",  label: "Facebook",     icon: Share2,         placeholder: "https://facebook.com/orah" },
+              { key: "instagramUrl", label: "Instagram",    icon: Camera,         placeholder: "https://instagram.com/orah" },
+              { key: "youtubeUrl",   label: "YouTube",      icon: Play,           placeholder: "https://youtube.com/@orah" },
+              { key: "mediumUrl",    label: "Medium / Blog",icon: FileText,       placeholder: "https://medium.com/@orah" },
+              { key: "redditUrl",    label: "Reddit",       icon: Globe,          placeholder: "https://reddit.com/r/orah" },
             ].map(item => (
               <Field key={item.key} label={item.label}>
                 <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5">
@@ -360,10 +360,10 @@ export function AdminSiteSettings() {
               </Field>
             ))}
             <Field label="Contact Email" description="Public support email shown in footer">
-              <Input value={settings.contactEmail} onChange={set("contactEmail")} placeholder="support@orahdex.io" type="email" />
+              <Input value={settings.contactEmail} onChange={set("contactEmail")} placeholder="support@orah.io" type="email" />
             </Field>
             <Field label="Support URL" description="Link to helpdesk or documentation">
-              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orahdex.io" />
+              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orah.io" />
             </Field>
           </div>
         )}
@@ -372,7 +372,7 @@ export function AdminSiteSettings() {
         {activeTab === "seo" && (
           <div className="space-y-0">
             <Field label="Page Title" description="Default <title> tag for all pages">
-              <Input value={settings.seoTitle} onChange={set("seoTitle")} placeholder="OrahDEX — Trade means DEX" />
+              <Input value={settings.seoTitle} onChange={set("seoTitle")} placeholder="Orah — Trade means DEX" />
               <p className="text-xs text-muted-foreground mt-1">{settings.seoTitle.length}/70 characters</p>
             </Field>
             <Field label="Meta Description" description="Default meta description (appears in Google search results)">
@@ -380,7 +380,7 @@ export function AdminSiteSettings() {
                 value={settings.seoDescription}
                 onChange={e => set("seoDescription")(e.target.value)}
                 rows={3}
-                placeholder="OrahDEX is a full-featured BSV-settled DEX…"
+                placeholder="Orah is a full-featured BSV-settled DEX…"
                 className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none transition-all"
               />
               <p className="text-xs text-muted-foreground mt-1">{settings.seoDescription.length}/160 characters</p>
@@ -389,7 +389,7 @@ export function AdminSiteSettings() {
               <Input value={settings.seoKeywords} onChange={set("seoKeywords")} placeholder="BSV DEX, crypto trading, Bitcoin SV exchange" />
             </Field>
             <Field label="Canonical URL" description="Canonical domain for SEO">
-              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orahdex.replit.app" />
+              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orah.replit.app" />
             </Field>
             <Field label="Open Graph Image URL" description="1200×630 image for social sharing previews">
               <Input value={settings.ogImageUrl} onChange={set("ogImageUrl")} placeholder="https://cdn.example.com/og.png" />
@@ -409,7 +409,7 @@ export function AdminSiteSettings() {
               </select>
             </Field>
             <Field label="Twitter @Handle" description="Used for twitter:site meta tag">
-              <Input value={settings.twitterSite} onChange={set("twitterSite")} placeholder="@orahdex" />
+              <Input value={settings.twitterSite} onChange={set("twitterSite")} placeholder="@orah" />
             </Field>
           </div>
         )}
@@ -432,49 +432,49 @@ export function AdminSiteSettings() {
                   type="email"
                   value={settings.contactEmail}
                   onChange={e => set("contactEmail")(e.target.value)}
-                  placeholder="support@orahdex.org"
+                  placeholder="support@orah.org"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.contactEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
-            <Field label="Legal Email" description="Terms of service, legal notices, compliance — legal@orahdex.org">
+            <Field label="Legal Email" description="Terms of service, legal notices, compliance — legal@orah.org">
               <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
                 <span className="text-xs font-black text-violet-400 shrink-0">@</span>
                 <input
                   type="email"
                   value={settings.legalEmail}
                   onChange={e => set("legalEmail")(e.target.value)}
-                  placeholder="legal@orahdex.org"
+                  placeholder="legal@orah.org"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.legalEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
-            <Field label="Privacy Email" description="GDPR requests, data subject rights, privacy complaints — privacy@orahdex.org">
+            <Field label="Privacy Email" description="GDPR requests, data subject rights, privacy complaints — privacy@orah.org">
               <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
                 <span className="text-xs font-black text-blue-400 shrink-0">@</span>
                 <input
                   type="email"
                   value={settings.privacyEmail}
                   onChange={e => set("privacyEmail")(e.target.value)}
-                  placeholder="privacy@orahdex.org"
+                  placeholder="privacy@orah.org"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.privacyEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
             <Field label="Support Portal URL" description="External help desk or support portal">
-              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orahdex.org" />
+              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orah.org" />
             </Field>
 
             {/* Quick email summary card */}
             <div className="mx-4 my-3 p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-2">Active Email Summary</p>
               {[
-                { label: "Support", email: settings.contactEmail || "support@orahdex.org", color: "text-primary" },
-                { label: "Legal",   email: settings.legalEmail   || "legal@orahdex.org",   color: "text-violet-400" },
-                { label: "Privacy", email: settings.privacyEmail || "privacy@orahdex.org", color: "text-blue-400" },
+                { label: "Support", email: settings.contactEmail || "support@orah.org", color: "text-primary" },
+                { label: "Legal",   email: settings.legalEmail   || "legal@orah.org",   color: "text-violet-400" },
+                { label: "Privacy", email: settings.privacyEmail || "privacy@orah.org", color: "text-blue-400" },
               ].map(({ label, email, color }) => (
                 <div key={label} className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-muted-foreground w-14">{label}</span>

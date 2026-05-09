@@ -115,7 +115,7 @@ export function AdminMintBurn() {
             Stablecoin Mint & Burn
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Credit (mint) or debit (burn) stablecoin balances from a user's OrahDEX Exchange account.
+            Credit (mint) or debit (burn) stablecoin balances from a user's Orah Exchange account.
             Every operation is logged permanently.
           </p>
         </div>
@@ -271,7 +271,7 @@ export function AdminMintBurn() {
                     <p className="text-xs font-semibold text-foreground">Print (Mint)</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Use when a user deposits real USD via bank transfer, crypto on-ramp, or P2P.
-                      Credits their OrahDEX Exchange balance instantly.
+                      Credits their Orah Exchange balance instantly.
                     </p>
                   </div>
                 </div>

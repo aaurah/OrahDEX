@@ -276,7 +276,7 @@ function QuotePanel() {
           {/* AMM placeholder */}
           <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold">OrahDEX AMM</span>
+              <span className="text-xs font-bold">Orah AMM</span>
               <span className="text-[10px] text-primary">On-chain</span>
             </div>
             <div className="space-y-1 text-xs">

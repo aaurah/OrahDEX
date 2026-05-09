@@ -409,7 +409,7 @@ export function AdminCopyVault() {
       const res = await fetch(`${BASE}/api/copy/vaults/${id}/sync-price`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: "orah-internal", status }),
+        body: JSON.stringify({ secret: "orahdex-internal", status }),
       });
       return res.json();
     },

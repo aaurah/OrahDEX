@@ -51,7 +51,7 @@ router.get("/config", (_req, res) => {
     supports_timescale_marks: false,
     supports_time: true,
     exchanges: [
-      { value: "OrahDEX", name: "OrahDEX", desc: "OrahDEX Sovereign DEX" },
+      { value: "Orah", name: "Orah", desc: "Orah Sovereign DEX" },
       { value: "BSV",     name: "BSV",     desc: "Bitcoin SV On-Chain" },
     ],
     symbols_types: [
@@ -103,8 +103,8 @@ router.get("/symbols", async (req, res) => {
       description:   `${base} / ${quote}`,
       type:          "crypto",
       session:       "24x7",
-      exchange:      "OrahDEX",
-      listed_exchange: "OrahDEX",
+      exchange:      "Orah",
+      listed_exchange: "Orah",
       timezone:      "Etc/UTC",
       minmov:        1,
       pricescale,
@@ -142,9 +142,9 @@ router.get("/search", async (req, res) => {
     res.json(
       markets.map(m => ({
         symbol:      m.symbol,
-        full_name:   `OrahDEX:${m.symbol}`,
+        full_name:   `Orah:${m.symbol}`,
         description: `${m.baseAsset} / ${m.quoteAsset}`,
-        exchange:    "OrahDEX",
+        exchange:    "Orah",
         type:        "crypto",
         ticker:      m.symbol,
       }))
@@ -159,7 +159,7 @@ router.get("/history", async (req, res) => {
   const t0 = Date.now();
   res.set("Access-Control-Allow-Origin", "*");
 
-  const symbol     = (req.query.symbol as string ?? "").replace(/^OrahDEX:/, "");
+  const symbol     = (req.query.symbol as string ?? "").replace(/^Orah:/, "");
   const resolution = req.query.resolution as string ?? "60";
   const from       = parseInt(req.query.from as string ?? "0");
   const to         = parseInt(req.query.to   as string ?? String(Math.floor(Date.now() / 1000)));

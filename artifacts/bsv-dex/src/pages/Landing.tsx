@@ -13,7 +13,7 @@ const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-/* ── Animated OrahO sigil — large sovereign version ───────────────────── */
+/* ── Animated OrahDEXO sigil — large sovereign version ───────────────────── */
 function SovereignSigil({ size = 160 }: { size?: number }) {
   return (
     <svg
@@ -176,9 +176,9 @@ function OraAiSection() {
 
   // Static fallback shown immediately if the AI call takes too long or fails
   const FALLBACK_INSIGHTS = [
-    { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
+    { id: 1, content: "BSV settlement gives Orah sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
     { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ Orah pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
   ];
 
   useEffect(() => {
@@ -394,7 +394,7 @@ export function LandingPage() {
               <circle cx="50" cy="50" r="13" fill="#4ade80"
                 style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
             </svg>
-            <span><span className="text-foreground">Orah</span><span className="text-green-400">DEX</span></span>
+            <span><span className="text-foreground">OrahDEX</span><span className="text-green-400">DEX</span></span>
           </div>
           <div className="flex items-center gap-2.5">
             {bsvBlock > 0 && (
@@ -513,7 +513,7 @@ export function LandingPage() {
                 { label: "Settlement", value: "BSV + OP_RETURN" },
                 { label: "Liquidity", value: "AMM + VAMM + OB" },
                 { label: "Bridge", value: "HTLC, no custody" },
-                { label: "NFT + Creator Coins", value: "OrahNFT × BSV" },
+                { label: "NFT + Creator Coins", value: "OrahDEXNFT × BSV" },
                 { label: "Copy trading", value: "CopyVault ERC4626" },
                 { label: "Fiat on-ramp", value: "6 providers" },
               ].map(({ label, value }) => (
@@ -544,7 +544,7 @@ export function LandingPage() {
               desc: "A hybrid of constant-product AMM, virtual AMM, and orderbook routing ensures every listed asset is tradeable — even with few users and no external market makers.",
             },
             {
-              label: "OrahNFT",
+              label: "OrahDEXNFT",
               pill: "Creator coins",
               pillColor: "#f472b6",
               desc: "A social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Mint, collect, and trade creator tokens on bonding curves — all inside the exchange.",
@@ -589,7 +589,7 @@ export function LandingPage() {
               The Keeper Protocol
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX runs on identity-aware execution. Keepers are sovereign participants
+              Orah runs on identity-aware execution. Keepers are sovereign participants
               who gain privileges, reduced fees, and priority routing in exchange for
               staking and contribution. Your identity is your engine.
             </p>
@@ -648,7 +648,7 @@ export function LandingPage() {
               Every Coin. Always Tradeable.
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
+              Orah's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
               A linear bonding curve provides instant price discovery and trade execution
               for 56+ major assets — embedded directly in the Market Hub.
             </p>
@@ -736,7 +736,7 @@ export function LandingPage() {
               Three Phases of Sovereignty
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              OrahDEX is not a simple DEX. It is a progressive architecture — 
+              Orah is not a simple DEX. It is a progressive architecture — 
               starting with deep CEX-backed liquidity and Virtual AMM price discovery,
               evolving to full on-chain AMM pools, and culminating in a sovereign BSV↔EVM bridge.
             </p>
@@ -773,7 +773,7 @@ export function LandingPage() {
               {[
                 { label: "Your Wallet", sub: "EVM · TRON · BSV", color: "#4ade80" },
                 null,
-                { label: "OrahDEX Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
+                { label: "Orah Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
                 null,
                 { label: "CEX Venues", sub: "Binance / OKX / Bybit", color: "#60a5fa" },
                 null,
@@ -813,7 +813,7 @@ export function LandingPage() {
               <span className="text-green-400">We build thresholds.</span>"
             </blockquote>
             <p className="text-muted-foreground max-w-lg mx-auto leading-relaxed mt-2">
-              OrahDEX is a sovereign exchange where every participant is a Keeper,
+              Orah is a sovereign exchange where every participant is a Keeper,
               every trade is an act of financial sovereignty, and settlement lives
               permanently on Bitcoin SV.
             </p>
@@ -843,7 +843,7 @@ export function LandingPage() {
           </div>
           <SocialBar iconSize="sm" variant="landing" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/30">
-            © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
+            © {new Date().getFullYear()} Orah · orah.org · Trade means DEX
           </p>
         </div>
       </section>

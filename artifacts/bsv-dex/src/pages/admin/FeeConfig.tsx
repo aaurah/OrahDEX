@@ -43,18 +43,18 @@ const VIP_TIERS = [
 const DEFAULT_FEES = {
   spotMakerFee: "0.10",
   spotTakerFee: "0.10",
-  spotMakerFeeOrah: "0.05",
-  spotTakerFeeOrah: "0.05",
+  spotMakerFeeOrahDEX: "0.05",
+  spotTakerFeeOrahDEX: "0.05",
   futuresMakerFee: "0.02",
   futuresTakerFee: "0.06",
-  futuresMakerFeeOrah: "0.01",
-  futuresTakerFeeOrah: "0.03",
+  futuresMakerFeeOrahDEX: "0.01",
+  futuresTakerFeeOrahDEX: "0.03",
   fundingRateInterval: "8",
   fundingRateCap: "0.75",
   referralCommission: "20",
   affiliateCommission: "30",
   feeTokenEnabled: true,
-  feeTokenSymbol: "ORAH",
+  feeTokenSymbol: "ORAHDEX",
   feeTokenDiscount: "50",
   platformFeeWallet: "1AwPYErieoPjPekmcFkGuTpx3VfyS5oAg6",
   distributionTeam: "40",
@@ -92,7 +92,7 @@ export function AdminFeeConfig() {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("spot");
   const [fees, setFees] = useState<Fees>(() => {
-    try { return { ...DEFAULT_FEES, ...JSON.parse(localStorage.getItem("orahdex_fees") ?? "{}") }; }
+    try { return { ...DEFAULT_FEES, ...JSON.parse(localStorage.getItem("orah_fees") ?? "{}") }; }
     catch { return DEFAULT_FEES; }
   });
   const [saving, setSaving] = useState(false);
@@ -105,7 +105,7 @@ export function AdminFeeConfig() {
   const save = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orahdex_fees", JSON.stringify(fees));
+    localStorage.setItem("orah_fees", JSON.stringify(fees));
     setSaving(false);
     toast({ title: "Fee config saved", description: "All fee settings have been updated." });
   };
@@ -142,8 +142,8 @@ export function AdminFeeConfig() {
               <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <p className="text-xs text-muted-foreground">When users pay fees in <strong className="text-primary">{fees.feeTokenSymbol}</strong>, they receive the discount below.</p>
             </div>
-            <FeeRow label={`Spot Maker Fee (${fees.feeTokenSymbol} payment)`} description={`Discounted maker fee when user pays in ${fees.feeTokenSymbol}`} value={fees.spotMakerFeeOrah} onChange={set("spotMakerFeeOrah")} />
-            <FeeRow label={`Spot Taker Fee (${fees.feeTokenSymbol} payment)`} description={`Discounted taker fee when user pays in ${fees.feeTokenSymbol}`} value={fees.spotTakerFeeOrah} onChange={set("spotTakerFeeOrah")} />
+            <FeeRow label={`Spot Maker Fee (${fees.feeTokenSymbol} payment)`} description={`Discounted maker fee when user pays in ${fees.feeTokenSymbol}`} value={fees.spotMakerFeeOrahDEX} onChange={set("spotMakerFeeOrahDEX")} />
+            <FeeRow label={`Spot Taker Fee (${fees.feeTokenSymbol} payment)`} description={`Discounted taker fee when user pays in ${fees.feeTokenSymbol}`} value={fees.spotTakerFeeOrahDEX} onChange={set("spotTakerFeeOrahDEX")} />
             <div className="border-t border-border pt-4 mt-4">
               <p className="text-sm font-semibold text-foreground mb-3">Fee Token Settings</p>
               <div className="grid grid-cols-2 gap-4">
@@ -166,8 +166,8 @@ export function AdminFeeConfig() {
           <>
             <FeeRow label="Futures Maker Fee" description="Limit orders that add liquidity to the futures order book" value={fees.futuresMakerFee} onChange={set("futuresMakerFee")} />
             <FeeRow label="Futures Taker Fee" description="Market orders that remove liquidity from the futures order book" value={fees.futuresTakerFee} onChange={set("futuresTakerFee")} />
-            <FeeRow label={`Futures Maker Fee (${fees.feeTokenSymbol})`} value={fees.futuresMakerFeeOrah} onChange={set("futuresMakerFeeOrah")} />
-            <FeeRow label={`Futures Taker Fee (${fees.feeTokenSymbol})`} value={fees.futuresTakerFeeOrah} onChange={set("futuresTakerFeeOrah")} />
+            <FeeRow label={`Futures Maker Fee (${fees.feeTokenSymbol})`} value={fees.futuresMakerFeeOrahDEX} onChange={set("futuresMakerFeeOrahDEX")} />
+            <FeeRow label={`Futures Taker Fee (${fees.feeTokenSymbol})`} value={fees.futuresTakerFeeOrahDEX} onChange={set("futuresTakerFeeOrahDEX")} />
             <FeeRow label="Funding Rate Interval" description="How often funding rates are applied" value={fees.fundingRateInterval} onChange={set("fundingRateInterval")} suffix="hours" />
             <FeeRow label="Funding Rate Cap" description="Maximum funding rate per interval (absolute value)" value={fees.fundingRateCap} onChange={set("fundingRateCap")} />
           </>
@@ -273,9 +273,9 @@ export function AdminFeeConfig() {
             <div className="space-y-1 mb-6">
               {[
                 { key: "distributionTeam",      label: "Team & Operations",    color: "#8b5cf6", desc: "Platform operating costs and team salaries" },
-                { key: "distributionBurn",       label: "ORAH Token Burn",      color: "#ef4444", desc: "Permanently removed from circulation to create deflation" },
+                { key: "distributionBurn",       label: "ORAHDEX Token Burn",      color: "#ef4444", desc: "Permanently removed from circulation to create deflation" },
                 { key: "distributionLiquidity",  label: "Liquidity Reserves",   color: "#22c55e", desc: "Added to AMM pools to deepen liquidity" },
-                { key: "distributionBuyback",    label: "Buyback Program",      color: "#f97316", desc: "Used to buy back ORAH tokens on the open market" },
+                { key: "distributionBuyback",    label: "Buyback Program",      color: "#f97316", desc: "Used to buy back ORAHDEX tokens on the open market" },
               ].map(item => (
                 <div key={item.key} className="flex items-center gap-4 py-4 border-b border-border last:border-0">
                   <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />

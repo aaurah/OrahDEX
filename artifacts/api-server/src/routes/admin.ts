@@ -179,8 +179,8 @@ router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
     res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
     return;
   }
-  const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
-  const issuer  = "OrahDEX";
+  const email   = process.env.ADMIN_EMAIL        || "admin@orah.app";
+  const issuer  = "Orah";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
   res.json({ uri, qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}` });
@@ -198,7 +198,7 @@ router.post("/auth/wallet-challenge", (req, res) => {
   }
   const nonce   = crypto.randomBytes(16).toString("hex");
   const ts      = new Date().toISOString();
-  const message = `Sign in to OrahDEX Admin Panel\n\nNonce: ${nonce}\nTimestamp: ${ts}\n\nThis request will not trigger a blockchain transaction.`;
+  const message = `Sign in to Orah Admin Panel\n\nNonce: ${nonce}\nTimestamp: ${ts}\n\nThis request will not trigger a blockchain transaction.`;
   pendingNonces.set(address.toLowerCase(), { nonce, message, expiresAt: Date.now() + 5 * 60 * 1000 });
   res.json({ nonce, message });
 });
@@ -380,15 +380,15 @@ async function buildRealUserList(): Promise<any[]> {
 const mockAdmins: any[] = [];
 
 const mockApiKeys = [
-  { id: "key_001", name: "Public Market Feed", key: "orah_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
-  { id: "key_002", name: "Trading Bot Integration", key: "orah_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
-  { id: "key_003", name: "Analytics Dashboard", key: "orah_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
-  { id: "key_004", name: "Legacy Integration", key: "orah_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
+  { id: "key_001", name: "Public Market Feed", key: "orahdex_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
+  { id: "key_002", name: "Trading Bot Integration", key: "orahdex_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
+  { id: "key_003", name: "Analytics Dashboard", key: "orahdex_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
+  { id: "key_004", name: "Legacy Integration", key: "orahdex_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
 ];
 
 const deployedContracts: any[] = [
-  { id: "ctr_001", name: "Orah Token", symbol: "ORAH", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1ORAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "c3d4e5f6a1b2...", deployedAt: "2026-01-10" },
-  { id: "ctr_002", name: "Orah Governance", symbol: "OGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1OGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "d4e5f6a1b2c3...", deployedAt: "2026-01-20" },
+  { id: "ctr_001", name: "OrahDEX Token", symbol: "ORAHDEX", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1ORAHDEXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "c3d4e5f6a1b2...", deployedAt: "2026-01-10" },
+  { id: "ctr_002", name: "OrahDEX Governance", symbol: "OGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1OGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "d4e5f6a1b2c3...", deployedAt: "2026-01-20" },
 ];
 
 /* ─── STATS ─── */
@@ -653,7 +653,7 @@ router.get("/transactions", async (_req, res) => {
         type: "settlement",
         status: "confirmed",
         from: t.walletAddress ?? "BOT_LIQUIDITY_ENGINE",
-        to: "OrahDEX Settlement",
+        to: "Orah Settlement",
         amount: parseFloat(t.quantity as string),
         asset: t.symbol?.split("/")?.[0] ?? "BSV",
         fee: parseFloat(t.fee as string),
@@ -685,7 +685,7 @@ router.get("/transactions", async (_req, res) => {
       type: "settlement",
       status: "confirmed",
       from: o.walletAddress,
-      to: o.matchedOrderId ? `Order ${o.matchedOrderId}` : "OrahDEX BOT",
+      to: o.matchedOrderId ? `Order ${o.matchedOrderId}` : "Orah BOT",
       amount: parseFloat(o.quantity as string),
       asset: o.symbol?.split("/")?.[0] ?? "BSV",
       fee: parseFloat(o.fee as string),
@@ -890,7 +890,7 @@ router.post("/api-keys", (req, res) => {
   const newKey = {
     id: `key_${(mockApiKeys.length + 1).toString().padStart(3, "0")}`,
     name, type, rateLimit: parseInt(rateLimit) || 100,
-    key: `orah_${type === "public" ? "pub" : "prv"}_${rand}`,
+    key: `orahdex_${type === "public" ? "pub" : "prv"}_${rand}`,
     calls24h: 0,
     status: "active",
     createdAt: new Date().toISOString().split("T")[0],
@@ -1153,7 +1153,7 @@ router.get("/bot-profit", async (_req, res) => {
     const historyBase: any[] = historyRaw ? JSON.parse(historyRaw) : [];
 
     // Cross-reference withdrawal_requests table to get live status and real TXIDs
-    // for EVM entries that were initially stored with internal orah_ IDs
+    // for EVM entries that were initially stored with internal orahdex_ IDs
     let history = historyBase;
     if (historyBase.length > 0) {
       try {
@@ -1173,7 +1173,7 @@ router.get("/bot-profit", async (_req, res) => {
             return {
               ...h,
               status: wr.status,
-              txid: (wr.txid && !wr.txid.startsWith("orah_")) ? wr.txid : h.txid,
+              txid: (wr.txid && !wr.txid.startsWith("orahdex_")) ? wr.txid : h.txid,
             };
           });
         }
@@ -1398,30 +1398,30 @@ async function seedWelcomeEmail() {
     const welcomeEmails = [
       {
         folder: "inbox",
-        fromAddress: "system@orahdex.org",
-        toAddress: "admin@orahdex.org",
-        subject: "🎉 Welcome to OrahDEX Admin Panel",
-        body: `Hi Admin,\n\nWelcome to OrahDEX! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orahdex.org\nLegal: legal@orahdex.org\nPrivacy: privacy@orahdex.org\n\nBest,\nOrahDEX System`,
+        fromAddress: "system@orah.org",
+        toAddress: "admin@orah.org",
+        subject: "🎉 Welcome to Orah Admin Panel",
+        body: `Hi Admin,\n\nWelcome to Orah! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orah.org\nLegal: legal@orah.org\nPrivacy: privacy@orah.org\n\nBest,\nOrah System`,
         isRead: false,
         isStarred: true,
         category: "system",
       },
       {
         folder: "inbox",
-        fromAddress: "setup@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "setup@orah.org",
+        toAddress: "admin@orah.org",
         subject: "⚙️ Setup Checklist — Action Required",
-        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
+        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrah Setup Wizard`,
         isRead: false,
         isStarred: false,
         category: "system",
       },
       {
         folder: "inbox",
-        fromAddress: "security@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "security@orah.org",
+        toAddress: "admin@orah.org",
         subject: "🔐 Security Recommendation",
-        body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrahDEX Security`,
+        body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrah Security`,
         isRead: true,
         isStarred: false,
         category: "system",
@@ -1891,7 +1891,7 @@ export function pushAdminLog(level: LogEntry["level"], message: string, context?
 }
 
 // Seed with startup log
-pushAdminLog("info", "OrahDEX API server started", "system");
+pushAdminLog("info", "Orah API server started", "system");
 
 router.get("/logs", (req, res) => {
   const level  = req.query.level as string | undefined;
@@ -1967,24 +1967,24 @@ router.patch("/markets/:symbol/status", async (req, res) => {
 /* ─── AUTO-SETUP — seed all defaults + test email in one click ────────────── */
 
 const SITE_DEFAULTS: Record<string, string> = {
-  site_name: "OrahDEX",
-  site_domain: "orahdex.org",
-  contact_email: "support@orahdex.org",
-  legal_email: "legal@orahdex.org",
-  privacy_email: "privacy@orahdex.org",
-  company_name: "OrahDEX Ltd.",
-  canonical_url: "https://orahdex.org",
+  site_name: "Orah",
+  site_domain: "orah.org",
+  contact_email: "support@orah.org",
+  legal_email: "legal@orah.org",
+  privacy_email: "privacy@orah.org",
+  company_name: "Orah Ltd.",
+  canonical_url: "https://orah.org",
   maker_fee: "0.001",
   taker_fee: "0.001",
-  seo_title: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
-  seo_description: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
+  seo_title: "Orah — Trade means DEX | BSV Settlement Exchange",
+  seo_description: "Orah is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
   seo_keywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures",
-  twitter_site: "@orahdex",
+  twitter_site: "@orah",
   twitter_card: "summary_large_image",
   terms_url: "/terms",
   privacy_url: "/privacy",
   whitepaper_url: "/whitepaper",
-  footer_text: "© 2025 OrahDEX. All rights reserved.",
+  footer_text: "© 2025 Orah. All rights reserved.",
   default_theme: "dark",
 };
 
@@ -2093,7 +2093,7 @@ router.get("/mint-burn-log", requireAdminToken, async (_req, res) => {
 
 /**
  * GET /admin/user-exchange-balance/:address
- * Returns the OrahDEX exchange (ledger) balances for a wallet.
+ * Returns the Orah exchange (ledger) balances for a wallet.
  */
 router.get("/user-exchange-balance/:address", requireAdminToken, async (req, res) => {
   try {

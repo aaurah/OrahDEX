@@ -221,9 +221,9 @@ function fmtPrice(v: number, price: number): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   ORAHCHART — Maximum Features Edition
+   ORAHDEXCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar }: {
+function OrahDEXChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar }: {
   symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean;
 }) {
   const mainRef   = useRef<HTMLDivElement>(null);
@@ -731,7 +731,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           </>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          <span className="text-[10px] text-green-400/70 font-mono">OrahDEX Live</span>
+          <span className="text-[10px] text-green-400/70 font-mono">Orah Live</span>
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
         </div>
       </div>
@@ -873,7 +873,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
                 letterSpacing: '0.15em',
               }}
             >
-              OrahDEX
+              Orah
             </span>
           </div>
         )}
@@ -919,7 +919,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       {/* ── BOTTOM STATUS BAR ── */}
       <div className="px-3 py-1 border-t shrink-0 flex items-center justify-between" style={{ borderColor: col.grid }}>
         <span className="text-[10px]" style={{ color: col.text, opacity: 0.5 }}>
-          {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === interval)?.label} · OrahDEX Sovereign Engine
+          {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === interval)?.label} · Orah Sovereign Engine
         </span>
         <div className="flex items-center gap-2">
           {activeOverlays.size > 0 && (
@@ -939,5 +939,5 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
    EXPORT
 ══════════════════════════════════════════════════════════════════════════ */
 export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar }: ChartProps) {
-  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} />;
+  return <OrahDEXChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} />;
 }

@@ -128,7 +128,7 @@ If any field is missing, add it.
 
       return (
         <span>
-          ✅ Sell Order Filled! +{net.toFixed(2)} {orderResult.quoteSymbol} credited to your OrahDEX balance · view in Portfolio → DeFi
+          ✅ Sell Order Filled! +{net.toFixed(2)} {orderResult.quoteSymbol} credited to your Orah balance · view in Portfolio → DeFi
         </span>
       );
     })()}
@@ -144,7 +144,7 @@ This is the correct, final, wallet-free, 0.00-proof version.
 
 if (net > 0) {
   showToast(
-    `Sell Order Filled! +${net.toFixed(2)} ${orderResult.quoteSymbol} credited to your OrahDEX balance · view in Portfolio → DeFi`
+    `Sell Order Filled! +${net.toFixed(2)} ${orderResult.quoteSymbol} credited to your Orah balance · view in Portfolio → DeFi`
   );
 }
 

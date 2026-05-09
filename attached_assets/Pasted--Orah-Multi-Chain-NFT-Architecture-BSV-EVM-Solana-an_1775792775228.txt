@@ -1,4 +1,4 @@
-🧩 OrahDEX Multi‑Chain NFT Architecture
+🧩 Orah Multi‑Chain NFT Architecture
 
 (BSV + EVM + Solana + any future chain)
 
@@ -169,7 +169,7 @@ Collection Page
 
 6. Mythic Layer (Keeper Identity)
 
-This is where OrahDEX becomes unique.
+This is where Orah becomes unique.
 
 NFTs are not just JPEGs — they are Relics, Sigils, Keys, Roles, Titles, Artifacts.
 

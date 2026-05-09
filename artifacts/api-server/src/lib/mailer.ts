@@ -69,7 +69,7 @@ export async function sendMail(opts: {
     const transporter = createTransporter(cfg);
 
     const mailOptions: SendMailOptions = {
-      from: `"OrahDEX" <${opts.from || cfg.from}>`,
+      from: `"Orah" <${opts.from || cfg.from}>`,
       to: opts.to,
       subject: opts.subject,
       text: opts.text,

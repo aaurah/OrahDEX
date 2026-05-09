@@ -162,7 +162,7 @@ function ExchangeHotWalletCard() {
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <span>
                 This wallet was <strong className="text-foreground">auto-generated</strong> and its private key is encrypted in the database.
-                Send funds to these addresses on each chain — whenever a user withdraws, OrahDEX pays from here instantly.
+                Send funds to these addresses on each chain — whenever a user withdraws, Orah pays from here instantly.
                 Keep a reserve balance to cover expected withdrawals.
               </span>
             </div>

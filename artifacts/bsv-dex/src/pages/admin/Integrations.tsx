@@ -352,7 +352,7 @@ export function AdminIntegrations() {
       <Section
         icon={<BarChart3 className="w-4 h-4" />}
         title="Price Data — Sovereign Engine"
-        description="OrahDEX runs its own price engine (Binance public feed + WhatsOnChain + own order books). No external API key needed for core price data. Optional keys below enhance token discovery."
+        description="Orah runs its own price engine (Binance public feed + WhatsOnChain + own order books). No external API key needed for core price data. Optional keys below enhance token discovery."
         badge="Optional"
         badgeColor="bg-secondary text-muted-foreground border-border"
         configuredCount={countSet("dexscreener_api_key", "geckoterm_api_key")}
@@ -375,7 +375,7 @@ export function AdminIntegrations() {
           />
         </div>
         <p className="text-xs text-muted-foreground/70 pt-1">
-          Core price data is served from OrahDEX sovereign engine — Binance public ticker + WhatsOnChain BSV rate + own trades. Zero dependency on CoinGecko or CoinMarketCap.
+          Core price data is served from Orah sovereign engine — Binance public ticker + WhatsOnChain BSV rate + own trades. Zero dependency on CoinGecko or CoinMarketCap.
         </p>
       </Section>
 
@@ -469,7 +469,7 @@ export function AdminIntegrations() {
       <Section
         icon={<Mail className="w-4 h-4" />}
         title="Email / SMTP"
-        description="Send transactional emails from OrahDEX (password resets, trade confirmations, notifications)."
+        description="Send transactional emails from Orah (password resets, trade confirmations, notifications)."
         badge={form.smtp_host ? "Configured" : "Not set"}
         badgeColor={form.smtp_host ? "bg-green-400/10 text-green-400 border-green-400/20" : "bg-amber-400/10 text-amber-400 border-amber-400/20"}
         defaultOpen={!form.smtp_host}
@@ -507,13 +507,13 @@ export function AdminIntegrations() {
               {
                 label: "SendGrid",
                 color: "text-blue-400 border-blue-500/30 bg-blue-500/8 hover:bg-blue-500/15",
-                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orah.org" },
                 note: "Username = apikey\nPassword = your SG API key\nFree: 100 emails/day",
               },
               {
                 label: "Mailgun",
                 color: "text-red-400 border-red-500/30 bg-red-500/8 hover:bg-red-500/15",
-                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orah.org" },
                 note: "Username = your Mailgun SMTP login\nPassword = Mailgun SMTP password\nFree: 100 emails/day (sandbox)",
               },
               {
@@ -588,7 +588,7 @@ export function AdminIntegrations() {
             label="From Email Address"
             value={form.smtp_from}
             onChange={set("smtp_from")}
-            placeholder="noreply@orahdex.org"
+            placeholder="noreply@orah.org"
             type="email"
             hint="Sender address shown on all outgoing emails."
           />

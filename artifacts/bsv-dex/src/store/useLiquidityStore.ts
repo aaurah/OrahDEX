@@ -7,7 +7,7 @@ export interface PositionEntry {
   depositedAt: number;
   txHash?: string;
   chainId?: number;
-  /** OrahDEX LP token contract address (pair address) — set when AMM is deployed on-chain */
+  /** Orah LP token contract address (pair address) — set when AMM is deployed on-chain */
   lpTokenAddress?: string;
 }
 
@@ -93,6 +93,6 @@ export const useLiquidityStore = create<LiquidityState>()(
       getUserPositions: (walletAddress) =>
         get().positions[walletAddress] ?? {},
     }),
-    { name: "orahdex-liquidity-positions" }
+    { name: "orah-liquidity-positions" }
   )
 );

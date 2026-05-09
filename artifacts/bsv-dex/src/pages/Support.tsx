@@ -36,20 +36,20 @@ type PublicFaq = {
 const DEFAULT_FAQS: PublicFaq[] = [
   {
     id: 1,
-    question: "How do I connect my wallet to OrahDEX?",
-    answer: "Click the 'Connect Wallet' button in the top-right corner. OrahDEX supports MetaMask, WalletConnect, Coinbase Wallet, and BSV wallets. After connecting, you'll be able to trade immediately.",
+    question: "How do I connect my wallet to Orah?",
+    answer: "Click the 'Connect Wallet' button in the top-right corner. Orah supports MetaMask, WalletConnect, Coinbase Wallet, and BSV wallets. After connecting, you'll be able to trade immediately.",
     category: "wallet",
   },
   {
     id: 2,
-    question: "What fees does OrahDEX charge?",
+    question: "What fees does Orah charge?",
     answer: "Spot trading fees are 0.30% maker / 0.30% taker for Standard tier. Fees reduce for Guardian (0.25%), Elder (0.20%), and Archon (0.15%) keeper tiers. Futures trading starts at 0.02% maker / 0.04% taker.",
     category: "fees",
   },
   {
     id: 3,
     question: "How does BSV settlement work?",
-    answer: "All trades on OrahDEX settle on the Bitcoin SV blockchain. Settlement is typically completed in under 5 seconds at a cost of less than $0.001. You don't need BSV to trade — settlement is handled automatically.",
+    answer: "All trades on Orah settle on the Bitcoin SV blockchain. Settlement is typically completed in under 5 seconds at a cost of less than $0.001. You don't need BSV to trade — settlement is handled automatically.",
     category: "trading",
   },
   {
@@ -61,7 +61,7 @@ const DEFAULT_FAQS: PublicFaq[] = [
   {
     id: 5,
     question: "Is KYC required to trade?",
-    answer: "OrahDEX supports trading without KYC under certain thresholds. For larger volumes and fiat on-ramps, KYC verification may be required. Check the Platform Settings or contact support for current thresholds.",
+    answer: "Orah supports trading without KYC under certain thresholds. For larger volumes and fiat on-ramps, KYC verification may be required. Check the Platform Settings or contact support for current thresholds.",
     category: "kyc",
   },
   {
@@ -109,7 +109,7 @@ export function SupportPage() {
   const [faqs, setFaqs] = useState<PublicFaq[]>(DEFAULT_FAQS);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "support"; text: string; ts: number }[]>([
-    { role: "support", text: "Hi! Welcome to OrahDEX Support. How can I help you today?", ts: Date.now() },
+    { role: "support", text: "Hi! Welcome to Orah Support. How can I help you today?", ts: Date.now() },
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -317,9 +317,9 @@ export function SupportPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { icon: Mail, label: "General Support", value: "support@orahdex.org", href: "mailto:support@orahdex.org", color: "text-primary" },
-              { icon: Shield, label: "Security & Legal", value: "legal@orahdex.org", href: "mailto:legal@orahdex.org", color: "text-blue-400" },
-              { icon: Globe, label: "Press & Media", value: "press@orahdex.org", href: "mailto:press@orahdex.org", color: "text-purple-400" },
+              { icon: Mail, label: "General Support", value: "support@orah.org", href: "mailto:support@orah.org", color: "text-primary" },
+              { icon: Shield, label: "Security & Legal", value: "legal@orah.org", href: "mailto:legal@orah.org", color: "text-blue-400" },
+              { icon: Globe, label: "Press & Media", value: "press@orah.org", href: "mailto:press@orah.org", color: "text-purple-400" },
               { icon: MessageSquare, label: "Community", value: "Telegram Channel", href: "#", color: "text-teal-400" },
             ].map(ch => (
               <a
@@ -531,7 +531,7 @@ export function SupportPage() {
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/whitepaper" className="hover:text-foreground transition-colors">Whitepaper</Link>
           </div>
-          <p className="text-xs text-muted-foreground">© 2026 OrahDEX. All rights reserved.</p>
+          <p className="text-xs text-muted-foreground">© 2026 Orah. All rights reserved.</p>
         </div>
       </footer>
 
@@ -541,7 +541,7 @@ export function SupportPage() {
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-primary/10">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-sm font-semibold">OrahDEX Support</span>
+              <span className="text-sm font-semibold">Orah Support</span>
             </div>
             <button onClick={() => setChatOpen(false)} className="text-muted-foreground hover:text-foreground text-lg leading-none">×</button>
           </div>

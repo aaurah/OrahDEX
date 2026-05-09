@@ -65,7 +65,7 @@ const STEPS: Step[] = [
   {
     id: "price-apis",   step: 3,  label: "C",
     title: "Price Data — Sovereign Engine",
-    description: "OrahDEX uses its own price engine (Binance public feed + WhatsOnChain + own order books). No API key required.",
+    description: "Orah uses its own price engine (Binance public feed + WhatsOnChain + own order books). No API key required.",
     href: "/admin/integrations", icon: BarChart3, priority: "recommended",
     checkIntegrations: ["dexscreener_api_key", "geckoterm_api_key"],
   },
@@ -350,19 +350,19 @@ function StepCard({
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="Platform Name" fieldKey="site_name" value={val("site_name", "site")}
-              onChange={setDraftKey("site_name")} placeholder="OrahDEX" secret={false} />
+              onChange={setDraftKey("site_name")} placeholder="Orah" secret={false} />
             <ApiKeyField label="Platform Domain" fieldKey="site_domain" value={val("site_domain", "site")}
-              onChange={setDraftKey("site_domain")} placeholder="orahdex.org" secret={false} />
+              onChange={setDraftKey("site_domain")} placeholder="orah.org" secret={false} />
             <ApiKeyField label="Support Email" fieldKey="contact_email" value={val("contact_email", "site")}
-              onChange={setDraftKey("contact_email")} placeholder="support@orahdex.org" secret={false} type="email" />
+              onChange={setDraftKey("contact_email")} placeholder="support@orah.org" secret={false} type="email" />
             <ApiKeyField label="Legal Email" fieldKey="legal_email" value={val("legal_email", "site")}
-              onChange={setDraftKey("legal_email")} placeholder="legal@orahdex.org" secret={false} type="email" />
+              onChange={setDraftKey("legal_email")} placeholder="legal@orah.org" secret={false} type="email" />
             <ApiKeyField label="Privacy Email" fieldKey="privacy_email" value={val("privacy_email", "site")}
-              onChange={setDraftKey("privacy_email")} placeholder="privacy@orahdex.org" secret={false} type="email" />
+              onChange={setDraftKey("privacy_email")} placeholder="privacy@orah.org" secret={false} type="email" />
             <ApiKeyField label="Company Name" fieldKey="company_name" value={val("company_name", "site")}
-              onChange={setDraftKey("company_name")} placeholder="OrahDEX Ltd." secret={false} />
+              onChange={setDraftKey("company_name")} placeholder="Orah Ltd." secret={false} />
             <ApiKeyField label="Canonical URL" fieldKey="canonical_url" value={val("canonical_url", "site")}
-              onChange={setDraftKey("canonical_url")} placeholder="https://orahdex.org" secret={false} />
+              onChange={setDraftKey("canonical_url")} placeholder="https://orah.org" secret={false} />
           </InlineForm>
         );
       case "price-apis":
@@ -370,7 +370,7 @@ function StepCard({
           <InlineForm onSave={handleSave} loading={saving}>
             <div className="col-span-full rounded-xl bg-secondary/40 border border-border p-4 text-sm text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground">Sovereign Price Engine — Active</p>
-              <p>OrahDEX sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
+              <p>Orah sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
             </div>
             <ApiKeyField label="DexScreener API Key (optional)" fieldKey="dexscreener_api_key" value={val("dexscreener_api_key", "int")}
               onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" description="Enhances token discovery for Base chain and DEX pairs." />
@@ -390,7 +390,7 @@ function StepCard({
             <ApiKeyField label="SMTP Password / API Key" fieldKey="smtp_pass" value={val("smtp_pass", "int")}
               onChange={setDraftKey("smtp_pass")} placeholder="Your SMTP password or SendGrid API key" />
             <ApiKeyField label="From Address" fieldKey="smtp_from" value={val("smtp_from", "int")}
-              onChange={setDraftKey("smtp_from")} placeholder="no-reply@orahdex.org" secret={false} type="email" />
+              onChange={setDraftKey("smtp_from")} placeholder="no-reply@orah.org" secret={false} type="email" />
           </InlineForm>
         );
       case "fees":

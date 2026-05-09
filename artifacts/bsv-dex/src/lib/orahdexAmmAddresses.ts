@@ -1,32 +1,32 @@
 /**
- * OrahDEX AMM contract addresses per chain.
+ * Orah AMM contract addresses per chain.
  *
  * After deploying with `pnpm deploy:sepolia` (or any target network), the
- * script writes `artifacts/orahdex-contracts/deployments/<chainId>.json`.
- * Copy the factory + router addresses here and add the chainId to ORAH_AMM_CHAINS.
+ * script writes `artifacts/orah-contracts/deployments/<chainId>.json`.
+ * Copy the factory + router addresses here and add the chainId to ORAHDEX_AMM_CHAINS.
  *
  * These are the ONLY values the frontend needs at runtime — no ABIs imported
  * here, those live in useLpBalance.ts and onChainLiquidity.ts.
  */
 
-export interface OrahAmmConfig {
+export interface OrahDEXAmmConfig {
   factory: `0x${string}`;
   router:  `0x${string}`;
   weth:    `0x${string}`;
 }
 
 /**
- * Deployed OrahDEX AMM addresses keyed by EVM chain ID.
+ * Deployed Orah AMM addresses keyed by EVM chain ID.
  *
- * Chain IDs present here are treated as "OrahDEX-native" chains — the
- * liquidity UI will offer OrahRouter-based add/remove instead of Uni V3.
+ * Chain IDs present here are treated as "Orah-native" chains — the
+ * liquidity UI will offer OrahDEXRouter-based add/remove instead of Uni V3.
  *
  * TO ADD A NEW DEPLOYMENT:
- *   1. Run: pnpm --filter @workspace/orahdex-contracts deploy:<network>
+ *   1. Run: pnpm --filter @workspace/orah-contracts deploy:<network>
  *   2. Copy the printed factory + router addresses into this map.
- *   3. Add the chainId to ORAH_AMM_CHAINS below.
+ *   3. Add the chainId to ORAHDEX_AMM_CHAINS below.
  */
-export const ORAH_AMM_ADDRESSES: Record<number, OrahAmmConfig> = {
+export const ORAHDEX_AMM_ADDRESSES: Record<number, OrahDEXAmmConfig> = {
   // ── Sepolia testnet (chainId 11155111) — deployed 2026-04-16 ────────────
   11155111: {
     factory: "0x8c6bdD68078Eb20b99dd8E644fF347013415220c",
@@ -43,30 +43,30 @@ export const ORAH_AMM_ADDRESSES: Record<number, OrahAmmConfig> = {
 };
 
 /**
- * Set of chain IDs where OrahDEX AMM contracts are deployed.
- * Used as a fast lookup instead of iterating ORAH_AMM_ADDRESSES keys.
+ * Set of chain IDs where Orah AMM contracts are deployed.
+ * Used as a fast lookup instead of iterating ORAHDEX_AMM_ADDRESSES keys.
  */
-export const ORAH_AMM_CHAINS: ReadonlySet<number> =
-  new Set(Object.keys(ORAH_AMM_ADDRESSES).map(Number));
+export const ORAHDEX_AMM_CHAINS: ReadonlySet<number> =
+  new Set(Object.keys(ORAHDEX_AMM_ADDRESSES).map(Number));
 
 /**
- * Returns the OrahDEX AMM config for a chain, or undefined if not deployed.
+ * Returns the Orah AMM config for a chain, or undefined if not deployed.
  */
-export function getOrahAmm(chainId: number): OrahAmmConfig | undefined {
-  return ORAH_AMM_ADDRESSES[chainId];
+export function getOrahDEXAmm(chainId: number): OrahDEXAmmConfig | undefined {
+  return ORAHDEX_AMM_ADDRESSES[chainId];
 }
 
 /**
- * True when OrahDEX AMM contracts are deployed on the given chain.
+ * True when Orah AMM contracts are deployed on the given chain.
  */
-export function hasOrahAmm(chainId: number): boolean {
-  return ORAH_AMM_CHAINS.has(chainId);
+export function hasOrahDEXAmm(chainId: number): boolean {
+  return ORAHDEX_AMM_CHAINS.has(chainId);
 }
 
 // ─── Minimal ABI fragments for LP token & pair interactions ──────────────────
 // Embedded here so downstream hooks don't need to import full compile artifacts.
 
-export const ORAH_FACTORY_ABI = [
+export const ORAHDEX_FACTORY_ABI = [
   {
     name: "getPair",
     type: "function",
@@ -79,7 +79,7 @@ export const ORAH_FACTORY_ABI = [
   },
 ] as const;
 
-export const ORAH_PAIR_ABI = [
+export const ORAHDEX_PAIR_ABI = [
   {
     name: "balanceOf",
     type: "function",
@@ -135,7 +135,7 @@ export const ORAH_PAIR_ABI = [
   },
 ] as const;
 
-export const ORAH_ROUTER_ABI = [
+export const ORAHDEX_ROUTER_ABI = [
   {
     name: "addLiquidity",
     type: "function",

@@ -1,5 +1,5 @@
 /**
- * OrahDEX per-chain configuration.
+ * Orah per-chain configuration.
  * Single source of truth for chain metadata, RPC endpoints,
  * DEX router addresses, and token contract addresses.
  *
@@ -372,7 +372,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     },
   },
 
-  // ── Sepolia testnet — OrahDEX native AMM (OrahRouter02) ───────────────────
+  // ── Sepolia testnet — Orah native AMM (OrahDEXRouter02) ───────────────────
   11155111: {
     chainId:      11155111,
     name:         "Sepolia",
@@ -382,7 +382,7 @@ export const CHAINS: Record<number, ChainConfig> = {
     nativeSymbol: "ETH",
     nativeName:   "Ethereum",
     nativeColor:  "#8B5CF6",
-    router:       "0x03EdB4b914A0D05E6Aee0a8389A90eE33c8f664a",  // OrahRouter02
+    router:       "0x03EdB4b914A0D05E6Aee0a8389A90eE33c8f664a",  // OrahDEXRouter02
     tokens: {
       USDC: { symbol: "USDC", address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", decimals: 6 },
       USDT: { symbol: "USDT", address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", decimals: 6 },

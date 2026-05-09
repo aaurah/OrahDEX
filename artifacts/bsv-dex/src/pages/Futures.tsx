@@ -121,12 +121,12 @@ export function FuturesTrading() {
   const seoBase = rawSymbol.split("-")[0];
 
   const { address, network, balance, chainId: walletChainId, provider, internalBsvAddress, internalEvmAddress } = useWalletStore();
-  const isOrahWallet = provider === 'orah-wallet';
-  const usesApiBalance = isOrahWallet;
+  const isOrahDEXWallet = provider === 'orahdex-wallet';
+  const usesApiBalance = isOrahDEXWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
-  // Alt address for cross-network order visibility (BSV ↔ EVM Orah wallet users)
+  // Alt address for cross-network order visibility (BSV ↔ EVM OrahDEX wallet users)
   const altAddress = (internalEvmAddress && internalEvmAddress !== address)
     ? internalEvmAddress
     : (internalBsvAddress && internalBsvAddress !== address)
@@ -135,15 +135,15 @@ export function FuturesTrading() {
 
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
-    description: `Trade ${seoBase} perpetual futures on OrahDEX with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
-    keywords: `${seoBase} futures, ${seoBase} perpetual, ${seoBase} leverage, crypto futures, perp trading, ${rawSymbol}, OrahDEX futures`,
+    description: `Trade ${seoBase} perpetual futures on Orah with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
+    keywords: `${seoBase} futures, ${seoBase} perpetual, ${seoBase} leverage, crypto futures, perp trading, ${rawSymbol}, Orah futures`,
     url: `/futures/${rawSymbol}`,
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": `${seoBase} Perpetual Futures on OrahDEX`,
+      "name": `${seoBase} Perpetual Futures on Orah`,
       "description": `${seoBase} perpetual futures with up to 100x leverage, cross and isolated margin`,
-      "url": `https://orahdex.replit.app/futures/${rawSymbol}`
+      "url": `https://orah.replit.app/futures/${rawSymbol}`
     }
   });
 
@@ -778,7 +778,7 @@ export function FuturesTrading() {
                   <button
                     key={pct}
                     onClick={() => {
-                      // Use USDT ledger balance for Orah wallets, native balance for external EVM wallets
+                      // Use USDT ledger balance for OrahDEX wallets, native balance for external EVM wallets
                       const availBal = usesApiBalance ? apiUsdtBal : nativeBal;
                       const portion = availBal * (pct / 100);
                       const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;

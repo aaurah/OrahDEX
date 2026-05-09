@@ -107,7 +107,7 @@ export function AdminDashboard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold mb-1">Platform Overview</h2>
-          <p className="text-muted-foreground text-sm">Real-time Orah DEX system metrics and activity</p>
+          <p className="text-muted-foreground text-sm">Real-time OrahDEX DEX system metrics and activity</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0 pt-1">
           <RefreshCw className="w-3 h-3 animate-spin" style={{ animationDuration: "4s" }} />
@@ -172,7 +172,7 @@ export function AdminDashboard() {
               color: "text-green-400",
               bg: "bg-green-400/5 border-green-400/20",
               title: "Outbound Email Live",
-              detail: "Brevo SMTP confirmed. All platform mail sent from support@orahdex.org.",
+              detail: "Brevo SMTP confirmed. All platform mail sent from support@orah.org.",
             },
             {
               icon: "📬",
@@ -186,7 +186,7 @@ export function AdminDashboard() {
               color: "text-amber-400",
               bg: "bg-amber-400/5 border-amber-400/20",
               title: "Balance Display Fixed",
-              detail: "Orah wallet balance now always reads from the internal ledger — deducts correctly after every trade.",
+              detail: "OrahDEX wallet balance now always reads from the internal ledger — deducts correctly after every trade.",
             },
             {
               icon: "🔌",

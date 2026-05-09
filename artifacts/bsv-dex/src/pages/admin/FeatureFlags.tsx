@@ -52,7 +52,7 @@ const GROUPS: Group[] = [
     title: "DeFi & Earn", icon: "🏦",
     flags: [
       { id: "yield_farming",    label: "Yield Farming",         description: "LP token staking for additional rewards", beta: true },
-      { id: "staking",          label: "OrahToken Staking",     description: "Stake ORAH tokens for fee discounts and rewards", beta: true },
+      { id: "staking",          label: "OrahDEXToken Staking",     description: "Stake ORAHDEX tokens for fee discounts and rewards", beta: true },
       { id: "lending",          label: "Lending Protocol",      description: "Deposit assets to earn lending interest", beta: true },
       { id: "borrowing",        label: "Borrowing Protocol",    description: "Borrow against collateral", beta: true },
       { id: "nft_trading",      label: "NFT Trading",           description: "NFT marketplace integration", beta: true },
@@ -114,7 +114,7 @@ const GROUPS: Group[] = [
       { id: "push_notifications",   label: "Push Notifications",    description: "Browser push notifications for price alerts" },
       { id: "telegram_bot",         label: "Telegram Bot Alerts",   description: "Alert users via Telegram bot", beta: true },
       { id: "discord_bot",          label: "Discord Bot Alerts",    description: "Post trade alerts to Discord channels", beta: true },
-      { id: "native_chat",          label: "Native OrahDEX Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support, Ora AI)" },
+      { id: "native_chat",          label: "Native Orah Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support, Ora AI)" },
       { id: "global_chat_channel",  label: "Global Chat Channel",   description: "Show the Global channel in the chat widget — open to all connected wallets" },
       { id: "pair_chat_channel",    label: "Pair Chat Channels",    description: "Create per-pair chat channels auto-detected from the trading URL (e.g. #BTC-USDT)" },
       { id: "ai_chat_moderation",   label: "AI Moderation",         description: "Block phishing patterns, PII, scam links and seed-phrase leaks before messages are stored" },
@@ -145,18 +145,18 @@ const GROUPS: Group[] = [
 export function AdminFeatureFlags() {
   const { toast } = useToast();
   const [flags, setFlags] = useState<Record<string, boolean>>(() => {
-    try { return { ...DEFAULT_FLAGS, ...JSON.parse(localStorage.getItem("orahdex_features") ?? "{}") }; }
+    try { return { ...DEFAULT_FLAGS, ...JSON.parse(localStorage.getItem("orah_features") ?? "{}") }; }
     catch { return DEFAULT_FLAGS; }
   });
   const [saving, setSaving] = useState(false);
-  const [maintenanceMsg, setMaintenanceMsg] = useState("OrahDEX is currently undergoing scheduled maintenance. We'll be back shortly.");
+  const [maintenanceMsg, setMaintenanceMsg] = useState("Orah is currently undergoing scheduled maintenance. We'll be back shortly.");
 
   const toggle = (id: string) => setFlags(f => ({ ...f, [id]: !f[id] }));
 
   const save = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orahdex_features", JSON.stringify(flags));
+    localStorage.setItem("orah_features", JSON.stringify(flags));
     setSaving(false);
     toast({ title: "Feature flags saved", description: `${Object.values(flags).filter(Boolean).length} features enabled.` });
   };

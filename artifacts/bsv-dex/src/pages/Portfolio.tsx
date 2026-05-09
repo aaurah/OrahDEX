@@ -241,15 +241,15 @@ function useLivePrices() {
 export function Portfolio() {
   useSEO({
     title: "Portfolio — Track Your Crypto Assets",
-    description: "View and manage your entire crypto portfolio on OrahDEX. Track balances, P&L, trade history, and asset allocation across all connected wallets.",
-    keywords: "crypto portfolio, asset tracker, wallet balance, P&L tracker, trade history, OrahDEX portfolio",
+    description: "View and manage your entire crypto portfolio on Orah. Track balances, P&L, trade history, and asset allocation across all connected wallets.",
+    keywords: "crypto portfolio, asset tracker, wallet balance, P&L tracker, trade history, Orah portfolio",
     url: "/portfolio",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX Portfolio",
+      "name": "Orah Portfolio",
       "description": "Cryptocurrency portfolio tracker and asset manager",
-      "url": "https://orahdex.replit.app/portfolio"
+      "url": "https://orah.replit.app/portfolio"
     }
   });
 

@@ -132,7 +132,7 @@ router.get("/bsv/resolve-handle/:handle", async (req, res) => {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 4000);
-      const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } });
+      const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } });
       clearTimeout(timer);
       if (r.ok) {
         const data = await r.json() as any;
@@ -303,7 +303,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const wocRes = await fetch(
       `${BSV_NET.wocBase}/address/${bsvAddress}/balance`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
     );
     clearTimeout(timer);
 
@@ -343,7 +343,7 @@ router.get("/bsv/utxos/:address", async (req, res) => {
     const timer = setTimeout(() => ctrl.abort(), 8000);
     const wocRes = await fetch(
       `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
     );
     clearTimeout(timer);
     if (!wocRes.ok) { res.json([]); return; }
@@ -382,7 +382,7 @@ router.post("/bsv/broadcast", async (req, res) => {
     const timer = setTimeout(() => ctrl.abort(), 15_000);
     const wocRes = await fetch(BSV_NET.wocBroadcast, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "Orah/1.0" },
       body:    JSON.stringify({ txhex: rawHex }),
       signal:  ctrl.signal,
     });
@@ -517,7 +517,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b.sender ?? b.from ?? b.From ?? b.fromAddress ?? b.from_email ?? "unknown@unknown.com";
 
     const to: string =
-      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.org";
+      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orah.org";
 
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";
@@ -675,7 +675,7 @@ router.post("/user/api-keys", (req, res) => {
   const key = {
     id, wallet: wallet.toLowerCase(),
     name, permission, rateLimit: parseInt(rateLimit) || 100,
-    key: `orah_usr_${rand}`,
+    key: `orahdex_usr_${rand}`,
     calls24h: 0, status: "active",
     createdAt: new Date().toISOString().split("T")[0],
   };

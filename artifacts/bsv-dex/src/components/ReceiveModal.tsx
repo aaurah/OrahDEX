@@ -116,7 +116,7 @@ export function ReceiveModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
               <div className="p-6 space-y-5">
                 <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-                  <span className="text-primary font-semibold">Non-custodial.</span> Funds sent to this address go directly to your wallet. OrahDEX never holds your assets.
+                  <span className="text-primary font-semibold">Non-custodial.</span> Funds sent to this address go directly to your wallet. Orah never holds your assets.
                 </div>
 
                 <div className="relative">

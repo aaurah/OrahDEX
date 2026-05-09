@@ -162,7 +162,7 @@ function LandingView({
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Orah DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
+          OrahDEX DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
         </Text>
       </View>
     </ScrollView>
@@ -385,7 +385,7 @@ function ImportView({ connect, onDone }: { connect: any; onDone: () => void }) {
       <View style={styles.warnCard}>
         <Feather name="alert-triangle" size={14} color="#FBBF24" />
         <Text style={styles.warnText}>
-          Never enter your seed phrase on untrusted sites. Orah DEX never stores or transmits your phrase — all derivation is local.
+          Never enter your seed phrase on untrusted sites. OrahDEX DEX never stores or transmits your phrase — all derivation is local.
         </Text>
       </View>
 
@@ -442,7 +442,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Orah DEX never holds your funds. All trades settle directly on-chain.
+          OrahDEX DEX never holds your funds. All trades settle directly on-chain.
         </Text>
       </View>
     </ScrollView>

@@ -279,7 +279,7 @@ function LiquidityModal({
   const openWalletModal = useWalletModalStore((s) => s.open);
   const { addPosition, removePositionPct, getUserPositions } = useLiquidityStore();
   const isEvm = !address || network === "evm" || address?.startsWith("0x");
-  // Always check OrahDEX internal ledger balances — trading funds live here.
+  // Always check Orah internal ledger balances — trading funds live here.
   const { balances, refresh: refreshBackendBalances } = useBackendBalances(address);
   // Keep EVM hook alive to refresh wallet display after real on-chain txs.
   const { refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, chainId);
@@ -904,7 +904,7 @@ function Farming({ farmPools }: { farmPools: Array<typeof POOLS[0] & { userLp: n
         <Zap size={18} className="text-green-400 shrink-0 mt-0.5" />
         <div>
           <p className="text-xs font-semibold text-green-400">Yield Farming Active</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Stake your LP tokens to earn additional OrahDEX rewards on top of pool fees.</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Stake your LP tokens to earn additional Orah rewards on top of pool fees.</p>
         </div>
       </div>
 

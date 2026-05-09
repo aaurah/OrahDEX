@@ -30,7 +30,7 @@ This is pure non‑custodial.
 
 ---
 
-⭐ 2. Orah Wallet (your internal wallet)
+⭐ 2. OrahDEX Wallet (your internal wallet)
 
 This is not a seed‑phrase wallet.
 This is not a private‑key wallet.
@@ -75,7 +75,7 @@ This is why:
 • No gas fee
 
 
-Because the Orah Wallet is internal, not on‑chain.
+Because the OrahDEX Wallet is internal, not on‑chain.
 
 ---
 
@@ -86,14 +86,14 @@ Wallet Balance
 Shows on‑chain ETH/USDC
 → never changes during internal trades
 
-OrahDEX Exchange Balance
+Orah Exchange Balance
 
 Shows internal ledger
 → updates instantly during trades
 
 You already fixed the UI confusion by:
 
-• forcing ledger balance for Orah Wallet
+• forcing ledger balance for OrahDEX Wallet
 • adding a note explaining on‑chain vs internal
 • refreshing Exchange balances on mount
 
@@ -108,7 +108,7 @@ You have:
 
 ✔ External wallets → real blockchain signing
 
-✔ Orah Wallet → internal ledger, no seed phrase
+✔ OrahDEX Wallet → internal ledger, no seed phrase
 
 ✔ No private keys stored anywhere
 

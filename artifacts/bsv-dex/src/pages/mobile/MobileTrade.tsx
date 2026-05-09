@@ -254,8 +254,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
-  const isOrahWallet = provider === "orah-wallet";
-  const isExternalEvm = isEvm && !isOrahWallet;
+  const isOrahDEXWallet = provider === "orahdex-wallet";
+  const isExternalEvm = isEvm && !isOrahDEXWallet;
   const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
@@ -278,7 +278,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
     setApiBalancesLoading(false);
   }, []);
-  // Fetch internal exchange balance for ALL connected wallets — not just Orah.
+  // Fetch internal exchange balance for ALL connected wallets — not just OrahDEX.
   // External EVM wallets accumulate internal balance after exchange trades or
   // on-chain swap settlements. Without this, sell orders on cross-chain pairs
   // (e.g. EVM wallet selling BSV) are incorrectly blocked by the sell guard.
@@ -286,10 +286,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
+  // Only OrahDEX Wallet uses internal exchange ledger as the primary available balance source.
   // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
   // internal exchange balances for assets accumulated via exchange trades.
-  const usesApiBalance = isOrahWallet;
+  const usesApiBalance = isOrahDEXWallet;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -504,12 +504,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+          description: `+${receivedQty} ${receivedTok} credited to your Orah balance`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
+          body: `+${receivedQty} ${receivedTok} credited to your Orah balance · withdraw anytime`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -547,7 +547,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         title:       "Order Failed",
         description: code === "DEPOSIT_REQUIRED"
           ? (usesApiBalance
-            ? "Deposit funds to your OrahDEX trading balance before trading."
+            ? "Deposit funds to your Orah trading balance before trading."
             : "Deposit funds to your wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
           ? (usesApiBalance
@@ -571,9 +571,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const handleShare = async () => {
     const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
-    const text = `Trade ${symbol} on OrahDEX — Trade means DEX`;
+    const text = `Trade ${symbol} on Orah — Trade means DEX`;
     if (navigator.share) {
-      try { await navigator.share({ title: `OrahDEX — ${symbol}`, text, url }); } catch {}
+      try { await navigator.share({ title: `Orah — ${symbol}`, text, url }); } catch {}
       setShareCopied(false);
     } else {
       try { await navigator.clipboard.writeText(url); } catch {}
@@ -656,8 +656,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   useEffect(() => {
     if (!lastPrice) return;
     const sign = change >= 0 ? "▲" : "▼";
-    document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
-    return () => { document.title = "OrahDEX"; };
+    document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | Orah`;
+    return () => { document.title = "Orah"; };
   }, [lastPrice, change, base, quote]);
 
   // Quote-currency and cross-rate computations
@@ -729,7 +729,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const walletBaseBalance  = evmTokenBalances.length > 0 ? erc20BaseBalance  : (isNativeBase  ? walletBal : 0);
   const walletQuoteBalance = evmTokenBalances.length > 0 ? erc20QuoteBalance : (isNativeQuote ? walletBal  : 0);
 
-  // Orah Wallet users use the API ledger balance.
+  // OrahDEX Wallet users use the API ledger balance.
   // External wallets are on-chain-first: availability comes from wallet balances,
   // then open-order locks are subtracted client-side for accurate remaining size.
   const internalBaseBalance  = apiBalances[base]  ?? 0;
@@ -849,7 +849,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      const orderMsg = `Orah order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
       try {
         evmSignature = await signMessageAsync({ message: orderMsg });
       } catch (signErr: any) {
@@ -877,7 +877,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       stopPrice: useStop,
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
-      walletSource:   isOrahWallet ? "orah" : "external",
+      walletSource:   isOrahDEXWallet ? "orahdex" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
       evmSignature,
@@ -1484,7 +1484,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-emerald-300 font-semibold">Sent to your OrahDEX EVM wallet</p>
+                    <p className="text-[11px] text-emerald-300 font-semibold">Sent to your Orah EVM wallet</p>
                     <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
                       One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — ETH, BSC, Polygon, Arbitrum, Base, Avalanche, Linea, Scroll, Mantle and more.
                     </p>
@@ -1511,7 +1511,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-teal-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your OrahDEX BSV wallet</p>
+                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your Orah BSV wallet</p>
                     <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
                       {hasMobileSeparateBtcAddr
                         ? <>Your <span className="text-teal-300 font-medium">HD wallet</span> gives each chain its own BIP44 address — BSV, BTC, BCH &amp; SOL all separate.</>
@@ -1547,7 +1547,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-orange-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-orange-300 font-semibold">Sent to your OrahDEX BTC wallet</p>
+                    <p className="text-[11px] text-orange-300 font-semibold">Sent to your Orah BTC wallet</p>
                     <p className="text-[10px] text-orange-200/70 leading-relaxed mt-0.5">
                       Derived at <span className="text-orange-300 font-medium">m/44'/0'/0'/0/0</span> — compatible with any BIP44 wallet.
                     </p>
@@ -1570,7 +1570,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-violet-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-violet-300 font-semibold">Sent to your OrahDEX Solana wallet</p>
+                    <p className="text-[11px] text-violet-300 font-semibold">Sent to your Orah Solana wallet</p>
                     <p className="text-[10px] text-violet-200/70 leading-relaxed mt-0.5">
                       Derived via <span className="text-violet-300 font-medium">SLIP-0010 m/44'/501'/0'/0'</span> — Phantom-compatible.
                     </p>
@@ -1714,10 +1714,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
                           const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX balance`;
+                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your Orah balance`;
                         } else {
                           const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          return `+${creditedQty} ${orderResult.base} credited to your OrahDEX balance`;
+                          return `+${creditedQty} ${orderResult.base} credited to your Orah balance`;
                         }
                       })()
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
@@ -1752,7 +1752,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
                     ? (usesApiBalance
-                      ? `Deposit ${side === "sell" ? base : quote} to your OrahDEX trading balance first. Your exchange wallet must be funded before placing orders.`
+                      ? `Deposit ${side === "sell" ? base : quote} to your Orah trading balance first. Your exchange wallet must be funded before placing orders.`
                       : `Deposit ${side === "sell" ? base : quote} to your wallet first. On-chain funds are required before placing orders.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
                     ? (usesApiBalance

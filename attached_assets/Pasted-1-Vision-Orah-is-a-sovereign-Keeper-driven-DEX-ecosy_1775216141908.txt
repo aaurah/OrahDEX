@@ -1,13 +1,13 @@
 1. Vision
 
-OrahDex is a sovereign, Keeper‑driven DEX ecosystem where:
+Orah is a sovereign, Keeper‑driven DEX ecosystem where:
 
 • Identity is primitive: Keepers, not wallets, are the core actors.
 • Ritual is UX: Every swap, bridge, and position is a ceremonial act with clear stages.
 • Modularity is law: Spot, AMM, P2P, and cross‑chain bridges are composable modules, not monoliths.
 
 
-OrahDex is built to be:
+Orah is built to be:
 
 • Sovereign: No dependency on centralized order books or custodial bridges.
 • Extensible: New markets, chains, and Keeper rituals can be added without breaking the core.
@@ -39,7 +39,7 @@ OrahDex is built to be:
 
 3. Keeper registry and identity
 
-The Keeper Registry is the identity spine of OrahDex.
+The Keeper Registry is the identity spine of Orah.
 
 3.1 Design goals
 
@@ -96,7 +96,7 @@ interface IKeeperRegistry {
 }
 
 
-This registry becomes the canonical identity source for all OrahDex modules.
+This registry becomes the canonical identity source for all Orah modules.
 
 ---
 
@@ -185,7 +185,7 @@ This allows:
 
 pragma solidity ^0.8.20;
 
-contract OrahHtlcBridge {
+contract OrahDEXHtlcBridge {
     struct Lock {
         address sender;
         address recipient;
@@ -275,7 +275,7 @@ interface IERC20 {
 }
 
 
-On the BSV side, a corresponding HTLC script locks native BSV with the same hashlock/timelock. Relayers observe events on both chains and coordinate mint/burn of wrapped assets (e.g., wBSV) on OrahDex’s EVM‑compatible side.
+On the BSV side, a corresponding HTLC script locks native BSV with the same hashlock/timelock. Relayers observe events on both chains and coordinate mint/burn of wrapped assets (e.g., wBSV) on Orah’s EVM‑compatible side.
 
 ---
 
@@ -316,7 +316,7 @@ These intents are signed messages, matched off‑chain, and settled on‑chain v
 
 pragma solidity ^0.8.20;
 
-contract OrahP2PSettlement {
+contract OrahDEXP2PSettlement {
     struct Order {
         address maker;
         address tokenIn;

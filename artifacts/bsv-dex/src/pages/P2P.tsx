@@ -617,15 +617,15 @@ const FIATS: Fiat[] = ["USD", "EUR", "GBP", "AUD", "NGN", "INR", "BRL", "CAD", "
 export function P2P() {
   useSEO({
     title: "P2P Trading — Buy & Sell Crypto Peer-to-Peer",
-    description: "Buy and sell Bitcoin, Ethereum, BSV and more with 0 fees on OrahDEX P2P. Escrow-secured trades, 100+ payment methods, global merchants.",
-    keywords: "P2P crypto, peer to peer bitcoin, buy BTC, sell ETH, crypto OTC, escrow trading, zero fee P2P, OrahDEX P2P",
+    description: "Buy and sell Bitcoin, Ethereum, BSV and more with 0 fees on Orah P2P. Escrow-secured trades, 100+ payment methods, global merchants.",
+    keywords: "P2P crypto, peer to peer bitcoin, buy BTC, sell ETH, crypto OTC, escrow trading, zero fee P2P, Orah P2P",
     url: "/p2p",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX P2P Trading",
+      "name": "Orah P2P Trading",
       "description": "Peer-to-peer cryptocurrency marketplace with escrow-protected trades",
-      "url": "https://orahdex.replit.app/p2p"
+      "url": "https://orah.replit.app/p2p"
     }
   });
 
@@ -898,7 +898,7 @@ export function P2P() {
                 Trade Crypto Peer-to-Peer
               </h1>
               <p className="text-muted-foreground text-sm lg:text-base">
-                Buy and sell directly with verified traders. Funds secured by OrahDEX escrow.
+                Buy and sell directly with verified traders. Funds secured by Orah escrow.
               </p>
             </div>
             <button
@@ -1417,7 +1417,7 @@ export function P2P() {
             {[
               { icon: Send,         title: "Create an Offer",    desc: "Choose what you give and what you want. Set your own rate. Optionally restrict to a specific wallet address for a private trade." },
               { icon: Copy,         title: "Share the Link",     desc: "Copy the unique trade link and send it to your counterparty — or leave the offer open for anyone in the market to fill." },
-              { icon: CheckCircle2, title: "Instant Settlement", desc: "When filled, both sides settle atomically on OrahDEX internal ledger. No slippage, no gas, instant confirmation." },
+              { icon: CheckCircle2, title: "Instant Settlement", desc: "When filled, both sides settle atomically on Orah internal ledger. No slippage, no gas, instant confirmation." },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4 p-5 bg-card border border-border rounded-2xl">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -1733,7 +1733,7 @@ export function P2P() {
         {/* Trust badges */}
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {[
-            { icon: Lock, title: "Escrow Protection", desc: "All crypto is held in OrahDEX smart-contract escrow until payment is confirmed by both parties." },
+            { icon: Lock, title: "Escrow Protection", desc: "All crypto is held in Orah smart-contract escrow until payment is confirmed by both parties." },
             { icon: Shield, title: "Verified Traders", desc: "Our verification system ensures you trade with trustworthy counterparties with proven track records." },
             { icon: MessageSquare, title: "Real-time Chat", desc: "Built-in encrypted chat for every trade. Resolve disputes quickly with our moderation team." },
           ].map(({ icon: Icon, title, desc }) => (

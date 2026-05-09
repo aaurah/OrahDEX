@@ -15,7 +15,7 @@ You can hand this to engineers as the blueprint.
 
 Services:
 
-• API Gateway – api.orahdex.org
+• API Gateway – api.orah.org
 • Core DEX Backend – markets, trades, orderbook, candles, wallets
 • Liquidity Bot Service – market making, throttled
 • TradingView Datafeed Service – symbols, history, streaming
@@ -28,7 +28,7 @@ Services:
 
 2. Core REST API (frontend ↔ backend)
 
-Base: https://api.orahdex.org/v1
+Base: https://api.orah.org/v1
 
 Auth:
 
@@ -123,7 +123,7 @@ With 3s timeout enforced.
 
 3. WebSocket API (live data)
 
-Base: wss://api.orahdex.org/ws
+Base: wss://api.orah.org/ws
 
 Channels:
 
@@ -159,7 +159,7 @@ Orderbook update:
 
 4. TradingView datafeed service
 
-Base: https://tv.orahdex.org
+Base: https://tv.orah.org
 
 Implements TradingView’s UDF‑style endpoints.
 
@@ -174,7 +174,7 @@ GET /config
   "supports_timescale_marks": false,
   "supports_time": true,
   "exchanges": [
-    {"value": "OrahDEX", "name": "OrahDEX", "desc": "OrahDEX Sovereign DEX"}
+    {"value": "Orah", "name": "Orah", "desc": "Orah Sovereign DEX"}
   ],
   "supported_resolutions": ["1", "5", "15", "60", "240", "1D"]
 }
@@ -190,7 +190,7 @@ GET /symbols?symbol=BSVUSDT
   "description": "BSV / USDT",
   "type": "crypto",
   "session": "24x7",
-  "exchange": "OrahDEX",
+  "exchange": "Orah",
   "minmov": 1,
   "pricescale": 10000,
   "has_intraday": true,
@@ -201,7 +201,7 @@ GET /symbols?symbol=BSVUSDT
 
 4.3 /search
 
-GET /search?query=BSV&type=crypto&exchange=OrahDEX
+GET /search?query=BSV&type=crypto&exchange=Orah
 
 Returns list of matching symbols.
 
@@ -232,7 +232,7 @@ GET /time → returns current server unix time.
 
 TradingView’s widget can use your WebSocket:
 
-• On subscribeBars, you hook into wss://api.orahdex.org/ws
+• On subscribeBars, you hook into wss://api.orah.org/ws
 • Push candle updates as they form.
 
 
@@ -246,7 +246,7 @@ Web app:
 • For charts, embed TradingView widget with custom datafeed:
 
 
-const datafeed = new Datafeeds.UDFCompatibleDatafeed("https://tv.orahdex.org");
+const datafeed = new Datafeeds.UDFCompatibleDatafeed("https://tv.orah.org");
 
 new TradingView.widget({
   symbol: "BSVUSDT",
@@ -271,8 +271,8 @@ Mobile app:
 
 6. Admin panel (trading + system control)
 
-Base: https://admin.orahdex.org
-Backend: https://api.orahdex.org/admin
+Base: https://admin.orah.org
+Backend: https://api.orah.org/admin
 
 6.1 Auth
 

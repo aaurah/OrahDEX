@@ -813,7 +813,7 @@ importers:
         specifier: 'catalog:'
         version: 4.3.6
 
-  artifacts/orahdex-contracts:
+  artifacts/orah-contracts:
     devDependencies:
       '@nomicfoundation/hardhat-ethers':
         specifier: ^3.0.8

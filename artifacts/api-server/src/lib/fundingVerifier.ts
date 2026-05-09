@@ -1,5 +1,5 @@
 /**
- * fundingVerifier.ts — Funding invariant enforcement for OrahDEX orders
+ * fundingVerifier.ts — Funding invariant enforcement for Orah orders
  *
  * The central enforcement point for the rule:
  *   "No order reaches the matching engine without verifiable funding."
@@ -30,7 +30,7 @@
  *               For BSV: uses utxoRef as proof.
  *               The API ledger is NOT debited for external wallets.
  *
- *   "orah"      API-managed wallet with real deposited funds.
+ *   "orahdex"      API-managed wallet with real deposited funds.
  *               Locks from the API ledger.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ async function verifySpotFunding(
 
     // 2. Require wallet signature + accept on-chain balance as proof of funding.
     // External EVM wallets must sign the order intent (personal_sign) to authorise
-    // on-chain settlement via the OrahDEX HTLC contract.
+    // on-chain settlement via the Orah HTLC contract.
     const onChain = reportedBalance ?? 0;
     if (onChain >= needed) {
       if (!signature) {
@@ -151,7 +151,7 @@ async function verifySpotFunding(
     };
   }
 
-  // ── Orah internal ledger ────────────────────────────────────────────────
+  // ── OrahDEX internal ledger ────────────────────────────────────────────────
   // Lock funds from user_balances — returns INSUFFICIENT_FUNDS if balance is too low.
   try {
     await lockForOrder({ walletAddress, asset, amount });

@@ -2,7 +2,7 @@
  * dex.ts — Sovereign DEX market data routes
  *
  * All price and market data now sourced from:
- *   - OrahDEX own markets DB table
+ *   - Orah own markets DB table
  *   - Binance public REST API (no key required) — reference feed
  *   - WhatsOnChain public API — BSV price
  *
@@ -147,10 +147,10 @@ router.get("/dex/exchanges", async (_req, res) => {
   const btcPrice = await fetchBtcUsd();
 
   const exchanges = [
-    // OrahDEX always pinned first
+    // Orah always pinned first
     {
-      id: "orahdex", name: "OrahDEX", url: "https://orahdex.org",
-      image: "/orahdex-logo.jpg", country: null, yearEstablished: 2026,
+      id: "orah", name: "Orah", url: "https://orah.org",
+      image: "/orah-logo.jpg", country: null, yearEstablished: 2026,
       type: "dex", chain: "BSV", rank: 1, trustScore: 9,
       tradeVolume24hBtc: 120,
       tradeVolume24hUsd: 120 * btcPrice,
@@ -184,7 +184,7 @@ router.get("/dex/exchanges", async (_req, res) => {
     dexCount:       dexExchanges.length,
     cexCount:       cexExchanges.length,
     exchanges,
-    source:         "orahdex-sovereign",
+    source:         "orah-sovereign",
   };
 
   exchangeCache = { data: result, ts: Date.now() };
@@ -252,7 +252,7 @@ router.get("/coins/markets", async (req, res) => {
       const low24h    = parseFloat(m.low24h  ?? "0");
 
       coins.push({
-        id:            `orah-${m.baseAsset.toLowerCase()}`,
+        id:            `orahdex-${m.baseAsset.toLowerCase()}`,
         rank,
         name:          m.baseAsset,
         symbol:        m.baseAsset,
@@ -264,7 +264,7 @@ router.get("/coins/markets", async (req, res) => {
         high24h:       high24h || usdPrice * 1.02,
         low24h:        low24h  || usdPrice * 0.98,
         circulatingSupply: 0,
-        source:        "orahdex",
+        source:        "orah",
       });
       rank++;
     }
@@ -288,15 +288,15 @@ router.get("/coins/:id/tickers", async (req, res) => {
   if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
 
   try {
-    const symbol = id.replace(/^orah-/, "").toUpperCase();
+    const symbol = id.replace(/^orahdex-/, "").toUpperCase();
     const markets = await db
       .select()
       .from(marketsTable)
       .where(eq(marketsTable.baseAsset, symbol));
 
     const tickers = markets.map(m => ({
-      exchangeId:    "orahdex",
-      exchangeName:  "OrahDEX",
+      exchangeId:    "orah",
+      exchangeName:  "Orah",
       exchangeLogo:  null,
       base:          m.baseAsset,
       target:        m.quoteAsset,
@@ -304,14 +304,14 @@ router.get("/coins/:id/tickers", async (req, res) => {
       volume:        parseFloat(m.volume24h ?? "0"),
       spread:        null,
       trustScore:    "green",
-      tradeUrl:      `https://orahdex.org/spot/${m.baseAsset}-${m.quoteAsset}`,
+      tradeUrl:      `https://orah.org/spot/${m.baseAsset}-${m.quoteAsset}`,
       convertedLast: parseFloat(m.lastPrice ?? "0"),
       convertedVol:  parseFloat(m.volume24h ?? "0"),
       isAnomaly:     false,
       isStale:       false,
     }));
 
-    const result = { coinId: id, name: symbol, tickers, source: "orahdex-sovereign" };
+    const result = { coinId: id, name: symbol, tickers, source: "orah-sovereign" };
     tickerCache.set(id, { data: result, ts: Date.now() });
     return res.json(result);
   } catch (err: any) {

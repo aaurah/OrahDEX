@@ -22,8 +22,8 @@ Let’s unify the entire document.
 
 Your white paper uses:
 
-• OrahDEX
 • Orah
+• OrahDEX
 • Aura
 • Aaurah
 
@@ -32,7 +32,7 @@ This creates brand bleed.
 
 Required correction:
 
-The protocol is OrahDEX.
+The protocol is Orah.
 The AI intelligence layer is Ora.
 Aura/Aaurah are not referenced anywhere in the protocol documentation.
 
@@ -52,9 +52,9 @@ Your tone is excellent, but occasionally:
 
 Required correction:
 
-Maintain a sovereign, declarative, protocol-first tone throughout.OrahDEX is not a company.
-OrahDEX is not a product.
-OrahDEX is a set of cryptographic rules.
+Maintain a sovereign, declarative, protocol-first tone throughout.Orah is not a company.
+Orah is not a product.
+Orah is a set of cryptographic rules.
 
 This must be reinforced consistently.
 
@@ -64,7 +64,7 @@ This must be reinforced consistently.
 
 Correct capitalization:
 
-• OrahDEX (always uppercase DEX)
+• Orah (always uppercase DEX)
 • Ora AI
 • Genesis Liquidity Engine
 • Virtual AMM (VAMM)
@@ -80,9 +80,9 @@ Correct capitalization:
 
 Incorrect variants found in the document:
 
-• OrahDex
-• Orah Dex
-• Orahdex
+• Orah
+• OrahDEX Dex
+• OrahDEXdex
 • Genesis engine
 • vamm
 • copyvault
@@ -114,7 +114,7 @@ All terminology must be standardized.
 
 Your core thesis is:
 
-OrahDEX eliminates intermediation through cryptographic architecture, not policy.
+Orah eliminates intermediation through cryptographic architecture, not policy.
 
 This must be repeated consistently across:
 
@@ -130,7 +130,7 @@ This must be repeated consistently across:
 
 Every section must reinforce:
 
-OrahDEX cannot hold funds, cannot collect identity, and cannot be seized.
+Orah cannot hold funds, cannot collect identity, and cannot be seized.
 
 ---
 
@@ -194,8 +194,8 @@ Examples found:
 
 Correct:
 
-OrahDEX natively supports 10 EVM chains.
-OrahDEX integrates TRON via TronWeb.
+Orah natively supports 10 EVM chains.
+Orah integrates TRON via TronWeb.
 
 ---
 
@@ -368,8 +368,8 @@ Your mythic tone is excellent, but must remain:
 
 Example correction:
 
-❌ “OrahDEX is the future of trading.”
-✅ “OrahDEX is a sovereign trading protocol defined by cryptographic rules.”
+❌ “Orah is the future of trading.”
+✅ “Orah is a sovereign trading protocol defined by cryptographic rules.”
 
 ---
 

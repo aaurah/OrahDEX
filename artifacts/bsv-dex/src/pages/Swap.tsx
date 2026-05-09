@@ -7,7 +7,7 @@
  *   - Chains: Ethereum, Base, BSC, Arbitrum, Optimism, Polygon, Avalanche
  *
  * MODE 2: "Exchange" — custodial internal order matching (existing system).
- *   - Fast, no gas, uses OrahDEX internal ledger balances
+ *   - Fast, no gas, uses Orah internal ledger balances
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -32,7 +32,7 @@ import type { Account } from "viem";
 import { writeContract as coreWriteContract } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
-import { getViemAccountForOrahWallet } from "@/lib/passkeyWallet";
+import { getViemAccountForOrahDEXWallet } from "@/lib/passkeyWallet";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
@@ -355,7 +355,7 @@ async function executeSwap(
   });
 }
 
-// ─── Swap executor (Orah passkey wallet — uses local viem walletClient) ───────
+// ─── Swap executor (OrahDEX passkey wallet — uses local viem walletClient) ───────
 
 async function executeSwapWithLocalAccount(
   chainId: SupportedChainId,
@@ -507,14 +507,14 @@ function TokenPicker({
 const GAS_PRESETS_USD = [2, 5, 10, 20];
 
 function GasTopUpPanel({
-  chainId, chainName, nativeSymbol, gasBalance, address, isOrahWallet, onSuccess, tokens,
+  chainId, chainName, nativeSymbol, gasBalance, address, isOrahDEXWallet, onSuccess, tokens,
 }: {
   chainId: SupportedChainId;
   chainName: string;
   nativeSymbol: string;
   gasBalance: number | null;
   address: string | null;
-  isOrahWallet: boolean;
+  isOrahDEXWallet: boolean;
   onSuccess: () => void;
   tokens: Token[];
 }) {
@@ -573,9 +573,9 @@ function GasTopUpPanel({
       const amtIn     = parseUnits(presetUSD.toString(), stablecoin.decimals);
       const amtOutMin = gasQuote.amountOut * 95n / 100n;
       let hash: `0x${string}`;
-      if (isOrahWallet) {
+      if (isOrahDEXWallet) {
         toast({ title: "Biometric authentication", description: "Authenticate with your passkey to top up gas…" });
-        const account = await getViemAccountForOrahWallet(address as `0x${string}`);
+        const account = await getViemAccountForOrahDEXWallet(address as `0x${string}`);
         hash = await executeSwapWithLocalAccount(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`, account, chainName, nativeSymbol);
       } else {
         hash = await executeSwap(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`);
@@ -1177,7 +1177,7 @@ function ExchangeSwapPanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-bold">
           <RefreshCw className="w-4 h-4 text-primary" />
-          OrahDEX Exchange
+          Orah Exchange
         </div>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
       </div>
@@ -1351,7 +1351,7 @@ function ExchangeSwapPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/60 text-center">
-        Instant · No gas · 0.3% fee · Uses OrahDEX internal balance
+        Instant · No gas · 0.3% fee · Uses Orah internal balance
       </p>
     </div>
   );
@@ -1360,17 +1360,17 @@ function ExchangeSwapPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Swap — OrahDEX", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
+  useSEO({ title: "Swap — Orah", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
   const [, setLocation] = useLocation();
   const isMobile = useIsMobile();
 
   const { address, chainId: walletChainId, provider } = useWalletStore();
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
-  // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
+  // OrahDEX passkey wallets sign transactions via biometric auth — no seed phrase stored.
   const [chainId,   setChainId]   = useState<SupportedChainId>(1);
   const tokens = TOKENS[chainId];
 
@@ -1496,12 +1496,12 @@ export function Swap() {
 
       let hash: `0x${string}`;
 
-      if (isOrahWallet) {
+      if (isOrahDEXWallet) {
         // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
         toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
         let account: Account;
         try {
-          account = await getViemAccountForOrahWallet(address);
+          account = await getViemAccountForOrahDEXWallet(address);
         } catch (authErr: any) {
           const msg: string = authErr?.message ?? "";
           if (msg.startsWith("NO_PASSKEY_WALLET")) {
@@ -1779,7 +1779,7 @@ export function Swap() {
                 </button>
               ) : (
                 <>
-                  {isOrahWallet && (
+                  {isOrahDEXWallet && (
                     <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-400">
                       <Fingerprint className="w-3.5 h-3.5 shrink-0" />
                       <span>Your passkey will authenticate this swap — no seed phrase needed.</span>
@@ -1792,7 +1792,7 @@ export function Swap() {
                   >
                     {swapping
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping…</>
-                      : isOrahWallet
+                      : isOrahDEXWallet
                         ? <><Fingerprint className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>
                         : <><Zap className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>}
                   </button>
@@ -1805,7 +1805,7 @@ export function Swap() {
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name} via
-                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
+                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}.{isOrahDEXWallet ? " Your passkey signs the transaction — Orah never holds your funds or keys." : " Your wallet signs the transaction directly — Orah never holds your funds."}
               </span>
             </div>
           </>
@@ -1813,7 +1813,7 @@ export function Swap() {
         {/* Divider */}
         <div className="flex items-center gap-3">
           <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap via OrahDEX Exchange</span>
+          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap via Orah Exchange</span>
           <div className="flex-1 h-px bg-border/40" />
         </div>
 

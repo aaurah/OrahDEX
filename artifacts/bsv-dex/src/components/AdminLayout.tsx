@@ -16,7 +16,7 @@ import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { useAccount, useChainId, useBalance, useDisconnect } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { cn } from "@/lib/utils";
-import { BrandLogo, OrahInline } from "./BrandLogo";
+import { BrandLogo, OrahDEXInline } from "./BrandLogo";
 
 const CHAIN_NAMES: Record<number, { name: string; color: string; short: string }> = {
   1:      { name: "Ethereum",    color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "ETH" },
@@ -474,7 +474,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <h1 className="text-sm font-bold text-foreground">
                 {NAV_GROUPS.flatMap(g => g.items).find(isActive)?.label ?? "Admin Panel"}
               </h1>
-              <p className="text-xs text-muted-foreground flex items-center gap-1"><OrahInline className="text-xs" /> Platform Management</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><OrahDEXInline className="text-xs" /> Platform Management</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

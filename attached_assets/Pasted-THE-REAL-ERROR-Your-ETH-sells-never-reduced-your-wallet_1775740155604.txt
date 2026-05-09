@@ -1,9 +1,9 @@
 THE REAL ERROR: Your ETH sells never reduced your wallet ETH.
 
-In your OrahDEX screenshots:
+In your Orah screenshots:
 
 • You sold 0.0058 ETH multiple times
-• You received 52.55 USDT in OrahDEX Balance
+• You received 52.55 USDT in Orah Balance
 • Your wallet ETH never decreased
 • Your external wallet (auragroup) still shows 0.006 ETH
 
@@ -26,10 +26,10 @@ This is the core accounting bug.
 
 🔥 THE PROOF (from your screenshots)
 
-Screenshot 1 (OrahDEX Portfolio)
+Screenshot 1 (Orah Portfolio)
 
 • Wallet ETH: 0.0058 ETH
-• OrahDEX Balance: 52.55 USDT
+• Orah Balance: 52.55 USDT
 
 
 Screenshot 2 (Orders)
@@ -49,7 +49,7 @@ Screenshot 3 (External Wallet)
 This means:
 
 Your trades are not actually moving tokens.
-They are only updating the internal OrahDEX ledger.
+They are only updating the internal Orah ledger.
 
 This is the error.
 
@@ -100,7 +100,7 @@ This is why:
 
 🛠️ THE FIX (you must choose one of these two models)
 
-You must decide which model OrahDEX actually is:
+You must decide which model Orah actually is:
 
 ---
 
@@ -122,11 +122,11 @@ Then you must:
 
 1. NEVER show wallet ETH as “sellable”
 
-Only show OrahDEX ETH balance, not wallet ETH.
+Only show Orah ETH balance, not wallet ETH.
 
-2. Move ETH into OrahDEX before trading
+2. Move ETH into Orah before trading
 
-User must “Deposit to OrahDEX” first.
+User must “Deposit to Orah” first.
 
 3. Wallet ETH must not be used for trading
 

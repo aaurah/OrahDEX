@@ -105,15 +105,15 @@ const ALL_MOCK = () => [
 export function Markets() {
   useSEO({
     title: "Crypto Markets — 500+ Trading Pairs · Every Coin",
-    description: "Trade every cryptocurrency on OrahDEX — 500+ spot pairs across BTC, ETH, SOL, all Layer 1s, Layer 2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20 & more. Live prices from CoinGecko.",
-    keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, OrahDEX markets",
+    description: "Trade every cryptocurrency on Orah — 500+ spot pairs across BTC, ETH, SOL, all Layer 1s, Layer 2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20 & more. Live prices from CoinGecko.",
+    keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, Orah markets",
     url: "/",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "ItemList",
-      "name": "OrahDEX Cryptocurrency Markets",
-      "description": "Live cryptocurrency trading pairs on OrahDEX",
-      "url": "https://orahdex.replit.app/"
+      "name": "Orah Cryptocurrency Markets",
+      "description": "Live cryptocurrency trading pairs on Orah",
+      "url": "https://orah.replit.app/"
     }
   });
 
