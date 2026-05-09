@@ -26,7 +26,14 @@ const CATEGORIES = [
   { value: "other",      label: "Other" },
 ];
 
-const DEFAULT_FAQS = [
+type PublicFaq = {
+  id: number;
+  question: string;
+  answer: string;
+  category: string;
+};
+
+const DEFAULT_FAQS: PublicFaq[] = [
   {
     id: 1,
     question: "How do I connect my wallet to OrahDEX?",
@@ -64,13 +71,6 @@ const DEFAULT_FAQS = [
     category: "trading",
   },
 ];
-
-type PublicFaq = {
-  id: number;
-  question: string;
-  answer: string;
-  category: string;
-};
 
 function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
@@ -125,9 +125,13 @@ export function SupportPage() {
         const normalized = data
           .filter((row): row is PublicFaq => (
             typeof row?.id === "number"
+            && Number.isFinite(row.id)
             && typeof row?.question === "string"
+            && row.question.trim().length > 0
             && typeof row?.answer === "string"
+            && row.answer.trim().length > 0
             && typeof row?.category === "string"
+            && row.category.trim().length > 0
           ));
         if (import.meta.env.DEV && normalized.length !== data.length) {
           console.warn(`Filtered ${data.length - normalized.length} malformed FAQ item(s) from /api/support/faqs.`);
