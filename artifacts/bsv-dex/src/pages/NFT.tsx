@@ -163,22 +163,22 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, balance: storeBalance, provider, chainId } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
+  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, isEvm ? (chainId ?? 1) : null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
   const availableBsvNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
   const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
   const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -1055,19 +1055,19 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
 
 function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose: () => void; initialMode?: "buy" | "sell" }) {
   const [mode, setMode] = useState<"buy" | "sell">(initialMode);
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, balance: storeBalance, provider, chainId } = useWalletStore();
   const [, navigate] = useLocation();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
   const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances();
+  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, isEvm ? (chainId ?? 1) : null);
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
   const availableNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? parseFloat(nativeEvmBalance.amount) || 0 : 0)
+    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
   const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
   const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${parseFloat(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
   const isBsvMint = !isEvm || post.mint_currency === "BSV";

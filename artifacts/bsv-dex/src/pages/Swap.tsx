@@ -256,8 +256,8 @@ async function tryQuoteOnRpc(
         functionName: "quoteExactInputSingle",
         args: [{ tokenIn, tokenOut, amountIn, fee: fee as 100|500|3000|10000, sqrtPriceLimitX96: 0n }],
       });
-      if ((result as bigint[])[0] > 0n) {
-        return { amountOut: (result as bigint[])[0], gasEstimate: (result as bigint[])[3], fee };
+      if (result[0] > 0n) {
+        return { amountOut: result[0], gasEstimate: result[3], fee };
       }
     } catch {}
   }
@@ -305,6 +305,7 @@ async function executeSwap(
   const routerAddr = SWAP_ROUTER[chainId];
   const weth       = WETH[chainId];
   const config     = getWagmiConfig();
+  if (!config) throw new Error("Wagmi config not initialized");
   const tokenIn    = fromToken.isNative ? weth : fromToken.address;
   const tokenOut   = toToken.isNative   ? weth : toToken.address;
   const isEthIn    = fromToken.isNative;

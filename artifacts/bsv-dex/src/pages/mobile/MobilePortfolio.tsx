@@ -201,7 +201,7 @@ const POOL_LABELS_MOBILE: Record<string, string> = {
   "jst-usdt":  "JST / USDT",  "trx-btc":   "TRX / BTC",
 };
 
-interface MarketRow { symbol: string; baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+interface MarketRow { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; }
 
 function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({

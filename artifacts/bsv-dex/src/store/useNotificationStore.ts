@@ -11,6 +11,7 @@ export type NotifType =
   | "wallet_connected"
   | "wallet_disconnected"
   | "withdrawal"
+  | "deposit"
   | "liquidity"
   | "support"
   | "support_reply"
