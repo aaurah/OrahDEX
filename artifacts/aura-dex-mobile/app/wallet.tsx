@@ -30,9 +30,10 @@ const BSV_WALLETS = [
   { id: "yours", name: "Yours Wallet", icon: "💛", desc: "Open-source BSV wallet", network: "bsv" as const },
 ];
 
-type View = "landing" | "create" | "import" | "connect";
+type WalletView = "landing" | "create" | "import" | "connect";
 type ConnectTab = "evm" | "bsv";
 type WalletNetwork = "evm" | "bsv";
+type WalletOption = (typeof EVM_WALLETS)[number] | (typeof BSV_WALLETS)[number];
 
 function generateAddress(network: WalletNetwork): string {
   const hex = () => Math.floor(Math.random() * 16).toString(16);
@@ -44,7 +45,7 @@ function generateAddress(network: WalletNetwork): string {
 export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { connect, wallet, disconnect } = useWallet();
-  const [view, setView] = useState<View>("landing");
+  const [view, setView] = useState<WalletView>("landing");
 
   const handleClose = () => router.back();
 
@@ -85,7 +86,7 @@ export default function WalletScreen() {
 
 function LandingView({
   onSelect, wallet, disconnect,
-}: { onSelect: (v: View) => void; wallet: any; disconnect: () => void }) {
+}: { onSelect: (v: WalletView) => void; wallet: any; disconnect: () => void }) {
   return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 12, paddingBottom: 40 }}>
       <Text style={styles.landingSubtitle}>Non-custodial · On-chain settlement · No registration</Text>
@@ -107,7 +108,7 @@ function LandingView({
 
       {[
         {
-          view: "create" as View,
+          view: "create" as WalletView,
           icon: "plus-circle", iconColor: C.primary, bgColor: C.primary + "18",
           title: "Create New Wallet",
           desc: "Generate a new wallet with a secure 12 or 24-word seed phrase. Works on BSV and EVM chains.",
@@ -115,7 +116,7 @@ function LandingView({
           tagColor: C.primary,
         },
         {
-          view: "import" as View,
+          view: "import" as WalletView,
           icon: "download", iconColor: "#A78BFA", bgColor: "#7C3AED18",
           title: "Import Existing Wallet",
           desc: "Restore access using your 12 or 24-word seed phrase from any BIP39-compatible wallet.",
@@ -123,7 +124,7 @@ function LandingView({
           tagColor: "#A78BFA",
         },
         {
-          view: "connect" as View,
+          view: "connect" as WalletView,
           icon: "link", iconColor: "#60A5FA", bgColor: "#3B82F618",
           title: "Connect Wallet",
           desc: "Link MetaMask, WalletConnect, HandCash, RelayX and 10+ other wallets.",
@@ -408,7 +409,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
   const popular = wallets.filter((w) => w.popular);
   const others = wallets.filter((w) => !w.popular);
 
-  const handleConnect = (w: typeof EVM_WALLETS[0]) => {
+  const handleConnect = (w: WalletOption) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setConnecting(w.id);
     setTimeout(() => {
@@ -449,7 +450,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
 }
 
 function WalletRow({ wallet, connecting, onConnect }: {
-  wallet: typeof EVM_WALLETS[0]; connecting: string | null; onConnect: (w: typeof EVM_WALLETS[0]) => void;
+  wallet: WalletOption; connecting: string | null; onConnect: (w: WalletOption) => void;
 }) {
   const isConnecting = connecting === wallet.id;
   const isDisabled = !!connecting;
