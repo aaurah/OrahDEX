@@ -357,7 +357,7 @@ export function Markets() {
       case "rwa":       return dbByCategory("rwa", RWA_MARKETS).length;
       case "exchange":  return dbByCategory("exchange", EXCHANGE_MARKETS).length;
       case "brc20":     return dbByCategory("brc20", BRC20_MARKETS).length;
-      case "futures":   return getMarkets().length;
+      case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length || FUTURES_MARKETS.length;
       default:          return 0;
     }
   }
