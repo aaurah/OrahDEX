@@ -119,6 +119,12 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+/* ── Connectivity ping registered before the main router so it is always
+   reachable even if a route middleware takes a long time ────────────────── */
+app.get("/api/ping", (_req, res) => {
+  res.status(204).end();
+});
+
 app.use("/api", router);
 app.use("/v1", v1Router);
 
@@ -141,11 +147,6 @@ try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startB
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
-
-/* ── Connectivity ping — returns 204 ─────────────────────────────────────── */
-app.get("/api/ping", (_req, res) => {
-  res.status(204).end();
-});
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {
