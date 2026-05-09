@@ -129,6 +129,9 @@ export function SupportPage() {
             && typeof row?.answer === "string"
             && typeof row?.category === "string"
           ));
+        if (import.meta.env.DEV && normalized.length !== data.length) {
+          console.warn(`Filtered ${data.length - normalized.length} malformed FAQ item(s) from /api/support/faqs.`);
+        }
         setFaqs(normalized);
       } catch (err) {
         if (import.meta.env.DEV) {
