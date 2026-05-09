@@ -347,6 +347,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         return;
       }
 
+      // nextStatus !== "completed" is guaranteed here by the early return above
       if (isMountedRef.current) {
         cctpPollRef.current = setInterval(() => {
           void pollCctpStatus(intentId);
