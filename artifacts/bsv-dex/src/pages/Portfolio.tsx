@@ -220,7 +220,7 @@ function getPortfolioAssets(nativeAsset: string) {
   return list.map(a => ({ ...a, color: ASSET_COLORS[a.asset] ?? "#6B7280" }));
 }
 
-interface MarketRow { baseAsset: string; lastPrice: number; priceChangePercent24h: number; }
+interface MarketRow { baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; }
 
 function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({

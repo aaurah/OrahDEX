@@ -92,7 +92,7 @@ export function SupportThread({ ticketId }: Props) {
             <ArrowLeft className="w-4 h-4" />
             Back to Support
           </Link>
-          <BrandLogo size="sm" />
+          <BrandLogo textSize="text-sm" />
         </div>
       </header>
 

@@ -688,7 +688,7 @@ export function P2P() {
     intentId: string; makerAddress: string; tokenIn: string; tokenOut: string;
     amountIn: string; minAmountOut: string; price: string;
     status: string; createdAt: string; expiresAt: string;
-    takerAddress?: string; filledAmountOut?: string;
+    takerAddress?: string; filledAmountOut?: string; terms?: string;
   }> }>({
     queryKey: ["direct-intents", dtFilterCoin],
     queryFn: async () => {
@@ -1307,7 +1307,7 @@ export function P2P() {
                 {openDirectIntents.map(intent => {
                   const isOwnOffer = walletAddress && intent.makerAddress.toLowerCase() === walletAddress.toLowerCase();
                   const isPrivate = intent.terms?.startsWith("private:");
-                  const privateTarget = isPrivate ? intent.terms.replace("private:", "") : null;
+                  const privateTarget = isPrivate ? intent.terms!.replace("private:", "") : null;
                   const canFill = !isOwnOffer && (!isPrivate || (walletAddress && privateTarget === walletAddress.toLowerCase()));
                   const expiresAt = new Date(intent.expiresAt);
                   const minsLeft = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 60000));

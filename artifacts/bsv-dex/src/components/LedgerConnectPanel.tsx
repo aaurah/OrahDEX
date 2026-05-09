@@ -206,7 +206,7 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
               onClick={loadMore}
               className="w-full py-2 text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors"
             >
-              {status === "deriving" ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronDown className="w-3 h-3" />}
+              <ChevronDown className="w-3 h-3" />
               Load more accounts (legacy paths)
             </button>
           )}
