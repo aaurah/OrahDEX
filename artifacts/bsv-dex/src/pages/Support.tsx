@@ -136,7 +136,10 @@ export function SupportPage() {
             category: row.category,
           }));
         setFaqs(normalized);
-      } catch {
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn("Failed to load published FAQs, using defaults.", err);
+        }
         if (!alive) return;
         setFaqs(DEFAULT_FAQS);
       }
