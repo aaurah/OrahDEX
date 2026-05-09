@@ -128,13 +128,7 @@ export function SupportPage() {
             && typeof row?.question === "string"
             && typeof row?.answer === "string"
             && typeof row?.category === "string"
-          ))
-          .map(row => ({
-            id: row.id,
-            question: row.question,
-            answer: row.answer,
-            category: row.category,
-          }));
+          ));
         setFaqs(normalized);
       } catch (err) {
         if (import.meta.env.DEV) {
