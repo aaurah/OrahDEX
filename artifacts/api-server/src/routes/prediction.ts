@@ -1,10 +1,16 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router = Router();
-const predictionClaimLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+const predictionClaimLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 const ROUND_DURATION_S = 300;
 const LOCK_DURATION_S  = 30;

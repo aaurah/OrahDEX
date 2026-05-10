@@ -21,9 +21,9 @@ import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } fr
 import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
-import { createRateLimit } from "../middleware/rateLimit.js";
 
 // ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
@@ -104,8 +104,20 @@ const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals:
 };
 
 const router: IRouter = Router();
-const tradeSettleLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
-const tradeWithdrawLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+const tradeSettleLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
+const tradeWithdrawLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 const FEE_PCT = 0.003; // 0.3%
 

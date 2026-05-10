@@ -3,13 +3,25 @@ import { db, pool } from "@workspace/db";
 import { withdrawalRequestsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router: IRouter = Router();
-const userWithdrawalLimiter = createRateLimit({ windowMs: 60_000, max: 15 });
-const adminWithdrawalLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
+const userWithdrawalLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
+const adminWithdrawalLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 // ── POST /withdrawals ─────────────────────────────────────────────────────────
 // Creates a withdrawal request AND immediately deducts the amount from the

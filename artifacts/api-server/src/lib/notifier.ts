@@ -2,23 +2,42 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 
-function isValidTelegramToken(token: string): boolean {
-  return /^[0-9]{6,}:[A-Za-z0-9_-]{20,}$/.test(token);
+function isAsciiTokenChar(ch: string): boolean {
+  return (
+    (ch >= "a" && ch <= "z") ||
+    (ch >= "A" && ch <= "Z") ||
+    (ch >= "0" && ch <= "9") ||
+    ch === "_" ||
+    ch === "-"
+  );
 }
 
-function normalizeDiscordWebhook(webhookUrl: string): string | null {
+function isValidTelegramToken(token: string): boolean {
+  const sep = token.indexOf(":");
+  if (sep < 6 || sep !== token.lastIndexOf(":") || sep >= token.length - 20) return false;
+  for (let i = 0; i < sep; i++) {
+    const ch = token[i];
+    if (ch < "0" || ch > "9") return false;
+  }
+  for (let i = sep + 1; i < token.length; i++) {
+    if (!isAsciiTokenChar(token[i])) return false;
+  }
+  return true;
+}
+
+function normalizeDiscordWebhook(webhookUrl: string): URL | null {
   try {
     const url = new URL(webhookUrl);
     if (url.protocol !== "https:") return null;
     const host = url.hostname.toLowerCase();
-    const allowedHost =
-      host === "discord.com" ||
-      host === "discordapp.com" ||
-      host === "canary.discord.com" ||
-      host === "ptb.discord.com";
-    if (!allowedHost) return null;
+    let origin: string | null = null;
+    if (host === "discord.com") origin = "https://discord.com";
+    if (host === "discordapp.com") origin = "https://discordapp.com";
+    if (host === "canary.discord.com") origin = "https://canary.discord.com";
+    if (host === "ptb.discord.com") origin = "https://ptb.discord.com";
+    if (!origin) return null;
     if (!url.pathname.startsWith("/api/webhooks/")) return null;
-    return url.toString();
+    return new URL(`${url.pathname}${url.search}`, origin);
   } catch {
     return null;
   }

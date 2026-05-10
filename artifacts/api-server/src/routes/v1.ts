@@ -10,6 +10,7 @@
  */
 
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { db } from "@workspace/db";
 import { marketsTable, htlcLocksTable, ordersTable, keepersTable } from "@workspace/db/schema";
 import { eq, ilike, and, sum, sql as drizzleSql } from "drizzle-orm";
@@ -18,10 +19,15 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES, COINGECKO_IDS } from "../lib/priceUpdater.js";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
-import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router = Router();
-const bridgeRevealLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+const bridgeRevealLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 // ── Chain → Router contract address (Uniswap v2-compatible) ─────────────────
 const CHAIN_ROUTERS: Record<number, string> = {

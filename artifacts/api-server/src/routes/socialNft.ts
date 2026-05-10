@@ -1,11 +1,23 @@
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router: IRouter = Router();
-const socialWriteLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
-const socialReadLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
+const socialWriteLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
+const socialReadLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 function uid(): string { return crypto.randomUUID(); }
 

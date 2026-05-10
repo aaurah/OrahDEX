@@ -62,7 +62,7 @@ function isPrivateHostname(hostname: string): boolean {
     return false;
   }
   if (ipType === 6) {
-    return host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80");
+    return host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb");
   }
   return false;
 }
@@ -70,7 +70,11 @@ function isPrivateHostname(hostname: string): boolean {
 function isSafePaymailDomain(domain: string): boolean {
   const d = domain.trim().toLowerCase();
   if (!d || d.length > 253 || d.startsWith(".") || d.endsWith(".") || d.includes("..")) return false;
-  if (!/^[a-z0-9.-]+$/.test(d)) return false;
+  for (const ch of d) {
+    const isLower = ch >= "a" && ch <= "z";
+    const isDigit = ch >= "0" && ch <= "9";
+    if (!isLower && !isDigit && ch !== "." && ch !== "-") return false;
+  }
   if (!d.includes(".")) return false;
   return !isPrivateHostname(d);
 }
@@ -110,7 +114,7 @@ function collapseWhitespace(input: string): string {
   let out = "";
   let previousWasWhitespace = false;
   for (const ch of input) {
-    const isWhitespace = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f";
+    const isWhitespace = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f" || ch === "\v";
     if (isWhitespace) {
       if (!previousWasWhitespace) out += " ";
       previousWasWhitespace = true;
