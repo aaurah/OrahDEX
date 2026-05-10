@@ -18,8 +18,10 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES, COINGECKO_IDS } from "../lib/priceUpdater.js";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router = Router();
+const bridgeRevealLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
 
 // ── Chain → Router contract address (Uniswap v2-compatible) ─────────────────
 const CHAIN_ROUTERS: Record<number, string> = {
@@ -723,7 +725,7 @@ router.post("/bridge/lock", async (req, res) => {
 });
 
 // POST /v1/bridge/reveal — relayer reveals the preimage to claim BSV
-router.post("/bridge/reveal", async (req, res) => {
+router.post("/bridge/reveal", bridgeRevealLimiter, async (req, res) => {
   try {
     const { lockId, secret } = req.body as { lockId?: string; secret?: string };
 

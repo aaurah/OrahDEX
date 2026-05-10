@@ -1,8 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router: IRouter = Router();
+const socialWriteLimiter = createRateLimit({ windowMs: 60_000, max: 30 });
+const socialReadLimiter = createRateLimit({ windowMs: 60_000, max: 120 });
 
 function uid(): string { return crypto.randomUUID(); }
 
@@ -142,7 +145,7 @@ router.post("/social/posts/:id/like", async (req, res) => {
 });
 
 /* ── POST /social/posts/:id/comment ──────────────────────────────────────── */
-router.post("/social/posts/:id/comment", async (req, res) => {
+router.post("/social/posts/:id/comment", socialWriteLimiter, async (req, res) => {
   try {
     const { wallet_address, display_name, content } = req.body as Record<string, string>;
     if (!wallet_address || !content) { res.status(400).json({ error: "wallet_address and content required" }); return; }
@@ -163,7 +166,7 @@ router.post("/social/posts/:id/comment", async (req, res) => {
 });
 
 /* ── GET /social/trending — top creators + posts ─────────────────────────── */
-router.get("/social/trending", async (req, res) => {
+router.get("/social/trending", socialReadLimiter, async (req, res) => {
 
   try {
     const { rows: topPosts } = await pool.query(
@@ -182,7 +185,7 @@ router.get("/social/trending", async (req, res) => {
 });
 
 /* ── GET /social/profile/:address ────────────────────────────────────────── */
-router.get("/social/profile/:address", async (req, res) => {
+router.get("/social/profile/:address", socialReadLimiter, async (req, res) => {
 
   try {
     const { address } = req.params;

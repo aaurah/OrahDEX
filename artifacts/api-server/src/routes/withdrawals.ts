@@ -5,14 +5,17 @@ import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router: IRouter = Router();
+const userWithdrawalLimiter = createRateLimit({ windowMs: 60_000, max: 15 });
+const adminWithdrawalLimiter = createRateLimit({ windowMs: 60_000, max: 60 });
 
 // ── POST /withdrawals ─────────────────────────────────────────────────────────
 // Creates a withdrawal request AND immediately deducts the amount from the
 // user's available internal balance. If the balance is insufficient the
 // request is rejected so the user cannot over-withdraw.
-router.post("/withdrawals", async (req, res) => {
+router.post("/withdrawals", userWithdrawalLimiter, async (req, res) => {
   const { walletAddress, asset, amount, network, networkLabel, recipient, fee } = req.body;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
@@ -125,7 +128,7 @@ router.post("/withdrawals", async (req, res) => {
 
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
 // Returns ALL withdrawal requests for the admin panel, newest first.
-router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
+router.get("/admin/withdrawals", requireAdminToken, adminWithdrawalLimiter, async (req, res) => {
   try {
     const { rows } = await pool.query<{
       id: string; wallet_address: string; asset: string; amount: string;
@@ -160,7 +163,7 @@ router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
 // ── PATCH /withdrawals/:id ────────────────────────────────────────────────────
 // Admin action: update status to 'cancelled' (refunds balance), 'processing',
 // or 'completed' (with optional txid).
-router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
+router.patch("/withdrawals/:id", requireAdminToken, adminWithdrawalLimiter, async (req, res) => {
   const { id } = req.params;
   const { status, txid, note } = req.body as { status: string; txid?: string; note?: string };
 
@@ -261,7 +264,7 @@ router.patch("/withdrawals/:id", requireAdminToken, async (req, res) => {
 
 // ── POST /admin/balance-adjust ────────────────────────────────────────────────
 // Admin: manually credit or deduct a user's internal balance for a given asset.
-router.post("/admin/balance-adjust", requireAdminToken, async (req, res) => {
+router.post("/admin/balance-adjust", requireAdminToken, adminWithdrawalLimiter, async (req, res) => {
   const { walletAddress, asset, amount, type, reason } = req.body as {
     walletAddress: string; asset: string; amount: string; type: "credit" | "deduct"; reason?: string;
   };

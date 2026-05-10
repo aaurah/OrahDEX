@@ -181,6 +181,10 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     res.status(400).json({ error: "walletAddress and txHash are required" });
     return;
   }
+  if (!/^[a-fA-F0-9]{64}$/.test(String(txHash))) {
+    res.status(400).json({ error: "txHash must be a valid 64-character hex string" });
+    return;
+  }
 
   try {
     const wallet = await getOrCreateWallet();
@@ -198,7 +202,8 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     }
 
     // Fetch tx from WhatsOnChain
-    const txRes = await fetch(`${BSV_NET.wocBase}/tx/hash/${txHash}`);
+    const txUrl = new URL(`/tx/hash/${encodeURIComponent(txHash)}`, BSV_NET.wocBase);
+    const txRes = await fetch(txUrl);
     if (!txRes.ok) {
       res.status(400).json({ error: "Transaction not found on BSV chain. Please wait for confirmation and try again." });
       return;

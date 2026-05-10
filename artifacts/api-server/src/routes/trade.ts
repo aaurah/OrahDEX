@@ -23,6 +23,7 @@ import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { createRateLimit } from "../middleware/rateLimit.js";
 
 // ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
@@ -103,6 +104,8 @@ const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals:
 };
 
 const router: IRouter = Router();
+const tradeSettleLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
+const tradeWithdrawLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
 
 const FEE_PCT = 0.003; // 0.3%
 
@@ -268,7 +271,7 @@ router.post("/trade/wallet", async (req, res) => {
  *
  * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut }
  */
-router.post("/trade/wallet/settle", async (req, res) => {
+router.post("/trade/wallet/settle", tradeSettleLimiter, async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut } = req.body ?? {};
 
   if (!txHash || !chainId || !walletAddress || !assetIn || !assetOut || !amountIn || !amountOut) {
@@ -617,7 +620,7 @@ router.post("/trade/exchange", async (req, res) => {
 // Deducts the internal balance atomically, then attempts on-chain broadcast
 // via the hot wallet. If a Vault contract address is configured, it will be
 // used instead (set VAULT_CONTRACT_ADDRESS env var + deploy the contract first).
-router.post("/withdraw", async (req, res) => {
+router.post("/withdraw", tradeWithdrawLimiter, async (req, res) => {
   const { walletAddress, asset, amount, network, recipient, networkLabel } = req.body ?? {};
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {

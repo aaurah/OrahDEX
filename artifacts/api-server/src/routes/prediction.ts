@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { createRateLimit } from "../middleware/rateLimit.js";
 
 const router = Router();
+const predictionClaimLimiter = createRateLimit({ windowMs: 60_000, max: 20 });
 
 const ROUND_DURATION_S = 300;
 const LOCK_DURATION_S  = 30;
@@ -409,7 +411,7 @@ router.post("/prediction/bet", async (req, res) => {
   }
 });
 
-router.post("/prediction/claim", async (req, res) => {
+router.post("/prediction/claim", predictionClaimLimiter, async (req, res) => {
   try {
     await ensureTables();
 

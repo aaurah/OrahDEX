@@ -173,9 +173,12 @@ router.get("/history", async (req, res) => {
     const encodedSymbol = encodeURIComponent(symbol);
     const limit = Math.min(Math.ceil((to - from) / intervalToSeconds(interval)) + 10, 1000);
 
-    const proto = req.protocol;
-    const host  = req.get("host") ?? "localhost:8080";
-    const candleUrl = `${proto}://${host}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=${limit}&from=${from}&to=${to}`;
+    const localPort = req.socket.localPort ?? Number(process.env.PORT ?? 8080);
+    const candleUrl = new URL(`/api/markets/${encodedSymbol}/candles`, `http://127.0.0.1:${localPort}`);
+    candleUrl.searchParams.set("interval", interval);
+    candleUrl.searchParams.set("limit", String(limit));
+    candleUrl.searchParams.set("from", String(from));
+    candleUrl.searchParams.set("to", String(to));
 
     const resp = await fetch(candleUrl, { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) {

@@ -2,6 +2,28 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 
+function isValidTelegramToken(token: string): boolean {
+  return /^[0-9]{6,}:[A-Za-z0-9_-]{20,}$/.test(token);
+}
+
+function normalizeDiscordWebhook(webhookUrl: string): string | null {
+  try {
+    const url = new URL(webhookUrl);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    const allowedHost =
+      host === "discord.com" ||
+      host === "discordapp.com" ||
+      host === "canary.discord.com" ||
+      host === "ptb.discord.com";
+    if (!allowedHost) return null;
+    if (!url.pathname.startsWith("/api/webhooks/")) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function getSetting(key: string): Promise<string> {
   const rows = await db.select().from(platformSettingsTable);
   return rows.find(r => r.key === key)?.value ?? "";
@@ -9,7 +31,10 @@ async function getSetting(key: string): Promise<string> {
 
 /* ── Telegram Bot ─────────────────────────────────────────────────────────── */
 async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  if (!isValidTelegramToken(token)) {
+    throw new Error("Invalid Telegram bot token format");
+  }
+  const url = new URL(`/bot${encodeURIComponent(token)}/sendMessage`, "https://api.telegram.org");
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -44,10 +69,13 @@ async function sendNtfy(topic: string, title: string, message: string, priority:
 
 /* ── Discord Webhook ──────────────────────────────────────────────────────── */
 async function sendDiscord(webhookUrl: string, title: string, message: string, priority: string): Promise<void> {
+  const safeWebhook = normalizeDiscordWebhook(webhookUrl);
+  if (!safeWebhook) throw new Error("Invalid Discord webhook URL");
+
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };
-  const res = await fetch(webhookUrl, {
+  const res = await fetch(safeWebhook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
