@@ -8,6 +8,18 @@ import { notifyNewTicket, sendTestNotification } from "../lib/notifier.js";
 
 const router = Router();
 
+function isValidEmailAddress(email: string): boolean {
+  const trimmed = email.trim();
+  if (!trimmed || trimmed.length > 254 || trimmed.includes(" ")) return false;
+  const at = trimmed.indexOf("@");
+  if (at <= 0 || at !== trimmed.lastIndexOf("@") || at === trimmed.length - 1) return false;
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  if (!local || !domain || local.length > 64 || !domain.includes(".")) return false;
+  if (domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) return false;
+  return true;
+}
+
 /* ── PUBLIC: Submit contact form ticket ────────────────────────────────────── */
 router.post("/support/contact", async (req, res) => {
   try {
@@ -16,8 +28,7 @@ router.post("/support/contact", async (req, res) => {
       res.status(400).json({ error: "name, email, subject and message are required" });
       return;
     }
-    const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRx.test(email)) {
+    if (!isValidEmailAddress(email)) {
       res.status(400).json({ error: "Invalid email address" });
       return;
     }

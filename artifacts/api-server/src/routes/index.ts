@@ -38,6 +38,7 @@ import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { isIP } from "node:net";
 import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js";
 import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
@@ -45,6 +46,85 @@ import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router: IRouter = Router();
+
+function isPrivateHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  if (!host) return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+
+  const ipType = isIP(host);
+  if (ipType === 4) {
+    const [a, b] = host.split(".").map(Number);
+    if (a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  if (ipType === 6) {
+    return host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb");
+  }
+  return false;
+}
+
+function isSafePaymailDomain(domain: string): boolean {
+  const d = domain.trim().toLowerCase();
+  if (!d || d.length > 253 || d.startsWith(".") || d.endsWith(".") || d.includes("..")) return false;
+  for (const ch of d) {
+    const isLower = ch >= "a" && ch <= "z";
+    const isDigit = ch >= "0" && ch <= "9";
+    if (!isLower && !isDigit && ch !== "." && ch !== "-") return false;
+  }
+  if (!d.includes(".")) return false;
+  return !isPrivateHostname(d);
+}
+
+function isAllowedPaymailPkiUrl(rawUrl: string, domain: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    const d = domain.toLowerCase();
+    if (isPrivateHostname(host)) return false;
+    return host === d || host === `bsvalias.${d}` || host.endsWith(`.${d}`);
+  } catch {
+    return false;
+  }
+}
+
+function stripHtmlTags(input: string): string {
+  let out = "";
+  let insideTag = false;
+  for (const ch of input) {
+    if (ch === "<") {
+      insideTag = true;
+      continue;
+    }
+    if (ch === ">") {
+      insideTag = false;
+      out += " ";
+      continue;
+    }
+    if (!insideTag) out += ch;
+  }
+  return out;
+}
+
+function collapseWhitespace(input: string): string {
+  let out = "";
+  let previousWasWhitespace = false;
+  for (const ch of input) {
+    const isWhitespace = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f" || ch === "\v";
+    if (isWhitespace) {
+      if (!previousWasWhitespace) out += " ";
+      previousWasWhitespace = true;
+    } else {
+      out += ch;
+      previousWasWhitespace = false;
+    }
+  }
+  return out.trim();
+}
 
 // Public settings — only whitelisted keys exposed (Reown project ID is a public identifier)
 const PUBLIC_SETTING_KEYS = ["reown_project_id"];
@@ -219,10 +299,15 @@ router.get("/bsv/balance/:address", async (req, res) => {
   } else if (isPaymail(raw)) {
     // Try paymail PKI resolution to get the P2PKH address
     const [alias, domain] = raw.split("@");
+    if (!alias || !domain || !isSafePaymailDomain(domain)) {
+      res.status(400).json({ error: "Invalid or unsafe paymail domain." });
+      return;
+    }
 
     // Strategy 1: Try well-known bsvalias to find pki endpoint
     const paymailDomains = [domain, `bsvalias.${domain}`];
     for (const d of paymailDomains) {
+      if (!isSafePaymailDomain(d)) continue;
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 3000);
@@ -235,6 +320,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
             const pkiUrl = pkiTmpl
               .replace("{alias}", alias)
               .replace("{domain.tld}", domain);
+            if (!isAllowedPaymailPkiUrl(pkiUrl, domain)) continue;
             const ctrl2 = new AbortController();
             const t2 = setTimeout(() => ctrl2.abort(), 3000);
             const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
@@ -262,6 +348,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
         `https://${domain}/${alias}@${domain}/id-key`,
       ];
       for (const url of pkiPatterns) {
+        if (!isAllowedPaymailPkiUrl(url, domain)) continue;
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 2500);
@@ -341,10 +428,8 @@ router.get("/bsv/utxos/:address", async (req, res) => {
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
-    const wocRes = await fetch(
-      `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
-    );
+    const utxoUrl = new URL(`/address/${encodeURIComponent(address)}/unspent`, BSV_NET.wocBase);
+    const wocRes = await fetch(utxoUrl, { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } });
     clearTimeout(timer);
     if (!wocRes.ok) { res.json([]); return; }
     const data = await wocRes.json() as Array<{
@@ -527,7 +612,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
 
     // Strip basic HTML tags for storage if we only got HTML
-    const cleanBody = body.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+    const cleanBody = collapseWhitespace(stripHtmlTags(body));
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });
@@ -804,4 +889,3 @@ router.put("/connect-session/:token", (req, res) => {
 });
 
 export default router;
-

@@ -10,6 +10,7 @@
  */
 
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { db } from "@workspace/db";
 import { marketsTable, htlcLocksTable, ordersTable, keepersTable } from "@workspace/db/schema";
 import { eq, ilike, and, sum, sql as drizzleSql } from "drizzle-orm";
@@ -20,6 +21,13 @@ import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router = Router();
+const bridgeRevealLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 // ── Chain → Router contract address (Uniswap v2-compatible) ─────────────────
 const CHAIN_ROUTERS: Record<number, string> = {
@@ -723,7 +731,7 @@ router.post("/bridge/lock", async (req, res) => {
 });
 
 // POST /v1/bridge/reveal — relayer reveals the preimage to claim BSV
-router.post("/bridge/reveal", async (req, res) => {
+router.post("/bridge/reveal", bridgeRevealLimiter, async (req, res) => {
   try {
     const { lockId, secret } = req.body as { lockId?: string; secret?: string };
 

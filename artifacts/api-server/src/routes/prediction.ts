@@ -1,8 +1,16 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
+const predictionClaimLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 const ROUND_DURATION_S = 300;
 const LOCK_DURATION_S  = 30;
@@ -409,7 +417,7 @@ router.post("/prediction/bet", async (req, res) => {
   }
 });
 
-router.post("/prediction/claim", async (req, res) => {
+router.post("/prediction/claim", predictionClaimLimiter, async (req, res) => {
   try {
     await ensureTables();
 

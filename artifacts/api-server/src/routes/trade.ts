@@ -21,6 +21,7 @@ import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } fr
 import { db as _db, pool } from "@workspace/db";
 import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
@@ -103,6 +104,20 @@ const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals:
 };
 
 const router: IRouter = Router();
+const tradeSettleLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
+const tradeWithdrawLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 const FEE_PCT = 0.003; // 0.3%
 
@@ -268,7 +283,7 @@ router.post("/trade/wallet", async (req, res) => {
  *
  * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut }
  */
-router.post("/trade/wallet/settle", async (req, res) => {
+router.post("/trade/wallet/settle", tradeSettleLimiter, async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut } = req.body ?? {};
 
   if (!txHash || !chainId || !walletAddress || !assetIn || !assetOut || !amountIn || !amountOut) {
@@ -617,7 +632,7 @@ router.post("/trade/exchange", async (req, res) => {
 // Deducts the internal balance atomically, then attempts on-chain broadcast
 // via the hot wallet. If a Vault contract address is configured, it will be
 // used instead (set VAULT_CONTRACT_ADDRESS env var + deploy the contract first).
-router.post("/withdraw", async (req, res) => {
+router.post("/withdraw", tradeWithdrawLimiter, async (req, res) => {
   const { walletAddress, asset, amount, network, recipient, networkLabel } = req.body ?? {};
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {

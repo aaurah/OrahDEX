@@ -2,6 +2,47 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 
+function isAsciiTokenChar(ch: string): boolean {
+  return (
+    (ch >= "a" && ch <= "z") ||
+    (ch >= "A" && ch <= "Z") ||
+    (ch >= "0" && ch <= "9") ||
+    ch === "_" ||
+    ch === "-"
+  );
+}
+
+function isValidTelegramToken(token: string): boolean {
+  const sep = token.indexOf(":");
+  if (sep < 6 || sep !== token.lastIndexOf(":") || sep >= token.length - 20) return false;
+  for (let i = 0; i < sep; i++) {
+    const ch = token[i];
+    if (ch < "0" || ch > "9") return false;
+  }
+  for (let i = sep + 1; i < token.length; i++) {
+    if (!isAsciiTokenChar(token[i])) return false;
+  }
+  return true;
+}
+
+function normalizeDiscordWebhook(webhookUrl: string): URL | null {
+  try {
+    const url = new URL(webhookUrl);
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    let origin: string | null = null;
+    if (host === "discord.com") origin = "https://discord.com";
+    if (host === "discordapp.com") origin = "https://discordapp.com";
+    if (host === "canary.discord.com") origin = "https://canary.discord.com";
+    if (host === "ptb.discord.com") origin = "https://ptb.discord.com";
+    if (!origin) return null;
+    if (!url.pathname.startsWith("/api/webhooks/")) return null;
+    return new URL(`${url.pathname}${url.search}`, origin);
+  } catch {
+    return null;
+  }
+}
+
 async function getSetting(key: string): Promise<string> {
   const rows = await db.select().from(platformSettingsTable);
   return rows.find(r => r.key === key)?.value ?? "";
@@ -9,7 +50,10 @@ async function getSetting(key: string): Promise<string> {
 
 /* ── Telegram Bot ─────────────────────────────────────────────────────────── */
 async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  if (!isValidTelegramToken(token)) {
+    throw new Error("Invalid Telegram bot token format");
+  }
+  const url = new URL(`/bot${encodeURIComponent(token)}/sendMessage`, "https://api.telegram.org");
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -44,10 +88,13 @@ async function sendNtfy(topic: string, title: string, message: string, priority:
 
 /* ── Discord Webhook ──────────────────────────────────────────────────────── */
 async function sendDiscord(webhookUrl: string, title: string, message: string, priority: string): Promise<void> {
+  const safeWebhook = normalizeDiscordWebhook(webhookUrl);
+  if (!safeWebhook) throw new Error("Invalid Discord webhook URL");
+
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };
-  const res = await fetch(webhookUrl, {
+  const res = await fetch(safeWebhook, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
